@@ -8,6 +8,7 @@ jobs:
   steps:
   - checkout: self
     clean: true
+    submodules: true
 
   - ${{ if eq(variables['Build.Reason'], 'Schedule') }}:
     - template: schedule-only-steps.yml
@@ -32,6 +33,7 @@ jobs:
   steps:
   - checkout: self
     clean: true
+    submodules: true
   - template: install-dependencies.yml
   - template: dotnet.yml
 
@@ -42,6 +44,7 @@ jobs:
   steps:
   - checkout: self
     clean: true
+    submodules: true
   - template: install-dependencies.yml
   - template: dotnet.yml
 

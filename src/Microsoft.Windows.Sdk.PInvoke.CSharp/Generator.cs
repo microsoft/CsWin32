@@ -297,22 +297,34 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
 
         private SyntaxKind Visibility => this.options.Public ? SyntaxKind.PublicKeyword : SyntaxKind.InternalKeyword;
 
-        private IEnumerable<MemberDeclarationSyntax> NamespaceMembers =>
-            this.GroupByModule ?
-                this.MembersByClass.Select(kv =>
-                    ClassDeclaration(Identifier(GetClassNameForModule(kv.Key)))
+        private IEnumerable<MemberDeclarationSyntax> NamespaceMembers
+        {
+            get
+            {
+                IEnumerable<MemberDeclarationSyntax> result = this.GroupByModule
+                    ? this.MembersByClass.Select(kv =>
+                        ClassDeclaration(Identifier(GetClassNameForModule(kv.Key)))
                         .AddModifiers(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.PartialKeyword))
                         .AddMembers(kv.ToArray()))
-                    .Concat(this.types.Values.ToArray()) :
-                new MemberDeclarationSyntax[]
+                    : new MemberDeclarationSyntax[]
+                    {
+                        ClassDeclaration(Identifier(this.SingleClassName))
+                            .AddModifiers(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.PartialKeyword))
+                            .AddMembers(this.MembersByClass.SelectMany(kv => kv).ToArray()),
+                    };
+                result = result
+                    .Concat(this.safeHandleTypes)
+                    .Concat(this.types.Values);
+
+                var constantClass = this.CreateConstantDefiningClass();
+                if (constantClass.Members.Count > 0)
                 {
-                    ClassDeclaration(Identifier(this.SingleClassName))
-                        .AddModifiers(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.PartialKeyword))
-                        .AddMembers(this.MembersByClass.SelectMany(kv => kv).ToArray()),
+                    result = result.Concat(new MemberDeclarationSyntax[] { constantClass });
                 }
-                .Concat(this.safeHandleTypes)
-                .Concat(this.types.Values)
-                .Concat(new MemberDeclarationSyntax[] { this.CreateConstantDefiningClass() });
+
+                return result;
+            }
+        }
 
         private IEnumerable<IGrouping<string, MemberDeclarationSyntax>> MembersByClass =>
             from entry in this.modulesAndMembers

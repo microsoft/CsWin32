@@ -1,0 +1,31 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace />
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="NativeMethods.json" />
+    <AdditionalFiles Include="NativeMethods.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Microsoft.Windows.Sdk.PInvoke.CSharp\Microsoft.Windows.Sdk.PInvoke.CSharp.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <Analyzer Include="$(RepoRootPath)\bin\Microsoft.Windows.Sdk.PInvoke.CSharp\Debug\netstandard2.0\System.Text.Json.dll" />
+    <Analyzer Include="$(RepoRootPath)\bin\Microsoft.Windows.Sdk.PInvoke.CSharp\Debug\netstandard2.0\Microsoft.Bcl.AsyncInterfaces.dll" />
+    <Analyzer Include="$(RepoRootPath)\bin\Microsoft.Windows.Sdk.PInvoke.CSharp\Debug\netstandard2.0\System.Text.Encodings.Web.dll" />
+    <Analyzer Include="$(RepoRootPath)\bin\Microsoft.Windows.Sdk.PInvoke.CSharp\Debug\netstandard2.0\YamlDotNet.dll" />
+  </ItemGroup>
+
+  <ProjectExtensions>
+    <VisualStudio><UserProperties nativemethods_1json__JsonSchema="..\..\src\Microsoft.Windows.Sdk.PInvoke.CSharp\settings.schema.json" /></VisualStudio>
+  </ProjectExtensions>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.msbuild" Version="2.9.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="16.8.0" />
+    <PackageReference Include="xunit" Version="2.4.1" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.4.3" />
+  </ItemGroup>
+
+</Project>

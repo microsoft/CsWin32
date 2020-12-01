@@ -1,3 +1,51 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <Nullable>enable</Nullable>
+
+    <!-- Special properties for analyzer packages. -->
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <IncludeSymbols>false</IncludeSymbols>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <NoWarn>$(NoWarn);NU5128</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <YamlDocOutputPath Include="../../obj/$(Configuration)/apidocs.yml" Visible="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="AnalyzerReleases.Shipped.md" />
+    <AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="$(PkgMicrosoft_Windows_SDK_Win32Metadata)\content\Microsoft.Windows.Sdk.Win32.winmd" />
+    <EmbeddedResource Include="$(PkgMicrosoft_Windows_SDK_Win32Metadata)\content\Microsoft.Windows.Sdk.Win32.Interop.dll" />
+    <EmbeddedResource Include="@(YamlDocOutputPath)" />
+  </ItemGroup>
+
+  <ItemDefinitionGroup>
+    <PackageReference>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemDefinitionGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="3.8.0-5.final" />
+    <PackageReference Include="Nullable" Version="1.3.0" />
+    <PackageReference Include="System.Reflection.Metadata" Version="5.0.0" />
+    <PackageReference Include="Microsoft.Windows.SDK.Win32Metadata" Version="10.0.21269.1001-preview.rs-prerelease" GeneratePathProperty="true" />
+    <PackageReference Include="System.Text.Json" Version="5.0.0" />
+    <PackageReference Include="YamlDotNet" Version="8.1.2" />
+    <PackageReference Include="System.Memory" Version="4.5.4" PrivateAssets="none" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ScrapeDocs\ScrapeDocs.csproj" ReferenceOutputAssembly="false" OutputItemType="ScraperTool" SetTargetFramework="TargetFramework=net5.0" />
+  </ItemGroup>
+
+  <Import Project="$(MSBuildProjectName).targets" />
 </Project>

@@ -1,0 +1,4 @@
+[submodule "docs"]
+	path = ext/sdk-api
+	url = https://github.com/MicrosoftDocs/sdk-api
+	shallow = true

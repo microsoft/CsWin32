@@ -1,0 +1,44 @@
+{
+  "definitions": {},
+  "$schema": "http://json-schema.org/draft-04/schema",
+  "$id": "https://example.com/object1606572004.json",
+  "title": "Root",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "title": "The URL for the schema used by this document.",
+      "type": "string"
+    },
+    "namespace": {
+      "title": "Namespace for generated code.",
+      "type": "string",
+      "default": "Microsoft.Windows.Sdk",
+      "examples": [
+        "PInvoke"
+      ],
+      "pattern": "^\\w+(?:\\.\\w+)*$"
+    },
+    "wideCharOnly": {
+      "title": "Omit ANSI functions and remove `W` suffix from UTF-16 functions.",
+      "type": "boolean",
+      "default": true
+    },
+    "emitSingleFile": {
+      "title": "A value indicating whether to emit a single source file as opposed to types spread across many files.",
+      "type": "boolean",
+      "default": false
+    },
+    "className": {
+      "title": "The name of a single class under which all p/invoke methods should be added, regardless of imported module. Use null for one class per imported module.",
+      "type": [ "string", "null" ],
+      "default": "PInvoke",
+      "pattern": "^\\w+$"
+    },
+    "public": {
+      "title": "A value indicating whether to expose the generated APIs publicly (as opposed to internally).",
+      "type": "boolean",
+      "default": false
+    }
+  }
+}

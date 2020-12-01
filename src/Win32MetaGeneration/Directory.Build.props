@@ -1,3 +1,6 @@
 <Project>
+  <PropertyGroup>
+    <IsCodeGenerationProject>true</IsCodeGenerationProject>
+  </PropertyGroup>
   <Import Project="$([MSBuild]::GetDirectoryNameOfFileAbove($(MSBuildThisFileDirectory)../, Directory.Build.props))\Directory.Build.props" Condition=" '$([MSBuild]::GetDirectoryNameOfFileAbove($(MSBuildThisFileDirectory)../, Directory.Build.props))' != '' " />
 </Project>

@@ -1,0 +1,4 @@
+﻿{
+  "$schema": "..\\..\\src\\Microsoft.Windows.Sdk.PInvoke.CSharp\\settings.schema.json",
+  "emitSingleFile": true
+}

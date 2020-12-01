@@ -5,6 +5,7 @@ using System;
 using Microsoft.Windows.Sdk;
 using Xunit;
 
+[Trait("WindowsOnly", "true")]
 public class BasicTests
 {
     [Fact]

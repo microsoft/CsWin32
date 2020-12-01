@@ -5,6 +5,8 @@ parameters:
 jobs:
 - job: Windows
   pool: ${{ parameters.windowsPool }}
+  variables:
+    TestFilter: true
   steps:
   - checkout: self
     clean: true
@@ -30,6 +32,8 @@ jobs:
 - job: Linux
   pool:
     vmImage: Ubuntu 18.04
+  variables:
+    TestFilter: "WindowsOnly!=true"
   steps:
   - checkout: self
     clean: true
@@ -41,6 +45,8 @@ jobs:
   condition: ${{ parameters.includeMacOS }}
   pool:
     vmImage: macOS-10.15
+  variables:
+    TestFilter: "WindowsOnly!=true"
   steps:
   - checkout: self
     clean: true

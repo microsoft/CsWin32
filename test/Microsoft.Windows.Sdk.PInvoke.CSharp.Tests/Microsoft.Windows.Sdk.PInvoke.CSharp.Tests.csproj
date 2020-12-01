@@ -5,7 +5,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Library\Library.csproj" />
+    <ProjectReference Include="..\..\src\Microsoft.Windows.Sdk.PInvoke.CSharp\Microsoft.Windows.Sdk.PInvoke.CSharp.csproj" />
   </ItemGroup>
 
   <ItemGroup>

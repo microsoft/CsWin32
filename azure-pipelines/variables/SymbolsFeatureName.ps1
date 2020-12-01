@@ -1,1 +1,1 @@
-'LibraryName'
+'Microsoft.Windows.Sdk.PInvoke.CSharp'

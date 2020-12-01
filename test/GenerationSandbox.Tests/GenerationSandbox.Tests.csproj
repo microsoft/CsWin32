@@ -11,10 +11,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Microsoft.Windows.Sdk.PInvoke.CSharp\Microsoft.Windows.Sdk.PInvoke.CSharp.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-    <Analyzer Include="$(RepoRootPath)\bin\Microsoft.Windows.Sdk.PInvoke.CSharp\Debug\netstandard2.0\System.Text.Json.dll" />
-    <Analyzer Include="$(RepoRootPath)\bin\Microsoft.Windows.Sdk.PInvoke.CSharp\Debug\netstandard2.0\Microsoft.Bcl.AsyncInterfaces.dll" />
-    <Analyzer Include="$(RepoRootPath)\bin\Microsoft.Windows.Sdk.PInvoke.CSharp\Debug\netstandard2.0\System.Text.Encodings.Web.dll" />
-    <Analyzer Include="$(RepoRootPath)\bin\Microsoft.Windows.Sdk.PInvoke.CSharp\Debug\netstandard2.0\YamlDotNet.dll" />
+    <Analyzer Include="$(RepoRootPath)\bin\Microsoft.Windows.Sdk.PInvoke.CSharp\$(Configuration)\netstandard2.0\System.Text.Json.dll" />
+    <Analyzer Include="$(RepoRootPath)\bin\Microsoft.Windows.Sdk.PInvoke.CSharp\$(Configuration)\netstandard2.0\Microsoft.Bcl.AsyncInterfaces.dll" />
+    <Analyzer Include="$(RepoRootPath)\bin\Microsoft.Windows.Sdk.PInvoke.CSharp\$(Configuration)\netstandard2.0\System.Text.Encodings.Web.dll" />
+    <Analyzer Include="$(RepoRootPath)\bin\Microsoft.Windows.Sdk.PInvoke.CSharp\$(Configuration)\netstandard2.0\YamlDotNet.dll" />
   </ItemGroup>
 
   <ProjectExtensions>

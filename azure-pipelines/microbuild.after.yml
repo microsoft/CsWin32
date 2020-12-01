@@ -4,6 +4,8 @@ steps:
   inputs:
     TargetFolders: |
       $(Build.SourcesDirectory)/bin/Packages/$(BuildConfiguration)/NuGet
+    WhiteListPathForCerts: $(Build.SourcesDirectory)\azure-pipelines\no_authenticode.txt
+    WhiteListPathForSigs: $(Build.SourcesDirectory)\azure-pipelines\no_strongname.txt
 
 - task: MicroBuildCleanup@1
   condition: succeededOrFailed()

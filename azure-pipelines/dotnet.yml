@@ -8,13 +8,8 @@ steps:
     configuration: $(BuildConfiguration)
   condition: and(succeeded(), eq(variables['Agent.OS'], 'Windows_NT'))
 
-- script: dotnet build --no-restore -c $(BuildConfiguration) /v:m /bl:"$(Build.ArtifactStagingDirectory)/build_logs/build.binlog"
+- script: dotnet build /t:build,pack --no-restore -c $(BuildConfiguration) /v:m /bl:"$(Build.ArtifactStagingDirectory)/build_logs/build.binlog"
   displayName: dotnet build
-  condition: and(succeeded(), ne(variables['Agent.OS'], 'Windows_NT'))
-
-- script: dotnet pack --no-build -c $(BuildConfiguration) /v:m /bl:"$(Build.ArtifactStagingDirectory)/build_logs/pack.binlog"
-  displayName: dotnet pack
-  condition: and(succeeded(), ne(variables['Agent.OS'], 'Windows_NT'))
 
 - task: DotNetCoreCLI@2
   displayName: dotnet test -f net472

@@ -1825,7 +1825,10 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
                     if (isArray)
                     {
                         // TODO: add support for in/out size parameters. (e.g. RSGetViewports)
-                        if (sizeParamIndex.HasValue && !(externMethodDeclaration.ParameterList.Parameters[sizeParamIndex.Value].Type is PointerTypeSyntax))
+                        // TODO: add support for lists of pointers via a generated pointer-wrapping struct (e.g. PSSetSamplers)
+                        if (sizeParamIndex.HasValue
+                            && !(externMethodDeclaration.ParameterList.Parameters[sizeParamIndex.Value].Type is PointerTypeSyntax)
+                            && !isPointerToPointer)
                         {
                             signatureChanged = true;
 
@@ -1861,8 +1864,9 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
 
                             arguments[sizeParamIndex.Value] = Argument(sizeArgExpression);
                         }
-                        else if (sizeConst.HasValue)
+                        else if (sizeConst.HasValue && !isPointerToPointer)
                         {
+                            // TODO: add support for lists of pointers via a generated pointer-wrapping struct
                             signatureChanged = true;
 
                             // Accept a span instead of a pointer.

@@ -25,7 +25,7 @@ namespace Win32.CodeGen
                 e.Cancel = true;
             };
 
-            Console.WriteLine("Generating code... (press Ctrl+C to cancel)");
+            Console.WriteLine("Initializing generator...");
 
             try
             {
@@ -51,6 +51,7 @@ namespace Win32.CodeGen
                         EmitSingleFile = true,
                     },
                     parseOptions: CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.CSharp9));
+                Console.WriteLine("Generating code... (press Ctrl+C to cancel)");
                 if (args.Length > 0)
                 {
                     foreach (string name in args)
@@ -76,7 +77,9 @@ namespace Win32.CodeGen
                     generator.GenerateAll(cts.Token);
                 }
 
+                Console.WriteLine("Gathering source files...");
                 var compilationUnits = generator.GetCompilationUnits(cts.Token);
+                Console.WriteLine("Emitting source files...");
                 compilationUnits.AsParallel().WithCancellation(cts.Token).ForAll(unit =>
                 {
                     string outputPath = Path.Combine(outputDirectory, unit.Key);

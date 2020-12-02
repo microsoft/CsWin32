@@ -501,6 +501,7 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
                         ClassDeclarationSyntax classDecl => classDecl.Identifier.ValueText,
                         StructDeclarationSyntax structDecl => structDecl.Identifier.ValueText,
                         EnumDeclarationSyntax enumDecl => enumDecl.Identifier.ValueText,
+                        DelegateDeclarationSyntax delegateDecl => delegateDecl.Identifier.ValueText,
                         _ => throw new NotSupportedException("Unsupported member type: " + member.GetType().Name),
                     };
 

@@ -567,83 +567,90 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
             }
 
             var methodName = this.mr.GetString(methodDefinition.Name);
-            if (this.WideCharOnly && IsAnsiFunction(methodName))
+            try
             {
-                // Skip Ansi functions.
-                return;
-            }
-
-            var moduleName = this.GetNormalizedModuleName(import);
-
-            if (false && !CanonicalCapitalizations.Contains(moduleName))
-            {
-                // Skip methods for modules we are not prepared to export.
-                return;
-            }
-
-            string? entrypoint = null;
-            if (this.TryGetRenamedMethod(methodName, out string? newName))
-            {
-                entrypoint = methodName;
-                methodName = newName;
-            }
-
-            MethodSignature<TypeSyntax> signature = methodDefinition.DecodeSignature(this.signatureTypeProvider, null);
-            CustomAttributeHandleCollection? returnTypeAttributes = this.GetReturnTypeCustomAttributes(methodDefinition);
-
-            TypeSyntax returnType = signature.ReturnType;
-            AttributeSyntax? returnTypeAttribute = null;
-            if (returnTypeAttributes.HasValue)
-            {
-                (returnType, returnTypeAttribute) = this.ReinterpretMethodSignatureType(signature.ReturnType, returnTypeAttributes.Value);
-            }
-
-            MethodDeclarationSyntax methodDeclaration = MethodDeclaration(
-                List<AttributeListSyntax>().Add(AttributeList().AddAttributes(DllImport(import, moduleName, entrypoint))),
-                modifiers: TokenList(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.ExternKeyword)),
-                returnType,
-                explicitInterfaceSpecifier: null!,
-                SafeIdentifier(methodName),
-                null!,
-                this.CreateParameterList(methodDefinition, signature),
-                List<TypeParameterConstraintClauseSyntax>(),
-                body: null!,
-                Token(SyntaxKind.SemicolonToken));
-            if (returnTypeAttribute is object)
-            {
-                methodDeclaration = methodDeclaration.AddAttributeLists(
-                    AttributeList().WithTarget(AttributeTargetSpecifier(Token(SyntaxKind.ReturnKeyword))).AddAttributes(returnTypeAttribute));
-            }
-
-            // Add documentation if we can find it.
-            methodDeclaration = AddApiDocumentation(entrypoint ?? methodName, methodDeclaration);
-
-            List<MemberDeclarationSyntax> methodsList = this.GetModuleMemberList(moduleName);
-            if (methodDeclaration.ReturnType is PointerTypeSyntax || methodDeclaration.ParameterList.Parameters.Any(p => p.Type is PointerTypeSyntax))
-            {
-                methodDeclaration = methodDeclaration.AddModifiers(Token(SyntaxKind.UnsafeKeyword));
-                methodsList.AddRange(this.CreateFriendlyOverloads(methodDefinition, methodDeclaration, this.GroupByModule ? GetClassNameForModule(moduleName) : this.SingleClassName, isStatic: true));
-            }
-
-            methodsList.Add(methodDeclaration);
-
-            // If RIAAFree applies, make sure we generate the close handle method.
-            if (returnTypeAttributes.HasValue)
-            {
-                foreach (CustomAttributeHandle attHandle in returnTypeAttributes)
+                if (this.WideCharOnly && IsAnsiFunction(methodName))
                 {
-                    CustomAttribute att = this.mr.GetCustomAttribute(attHandle);
-                    if (this.IsAttribute(att, InteropDecorationNamespace, RIAAFreeAttribute))
-                    {
-                        var args = att.DecodeValue(this.customAttributeTypeProvider);
-                        if (args.FixedArguments[0].Value is string freeMethodName)
-                        {
-                            this.TryGenerateExternMethod(freeMethodName);
-                        }
+                    // Skip Ansi functions.
+                    return;
+                }
 
-                        break;
+                var moduleName = this.GetNormalizedModuleName(import);
+
+                if (false && !CanonicalCapitalizations.Contains(moduleName))
+                {
+                    // Skip methods for modules we are not prepared to export.
+                    return;
+                }
+
+                string? entrypoint = null;
+                if (this.TryGetRenamedMethod(methodName, out string? newName))
+                {
+                    entrypoint = methodName;
+                    methodName = newName;
+                }
+
+                MethodSignature<TypeSyntax> signature = methodDefinition.DecodeSignature(this.signatureTypeProvider, null);
+                CustomAttributeHandleCollection? returnTypeAttributes = this.GetReturnTypeCustomAttributes(methodDefinition);
+
+                TypeSyntax returnType = signature.ReturnType;
+                AttributeSyntax? returnTypeAttribute = null;
+                if (returnTypeAttributes.HasValue)
+                {
+                    (returnType, returnTypeAttribute) = this.ReinterpretMethodSignatureType(signature.ReturnType, returnTypeAttributes.Value);
+                }
+
+                MethodDeclarationSyntax methodDeclaration = MethodDeclaration(
+                    List<AttributeListSyntax>().Add(AttributeList().AddAttributes(DllImport(import, moduleName, entrypoint))),
+                    modifiers: TokenList(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.ExternKeyword)),
+                    returnType,
+                    explicitInterfaceSpecifier: null!,
+                    SafeIdentifier(methodName),
+                    null!,
+                    this.CreateParameterList(methodDefinition, signature),
+                    List<TypeParameterConstraintClauseSyntax>(),
+                    body: null!,
+                    Token(SyntaxKind.SemicolonToken));
+                if (returnTypeAttribute is object)
+                {
+                    methodDeclaration = methodDeclaration.AddAttributeLists(
+                        AttributeList().WithTarget(AttributeTargetSpecifier(Token(SyntaxKind.ReturnKeyword))).AddAttributes(returnTypeAttribute));
+                }
+
+                // Add documentation if we can find it.
+                methodDeclaration = AddApiDocumentation(entrypoint ?? methodName, methodDeclaration);
+
+                List<MemberDeclarationSyntax> methodsList = this.GetModuleMemberList(moduleName);
+                if (methodDeclaration.ReturnType is PointerTypeSyntax || methodDeclaration.ParameterList.Parameters.Any(p => p.Type is PointerTypeSyntax))
+                {
+                    methodDeclaration = methodDeclaration.AddModifiers(Token(SyntaxKind.UnsafeKeyword));
+                    methodsList.AddRange(this.CreateFriendlyOverloads(methodDefinition, methodDeclaration, this.GroupByModule ? GetClassNameForModule(moduleName) : this.SingleClassName, isStatic: true));
+                }
+
+                methodsList.Add(methodDeclaration);
+
+                // If RIAAFree applies, make sure we generate the close handle method.
+                if (returnTypeAttributes.HasValue)
+                {
+                    foreach (CustomAttributeHandle attHandle in returnTypeAttributes)
+                    {
+                        CustomAttribute att = this.mr.GetCustomAttribute(attHandle);
+                        if (this.IsAttribute(att, InteropDecorationNamespace, RIAAFreeAttribute))
+                        {
+                            var args = att.DecodeValue(this.customAttributeTypeProvider);
+                            if (args.FixedArguments[0].Value is string freeMethodName)
+                            {
+                                this.TryGenerateExternMethod(freeMethodName);
+                            }
+
+                            break;
+                        }
                     }
                 }
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Failed while generating extern method: {methodName}", ex);
             }
         }
 

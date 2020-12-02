@@ -1822,6 +1822,16 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
 
                             arguments[sizeParamIndex.Value] = Argument(sizeArgExpression);
                         }
+                        else if (isNullTerminated && parameters[param.SequenceNumber - 1].Type is PointerTypeSyntax { ElementType: PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.CharKeyword } } })
+                        {
+                            // replace char* with string
+                            signatureChanged = true;
+                            parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
+                                .WithType(PredefinedType(Token(SyntaxKind.StringKeyword)));
+                            fixedBlocks.Add(VariableDeclaration(ptrType).AddVariables(
+                                VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
+                            arguments[param.SequenceNumber - 1] = Argument(localName);
+                        }
                     }
                     else if (isIn && isOptional && !isOut && !isPointerToPointer)
                     {

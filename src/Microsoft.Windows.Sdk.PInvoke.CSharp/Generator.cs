@@ -50,6 +50,13 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
 
 ";
 
+        private const string PartialPInvokeContentComment = @"/// <content>
+/// Contains extern methods into ""{0}.dll"".
+/// </content>
+";
+
+        private const string SimpleFileNameAnnotation = "SimpleFileName";
+
         private static readonly TypeSyntax SafeHandleTypeSyntax = IdentifierName("SafeHandle");
         private static readonly IdentifierNameSyntax IntPtrTypeSyntax = IdentifierName(nameof(IntPtr));
         private static readonly TypeSyntax VoidStar = SyntaxFactory.ParseTypeName("void*");
@@ -302,16 +309,16 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
             get
             {
                 IEnumerable<MemberDeclarationSyntax> result = this.GroupByModule
-                    ? this.MembersByClass.Select(kv =>
+                    ? this.ExternMethodsByModuleClassName.Select(kv =>
                         ClassDeclaration(Identifier(GetClassNameForModule(kv.Key)))
                         .AddModifiers(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.PartialKeyword))
                         .AddMembers(kv.ToArray()))
-                    : new MemberDeclarationSyntax[]
-                    {
-                        ClassDeclaration(Identifier(this.SingleClassName))
-                            .AddModifiers(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.PartialKeyword))
-                            .AddMembers(this.MembersByClass.SelectMany(kv => kv).ToArray()),
-                    };
+                    : from entry in this.modulesAndMembers
+                      select ClassDeclaration(Identifier(this.SingleClassName))
+                        .AddModifiers(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.PartialKeyword))
+                        .AddMembers(entry.Value.ToArray())
+                        .WithLeadingTrivia(ParseLeadingTrivia(string.Format(CultureInfo.InvariantCulture, PartialPInvokeContentComment, entry.Key)))
+                        .WithAdditionalAnnotations(new SyntaxAnnotation(SimpleFileNameAnnotation, $"{this.SingleClassName}.{entry.Key}"));
                 result = result
                     .Concat(this.safeHandleTypes)
                     .Concat(this.types.Values);
@@ -326,7 +333,7 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
             }
         }
 
-        private IEnumerable<IGrouping<string, MemberDeclarationSyntax>> MembersByClass =>
+        private IEnumerable<IGrouping<string, MemberDeclarationSyntax>> ExternMethodsByModuleClassName =>
             from entry in this.modulesAndMembers
             from method in entry.Value
             group method by GetClassNameForModule(entry.Key) into x
@@ -495,14 +502,16 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
             else
             {
                 var membersByFile = from member in this.NamespaceMembers
-                                    let fileSimpleName = member switch
-                                    {
-                                        ClassDeclarationSyntax classDecl => classDecl.Identifier.ValueText,
-                                        StructDeclarationSyntax structDecl => structDecl.Identifier.ValueText,
-                                        EnumDeclarationSyntax enumDecl => enumDecl.Identifier.ValueText,
-                                        DelegateDeclarationSyntax delegateDecl => "Delegates", // group all delegates in one file
-                                        _ => throw new NotSupportedException("Unsupported member type: " + member.GetType().Name),
-                                    }
+                                    let fileSimpleName = member.HasAnnotations(SimpleFileNameAnnotation)
+                                        ? member.GetAnnotations(SimpleFileNameAnnotation).Single().Data
+                                        : member switch
+                                        {
+                                            ClassDeclarationSyntax classDecl => classDecl.Identifier.ValueText,
+                                            StructDeclarationSyntax structDecl => structDecl.Identifier.ValueText,
+                                            EnumDeclarationSyntax enumDecl => enumDecl.Identifier.ValueText,
+                                            DelegateDeclarationSyntax delegateDecl => "Delegates", // group all delegates in one file
+                                            _ => throw new NotSupportedException("Unsupported member type: " + member.GetType().Name),
+                                        }
                                     group member by fileSimpleName into x
                                     select x;
 

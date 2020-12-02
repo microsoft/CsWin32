@@ -1741,6 +1741,7 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
         {
             static ParameterSyntax StripAttributes(ParameterSyntax parameter) => parameter.WithAttributeLists(List<AttributeListSyntax>());
             bool IsInterface(string name) => this.typesByName.TryGetValue(name, out TypeDefinitionHandle tdh) && (this.mr.GetTypeDefinition(tdh).Attributes & TypeAttributes.Interface) == TypeAttributes.Interface;
+            static ExpressionSyntax GetSpanLength(ExpressionSyntax span) => MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, span, IdentifierName(nameof(Span<int>.Length)));
 
             var parameters = externMethodDeclaration.ParameterList.Parameters.Select(StripAttributes).ToList();
             var lengthParamUsedBy = new Dictionary<int, int>();
@@ -1758,8 +1759,6 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
 
                 // TODO:
                 // * Review double/triple pointer scenarios.
-                // * Create an overload with fewer parameters when one parameter describes the length of another.
-                // * change double-pointers to `out` modifiers on single-pointers.
                 //   * Consider CredEnumerateA, which is a "pointer to an array of pointers" (3-asterisks!). How does FriendlyAttribute improve this, if at all? The memory must be freed through another p/invoke.
                 if (parameters[param.SequenceNumber - 1].Type is PointerTypeSyntax ptrType
                     && !IsVoid(ptrType.ElementType)
@@ -1792,6 +1791,7 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
                     UnmanagedType? unmanagedType = null;
                     bool isNullTerminated = false;
                     short? sizeParamIndex = null;
+                    int? sizeConst = null;
                     foreach (CustomAttributeHandle attHandle in param.GetCustomAttributes())
                     {
                         CustomAttribute att = this.mr.GetCustomAttribute(attHandle);
@@ -1814,6 +1814,7 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
 
                             isNullTerminated |= args.NamedArguments.Any(a => a.Name == "IsNullTerminated" && a.Value is bool value && value);
                             sizeParamIndex = (short?)args.NamedArguments.FirstOrDefault(a => a.Name == "SizeParamIndex").Value;
+                            sizeConst = (int?)args.NamedArguments.FirstOrDefault(a => a.Name == "SizeConst").Value;
 
                             continue;
                         }
@@ -1826,8 +1827,6 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
                         if (sizeParamIndex.HasValue)
                         {
                             signatureChanged = true;
-                            static ExpressionSyntax GetSpanLength(ExpressionSyntax span) =>
-                                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, span, IdentifierName(nameof(Span<int>.Length)));
 
                             if (lengthParamUsedBy.TryGetValue(sizeParamIndex.Value, out int userIndex))
                             {
@@ -1860,6 +1859,25 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
                             }
 
                             arguments[sizeParamIndex.Value] = Argument(sizeArgExpression);
+                        }
+                        else if (sizeConst.HasValue)
+                        {
+                            signatureChanged = true;
+
+                            // Accept a span instead of a pointer.
+                            parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
+                                .WithType(isIn && isConst ? MakeReadOnlySpanOfT(ptrType.ElementType) : MakeSpanOfT(ptrType.ElementType));
+                            fixedBlocks.Add(VariableDeclaration(ptrType).AddVariables(
+                                VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
+                            arguments[param.SequenceNumber - 1] = Argument(localName);
+
+                            // Add a runtime check that the span is at least the required length.
+                            leadingStatements.Add(IfStatement(
+                                BinaryExpression(
+                                    SyntaxKind.LessThanExpression,
+                                    GetSpanLength(origName),
+                                    LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(sizeConst.Value))),
+                                ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentException))).WithArgumentList(ArgumentList()))));
                         }
                         else if (isNullTerminated && parameters[param.SequenceNumber - 1].Type is PointerTypeSyntax { ElementType: PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.CharKeyword } } })
                         {

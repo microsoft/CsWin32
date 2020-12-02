@@ -1824,7 +1824,8 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
                     IdentifierNameSyntax localName = IdentifierName(origName + "Local");
                     if (isArray)
                     {
-                        if (sizeParamIndex.HasValue)
+                        // TODO: add support for in/out size parameters. (e.g. RSGetViewports)
+                        if (sizeParamIndex.HasValue && !(externMethodDeclaration.ParameterList.Parameters[sizeParamIndex.Value].Type is PointerTypeSyntax))
                         {
                             signatureChanged = true;
 

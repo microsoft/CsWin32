@@ -1745,16 +1745,26 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
                     bool isPointerToPointer = ptrType.ElementType is PointerTypeSyntax;
                     bool isOptional = (param.Attributes & ParameterAttributes.Optional) == ParameterAttributes.Optional;
                     bool isIn = (param.Attributes & ParameterAttributes.In) == ParameterAttributes.In;
+                    bool isConst = param.GetCustomAttributes().Any(ah => this.IsAttribute(this.mr.GetCustomAttribute(ah), InteropDecorationNamespace, "ConstAttribute"));
                     bool isComOutPtr = param.GetCustomAttributes().Any(ah => this.IsAttribute(this.mr.GetCustomAttribute(ah), InteropDecorationNamespace, "ComOutPtrAttribute"));
                     bool isOut = isComOutPtr || (param.Attributes & ParameterAttributes.Out) == ParameterAttributes.Out;
 
-                    // If there are no SAL annotations at all, assume it is bidirectional.
+                    // If there are no SAL annotations at all...
                     if (!isOptional && !isIn && !isOut)
                     {
-                        isIn = isOut = true;
+                        // Consider that const means [In]
+                        if (isConst)
+                        {
+                            isIn = true;
+                            isOut = false;
+                        }
+                        else
+                        {
+                            // Otherwise assume bidirectional.
+                            isIn = isOut = true;
+                        }
                     }
 
-                    bool isConst = false;
                     bool isArray = false;
                     UnmanagedType? unmanagedType = null;
                     bool isNullTerminated = false;
@@ -1762,12 +1772,6 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
                     foreach (CustomAttributeHandle attHandle in param.GetCustomAttributes())
                     {
                         CustomAttribute att = this.mr.GetCustomAttribute(attHandle);
-                        if (this.IsAttribute(att, InteropDecorationNamespace, "ConstAttribute"))
-                        {
-                            isConst = true;
-                            continue;
-                        }
-
                         if (this.IsAttribute(att, InteropDecorationNamespace, NativeTypeInfoAttribute))
                         {
                             var args = att.DecodeValue(this.customAttributeTypeProvider);

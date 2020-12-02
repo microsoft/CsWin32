@@ -1721,6 +1721,7 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
             bool IsInterface(string name) => this.typesByName.TryGetValue(name, out TypeDefinitionHandle tdh) && (this.mr.GetTypeDefinition(tdh).Attributes & TypeAttributes.Interface) == TypeAttributes.Interface;
 
             var parameters = externMethodDeclaration.ParameterList.Parameters.Select(StripAttributes).ToList();
+            var parameterIndexesToRemove = new List<int>();
             var arguments = externMethodDeclaration.ParameterList.Parameters.Select(p => Argument(IdentifierName(p.Identifier.Text))).ToList();
             var fixedBlocks = new List<VariableDeclarationSyntax>();
             var leadingStatements = new List<StatementSyntax>();
@@ -1781,6 +1782,9 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
                                 switch (unmanagedType.Value)
                                 {
                                     case UnmanagedType.LPWStr:
+                                    case UnmanagedType.LPStr:
+                                    case UnmanagedType.LPTStr:
+                                    case UnmanagedType.LPArray:
                                         isArray = true;
                                         break;
                                 }
@@ -1797,49 +1801,26 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
                     IdentifierNameSyntax localName = IdentifierName(origName + "Local");
                     if (isArray)
                     {
-                        signatureChanged = true;
-                        parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
-                            .WithType(isIn && isConst ? MakeReadOnlySpanOfT(ptrType.ElementType) : MakeSpanOfT(ptrType.ElementType));
-                        fixedBlocks.Add(VariableDeclaration(ptrType).AddVariables(
-                            VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
-                        arguments[param.SequenceNumber - 1] = Argument(localName);
-
-                        if (isNullTerminated && !sizeParamIndex.HasValue)
+                        if (sizeParamIndex.HasValue)
                         {
-                            // In an abundance of caution, since in .NET a Span type carries length information which
-                            // does not propagate to the native side, make sure that the span's last element is \0 (or perhaps
-                            // the element after that).
-                            // In reading beyond the last element, maybe we'll trigger an AV, but better us than the operating system
-                            // to notify the caller when they forgot to add a null terminator.
-                            //// if ((param.Length == 0 || param[param.Length - 1] != default) && *(paramLocal + param.Length) != default)
-                            ////    throw new ArgumentException("Null termination required.", nameof(param));
-                            ExpressionSyntax paramLength = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName(nameof(Span<int>.Length)));
-                            leadingStatements.Add(
-                                IfStatement(
-                                    BinaryExpression(
-                                        SyntaxKind.LogicalAndExpression,
-                                        ParenthesizedExpression(
-                                            BinaryExpression(
-                                                SyntaxKind.LogicalOrExpression,
-                                                BinaryExpression(SyntaxKind.EqualsExpression, paramLength, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))),
-                                                BinaryExpression(
-                                                    SyntaxKind.NotEqualsExpression,
-                                                    ElementAccessExpression(origName).AddArgumentListArguments(
-                                                        Argument(BinaryExpression(SyntaxKind.SubtractExpression, paramLength, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(1))))),
-                                                    LiteralExpression(SyntaxKind.DefaultLiteralExpression)))),
-                                        BinaryExpression(
-                                            SyntaxKind.NotEqualsExpression,
-                                            PrefixUnaryExpression(
-                                                SyntaxKind.PointerIndirectionExpression,
-                                                ParenthesizedExpression(BinaryExpression(
-                                                    SyntaxKind.AddExpression,
-                                                    localName,
-                                                    paramLength))),
-                                            LiteralExpression(SyntaxKind.DefaultLiteralExpression))),
-                                    ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentException)))
-                                        .AddArgumentListArguments(
-                                            Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal("Null termination required."))),
-                                            Argument(InvocationExpression(IdentifierName("nameof")).AddArgumentListArguments(Argument(origName)))))));
+                            signatureChanged = true;
+                            parameterIndexesToRemove.Add(sizeParamIndex.Value);
+                            parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
+                                .WithType(isIn && isConst ? MakeReadOnlySpanOfT(ptrType.ElementType) : MakeSpanOfT(ptrType.ElementType));
+                            fixedBlocks.Add(VariableDeclaration(ptrType).AddVariables(
+                                VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
+                            arguments[param.SequenceNumber - 1] = Argument(localName);
+
+                            ExpressionSyntax sizeArgExpression = MemberAccessExpression(
+                                SyntaxKind.SimpleMemberAccessExpression,
+                                origName,
+                                IdentifierName(nameof(Span<int>.Length)));
+                            if (parameters[sizeParamIndex.Value].Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.UIntKeyword } })
+                            {
+                                sizeArgExpression = CastExpression(PredefinedType(Token(SyntaxKind.UIntKeyword)), sizeArgExpression);
+                            }
+
+                            arguments[sizeParamIndex.Value] = Argument(sizeArgExpression);
                         }
                     }
                     else if (isIn && isOptional && !isOut && !isPointerToPointer)
@@ -1898,6 +1879,15 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
 
             if (signatureChanged)
             {
+                if (parameterIndexesToRemove.Count > 0)
+                {
+                    parameterIndexesToRemove.Sort();
+                    for (int i = parameterIndexesToRemove.Count - 1; i >= 0; i--)
+                    {
+                        parameters.RemoveAt(parameterIndexesToRemove[i]);
+                    }
+                }
+
                 var leadingTrivia = Trivia(
                     DocumentationCommentTrivia(SyntaxKind.SingleLineDocumentationCommentTrivia).AddContent(
                         XmlText("/// "),

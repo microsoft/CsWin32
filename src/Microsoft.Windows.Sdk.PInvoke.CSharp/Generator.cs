@@ -1080,12 +1080,6 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
                 break;
             }
 
-            // Due to https://github.com/microsoft/win32metadata/issues/45, we have to look on the method itself as well.
-            if (returnTypeAttributes is null)
-            {
-                return methodDefinition.GetCustomAttributes();
-            }
-
             return returnTypeAttributes;
         }
 
@@ -1127,7 +1121,6 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
             }
 
             // TODO: Reuse existing SafeHandle's defined in .NET where possible to facilitate interop with APIs that take them.
-            //       https://github.com/microsoft/win32metadata/issues/47
             string safeHandleClassName = $"{releaseMethod}SafeHandle";
             this.TryGetRenamedMethod(releaseMethod, out string? renamedReleaseMethod);
 
@@ -1378,33 +1371,14 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
                 baseTypeHandle = baseType.GetInterfaceImplementations().SingleOrDefault();
             }
 
-            ComInterfaceType? interfaceType = null;
             Guid guid = Guid.Empty;
             foreach (CustomAttributeHandle attHandle in typeDef.GetCustomAttributes())
             {
                 var att = this.mr.GetCustomAttribute(attHandle);
-                if (this.IsAttribute(att, SystemRuntimeInteropServices, nameof(InterfaceTypeAttribute)))
-                {
-                    var args = att.DecodeValue(this.customAttributeTypeProvider);
-                    interfaceType = (ComInterfaceType)args.FixedArguments[0].Value!;
-                }
-                else if (this.IsAttribute(att, SystemRuntimeInteropServices, nameof(GuidAttribute)))
+                if (this.IsAttribute(att, SystemRuntimeInteropServices, nameof(GuidAttribute)))
                 {
                     var args = att.DecodeValue(this.customAttributeTypeProvider);
                     guid = Guid.Parse((string)args.FixedArguments[0].Value!);
-                }
-            }
-
-            // We have to check for these attributes until this is fixed: https://github.com/microsoft/win32metadata/issues/40
-            if (interfaceType.HasValue)
-            {
-                if (interfaceType == ComInterfaceType.InterfaceIsIUnknown)
-                {
-                    baseTypes.Push(this.typesByName["IUnknown"]);
-                }
-                else if (interfaceType == ComInterfaceType.InterfaceIsIDispatch)
-                {
-                    baseTypes.Push(this.typesByName["IDispatch"]);
                 }
             }
 
@@ -1413,7 +1387,6 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
             var vtblMembers = new List<MemberDeclarationSyntax>();
 
             // It is imperative that we generate methods for all base interfaces as well, ahead of any implemented by *this* interface.
-            // BUGBUG: We're missing the IUnknown methods (https://github.com/microsoft/win32metadata/issues/39)
             var allMethods = new List<MethodDefinitionHandle>();
             while (baseTypes.Count > 0)
             {

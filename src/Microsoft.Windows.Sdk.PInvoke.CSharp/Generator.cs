@@ -494,18 +494,23 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
             }
             else
             {
-                foreach (var member in this.NamespaceMembers)
-                {
-                    string identifier = member switch
-                    {
-                        ClassDeclarationSyntax classDecl => classDecl.Identifier.ValueText,
-                        StructDeclarationSyntax structDecl => structDecl.Identifier.ValueText,
-                        EnumDeclarationSyntax enumDecl => enumDecl.Identifier.ValueText,
-                        DelegateDeclarationSyntax delegateDecl => delegateDecl.Identifier.ValueText,
-                        _ => throw new NotSupportedException("Unsupported member type: " + member.GetType().Name),
-                    };
+                var membersByFile = from member in this.NamespaceMembers
+                                    let fileSimpleName = member switch
+                                    {
+                                        ClassDeclarationSyntax classDecl => classDecl.Identifier.ValueText,
+                                        StructDeclarationSyntax structDecl => structDecl.Identifier.ValueText,
+                                        EnumDeclarationSyntax enumDecl => enumDecl.Identifier.ValueText,
+                                        DelegateDeclarationSyntax delegateDecl => "Delegates", // group all delegates in one file
+                                        _ => throw new NotSupportedException("Unsupported member type: " + member.GetType().Name),
+                                    }
+                                    group member by fileSimpleName into x
+                                    select x;
 
-                    results.Add(string.Format(CultureInfo.InvariantCulture, FilenamePattern, identifier), starterNamespace.AddMembers(member));
+                foreach (var fileSimpleName in membersByFile)
+                {
+                    results.Add(
+                        string.Format(CultureInfo.InvariantCulture, FilenamePattern, fileSimpleName.Key),
+                        starterNamespace.AddMembers(fileSimpleName.ToArray()));
                 }
             }
 

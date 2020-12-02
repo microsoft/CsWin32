@@ -1728,7 +1728,7 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
             bool IsInterface(string name) => this.typesByName.TryGetValue(name, out TypeDefinitionHandle tdh) && (this.mr.GetTypeDefinition(tdh).Attributes & TypeAttributes.Interface) == TypeAttributes.Interface;
 
             var parameters = externMethodDeclaration.ParameterList.Parameters.Select(StripAttributes).ToList();
-            var parameterIndexesToRemove = new List<int>();
+            var lengthParamUsedBy = new Dictionary<int, int>();
             var arguments = externMethodDeclaration.ParameterList.Parameters.Select(p => Argument(IdentifierName(p.Identifier.Text))).ToList();
             var fixedBlocks = new List<VariableDeclarationSyntax>();
             var leadingStatements = new List<StatementSyntax>();
@@ -1811,26 +1811,34 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
                         if (sizeParamIndex.HasValue)
                         {
                             signatureChanged = true;
+                            static ExpressionSyntax GetSpanLength(ExpressionSyntax span) =>
+                                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, span, IdentifierName(nameof(Span<int>.Length)));
 
-                            if (parameterIndexesToRemove.Contains(sizeParamIndex.Value))
+                            if (lengthParamUsedBy.TryGetValue(sizeParamIndex.Value, out int userIndex))
                             {
                                 // Multiple array parameters share a common 'length' parameter.
                                 // Since we're making this a little less obvious, add a quick if check in the helper method
                                 // that enforces that all such parameters have a common span length.
-                                // TODO: code here
+                                ExpressionSyntax otherUserName = IdentifierName(parameters[userIndex].Identifier.ValueText);
+                                leadingStatements.Add(IfStatement(
+                                    BinaryExpression(
+                                        SyntaxKind.NotEqualsExpression,
+                                        GetSpanLength(otherUserName),
+                                        GetSpanLength(origName)),
+                                    ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentException))).WithArgumentList(ArgumentList()))));
+                            }
+                            else
+                            {
+                                lengthParamUsedBy.Add(sizeParamIndex.Value, param.SequenceNumber - 1);
                             }
 
-                            parameterIndexesToRemove.Add(sizeParamIndex.Value);
                             parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
                                 .WithType(isIn && isConst ? MakeReadOnlySpanOfT(ptrType.ElementType) : MakeSpanOfT(ptrType.ElementType));
                             fixedBlocks.Add(VariableDeclaration(ptrType).AddVariables(
                                 VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
                             arguments[param.SequenceNumber - 1] = Argument(localName);
 
-                            ExpressionSyntax sizeArgExpression = MemberAccessExpression(
-                                SyntaxKind.SimpleMemberAccessExpression,
-                                origName,
-                                IdentifierName(nameof(Span<int>.Length)));
+                            ExpressionSyntax sizeArgExpression = GetSpanLength(origName);
                             if (parameters[sizeParamIndex.Value].Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.UIntKeyword } })
                             {
                                 sizeArgExpression = CastExpression(PredefinedType(Token(SyntaxKind.UIntKeyword)), sizeArgExpression);
@@ -1905,21 +1913,14 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
 
             if (signatureChanged)
             {
-                if (parameterIndexesToRemove.Count > 0)
+                if (lengthParamUsedBy.Count > 0)
                 {
                     // Remove in reverse order so as to not invalidate the indexes of elements to remove.
-                    parameterIndexesToRemove.Sort();
-
                     // Also take care to only remove each element once, even if it shows up multiple times in the collection.
-                    int lastRemovedIndex = -1;
-                    for (int i = parameterIndexesToRemove.Count - 1; i >= 0; i--)
+                    var parameterIndexesToRemove = new SortedSet<int>(lengthParamUsedBy.Keys);
+                    foreach (int indexToRemove in parameterIndexesToRemove.Reverse())
                     {
-                        int indexToRemove = parameterIndexesToRemove[i];
-                        if (indexToRemove != lastRemovedIndex)
-                        {
-                            parameters.RemoveAt(indexToRemove);
-                            lastRemovedIndex = indexToRemove;
-                        }
+                        parameters.RemoveAt(indexToRemove);
                     }
                 }
 

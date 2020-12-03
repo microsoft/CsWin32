@@ -29,6 +29,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.logger = logger;
 
         this.parseOptions = CSharpParseOptions.Default
+            .WithDocumentationMode(DocumentationMode.Diagnose)
             .WithLanguageVersion(LanguageVersion.CSharp9);
         this.compilation = null!; // set in InitializeAsync
     }
@@ -63,7 +64,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     private void CollectGeneratedCode(Generator generator)
     {
         var compilationUnits = generator.GetCompilationUnits(CancellationToken.None);
-        var syntaxTrees = new List<CSharpSyntaxTree>(compilationUnits.Count);
+        var syntaxTrees = new List<SyntaxTree>(compilationUnits.Count);
         foreach (var unit in compilationUnits)
         {
             this.logger.WriteLine($"{unit.Key} content:");
@@ -72,7 +73,9 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             unit.Value.WriteTo(lineWriter);
             this.logger.WriteLine(FileSeparator);
 
-            syntaxTrees.Add((CSharpSyntaxTree)CSharpSyntaxTree.Create(unit.Value, this.parseOptions, path: unit.Key));
+            // Our syntax trees aren't quite right. And anyway the source generator API only takes text anyway so it doesn't _really_ matter.
+            // So render the trees as text and have C# re-parse them so we get the same compiler warnings/errors that the user would get.
+            syntaxTrees.Add(CSharpSyntaxTree.ParseText(unit.Value.ToFullString(), this.parseOptions, path: unit.Key));
         }
 
         this.compilation = this.compilation.AddSyntaxTrees(syntaxTrees);
@@ -90,11 +93,12 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
 
     private void AssertNoDiagnostics(ImmutableArray<Diagnostic> diagnostics)
     {
-        foreach (var diagnostic in diagnostics)
+        var filteredDiagnostics = diagnostics.Where(d => d.Severity > DiagnosticSeverity.Hidden);
+        foreach (var diagnostic in filteredDiagnostics)
         {
             this.logger.WriteLine(diagnostic.ToString());
         }
 
-        Assert.Empty(diagnostics);
+        Assert.Empty(filteredDiagnostics);
     }
 }

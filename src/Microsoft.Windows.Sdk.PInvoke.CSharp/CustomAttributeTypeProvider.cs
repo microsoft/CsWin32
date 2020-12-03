@@ -56,7 +56,7 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
             return ParseName(ns + "." + name);
         }
 
-        public TypeSyntax GetTypeFromSerializedName(string name) => ParseName(name.Substring(0, name.IndexOf(',')));
+        public TypeSyntax GetTypeFromSerializedName(string name) => ParseName(name.IndexOf(',') is int index && index >= 0 ? name.Substring(0, index) : name);
 
         public PrimitiveTypeCode GetUnderlyingEnumType(TypeSyntax type) => PrimitiveTypeCode.Int32; // an assumption that works for now.
 

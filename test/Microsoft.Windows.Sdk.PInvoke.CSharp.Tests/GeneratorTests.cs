@@ -70,10 +70,22 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [InlineData("PlgBlt")] // SizeConst
     [InlineData("ID3D12Resource")] // COM interface with base types
     [InlineData("ENABLE_TRACE_PARAMETERS_V1")] // bad xml created at some point.
+    [InlineData("JsRuntimeVersion")] // An enum that has an extra member in a separate header file.
+    [InlineData("ReportEvent")] // Failed at one point
+    [InlineData("ARM64EC_NT_CONTEXT")] // Member names with type names colliding with containing type
     public void InterestingAPIs(string api)
     {
         this.generator = new Generator(compilation: this.compilation, parseOptions: this.parseOptions);
         Assert.True(this.generator.TryGenerate(api, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+    }
+
+    [Fact]
+    public void FullGeneration()
+    {
+        this.generator = new Generator(compilation: this.compilation, parseOptions: this.parseOptions);
+        this.generator.GenerateAll(CancellationToken.None);
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
     }

@@ -1884,9 +1884,9 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
                             arguments[param.SequenceNumber - 1] = Argument(localName);
 
                             ExpressionSyntax sizeArgExpression = GetSpanLength(origName);
-                            if (parameters[sizeParamIndex.Value].Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.UIntKeyword } })
+                            if (!(parameters[sizeParamIndex.Value].Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.IntKeyword } }))
                             {
-                                sizeArgExpression = CastExpression(PredefinedType(Token(SyntaxKind.UIntKeyword)), sizeArgExpression);
+                                sizeArgExpression = CastExpression(parameters[sizeParamIndex.Value].Type!, sizeArgExpression);
                             }
 
                             arguments[sizeParamIndex.Value] = Argument(sizeArgExpression);

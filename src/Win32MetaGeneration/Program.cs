@@ -57,18 +57,9 @@ namespace Win32.CodeGen
                     foreach (string name in args)
                     {
                         cts.Token.ThrowIfCancellationRequested();
-                        if (name.EndsWith(".*", StringComparison.Ordinal))
+                        if (!generator.TryGenerate(name, cts.Token))
                         {
-                            generator.TryGenerateAllExternMethods(name.Substring(0, name.Length - 2), cts.Token);
-                        }
-                        else
-                        {
-                            if (!generator.TryGenerateExternMethod(name) &&
-                                !generator.TryGenerateType(name) &&
-                                !generator.TryGenerateConstant(name))
-                            {
-                                Console.Error.WriteLine("WARNING: No match for " + name);
-                            }
+                            Console.Error.WriteLine("WARNING: No match for " + name);
                         }
                     }
                 }

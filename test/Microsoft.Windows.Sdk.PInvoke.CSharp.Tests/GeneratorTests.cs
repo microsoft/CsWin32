@@ -36,12 +36,15 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        ImmutableArray<MetadataReference> references = await ReferenceAssemblies.NetStandard.NetStandard20.ResolveAsync(LanguageNames.CSharp, default);
+        ReferenceAssemblies references = ReferenceAssemblies.NetStandard.NetStandard20
+            .AddPackages(ImmutableArray.Create(
+                new PackageIdentity("System.Memory", "4.5.4")));
+        ImmutableArray<MetadataReference> metadataReferences = await references.ResolveAsync(LanguageNames.CSharp, default);
 
         // CONSIDER: How can I pass in the source generator itself, with AdditionalFiles, so I'm exercising that code too?
         this.compilation = CSharpCompilation.Create(
             assemblyName: "test",
-            references: references,
+            references: metadataReferences,
             options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, allowUnsafe: true));
     }
 
@@ -57,6 +60,19 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     {
         this.generator = new Generator(compilation: this.compilation, parseOptions: this.parseOptions);
         Assert.True(this.generator.TryGenerateExternMethod("GetTickCount"));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+    }
+
+    [Theory]
+    [InlineData("CreateFile")] // SafeHandle-derived type
+    [InlineData("D3DGetTraceInstructionOffsets")] // SizeParamIndex
+    [InlineData("PlgBlt")] // SizeConst
+    [InlineData("ID3D12Resource")] // COM interface with base types
+    public void InterestingAPIs(string api)
+    {
+        this.generator = new Generator(compilation: this.compilation, parseOptions: this.parseOptions);
+        Assert.True(this.generator.TryGenerate(api, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
     }

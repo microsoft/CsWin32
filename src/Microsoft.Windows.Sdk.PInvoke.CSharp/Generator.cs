@@ -364,6 +364,32 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
         }
 
         /// <summary>
+        /// Generates code for a given API.
+        /// </summary>
+        /// <param name="apiNameOrModuleWildcard">The name of the method, struct or constant. Or the name of a module with a ".*" suffix in order to generate all methods and supporting types for the specified module.</param>
+        /// <param name="cancellationToken">A cancellation token.</param>
+        /// <returns><see langword="true" /> if any matching APIs were found and generated; <see langword="false"/> otherwise.</returns>
+        public bool TryGenerate(string apiNameOrModuleWildcard, CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrWhiteSpace(apiNameOrModuleWildcard))
+            {
+                throw new ArgumentException("API cannot be null or empty.", nameof(apiNameOrModuleWildcard));
+            }
+
+            if (apiNameOrModuleWildcard.EndsWith(".*", StringComparison.Ordinal))
+            {
+                return this.TryGenerateAllExternMethods(apiNameOrModuleWildcard.Substring(0, apiNameOrModuleWildcard.Length - 2), cancellationToken);
+            }
+            else
+            {
+                return
+                    this.TryGenerateExternMethod(apiNameOrModuleWildcard) ||
+                    this.TryGenerateType(apiNameOrModuleWildcard) ||
+                    this.TryGenerateConstant(apiNameOrModuleWildcard);
+            }
+        }
+
+        /// <summary>
         /// Generates a projection of all extern methods and their supporting types.
         /// </summary>
         /// <param name="cancellationToken">A cancellation token.</param>
@@ -1050,9 +1076,9 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
                 default,
                 parameter.Type!);
 
-        private static TypeSyntax MakeSpanOfT(TypeSyntax typeArgument) => QualifiedName(IdentifierName("System"), GenericName(Identifier("Span")).AddTypeArgumentListArguments(typeArgument));
+        private static TypeSyntax MakeSpanOfT(TypeSyntax typeArgument) => GenericName("Span").AddTypeArgumentListArguments(typeArgument);
 
-        private static TypeSyntax MakeReadOnlySpanOfT(TypeSyntax typeArgument) => QualifiedName(IdentifierName("System"), GenericName(Identifier("ReadOnlySpan")).AddTypeArgumentListArguments(typeArgument));
+        private static TypeSyntax MakeReadOnlySpanOfT(TypeSyntax typeArgument) => GenericName("ReadOnlySpan").AddTypeArgumentListArguments(typeArgument);
 
         private static FunctionPointerUnmanagedCallingConventionSyntax ToUnmanagedCallingConventionSyntax(CallingConvention callingConvention)
         {

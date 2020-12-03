@@ -99,14 +99,9 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
                         context.ReportDiagnostic(Diagnostic.Create(NoMethodsForModule, location, moduleName));
                     }
                 }
-                else
+                else if (!generator.TryGenerate(name, context.CancellationToken))
                 {
-                    if (!generator.TryGenerateExternMethod(name) &&
-                        !generator.TryGenerateType(name) &&
-                        !generator.TryGenerateConstant(name))
-                    {
-                        context.ReportDiagnostic(Diagnostic.Create(NoMatchingMethodOrType, location, name));
-                    }
+                    context.ReportDiagnostic(Diagnostic.Create(NoMatchingMethodOrType, location, name));
                 }
             }
 

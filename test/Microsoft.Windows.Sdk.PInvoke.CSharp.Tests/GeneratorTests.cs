@@ -69,6 +69,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [InlineData("D3DGetTraceInstructionOffsets")] // SizeParamIndex
     [InlineData("PlgBlt")] // SizeConst
     [InlineData("ID3D12Resource")] // COM interface with base types
+    [InlineData("ENABLE_TRACE_PARAMETERS_V1")] // bad xml created at some point.
     public void InterestingAPIs(string api)
     {
         this.generator = new Generator(compilation: this.compilation, parseOptions: this.parseOptions);
@@ -101,7 +102,6 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     {
         this.AssertNoDiagnostics(this.compilation.GetDiagnostics());
 
-        // TODO: do I need to Emit as well to get *all* the diagnostics?
         var emitResult = this.compilation.Emit(peStream: Stream.Null, xmlDocumentationStream: Stream.Null);
         this.AssertNoDiagnostics(emitResult.Diagnostics);
         Assert.True(emitResult.Success);

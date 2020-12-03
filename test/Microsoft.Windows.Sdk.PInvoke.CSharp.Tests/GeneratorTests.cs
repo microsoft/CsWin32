@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
@@ -87,8 +86,10 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.generator = new Generator(compilation: this.compilation, parseOptions: this.parseOptions);
         this.generator.GenerateAll(CancellationToken.None);
         this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.AssertNoDiagnostics(logGeneratedCode: false);
     }
+
+    private static ImmutableArray<Diagnostic> FilterDiagnostics(ImmutableArray<Diagnostic> diagnostics) => diagnostics.Where(d => d.Severity > DiagnosticSeverity.Hidden).ToImmutableArray();
 
     private void CollectGeneratedCode(Generator generator)
     {
@@ -96,12 +97,6 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         var syntaxTrees = new List<SyntaxTree>(compilationUnits.Count);
         foreach (var unit in compilationUnits)
         {
-            this.logger.WriteLine($"{unit.Key} content:");
-            this.logger.WriteLine(FileSeparator);
-            using var lineWriter = new NumberedLineWriter(this.logger);
-            unit.Value.WriteTo(lineWriter);
-            this.logger.WriteLine(FileSeparator);
-
             // Our syntax trees aren't quite right. And anyway the source generator API only takes text anyway so it doesn't _really_ matter.
             // So render the trees as text and have C# re-parse them so we get the same compiler warnings/errors that the user would get.
             syntaxTrees.Add(CSharpSyntaxTree.ParseText(unit.Value.ToFullString(), this.parseOptions, path: unit.Key));
@@ -110,23 +105,51 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.compilation = this.compilation.AddSyntaxTrees(syntaxTrees);
     }
 
-    private void AssertNoDiagnostics()
+    private void AssertNoDiagnostics(bool logGeneratedCode = true)
     {
-        this.AssertNoDiagnostics(this.compilation.GetDiagnostics());
+        var diagnostics = FilterDiagnostics(this.compilation.GetDiagnostics());
+        this.LogDiagnostics(diagnostics);
 
-        var emitResult = this.compilation.Emit(peStream: Stream.Null, xmlDocumentationStream: Stream.Null);
-        this.AssertNoDiagnostics(emitResult.Diagnostics);
-        Assert.True(emitResult.Success);
+        var emitDiagnostics = ImmutableArray<Diagnostic>.Empty;
+        bool? emitSuccessful = null;
+        if (diagnostics.IsEmpty)
+        {
+            var emitResult = this.compilation.Emit(peStream: Stream.Null, xmlDocumentationStream: Stream.Null);
+            emitSuccessful = emitResult.Success;
+            emitDiagnostics = FilterDiagnostics(emitResult.Diagnostics);
+            this.LogDiagnostics(emitDiagnostics);
+        }
+
+        if (logGeneratedCode)
+        {
+            this.LogGeneratedCode();
+        }
+
+        Assert.Empty(diagnostics);
+        if (emitSuccessful.HasValue)
+        {
+            Assert.Empty(emitDiagnostics);
+            Assert.True(emitSuccessful);
+        }
     }
 
-    private void AssertNoDiagnostics(ImmutableArray<Diagnostic> diagnostics)
+    private void LogDiagnostics(ImmutableArray<Diagnostic> diagnostics)
     {
-        var filteredDiagnostics = diagnostics.Where(d => d.Severity > DiagnosticSeverity.Hidden);
-        foreach (var diagnostic in filteredDiagnostics)
+        foreach (var diagnostic in diagnostics)
         {
             this.logger.WriteLine(diagnostic.ToString());
         }
+    }
 
-        Assert.Empty(filteredDiagnostics);
+    private void LogGeneratedCode()
+    {
+        foreach (SyntaxTree tree in this.compilation.SyntaxTrees)
+        {
+            this.logger.WriteLine(FileSeparator);
+            this.logger.WriteLine($"{tree.FilePath} content:");
+            this.logger.WriteLine(FileSeparator);
+            using var lineWriter = new NumberedLineWriter(this.logger);
+            tree.GetRoot().WriteTo(lineWriter);
+        }
     }
 }

@@ -18,6 +18,7 @@ steps:
     arguments: --no-build -c $(BuildConfiguration) -f net472 --filter "TestCategory!=FailsInCloudTest$(TestFilter)" -v n /p:CollectCoverage=true --settings "$(Build.Repository.LocalPath)/azure-pipelines/$(Agent.OS).runsettings" /bl:"$(Build.ArtifactStagingDirectory)/build_logs/test_net472.binlog"
     testRunTitle: net472-$(Agent.JobName)
   condition: succeededOrFailed()
+  enabled: false # https://github.com/dotnet/sdk/issues/14578
 
 - task: DotNetCoreCLI@2
   displayName: dotnet test -f net5.0
@@ -34,6 +35,7 @@ steps:
     arguments: --no-build -c $(BuildConfiguration) -f netcoreapp3.1 --filter "TestCategory!=FailsInCloudTest$(TestFilter)" -v n /p:CollectCoverage=true --settings "$(Build.Repository.LocalPath)/azure-pipelines/$(Agent.OS).runsettings" /bl:"$(Build.ArtifactStagingDirectory)/build_logs/test_netcoreapp3.1.binlog"
     testRunTitle: netcoreapp3.1-$(Agent.JobName)
   condition: succeededOrFailed()
+  enabled: false # https://github.com/dotnet/sdk/issues/14578
 
 - powershell: azure-pipelines/variables/_pipelines.ps1
   failOnStderr: true

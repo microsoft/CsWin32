@@ -56,6 +56,7 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
 ";
 
         private const string SimpleFileNameAnnotation = "SimpleFileName";
+        private const string OriginalDelegateAnnotation = "OriginalDelegate";
 
         private static readonly TypeSyntax SafeHandleTypeSyntax = IdentifierName("SafeHandle");
         private static readonly IdentifierNameSyntax IntPtrTypeSyntax = IdentifierName(nameof(IntPtr));
@@ -776,9 +777,14 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
                                     var variable = field.Declaration.Variables.Single();
                                     if (docs.Fields.TryGetValue(variable.Identifier.ValueText, out string? fieldDoc))
                                     {
-                                        fieldsDocBuilder.Append($@"/// <summary>");
+                                        fieldsDocBuilder.Append("/// <summary>");
                                         EmitDoc(fieldDoc, fieldsDocBuilder, docs, "members");
                                         fieldsDocBuilder.AppendLine("</summary>");
+                                        if (field.Declaration.Type.HasAnnotations(OriginalDelegateAnnotation))
+                                        {
+                                            fieldsDocBuilder.AppendLine(@$"/// <remarks>See the <see cref=""{field.Declaration.Type.GetAnnotations(OriginalDelegateAnnotation).Single().Data}"" /> delegate for more about this function.</remarks>");
+                                        }
+
                                         field = field.WithLeadingTrivia(ParseLeadingTrivia(fieldsDocBuilder.ToString()));
                                         fieldsDocBuilder.Clear();
                                     }
@@ -1046,6 +1052,22 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
         private static TypeSyntax MakeSpanOfT(TypeSyntax typeArgument) => QualifiedName(IdentifierName("System"), GenericName(Identifier("Span")).AddTypeArgumentListArguments(typeArgument));
 
         private static TypeSyntax MakeReadOnlySpanOfT(TypeSyntax typeArgument) => QualifiedName(IdentifierName("System"), GenericName(Identifier("ReadOnlySpan")).AddTypeArgumentListArguments(typeArgument));
+
+        private static FunctionPointerUnmanagedCallingConventionSyntax ToUnmanagedCallingConventionSyntax(CallingConvention callingConvention)
+        {
+            return callingConvention switch
+            {
+                CallingConvention.StdCall => FunctionPointerUnmanagedCallingConvention(Identifier("Stdcall")),
+                CallingConvention.Winapi => FunctionPointerUnmanagedCallingConvention(Identifier("Stdcall")), // Winapi isn't a valid string, and only .NET 5 supports runtime-determined calling conventions like Winapi does.
+                _ => throw new NotImplementedException(),
+            };
+        }
+
+        private static FunctionPointerTypeSyntax FunctionPointer(CallingConvention callingConvention, MethodSignature<TypeSyntax> signature, string delegateName)
+            => FunctionPointerType(
+                FunctionPointerCallingConvention(Token(SyntaxKind.UnmanagedKeyword), FunctionPointerUnmanagedCallingConventionList(SingletonSeparatedList(ToUnmanagedCallingConventionSyntax(callingConvention)))),
+                FunctionPointerParameterList(SeparatedList(signature.ParameterTypes.Select(FunctionPointerParameter)).Add(FunctionPointerParameter(signature.ReturnType))))
+               .WithAdditionalAnnotations(new SyntaxAnnotation(OriginalDelegateAnnotation, delegateName));
 
         private static bool IsVoid(TypeSyntax typeSyntax) => typeSyntax is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.VoidKeyword } };
 
@@ -1558,8 +1580,7 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
                 }
             }
 
-            MethodDefinition invokeMethodDef = typeDef.GetMethods().Select(this.mr.GetMethodDefinition).Single(def => this.mr.StringComparer.Equals(def.Name, "Invoke"));
-            MethodSignature<TypeSyntax> signature = invokeMethodDef.DecodeSignature(this.signatureTypeProvider, null);
+            this.GetSignatureForDelegate(typeDef, out MethodDefinition invokeMethodDef, out MethodSignature<TypeSyntax> signature);
 
             DelegateDeclarationSyntax result = DelegateDeclaration(signature.ReturnType, name)
                 .WithParameterList(this.CreateParameterList(invokeMethodDef, signature))
@@ -1571,6 +1592,12 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
             }
 
             return result;
+        }
+
+        private void GetSignatureForDelegate(TypeDefinition typeDef, out MethodDefinition invokeMethodDef, out MethodSignature<TypeSyntax> signature)
+        {
+            invokeMethodDef = typeDef.GetMethods().Select(this.mr.GetMethodDefinition).Single(def => this.mr.StringComparer.Equals(def.Name, "Invoke"));
+            signature = invokeMethodDef.DecodeSignature(this.signatureTypeProvider, null);
         }
 
         private StructDeclarationSyntax CreateInteropStruct(TypeDefinition typeDef)
@@ -1626,7 +1653,7 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
                         field = field.AddAttributeLists(AttributeList().AddAttributes(DebuggerBrowsable(DebuggerBrowsableState.Never)));
                     }
 
-                    if (fieldInfo.FieldType is PointerTypeSyntax)
+                    if (fieldInfo.FieldType is PointerTypeSyntax || fieldInfo.FieldType is FunctionPointerTypeSyntax)
                     {
                         field = field.AddModifiers(Token(SyntaxKind.UnsafeKeyword));
                     }
@@ -2258,6 +2285,28 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
                                 Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(length)))))))));
 
                 return (IdentifierName(fixedLengthStruct.Identifier.ValueText), List<MemberDeclarationSyntax>().Add(property).Add(fixedLengthStruct));
+            }
+
+            // If the field is a delegate type, we have to replace that with a native function pointer to avoid the struct becoming a 'managed type'.
+            if (originalType is IdentifierNameSyntax { Identifier: { ValueText: string typeName } } && this.typesByName.TryGetValue(typeName, out TypeDefinitionHandle typeDefHandle))
+            {
+                var typeDef = this.mr.GetTypeDefinition(typeDefHandle);
+                if ((typeDef.Attributes & TypeAttributes.Class) == TypeAttributes.Class)
+                {
+                    if (typeDef.BaseType.Kind == HandleKind.TypeReference)
+                    {
+                        var baseType = this.mr.GetTypeReference((TypeReferenceHandle)typeDef.BaseType);
+                        if (this.mr.StringComparer.Equals(baseType.Name, "MulticastDelegate"))
+                        {
+                            CustomAttribute ufpAtt = typeDef.GetCustomAttributes().Select(ah => this.mr.GetCustomAttribute(ah)).Single(a => this.IsAttribute(a, SystemRuntimeInteropServices, nameof(UnmanagedFunctionPointerAttribute)));
+                            var attArgs = ufpAtt.DecodeValue(this.customAttributeTypeProvider);
+                            CallingConvention callingConvention = (CallingConvention)attArgs.FixedArguments[0].Value!;
+
+                            this.GetSignatureForDelegate(typeDef, out MethodDefinition invokeMethodDef, out MethodSignature<TypeSyntax> signature);
+                            return (FunctionPointer(CallingConvention.StdCall, signature, typeName), default);
+                        }
+                    }
+                }
             }
 
             return (originalType, default);

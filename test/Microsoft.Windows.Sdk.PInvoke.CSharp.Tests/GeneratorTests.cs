@@ -68,7 +68,8 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         {
             this.logger.WriteLine($"{unit.Key} content:");
             this.logger.WriteLine(FileSeparator);
-            this.logger.WriteLine(unit.Value.ToFullString());
+            using var lineWriter = new NumberedLineWriter(this.logger);
+            unit.Value.WriteTo(lineWriter);
             this.logger.WriteLine(FileSeparator);
 
             syntaxTrees.Add((CSharpSyntaxTree)CSharpSyntaxTree.Create(unit.Value, this.parseOptions, path: unit.Key));

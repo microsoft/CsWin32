@@ -179,6 +179,7 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
             "CS1591", // missing docs
             "CS1573", // missing docs for an individual parameter
             "CS0649", // fields never assigned to
+            "CS8019", // unused usings
         };
 
         private static readonly AttributeSyntax InAttributeSyntax = Attribute(IdentifierName("In"));

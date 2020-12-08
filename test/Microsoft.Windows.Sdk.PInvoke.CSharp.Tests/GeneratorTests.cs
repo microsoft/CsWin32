@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
@@ -19,6 +20,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
 {
     private static readonly string FileSeparator = new string('=', 140);
     private readonly ITestOutputHelper logger;
+    private readonly FileStream metadataStream;
     private CSharpCompilation compilation;
     private CSharpParseOptions parseOptions;
     private Generator? generator;
@@ -26,6 +28,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public GeneratorTests(ITestOutputHelper logger)
     {
         this.logger = logger;
+        this.metadataStream = File.OpenRead(Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "Windows.Win32.winmd"));
 
         this.parseOptions = CSharpParseOptions.Default
             .WithDocumentationMode(DocumentationMode.Diagnose)
@@ -52,12 +55,13 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public void Dispose()
     {
         this.generator?.Dispose();
+        this.metadataStream.Dispose();
     }
 
     [Fact]
     public void SimplestMethod()
     {
-        this.generator = new Generator(compilation: this.compilation, parseOptions: this.parseOptions);
+        this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);
         Assert.True(this.generator.TryGenerateExternMethod("GetTickCount"));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -74,7 +78,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [InlineData("ARM64EC_NT_CONTEXT")] // Member names with type names colliding with containing type
     public void InterestingAPIs(string api)
     {
-        this.generator = new Generator(compilation: this.compilation, parseOptions: this.parseOptions);
+        this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);
         Assert.True(this.generator.TryGenerate(api, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -83,7 +87,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [Fact]
     public void FullGeneration()
     {
-        this.generator = new Generator(compilation: this.compilation, parseOptions: this.parseOptions);
+        this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);
         this.generator.GenerateAll(CancellationToken.None);
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics(logGeneratedCode: false);

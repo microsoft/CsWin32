@@ -20,6 +20,7 @@
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
 
     <MicroBuildVersion>2.0.61</MicroBuildVersion>
+    <MetadataVersion>10.0.21280.1001-preview.rs-lkg.2</MetadataVersion>
   </PropertyGroup>
 
   <ItemGroup>

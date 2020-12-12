@@ -10,6 +10,7 @@
     <IncludeSymbols>false</IncludeSymbols>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <NoWarn>$(NoWarn);NU5128</NoWarn>
+    <DevelopmentDependency>true</DevelopmentDependency>
   </PropertyGroup>
 
   <ItemGroup>

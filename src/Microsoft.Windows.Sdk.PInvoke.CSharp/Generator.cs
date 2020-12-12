@@ -232,21 +232,16 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
         /// <summary>
         /// Initializes a new instance of the <see cref="Generator"/> class.
         /// </summary>
+        /// <param name="metadataLibraryStream">The stream to the winmd metadata to generate APIs from.</param>
         /// <param name="options">Options that influence the result of generation.</param>
         /// <param name="compilation">The compilation that the generated code will be added to.</param>
         /// <param name="parseOptions">The parse options that will be used for the generated code.</param>
-        public Generator(GeneratorOptions? options = null, CSharpCompilation? compilation = null, CSharpParseOptions? parseOptions = null)
+        public Generator(Stream metadataLibraryStream, GeneratorOptions? options = null, CSharpCompilation? compilation = null, CSharpParseOptions? parseOptions = null)
         {
             this.options = options ??= new GeneratorOptions();
             this.options.Validate();
             this.compilation = compilation;
             this.parseOptions = parseOptions;
-
-            Stream? metadataLibraryStream = Assembly.GetExecutingAssembly().GetManifestResourceStream(ThisAssembly.RootNamespace + ".Windows.Win32.winmd");
-            if (metadataLibraryStream is null)
-            {
-                throw new Exception("Metadata assembly not found.");
-            }
 
             this.metadataStream = metadataLibraryStream;
             this.peReader = new PEReader(this.metadataStream);

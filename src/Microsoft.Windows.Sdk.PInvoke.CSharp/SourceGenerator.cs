@@ -52,6 +52,12 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
                 return;
             }
 
+            if (!context.AnalyzerConfigOptions.GlobalOptions.TryGetValue("build_property.MicrosoftWindowsSdkWin32MetadataBasePath", out string? metadataPath) ||
+                string.IsNullOrWhiteSpace(metadataPath))
+            {
+                return;
+            }
+
             GeneratorOptions? options = null;
             AdditionalText? nativeMethodsJsonFile = context.AdditionalFiles
                 .FirstOrDefault(af => string.Equals(Path.GetFileName(af.Path), NativeMethodsJsonAdditionalFileName, StringComparison.OrdinalIgnoreCase));
@@ -73,7 +79,8 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
                 return;
             }
 
-            using var generator = new Generator(options, (CSharpCompilation)context.Compilation, (CSharpParseOptions)context.ParseOptions);
+            using var metadataStream = File.OpenRead(Path.Combine(metadataPath, "Windows.Win32.winmd"));
+            using var generator = new Generator(metadataStream, options, (CSharpCompilation)context.Compilation, (CSharpParseOptions)context.ParseOptions);
 
             SourceText? nativeMethodsTxt = nativeMethodsTxtFile.GetText(context.CancellationToken);
             if (nativeMethodsTxt is null)

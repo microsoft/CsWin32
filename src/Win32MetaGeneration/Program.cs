@@ -43,8 +43,9 @@ namespace Win32.CodeGen
                 }
 
                 var sw = Stopwatch.StartNew();
-
+                using var metadataStream = File.OpenRead(Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "Windows.Win32.winmd"));
                 using var generator = new Generator(
+                    metadataStream,
                     new GeneratorOptions
                     {
                         WideCharOnly = true,

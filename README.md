@@ -9,6 +9,12 @@
 * Rapidly add p/invoke methods and supporting types to your C# project.
 * No bulky assemblies to ship alongside your application.
 * `SafeHandle`-types automatically generated.
+* Generates xml documentation based on and links back to docs.microsoft.com
+
+![Animation demonstrating p/invoke code generation](doc/demo.gif)
+
+Source generator requires C# 9.
+See [dotnet/pinvoke](https://github.com/dotnet/pinvoke) for precompiled NuGet packages with Win32 p/invokes.
 
 ## Usage
 

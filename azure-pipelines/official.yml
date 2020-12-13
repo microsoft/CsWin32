@@ -31,6 +31,7 @@ stages:
     BuildConfiguration: Release
     BuildPlatform: Any CPU
     push_to_ci: true
+    ci_feed: Personal/CsWin32
     NUGET_PACKAGES: $(Agent.TempDirectory)/.nuget/packages
     SignTypeSelection: ${{ parameters.SignTypeSelection }}
 

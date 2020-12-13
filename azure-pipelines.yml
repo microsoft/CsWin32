@@ -21,6 +21,8 @@ variables:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   BuildConfiguration: Release
   # #codecov_token: # Get a new one from https://codecov.io/
+  push_to_ci: true
+  ci_feed: Personal/CsWin32
   NUGET_PACKAGES: $(Agent.TempDirectory)/.nuget/packages
 
 jobs:

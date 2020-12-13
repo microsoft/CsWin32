@@ -85,6 +85,29 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
+    public void CollidingStructNotGenerated()
+    {
+        const string test = @"
+namespace Microsoft.Windows.Sdk
+{
+    internal enum FILE_CREATE_FLAGS
+    {
+        CREATE_NEW = 1,
+        CREATE_ALWAYS = 2,
+        OPEN_EXISTING = 3,
+        OPEN_ALWAYS = 4,
+        TRUNCATE_EXISTING = 5,
+    }
+}
+";
+        this.compilation = this.compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(test, path: "test.cs"));
+        this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);
+        Assert.True(this.generator.TryGenerate("CreateFile", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+    }
+
+    [Fact]
     public void FullGeneration()
     {
         this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);

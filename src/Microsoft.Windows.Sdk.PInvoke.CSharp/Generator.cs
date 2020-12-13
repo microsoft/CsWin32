@@ -1323,6 +1323,15 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
                 return null;
             }
 
+            // Skip if the compilation already defines this type.
+            string name = this.mr.GetString(typeDef.Name);
+            string ns = this.mr.GetString(typeDef.Namespace);
+            string fullyQualifiedName = this.Namespace + "." + name;
+            if (this.compilation?.GetTypeByMetadataName(fullyQualifiedName) is object)
+            {
+                return null;
+            }
+
             try
             {
                 StringHandle baseTypeName, baseTypeNamespace;

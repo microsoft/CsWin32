@@ -13,7 +13,10 @@
 
 ![Animation demonstrating p/invoke code generation](doc/demo.gif)
 
-Source generator requires C# 9.
+## Prerequisites
+
+Source Generators require C# 9, which comes with the .NET 5 SDK or Visual Studio 2019 Update 8 (16.8).
+
 See [dotnet/pinvoke](https://github.com/dotnet/pinvoke) for precompiled NuGet packages with Win32 p/invokes.
 
 ## Usage

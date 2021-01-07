@@ -6,8 +6,4 @@
     <IsPackable>false</IsPackable>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
-
-  <ItemGroup>
-    <PackageReference Include="MicroBuild.NonShipping" Version="$(MicroBuildVersion)" />
-  </ItemGroup>
 </Project>

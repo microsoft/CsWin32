@@ -76,6 +76,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [InlineData("JsRuntimeVersion")] // An enum that has an extra member in a separate header file.
     [InlineData("ReportEvent")] // Failed at one point
     [InlineData("ARM64EC_NT_CONTEXT")] // Member names with type names colliding with containing type
+    [InlineData("DISPLAYCONFIG_VIDEO_SIGNAL_INFO")] // Union, explicit layout, bitmask, nested structs
     public void InterestingAPIs(string api)
     {
         this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);

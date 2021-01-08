@@ -14,4 +14,13 @@ public class BasicTests
         uint result = PInvoke.GetTickCount();
         Assert.NotEqual(0u, result);
     }
+
+    [Fact]
+    public void DISPLAYCONFIG_VIDEO_SIGNAL_INFO_Test()
+    {
+        DISPLAYCONFIG_VIDEO_SIGNAL_INFO i = default;
+        i.pixelRate = 5;
+
+        // TODO: write code that sets/gets memory on the inner struct (e.g. videoStandard).
+    }
 }

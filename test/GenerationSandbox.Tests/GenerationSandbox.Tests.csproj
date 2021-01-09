@@ -6,11 +6,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <AdditionalFiles Include="NativeMethods.json" />
-    <AdditionalFiles Include="NativeMethods.txt" />
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\..\src\Microsoft.Windows.Sdk.PInvoke.CSharp\Microsoft.Windows.Sdk.PInvoke.CSharp.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <Analyzer Include="$(RepoRootPath)\bin\Microsoft.Windows.Sdk.PInvoke.CSharp\$(Configuration)\netstandard2.0\System.Text.Json.dll" />
     <Analyzer Include="$(RepoRootPath)\bin\Microsoft.Windows.Sdk.PInvoke.CSharp\$(Configuration)\netstandard2.0\Microsoft.Bcl.AsyncInterfaces.dll" />

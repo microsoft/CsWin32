@@ -41,15 +41,7 @@ Use of the `unsafe` keyword is required anywhere you use pointers.
 The source generator NuGet package sets the default value of the `AllowUnsafeBlocks` property for your project to `true`,
 but if you explicitly set it to `false` in your project file, generated code may produce compiler errors.
 
-Create a `NativeMethods.txt` file in your project directory and add it as an `AdditionalFile` item in your project:
-
-```xml
-<ItemGroup>
-  <AdditionalFiles Include="NativeMethods.txt" />
-</ItemGroup>
-```
-
-In your `NativeMethods.txt` file, list the APIs to generate code for.
+Create a `NativeMethods.txt` file in your project directory that lists the APIs to generate code for.
 Each line may consist of *one* of the following:
 
 * Exported method name (e.g. `CreateFile`). This *may* include the `A` or `W` suffix, where applicable.
@@ -78,21 +70,13 @@ Several aspects of the generated code can be customized, including:
 * Whether to emit interop types as `public` or `internal`
 * Whether to emit ANSI functions as well where Wide character functions also exist
 
-To configure these settings, create a `NativeMethods.json` file in your project directory and add it as an `AdditionalFile` item in your project:
-
-```xml
-<ItemGroup>
-  <AdditionalFiles Include="NativeMethods.json" />
-</ItemGroup>
-```
-
-The [`settings.schema.json`](src/Microsoft.Windows.Sdk.PInvoke.CSharp/settings.schema.json) file in this repo defines the JSON schema to use as content for this file.
-Here is an example:
+To configure these settings, create a `NativeMethods.json` file in your project directory.
+Specifying the `$schema` property adds completions, descriptions and validation in many JSON editors.
 
 ```json
 {
-  "$schema": "..\\..\\src\\Microsoft.Windows.Sdk.PInvoke.CSharp\\settings.schema.json",
-  "emitSingleFile": true
+  "$schema": "https://raw.githubusercontent.com/microsoft/CsWin32/main/src/Microsoft.Windows.Sdk.PInvoke.CSharp/settings.schema.json",
+  "emitSingleFile": false
 }
 ```
 

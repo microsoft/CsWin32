@@ -2,4 +2,9 @@
   <PropertyGroup>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
+  
+  <ItemGroup>
+    <AdditionalFiles Include="NativeMethods.json" Condition="Exists('NativeMethods.json')" />
+    <AdditionalFiles Include="NativeMethods.txt" Condition="Exists('NativeMethods.txt')"  />
+  </ItemGroup>
 </Project>

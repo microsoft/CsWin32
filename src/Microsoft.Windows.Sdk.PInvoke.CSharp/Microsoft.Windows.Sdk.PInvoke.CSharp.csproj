@@ -4,6 +4,7 @@
     <IsPackable>true</IsPackable>
     <TargetFramework>netstandard2.0</TargetFramework>
     <Nullable>enable</Nullable>
+    <Description>Microsoft Windows SDK Win32 API Source Generator</Description>
 
     <!-- Special properties for analyzer packages. -->
     <IncludeBuildOutput>false</IncludeBuildOutput>
@@ -18,6 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Update="readme.txt" Pack="true" PackagePath="" />
     <None Include="build\**">
       <Pack>true</Pack>
       <PackagePath>build\</PackagePath>

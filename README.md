@@ -38,13 +38,8 @@ dotnet add package Microsoft.Windows.Sdk.PInvoke.CSharp -pre
 Your project must allow unsafe code to support the generated code that will likely use pointers.
 This does *not* automatically make all your code *unsafe*.
 Use of the `unsafe` keyword is required anywhere you use pointers.
-Add the following property to your project file:
-
-```xml
-<PropertyGroup>
-  <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-</PropertyGroup>
-```
+The source generator NuGet package sets the default value of the `AllowUnsafeBlocks` property for your project to `true`,
+but if you explicitly set it to `false` in your project file, generated code may produce compiler errors.
 
 Create a `NativeMethods.txt` file in your project directory and add it as an `AdditionalFile` item in your project:
 

@@ -5,3 +5,4 @@
 Rule ID | Category | Severity | Notes
 --------|----------|----------|-------
 PInvoke001 | Functionality | Error | SourceGenerator
+PInvoke002 | Functionality | Warning | SourceGenerator

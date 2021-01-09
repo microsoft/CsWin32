@@ -39,6 +39,15 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
             DiagnosticSeverity.Error,
             isEnabledByDefault: true);
 
+        private static readonly DiagnosticDescriptor UnsafeCodeRequired = new DiagnosticDescriptor(
+            "PInvoke002",
+            "AllowUnsafeCode",
+            "AllowUnsafeBlocks must be set to 'true' in the project file for many APIs. Compiler errors may result.",
+            "Functionality",
+            DiagnosticSeverity.Warning,
+            isEnabledByDefault: true,
+            description: "Many generated types or P/Invoke methods require use of pointers, so the receiving compilation must allow unsafe code.");
+
         /// <inheritdoc/>
         public void Initialize(GeneratorInitializationContext context)
         {
@@ -80,7 +89,15 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
             }
 
             using var metadataStream = File.OpenRead(Path.Combine(metadataPath, "Windows.Win32.winmd"));
-            using var generator = new Generator(metadataStream, options, (CSharpCompilation)context.Compilation, (CSharpParseOptions)context.ParseOptions);
+            var compilation = (CSharpCompilation)context.Compilation;
+            var parseOptions = (CSharpParseOptions)context.ParseOptions;
+
+            if (!compilation.Options.AllowUnsafe)
+            {
+                context.ReportDiagnostic(Diagnostic.Create(UnsafeCodeRequired, location: null));
+            }
+
+            using var generator = new Generator(metadataStream, options, compilation, parseOptions);
 
             SourceText? nativeMethodsTxt = nativeMethodsTxtFile.GetText(context.CancellationToken);
             if (nativeMethodsTxt is null)

@@ -14,7 +14,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Testing;
-using Microsoft.Windows.Sdk.PInvoke.CSharp;
+using Microsoft.Windows.CsWin32;
 using Xunit;
 using Xunit.Abstractions;
 

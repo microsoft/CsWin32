@@ -29,10 +29,10 @@ Add these feeds as package sources:
 <add key="MSFTNuget" value="https://microsoft.pkgs.visualstudio.com/_packaging/MSFTNuget/nuget/v3/index.json" />
 ```
 
-Install the `Microsoft.Windows.Sdk.PInvoke.CSharp` package:
+Install the `Microsoft.Windows.CsWin32` package:
 
 ```ps1
-dotnet add package Microsoft.Windows.Sdk.PInvoke.CSharp -pre
+dotnet add package Microsoft.Windows.CsWin32 -pre
 ```
 
 Your project must allow unsafe code to support the generated code that will likely use pointers.
@@ -75,7 +75,7 @@ Specifying the `$schema` property adds completions, descriptions and validation 
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/microsoft/CsWin32/main/src/Microsoft.Windows.Sdk.PInvoke.CSharp/settings.schema.json",
+  "$schema": "https://raw.githubusercontent.com/microsoft/CsWin32/main/src/Microsoft.Windows.CsWin32/settings.schema.json",
   "emitSingleFile": false
 }
 ```

@@ -29,9 +29,9 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "test", "test", "{36CCE840-6
 		test\Directory.Build.targets = test\Directory.Build.targets
 	EndProjectSection
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Microsoft.Windows.Sdk.PInvoke.CSharp", "src\Microsoft.Windows.Sdk.PInvoke.CSharp\Microsoft.Windows.Sdk.PInvoke.CSharp.csproj", "{E3E96466-44B6-41AF-BBC8-9D30183ED8A9}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Microsoft.Windows.CsWin32", "src\Microsoft.Windows.CsWin32\Microsoft.Windows.CsWin32.csproj", "{E3E96466-44B6-41AF-BBC8-9D30183ED8A9}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Microsoft.Windows.Sdk.PInvoke.CSharp.Tests", "test\Microsoft.Windows.Sdk.PInvoke.CSharp.Tests\Microsoft.Windows.Sdk.PInvoke.CSharp.Tests.csproj", "{0129FE6E-3480-408A-BF40-9E6343CDB06C}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Microsoft.Windows.CsWin32.Tests", "test\Microsoft.Windows.CsWin32.Tests\Microsoft.Windows.CsWin32.Tests.csproj", "{0129FE6E-3480-408A-BF40-9E6343CDB06C}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ScrapeDocs", "src\ScrapeDocs\ScrapeDocs.csproj", "{EB7D0834-4236-408F-B172-64FB45FF643A}"
 EndProject

@@ -1,1 +1,1 @@
-'Microsoft.Windows.Sdk.PInvoke.CSharp'
+'Microsoft.Windows.CsWin32'

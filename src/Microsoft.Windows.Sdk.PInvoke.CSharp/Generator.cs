@@ -900,7 +900,14 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
                             docCommentsBuilder.Append(' ');
                         }
 
-                        if (!inParagraph)
+                        if (inParagraph)
+                        {
+                            if (docCommentsBuilder.Length > 0 && docCommentsBuilder[docCommentsBuilder.Length - 1] != ' ')
+                            {
+                                docCommentsBuilder.Append(' ');
+                            }
+                        }
+                        else
                         {
                             docCommentsBuilder.Append("/// <para>");
                             inParagraph = true;

@@ -10,7 +10,7 @@
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="3.8.0" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Microsoft.Windows.Sdk.PInvoke.CSharp\Microsoft.Windows.Sdk.PInvoke.CSharp.csproj" />
+    <ProjectReference Include="..\Microsoft.Windows.CsWin32\Microsoft.Windows.CsWin32.csproj" />
   </ItemGroup>
   <ItemGroup>
     <None Include="$(MicrosoftWindowsSdkWin32MetadataBasePath)*.winmd">

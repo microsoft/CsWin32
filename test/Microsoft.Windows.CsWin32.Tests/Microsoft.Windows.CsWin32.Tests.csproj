@@ -3,7 +3,7 @@
   <PropertyGroup>
     <RootNamespace />
   </PropertyGroup>
-  
+
   <ItemGroup>
     <None Include="$(MicrosoftWindowsSdkWin32MetadataBasePath)*.winmd">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
@@ -11,7 +11,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Microsoft.Windows.Sdk.PInvoke.CSharp\Microsoft.Windows.Sdk.PInvoke.CSharp.csproj" />
+    <ProjectReference Include="..\..\src\Microsoft.Windows.CsWin32\Microsoft.Windows.CsWin32.csproj" />
   </ItemGroup>
 
   <ItemGroup>

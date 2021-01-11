@@ -7,10 +7,12 @@ using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Testing;
 using Microsoft.Windows.Sdk.PInvoke.CSharp;
 using Xunit;
@@ -85,6 +87,27 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.AssertNoDiagnostics();
     }
 
+    /// <summary>
+    /// Verifies that GetLastError is never generated.
+    /// Users should call <see cref="Marshal.GetLastWin32Error"/> instead.
+    /// </summary>
+    [Fact]
+    public void GetLastErrorNotIncludedInBulkGeneration()
+    {
+        this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);
+        Assert.True(this.generator.TryGenerate("kernel32.*", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        Assert.True(this.IsMethodGenerated("CreateFile"));
+        Assert.False(this.IsMethodGenerated("GetLastError"));
+    }
+
+    [Fact]
+    public void GetLastErrorGenerationThrowsWhenExplicitlyCalled()
+    {
+        this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);
+        Assert.Throws<NotSupportedException>(() => this.generator.TryGenerate("GetLastError", CancellationToken.None));
+    }
+
     [Fact]
     public void CollidingStructNotGenerated()
     {
@@ -132,6 +155,8 @@ namespace Microsoft.Windows.Sdk
 
         this.compilation = this.compilation.AddSyntaxTrees(syntaxTrees);
     }
+
+    private bool IsMethodGenerated(string name) => this.compilation.SyntaxTrees.Any(st => st.GetRoot().DescendantNodes().OfType<MethodDeclarationSyntax>().Any(md => md.Identifier.ValueText == name));
 
     private void AssertNoDiagnostics(bool logGeneratedCode = true)
     {

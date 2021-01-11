@@ -33,6 +33,11 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
             { nameof(System.Runtime.InteropServices.ComTypes.FILETIME), ParseTypeName("System.Runtime.InteropServices.ComTypes.FILETIME") },
         };
 
+        internal static readonly Dictionary<string, string> BannedAPIs = new Dictionary<string, string>
+        {
+            { "GetLastError", "Do not generate GetLastError. Call Marshal.GetLastWin32Error() instead. Learn more from https://docs.microsoft.com/en-us/dotnet/api/system.runtime.interopservices.marshal.getlastwin32error" },
+        };
+
         private const string SystemRuntimeCompilerServices = "System.Runtime.CompilerServices";
         private const string SystemRuntimeInteropServices = "System.Runtime.InteropServices";
         private const string MetadataTypesNamespace = "Windows.Win32";
@@ -436,6 +441,22 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
                 ModuleReference module = this.mr.GetModuleReference(moduleHandle);
                 if (this.mr.StringComparer.Equals(module.Name, moduleName, ignoreCase: true))
                 {
+                    string? bannedReason = null;
+                    foreach (var bannedApi in BannedAPIs)
+                    {
+                        if (this.mr.StringComparer.Equals(methodDef.Name, bannedApi.Key))
+                        {
+                            // Skip a banned API.
+                            bannedReason = bannedApi.Value;
+                            continue;
+                        }
+                    }
+
+                    if (bannedReason is object)
+                    {
+                        continue;
+                    }
+
                     this.GenerateExternMethod(methodHandle);
                     successful = true;
                 }
@@ -451,6 +472,11 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
         /// <returns><see langword="true"/> if a match was found and the extern method generated; otherwise <see langword="false"/>.</returns>
         public bool TryGenerateExternMethod(string name)
         {
+            if (BannedAPIs.TryGetValue(name, out string? reason))
+            {
+                throw new NotSupportedException(reason);
+            }
+
             if (this.methodsByName.TryGetValue(name, out MethodDefinitionHandle handle))
             {
                 this.GenerateExternMethod(handle);

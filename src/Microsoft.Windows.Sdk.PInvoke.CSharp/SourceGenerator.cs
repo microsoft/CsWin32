@@ -48,6 +48,14 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
             isEnabledByDefault: true,
             description: "Many generated types or P/Invoke methods require use of pointers, so the receiving compilation must allow unsafe code.");
 
+        private static readonly DiagnosticDescriptor BannedApi = new DiagnosticDescriptor(
+            "PInvoke003",
+            "BannedAPI",
+            "This API will not be generated. {0}",
+            "Functionality",
+            DiagnosticSeverity.Warning,
+            isEnabledByDefault: true);
+
         /// <inheritdoc/>
         public void Initialize(GeneratorInitializationContext context)
         {
@@ -115,7 +123,11 @@ namespace Microsoft.Windows.Sdk.PInvoke.CSharp
                 }
 
                 var location = Location.Create(nativeMethodsTxtFile.Path, line.Span, nativeMethodsTxt.Lines.GetLinePositionSpan(line.Span));
-                if (name.EndsWith(".*", StringComparison.Ordinal))
+                if (Generator.BannedAPIs.TryGetValue(name, out string? reason))
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(BannedApi, location, reason));
+                }
+                else if (name.EndsWith(".*", StringComparison.Ordinal))
                 {
                     var moduleName = name.Substring(0, name.Length - 2);
                     if (!generator.TryGenerateAllExternMethods(moduleName, context.CancellationToken))

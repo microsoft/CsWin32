@@ -77,8 +77,13 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [InlineData("ENABLE_TRACE_PARAMETERS_V1")] // bad xml created at some point.
     [InlineData("JsRuntimeVersion")] // An enum that has an extra member in a separate header file.
     [InlineData("ReportEvent")] // Failed at one point
-    [InlineData("ARM64EC_NT_CONTEXT")] // Member names with type names colliding with containing type
+    [InlineData("ARM64_NT_CONTEXT")] // Member names with type names colliding with containing type
     [InlineData("DISPLAYCONFIG_VIDEO_SIGNAL_INFO")] // Union, explicit layout, bitmask, nested structs
+    [InlineData("g_wszStreamBufferRecordingDuration")] // Constant string field
+    [InlineData("MFVideoAlphaBitmap")] // field named params
+    [InlineData("DDRAWI_DDVIDEOPORT_INT")] // field that is never used
+    [InlineData("MainAVIHeader")] // dwReserved field is a fixed length array
+    [InlineData("JsRuntimeVersionEdge")] // Constant typed as an enum
     public void InterestingAPIs(string api)
     {
         this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);

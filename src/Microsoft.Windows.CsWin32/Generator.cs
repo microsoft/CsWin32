@@ -40,7 +40,6 @@ namespace Microsoft.Windows.CsWin32
 
         private const string SystemRuntimeCompilerServices = "System.Runtime.CompilerServices";
         private const string SystemRuntimeInteropServices = "System.Runtime.InteropServices";
-        private const string MetadataTypesNamespace = "Windows.Win32";
         private const string InteropDecorationNamespace = "Windows.Win32.Interop";
         private const string RAIIFreeAttribute = "RAIIFreeAttribute";
         private const string NativeTypeInfoAttribute = "NativeTypeInfoAttribute";
@@ -172,6 +171,7 @@ namespace Microsoft.Windows.CsWin32
             "out",
             "decimal",
             "as",
+            "params",
         };
 
         private static readonly HashSet<string> ObjectMembers = new HashSet<string>(StringComparer.Ordinal)
@@ -255,11 +255,11 @@ namespace Microsoft.Windows.CsWin32
             this.signatureTypeProvider = new SignatureTypeProvider(this);
             this.customAttributeTypeProvider = new CustomAttributeTypeProvider();
 
-            this.Apis = this.mr.TypeDefinitions.Select(this.mr.GetTypeDefinition).Single(td => this.mr.StringComparer.Equals(td.Name, "Apis") && this.mr.StringComparer.Equals(td.Namespace, MetadataTypesNamespace));
+            this.Apis = this.mr.TypeDefinitions.Select(this.mr.GetTypeDefinition).Where(td => this.mr.StringComparer.Equals(td.Name, "Apis")).ToList();
             this.InitializeNestedToDeclaringLookupDictionary();
 
             this.methodsByName = new Dictionary<string, MethodDefinitionHandle>(StringComparer.Ordinal);
-            foreach (MethodDefinitionHandle methodDefHandle in this.Apis.GetMethods())
+            foreach (MethodDefinitionHandle methodDefHandle in this.Apis.SelectMany(api => api.GetMethods()))
             {
                 string methodName = this.mr.GetString(this.mr.GetMethodDefinition(methodDefHandle).Name);
                 if (!this.methodsByName.ContainsKey(methodName))
@@ -279,7 +279,7 @@ namespace Microsoft.Windows.CsWin32
                 }
             }
 
-            foreach (FieldDefinitionHandle fieldDefHandle in this.Apis.GetFields())
+            foreach (FieldDefinitionHandle fieldDefHandle in this.Apis.SelectMany(api => api.GetFields()))
             {
                 FieldDefinition fieldDef = this.mr.GetFieldDefinition(fieldDefHandle);
                 const FieldAttributes expectedFlags = FieldAttributes.Literal | FieldAttributes.Static | FieldAttributes.Public;
@@ -291,7 +291,7 @@ namespace Microsoft.Windows.CsWin32
             }
         }
 
-        internal TypeDefinition Apis { get; }
+        internal List<TypeDefinition> Apis { get; }
 
         internal MetadataReader Reader => this.mr;
 
@@ -396,7 +396,7 @@ namespace Microsoft.Windows.CsWin32
         /// <param name="cancellationToken">A cancellation token.</param>
         public void GenerateAllExternMethods(CancellationToken cancellationToken)
         {
-            foreach (MethodDefinitionHandle methodHandle in this.Apis.GetMethods())
+            foreach (MethodDefinitionHandle methodHandle in this.Apis.SelectMany(api => api.GetMethods()))
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -410,7 +410,7 @@ namespace Microsoft.Windows.CsWin32
         /// <param name="cancellationToken">A cancellation token.</param>
         public void GenerateAllConstants(CancellationToken cancellationToken)
         {
-            foreach (FieldDefinitionHandle fieldDefHandle in this.Apis.GetFields())
+            foreach (FieldDefinitionHandle fieldDefHandle in this.Apis.SelectMany(api => api.GetFields()))
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -427,7 +427,7 @@ namespace Microsoft.Windows.CsWin32
         public bool TryGenerateAllExternMethods(string moduleName, CancellationToken cancellationToken)
         {
             bool successful = false;
-            foreach (MethodDefinitionHandle methodHandle in this.Apis.GetMethods())
+            foreach (MethodDefinitionHandle methodHandle in this.Apis.SelectMany(api => api.GetMethods()))
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -551,25 +551,31 @@ namespace Microsoft.Windows.CsWin32
             }
             else
             {
-                var membersByFile = from member in this.NamespaceMembers
-                                    let fileSimpleName = member.HasAnnotations(SimpleFileNameAnnotation)
-                                        ? member.GetAnnotations(SimpleFileNameAnnotation).Single().Data
-                                        : member switch
-                                        {
-                                            ClassDeclarationSyntax classDecl => classDecl.Identifier.ValueText,
-                                            StructDeclarationSyntax structDecl => structDecl.Identifier.ValueText,
-                                            EnumDeclarationSyntax enumDecl => enumDecl.Identifier.ValueText,
-                                            DelegateDeclarationSyntax delegateDecl => "Delegates", // group all delegates in one file
-                                            _ => throw new NotSupportedException("Unsupported member type: " + member.GetType().Name),
-                                        }
-                                    group member by fileSimpleName into x
-                                    select x;
+                var membersByFile = this.NamespaceMembers.GroupBy(
+                    member => member.HasAnnotations(SimpleFileNameAnnotation)
+                            ? member.GetAnnotations(SimpleFileNameAnnotation).Single().Data
+                            : member switch
+                            {
+                                ClassDeclarationSyntax classDecl => classDecl.Identifier.ValueText,
+                                StructDeclarationSyntax structDecl => structDecl.Identifier.ValueText,
+                                EnumDeclarationSyntax enumDecl => enumDecl.Identifier.ValueText,
+                                DelegateDeclarationSyntax delegateDecl => "Delegates", // group all delegates in one file
+                                _ => throw new NotSupportedException("Unsupported member type: " + member.GetType().Name),
+                            },
+                    StringComparer.OrdinalIgnoreCase);
 
                 foreach (var fileSimpleName in membersByFile)
                 {
-                    results.Add(
-                        string.Format(CultureInfo.InvariantCulture, FilenamePattern, fileSimpleName.Key),
-                        starterNamespace.AddMembers(fileSimpleName.ToArray()));
+                    try
+                    {
+                        results.Add(
+                            string.Format(CultureInfo.InvariantCulture, FilenamePattern, fileSimpleName.Key),
+                            starterNamespace.AddMembers(fileSimpleName.ToArray()));
+                    }
+                    catch (ArgumentException ex)
+                    {
+                        throw new GenerationFailedException($"Failed adding \"{fileSimpleName.Key}\".", ex);
+                    }
                 }
             }
 
@@ -715,7 +721,7 @@ namespace Microsoft.Windows.CsWin32
             }
             catch (Exception ex)
             {
-                throw new Exception($"Failed while generating extern method: {methodName}", ex);
+                throw new GenerationFailedException($"Failed while generating extern method: {methodName}", ex);
             }
         }
 
@@ -1432,19 +1438,29 @@ namespace Microsoft.Windows.CsWin32
             }
             catch (Exception ex)
             {
-                throw new Exception("Failed to generate " + this.mr.GetString(typeDef.Name), ex);
+                throw new GenerationFailedException("Failed to generate " + this.mr.GetString(typeDef.Name), ex);
             }
         }
 
         private FieldDeclarationSyntax CreateField(FieldDefinitionHandle fieldDefHandle)
         {
-            var fieldDef = this.mr.GetFieldDefinition(fieldDefHandle);
+            FieldDefinition fieldDef = this.mr.GetFieldDefinition(fieldDefHandle);
             string name = this.mr.GetString(fieldDef.Name);
-            TypeSyntax fieldType = fieldDef.DecodeSignature(this.signatureTypeProvider, null);
-            Constant constant = this.mr.GetConstant(fieldDef.GetDefaultValue());
-            return FieldDeclaration(VariableDeclaration(fieldType).AddVariables(
-                VariableDeclarator(name).WithInitializer(EqualsValueClause(this.ToExpressionSyntax(constant)))))
-                .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.ConstKeyword)));
+            try
+            {
+                TypeSyntax fieldType = fieldDef.DecodeSignature(this.signatureTypeProvider, null);
+                Constant constant = this.mr.GetConstant(fieldDef.GetDefaultValue());
+                return FieldDeclaration(VariableDeclaration(fieldType).AddVariables(
+                    VariableDeclarator(name).WithInitializer(EqualsValueClause(this.ToExpressionSyntax(constant)))))
+                    .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.ConstKeyword)));
+            }
+            catch (Exception ex)
+            {
+                TypeDefinition typeDef = this.mr.GetTypeDefinition(fieldDef.GetDeclaringType());
+                string typeName = this.mr.GetString(typeDef.Name);
+                string? ns = this.mr.GetString(typeDef.Namespace);
+                throw new GenerationFailedException($"Failed creating field: {ns}.{typeName}.{name}", ex);
+            }
         }
 
         private ClassDeclarationSyntax CreateConstantDefiningClass()

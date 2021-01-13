@@ -4,7 +4,7 @@ parameters:
 steps:
 
 - powershell: |
-    $AccessToken = '$(MSFTNuGetAccessToken)' # Avoid specifying the access token directly on the init.ps1 command line to avoid it showing up in errors
+    $AccessToken = '$(System.AccessToken)' # Avoid specifying the access token directly on the init.ps1 command line to avoid it showing up in errors
     .\init.ps1 -AccessToken $AccessToken ${{ parameters['initArgs'] }} -UpgradePrerequisites
     dotnet --info
 
@@ -12,9 +12,16 @@ steps:
     if (Get-Command mono -ErrorAction SilentlyContinue) {
       mono --version
     }
-  displayName: Install prerequisites
+  displayName: ⚙ Install prerequisites
+
+# ESRP signing requires this
+- task: UseDotNet@2
+  displayName: ⚙ Installing .NET Core 2.1 runtime
+  inputs:
+    packageType: runtime
+    version: 2.1.x
 
 - powershell: azure-pipelines/variables/_pipelines.ps1
   failOnStderr: true
-  displayName: Set pipeline variables based on source
+  displayName: ⚙ Set pipeline variables based on source
   name: SetPipelineVariables

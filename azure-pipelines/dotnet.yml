@@ -1,9 +1,123 @@
 steps:
-- script: dotnet build /t:build,pack --no-restore -c $(BuildConfiguration) /v:m /bl:"$(Build.ArtifactStagingDirectory)/build_logs/build.binlog"
-  displayName: dotnet build
+- script: dotnet build /t:build --no-restore -c $(BuildConfiguration) /v:m /bl:"$(Build.ArtifactStagingDirectory)/build_logs/build.binlog"
+  displayName: 🛠 dotnet build
+
+- task: EsrpCodeSigning@1
+  displayName: ✒ Authenticode sign
+  inputs:
+    ConnectedServiceName: Undocked RegFree Signing Connection
+    FolderPath: $(System.DefaultWorkingDirectory)\bin\Microsoft.Windows.CsWin32\$(BuildConfiguration)\netstandard2.0
+    Pattern: Microsoft.Windows.CsWin32.dll
+    signConfigType: inlineSignParams
+    inlineOperation: |
+      [
+        {
+          "keyCode": "CP-230012",
+          "operationSetCode": "SigntoolSign",
+          "parameters": [
+            {
+              "parameterName": "OpusName",
+              "parameterValue": "Microsoft"
+            },
+            {
+              "parameterName": "OpusInfo",
+              "parameterValue": "http://www.microsoft.com"
+            },
+            {
+              "parameterName": "PageHash",
+              "parameterValue": "/NPH"
+            },
+            {
+              "parameterName": "FileDigest",
+              "parameterValue": "/fd sha256"
+            },
+            {
+              "parameterName": "TimeStamp",
+              "parameterValue": "/tr \"http://rfc3161.gtm.corp.microsoft.com/TSS/HttpTspServer\" /td sha256"
+            }
+          ],
+          "toolName": "signtool.exe",
+          "toolVersion": "6.2.9304.0"
+        }
+      ]
+    SessionTimeout: 60
+    MaxConcurrency: 50
+    MaxRetryAttempts: 5
+  condition: and(succeeded(), eq(variables['Agent.OS'], 'Windows_NT'), eq(variables['SignSelection'], 'true'))
+
+- task: EsrpCodeSigning@1
+  enabled: false # till we get it working
+  displayName: ✒ Authenticode sign (3rd party)
+  inputs:
+    ConnectedServiceName: Undocked RegFree Signing Connection
+    FolderPath: $(NUGET_PACKAGES)\yamldotnet\9.1.0\lib\netstandard1.3
+    Pattern: YamlDotNet.dll
+    signConfigType: inlineSignParams
+    inlineOperation: |
+     [
+      {
+        "KeyCode" : "CP-231522",
+        "OperationCode" : "SigntoolSign",
+        "Parameters" : {
+          "OpusName" : "Microsoft Edge",
+          "OpusInfo" : "https://www.microsoft.com",
+          "Append" : "/as",
+          "PageHash" : "/NPH",
+          "FileDigest" : "/fd \"SHA256\"",
+          "TimeStamp" : "/tr \"http://rfc3161.gtm.corp.microsoft.com/TSS/HttpTspServer\" /td sha256"
+        },
+        "ToolName" : "sign",
+        "ToolVersion" : "1.0"
+      },
+      {
+        "KeyCode" : "CP-231522",
+        "OperationCode" : "SigntoolVerify",
+        "Parameters" : {
+          "VerifyAll" : "/all"
+        },
+        "ToolName" : "sign",
+        "ToolVersion" : "1.0"
+      }
+     ]
+    SessionTimeout: 60
+    MaxConcurrency: 50
+    MaxRetryAttempts: 5
+  condition: and(succeeded(), eq(variables['Agent.OS'], 'Windows_NT'), eq(variables['SignSelection'], 'true'))
+
+- script: dotnet pack --no-build /p:buildprojectreferences=false -c $(BuildConfiguration) /v:m /bl:"$(Build.ArtifactStagingDirectory)/build_logs/pack.binlog"
+  displayName: 📦 dotnet pack
+
+- task: EsrpCodeSigning@1
+  displayName: ✒ NuGet sign
+  inputs:
+    ConnectedServiceName: Undocked RegFree Signing Connection
+    FolderPath: $(System.DefaultWorkingDirectory)\bin\Packages\$(BuildConfiguration)\NuGet
+    Pattern: Microsoft.Windows.CsWin32.*.nupkg
+    signConfigType: inlineSignParams
+    inlineOperation: |
+      [
+        {
+          "KeyCode" : "CP-401405",
+          "OperationCode" : "NuGetSign",
+          "Parameters" : {},
+          "ToolName" : "sign",
+          "ToolVersion" : "1.0"
+        },
+        {
+          "KeyCode" : "CP-401405",
+          "OperationCode" : "NuGetVerify",
+          "Parameters" : {},
+          "ToolName" : "sign",
+          "ToolVersion" : "1.0"
+        }
+      ]
+    SessionTimeout: 60
+    MaxConcurrency: 50
+    MaxRetryAttempts: 5
+  condition: and(succeeded(), eq(variables['Agent.OS'], 'Windows_NT'), eq(variables['SignSelection'], 'true'))
 
 - task: DotNetCoreCLI@2
-  displayName: dotnet test -f net472
+  displayName: 🧪 dotnet test -f net472
   inputs:
     command: test
     arguments: --no-build -c $(BuildConfiguration) -f net472 --filter "TestCategory!=FailsInCloudTest$(TestFilter)" -v n /p:CollectCoverage=true --settings "$(Build.Repository.LocalPath)/azure-pipelines/$(Agent.OS).runsettings" /bl:"$(Build.ArtifactStagingDirectory)/build_logs/test_net472.binlog"
@@ -12,7 +126,7 @@ steps:
   enabled: false # https://github.com/dotnet/sdk/issues/14578
 
 - task: DotNetCoreCLI@2
-  displayName: dotnet test -f net5.0
+  displayName: 🧪 dotnet test -f net5.0
   inputs:
     command: test
     arguments: --no-build -c $(BuildConfiguration) -f net5.0 --filter "TestCategory!=FailsInCloudTest$(TestFilter)" -v n /p:CollectCoverage=true --settings "$(Build.Repository.LocalPath)/azure-pipelines/$(Agent.OS).runsettings" /bl:"$(Build.ArtifactStagingDirectory)/build_logs/test_net5.0.binlog"
@@ -20,7 +134,7 @@ steps:
   condition: succeededOrFailed()
 
 - task: DotNetCoreCLI@2
-  displayName: dotnet test -f netcoreapp3.1
+  displayName: 🧪 dotnet test -f netcoreapp3.1
   inputs:
     command: test
     arguments: --no-build -c $(BuildConfiguration) -f netcoreapp3.1 --filter "TestCategory!=FailsInCloudTest$(TestFilter)" -v n /p:CollectCoverage=true --settings "$(Build.Repository.LocalPath)/azure-pipelines/$(Agent.OS).runsettings" /bl:"$(Build.ArtifactStagingDirectory)/build_logs/test_netcoreapp3.1.binlog"
@@ -30,12 +144,12 @@ steps:
 
 - powershell: azure-pipelines/variables/_pipelines.ps1
   failOnStderr: true
-  displayName: Update pipeline variables based on build outputs
+  displayName: ⚙ Update pipeline variables based on build outputs
   condition: succeededOrFailed()
 
 - powershell: azure-pipelines/artifacts/_pipelines.ps1 -ArtifactNameSuffix "-$(Agent.JobName)"
   failOnStderr: true
-  displayName: Publish artifacts
+  displayName: 📢 Publish artifacts
   condition: succeededOrFailed()
 
 - task: PublishSymbols@2
@@ -44,7 +158,7 @@ steps:
     SearchPattern: '**/*.pdb'
     IndexSources: false
     SymbolServerType: TeamServices
-  displayName: Publish symbols to symbol server
+  displayName: 📢 Publish symbols to symbol server
   condition: eq(variables['Agent.OS'], 'Windows_NT') # Execute on failed test runs too. Windows-only till https://github.com/microsoft/azure-pipelines-tasks/issues/13821 is fixed.
 
 - task: PublishSymbols@2
@@ -53,11 +167,11 @@ steps:
     SearchPattern: '**/*.pdb'
     IndexSources: false
     SymbolServerType: TeamServices
-  displayName: Publish test symbols to symbol server
+  displayName: 📢 Publish test symbols to symbol server
   condition: and(failed(), eq(variables['Agent.OS'], 'Windows_NT')) # Execute on failed test runs only.
 
 - bash: bash <(curl -s https://codecov.io/bash)
-  displayName: Publish code coverage results to codecov.io
+  displayName: 📢 Publish code coverage results to codecov.io
   condition: ne(variables['codecov_token'], '')
   timeoutInMinutes: 3
   continueOnError: true

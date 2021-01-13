@@ -28,7 +28,7 @@ namespace Microsoft.Windows.CsWin32
             "No matching method or type found",
             "Method or type \"{0}\" not found.",
             "Functionality",
-            DiagnosticSeverity.Error,
+            DiagnosticSeverity.Warning,
             isEnabledByDefault: true);
 
         private static readonly DiagnosticDescriptor NoMethodsForModule = new DiagnosticDescriptor(
@@ -36,7 +36,7 @@ namespace Microsoft.Windows.CsWin32
             "No module found",
             "No methods found under module \"{0}\".",
             "Functionality",
-            DiagnosticSeverity.Error,
+            DiagnosticSeverity.Warning,
             isEnabledByDefault: true);
 
         private static readonly DiagnosticDescriptor UnsafeCodeRequired = new DiagnosticDescriptor(

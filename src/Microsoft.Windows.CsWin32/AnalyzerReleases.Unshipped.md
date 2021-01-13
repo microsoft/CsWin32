@@ -4,6 +4,6 @@
 ### New Rules
 Rule ID | Category | Severity | Notes
 --------|----------|----------|-------
-PInvoke001 | Functionality | Error | SourceGenerator
+PInvoke001 | Functionality | Warning | SourceGenerator
 PInvoke002 | Functionality | Warning | SourceGenerator
 PInvoke003 | Functionality | Warning | SourceGenerator

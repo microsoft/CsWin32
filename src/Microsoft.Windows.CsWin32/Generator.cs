@@ -1451,7 +1451,7 @@ namespace Microsoft.Windows.CsWin32
                 TypeSyntax fieldType = fieldDef.DecodeSignature(this.signatureTypeProvider, null);
                 Constant constant = this.mr.GetConstant(fieldDef.GetDefaultValue());
                 return FieldDeclaration(VariableDeclaration(fieldType).AddVariables(
-                    VariableDeclarator(name).WithInitializer(EqualsValueClause(this.ToExpressionSyntax(constant)))))
+                    VariableDeclarator(name).WithInitializer(EqualsValueClause(CastExpression(fieldType, ParenthesizedExpression(this.ToExpressionSyntax(constant)))))))
                     .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.ConstKeyword)));
             }
             catch (Exception ex)

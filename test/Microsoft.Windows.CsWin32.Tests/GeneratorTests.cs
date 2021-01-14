@@ -84,6 +84,9 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [InlineData("DDRAWI_DDVIDEOPORT_INT")] // field that is never used
     [InlineData("MainAVIHeader")] // dwReserved field is a fixed length array
     [InlineData("JsRuntimeVersionEdge")] // Constant typed as an enum
+    [InlineData("POSITIVE_INFINITY")] // Special float imaginary number
+    [InlineData("NEGATIVE_INFINITY")] // Special float imaginary number
+    [InlineData("NaN")] // Special float imaginary number
     public void InterestingAPIs(string api)
     {
         this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);

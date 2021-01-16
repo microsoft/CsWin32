@@ -96,6 +96,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [InlineData("I_RpcServerInqAddressChangeFn")] // p/invoke that returns a function pointer
     [InlineData("WSPUPCALLTABLE")] // a delegate with a delegate in its signature
     [InlineData("HWND_BOTTOM")] // A constant typed as a typedef'd struct
+    [InlineData("BOOL")] // a special cased typedef struct
     [InlineData("uregex_getMatchCallback")] // friendly overload with delegate parameter, and out parameters
     public void InterestingAPIs(string api)
     {

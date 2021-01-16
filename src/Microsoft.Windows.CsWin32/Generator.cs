@@ -1822,6 +1822,10 @@ namespace Microsoft.Windows.CsWin32
         private StructDeclarationSyntax CreateTypeDefStruct(TypeDefinition typeDef)
         {
             string name = this.mr.GetString(typeDef.Name);
+            if (name == "BOOL")
+            {
+                return this.CreateTypeDefBOOLStruct(typeDef);
+            }
 
             FieldDefinition fieldDef = this.mr.GetFieldDefinition(typeDef.GetFields().Single());
             string fieldName = this.mr.GetString(fieldDef.Name);
@@ -1844,14 +1848,69 @@ namespace Microsoft.Windows.CsWin32
                 .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, valueParameter)))
                 .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
 
-            // Conversion operators
+            // public static implicit operator int(HWND value) => value.Value;
             members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), fieldInfo.FieldType)
                 .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IdentifierName(name)))
                 .WithExpressionBody(ArrowExpressionClause(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(fieldName))))
                 .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
                 .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+
+            // public static explicit operator HWND(int value) => new HWND(value);
             members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), IdentifierName(name))
                 .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(fieldInfo.FieldType))
+                .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(IdentifierName(name)).AddArgumentListArguments(Argument(valueParameter))))
+                .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
+                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+
+            StructDeclarationSyntax result = StructDeclaration(name)
+                .WithMembers(members)
+                .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.ReadOnlyKeyword)));
+
+            result = AddApiDocumentation(name, result);
+            return result;
+        }
+
+        private StructDeclarationSyntax CreateTypeDefBOOLStruct(TypeDefinition typeDef)
+        {
+            const string name = "BOOL";
+
+            FieldDefinition fieldDef = this.mr.GetFieldDefinition(typeDef.GetFields().Single());
+            string fieldName = this.mr.GetString(fieldDef.Name);
+            VariableDeclaratorSyntax fieldDeclarator = VariableDeclarator("value");
+            (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers) fieldInfo =
+                this.ReinterpretFieldType(fieldDeclarator.Identifier.ValueText, fieldDef.DecodeSignature(this.signatureTypeProvider, null), fieldDef.GetCustomAttributes());
+            SyntaxList<MemberDeclarationSyntax> members = List<MemberDeclarationSyntax>();
+
+            FieldDeclarationSyntax fieldSyntax = FieldDeclaration(
+                VariableDeclaration(fieldInfo.FieldType).AddVariables(fieldDeclarator))
+                .AddModifiers(Token(SyntaxKind.PrivateKeyword), Token(SyntaxKind.ReadOnlyKeyword));
+            members = members.Add(fieldSyntax);
+            MemberAccessExpressionSyntax fieldAccessExpression = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("value"));
+
+            // Add property accessor
+            members = members.Add(PropertyDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), "Value")
+                .WithExpressionBody(ArrowExpressionClause(BinaryExpression(SyntaxKind.NotEqualsExpression, fieldAccessExpression, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))))).WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
+                .AddModifiers(Token(this.Visibility)));
+
+            // BOOL(bool value) => this.value = value ? 1 : 0;
+            IdentifierNameSyntax valueParameter = IdentifierName("value");
+            ExpressionSyntax boolToInt = ConditionalExpression(valueParameter, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(1)), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)));
+            members = members.Add(ConstructorDeclaration(name)
+                .AddModifiers(Token(this.Visibility))
+                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(PredefinedType(Token(SyntaxKind.BoolKeyword))))
+                .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, boolToInt)))
+                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+
+            // public static implicit operator bool(BOOL value) => value.Value;
+            members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), PredefinedType(Token(SyntaxKind.BoolKeyword)))
+                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IdentifierName(name)))
+                .WithExpressionBody(ArrowExpressionClause(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(fieldName))))
+                .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
+                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+
+            // public static implicit operator BOOL(bool value) => new BOOL(value);
+            members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), IdentifierName(name))
+                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(PredefinedType(Token(SyntaxKind.BoolKeyword))))
                 .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(IdentifierName(name)).AddArgumentListArguments(Argument(valueParameter))))
                 .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
                 .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));

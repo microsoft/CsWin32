@@ -186,6 +186,8 @@ namespace Microsoft.Windows.CsWin32
             "CS0649", // fields never assigned to
             "CS8019", // unused usings
             "CS1570", // XML comment has badly formed XML
+            "CS1584", // C# bug: https://github.com/microsoft/CsWin32/issues/24
+            "CS1658", // C# bug: https://github.com/microsoft/CsWin32/issues/24
         };
 
         private static readonly AttributeSyntax InAttributeSyntax = Attribute(IdentifierName("In"));
@@ -692,7 +694,7 @@ namespace Microsoft.Windows.CsWin32
                 methodDeclaration = AddApiDocumentation(entrypoint ?? methodName, methodDeclaration);
 
                 List<MemberDeclarationSyntax> methodsList = this.GetModuleMemberList(moduleName);
-                if (methodDeclaration.ReturnType is PointerTypeSyntax || methodDeclaration.ParameterList.Parameters.Any(p => p.Type is PointerTypeSyntax))
+                if (RequiresUnsafe(methodDeclaration.ReturnType) || methodDeclaration.ParameterList.Parameters.Any(p => RequiresUnsafe(p.Type)))
                 {
                     methodDeclaration = methodDeclaration.AddModifiers(Token(SyntaxKind.UnsafeKeyword));
                     methodsList.AddRange(this.CreateFriendlyOverloads(methodDefinition, methodDeclaration, this.GroupByModule ? GetClassNameForModule(moduleName) : this.SingleClassName, isStatic: true));
@@ -999,6 +1001,8 @@ namespace Microsoft.Windows.CsWin32
                 }
             }
         }
+
+        private static bool RequiresUnsafe(TypeSyntax? typeSyntax) => typeSyntax is PointerTypeSyntax || typeSyntax is FunctionPointerTypeSyntax;
 
         private static string GetClassNameForModule(string moduleName) =>
             moduleName.StartsWith("api-", StringComparison.Ordinal) || moduleName.StartsWith("ext-", StringComparison.Ordinal) ? "ApiSets" : moduleName.Replace('-', '_');
@@ -2193,6 +2197,21 @@ namespace Microsoft.Windows.CsWin32
 
             var modifiers = TokenList();
 
+            // If the parameter is a pointer to a delegate, we remove the pointer because as a managed type,
+            // we cannot get a pointer to it, but rather let the CLR marshaler take care of it.
+            if (parameterInfo.Type is PointerTypeSyntax { ElementType: IdentifierNameSyntax identifierName } && this.IsDelegateReference(identifierName))
+            {
+                // Strip the pointer, leave the delegate name.
+                parameterInfo = (identifierName, null);
+            }
+            else if (parameterInfo.Type is PointerTypeSyntax { ElementType: PointerTypeSyntax { ElementType: IdentifierNameSyntax identifierName1 } } && this.IsDelegateReference(identifierName1))
+            {
+                // This is a pointer to a pointer to a delegate. We need to strip the pointers and add a ref or out modifier.
+                parameterInfo = (identifierName1, null);
+                attributes = AttributeList(); // remove in/out/ref attributes
+                modifiers = modifiers.Add((parameter.Attributes & ParameterAttributes.In) == ParameterAttributes.In ? Token(SyntaxKind.RefKeyword) : Token(SyntaxKind.OutKeyword));
+            }
+
             ParameterSyntax parameterSyntax = Parameter(
                 attributes.Attributes.Count > 0 ? List<AttributeListSyntax>().Add(attributes) : List<AttributeListSyntax>(),
                 modifiers,
@@ -2211,6 +2230,11 @@ namespace Microsoft.Windows.CsWin32
 
         private (TypeSyntax Type, AttributeSyntax? MarshalAsAttribute) ReinterpretMethodSignatureType(TypeSyntax originalType, CustomAttributeHandleCollection customAttributes)
         {
+            if (originalType is PointerTypeSyntax { ElementType: IdentifierNameSyntax idName } && this.IsDelegateReference(idName, out TypeDefinition delegateTypeDef))
+            {
+                return (this.FunctionPointer(delegateTypeDef), null);
+            }
+
             foreach (CustomAttributeHandle attHandle in customAttributes)
             {
                 CustomAttribute att = this.mr.GetCustomAttribute(attHandle);
@@ -2375,28 +2399,42 @@ namespace Microsoft.Windows.CsWin32
             }
 
             // If the field is a delegate type, we have to replace that with a native function pointer to avoid the struct becoming a 'managed type'.
-            if (originalType is IdentifierNameSyntax { Identifier: { ValueText: string typeName } } && this.typesByName.TryGetValue(typeName, out TypeDefinitionHandle typeDefHandle))
+            if (originalType is PointerTypeSyntax { ElementType: IdentifierNameSyntax idName } && this.IsDelegateReference(idName, out TypeDefinition typeDef))
             {
-                var typeDef = this.mr.GetTypeDefinition(typeDefHandle);
-                if ((typeDef.Attributes & TypeAttributes.Class) == TypeAttributes.Class)
-                {
-                    if (typeDef.BaseType.Kind == HandleKind.TypeReference)
-                    {
-                        var baseType = this.mr.GetTypeReference((TypeReferenceHandle)typeDef.BaseType);
-                        if (this.mr.StringComparer.Equals(baseType.Name, "MulticastDelegate"))
-                        {
-                            CustomAttribute ufpAtt = typeDef.GetCustomAttributes().Select(ah => this.mr.GetCustomAttribute(ah)).Single(a => this.IsAttribute(a, SystemRuntimeInteropServices, nameof(UnmanagedFunctionPointerAttribute)));
-                            var attArgs = ufpAtt.DecodeValue(this.customAttributeTypeProvider);
-                            CallingConvention callingConvention = (CallingConvention)attArgs.FixedArguments[0].Value!;
-
-                            this.GetSignatureForDelegate(typeDef, out MethodDefinition invokeMethodDef, out MethodSignature<TypeSyntax> signature);
-                            return (FunctionPointer(CallingConvention.StdCall, signature, typeName), default);
-                        }
-                    }
-                }
+                return (this.FunctionPointer(typeDef), default);
+            }
+            else if (originalType is IdentifierNameSyntax idName2 && this.IsDelegateReference(idName2, out typeDef))
+            {
+                return (this.FunctionPointer(typeDef), default);
             }
 
             return (originalType, default);
+        }
+
+        private FunctionPointerTypeSyntax FunctionPointer(TypeDefinition delegateType)
+        {
+            CustomAttribute ufpAtt = delegateType.GetCustomAttributes().Select(ah => this.mr.GetCustomAttribute(ah)).Single(a => this.IsAttribute(a, SystemRuntimeInteropServices, nameof(UnmanagedFunctionPointerAttribute)));
+            var attArgs = ufpAtt.DecodeValue(this.customAttributeTypeProvider);
+            CallingConvention callingConvention = (CallingConvention)attArgs.FixedArguments[0].Value!;
+
+            this.GetSignatureForDelegate(delegateType, out MethodDefinition invokeMethodDef, out MethodSignature<TypeSyntax> signature);
+            return FunctionPointer(CallingConvention.StdCall, signature, this.mr.GetString(delegateType.Name));
+        }
+
+        private bool IsDelegate(TypeDefinition typeDef) => (typeDef.Attributes & TypeAttributes.Class) == TypeAttributes.Class && typeDef.BaseType.Kind == HandleKind.TypeReference && this.mr.StringComparer.Equals(this.mr.GetTypeReference((TypeReferenceHandle)typeDef.BaseType).Name, nameof(MulticastDelegate));
+
+        private bool IsDelegateReference(IdentifierNameSyntax identifierName) => this.IsDelegateReference(identifierName, out _);
+
+        private bool IsDelegateReference(IdentifierNameSyntax identifierName, out TypeDefinition delegateTypeDef)
+        {
+            if (this.typesByName.TryGetValue(identifierName.Identifier.ValueText, out TypeDefinitionHandle value))
+            {
+                delegateTypeDef = this.mr.GetTypeDefinition(value);
+                return this.IsDelegate(delegateTypeDef);
+            }
+
+            delegateTypeDef = default;
+            return false;
         }
 
         private UnmanagedType? GetUnmanagedType(BlobHandle blobHandle)

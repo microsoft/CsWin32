@@ -88,9 +88,18 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [InlineData("POSITIVE_INFINITY")] // Special float imaginary number
     [InlineData("NEGATIVE_INFINITY")] // Special float imaginary number
     [InlineData("NaN")] // Special float imaginary number
+    [InlineData("RpcServerRegisterIfEx")] // Optional attribute on delegate type.
+    [InlineData("RpcSsSwapClientAllocFree")] // Parameters typed as pointers to in delegates and out delegates
+    [InlineData("RPC_DISPATCH_TABLE")] // Struct with a field typed as a delegate
+    [InlineData("RPC_SERVER_INTERFACE")] // Struct with a field typed as struct with a field typed as a delegate
+    [InlineData("DDHAL_DESTROYDRIVERDATA")] // Struct with a field typed as a delegate
+    [InlineData("I_RpcServerInqAddressChangeFn")] // p/invoke that returns a function pointer
+    [InlineData("WSPUPCALLTABLE")] // a delegate with a delegate in its signature
+    [InlineData("HWND_BOTTOM")] // A constant typed as a typedef'd struct
+    [InlineData("uregex_getMatchCallback")] // friendly overload with delegate parameter, and out parameters
     public void InterestingAPIs(string api)
     {
-        this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);
+        this.generator = new Generator(this.metadataStream, options: new GeneratorOptions { EmitSingleFile = true }, compilation: this.compilation, parseOptions: this.parseOptions);
         Assert.True(this.generator.TryGenerate(api, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -212,6 +221,7 @@ namespace Microsoft.Windows.Sdk
             this.logger.WriteLine(FileSeparator);
             using var lineWriter = new NumberedLineWriter(this.logger);
             tree.GetRoot().WriteTo(lineWriter);
+            lineWriter.WriteLine(string.Empty);
         }
     }
 }

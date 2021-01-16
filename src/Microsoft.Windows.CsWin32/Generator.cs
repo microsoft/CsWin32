@@ -1130,12 +1130,6 @@ namespace Microsoft.Windows.CsWin32
             };
         }
 
-        private static FunctionPointerTypeSyntax FunctionPointer(CallingConvention callingConvention, MethodSignature<TypeSyntax> signature, string delegateName)
-            => FunctionPointerType(
-                FunctionPointerCallingConvention(Token(SyntaxKind.UnmanagedKeyword), FunctionPointerUnmanagedCallingConventionList(SingletonSeparatedList(ToUnmanagedCallingConventionSyntax(callingConvention)))),
-                FunctionPointerParameterList(SeparatedList(signature.ParameterTypes.Select(FunctionPointerParameter)).Add(FunctionPointerParameter(signature.ReturnType))))
-               .WithAdditionalAnnotations(new SyntaxAnnotation(OriginalDelegateAnnotation, delegateName));
-
         private static bool IsVoid(TypeSyntax typeSyntax) => typeSyntax is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.VoidKeyword } };
 
         private static bool IsWideFunction(string methodName)
@@ -1162,6 +1156,27 @@ namespace Microsoft.Windows.CsWin32
             }
 
             return false;
+        }
+
+        private FunctionPointerTypeSyntax FunctionPointer(CallingConvention callingConvention, MethodSignature<TypeSyntax> signature, string delegateName)
+            => FunctionPointerType(
+                FunctionPointerCallingConvention(Token(SyntaxKind.UnmanagedKeyword), FunctionPointerUnmanagedCallingConventionList(SingletonSeparatedList(ToUnmanagedCallingConventionSyntax(callingConvention)))),
+                FunctionPointerParameterList(SeparatedList(signature.ParameterTypes.Select(p => this.TranslateDelegateToFunctionPointer(FunctionPointerParameter(p))))
+                    .Add(this.TranslateDelegateToFunctionPointer(FunctionPointerParameter(signature.ReturnType)))))
+               .WithAdditionalAnnotations(new SyntaxAnnotation(OriginalDelegateAnnotation, delegateName));
+
+        private FunctionPointerParameterSyntax TranslateDelegateToFunctionPointer(FunctionPointerParameterSyntax parameter)
+        {
+            if (this.IsDelegateReference(parameter.Type as IdentifierNameSyntax, out TypeDefinition delegateTypeDef))
+            {
+                return FunctionPointerParameter(this.FunctionPointer(delegateTypeDef));
+            }
+            else if (parameter.Type is PointerTypeSyntax { ElementType: IdentifierNameSyntax idName } && this.IsDelegateReference(idName, out TypeDefinition delegateTypeDef2))
+            {
+                return FunctionPointerParameter(PointerType(this.FunctionPointer(delegateTypeDef2)));
+            }
+
+            return parameter;
         }
 
         private bool TryGetRenamedMethod(string methodName, [NotNullWhen(true)] out string? newName)
@@ -2552,7 +2567,7 @@ namespace Microsoft.Windows.CsWin32
             CallingConvention callingConvention = (CallingConvention)attArgs.FixedArguments[0].Value!;
 
             this.GetSignatureForDelegate(delegateType, out MethodDefinition invokeMethodDef, out MethodSignature<TypeSyntax> signature);
-            return FunctionPointer(CallingConvention.StdCall, signature, this.mr.GetString(delegateType.Name));
+            return this.FunctionPointer(CallingConvention.StdCall, signature, this.mr.GetString(delegateType.Name));
         }
 
         private bool IsDelegate(TypeDefinition typeDef) => (typeDef.Attributes & TypeAttributes.Class) == TypeAttributes.Class && typeDef.BaseType.Kind == HandleKind.TypeReference && this.mr.StringComparer.Equals(this.mr.GetTypeReference((TypeReferenceHandle)typeDef.BaseType).Name, nameof(MulticastDelegate));

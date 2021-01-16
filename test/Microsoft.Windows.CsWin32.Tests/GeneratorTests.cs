@@ -74,6 +74,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [InlineData("D3DGetTraceInstructionOffsets")] // SizeParamIndex
     [InlineData("PlgBlt")] // SizeConst
     [InlineData("ID3D12Resource")] // COM interface with base types
+    [InlineData("ID2D1RectangleGeometry")] // COM interface with base types
     [InlineData("ENABLE_TRACE_PARAMETERS_V1")] // bad xml created at some point.
     [InlineData("JsRuntimeVersion")] // An enum that has an extra member in a separate header file.
     [InlineData("ReportEvent")] // Failed at one point

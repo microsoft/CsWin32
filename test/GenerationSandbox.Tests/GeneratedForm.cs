@@ -15,22 +15,22 @@ internal static unsafe class GeneratedForm
     {
         Span<DebugPropertyInfo> span = stackalloc DebugPropertyInfo[2];
         uint initialized = 0;
-        int result = info->Next(span, ref initialized); // should be _out_ instead of _ref_: https://github.com/microsoft/win32metadata/issues/38#issuecomment-738559618
+        HRESULT result = info->Next(span, ref initialized); // should be _out_ instead of _ref_: https://github.com/microsoft/win32metadata/issues/38#issuecomment-738559618
         result = info->Clone(out IEnumDebugPropertyInfo* ppepi);
     }
 
     private static void IUnknown(IUnknown* pUnk)
     {
-        int hr = pUnk->QueryInterface(Guid.NewGuid(), out void* ppvObject);
+        HRESULT hr = pUnk->QueryInterface(Guid.NewGuid(), out void* ppvObject);
         uint c = pUnk->AddRef();
         uint r = pUnk->Release();
     }
 
     private static void IDispatch(IDispatch* pUnk)
     {
-        int hr = pUnk->QueryInterface(Guid.NewGuid(), out void* ppvObject);
+        HRESULT hr = pUnk->QueryInterface(Guid.NewGuid(), out void* ppvObject);
         uint c = pUnk->AddRef();
         uint r = pUnk->Release();
-        int gti = pUnk->GetTypeInfo(0u, 0u, out ITypeInfo* ppTInfo);
+        HRESULT gti = pUnk->GetTypeInfo(0u, 0u, out ITypeInfo* ppTInfo);
     }
 }

@@ -2006,7 +2006,13 @@ namespace Microsoft.Windows.CsWin32
                 // TODO:
                 // * Review double/triple pointer scenarios.
                 //   * Consider CredEnumerateA, which is a "pointer to an array of pointers" (3-asterisks!). How does FriendlyAttribute improve this, if at all? The memory must be freed through another p/invoke.
-                if (parameters[param.SequenceNumber - 1].Type is PointerTypeSyntax ptrType
+                ParameterSyntax externParam = parameters[param.SequenceNumber - 1];
+                if (this.IsDelegateReference(externParam.Type as IdentifierNameSyntax) && (externParam.Modifiers.Any(SyntaxKind.OutKeyword) || externParam.Modifiers.Any(SyntaxKind.RefKeyword)))
+                {
+                    bool hasOut = externParam.Modifiers.Any(SyntaxKind.OutKeyword);
+                    arguments[param.SequenceNumber - 1] = arguments[param.SequenceNumber - 1].WithRefKindKeyword(Token(hasOut ? SyntaxKind.OutKeyword : SyntaxKind.RefKeyword));
+                }
+                else if (parameters[param.SequenceNumber - 1].Type is PointerTypeSyntax ptrType
                     && !IsVoid(ptrType.ElementType)
                     && !(ptrType.ElementType is IdentifierNameSyntax id && IsInterface(id.Identifier.ValueText)))
                 {
@@ -2551,7 +2557,7 @@ namespace Microsoft.Windows.CsWin32
 
         private bool IsDelegate(TypeDefinition typeDef) => (typeDef.Attributes & TypeAttributes.Class) == TypeAttributes.Class && typeDef.BaseType.Kind == HandleKind.TypeReference && this.mr.StringComparer.Equals(this.mr.GetTypeReference((TypeReferenceHandle)typeDef.BaseType).Name, nameof(MulticastDelegate));
 
-        private bool IsDelegateReference(IdentifierNameSyntax identifierName) => this.IsDelegateReference(identifierName, out _);
+        private bool IsDelegateReference(IdentifierNameSyntax? identifierName) => this.IsDelegateReference(identifierName, out _);
 
         private bool IsTypeDefStruct(IdentifierNameSyntax? identifierName)
         {
@@ -2564,12 +2570,15 @@ namespace Microsoft.Windows.CsWin32
             return false;
         }
 
-        private bool IsDelegateReference(IdentifierNameSyntax identifierName, out TypeDefinition delegateTypeDef)
+        private bool IsDelegateReference(IdentifierNameSyntax? identifierName, out TypeDefinition delegateTypeDef)
         {
-            if (this.typesByName.TryGetValue(identifierName.Identifier.ValueText, out TypeDefinitionHandle value))
+            if (identifierName is object)
             {
-                delegateTypeDef = this.mr.GetTypeDefinition(value);
-                return this.IsDelegate(delegateTypeDef);
+                if (this.typesByName.TryGetValue(identifierName.Identifier.ValueText, out TypeDefinitionHandle value))
+                {
+                    delegateTypeDef = this.mr.GetTypeDefinition(value);
+                    return this.IsDelegate(delegateTypeDef);
+                }
             }
 
             delegateTypeDef = default;

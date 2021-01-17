@@ -8,6 +8,7 @@ namespace Microsoft.Windows.CsWin32
     using System.Linq;
     using System.Reflection;
     using System.Reflection.Metadata;
+    using Microsoft.CodeAnalysis;
     using Microsoft.CodeAnalysis.CSharp;
     using Microsoft.CodeAnalysis.CSharp.Syntax;
     using static Microsoft.CodeAnalysis.CSharp.SyntaxFactory;
@@ -76,7 +77,7 @@ namespace Microsoft.Windows.CsWin32
         /// <inheritdoc/>
         public TypeSyntax GetTypeFromReference(MetadataReader reader, TypeReferenceHandle handle, byte rawTypeKind)
         {
-            var tr = reader.GetTypeReference(handle);
+            TypeReference tr = reader.GetTypeReference(handle);
             string name = reader.GetString(tr.Name);
 
             // Take this opportunity to ensure the type exists too.
@@ -86,18 +87,23 @@ namespace Microsoft.Windows.CsWin32
             }
 
             TypeDefinitionHandle? typeDefHandle = this.owner.GenerateInteropType(handle);
-            TypeSyntax identifier = IdentifierName(name);
-
             if (typeDefHandle.HasValue)
             {
+                TypeSyntax identifier = IdentifierName(name);
                 TypeDefinition td = reader.GetTypeDefinition(typeDefHandle.Value);
                 if ((td.Attributes & TypeAttributes.Interface) == TypeAttributes.Interface)
                 {
                     identifier = PointerType(identifier);
                 }
-            }
 
-            return identifier;
+                return identifier;
+            }
+            else
+            {
+                // Fully qualify the type, since it may come in from another assembly and may come from a different namespace that isn't imported.
+                return QualifiedName(ParseName("global::" + reader.GetString(tr.Namespace)), IdentifierName(name))
+                    .WithAdditionalAnnotations(new SyntaxAnnotation(Generator.IsManagedTypeAnnotation, "true")); // an assumption for now.
+            }
         }
 
         /// <inheritdoc/>

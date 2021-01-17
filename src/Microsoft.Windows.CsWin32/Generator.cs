@@ -28,6 +28,8 @@ namespace Microsoft.Windows.CsWin32
     /// </summary>
     public class Generator : IDisposable
     {
+        internal const string IsManagedTypeAnnotation = "IsManagedType";
+
         internal static readonly Dictionary<string, TypeSyntax> BclInteropStructs = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)
         {
             { nameof(System.Runtime.InteropServices.ComTypes.FILETIME), ParseTypeName("System.Runtime.InteropServices.ComTypes.FILETIME") },
@@ -2022,7 +2024,7 @@ namespace Microsoft.Windows.CsWin32
                 // * Review double/triple pointer scenarios.
                 //   * Consider CredEnumerateA, which is a "pointer to an array of pointers" (3-asterisks!). How does FriendlyAttribute improve this, if at all? The memory must be freed through another p/invoke.
                 ParameterSyntax externParam = parameters[param.SequenceNumber - 1];
-                if (this.IsDelegateReference(externParam.Type as IdentifierNameSyntax) && (externParam.Modifiers.Any(SyntaxKind.OutKeyword) || externParam.Modifiers.Any(SyntaxKind.RefKeyword)))
+                if (this.IsManagedType(externParam.Type) && (externParam.Modifiers.Any(SyntaxKind.OutKeyword) || externParam.Modifiers.Any(SyntaxKind.RefKeyword)))
                 {
                     bool hasOut = externParam.Modifiers.Any(SyntaxKind.OutKeyword);
                     arguments[param.SequenceNumber - 1] = arguments[param.SequenceNumber - 1].WithRefKindKeyword(Token(hasOut ? SyntaxKind.OutKeyword : SyntaxKind.RefKeyword));
@@ -2346,17 +2348,20 @@ namespace Microsoft.Windows.CsWin32
 
             var modifiers = TokenList();
 
-            // If the parameter is a pointer to a delegate, we remove the pointer because as a managed type,
+            // If the parameter is a pointer to a managed type, we remove the pointer because as a managed type,
             // we cannot get a pointer to it, but rather let the CLR marshaler take care of it.
-            if (parameterInfo.Type is PointerTypeSyntax { ElementType: IdentifierNameSyntax identifierName } && this.IsDelegateReference(identifierName))
+            if (parameterInfo.Type is PointerTypeSyntax { ElementType: TypeSyntax ptrElem1 } && this.IsManagedType(ptrElem1))
             {
                 // Strip the pointer, leave the delegate name.
-                parameterInfo = (identifierName, null);
+                parameterInfo = (ptrElem1, null);
+                attributes = AttributeList(); // remove in/out/ref attributes
+                modifiers = modifiers.Add((parameter.Attributes & ParameterAttributes.In) == ParameterAttributes.In ? Token(SyntaxKind.RefKeyword) : Token(SyntaxKind.OutKeyword));
             }
-            else if (parameterInfo.Type is PointerTypeSyntax { ElementType: PointerTypeSyntax { ElementType: IdentifierNameSyntax identifierName1 } } && this.IsDelegateReference(identifierName1))
+            else if (parameterInfo.Type is PointerTypeSyntax { ElementType: PointerTypeSyntax { ElementType: TypeSyntax ptrElem2 } } && this.IsManagedType(ptrElem2))
             {
-                // This is a pointer to a pointer to a delegate. We need to strip the pointers and add a ref or out modifier.
-                parameterInfo = (identifierName1, null);
+                // This is a pointer to a pointer to a managed object. We need to strip the pointers and add a ref or out modifier.
+                // TODO: Is this actually a ref/out to an ARRAY of managed objects?
+                parameterInfo = (ptrElem2, null);
                 attributes = AttributeList(); // remove in/out/ref attributes
                 modifiers = modifiers.Add((parameter.Attributes & ParameterAttributes.In) == ParameterAttributes.In ? Token(SyntaxKind.RefKeyword) : Token(SyntaxKind.OutKeyword));
             }
@@ -2598,6 +2603,17 @@ namespace Microsoft.Windows.CsWin32
 
             delegateTypeDef = default;
             return false;
+        }
+
+        private bool IsManagedType(TypeSyntax? identifierName)
+        {
+            if (identifierName is null)
+            {
+                return false;
+            }
+
+            return identifierName.HasAnnotations(IsManagedTypeAnnotation)
+                || this.IsDelegateReference(identifierName as IdentifierNameSyntax);
         }
 
         private UnmanagedType? GetUnmanagedType(BlobHandle blobHandle)

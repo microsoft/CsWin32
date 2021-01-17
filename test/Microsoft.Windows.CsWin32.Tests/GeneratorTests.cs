@@ -42,8 +42,13 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     {
         ReferenceAssemblies references = ReferenceAssemblies.NetStandard.NetStandard20
             .AddPackages(ImmutableArray.Create(
-                new PackageIdentity("System.Memory", "4.5.4")));
+                new PackageIdentity("System.Memory", "4.5.4"),
+                new PackageIdentity("Microsoft.Windows.SDK.Contracts", "10.0.19041.1")));
         ImmutableArray<MetadataReference> metadataReferences = await references.ResolveAsync(LanguageNames.CSharp, default);
+
+        // Workaround for https://github.com/dotnet/roslyn-sdk/issues/699
+        metadataReferences = metadataReferences.AddRange(
+            Directory.GetFiles(Path.Combine(Path.GetTempPath(), "test-packages", "Microsoft.Windows.SDK.Contracts.10.0.19041.1", "ref", "netstandard2.0"), "*.winmd").Select(p => MetadataReference.CreateFromFile(p)));
 
         // CONSIDER: How can I pass in the source generator itself, with AdditionalFiles, so I'm exercising that code too?
         this.compilation = CSharpCompilation.Create(
@@ -98,6 +103,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [InlineData("HWND_BOTTOM")] // A constant typed as a typedef'd struct
     [InlineData("BOOL")] // a special cased typedef struct
     [InlineData("uregex_getMatchCallback")] // friendly overload with delegate parameter, and out parameters
+    [InlineData("CreateDispatcherQueueController")] // References a WinRT type
     public void InterestingAPIs(string api)
     {
         this.generator = new Generator(this.metadataStream, options: new GeneratorOptions { EmitSingleFile = true }, compilation: this.compilation, parseOptions: this.parseOptions);

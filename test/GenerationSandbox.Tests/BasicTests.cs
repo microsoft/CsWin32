@@ -23,4 +23,15 @@ public class BasicTests
 
         // TODO: write code that sets/gets memory on the inner struct (e.g. videoStandard).
     }
+
+    [Fact]
+    public void Bool()
+    {
+        BOOL b = true;
+        bool b2 = b;
+        Assert.True(b);
+        Assert.True(b2);
+
+        Assert.False(default(BOOL));
+    }
 }

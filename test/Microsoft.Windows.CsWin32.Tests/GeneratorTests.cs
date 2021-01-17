@@ -42,8 +42,13 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     {
         ReferenceAssemblies references = ReferenceAssemblies.NetStandard.NetStandard20
             .AddPackages(ImmutableArray.Create(
-                new PackageIdentity("System.Memory", "4.5.4")));
+                new PackageIdentity("System.Memory", "4.5.4"),
+                new PackageIdentity("Microsoft.Windows.SDK.Contracts", "10.0.19041.1")));
         ImmutableArray<MetadataReference> metadataReferences = await references.ResolveAsync(LanguageNames.CSharp, default);
+
+        // Workaround for https://github.com/dotnet/roslyn-sdk/issues/699
+        metadataReferences = metadataReferences.AddRange(
+            Directory.GetFiles(Path.Combine(Path.GetTempPath(), "test-packages", "Microsoft.Windows.SDK.Contracts.10.0.19041.1", "ref", "netstandard2.0"), "*.winmd").Select(p => MetadataReference.CreateFromFile(p)));
 
         // CONSIDER: How can I pass in the source generator itself, with AdditionalFiles, so I'm exercising that code too?
         this.compilation = CSharpCompilation.Create(
@@ -74,14 +79,34 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [InlineData("D3DGetTraceInstructionOffsets")] // SizeParamIndex
     [InlineData("PlgBlt")] // SizeConst
     [InlineData("ID3D12Resource")] // COM interface with base types
+    [InlineData("ID2D1RectangleGeometry")] // COM interface with base types
     [InlineData("ENABLE_TRACE_PARAMETERS_V1")] // bad xml created at some point.
     [InlineData("JsRuntimeVersion")] // An enum that has an extra member in a separate header file.
     [InlineData("ReportEvent")] // Failed at one point
-    [InlineData("ARM64EC_NT_CONTEXT")] // Member names with type names colliding with containing type
+    [InlineData("ARM64_NT_CONTEXT")] // Member names with type names colliding with containing type
     [InlineData("DISPLAYCONFIG_VIDEO_SIGNAL_INFO")] // Union, explicit layout, bitmask, nested structs
+    [InlineData("g_wszStreamBufferRecordingDuration")] // Constant string field
+    [InlineData("MFVideoAlphaBitmap")] // field named params
+    [InlineData("DDRAWI_DDVIDEOPORT_INT")] // field that is never used
+    [InlineData("MainAVIHeader")] // dwReserved field is a fixed length array
+    [InlineData("JsRuntimeVersionEdge")] // Constant typed as an enum
+    [InlineData("POSITIVE_INFINITY")] // Special float imaginary number
+    [InlineData("NEGATIVE_INFINITY")] // Special float imaginary number
+    [InlineData("NaN")] // Special float imaginary number
+    [InlineData("RpcServerRegisterIfEx")] // Optional attribute on delegate type.
+    [InlineData("RpcSsSwapClientAllocFree")] // Parameters typed as pointers to in delegates and out delegates
+    [InlineData("RPC_DISPATCH_TABLE")] // Struct with a field typed as a delegate
+    [InlineData("RPC_SERVER_INTERFACE")] // Struct with a field typed as struct with a field typed as a delegate
+    [InlineData("DDHAL_DESTROYDRIVERDATA")] // Struct with a field typed as a delegate
+    [InlineData("I_RpcServerInqAddressChangeFn")] // p/invoke that returns a function pointer
+    [InlineData("WSPUPCALLTABLE")] // a delegate with a delegate in its signature
+    [InlineData("HWND_BOTTOM")] // A constant typed as a typedef'd struct
+    [InlineData("BOOL")] // a special cased typedef struct
+    [InlineData("uregex_getMatchCallback")] // friendly overload with delegate parameter, and out parameters
+    [InlineData("CreateDispatcherQueueController")] // References a WinRT type
     public void InterestingAPIs(string api)
     {
-        this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);
+        this.generator = new Generator(this.metadataStream, options: new GeneratorOptions { EmitSingleFile = true }, compilation: this.compilation, parseOptions: this.parseOptions);
         Assert.True(this.generator.TryGenerate(api, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -203,6 +228,7 @@ namespace Microsoft.Windows.Sdk
             this.logger.WriteLine(FileSeparator);
             using var lineWriter = new NumberedLineWriter(this.logger);
             tree.GetRoot().WriteTo(lineWriter);
+            lineWriter.WriteLine(string.Empty);
         }
     }
 }

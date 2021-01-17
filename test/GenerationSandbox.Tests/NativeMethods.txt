@@ -2,3 +2,4 @@
 IEnumDebugPropertyInfo
 CreateFile
 DISPLAYCONFIG_VIDEO_SIGNAL_INFO
+BOOL

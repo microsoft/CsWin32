@@ -8,6 +8,7 @@ namespace Microsoft.Windows.CsWin32
     using System.Linq;
     using System.Reflection;
     using System.Reflection.Metadata;
+    using Microsoft.CodeAnalysis;
     using Microsoft.CodeAnalysis.CSharp;
     using Microsoft.CodeAnalysis.CSharp.Syntax;
     using static Microsoft.CodeAnalysis.CSharp.SyntaxFactory;
@@ -76,7 +77,7 @@ namespace Microsoft.Windows.CsWin32
         /// <inheritdoc/>
         public TypeSyntax GetTypeFromReference(MetadataReader reader, TypeReferenceHandle handle, byte rawTypeKind)
         {
-            var tr = reader.GetTypeReference(handle);
+            TypeReference tr = reader.GetTypeReference(handle);
             string name = reader.GetString(tr.Name);
 
             // Take this opportunity to ensure the type exists too.
@@ -86,18 +87,32 @@ namespace Microsoft.Windows.CsWin32
             }
 
             TypeDefinitionHandle? typeDefHandle = this.owner.GenerateInteropType(handle);
-            TypeSyntax identifier = IdentifierName(name);
-
             if (typeDefHandle.HasValue)
             {
+                TypeSyntax identifier = IdentifierName(name);
                 TypeDefinition td = reader.GetTypeDefinition(typeDefHandle.Value);
                 if ((td.Attributes & TypeAttributes.Interface) == TypeAttributes.Interface)
                 {
                     identifier = PointerType(identifier);
                 }
-            }
 
-            return identifier;
+                return identifier;
+            }
+            else
+            {
+                // Fully qualify the type, since it may come in from another assembly and may come from a different namespace that isn't imported.
+                string ns = reader.GetString(tr.Namespace);
+                TypeSyntax identifier = QualifiedName(ParseName("global::" + ns), IdentifierName(name));
+
+                // Recognize a WinRT class that the metadata can refer to.
+                // If we could recognize with a referenced type is a ref type vs a value type by its TypeReference, we wouldn't need special handling.
+                if (name == "DispatcherQueueController" && ns == "Windows.System")
+                {
+                    identifier = identifier.WithAdditionalAnnotations(new SyntaxAnnotation(Generator.IsManagedTypeAnnotation, "true"));
+                }
+
+                return identifier;
+            }
         }
 
         /// <inheritdoc/>

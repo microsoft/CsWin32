@@ -22,7 +22,7 @@
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
 
-    <MetadataVersion>10.0.21295.1000-preview.rs-prerelease.2</MetadataVersion>
+    <MetadataVersion>10.0.21296.1000-preview.rs-prerelease.1</MetadataVersion>
   </PropertyGroup>
 
   <ItemGroup>

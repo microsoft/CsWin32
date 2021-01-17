@@ -101,8 +101,17 @@ namespace Microsoft.Windows.CsWin32
             else
             {
                 // Fully qualify the type, since it may come in from another assembly and may come from a different namespace that isn't imported.
-                return QualifiedName(ParseName("global::" + reader.GetString(tr.Namespace)), IdentifierName(name))
-                    .WithAdditionalAnnotations(new SyntaxAnnotation(Generator.IsManagedTypeAnnotation, "true")); // an assumption for now.
+                string ns = reader.GetString(tr.Namespace);
+                TypeSyntax identifier = QualifiedName(ParseName("global::" + ns), IdentifierName(name));
+
+                // Recognize a WinRT class that the metadata can refer to.
+                // If we could recognize with a referenced type is a ref type vs a value type by its TypeReference, we wouldn't need special handling.
+                if (name == "DispatcherQueueController" && ns == "Windows.System")
+                {
+                    identifier = identifier.WithAdditionalAnnotations(new SyntaxAnnotation(Generator.IsManagedTypeAnnotation, "true"));
+                }
+
+                return identifier;
             }
         }
 

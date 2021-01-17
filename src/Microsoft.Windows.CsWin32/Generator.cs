@@ -33,6 +33,7 @@ namespace Microsoft.Windows.CsWin32
         internal static readonly Dictionary<string, TypeSyntax> BclInteropStructs = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)
         {
             { nameof(System.Runtime.InteropServices.ComTypes.FILETIME), ParseTypeName("System.Runtime.InteropServices.ComTypes.FILETIME") },
+            { nameof(Guid), ParseTypeName("System.Guid") },
         };
 
         internal static readonly Dictionary<string, string> BannedAPIs = new Dictionary<string, string>
@@ -2350,12 +2351,17 @@ namespace Microsoft.Windows.CsWin32
 
             // If the parameter is a pointer to a managed type, we remove the pointer because as a managed type,
             // we cannot get a pointer to it, but rather let the CLR marshaler take care of it.
+            SyntaxKind directionalModifier =
+                (parameter.Attributes & ParameterAttributes.In) == ParameterAttributes.In ? SyntaxKind.InKeyword :
+                (parameter.Attributes & ParameterAttributes.Out) == ParameterAttributes.Out ? SyntaxKind.OutKeyword :
+                (parameter.Attributes & (ParameterAttributes.In | ParameterAttributes.Out)) == (ParameterAttributes.In | ParameterAttributes.Out) ? SyntaxKind.RefKeyword :
+                default;
             if (parameterInfo.Type is PointerTypeSyntax { ElementType: TypeSyntax ptrElem1 } && this.IsManagedType(ptrElem1))
             {
                 // Strip the pointer, leave the delegate name.
                 parameterInfo = (ptrElem1, null);
                 attributes = AttributeList(); // remove in/out/ref attributes
-                modifiers = modifiers.Add((parameter.Attributes & ParameterAttributes.In) == ParameterAttributes.In ? Token(SyntaxKind.RefKeyword) : Token(SyntaxKind.OutKeyword));
+                modifiers = modifiers.Add(Token(directionalModifier != SyntaxKind.None ? directionalModifier : SyntaxKind.RefKeyword));
             }
             else if (parameterInfo.Type is PointerTypeSyntax { ElementType: PointerTypeSyntax { ElementType: TypeSyntax ptrElem2 } } && this.IsManagedType(ptrElem2))
             {
@@ -2363,7 +2369,7 @@ namespace Microsoft.Windows.CsWin32
                 // TODO: Is this actually a ref/out to an ARRAY of managed objects?
                 parameterInfo = (ptrElem2, null);
                 attributes = AttributeList(); // remove in/out/ref attributes
-                modifiers = modifiers.Add((parameter.Attributes & ParameterAttributes.In) == ParameterAttributes.In ? Token(SyntaxKind.RefKeyword) : Token(SyntaxKind.OutKeyword));
+                modifiers = modifiers.Add(Token(directionalModifier != SyntaxKind.None ? directionalModifier : SyntaxKind.RefKeyword));
             }
 
             ParameterSyntax parameterSyntax = Parameter(

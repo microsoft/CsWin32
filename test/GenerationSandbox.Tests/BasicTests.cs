@@ -3,6 +3,7 @@
 
 using System;
 using System.IO;
+using System.Runtime.InteropServices;
 using Microsoft.Windows.Sdk;
 using Xunit;
 
@@ -36,6 +37,54 @@ public class BasicTests
         Assert.True(b2);
 
         Assert.False(default(BOOL));
+    }
+
+    [Fact]
+    public void BSTR_ToString()
+    {
+        BSTR bstr = (BSTR)Marshal.StringToBSTR("hi");
+        try
+        {
+            Assert.Equal("hi", bstr.ToString());
+        }
+        finally
+        {
+            PInvoke.SysFreeString(bstr);
+        }
+    }
+
+    [Fact]
+    public unsafe void BSTR_ImplicitConversionTo_ReadOnlySpan()
+    {
+        BSTR bstr = (BSTR)Marshal.StringToBSTR("hi");
+        try
+        {
+            ReadOnlySpan<char> span = bstr;
+            Assert.Equal(2, span.Length);
+            Assert.Equal('h', span[0]);
+            Assert.Equal('i', span[1]);
+        }
+        finally
+        {
+            PInvoke.SysFreeString(bstr);
+        }
+    }
+
+    [Fact]
+    public unsafe void BSTR_AsSpan()
+    {
+        BSTR bstr = (BSTR)Marshal.StringToBSTR("hi");
+        try
+        {
+            ReadOnlySpan<char> span = bstr.AsSpan();
+            Assert.Equal(2, span.Length);
+            Assert.Equal('h', span[0]);
+            Assert.Equal('i', span[1]);
+        }
+        finally
+        {
+            PInvoke.SysFreeString(bstr);
+        }
     }
 
     [Fact]

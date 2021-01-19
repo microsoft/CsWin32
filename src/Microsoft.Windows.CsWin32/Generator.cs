@@ -1932,12 +1932,64 @@ namespace Microsoft.Windows.CsWin32
                 .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
                 .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
 
+            if (name == "BSTR")
+            {
+                members = members.AddRange(this.CreateAdditionalTypeDefBSTRMembers());
+            }
+
             StructDeclarationSyntax result = StructDeclaration(name)
                 .WithMembers(members)
                 .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.ReadOnlyKeyword)));
 
             result = AddApiDocumentation(name, result);
             return result;
+        }
+
+        private IEnumerable<MemberDeclarationSyntax> CreateAdditionalTypeDefBSTRMembers()
+        {
+            ExpressionSyntax thisValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Value"));
+
+            // public override string ToString() => Marshal.PtrToStringBSTR(this.Value);
+            yield return MethodDeclaration(PredefinedType(Token(SyntaxKind.StringKeyword)), nameof(this.ToString))
+                .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.OverrideKeyword))
+                .WithExpressionBody(ArrowExpressionClause(
+                    InvocationExpression(
+                        MemberAccessExpression(
+                            SyntaxKind.SimpleMemberAccessExpression,
+                            IdentifierName(nameof(Marshal)),
+                            IdentifierName(nameof(Marshal.PtrToStringBSTR))))
+                .AddArgumentListArguments(Argument(thisValue))))
+                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken));
+
+            // public static implicit operator ReadOnlySpan<char>(BSTR bstr) => bstr.Value != IntPtr.Zero ? new ReadOnlySpan<char>(bstr.Value.ToPointer(), *((int*)bstr.Value.ToPointer() - 1) / 2) : default;
+            TypeSyntax rosChar = MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword)));
+            IdentifierNameSyntax bstrParam = IdentifierName("bstr");
+            ExpressionSyntax bstrValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, bstrParam, IdentifierName("Value"));
+            ExpressionSyntax bstrPointer = InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, bstrValue, IdentifierName(nameof(IntPtr.ToPointer))), ArgumentList());
+            ExpressionSyntax length = BinaryExpression(
+                SyntaxKind.DivideExpression,
+                PrefixUnaryExpression(
+                    SyntaxKind.PointerIndirectionExpression,
+                    ParenthesizedExpression(
+                        BinaryExpression(
+                            SyntaxKind.SubtractExpression,
+                            CastExpression(PointerType(PredefinedType(Token(SyntaxKind.IntKeyword))), bstrPointer),
+                            LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(1))))),
+                LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(2)));
+            ExpressionSyntax rosCreation = ObjectCreationExpression(rosChar).AddArgumentListArguments(Argument(bstrPointer), Argument(length));
+            ExpressionSyntax bstrNotZero = BinaryExpression(SyntaxKind.NotEqualsExpression, bstrValue, DefaultExpression(IntPtrTypeSyntax));
+            ExpressionSyntax conditional = ConditionalExpression(bstrNotZero, rosCreation, DefaultExpression(rosChar));
+            yield return ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), rosChar)
+                .AddParameterListParameters(Parameter(bstrParam.Identifier).WithType(IdentifierName("BSTR")))
+                .WithExpressionBody(ArrowExpressionClause(conditional))
+                .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.UnsafeKeyword)) // operators MUST be public
+                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken));
+
+            // internal ReadOnlySpan<char> AsSpan() => this;
+            yield return MethodDeclaration(rosChar, "AsSpan")
+                .AddModifiers(Token(this.Visibility))
+                .WithExpressionBody(ArrowExpressionClause(ThisExpression()))
+                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken));
         }
 
         private StructDeclarationSyntax CreateTypeDefBOOLStruct(TypeDefinition typeDef)

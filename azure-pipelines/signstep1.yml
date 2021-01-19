@@ -44,7 +44,6 @@ steps:
   condition: and(succeeded(), eq(variables['Agent.OS'], 'Windows_NT'), eq(variables['IsSigned'], 'true'))
 
 - task: EsrpCodeSigning@1
-  enabled: false # till we get it working
   displayName: ✒ Authenticode sign (3rd party)
   inputs:
     ConnectedServiceName: Undocked RegFree Signing Connection

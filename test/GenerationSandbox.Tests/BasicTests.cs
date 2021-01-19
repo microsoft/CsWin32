@@ -2,12 +2,15 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
+using System.IO;
 using Microsoft.Windows.Sdk;
 using Xunit;
 
 [Trait("WindowsOnly", "true")]
 public class BasicTests
 {
+    private const int FILE_FLAG_DELETE_ON_CLOSE = 0x04000000; // remove when https://github.com/microsoft/win32metadata/issues/98 is fixed.
+
     [Fact]
     public void GetTickCount_Nonzero()
     {
@@ -33,5 +36,32 @@ public class BasicTests
         Assert.True(b2);
 
         Assert.False(default(BOOL));
+    }
+
+    [Fact]
+    public void CreateFile()
+    {
+        var path = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+        HANDLE fileHandle = PInvoke.CreateFile(
+            path,
+            FILE_ACCESS_FLAGS.FILE_GENERIC_WRITE,
+            FILE_SHARE_FLAGS.FILE_SHARE_NONE,
+            lpSecurityAttributes: null,
+            FILE_CREATE_FLAGS.CREATE_NEW,
+            FILE_FLAGS_AND_ATTRIBUTES.FILE_ATTRIBUTE_TEMPORARY | (FILE_FLAGS_AND_ATTRIBUTES)FILE_FLAG_DELETE_ON_CLOSE,
+            hTemplateFile: default);
+        try
+        {
+            Assert.True(File.Exists(path));
+        }
+        finally
+        {
+            if (fileHandle.Value != IntPtr.Zero)
+            {
+                PInvoke.CloseHandle(fileHandle);
+            }
+        }
+
+        Assert.False(File.Exists(path));
     }
 }

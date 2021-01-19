@@ -204,6 +204,8 @@ namespace Microsoft.Windows.CsWin32
         private readonly PEReader peReader;
         private readonly MetadataReader mr;
         private readonly SignatureTypeProvider signatureTypeProvider;
+        private readonly SignatureTypeProvider signatureTypeProviderAlwaysUseIntPtr;
+        private readonly SignatureTypeProvider signatureTypeProviderNoSafeHandles;
         private readonly CustomAttributeTypeProvider customAttributeTypeProvider;
         private readonly Dictionary<string, List<MemberDeclarationSyntax>> modulesAndMembers = new Dictionary<string, List<MemberDeclarationSyntax>>(StringComparer.OrdinalIgnoreCase);
 
@@ -217,6 +219,8 @@ namespace Microsoft.Windows.CsWin32
         private readonly Dictionary<FieldDefinitionHandle, MemberDeclarationSyntax> fieldsToSyntax = new Dictionary<FieldDefinitionHandle, MemberDeclarationSyntax>();
 
         private readonly List<ClassDeclarationSyntax> safeHandleTypes = new List<ClassDeclarationSyntax>();
+
+        private readonly Dictionary<string, string?> handleTypeReleaseMethod = new Dictionary<string, string?>();
 
         /// <summary>
         /// The set of types that are or have been generated so we don't stack overflow for self-referencing types.
@@ -258,7 +262,10 @@ namespace Microsoft.Windows.CsWin32
             this.peReader = new PEReader(this.metadataStream);
             this.mr = this.peReader.GetMetadataReader();
 
-            this.signatureTypeProvider = new SignatureTypeProvider(this);
+            // Disable safe handles everywhere (not just the one explicitly intended) till we figure out how to reconcile with BSTR and other structs.
+            this.signatureTypeProvider = new SignatureTypeProvider(this, preferNativeInt: this.LanguageVersion >= LanguageVersion.CSharp9, preferSafeHandles: false);
+            this.signatureTypeProviderAlwaysUseIntPtr = new SignatureTypeProvider(this, preferNativeInt: false, preferSafeHandles: false);
+            this.signatureTypeProviderNoSafeHandles = new SignatureTypeProvider(this, preferNativeInt: true, preferSafeHandles: false);
             this.customAttributeTypeProvider = new CustomAttributeTypeProvider();
 
             this.Apis = this.mr.TypeDefinitions.Select(this.mr.GetTypeDefinition).Where(td => this.mr.StringComparer.Equals(td.Name, "Apis")).ToList();
@@ -608,6 +615,32 @@ namespace Microsoft.Windows.CsWin32
             return normalizedResults;
         }
 
+        internal bool TryGetHandleReleaseMethod(string handleStructName, [NotNullWhen(true)] out string? releaseMethod)
+        {
+            if (!this.handleTypeReleaseMethod.TryGetValue(handleStructName, out releaseMethod))
+            {
+                TypeDefinition typeDef = this.mr.GetTypeDefinition(this.typesByName[handleStructName]);
+                foreach (CustomAttributeHandle attHandle in typeDef.GetCustomAttributes())
+                {
+                    CustomAttribute att = this.mr.GetCustomAttribute(attHandle);
+                    if (this.IsAttribute(att, InteropDecorationNamespace, RAIIFreeAttribute))
+                    {
+                        var args = att.DecodeValue(this.customAttributeTypeProvider);
+                        if (args.FixedArguments[0].Value is string freeMethodName)
+                        {
+                            this.handleTypeReleaseMethod.Add(handleStructName, freeMethodName);
+                            releaseMethod = freeMethodName;
+                            return true;
+                        }
+                    }
+                }
+
+                this.handleTypeReleaseMethod.Add(handleStructName, null);
+            }
+
+            return releaseMethod is object;
+        }
+
         internal void GenerateAllInteropTypes(CancellationToken cancellationToken)
         {
             foreach (TypeDefinitionHandle typeDefinitionHandle in this.mr.TypeDefinitions)
@@ -705,25 +738,6 @@ namespace Microsoft.Windows.CsWin32
                 }
 
                 methodsList.Add(methodDeclaration);
-
-                // If RAIIFree applies, make sure we generate the close handle method.
-                if (returnTypeAttributes.HasValue)
-                {
-                    foreach (CustomAttributeHandle attHandle in returnTypeAttributes)
-                    {
-                        CustomAttribute att = this.mr.GetCustomAttribute(attHandle);
-                        if (this.IsAttribute(att, InteropDecorationNamespace, RAIIFreeAttribute))
-                        {
-                            var args = att.DecodeValue(this.customAttributeTypeProvider);
-                            if (args.FixedArguments[0].Value is string freeMethodName)
-                            {
-                                this.TryGenerateExternMethod(freeMethodName);
-                            }
-
-                            break;
-                        }
-                    }
-                }
             }
             catch (Exception ex)
             {
@@ -778,6 +792,163 @@ namespace Microsoft.Windows.CsWin32
             }
 
             this.fieldsToSyntax.Add(fieldDefHandle, this.CreateField(fieldDefHandle));
+        }
+
+        internal TypeSyntax? GenerateSafeHandle(string releaseMethod)
+        {
+            if (this.releaseMethodsWithSafeHandleTypesGenerating.TryGetValue(releaseMethod, out TypeSyntax? safeHandleType))
+            {
+                return safeHandleType;
+            }
+
+            string safeHandleClassName = $"{releaseMethod}SafeHandle";
+
+            MethodDefinitionHandle releaseMethodHandle = this.methodsByName[releaseMethod];
+            MethodDefinition releaseMethodDef = this.mr.GetMethodDefinition(releaseMethodHandle);
+            string releaseMethodModule = this.GetNormalizedModuleName(releaseMethodDef.GetImport());
+
+            var safeHandleTypeIdentifier = IdentifierName(safeHandleClassName);
+            safeHandleType = this.GroupByModule
+                ? QualifiedName(IdentifierName(releaseMethodModule), safeHandleTypeIdentifier)
+                : safeHandleTypeIdentifier;
+
+            this.releaseMethodsWithSafeHandleTypesGenerating.Add(releaseMethod, safeHandleType);
+
+            this.GenerateExternMethod(releaseMethodHandle);
+
+            var releaseMethodSignature = releaseMethodDef.DecodeSignature(this.signatureTypeProvider, null);
+            TypeSyntax releaseMethodReturnType = this.GetReturnTypeCustomAttributes(releaseMethodDef) is { } atts
+                ? this.ReinterpretMethodSignatureType(releaseMethodSignature.ReturnType, atts).Type
+                : releaseMethodSignature.ReturnType;
+
+            // If the release method takes more than one parameter, we can't generate a SafeHandle for it.
+            if (releaseMethodSignature.RequiredParameterCount != 1)
+            {
+                return null;
+            }
+
+            TypeSyntax releaseMethodParameterType = releaseMethodSignature.ParameterTypes[0];
+
+            // TODO: Reuse existing SafeHandle's defined in .NET where possible to facilitate interop with APIs that take them.
+            this.TryGetRenamedMethod(releaseMethod, out string? renamedReleaseMethod);
+
+            var members = new List<MemberDeclarationSyntax>();
+
+            MemberAccessExpressionSyntax thisHandle = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("handle"));
+            ExpressionSyntax intptrZero = DefaultExpression(IntPtrTypeSyntax);
+            ExpressionSyntax intptrMinusOne = ObjectCreationExpression(IntPtrTypeSyntax).AddArgumentListArguments(Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(-1))));
+
+            // private static readonly IntPtr INVALID_HANDLE_VALUE = new IntPtr(-1);
+            const string invalidValueFieldName = "INVALID_HANDLE_VALUE";
+            members.Add(FieldDeclaration(VariableDeclaration(IntPtrTypeSyntax).AddVariables(
+                VariableDeclarator(invalidValueFieldName).WithInitializer(EqualsValueClause(intptrMinusOne))))
+                .AddModifiers(Token(SyntaxKind.PrivateKeyword), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.ReadOnlyKeyword)));
+
+            // public SafeHandle() : base(INVALID_HANDLE_VALUE, true)
+            members.Add(ConstructorDeclaration(safeHandleClassName)
+                .AddModifiers(Token(this.Visibility))
+                .WithInitializer(ConstructorInitializer(SyntaxKind.BaseConstructorInitializer, ArgumentList().AddArguments(
+                    Argument(IdentifierName(invalidValueFieldName)),
+                    Argument(LiteralExpression(SyntaxKind.TrueLiteralExpression)))))
+                .WithBody(Block()));
+
+            // public SafeHandle(IntPtr preexistingHandle, bool ownsHandle = true) : base(INVALID_HANDLE_VALUE, ownsHandle) { this.SetHandle(preexistingHandle); }
+            const string preexistingHandleName = "preexistingHandle";
+            const string ownsHandleName = "ownsHandle";
+            members.Add(ConstructorDeclaration(safeHandleClassName)
+                .AddModifiers(Token(this.Visibility))
+                .AddParameterListParameters(
+                    Parameter(Identifier(preexistingHandleName)).WithType(IntPtrTypeSyntax),
+                    Parameter(Identifier(ownsHandleName)).WithType(PredefinedType(Token(SyntaxKind.BoolKeyword)))
+                        .WithDefault(EqualsValueClause(LiteralExpression(SyntaxKind.TrueLiteralExpression))))
+                .WithInitializer(ConstructorInitializer(SyntaxKind.BaseConstructorInitializer, ArgumentList().AddArguments(
+                    Argument(IdentifierName(invalidValueFieldName)),
+                    Argument(IdentifierName(ownsHandleName)))))
+                .WithBody(Block().AddStatements(
+                    ExpressionStatement(InvocationExpression(MemberAccessExpression(
+                        SyntaxKind.SimpleMemberAccessExpression,
+                        ThisExpression(),
+                        IdentifierName("SetHandle"))).AddArgumentListArguments(
+                        Argument(IdentifierName(preexistingHandleName)))))));
+
+            // public override bool IsInvalid => this.handle == default || this.Handle == INVALID_HANDLE_VALUE;
+            members.Add(PropertyDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), nameof(SafeHandle.IsInvalid))
+                .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.OverrideKeyword))
+                .WithExpressionBody(ArrowExpressionClause(
+                    BinaryExpression(
+                        SyntaxKind.LogicalOrExpression,
+                        BinaryExpression(SyntaxKind.EqualsExpression, thisHandle, intptrZero),
+                        BinaryExpression(SyntaxKind.EqualsExpression, thisHandle, IdentifierName(invalidValueFieldName)))))
+                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+
+            // protected override bool ReleaseHandle() => ReleaseMethod(this);
+            // Special case release functions based on their return type as follows: (https://github.com/microsoft/win32metadata/issues/25)
+            //  * bool => true is success
+            //  * int => zero is success
+            //  * uint => zero is success
+            //  * byte => non-zero is success
+            ExpressionSyntax releaseInvocation = InvocationExpression(
+                MemberAccessExpression(
+                    SyntaxKind.SimpleMemberAccessExpression,
+                    IdentifierName(this.GroupByModule ? releaseMethodModule : this.SingleClassName),
+                    IdentifierName(renamedReleaseMethod ?? releaseMethod)),
+                ArgumentList().AddArguments(Argument(ThisExpression())));
+            BlockSyntax? releaseBlock = null;
+            if (!(releaseMethodReturnType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.BoolKeyword } } ||
+                releaseMethodReturnType is IdentifierNameSyntax { Identifier: { ValueText: "BOOL" } }))
+            {
+                SyntaxKind returnType = ((PredefinedTypeSyntax)releaseMethodReturnType).Keyword.Kind();
+                if (returnType == SyntaxKind.IntKeyword)
+                {
+                    releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)));
+                }
+                else
+                if (returnType == SyntaxKind.UIntKeyword)
+                {
+                    releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)));
+                }
+                else if (returnType == SyntaxKind.ByteKeyword)
+                {
+                    releaseInvocation = BinaryExpression(SyntaxKind.NotEqualsExpression, releaseInvocation, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)));
+                }
+                else if (returnType == SyntaxKind.VoidKeyword)
+                {
+                    releaseBlock = Block(
+                        ExpressionStatement(releaseInvocation),
+                        ReturnStatement(LiteralExpression(SyntaxKind.TrueLiteralExpression)));
+                }
+                else
+                {
+                    throw new NotSupportedException($"Return type {returnType} on release method {releaseMethod} not supported.");
+                }
+            }
+
+            MethodDeclarationSyntax releaseHandleDeclaration = MethodDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), "ReleaseHandle")
+                .AddModifiers(Token(SyntaxKind.ProtectedKeyword), Token(SyntaxKind.OverrideKeyword));
+            releaseHandleDeclaration = releaseBlock is null
+                ? releaseHandleDeclaration
+                     .WithExpressionBody(ArrowExpressionClause(releaseInvocation))
+                     .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
+                : releaseHandleDeclaration
+                    .WithBody(releaseBlock);
+            members.Add(releaseHandleDeclaration);
+
+            ClassDeclarationSyntax safeHandleDeclaration = ClassDeclaration(safeHandleClassName)
+                .AddModifiers(Token(this.Visibility))
+                .AddBaseListTypes(SimpleBaseType(SafeHandleTypeSyntax))
+                .AddMembers(members.ToArray())
+                .WithLeadingTrivia(ParseLeadingTrivia($@"/// <summary>
+        /// Represents a Win32 handle that can be closed with <see cref=""{(this.GroupByModule ? releaseMethodModule : this.SingleClassName)}.{renamedReleaseMethod ?? releaseMethod}""/>.
+        /// </summary>
+"));
+
+            this.safeHandleTypes.Add(safeHandleDeclaration);
+            if (this.GroupByModule)
+            {
+                this.GetModuleMemberList(releaseMethodModule).Add(safeHandleDeclaration);
+            }
+
+            return safeHandleType;
         }
 
         /// <summary>
@@ -1228,155 +1399,6 @@ namespace Microsoft.Windows.CsWin32
             return isCompilerGenerated;
         }
 
-        private TypeSyntax? GenerateSafeHandle(string releaseMethod)
-        {
-            if (this.releaseMethodsWithSafeHandleTypesGenerating.TryGetValue(releaseMethod, out TypeSyntax? safeHandleType))
-            {
-                return safeHandleType;
-            }
-
-            MethodDefinitionHandle releaseMethodHandle = this.methodsByName[releaseMethod];
-            MethodDefinition releaseMethodDef = this.mr.GetMethodDefinition(releaseMethodHandle);
-            string releaseMethodModule = this.GetNormalizedModuleName(releaseMethodDef.GetImport());
-            var releaseMethodSignature = releaseMethodDef.DecodeSignature(this.signatureTypeProvider, null);
-            TypeSyntax releaseMethodReturnType = this.GetReturnTypeCustomAttributes(releaseMethodDef) is { } atts
-                ? this.ReinterpretMethodSignatureType(releaseMethodSignature.ReturnType, atts).Type
-                : releaseMethodSignature.ReturnType;
-
-            // If the release method takes more than one parameter, we can't generate a SafeHandle for it.
-            if (releaseMethodSignature.RequiredParameterCount != 1)
-            {
-                return null;
-            }
-
-            // TODO: Reuse existing SafeHandle's defined in .NET where possible to facilitate interop with APIs that take them.
-            string safeHandleClassName = $"{releaseMethod}SafeHandle";
-            this.TryGetRenamedMethod(releaseMethod, out string? renamedReleaseMethod);
-
-            var members = new List<MemberDeclarationSyntax>();
-
-            MemberAccessExpressionSyntax thisHandle = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("handle"));
-            ExpressionSyntax intptrZero = DefaultExpression(IntPtrTypeSyntax);
-            ExpressionSyntax intptrMinusOne = ObjectCreationExpression(IntPtrTypeSyntax).AddArgumentListArguments(Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(-1))));
-
-            // private static readonly IntPtr INVALID_HANDLE_VALUE = new IntPtr(-1);
-            const string invalidValueFieldName = "INVALID_HANDLE_VALUE";
-            members.Add(FieldDeclaration(VariableDeclaration(IntPtrTypeSyntax).AddVariables(
-                VariableDeclarator(invalidValueFieldName).WithInitializer(EqualsValueClause(intptrMinusOne))))
-                .AddModifiers(Token(SyntaxKind.PrivateKeyword), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.ReadOnlyKeyword)));
-
-            // public SafeHandle() : base(INVALID_HANDLE_VALUE, true)
-            members.Add(ConstructorDeclaration(safeHandleClassName)
-                .AddModifiers(Token(this.Visibility))
-                .WithInitializer(ConstructorInitializer(SyntaxKind.BaseConstructorInitializer, ArgumentList().AddArguments(
-                    Argument(IdentifierName(invalidValueFieldName)),
-                    Argument(LiteralExpression(SyntaxKind.TrueLiteralExpression)))))
-                .WithBody(Block()));
-
-            // public SafeHandle(IntPtr preexistingHandle, bool ownsHandle = true) : base(INVALID_HANDLE_VALUE, ownsHandle) { this.SetHandle(preexistingHandle); }
-            const string preexistingHandleName = "preexistingHandle";
-            const string ownsHandleName = "ownsHandle";
-            members.Add(ConstructorDeclaration(safeHandleClassName)
-                .AddModifiers(Token(this.Visibility))
-                .AddParameterListParameters(
-                    Parameter(Identifier(preexistingHandleName)).WithType(IntPtrTypeSyntax),
-                    Parameter(Identifier(ownsHandleName)).WithType(PredefinedType(Token(SyntaxKind.BoolKeyword)))
-                        .WithDefault(EqualsValueClause(LiteralExpression(SyntaxKind.TrueLiteralExpression))))
-                .WithInitializer(ConstructorInitializer(SyntaxKind.BaseConstructorInitializer, ArgumentList().AddArguments(
-                    Argument(IdentifierName(invalidValueFieldName)),
-                    Argument(IdentifierName(ownsHandleName)))))
-                .WithBody(Block().AddStatements(
-                    ExpressionStatement(InvocationExpression(MemberAccessExpression(
-                        SyntaxKind.SimpleMemberAccessExpression,
-                        ThisExpression(),
-                        IdentifierName("SetHandle"))).AddArgumentListArguments(
-                        Argument(IdentifierName(preexistingHandleName)))))));
-
-            // public override bool IsInvalid => this.handle == default || this.Handle == INVALID_HANDLE_VALUE;
-            members.Add(PropertyDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), nameof(SafeHandle.IsInvalid))
-                .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.OverrideKeyword))
-                .WithExpressionBody(ArrowExpressionClause(
-                    BinaryExpression(
-                        SyntaxKind.LogicalOrExpression,
-                        BinaryExpression(SyntaxKind.EqualsExpression, thisHandle, intptrZero),
-                        BinaryExpression(SyntaxKind.EqualsExpression, thisHandle, IdentifierName(invalidValueFieldName)))))
-                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
-
-            // protected override bool ReleaseHandle() => ReleaseMethod(this.handle);
-            // Special case release functions based on their return type as follows: (https://github.com/microsoft/win32metadata/issues/25)
-            //  * bool => true is success
-            //  * int => zero is success
-            //  * uint => zero is success
-            //  * byte => non-zero is success
-            ExpressionSyntax releaseInvocation = InvocationExpression(
-                MemberAccessExpression(
-                    SyntaxKind.SimpleMemberAccessExpression,
-                    IdentifierName(this.GroupByModule ? releaseMethodModule : this.SingleClassName),
-                    IdentifierName(renamedReleaseMethod ?? releaseMethod)),
-                ArgumentList().AddArguments(Argument(thisHandle)));
-            BlockSyntax? releaseBlock = null;
-            if (!(releaseMethodReturnType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.BoolKeyword } }))
-            {
-                SyntaxKind returnType = ((PredefinedTypeSyntax)releaseMethodReturnType).Keyword.Kind();
-                if (returnType == SyntaxKind.IntKeyword)
-                {
-                    releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)));
-                }
-                else
-                if (returnType == SyntaxKind.UIntKeyword)
-                {
-                    releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)));
-                }
-                else if (returnType == SyntaxKind.ByteKeyword)
-                {
-                    releaseInvocation = BinaryExpression(SyntaxKind.NotEqualsExpression, releaseInvocation, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)));
-                }
-                else if (returnType == SyntaxKind.VoidKeyword)
-                {
-                    releaseBlock = Block(
-                        ExpressionStatement(releaseInvocation),
-                        ReturnStatement(LiteralExpression(SyntaxKind.TrueLiteralExpression)));
-                }
-                else
-                {
-                    throw new NotSupportedException($"Return type {returnType} on release method {releaseMethod} not supported.");
-                }
-            }
-
-            MethodDeclarationSyntax releaseHandleDeclaration = MethodDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), "ReleaseHandle")
-                .AddModifiers(Token(SyntaxKind.ProtectedKeyword), Token(SyntaxKind.OverrideKeyword));
-            releaseHandleDeclaration = releaseBlock is null
-                ? releaseHandleDeclaration
-                     .WithExpressionBody(ArrowExpressionClause(releaseInvocation))
-                     .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
-                : releaseHandleDeclaration
-                    .WithBody(releaseBlock);
-            members.Add(releaseHandleDeclaration);
-
-            ClassDeclarationSyntax safeHandleDeclaration = ClassDeclaration(safeHandleClassName)
-                .AddModifiers(Token(this.Visibility))
-                .AddBaseListTypes(SimpleBaseType(SafeHandleTypeSyntax))
-                .AddMembers(members.ToArray())
-                .WithLeadingTrivia(ParseLeadingTrivia($@"/// <summary>
-        /// Represents a Win32 handle that can be closed with <see cref=""{(this.GroupByModule ? releaseMethodModule : this.SingleClassName)}.{renamedReleaseMethod ?? releaseMethod}""/>.
-        /// </summary>
-"));
-
-            this.safeHandleTypes.Add(safeHandleDeclaration);
-            if (this.GroupByModule)
-            {
-                this.GetModuleMemberList(releaseMethodModule).Add(safeHandleDeclaration);
-            }
-
-            var safeHandleTypeIdentifier = IdentifierName(safeHandleDeclaration.Identifier);
-            safeHandleType = this.GroupByModule
-                ? QualifiedName(IdentifierName(releaseMethodModule), safeHandleTypeIdentifier)
-                : safeHandleTypeIdentifier;
-
-            this.releaseMethodsWithSafeHandleTypesGenerating.Add(releaseMethod, safeHandleType);
-            return safeHandleType;
-        }
-
         private MemberDeclarationSyntax? CreateInteropType(TypeDefinitionHandle typeDefHandle)
         {
             TypeDefinition typeDef = this.mr.GetTypeDefinition(typeDefHandle);
@@ -1483,10 +1505,18 @@ namespace Microsoft.Windows.CsWin32
             {
                 TypeSyntax fieldType = fieldDef.DecodeSignature(this.signatureTypeProvider, null);
                 Constant constant = this.mr.GetConstant(fieldDef.GetDefaultValue());
-                var value = this.ToExpressionSyntax(constant);
+                ExpressionSyntax value = this.ToExpressionSyntax(constant);
                 if (fieldType is not PredefinedTypeSyntax)
                 {
-                    value = CastExpression(fieldType, ParenthesizedExpression(value));
+                    if (fieldType is IdentifierNameSyntax { Identifier: { ValueText: string typeName } } && this.TryGetHandleReleaseMethod(typeName, out _))
+                    {
+                        // Cast to IntPtr first, then the actual handle struct.
+                        value = CastExpression(fieldType, CastExpression(IntPtrTypeSyntax, ParenthesizedExpression(value)));
+                    }
+                    else
+                    {
+                        value = CastExpression(fieldType, ParenthesizedExpression(value));
+                    }
                 }
 
                 var modifiers = TokenList(Token(this.Visibility));
@@ -1767,7 +1797,7 @@ namespace Microsoft.Windows.CsWin32
                 }
                 else
                 {
-                    var fieldInfo = this.ReinterpretFieldType(fieldDeclarator.Identifier.ValueText, fieldDef.DecodeSignature(this.signatureTypeProvider, null), fieldDef.GetCustomAttributes());
+                    var fieldInfo = this.ReinterpretFieldType(fieldDeclarator.Identifier.ValueText, fieldDef.DecodeSignature(this.signatureTypeProviderNoSafeHandles, null), fieldDef.GetCustomAttributes());
                     if (fieldInfo.AdditionalMembers.Count > 0)
                     {
                         fieldDeclarator = fieldDeclarator.WithIdentifier(Identifier(GetHiddenFieldName(fieldDeclarator.Identifier.ValueText)));
@@ -1845,11 +1875,33 @@ namespace Microsoft.Windows.CsWin32
                 return this.CreateTypeDefBOOLStruct(typeDef);
             }
 
+            bool isHandle = false;
+            foreach (CustomAttributeHandle attHandle in typeDef.GetCustomAttributes())
+            {
+                CustomAttribute att = this.mr.GetCustomAttribute(attHandle);
+
+                // If this struct represents a handle, generate the SafeHandle-equivalent.
+                if (this.IsAttribute(att, InteropDecorationNamespace, RAIIFreeAttribute))
+                {
+                    var args = att.DecodeValue(this.customAttributeTypeProvider);
+                    if (args.FixedArguments[0].Value is string freeMethodName)
+                    {
+                        ////this.GenerateSafeHandle(freeMethodName);
+                        this.TryGenerateExternMethod(freeMethodName);
+                        isHandle = true;
+                    }
+
+                    break;
+                }
+            }
+
+            SignatureTypeProvider signatureTypeProvider = isHandle ? this.signatureTypeProviderAlwaysUseIntPtr : this.signatureTypeProvider;
+
             FieldDefinition fieldDef = this.mr.GetFieldDefinition(typeDef.GetFields().Single());
             string fieldName = this.mr.GetString(fieldDef.Name);
             VariableDeclaratorSyntax fieldDeclarator = VariableDeclarator(SafeIdentifier(fieldName));
             (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers) fieldInfo =
-                this.ReinterpretFieldType(fieldDeclarator.Identifier.ValueText, fieldDef.DecodeSignature(this.signatureTypeProvider, null), fieldDef.GetCustomAttributes());
+                this.ReinterpretFieldType(fieldDeclarator.Identifier.ValueText, fieldDef.DecodeSignature(signatureTypeProvider, null), fieldDef.GetCustomAttributes());
             SyntaxList<MemberDeclarationSyntax> members = List<MemberDeclarationSyntax>();
 
             FieldDeclarationSyntax fieldSyntax = FieldDeclaration(
@@ -2429,15 +2481,6 @@ namespace Microsoft.Windows.CsWin32
                     }
 
                     break;
-                }
-
-                if (this.IsAttribute(att, InteropDecorationNamespace, RAIIFreeAttribute))
-                {
-                    var args = att.DecodeValue(this.customAttributeTypeProvider);
-                    if (args.FixedArguments[0].Value is string releaseMethod && this.GenerateSafeHandle(releaseMethod) is TypeSyntax safeHandleType)
-                    {
-                        return (safeHandleType, null);
-                    }
                 }
             }
 

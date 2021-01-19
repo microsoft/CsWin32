@@ -93,6 +93,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [InlineData("POSITIVE_INFINITY")] // Special float imaginary number
     [InlineData("NEGATIVE_INFINITY")] // Special float imaginary number
     [InlineData("NaN")] // Special float imaginary number
+    [InlineData("HBMMENU_POPUP_RESTORE")] // A HBITMAP handle as a constant
     [InlineData("RpcServerRegisterIfEx")] // Optional attribute on delegate type.
     [InlineData("RpcSsSwapClientAllocFree")] // Parameters typed as pointers to in delegates and out delegates
     [InlineData("RPC_DISPATCH_TABLE")] // Struct with a field typed as a delegate
@@ -127,10 +128,57 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
+    public void ReleaseMethodGeneratedWithHandleStruct()
+    {
+        this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);
+        Assert.True(this.generator.TryGenerate("HANDLE", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        Assert.True(this.IsMethodGenerated("CloseHandle"));
+    }
+
+    [Fact(Skip = "SafeHandles are deactivated for now.")]
+    public void CreateFileUsesSafeHandles()
+    {
+        this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);
+        Assert.True(this.generator.TryGenerate("CreateFile", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        MethodDeclarationSyntax? createFileMethod = this.FindGeneratedMethod("CreateFile");
+        Assert.NotNull(createFileMethod);
+        Assert.Equal("CloseHandleSafeHandle", Assert.IsType<IdentifierNameSyntax>(createFileMethod!.ReturnType).Identifier.ValueText);
+        Assert.Equal("CloseHandleSafeHandle", Assert.IsType<IdentifierNameSyntax>(createFileMethod.ParameterList.Parameters.Last().Type).Identifier.ValueText);
+    }
+
+    [Fact]
+    public void BSTR_FieldsDoNotBecomeSafeHandles()
+    {
+        this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);
+        Assert.True(this.generator.TryGenerate("DebugPropertyInfo", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        StructDeclarationSyntax structDecl = Assert.IsType<StructDeclarationSyntax>(this.FindGeneratedType("DebugPropertyInfo"));
+        var bstrField = structDecl.Members.OfType<FieldDeclarationSyntax>().First(m => m.Declaration.Variables.Any(v => v.Identifier.ValueText == "m_bstrName"));
+        Assert.Equal("BSTR", ((IdentifierNameSyntax)bstrField.Declaration.Type).Identifier.ValueText);
+    }
+
+    [Fact]
     public void GetLastErrorGenerationThrowsWhenExplicitlyCalled()
     {
         this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);
         Assert.Throws<NotSupportedException>(() => this.generator.TryGenerate("GetLastError", CancellationToken.None));
+    }
+
+    [Fact(Skip = "https://github.com/microsoft/win32metadata/issues/129")]
+    public void DeleteObject_TakesTypeDefStruct()
+    {
+        this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);
+        Assert.True(this.generator.TryGenerate("DeleteObject", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        MethodDeclarationSyntax? deleteObjectMethod = this.FindGeneratedMethod("DeleteObject");
+        Assert.NotNull(deleteObjectMethod);
+        Assert.Equal("HGDIOBJ", Assert.IsType<IdentifierNameSyntax>(deleteObjectMethod!.ParameterList.Parameters[0].Type).Identifier.ValueText);
     }
 
     [Fact]
@@ -181,7 +229,11 @@ namespace Microsoft.Windows.Sdk
         this.compilation = this.compilation.AddSyntaxTrees(syntaxTrees);
     }
 
-    private bool IsMethodGenerated(string name) => this.compilation.SyntaxTrees.Any(st => st.GetRoot().DescendantNodes().OfType<MethodDeclarationSyntax>().Any(md => md.Identifier.ValueText == name));
+    private MethodDeclarationSyntax? FindGeneratedMethod(string name) => this.compilation.SyntaxTrees.SelectMany(st => st.GetRoot().DescendantNodes().OfType<MethodDeclarationSyntax>()).FirstOrDefault(md => md.Identifier.ValueText == name);
+
+    private BaseTypeDeclarationSyntax? FindGeneratedType(string name) => this.compilation.SyntaxTrees.SelectMany(st => st.GetRoot().DescendantNodes().OfType<BaseTypeDeclarationSyntax>()).FirstOrDefault(md => md.Identifier.ValueText == name);
+
+    private bool IsMethodGenerated(string name) => this.FindGeneratedMethod(name) is object;
 
     private void AssertNoDiagnostics(bool logGeneratedCode = true)
     {

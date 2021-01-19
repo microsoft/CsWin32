@@ -16,10 +16,14 @@ namespace Microsoft.Windows.CsWin32
     internal class SignatureTypeProvider : ISignatureTypeProvider<TypeSyntax, IGenericContext?>
     {
         private readonly Generator owner;
+        private readonly bool preferNativeInt;
+        private readonly bool preferSafeHandles;
 
-        internal SignatureTypeProvider(Generator owner)
+        internal SignatureTypeProvider(Generator owner, bool preferNativeInt, bool preferSafeHandles)
         {
             this.owner = owner;
+            this.preferNativeInt = preferNativeInt;
+            this.preferSafeHandles = preferSafeHandles;
         }
 
         /// <inheritdoc/>
@@ -44,8 +48,8 @@ namespace Microsoft.Windows.CsWin32
                 PrimitiveTypeCode.Double => PredefinedType(Token(SyntaxKind.DoubleKeyword)),
                 PrimitiveTypeCode.Object => PredefinedType(Token(SyntaxKind.ObjectKeyword)),
                 PrimitiveTypeCode.String => PredefinedType(Token(SyntaxKind.StringKeyword)),
-                PrimitiveTypeCode.IntPtr => this.owner.LanguageVersion >= LanguageVersion.CSharp9 ? IdentifierName("nint") : IdentifierName(nameof(IntPtr)),
-                PrimitiveTypeCode.UIntPtr => this.owner.LanguageVersion >= LanguageVersion.CSharp9 ? IdentifierName("nuint") : IdentifierName(nameof(UIntPtr)),
+                PrimitiveTypeCode.IntPtr => this.preferNativeInt ? IdentifierName("nint") : IdentifierName(nameof(IntPtr)),
+                PrimitiveTypeCode.UIntPtr => this.preferNativeInt ? IdentifierName("nuint") : IdentifierName(nameof(UIntPtr)),
                 PrimitiveTypeCode.Void => PredefinedType(Token(SyntaxKind.VoidKeyword)),
                 _ => throw new NotSupportedException("Unsupported type code: " + typeCode),
             };
@@ -89,6 +93,12 @@ namespace Microsoft.Windows.CsWin32
             TypeDefinitionHandle? typeDefHandle = this.owner.GenerateInteropType(handle);
             if (typeDefHandle.HasValue)
             {
+                if (this.preferSafeHandles && this.owner.TryGetHandleReleaseMethod(name, out string? releaseMethod) && this.owner.GenerateSafeHandle(releaseMethod) is TypeSyntax safeHandleType)
+                {
+                    // Return the safe handle instead.
+                    return safeHandleType;
+                }
+
                 TypeSyntax identifier = IdentifierName(name);
                 TypeDefinition td = reader.GetTypeDefinition(typeDefHandle.Value);
                 if ((td.Attributes & TypeAttributes.Interface) == TypeAttributes.Interface)

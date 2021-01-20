@@ -1,12 +1,12 @@
 # C#/Win32 P/Invoke Source Generator
 
-***A source generator to add a user-defined set of Win32 p/invoke methods and supporting types to a C# project.***
+***A source generator to add a user-defined set of Win32 P/Invoke methods and supporting types to a C# project.***
 
 [![Build Status](https://dev.azure.com/microsoft/Dart/_apis/build/status/microsoft.CsWin32?branchName=main)](https://dev.azure.com/microsoft/Dart/_build/latest?definitionId=60888&branchName=main)
 
 ## Features
 
-* Rapidly add p/invoke methods and supporting types to your C# project.
+* Rapidly add P/Invoke methods and supporting types to your C# project.
 * No bulky assemblies to ship alongside your application.
 * `SafeHandle`-types automatically generated.
 * Generates xml documentation based on and links back to docs.microsoft.com
@@ -18,7 +18,7 @@
 Source Generators require C# 9, which comes with the .NET 5 SDK or Visual Studio 2019 Update 8 (16.8).
 The experience with source generators in Visual Studio is still improving, and is noticeably better in VS 16.9.
 
-See [dotnet/pinvoke](https://github.com/dotnet/pinvoke) for precompiled NuGet packages with Win32 p/invokes.
+See [dotnet/pinvoke](https://github.com/dotnet/pinvoke) for precompiled NuGet packages with Win32 P/Invokes.
 
 ## Usage
 
@@ -52,7 +52,7 @@ When generating any type or member, all supporting types will also be generated.
 Generated code is added directly in the compiler.
 An IDE may make this generated code available to view through code navigation commands (e.g. Go to Definition) or a tree view of source files that include generated source files.
 
-Assuming default settings and a `NativeMethods.txt` file with content that includes `CreateFile`, the p/invoke API can be found on the `Microsoft.Windows.Sdk.PInvoke` class, like this:
+Assuming default settings and a `NativeMethods.txt` file with content that includes `CreateFile`, the P/Invoke API can be found on the `Microsoft.Windows.Sdk.PInvoke` class, like this:
 
 ```cs
 using Microsoft.Windows.Sdk;

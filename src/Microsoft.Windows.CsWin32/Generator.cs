@@ -1277,7 +1277,9 @@ namespace Microsoft.Windows.CsWin32
                     IdentifierName(Enum.GetName(typeof(DebuggerBrowsableState), state)!))));
         }
 
-        private static SyntaxToken SafeIdentifier(string name) => Identifier(CSharpKeywords.Contains(name) ? "@" + name : name);
+        private static SyntaxToken SafeIdentifier(string name) => SafeIdentifierName(name).Identifier;
+
+        private static IdentifierNameSyntax SafeIdentifierName(string name) => IdentifierName(CSharpKeywords.Contains(name) ? "@" + name : name);
 
         private static string GetHiddenFieldName(string fieldName) => $"__{fieldName}";
 
@@ -1899,7 +1901,8 @@ namespace Microsoft.Windows.CsWin32
 
             FieldDefinition fieldDef = this.mr.GetFieldDefinition(typeDef.GetFields().Single());
             string fieldName = this.mr.GetString(fieldDef.Name);
-            VariableDeclaratorSyntax fieldDeclarator = VariableDeclarator(SafeIdentifier(fieldName));
+            IdentifierNameSyntax fieldIdentifierName = SafeIdentifierName(fieldName);
+            VariableDeclaratorSyntax fieldDeclarator = VariableDeclarator(fieldIdentifierName.Identifier);
             (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers) fieldInfo =
                 this.ReinterpretFieldType(fieldDeclarator.Identifier.ValueText, fieldDef.DecodeSignature(signatureTypeProvider, null), fieldDef.GetCustomAttributes());
             SyntaxList<MemberDeclarationSyntax> members = List<MemberDeclarationSyntax>();
@@ -1911,7 +1914,7 @@ namespace Microsoft.Windows.CsWin32
 
             // Add constructor
             IdentifierNameSyntax valueParameter = IdentifierName("value");
-            MemberAccessExpressionSyntax fieldAccessExpression = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName(fieldName));
+            MemberAccessExpressionSyntax fieldAccessExpression = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), fieldIdentifierName);
             members = members.Add(ConstructorDeclaration(name)
                 .AddModifiers(Token(this.Visibility))
                 .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(fieldInfo.FieldType))
@@ -1921,7 +1924,7 @@ namespace Microsoft.Windows.CsWin32
             // public static implicit operator int(HWND value) => value.Value;
             members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), fieldInfo.FieldType)
                 .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IdentifierName(name)))
-                .WithExpressionBody(ArrowExpressionClause(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(fieldName))))
+                .WithExpressionBody(ArrowExpressionClause(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, fieldIdentifierName)))
                 .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
                 .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
 
@@ -1932,12 +1935,101 @@ namespace Microsoft.Windows.CsWin32
                 .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
                 .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
 
+            // public bool Equals(HWND other) => this.Value == other.Value;
+            IdentifierNameSyntax other = IdentifierName("other");
+            members = members.Add(MethodDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), nameof(IEquatable<int>.Equals))
+                .AddModifiers(Token(SyntaxKind.PublicKeyword))
+                .AddParameterListParameters(Parameter(other.Identifier).WithType(IdentifierName(name)))
+                .WithExpressionBody(ArrowExpressionClause(
+                    BinaryExpression(
+                        SyntaxKind.EqualsExpression,
+                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), fieldIdentifierName),
+                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, other, fieldIdentifierName))))
+                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+
+            // public override bool Equals(object obj) => obj is HWND other && this.Equals(other);
+            IdentifierNameSyntax objParam = IdentifierName("obj");
+            members = members.Add(MethodDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), nameof(IEquatable<int>.Equals))
+                .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.OverrideKeyword))
+                .AddParameterListParameters(Parameter(objParam.Identifier).WithType(PredefinedType(Token(SyntaxKind.ObjectKeyword))))
+                .WithExpressionBody(ArrowExpressionClause(
+                    BinaryExpression(
+                        SyntaxKind.LogicalAndExpression,
+                        IsPatternExpression(objParam, DeclarationPattern(IdentifierName(name), SingleVariableDesignation(Identifier("other")))),
+                        InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName(nameof(Equals)))).AddArgumentListArguments(Argument(IdentifierName("other"))))))
+                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+
+            // public override int GetHashCode() => this.Value.GetHashCode();
+            members = members.Add(MethodDeclaration(PredefinedType(Token(SyntaxKind.IntKeyword)), nameof(object.GetHashCode))
+                .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.OverrideKeyword))
+                .WithExpressionBody(ArrowExpressionClause(
+                    InvocationExpression(
+                        MemberAccessExpression(
+                            SyntaxKind.SimpleMemberAccessExpression,
+                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), fieldIdentifierName),
+                            IdentifierName(nameof(object.GetHashCode))),
+                        ArgumentList())))
+                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+
+            if (name == "BSTR")
+            {
+                members = members.AddRange(this.CreateAdditionalTypeDefBSTRMembers());
+            }
+
             StructDeclarationSyntax result = StructDeclaration(name)
+                .AddBaseListTypes(SimpleBaseType(GenericName(nameof(IEquatable<int>)).AddTypeArgumentListArguments(IdentifierName(name))))
                 .WithMembers(members)
                 .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.ReadOnlyKeyword)));
 
             result = AddApiDocumentation(name, result);
             return result;
+        }
+
+        private IEnumerable<MemberDeclarationSyntax> CreateAdditionalTypeDefBSTRMembers()
+        {
+            ExpressionSyntax thisValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Value"));
+
+            // public override string ToString() => Marshal.PtrToStringBSTR(this.Value);
+            yield return MethodDeclaration(PredefinedType(Token(SyntaxKind.StringKeyword)), nameof(this.ToString))
+                .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.OverrideKeyword))
+                .WithExpressionBody(ArrowExpressionClause(
+                    InvocationExpression(
+                        MemberAccessExpression(
+                            SyntaxKind.SimpleMemberAccessExpression,
+                            IdentifierName(nameof(Marshal)),
+                            IdentifierName(nameof(Marshal.PtrToStringBSTR))))
+                .AddArgumentListArguments(Argument(thisValue))))
+                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken));
+
+            // public static implicit operator ReadOnlySpan<char>(BSTR bstr) => bstr.Value != IntPtr.Zero ? new ReadOnlySpan<char>(bstr.Value.ToPointer(), *((int*)bstr.Value.ToPointer() - 1) / 2) : default;
+            TypeSyntax rosChar = MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword)));
+            IdentifierNameSyntax bstrParam = IdentifierName("bstr");
+            ExpressionSyntax bstrValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, bstrParam, IdentifierName("Value"));
+            ExpressionSyntax bstrPointer = InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, bstrValue, IdentifierName(nameof(IntPtr.ToPointer))), ArgumentList());
+            ExpressionSyntax length = BinaryExpression(
+                SyntaxKind.DivideExpression,
+                PrefixUnaryExpression(
+                    SyntaxKind.PointerIndirectionExpression,
+                    ParenthesizedExpression(
+                        BinaryExpression(
+                            SyntaxKind.SubtractExpression,
+                            CastExpression(PointerType(PredefinedType(Token(SyntaxKind.IntKeyword))), bstrPointer),
+                            LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(1))))),
+                LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(2)));
+            ExpressionSyntax rosCreation = ObjectCreationExpression(rosChar).AddArgumentListArguments(Argument(bstrPointer), Argument(length));
+            ExpressionSyntax bstrNotZero = BinaryExpression(SyntaxKind.NotEqualsExpression, bstrValue, DefaultExpression(IntPtrTypeSyntax));
+            ExpressionSyntax conditional = ConditionalExpression(bstrNotZero, rosCreation, DefaultExpression(rosChar));
+            yield return ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), rosChar)
+                .AddParameterListParameters(Parameter(bstrParam.Identifier).WithType(IdentifierName("BSTR")))
+                .WithExpressionBody(ArrowExpressionClause(conditional))
+                .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.UnsafeKeyword)) // operators MUST be public
+                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken));
+
+            // internal ReadOnlySpan<char> AsSpan() => this;
+            yield return MethodDeclaration(rosChar, "AsSpan")
+                .AddModifiers(Token(this.Visibility))
+                .WithExpressionBody(ArrowExpressionClause(ThisExpression()))
+                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken));
         }
 
         private StructDeclarationSyntax CreateTypeDefBOOLStruct(TypeDefinition typeDef)

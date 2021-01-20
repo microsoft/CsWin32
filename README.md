@@ -22,12 +22,6 @@ See [dotnet/pinvoke](https://github.com/dotnet/pinvoke) for precompiled NuGet pa
 
 ## Usage
 
-Add this feed to your package sources:
-
-```xml
-<add key="MSFTNuget@Local" value="https://pkgs.dev.azure.com/microsoft/_packaging/MSFTNuget%40Local/nuget/v3/index.json" />
-```
-
 Install the `Microsoft.Windows.CsWin32` package:
 
 ```ps1

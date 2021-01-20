@@ -88,6 +88,36 @@ public class BasicTests
     }
 
     [Fact]
+    public void HandlesOverrideEquals()
+    {
+        HANDLE handle5 = new((IntPtr)5);
+        HANDLE handle8 = new((IntPtr)8);
+
+        Assert.True(handle5.Equals((object)handle5));
+        Assert.False(handle5.Equals((object)handle8));
+        Assert.False(handle5.Equals(null));
+    }
+
+    [Fact]
+    public void HandlesOverride_GetHashCode()
+    {
+        HANDLE handle5 = new((IntPtr)5);
+        HANDLE handle8 = new((IntPtr)8);
+
+        Assert.NotEqual(handle5.GetHashCode(), handle8.GetHashCode());
+    }
+
+    [Fact]
+    public void HandlesImplementsIEquatable()
+    {
+        var handle5 = new HANDLE((IntPtr)5);
+        IEquatable<HANDLE> handle5Equatable = handle5;
+        var handle8 = new HANDLE((IntPtr)8);
+        Assert.True(handle5Equatable.Equals(handle5));
+        Assert.False(handle5Equatable.Equals(handle8));
+    }
+
+    [Fact]
     public void CreateFile()
     {
         var path = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());

@@ -65,7 +65,7 @@ namespace Microsoft.Windows.CsWin32
 
         private const string SimpleFileNameAnnotation = "SimpleFileName";
         private const string OriginalDelegateAnnotation = "OriginalDelegate";
-
+        private static readonly IdentifierNameSyntax ConstantsClassName = IdentifierName("Constants");
         private static readonly TypeSyntax SafeHandleTypeSyntax = IdentifierName("SafeHandle");
         private static readonly IdentifierNameSyntax IntPtrTypeSyntax = IdentifierName(nameof(IntPtr));
         private static readonly TypeSyntax VoidStar = SyntaxFactory.ParseTypeName("void*");
@@ -206,6 +206,7 @@ namespace Microsoft.Windows.CsWin32
         private readonly SignatureTypeProvider signatureTypeProvider;
         private readonly SignatureTypeProvider signatureTypeProviderAlwaysUseIntPtr;
         private readonly SignatureTypeProvider signatureTypeProviderNoSafeHandles;
+        private readonly SignatureTypeProvider signatureTypeProviderNoSafeHandlesOrNint;
         private readonly CustomAttributeTypeProvider customAttributeTypeProvider;
         private readonly Dictionary<string, List<MemberDeclarationSyntax>> modulesAndMembers = new Dictionary<string, List<MemberDeclarationSyntax>>(StringComparer.OrdinalIgnoreCase);
 
@@ -240,6 +241,8 @@ namespace Microsoft.Windows.CsWin32
 
         private readonly Dictionary<string, TypeSyntax?> releaseMethodsWithSafeHandleTypesGenerating = new Dictionary<string, TypeSyntax?>();
 
+        private readonly HashSet<string> releaseMethods = new HashSet<string>(StringComparer.Ordinal);
+
         private readonly GeneratorOptions options;
         private readonly CSharpCompilation? compilation;
         private readonly CSharpParseOptions? parseOptions;
@@ -262,10 +265,10 @@ namespace Microsoft.Windows.CsWin32
             this.peReader = new PEReader(this.metadataStream);
             this.mr = this.peReader.GetMetadataReader();
 
-            // Disable safe handles everywhere (not just the one explicitly intended) till we figure out how to reconcile with BSTR and other structs.
-            this.signatureTypeProvider = new SignatureTypeProvider(this, preferNativeInt: this.LanguageVersion >= LanguageVersion.CSharp9, preferSafeHandles: false);
-            this.signatureTypeProviderAlwaysUseIntPtr = new SignatureTypeProvider(this, preferNativeInt: false, preferSafeHandles: false);
+            this.signatureTypeProvider = new SignatureTypeProvider(this, preferNativeInt: this.LanguageVersion >= LanguageVersion.CSharp9, preferSafeHandles: true);
+            this.signatureTypeProviderAlwaysUseIntPtr = new SignatureTypeProvider(this, preferNativeInt: false, preferSafeHandles: true);
             this.signatureTypeProviderNoSafeHandles = new SignatureTypeProvider(this, preferNativeInt: true, preferSafeHandles: false);
+            this.signatureTypeProviderNoSafeHandlesOrNint = new SignatureTypeProvider(this, preferNativeInt: false, preferSafeHandles: false);
             this.customAttributeTypeProvider = new CustomAttributeTypeProvider();
 
             this.Apis = this.mr.TypeDefinitions.Select(this.mr.GetTypeDefinition).Where(td => this.mr.StringComparer.Equals(td.Name, "Apis")).ToList();
@@ -288,6 +291,30 @@ namespace Microsoft.Windows.CsWin32
                 if (!this.typesByName.ContainsKey(name))
                 {
                     this.typesByName.Add(name, typeDefinitionHandle);
+                }
+
+                // Detect if this is a struct representing a native handle.
+                if (typeDefinition.GetFields().Count == 1 && typeDefinition.BaseType.Kind == HandleKind.TypeReference)
+                {
+                    TypeReference baseType = this.mr.GetTypeReference((TypeReferenceHandle)typeDefinition.BaseType);
+                    if (this.mr.StringComparer.Equals(baseType.Name, nameof(ValueType)) && this.mr.StringComparer.Equals(baseType.Namespace, nameof(System)))
+                    {
+                        foreach (CustomAttributeHandle h in typeDefinition.GetCustomAttributes())
+                        {
+                            CustomAttribute att = this.mr.GetCustomAttribute(h);
+                            if (this.IsAttribute(att, InteropDecorationNamespace, RAIIFreeAttribute))
+                            {
+                                var args = att.DecodeValue(this.customAttributeTypeProvider);
+                                if (args.FixedArguments[0].Value is string freeMethodName)
+                                {
+                                    this.handleTypeReleaseMethod.Add(name, freeMethodName);
+                                    this.releaseMethods.Add(freeMethodName);
+                                }
+
+                                break;
+                            }
+                        }
+                    }
                 }
             }
 
@@ -616,28 +643,7 @@ namespace Microsoft.Windows.CsWin32
 
         internal bool TryGetHandleReleaseMethod(string handleStructName, [NotNullWhen(true)] out string? releaseMethod)
         {
-            if (!this.handleTypeReleaseMethod.TryGetValue(handleStructName, out releaseMethod))
-            {
-                TypeDefinition typeDef = this.mr.GetTypeDefinition(this.typesByName[handleStructName]);
-                foreach (CustomAttributeHandle attHandle in typeDef.GetCustomAttributes())
-                {
-                    CustomAttribute att = this.mr.GetCustomAttribute(attHandle);
-                    if (this.IsAttribute(att, InteropDecorationNamespace, RAIIFreeAttribute))
-                    {
-                        var args = att.DecodeValue(this.customAttributeTypeProvider);
-                        if (args.FixedArguments[0].Value is string freeMethodName)
-                        {
-                            this.handleTypeReleaseMethod.Add(handleStructName, freeMethodName);
-                            releaseMethod = freeMethodName;
-                            return true;
-                        }
-                    }
-                }
-
-                this.handleTypeReleaseMethod.Add(handleStructName, null);
-            }
-
-            return releaseMethod is object;
+            return this.handleTypeReleaseMethod.TryGetValue(handleStructName, out releaseMethod);
         }
 
         internal void GenerateAllInteropTypes(CancellationToken cancellationToken)
@@ -699,7 +705,10 @@ namespace Microsoft.Windows.CsWin32
                     methodName = newName;
                 }
 
-                MethodSignature<TypeSyntax> signature = methodDefinition.DecodeSignature(this.signatureTypeProvider, null);
+                // If this method releases a handle, recreate the method signature such that we take the struct rather than the SafeHandle as a parameter.
+                var signatureTypeProvider = this.releaseMethods.Contains(entrypoint ?? methodName) ? this.signatureTypeProviderNoSafeHandlesOrNint : this.signatureTypeProvider;
+                MethodSignature<TypeSyntax> signature = methodDefinition.DecodeSignature(signatureTypeProvider, null);
+
                 CustomAttributeHandleCollection? returnTypeAttributes = this.GetReturnTypeCustomAttributes(methodDefinition);
 
                 TypeSyntax returnType = signature.ReturnType;
@@ -818,21 +827,28 @@ namespace Microsoft.Windows.CsWin32
             safeHandleType = this.GroupByModule
                 ? QualifiedName(IdentifierName(releaseMethodModule), safeHandleTypeIdentifier)
                 : safeHandleTypeIdentifier;
+            safeHandleType = safeHandleType.WithAdditionalAnnotations(new SyntaxAnnotation(IsManagedTypeAnnotation));
 
-            this.releaseMethodsWithSafeHandleTypesGenerating.Add(releaseMethod, safeHandleType);
-
-            this.GenerateExternMethod(releaseMethodHandle);
-
-            var releaseMethodSignature = releaseMethodDef.DecodeSignature(this.signatureTypeProvider, null);
-            TypeSyntax releaseMethodReturnType = this.GetReturnTypeCustomAttributes(releaseMethodDef) is { } atts
-                ? this.ReinterpretMethodSignatureType(releaseMethodSignature.ReturnType, atts).Type
-                : releaseMethodSignature.ReturnType;
+            var releaseMethodSignature = releaseMethodDef.DecodeSignature(this.signatureTypeProviderNoSafeHandlesOrNint, null);
 
             // If the release method takes more than one parameter, we can't generate a SafeHandle for it.
             if (releaseMethodSignature.RequiredParameterCount != 1)
             {
-                return null;
+                safeHandleType = null;
             }
+
+            this.releaseMethodsWithSafeHandleTypesGenerating.Add(releaseMethod, safeHandleType);
+
+            if (safeHandleType is null)
+            {
+                return safeHandleType;
+            }
+
+            this.GenerateExternMethod(releaseMethodHandle);
+
+            TypeSyntax releaseMethodReturnType = this.GetReturnTypeCustomAttributes(releaseMethodDef) is { } atts
+                 ? this.ReinterpretMethodSignatureType(releaseMethodSignature.ReturnType, atts).Type
+                 : releaseMethodSignature.ReturnType;
 
             TypeSyntax releaseMethodParameterType = releaseMethodSignature.ParameterTypes[0];
 
@@ -878,6 +894,13 @@ namespace Microsoft.Windows.CsWin32
                         IdentifierName("SetHandle"))).AddArgumentListArguments(
                         Argument(IdentifierName(preexistingHandleName)))))));
 
+            // public static SafeHandle Null { get; } = new SafeHandle();
+            members.Add(PropertyDeclaration(safeHandleTypeIdentifier, "Null")
+                .AddModifiers(Token(this.Visibility), Token(SyntaxKind.StaticKeyword))
+                .AddAccessorListAccessors(AccessorDeclaration(SyntaxKind.GetAccessorDeclaration).WithSemicolonToken(Token(SyntaxKind.SemicolonToken)))
+                .WithInitializer(EqualsValueClause(ObjectCreationExpression(safeHandleTypeIdentifier, ArgumentList(), null)))
+                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+
             // public override bool IsInvalid => this.handle == default || this.Handle == INVALID_HANDLE_VALUE;
             members.Add(PropertyDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), nameof(SafeHandle.IsInvalid))
                 .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.OverrideKeyword))
@@ -888,7 +911,7 @@ namespace Microsoft.Windows.CsWin32
                         BinaryExpression(SyntaxKind.EqualsExpression, thisHandle, IdentifierName(invalidValueFieldName)))))
                 .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
 
-            // protected override bool ReleaseHandle() => ReleaseMethod(this);
+            // protected override bool ReleaseHandle() => ReleaseMethod((struct)this.handle);
             // Special case release functions based on their return type as follows: (https://github.com/microsoft/win32metadata/issues/25)
             //  * bool => true is success
             //  * int => zero is success
@@ -899,34 +922,62 @@ namespace Microsoft.Windows.CsWin32
                     SyntaxKind.SimpleMemberAccessExpression,
                     IdentifierName(this.GroupByModule ? releaseMethodModule : this.SingleClassName),
                     IdentifierName(renamedReleaseMethod ?? releaseMethod)),
-                ArgumentList().AddArguments(Argument(ThisExpression())));
+                ArgumentList().AddArguments(Argument(CastExpression(releaseMethodParameterType, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("handle"))))));
             BlockSyntax? releaseBlock = null;
             if (!(releaseMethodReturnType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.BoolKeyword } } ||
                 releaseMethodReturnType is IdentifierNameSyntax { Identifier: { ValueText: "BOOL" } }))
             {
-                SyntaxKind returnType = ((PredefinedTypeSyntax)releaseMethodReturnType).Keyword.Kind();
-                if (returnType == SyntaxKind.IntKeyword)
+                switch (releaseMethodReturnType)
                 {
-                    releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)));
-                }
-                else
-                if (returnType == SyntaxKind.UIntKeyword)
-                {
-                    releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)));
-                }
-                else if (returnType == SyntaxKind.ByteKeyword)
-                {
-                    releaseInvocation = BinaryExpression(SyntaxKind.NotEqualsExpression, releaseInvocation, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)));
-                }
-                else if (returnType == SyntaxKind.VoidKeyword)
-                {
-                    releaseBlock = Block(
-                        ExpressionStatement(releaseInvocation),
-                        ReturnStatement(LiteralExpression(SyntaxKind.TrueLiteralExpression)));
-                }
-                else
-                {
-                    throw new NotSupportedException($"Return type {returnType} on release method {releaseMethod} not supported.");
+                    case PredefinedTypeSyntax predefined:
+                        SyntaxKind returnType = predefined.Keyword.Kind();
+                        if (returnType == SyntaxKind.IntKeyword)
+                        {
+                            releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)));
+                        }
+                        else if (returnType == SyntaxKind.UIntKeyword)
+                        {
+                            releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)));
+                        }
+                        else if (returnType == SyntaxKind.ByteKeyword)
+                        {
+                            releaseInvocation = BinaryExpression(SyntaxKind.NotEqualsExpression, releaseInvocation, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)));
+                        }
+                        else if (returnType == SyntaxKind.VoidKeyword)
+                        {
+                            releaseBlock = Block(
+                                ExpressionStatement(releaseInvocation),
+                                ReturnStatement(LiteralExpression(SyntaxKind.TrueLiteralExpression)));
+                        }
+                        else
+                        {
+                            throw new NotSupportedException($"Return type {returnType} on release method {releaseMethod} not supported.");
+                        }
+
+                        break;
+                    case IdentifierNameSyntax identifierName:
+                        switch (identifierName.Identifier.ValueText)
+                        {
+                            case "LSTATUS":
+                                this.TryGenerateConstant("ERROR_SUCCESS");
+                                ExpressionSyntax errorSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ConstantsClassName, IdentifierName("ERROR_SUCCESS"));
+                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, CastExpression(IdentifierName("LSTATUS"), errorSuccess));
+                                break;
+                            case "NTSTATUS":
+                                // https://github.com/microsoft/win32metadata/issues/136
+                                ////ExpressionSyntax statusSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("NTSTATUS"), IdentifierName("STATUS_SUCCESS"));
+                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, CastExpression(IdentifierName("NTSTATUS"), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))));
+                                break;
+                            case "HRESULT":
+                                this.TryGenerateConstant("S_OK");
+                                ExpressionSyntax ok = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ConstantsClassName, IdentifierName("S_OK"));
+                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, CastExpression(IdentifierName("HRESULT"), ok));
+                                break;
+                            default:
+                                throw new NotSupportedException($"Return type {identifierName.Identifier.ValueText} on release method {releaseMethod} not supported.");
+                        }
+
+                        break;
                 }
             }
 
@@ -1294,6 +1345,7 @@ namespace Microsoft.Windows.CsWin32
 
         private static CrefParameterSyntax ToCref(ParameterSyntax parameter)
             => CrefParameter(
+                parameter.Modifiers.Any(SyntaxKind.InKeyword) ? Token(SyntaxKind.InKeyword) :
                 parameter.Modifiers.Any(SyntaxKind.RefKeyword) ? Token(SyntaxKind.RefKeyword) :
                 parameter.Modifiers.Any(SyntaxKind.OutKeyword) ? Token(SyntaxKind.OutKeyword) :
                 default,
@@ -1352,11 +1404,11 @@ namespace Microsoft.Windows.CsWin32
         {
             if (this.IsDelegateReference(parameter.Type as IdentifierNameSyntax, out TypeDefinition delegateTypeDef))
             {
-                return FunctionPointerParameter(this.FunctionPointer(delegateTypeDef));
+                return FunctionPointerParameter(this.FunctionPointer(delegateTypeDef, this.signatureTypeProvider));
             }
             else if (parameter.Type is PointerTypeSyntax { ElementType: IdentifierNameSyntax idName } && this.IsDelegateReference(idName, out TypeDefinition delegateTypeDef2))
             {
-                return FunctionPointerParameter(PointerType(this.FunctionPointer(delegateTypeDef2)));
+                return FunctionPointerParameter(PointerType(this.FunctionPointer(delegateTypeDef2, this.signatureTypeProvider)));
             }
 
             return parameter;
@@ -1512,7 +1564,7 @@ namespace Microsoft.Windows.CsWin32
             string name = this.mr.GetString(fieldDef.Name);
             try
             {
-                TypeSyntax fieldType = fieldDef.DecodeSignature(this.signatureTypeProvider, null);
+                TypeSyntax fieldType = fieldDef.DecodeSignature(this.signatureTypeProviderNoSafeHandles, null);
                 Constant constant = this.mr.GetConstant(fieldDef.GetDefaultValue());
                 ExpressionSyntax value = this.ToExpressionSyntax(constant);
                 if (fieldType is not PredefinedTypeSyntax)
@@ -1553,7 +1605,7 @@ namespace Microsoft.Windows.CsWin32
 
         private ClassDeclarationSyntax CreateConstantDefiningClass()
         {
-            return ClassDeclaration("Constants")
+            return ClassDeclaration(ConstantsClassName.Identifier)
                 .AddMembers(this.fieldsToSyntax.Values.ToArray())
                 .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.PartialKeyword)));
         }
@@ -1616,7 +1668,7 @@ namespace Microsoft.Windows.CsWin32
                 string methodName = this.mr.GetString(methodDefinition.Name);
                 IdentifierNameSyntax innerMethodName = IdentifierName($"{methodName}_{methodCounter}");
 
-                MethodSignature<TypeSyntax> signature = methodDefinition.DecodeSignature(this.signatureTypeProvider, null);
+                MethodSignature<TypeSyntax> signature = methodDefinition.DecodeSignature(this.signatureTypeProviderNoSafeHandles, null);
                 CustomAttributeHandleCollection? returnTypeAttributes = this.GetReturnTypeCustomAttributes(methodDefinition);
 
                 TypeSyntax returnType = signature.ReturnType;
@@ -1749,7 +1801,7 @@ namespace Microsoft.Windows.CsWin32
                 }
             }
 
-            this.GetSignatureForDelegate(typeDef, out MethodDefinition invokeMethodDef, out MethodSignature<TypeSyntax> signature);
+            this.GetSignatureForDelegate(typeDef, this.signatureTypeProvider, out MethodDefinition invokeMethodDef, out MethodSignature<TypeSyntax> signature);
 
             DelegateDeclarationSyntax result = DelegateDeclaration(signature.ReturnType, name)
                 .WithParameterList(this.CreateParameterList(invokeMethodDef, signature))
@@ -1763,10 +1815,10 @@ namespace Microsoft.Windows.CsWin32
             return result;
         }
 
-        private void GetSignatureForDelegate(TypeDefinition typeDef, out MethodDefinition invokeMethodDef, out MethodSignature<TypeSyntax> signature)
+        private void GetSignatureForDelegate(TypeDefinition typeDef, SignatureTypeProvider signatureTypeProvider, out MethodDefinition invokeMethodDef, out MethodSignature<TypeSyntax> signature)
         {
             invokeMethodDef = typeDef.GetMethods().Select(this.mr.GetMethodDefinition).Single(def => this.mr.StringComparer.Equals(def.Name, "Invoke"));
-            signature = invokeMethodDef.DecodeSignature(this.signatureTypeProvider, null);
+            signature = invokeMethodDef.DecodeSignature(signatureTypeProvider, null);
         }
 
         private StructDeclarationSyntax CreateInteropStruct(TypeDefinition typeDef)
@@ -2543,7 +2595,7 @@ namespace Microsoft.Windows.CsWin32
         {
             if (originalType is PointerTypeSyntax { ElementType: IdentifierNameSyntax idName } && this.IsDelegateReference(idName, out TypeDefinition delegateTypeDef))
             {
-                return (this.FunctionPointer(delegateTypeDef), null);
+                return (this.FunctionPointer(delegateTypeDef, this.signatureTypeProvider), null);
             }
 
             foreach (CustomAttributeHandle attHandle in customAttributes)
@@ -2703,23 +2755,23 @@ namespace Microsoft.Windows.CsWin32
             // If the field is a delegate type, we have to replace that with a native function pointer to avoid the struct becoming a 'managed type'.
             if (originalType is PointerTypeSyntax { ElementType: IdentifierNameSyntax idName } && this.IsDelegateReference(idName, out TypeDefinition typeDef))
             {
-                return (this.FunctionPointer(typeDef), default);
+                return (this.FunctionPointer(typeDef, this.signatureTypeProviderNoSafeHandles), default);
             }
             else if (originalType is IdentifierNameSyntax idName2 && this.IsDelegateReference(idName2, out typeDef))
             {
-                return (this.FunctionPointer(typeDef), default);
+                return (this.FunctionPointer(typeDef, this.signatureTypeProviderNoSafeHandles), default);
             }
 
             return (originalType, default);
         }
 
-        private FunctionPointerTypeSyntax FunctionPointer(TypeDefinition delegateType)
+        private FunctionPointerTypeSyntax FunctionPointer(TypeDefinition delegateType, SignatureTypeProvider signatureTypeProvider)
         {
             CustomAttribute ufpAtt = delegateType.GetCustomAttributes().Select(ah => this.mr.GetCustomAttribute(ah)).Single(a => this.IsAttribute(a, SystemRuntimeInteropServices, nameof(UnmanagedFunctionPointerAttribute)));
             var attArgs = ufpAtt.DecodeValue(this.customAttributeTypeProvider);
             CallingConvention callingConvention = (CallingConvention)attArgs.FixedArguments[0].Value!;
 
-            this.GetSignatureForDelegate(delegateType, out MethodDefinition invokeMethodDef, out MethodSignature<TypeSyntax> signature);
+            this.GetSignatureForDelegate(delegateType, signatureTypeProvider, out MethodDefinition invokeMethodDef, out MethodSignature<TypeSyntax> signature);
             return this.FunctionPointer(CallingConvention.StdCall, signature, this.mr.GetString(delegateType.Name));
         }
 

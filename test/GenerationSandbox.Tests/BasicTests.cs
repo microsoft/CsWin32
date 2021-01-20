@@ -121,26 +121,16 @@ public class BasicTests
     public void CreateFile()
     {
         var path = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-        HANDLE fileHandle = PInvoke.CreateFile(
+        using var fileHandle = PInvoke.CreateFile(
             path,
             FILE_ACCESS_FLAGS.FILE_GENERIC_WRITE,
             FILE_SHARE_FLAGS.FILE_SHARE_NONE,
             lpSecurityAttributes: null,
             FILE_CREATE_FLAGS.CREATE_NEW,
             FILE_FLAGS_AND_ATTRIBUTES.FILE_ATTRIBUTE_TEMPORARY | (FILE_FLAGS_AND_ATTRIBUTES)FILE_FLAG_DELETE_ON_CLOSE,
-            hTemplateFile: default);
-        try
-        {
-            Assert.True(File.Exists(path));
-        }
-        finally
-        {
-            if (fileHandle.Value != IntPtr.Zero)
-            {
-                PInvoke.CloseHandle(fileHandle);
-            }
-        }
-
+            hTemplateFile: CloseHandleSafeHandle.Null);
+        Assert.True(File.Exists(path));
+        fileHandle.Dispose();
         Assert.False(File.Exists(path));
     }
 }

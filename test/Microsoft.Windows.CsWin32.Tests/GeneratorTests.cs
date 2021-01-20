@@ -104,6 +104,12 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [InlineData("BOOL")] // a special cased typedef struct
     [InlineData("uregex_getMatchCallback")] // friendly overload with delegate parameter, and out parameters
     [InlineData("CreateDispatcherQueueController")] // References a WinRT type
+    [InlineData("RegOpenKey")] // allocates a handle with a release function that returns LSTATUS
+    [InlineData("LsaRegisterLogonProcess")] // allocates a handle with a release function that returns NTSTATUS
+    [InlineData("FilterCreate")] // allocates a handle with a release function that returns HRESULT
+    [InlineData("DsGetDcOpen")] // allocates a handle with a release function that returns HRESULT
+    [InlineData("DXVAHDSW_CALLBACKS")] // pointers to handles
+    [InlineData("HBITMAP_UserMarshal")] // in+out handle pointer
     public void InterestingAPIs(string api)
     {
         this.generator = new Generator(this.metadataStream, options: new GeneratorOptions { EmitSingleFile = true }, compilation: this.compilation, parseOptions: this.parseOptions);
@@ -136,7 +142,17 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         Assert.True(this.IsMethodGenerated("CloseHandle"));
     }
 
-    [Fact(Skip = "SafeHandles are deactivated for now.")]
+    [Fact]
+    public void NamespaceHandleGetsNoSafeHandle()
+    {
+        this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);
+        Assert.True(this.generator.TryGenerate("CreatePrivateNamespace", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        Assert.Null(this.FindGeneratedType("ClosePrivateNamespaceSafeHandle"));
+    }
+
+    [Fact]
     public void CreateFileUsesSafeHandles()
     {
         this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);

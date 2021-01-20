@@ -4,7 +4,7 @@ pr: none
 resources:
   pipelines:
   - pipeline: CI
-    source: Library # TODO: This should match the name of your CI pipeline
+    source: microsoft.CsWin32
     trigger:
       tags:
       - auto-release
@@ -28,7 +28,7 @@ stages:
           - task: GitHubRelease@1
             displayName: GitHub release (create)
             inputs:
-              gitHubConnection: # TODO: fill in service connection here
+              gitHubConnection: AArnott
               repositoryName: $(Build.Repository.Name)
               target: $(resources.pipeline.CI.sourceCommit)
               tagSource: userSpecifiedTag
@@ -68,4 +68,4 @@ stages:
               command: push
               packagesToPush: $(Pipeline.Workspace)/CI/deployables-Windows/NuGet/*.nupkg
               nuGetFeedType: external
-              publishFeedCredentials: # TODO: fill in service connection here
+              publishFeedCredentials: Microsoft.Windows.CsWin32

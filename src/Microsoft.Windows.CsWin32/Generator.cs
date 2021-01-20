@@ -275,10 +275,7 @@ namespace Microsoft.Windows.CsWin32
             foreach (MethodDefinitionHandle methodDefHandle in this.Apis.SelectMany(api => api.GetMethods()))
             {
                 string methodName = this.mr.GetString(this.mr.GetMethodDefinition(methodDefHandle).Name);
-                if (!this.methodsByName.ContainsKey(methodName))
-                {
-                    this.methodsByName.Add(methodName, methodDefHandle);
-                }
+                this.methodsByName.Add(methodName, methodDefHandle);
             }
 
             this.typesByName = new Dictionary<string, TypeDefinitionHandle>(StringComparer.Ordinal);
@@ -286,6 +283,8 @@ namespace Microsoft.Windows.CsWin32
             {
                 TypeDefinition typeDefinition = this.mr.GetTypeDefinition(typeDefinitionHandle);
                 string name = this.mr.GetString(typeDefinition.Name);
+
+                // https://github.com/microsoft/CsWin32/issues/31
                 if (!this.typesByName.ContainsKey(name))
                 {
                     this.typesByName.Add(name, typeDefinitionHandle);
@@ -773,6 +772,14 @@ namespace Microsoft.Windows.CsWin32
 
             if (!this.typesGenerating.Add(typeDefHandle))
             {
+                return;
+            }
+
+            // https://github.com/microsoft/CsWin32/issues/31
+            TypeDefinition typeDef = this.mr.GetTypeDefinition(typeDefHandle);
+            if (this.typesByName.TryGetValue(this.mr.GetString(typeDef.Name), out TypeDefinitionHandle expectedHandle) && !expectedHandle.Equals(typeDefHandle))
+            {
+                // Skip generating types with conflicting names till we fix that issue.
                 return;
             }
 

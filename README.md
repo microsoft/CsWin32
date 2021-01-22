@@ -46,13 +46,17 @@ When generating any type or member, all supporting types will also be generated.
 Generated code is added directly in the compiler.
 An IDE may make this generated code available to view through code navigation commands (e.g. Go to Definition) or a tree view of source files that include generated source files.
 
-Assuming default settings and a `NativeMethods.txt` file with content that includes `CreateFile`, the P/Invoke API can be found on the `Microsoft.Windows.Sdk.PInvoke` class, like this:
+Assuming default settings and a `NativeMethods.txt` file with content that includes `CreateFile`, the P/Invoke methods can be found on the `Microsoft.Windows.Sdk.PInvoke` class, like this:
 
 ```cs
 using Microsoft.Windows.Sdk;
 
 PInvoke.CreateFile(/*args*/);
 ```
+
+Constants are defined on the `Microsoft.Windows.Sdk.Constants` class.
+
+Other supporting types are defined within the `Microsoft.Windows.Sdk` namespace.
 
 ### Customizing generated code
 

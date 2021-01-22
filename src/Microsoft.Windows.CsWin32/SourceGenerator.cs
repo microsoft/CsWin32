@@ -122,6 +122,7 @@ namespace Microsoft.Windows.CsWin32
                     continue;
                 }
 
+                name = name.Trim();
                 var location = Location.Create(nativeMethodsTxtFile.Path, line.Span, nativeMethodsTxt.Lines.GetLinePositionSpan(line.Span));
                 if (Generator.BannedAPIs.TryGetValue(name, out string? reason))
                 {

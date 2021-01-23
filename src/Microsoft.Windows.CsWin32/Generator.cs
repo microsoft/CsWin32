@@ -579,7 +579,8 @@ namespace Microsoft.Windows.CsWin32
         {
             var starterNamespace = NamespaceDeclaration(ParseName(this.Namespace));
 
-            const string FilenamePattern = "{0}.cs";
+            // .g.cs because the resulting files are not user-created.
+            const string FilenamePattern = "{0}.g.cs";
             var results = new Dictionary<string, NamespaceDeclarationSyntax>(StringComparer.OrdinalIgnoreCase);
 
             if (this.options.EmitSingleFile)

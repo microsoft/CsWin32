@@ -117,7 +117,7 @@ namespace Microsoft.Windows.CsWin32
             {
                 context.CancellationToken.ThrowIfCancellationRequested();
                 string name = line.ToString();
-                if (string.IsNullOrWhiteSpace(name))
+                if (string.IsNullOrWhiteSpace(name) || name.StartsWith("//", StringComparison.InvariantCulture))
                 {
                     continue;
                 }

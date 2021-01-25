@@ -38,7 +38,7 @@ namespace Microsoft.Windows.CsWin32
 
         internal static readonly Dictionary<string, string> BannedAPIs = new Dictionary<string, string>
         {
-            { "GetLastError", "Do not generate GetLastError. Call Marshal.GetLastWin32Error() instead. Learn more from https://docs.microsoft.com/en-us/dotnet/api/system.runtime.interopservices.marshal.getlastwin32error" },
+            { "GetLastError", "Do not generate GetLastError. Call Marshal.GetLastWin32Error() instead. Learn more from https://docs.microsoft.com/dotnet/api/system.runtime.interopservices.marshal.getlastwin32error" },
         };
 
         private const string SystemRuntimeCompilerServices = "System.Runtime.CompilerServices";

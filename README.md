@@ -38,8 +38,9 @@ Create a `NativeMethods.txt` file in your project directory that lists the APIs 
 Each line may consist of *one* of the following:
 
 * Exported method name (e.g. `CreateFile`). This *may* include the `A` or `W` suffix, where applicable.
-* Module name followed by `.*` to generate all methods exported from that module (e.g. `Kernel32.*`)
+* Module name followed by `.*` to generate all methods exported from that module (e.g. `Kernel32.*`).
 * The name of a struct, enum, constant or interface to generate.
+* A comment (i.e. any line starting with `//`) or white space line, which will be ignored.
 
 When generating any type or member, all supporting types will also be generated.
 

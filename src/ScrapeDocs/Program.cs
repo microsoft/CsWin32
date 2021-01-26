@@ -110,9 +110,6 @@ namespace ScrapeDocs
 
         private (string ApiName, YamlNode YamlNode)? ParseDocFile(string filePath)
         {
-            string presumedMethodName = FileNamePattern.Match(Path.GetFileNameWithoutExtension(filePath)).Groups[1].Value;
-            Uri helpLink = new Uri("https://docs.microsoft.com/en-us/windows/win32/api/" + filePath.Substring(this.contentBasePath.Length, filePath.Length - 3 - this.contentBasePath.Length).Replace('\\', '/'));
-
             var yaml = new YamlStream();
             using StreamReader mdFileReader = File.OpenText(filePath);
             using var markdownToYamlReader = new YamlSectionReader(mdFileReader);
@@ -159,6 +156,8 @@ namespace ScrapeDocs
                 return match is object;
             }
 
+            string presumedMethodName = FileNamePattern.Match(Path.GetFileNameWithoutExtension(filePath)).Groups[1].Value;
+
             // Some structures have filenames that include the W or A suffix when the content doesn't. So try some fuzzy matching.
             if (!TryGetProperName(presumedMethodName, null, out string? properName) &&
                 !TryGetProperName(presumedMethodName, 'a', out properName) &&
@@ -169,6 +168,7 @@ namespace ScrapeDocs
             }
 
             var methodNode = new YamlMappingNode();
+            Uri helpLink = new Uri("https://docs.microsoft.com/windows/win32/api/" + filePath.Substring(this.contentBasePath.Length, filePath.Length - 3 - this.contentBasePath.Length).Replace('\\', '/'));
             methodNode.Add("HelpLink", helpLink.AbsoluteUri);
 
             var description = ((YamlMappingNode)yaml.Documents[0].RootNode).Children.FirstOrDefault(n => n.Key is YamlScalarNode { Value: "description" }).Value as YamlScalarNode;

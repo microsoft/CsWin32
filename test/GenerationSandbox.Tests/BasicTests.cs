@@ -133,4 +133,10 @@ public class BasicTests
         fileHandle.Dispose();
         Assert.False(File.Exists(path));
     }
+
+    [Fact]
+    public void SafeHandle_Null_IsZero()
+    {
+        Assert.Equal(IntPtr.Zero, CloseHandleSafeHandle.Null.DangerousGetHandle());
+    }
 }

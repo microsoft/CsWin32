@@ -250,7 +250,7 @@ namespace Microsoft.Windows.CsWin32
         /// <summary>
         /// Initializes a new instance of the <see cref="Generator"/> class.
         /// </summary>
-        /// <param name="metadataLibraryStream">The stream to the winmd metadata to generate APIs from.</param>
+        /// <param name="metadataLibraryStream">The stream to the winmd metadata to generate APIs from. This will be disposed of with the <see cref="Generator"/>.</param>
         /// <param name="options">Options that influence the result of generation.</param>
         /// <param name="compilation">The compilation that the generated code will be added to.</param>
         /// <param name="parseOptions">The parse options that will be used for the generated code.</param>

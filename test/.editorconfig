@@ -44,3 +44,6 @@ dotnet_diagnostic.CA2007.severity = none
 
 # SA1310: Field names should not contain underscore
 dotnet_diagnostic.SA1310.severity = silent
+
+# SA1133: Do not combine attributes
+dotnet_diagnostic.SA1133.severity = silent

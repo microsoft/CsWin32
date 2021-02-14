@@ -14,6 +14,12 @@
           StandardOutputImportance="high"/>
   </Target>
 
+  <Target Name="SetNuSpecProperties" BeforeTargets="GenerateNuspec" DependsOnTargets="GetBuildVersion">
+    <PropertyGroup>
+      <NuspecProperties>$(NuspecProperties);Version=$(Version);BaseOutputPath=$(OutputPath);MetadataVersion=$(MetadataVersion);PackageReleaseNotes=$(PackageReleaseNotes);commit=$(GitCommitId);</NuspecProperties>
+    </PropertyGroup>
+  </Target>
+
   <Target Name="PackBuildOutputs" DependsOnTargets="ResolveProjectReferences;SatelliteDllsProjectOutputGroup;SatelliteDllsProjectOutputGroupDependencies">
     <ItemGroup>
       <!-- Analysis of C# projects -->

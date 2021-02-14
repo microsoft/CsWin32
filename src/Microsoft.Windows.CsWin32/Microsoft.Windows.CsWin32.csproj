@@ -4,14 +4,13 @@
     <IsPackable>true</IsPackable>
     <TargetFramework>netstandard2.0</TargetFramework>
     <Nullable>enable</Nullable>
-    <Description>Microsoft Windows SDK Win32 API Source Generator</Description>
 
     <!-- Special properties for analyzer packages. -->
     <IncludeBuildOutput>false</IncludeBuildOutput>
     <IncludeSymbols>false</IncludeSymbols>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
-    <NoWarn>$(NoWarn);NU5128</NoWarn>
-    <DevelopmentDependency>true</DevelopmentDependency>
+    <NoWarn>$(NoWarn);NU5128;NU5127</NoWarn>
+    <NuSpecFile>Microsoft.Windows.CsWin32.nuspec</NuSpecFile>
   </PropertyGroup>
 
   <ItemGroup>

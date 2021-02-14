@@ -14,8 +14,7 @@ internal static unsafe class GeneratedForm
     private static void IEnumDebugPropertyInfo(IEnumDebugPropertyInfo* info)
     {
         Span<DebugPropertyInfo> span = stackalloc DebugPropertyInfo[2];
-        uint initialized = 0;
-        HRESULT result = info->Next(span, ref initialized); // should be _out_ instead of _ref_: https://github.com/microsoft/win32metadata/issues/38#issuecomment-738559618
+        HRESULT result = info->Next(span, out uint initialized);
         result = info->Clone(out IEnumDebugPropertyInfo* ppepi);
     }
 

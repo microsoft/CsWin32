@@ -250,7 +250,7 @@ namespace Microsoft.Windows.CsWin32
         /// <summary>
         /// Initializes a new instance of the <see cref="Generator"/> class.
         /// </summary>
-        /// <param name="metadataLibraryStream">The stream to the winmd metadata to generate APIs from.</param>
+        /// <param name="metadataLibraryStream">The stream to the winmd metadata to generate APIs from. This will be disposed of with the <see cref="Generator"/>.</param>
         /// <param name="options">Options that influence the result of generation.</param>
         /// <param name="compilation">The compilation that the generated code will be added to.</param>
         /// <param name="parseOptions">The parse options that will be used for the generated code.</param>
@@ -1460,6 +1460,35 @@ namespace Microsoft.Windows.CsWin32
             return isCompilerGenerated;
         }
 
+        private ISymbol? FindSymbolIfAlreadyAvailable(string fullyQualifiedMetadataName)
+        {
+            if (this.compilation is object)
+            {
+                if (this.compilation.Assembly.GetTypeByMetadataName(fullyQualifiedMetadataName) is { } ownSymbol)
+                {
+                    // This assembly defines it.
+                    return ownSymbol;
+                }
+
+                foreach (var reference in this.compilation.References)
+                {
+                    if (this.compilation.GetAssemblyOrModuleSymbol(reference) is IAssemblySymbol referencedAssembly)
+                    {
+                        if (referencedAssembly.GetTypeByMetadataName(fullyQualifiedMetadataName) is { } externalSymbol)
+                        {
+                            if (this.compilation.IsSymbolAccessibleWithin(externalSymbol, this.compilation.Assembly))
+                            {
+                                // A referenced assembly declares this symbol and it is accessible to our own.
+                                return externalSymbol;
+                            }
+                        }
+                    }
+                }
+            }
+
+            return null;
+        }
+
         private MemberDeclarationSyntax? CreateInteropType(TypeDefinitionHandle typeDefHandle)
         {
             TypeDefinition typeDef = this.mr.GetTypeDefinition(typeDefHandle);
@@ -1468,12 +1497,13 @@ namespace Microsoft.Windows.CsWin32
                 return null;
             }
 
-            // Skip if the compilation already defines this type.
+            // Skip if the compilation already defines this type or can access it from elsewhere.
             string name = this.mr.GetString(typeDef.Name);
             string ns = this.mr.GetString(typeDef.Namespace);
             string fullyQualifiedName = this.Namespace + "." + name;
-            if (this.compilation?.GetTypeByMetadataName(fullyQualifiedName) is object)
+            if (this.FindSymbolIfAlreadyAvailable(fullyQualifiedName) is object)
             {
+                // The type already exists either in this project or a referenced one.
                 return null;
             }
 

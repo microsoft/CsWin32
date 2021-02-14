@@ -30,7 +30,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public GeneratorTests(ITestOutputHelper logger)
     {
         this.logger = logger;
-        this.metadataStream = File.OpenRead(Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "Windows.Win32.winmd"));
+        this.metadataStream = OpenMetadata();
 
         this.parseOptions = CSharpParseOptions.Default
             .WithDocumentationMode(DocumentationMode.Diagnose)
@@ -228,9 +228,38 @@ namespace Microsoft.Windows.Sdk
         this.AssertNoDiagnostics(logGeneratedCode: false);
     }
 
+    [Theory, PairwiseData]
+    public void ProjectReferenceBetweenTwoGeneratingProjects(bool internalsVisibleTo)
+    {
+        CSharpCompilation referencedProject = this.compilation
+            .WithAssemblyName("refdProj");
+        if (internalsVisibleTo)
+        {
+            referencedProject = referencedProject.AddSyntaxTrees(
+                CSharpSyntaxTree.ParseText($@"[assembly: System.Runtime.CompilerServices.InternalsVisibleToAttribute(""{this.compilation.AssemblyName}"")]", this.parseOptions));
+        }
+
+        using var referencedGenerator = new Generator(OpenMetadata(), compilation: referencedProject, parseOptions: this.parseOptions);
+        Assert.True(referencedGenerator.TryGenerate("LockWorkStation", CancellationToken.None));
+        referencedProject = this.AddGeneratedCode(referencedProject, referencedGenerator);
+        this.AssertNoDiagnostics(referencedProject);
+
+        // Now produce more code in a referencing project that includes at least one of the same types as generated in the referenced project.
+        this.compilation = this.compilation.AddReferences(referencedProject.ToMetadataReference());
+        this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);
+        Assert.True(this.generator.TryGenerate("LockWorkStation", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics(logGeneratedCode: false);
+    }
+
     private static ImmutableArray<Diagnostic> FilterDiagnostics(ImmutableArray<Diagnostic> diagnostics) => diagnostics.Where(d => d.Severity > DiagnosticSeverity.Hidden).ToImmutableArray();
 
-    private void CollectGeneratedCode(Generator generator)
+    private static FileStream OpenMetadata()
+    {
+        return File.OpenRead(Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "Windows.Win32.winmd"));
+    }
+
+    private CSharpCompilation AddGeneratedCode(CSharpCompilation compilation, Generator generator)
     {
         var compilationUnits = generator.GetCompilationUnits(CancellationToken.None);
         var syntaxTrees = new List<SyntaxTree>(compilationUnits.Count);
@@ -241,8 +270,10 @@ namespace Microsoft.Windows.Sdk
             syntaxTrees.Add(CSharpSyntaxTree.ParseText(unit.Value.ToFullString(), this.parseOptions, path: unit.Key));
         }
 
-        this.compilation = this.compilation.AddSyntaxTrees(syntaxTrees);
+        return compilation.AddSyntaxTrees(syntaxTrees);
     }
+
+    private void CollectGeneratedCode(Generator generator) => this.compilation = this.AddGeneratedCode(this.compilation, generator);
 
     private MethodDeclarationSyntax? FindGeneratedMethod(string name) => this.compilation.SyntaxTrees.SelectMany(st => st.GetRoot().DescendantNodes().OfType<MethodDeclarationSyntax>()).FirstOrDefault(md => md.Identifier.ValueText == name);
 
@@ -250,16 +281,18 @@ namespace Microsoft.Windows.Sdk
 
     private bool IsMethodGenerated(string name) => this.FindGeneratedMethod(name) is object;
 
-    private void AssertNoDiagnostics(bool logGeneratedCode = true)
+    private void AssertNoDiagnostics(bool logGeneratedCode = true) => this.AssertNoDiagnostics(this.compilation, logGeneratedCode);
+
+    private void AssertNoDiagnostics(CSharpCompilation compilation, bool logGeneratedCode = true)
     {
-        var diagnostics = FilterDiagnostics(this.compilation.GetDiagnostics());
+        var diagnostics = FilterDiagnostics(compilation.GetDiagnostics());
         this.LogDiagnostics(diagnostics);
 
         var emitDiagnostics = ImmutableArray<Diagnostic>.Empty;
         bool? emitSuccessful = null;
         if (diagnostics.IsEmpty)
         {
-            var emitResult = this.compilation.Emit(peStream: Stream.Null, xmlDocumentationStream: Stream.Null);
+            var emitResult = compilation.Emit(peStream: Stream.Null, xmlDocumentationStream: Stream.Null);
             emitSuccessful = emitResult.Success;
             emitDiagnostics = FilterDiagnostics(emitResult.Diagnostics);
             this.LogDiagnostics(emitDiagnostics);

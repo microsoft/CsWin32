@@ -1931,7 +1931,7 @@ namespace Microsoft.Windows.CsWin32
 
             StructDeclarationSyntax result = StructDeclaration(name)
                 .AddMembers(members.ToArray())
-                .WithModifiers(TokenList(Token(this.Visibility)));
+                .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.PartialKeyword)));
 
             TypeLayout layout = typeDef.GetLayout();
             if (!layout.IsDefault || (typeDef.Attributes & TypeAttributes.ExplicitLayout) == TypeAttributes.ExplicitLayout)
@@ -2073,7 +2073,7 @@ namespace Microsoft.Windows.CsWin32
             StructDeclarationSyntax result = StructDeclaration(name)
                 .AddBaseListTypes(SimpleBaseType(GenericName(nameof(IEquatable<int>)).AddTypeArgumentListArguments(IdentifierName(name))))
                 .WithMembers(members)
-                .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.ReadOnlyKeyword)));
+                .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.ReadOnlyKeyword), Token(SyntaxKind.PartialKeyword)));
 
             result = AddApiDocumentation(name, result);
             return result;
@@ -2173,7 +2173,7 @@ namespace Microsoft.Windows.CsWin32
 
             StructDeclarationSyntax result = StructDeclaration(name)
                 .WithMembers(members)
-                .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.ReadOnlyKeyword)));
+                .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.ReadOnlyKeyword), Token(SyntaxKind.PartialKeyword)));
 
             result = AddApiDocumentation(name, result);
             return result;

@@ -162,8 +162,8 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.AssertNoDiagnostics();
         MethodDeclarationSyntax? createFileMethod = this.FindGeneratedMethod("CreateFile");
         Assert.NotNull(createFileMethod);
-        Assert.Equal("CloseHandleSafeHandle", Assert.IsType<IdentifierNameSyntax>(createFileMethod!.ReturnType).Identifier.ValueText);
-        Assert.Equal("SafeHandle", Assert.IsType<IdentifierNameSyntax>(createFileMethod.ParameterList.Parameters.Last().Type).Identifier.ValueText);
+        Assert.Equal("Microsoft.Win32.SafeHandles.SafeFileHandle", createFileMethod!.ReturnType.ToString());
+        Assert.Equal("SafeHandle", createFileMethod.ParameterList.Parameters.Last().Type?.ToString());
     }
 
     [Fact]

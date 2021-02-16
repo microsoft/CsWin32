@@ -40,6 +40,11 @@ namespace Microsoft.Windows.CsWin32
             { "ULARGE_INTEGER", PredefinedType(Token(SyntaxKind.ULongKeyword)) },
         };
 
+        internal static readonly Dictionary<string, TypeSyntax> BclInteropSafeHandles = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)
+        {
+            { "CloseHandle", ParseTypeName("Microsoft.Win32.SafeHandles.SafeFileHandle").WithAdditionalAnnotations(IsManagedTypeAnnotation, IsSafeHandleTypeAnnotation) },
+        };
+
         internal static readonly Dictionary<string, string> BannedAPIs = new Dictionary<string, string>
         {
             { "GetLastError", "Do not generate GetLastError. Call Marshal.GetLastWin32Error() instead. Learn more from https://docs.microsoft.com/dotnet/api/system.runtime.interopservices.marshal.getlastwin32error" },
@@ -829,6 +834,11 @@ namespace Microsoft.Windows.CsWin32
                 return safeHandleType;
             }
 
+            if (BclInteropSafeHandles.TryGetValue(releaseMethod, out TypeSyntax? bclType))
+            {
+                return bclType;
+            }
+
             string safeHandleClassName = $"{releaseMethod}SafeHandle";
 
             MethodDefinitionHandle releaseMethodHandle = this.methodsByName[releaseMethod];
@@ -869,7 +879,6 @@ namespace Microsoft.Windows.CsWin32
 
             TypeSyntax releaseMethodParameterType = releaseMethodSignature.ParameterTypes[0];
 
-            // TODO: Reuse existing SafeHandle's defined in .NET where possible to facilitate interop with APIs that take them.
             this.TryGetRenamedMethod(releaseMethod, out string? renamedReleaseMethod);
 
             var members = new List<MemberDeclarationSyntax>();

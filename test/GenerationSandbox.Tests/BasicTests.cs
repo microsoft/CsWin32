@@ -137,7 +137,7 @@ public class BasicTests
     [Fact]
     public void SafeHandle_Null_IsZero()
     {
-        Assert.Equal(IntPtr.Zero, CloseHandleSafeHandle.Null.DangerousGetHandle());
+        Assert.Equal(IntPtr.Zero, DeleteDCSafeHandle.Null.DangerousGetHandle());
     }
 
     [Fact]

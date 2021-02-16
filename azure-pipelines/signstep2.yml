@@ -1,0 +1,30 @@
+steps:
+
+- task: EsrpCodeSigning@1
+  displayName: ✒ NuGet sign
+  inputs:
+    ConnectedServiceName: Undocked RegFree Signing Connection
+    FolderPath: $(System.DefaultWorkingDirectory)\bin\Packages\$(BuildConfiguration)\NuGet
+    Pattern: Microsoft.Windows.CsWin32.*.nupkg
+    signConfigType: inlineSignParams
+    inlineOperation: |
+      [
+        {
+          "KeyCode" : "CP-401405",
+          "OperationCode" : "NuGetSign",
+          "Parameters" : {},
+          "ToolName" : "sign",
+          "ToolVersion" : "1.0"
+        },
+        {
+          "KeyCode" : "CP-401405",
+          "OperationCode" : "NuGetVerify",
+          "Parameters" : {},
+          "ToolName" : "sign",
+          "ToolVersion" : "1.0"
+        }
+      ]
+    SessionTimeout: 60
+    MaxConcurrency: 50
+    MaxRetryAttempts: 5
+  condition: and(succeeded(), eq(variables['Agent.OS'], 'Windows_NT'), eq(variables['IsSigned'], 'true'))

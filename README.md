@@ -97,3 +97,13 @@ Alternatively, you may set the `MicrosoftWindowsSdkWin32MetadataBasePath` proper
 ## Known issues
 
 - [**WPF projects** issue and workaround](https://github.com/microsoft/CsWin32/issues/7).
+
+## Consuming daily builds
+
+Can't wait for the next release to try out a bug fix? Follow these steps to consume directly from our daily build.
+
+Just add this package feed to your nuget.config file:
+
+   ```xml
+   <add key="winsdk" value="https://pkgs.dev.azure.com/azure-public/vside/_packaging/winsdk/nuget/v3/index.json" />
+   ```

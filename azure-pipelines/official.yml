@@ -9,6 +9,12 @@ trigger:
     - doc/
     - '*.md'
     - .vscode/
+schedules:
+- cron: "0 3 * * *" # Daily @ 8 PM PST
+  displayName: Daily build
+  branches:
+    include:
+    - main
 
 parameters:
 - name: SignSelection
@@ -40,3 +46,31 @@ stages:
   - template: build.yml
     parameters:
       includeMacOS: ${{ parameters.includeMacOS }}
+
+- stage: azure_public_winsdk_feed
+  displayName: azure-public/winsdk feed
+  condition: and(succeeded(), eq(dependencies.Build.outputs['Windows.SetPipelineVariables.IsSigned'], 'true'))
+  jobs:
+  - deployment: push
+    pool:
+      vmImage: ubuntu-latest
+    environment: No-Approval
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: current
+            artifact: deployables-Windows
+            displayName: Download deployables-Windows artifact
+          - task: NuGetToolInstaller@1
+            displayName: Use NuGet 5.x
+            inputs:
+              versionSpec: 5.x
+          - task: 333b11bd-d341-40d9-afcf-b32d5ce6f23b@2 # NuGetCommand
+            displayName: NuGet push
+            inputs:
+              command: push
+              packagesToPush: $(Pipeline.Workspace)/deployables-Windows/NuGet/*.nupkg
+              nuGetFeedType: external
+              publishFeedCredentials: azure-public/winsdk
+            continueOnError: true # until "skip on conflict" is offered as a task input.

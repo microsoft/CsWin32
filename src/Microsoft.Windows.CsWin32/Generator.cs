@@ -28,8 +28,8 @@ namespace Microsoft.Windows.CsWin32
     /// </summary>
     public class Generator : IDisposable
     {
-        internal const string IsManagedTypeAnnotation = "IsManagedType";
-        internal const string IsSafeHandleTypeAnnotation = "IsSafeHandleType";
+        internal static readonly SyntaxAnnotation IsManagedTypeAnnotation = new SyntaxAnnotation("IsManagedType");
+        internal static readonly SyntaxAnnotation IsSafeHandleTypeAnnotation = new SyntaxAnnotation("IsSafeHandleType");
 
         internal static readonly Dictionary<string, TypeSyntax> BclInteropStructs = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)
         {
@@ -835,9 +835,7 @@ namespace Microsoft.Windows.CsWin32
             safeHandleType = this.GroupByModule
                 ? QualifiedName(IdentifierName(releaseMethodModule), safeHandleTypeIdentifier)
                 : safeHandleTypeIdentifier;
-            safeHandleType = safeHandleType.WithAdditionalAnnotations(
-                new SyntaxAnnotation(IsManagedTypeAnnotation),
-                new SyntaxAnnotation(IsSafeHandleTypeAnnotation));
+            safeHandleType = safeHandleType.WithAdditionalAnnotations(IsManagedTypeAnnotation, IsSafeHandleTypeAnnotation);
 
             var releaseMethodSignature = releaseMethodDef.DecodeSignature(this.signatureTypeProviderNoSafeHandlesOrNint, null);
 
@@ -2680,7 +2678,7 @@ namespace Microsoft.Windows.CsWin32
                 return (this.FunctionPointer(delegateTypeDef, this.signatureTypeProvider), null);
             }
 
-            if (!isReturnOrOutParam && originalType.HasAnnotations(IsSafeHandleTypeAnnotation))
+            if (!isReturnOrOutParam && originalType.HasAnnotation(IsSafeHandleTypeAnnotation))
             {
                 return (SafeHandleTypeSyntax, null);
             }
@@ -2899,7 +2897,7 @@ namespace Microsoft.Windows.CsWin32
                 return false;
             }
 
-            return identifierName.HasAnnotations(IsManagedTypeAnnotation)
+            return identifierName.HasAnnotation(IsManagedTypeAnnotation)
                 || this.IsDelegateReference(identifierName as IdentifierNameSyntax);
         }
 

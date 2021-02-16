@@ -35,5 +35,6 @@
     <file src="$BaseOutputPath$System.Text.Encodings.Web.dll" target="analyzers\cs\System.Text.Encodings.Web.dll" />
     <file src="readme.txt" target="readme.txt" />
     <file src="build\**" target="build\" />
+    <file src="tools\**" target="tools\" />
   </files>
 </package>

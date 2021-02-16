@@ -139,4 +139,20 @@ public class BasicTests
     {
         Assert.Equal(IntPtr.Zero, CloseHandleSafeHandle.Null.DangerousGetHandle());
     }
+
+    [Fact]
+    public void HRESULT_Succeeded()
+    {
+        Assert.True(((HRESULT)0).Succeeded);
+        Assert.True(((HRESULT)1).Succeeded);
+        Assert.False(((HRESULT)(-1)).Succeeded);
+    }
+
+    [Fact]
+    public void HRESULT_Failed()
+    {
+        Assert.False(((HRESULT)0).Failed);
+        Assert.False(((HRESULT)1).Failed);
+        Assert.True(((HRESULT)(-1)).Failed);
+    }
 }

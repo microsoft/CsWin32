@@ -69,6 +69,7 @@ namespace Microsoft.Windows.CsWin32
         private static readonly TypeSyntax SafeHandleTypeSyntax = IdentifierName("SafeHandle");
         private static readonly IdentifierNameSyntax IntPtrTypeSyntax = IdentifierName(nameof(IntPtr));
         private static readonly TypeSyntax VoidStar = SyntaxFactory.ParseTypeName("void*");
+        private static readonly AttributeListSyntax DebuggerBrowsableNever = AttributeList().AddAttributes(DebuggerBrowsable(DebuggerBrowsableState.Never));
 
         /// <summary>
         /// This is the preferred capitalizations for modules and class names.
@@ -1340,6 +1341,13 @@ namespace Microsoft.Windows.CsWin32
                     IdentifierName(Enum.GetName(typeof(DebuggerBrowsableState), state)!))));
         }
 
+        private static AttributeSyntax DebuggerDisplay(string format)
+        {
+            return Attribute(IdentifierName("DebuggerDisplay"))
+                .AddArgumentListArguments(
+                AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(format))));
+        }
+
         private static SyntaxToken SafeIdentifier(string name) => SafeIdentifierName(name).Identifier;
 
         private static IdentifierNameSyntax SafeIdentifierName(string name) => IdentifierName(CSharpKeywords.Contains(name) ? "@" + name : name);
@@ -1906,7 +1914,7 @@ namespace Microsoft.Windows.CsWin32
 
                     if (fieldInfo.AdditionalMembers.Count > 0)
                     {
-                        field = field.AddAttributeLists(AttributeList().AddAttributes(DebuggerBrowsable(DebuggerBrowsableState.Never)));
+                        field = field.AddAttributeLists(DebuggerBrowsableNever);
                     }
 
                     if (fieldInfo.FieldType is PointerTypeSyntax || fieldInfo.FieldType is FunctionPointerTypeSyntax)
@@ -2065,15 +2073,23 @@ namespace Microsoft.Windows.CsWin32
                         ArgumentList())))
                 .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
 
-            if (name == "BSTR")
+            switch (name)
             {
-                members = members.AddRange(this.CreateAdditionalTypeDefBSTRMembers());
+                case "BSTR":
+                    members = members.AddRange(this.CreateAdditionalTypeDefBSTRMembers());
+                    break;
+                case "HRESULT":
+                    members = members.AddRange(this.CreateAdditionalTypeDefHRESULTMembers());
+                    break;
+                default:
+                    break;
             }
 
             StructDeclarationSyntax result = StructDeclaration(name)
                 .AddBaseListTypes(SimpleBaseType(GenericName(nameof(IEquatable<int>)).AddTypeArgumentListArguments(IdentifierName(name))))
                 .WithMembers(members)
-                .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.ReadOnlyKeyword), Token(SyntaxKind.PartialKeyword)));
+                .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.ReadOnlyKeyword), Token(SyntaxKind.PartialKeyword)))
+                .AddAttributeLists(AttributeList().AddAttributes(DebuggerDisplay("{" + fieldName + "}")));
 
             result = AddApiDocumentation(name, result);
             return result;
@@ -2124,6 +2140,27 @@ namespace Microsoft.Windows.CsWin32
                 .AddModifiers(Token(this.Visibility))
                 .WithExpressionBody(ArrowExpressionClause(ThisExpression()))
                 .WithSemicolonToken(Token(SyntaxKind.SemicolonToken));
+        }
+
+        private IEnumerable<MemberDeclarationSyntax> CreateAdditionalTypeDefHRESULTMembers()
+        {
+            ExpressionSyntax thisValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Value"));
+
+            // [DebuggerBrowsable(DebuggerBrowsableState.Never)]
+            // public bool Succeeded => this.Value >= 0;
+            yield return PropertyDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), "Succeeded")
+                .AddModifiers(Token(this.Visibility))
+                .WithExpressionBody(ArrowExpressionClause(BinaryExpression(SyntaxKind.GreaterThanOrEqualExpression, thisValue, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)))))
+                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
+                .AddAttributeLists(DebuggerBrowsableNever);
+
+            // [DebuggerBrowsable(DebuggerBrowsableState.Never)]
+            // public bool Failed => this.Value < 0;
+            yield return PropertyDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), "Failed")
+                .AddModifiers(Token(this.Visibility))
+                .WithExpressionBody(ArrowExpressionClause(BinaryExpression(SyntaxKind.LessThanExpression, thisValue, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)))))
+                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
+                .AddAttributeLists(DebuggerBrowsableNever);
         }
 
         private StructDeclarationSyntax CreateTypeDefBOOLStruct(TypeDefinition typeDef)

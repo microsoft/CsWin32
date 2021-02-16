@@ -844,6 +844,11 @@ namespace Microsoft.Windows.CsWin32
                 return safeHandleType;
             }
 
+            if (this.FindSymbolIfAlreadyAvailable($"{this.Namespace}.{safeHandleType}") is object)
+            {
+                return safeHandleType;
+            }
+
             this.GenerateExternMethod(releaseMethodHandle);
 
             TypeSyntax releaseMethodReturnType = this.GetReturnTypeCustomAttributes(releaseMethodDef) is { } atts

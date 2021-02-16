@@ -41,7 +41,7 @@ steps:
     SessionTimeout: 60
     MaxConcurrency: 50
     MaxRetryAttempts: 5
-  condition: and(succeeded(), eq(variables['Agent.OS'], 'Windows_NT'), eq(variables['SignSelection'], 'true'))
+  condition: and(succeeded(), eq(variables['Agent.OS'], 'Windows_NT'), eq(variables['IsSigned'], 'true'))
 
 - task: EsrpCodeSigning@1
   enabled: false # till we get it working
@@ -80,4 +80,4 @@ steps:
     SessionTimeout: 60
     MaxConcurrency: 50
     MaxRetryAttempts: 5
-  condition: and(succeeded(), eq(variables['Agent.OS'], 'Windows_NT'), eq(variables['SignSelection'], 'true'))
+  condition: and(succeeded(), eq(variables['Agent.OS'], 'Windows_NT'), eq(variables['IsSigned'], 'true'))

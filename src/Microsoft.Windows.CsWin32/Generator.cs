@@ -29,6 +29,7 @@ namespace Microsoft.Windows.CsWin32
     public class Generator : IDisposable
     {
         internal const string IsManagedTypeAnnotation = "IsManagedType";
+        internal const string IsSafeHandleTypeAnnotation = "IsSafeHandleType";
 
         internal static readonly Dictionary<string, TypeSyntax> BclInteropStructs = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)
         {
@@ -722,7 +723,7 @@ namespace Microsoft.Windows.CsWin32
                 AttributeSyntax? returnTypeAttribute = null;
                 if (returnTypeAttributes.HasValue)
                 {
-                    (returnType, returnTypeAttribute) = this.ReinterpretMethodSignatureType(signature.ReturnType, returnTypeAttributes.Value);
+                    (returnType, returnTypeAttribute) = this.ReinterpretMethodSignatureType(signature.ReturnType, returnTypeAttributes.Value, isReturnOrOutParam: true);
                 }
 
                 MethodDeclarationSyntax methodDeclaration = MethodDeclaration(
@@ -834,7 +835,9 @@ namespace Microsoft.Windows.CsWin32
             safeHandleType = this.GroupByModule
                 ? QualifiedName(IdentifierName(releaseMethodModule), safeHandleTypeIdentifier)
                 : safeHandleTypeIdentifier;
-            safeHandleType = safeHandleType.WithAdditionalAnnotations(new SyntaxAnnotation(IsManagedTypeAnnotation));
+            safeHandleType = safeHandleType.WithAdditionalAnnotations(
+                new SyntaxAnnotation(IsManagedTypeAnnotation),
+                new SyntaxAnnotation(IsSafeHandleTypeAnnotation));
 
             var releaseMethodSignature = releaseMethodDef.DecodeSignature(this.signatureTypeProviderNoSafeHandlesOrNint, null);
 
@@ -859,7 +862,7 @@ namespace Microsoft.Windows.CsWin32
             this.GenerateExternMethod(releaseMethodHandle);
 
             TypeSyntax releaseMethodReturnType = this.GetReturnTypeCustomAttributes(releaseMethodDef) is { } atts
-                 ? this.ReinterpretMethodSignatureType(releaseMethodSignature.ReturnType, atts).Type
+                 ? this.ReinterpretMethodSignatureType(releaseMethodSignature.ReturnType, atts, isReturnOrOutParam: true).Type
                  : releaseMethodSignature.ReturnType;
 
             TypeSyntax releaseMethodParameterType = releaseMethodSignature.ParameterTypes[0];
@@ -1724,7 +1727,7 @@ namespace Microsoft.Windows.CsWin32
                 AttributeSyntax? returnTypeAttribute = null;
                 if (returnTypeAttributes.HasValue)
                 {
-                    (returnType, returnTypeAttribute) = this.ReinterpretMethodSignatureType(signature.ReturnType, returnTypeAttributes.Value);
+                    (returnType, returnTypeAttribute) = this.ReinterpretMethodSignatureType(signature.ReturnType, returnTypeAttributes.Value, isReturnOrOutParam: true);
                 }
 
                 ParameterListSyntax parameterList = this.CreateParameterList(methodDefinition, signature);
@@ -2606,7 +2609,8 @@ namespace Microsoft.Windows.CsWin32
 
             // TODO:
             // * Notice [Out][RAIIFree] handle producing parameters. Can we make these provide SafeHandle's?
-            var parameterInfo = this.ReinterpretMethodSignatureType(methodSignature.ParameterTypes[parameter.SequenceNumber - 1], parameter.GetCustomAttributes());
+            bool isReturnOrOutParam = parameter.SequenceNumber == 0 || (parameter.Attributes & ParameterAttributes.Out) == ParameterAttributes.Out;
+            var parameterInfo = this.ReinterpretMethodSignatureType(methodSignature.ParameterTypes[parameter.SequenceNumber - 1], parameter.GetCustomAttributes(), isReturnOrOutParam);
 
             // Determine the custom attributes to apply.
             var attributes = AttributeList();
@@ -2669,11 +2673,16 @@ namespace Microsoft.Windows.CsWin32
             return parameterSyntax;
         }
 
-        private (TypeSyntax Type, AttributeSyntax? MarshalAsAttribute) ReinterpretMethodSignatureType(TypeSyntax originalType, CustomAttributeHandleCollection customAttributes)
+        private (TypeSyntax Type, AttributeSyntax? MarshalAsAttribute) ReinterpretMethodSignatureType(TypeSyntax originalType, CustomAttributeHandleCollection customAttributes, bool isReturnOrOutParam)
         {
             if (originalType is PointerTypeSyntax { ElementType: IdentifierNameSyntax idName } && this.IsDelegateReference(idName, out TypeDefinition delegateTypeDef))
             {
                 return (this.FunctionPointer(delegateTypeDef, this.signatureTypeProvider), null);
+            }
+
+            if (!isReturnOrOutParam && originalType.HasAnnotations(IsSafeHandleTypeAnnotation))
+            {
+                return (SafeHandleTypeSyntax, null);
             }
 
             foreach (CustomAttributeHandle attHandle in customAttributes)

@@ -135,12 +135,6 @@ public class BasicTests
     }
 
     [Fact]
-    public void SafeHandle_Null_IsZero()
-    {
-        Assert.Equal(IntPtr.Zero, DeleteDCSafeHandle.Null.DangerousGetHandle());
-    }
-
-    [Fact]
     public void HRESULT_Succeeded()
     {
         Assert.True(((HRESULT)0).Succeeded);

@@ -920,13 +920,6 @@ namespace Microsoft.Windows.CsWin32
                         IdentifierName("SetHandle"))).AddArgumentListArguments(
                         Argument(IdentifierName(preexistingHandleName)))))));
 
-            // public static SafeHandle Null { get; } = new SafeHandle(IntPtr.Zero);
-            members.Add(PropertyDeclaration(safeHandleTypeIdentifier, "Null")
-                .AddModifiers(Token(this.Visibility), Token(SyntaxKind.StaticKeyword))
-                .AddAccessorListAccessors(AccessorDeclaration(SyntaxKind.GetAccessorDeclaration).WithSemicolonToken(Token(SyntaxKind.SemicolonToken)))
-                .WithInitializer(EqualsValueClause(ObjectCreationExpression(safeHandleTypeIdentifier, ArgumentList().AddArguments(Argument(intptrZero)), null)))
-                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
-
             // public override bool IsInvalid => this.handle == default || this.Handle == INVALID_HANDLE_VALUE;
             members.Add(PropertyDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), nameof(SafeHandle.IsInvalid))
                 .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.OverrideKeyword))

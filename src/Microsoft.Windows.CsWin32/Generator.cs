@@ -255,6 +255,8 @@ namespace Microsoft.Windows.CsWin32
         private readonly CSharpCompilation? compilation;
         private readonly CSharpParseOptions? parseOptions;
 
+        private bool nullSafeHandleGenerated;
+
         /// <summary>
         /// Initializes a new instance of the <see cref="Generator"/> class.
         /// </summary>
@@ -820,6 +822,8 @@ namespace Microsoft.Windows.CsWin32
 
         internal TypeSyntax? GenerateSafeHandle(string releaseMethod)
         {
+            this.GenerateNullSafeHandleHelper();
+
             if (this.releaseMethodsWithSafeHandleTypesGenerating.TryGetValue(releaseMethod, out TypeSyntax? safeHandleType))
             {
                 return safeHandleType;
@@ -1411,6 +1415,39 @@ namespace Microsoft.Windows.CsWin32
             }
 
             return false;
+        }
+
+        private void GenerateNullSafeHandleHelper()
+        {
+            if (this.nullSafeHandleGenerated)
+            {
+                return;
+            }
+
+            this.nullSafeHandleGenerated = true;
+
+            const string className = "NullSafeHandle";
+            string fullName = $"{this.Namespace}.{className}";
+            if (this.FindSymbolIfAlreadyAvailable(fullName) is object)
+            {
+                return;
+            }
+
+            // static readonly SafeHandle NullHandle = new SafeFileHandle(IntPtr.Zero, ownsHandle: false);
+            FieldDeclarationSyntax nullHandle = FieldDeclaration(
+                VariableDeclaration(SafeHandleTypeSyntax)
+                    .AddVariables(VariableDeclarator("NullHandle").WithInitializer(EqualsValueClause(
+                        ObjectCreationExpression(ParseTypeName("Microsoft.Win32.SafeHandles.SafeFileHandle")).AddArgumentListArguments(
+                                Argument(DefaultExpression(IntPtrTypeSyntax)),
+                                Argument(LiteralExpression(SyntaxKind.FalseLiteralExpression)))))))
+                .AddModifiers(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.ReadOnlyKeyword));
+
+            // static class NullSafeHandle { ... }
+            ClassDeclarationSyntax helper = ClassDeclaration(className)
+                .AddModifiers(Token(this.Visibility), Token(SyntaxKind.StaticKeyword))
+                .AddMembers(nullHandle);
+
+            this.safeHandleTypes.Add(helper);
         }
 
         private FunctionPointerTypeSyntax FunctionPointer(CallingConvention callingConvention, MethodSignature<TypeSyntax> signature, string delegateName)

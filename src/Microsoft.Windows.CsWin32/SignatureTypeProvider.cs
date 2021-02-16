@@ -118,7 +118,7 @@ namespace Microsoft.Windows.CsWin32
                 // If we could recognize with a referenced type is a ref type vs a value type by its TypeReference, we wouldn't need special handling.
                 if (name == "DispatcherQueueController" && ns == "Windows.System")
                 {
-                    identifier = identifier.WithAdditionalAnnotations(new SyntaxAnnotation(Generator.IsManagedTypeAnnotation, "true"));
+                    identifier = identifier.WithAdditionalAnnotations(Generator.IsManagedTypeAnnotation);
                 }
 
                 return identifier;

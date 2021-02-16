@@ -128,16 +128,10 @@ public class BasicTests
             lpSecurityAttributes: null,
             FILE_CREATE_FLAGS.CREATE_NEW,
             FILE_FLAGS_AND_ATTRIBUTES.FILE_ATTRIBUTE_TEMPORARY | (FILE_FLAGS_AND_ATTRIBUTES)FILE_FLAG_DELETE_ON_CLOSE,
-            hTemplateFile: CloseHandleSafeHandle.Null);
+            hTemplateFile: NullSafeHandle.NullHandle);
         Assert.True(File.Exists(path));
         fileHandle.Dispose();
         Assert.False(File.Exists(path));
-    }
-
-    [Fact]
-    public void SafeHandle_Null_IsZero()
-    {
-        Assert.Equal(IntPtr.Zero, CloseHandleSafeHandle.Null.DangerousGetHandle());
     }
 
     [Fact]

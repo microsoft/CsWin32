@@ -28,8 +28,8 @@ namespace Microsoft.Windows.CsWin32
     /// </summary>
     public class Generator : IDisposable
     {
-        internal const string IsManagedTypeAnnotation = "IsManagedType";
-        internal const string IsSafeHandleTypeAnnotation = "IsSafeHandleType";
+        internal static readonly SyntaxAnnotation IsManagedTypeAnnotation = new SyntaxAnnotation("IsManagedType");
+        internal static readonly SyntaxAnnotation IsSafeHandleTypeAnnotation = new SyntaxAnnotation("IsSafeHandleType");
 
         internal static readonly Dictionary<string, TypeSyntax> BclInteropStructs = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)
         {
@@ -38,6 +38,11 @@ namespace Microsoft.Windows.CsWin32
             { "OLD_LARGE_INTEGER", PredefinedType(Token(SyntaxKind.LongKeyword)) },
             { "LARGE_INTEGER", PredefinedType(Token(SyntaxKind.LongKeyword)) },
             { "ULARGE_INTEGER", PredefinedType(Token(SyntaxKind.ULongKeyword)) },
+        };
+
+        internal static readonly Dictionary<string, TypeSyntax> BclInteropSafeHandles = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)
+        {
+            { "CloseHandle", ParseTypeName("Microsoft.Win32.SafeHandles.SafeFileHandle").WithAdditionalAnnotations(IsManagedTypeAnnotation, IsSafeHandleTypeAnnotation) },
         };
 
         internal static readonly Dictionary<string, string> BannedAPIs = new Dictionary<string, string>
@@ -254,6 +259,8 @@ namespace Microsoft.Windows.CsWin32
         private readonly GeneratorOptions options;
         private readonly CSharpCompilation? compilation;
         private readonly CSharpParseOptions? parseOptions;
+
+        private bool nullSafeHandleGenerated;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="Generator"/> class.
@@ -820,9 +827,16 @@ namespace Microsoft.Windows.CsWin32
 
         internal TypeSyntax? GenerateSafeHandle(string releaseMethod)
         {
+            this.GenerateNullSafeHandleHelper();
+
             if (this.releaseMethodsWithSafeHandleTypesGenerating.TryGetValue(releaseMethod, out TypeSyntax? safeHandleType))
             {
                 return safeHandleType;
+            }
+
+            if (BclInteropSafeHandles.TryGetValue(releaseMethod, out TypeSyntax? bclType))
+            {
+                return bclType;
             }
 
             string safeHandleClassName = $"{releaseMethod}SafeHandle";
@@ -835,9 +849,7 @@ namespace Microsoft.Windows.CsWin32
             safeHandleType = this.GroupByModule
                 ? QualifiedName(IdentifierName(releaseMethodModule), safeHandleTypeIdentifier)
                 : safeHandleTypeIdentifier;
-            safeHandleType = safeHandleType.WithAdditionalAnnotations(
-                new SyntaxAnnotation(IsManagedTypeAnnotation),
-                new SyntaxAnnotation(IsSafeHandleTypeAnnotation));
+            safeHandleType = safeHandleType.WithAdditionalAnnotations(IsManagedTypeAnnotation, IsSafeHandleTypeAnnotation);
 
             var releaseMethodSignature = releaseMethodDef.DecodeSignature(this.signatureTypeProviderNoSafeHandlesOrNint, null);
 
@@ -867,7 +879,6 @@ namespace Microsoft.Windows.CsWin32
 
             TypeSyntax releaseMethodParameterType = releaseMethodSignature.ParameterTypes[0];
 
-            // TODO: Reuse existing SafeHandle's defined in .NET where possible to facilitate interop with APIs that take them.
             this.TryGetRenamedMethod(releaseMethod, out string? renamedReleaseMethod);
 
             var members = new List<MemberDeclarationSyntax>();
@@ -908,13 +919,6 @@ namespace Microsoft.Windows.CsWin32
                         ThisExpression(),
                         IdentifierName("SetHandle"))).AddArgumentListArguments(
                         Argument(IdentifierName(preexistingHandleName)))))));
-
-            // public static SafeHandle Null { get; } = new SafeHandle(IntPtr.Zero);
-            members.Add(PropertyDeclaration(safeHandleTypeIdentifier, "Null")
-                .AddModifiers(Token(this.Visibility), Token(SyntaxKind.StaticKeyword))
-                .AddAccessorListAccessors(AccessorDeclaration(SyntaxKind.GetAccessorDeclaration).WithSemicolonToken(Token(SyntaxKind.SemicolonToken)))
-                .WithInitializer(EqualsValueClause(ObjectCreationExpression(safeHandleTypeIdentifier, ArgumentList().AddArguments(Argument(intptrZero)), null)))
-                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
 
             // public override bool IsInvalid => this.handle == default || this.Handle == INVALID_HANDLE_VALUE;
             members.Add(PropertyDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), nameof(SafeHandle.IsInvalid))
@@ -1413,6 +1417,39 @@ namespace Microsoft.Windows.CsWin32
             }
 
             return false;
+        }
+
+        private void GenerateNullSafeHandleHelper()
+        {
+            if (this.nullSafeHandleGenerated)
+            {
+                return;
+            }
+
+            this.nullSafeHandleGenerated = true;
+
+            const string className = "NullSafeHandle";
+            string fullName = $"{this.Namespace}.{className}";
+            if (this.FindSymbolIfAlreadyAvailable(fullName) is object)
+            {
+                return;
+            }
+
+            // static readonly SafeHandle NullHandle = new SafeFileHandle(IntPtr.Zero, ownsHandle: false);
+            FieldDeclarationSyntax nullHandle = FieldDeclaration(
+                VariableDeclaration(SafeHandleTypeSyntax)
+                    .AddVariables(VariableDeclarator("NullHandle").WithInitializer(EqualsValueClause(
+                        ObjectCreationExpression(ParseTypeName("Microsoft.Win32.SafeHandles.SafeFileHandle")).AddArgumentListArguments(
+                                Argument(DefaultExpression(IntPtrTypeSyntax)),
+                                Argument(LiteralExpression(SyntaxKind.FalseLiteralExpression)))))))
+                .AddModifiers(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.ReadOnlyKeyword));
+
+            // static class NullSafeHandle { ... }
+            ClassDeclarationSyntax helper = ClassDeclaration(className)
+                .AddModifiers(Token(this.Visibility), Token(SyntaxKind.StaticKeyword))
+                .AddMembers(nullHandle);
+
+            this.safeHandleTypes.Add(helper);
         }
 
         private FunctionPointerTypeSyntax FunctionPointer(CallingConvention callingConvention, MethodSignature<TypeSyntax> signature, string delegateName)
@@ -2680,7 +2717,7 @@ namespace Microsoft.Windows.CsWin32
                 return (this.FunctionPointer(delegateTypeDef, this.signatureTypeProvider), null);
             }
 
-            if (!isReturnOrOutParam && originalType.HasAnnotations(IsSafeHandleTypeAnnotation))
+            if (!isReturnOrOutParam && originalType.HasAnnotation(IsSafeHandleTypeAnnotation))
             {
                 return (SafeHandleTypeSyntax, null);
             }
@@ -2899,7 +2936,7 @@ namespace Microsoft.Windows.CsWin32
                 return false;
             }
 
-            return identifierName.HasAnnotations(IsManagedTypeAnnotation)
+            return identifierName.HasAnnotation(IsManagedTypeAnnotation)
                 || this.IsDelegateReference(identifierName as IdentifierNameSyntax);
         }
 

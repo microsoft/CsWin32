@@ -34,11 +34,17 @@ namespace Microsoft.Windows.CsWin32
         {
             { nameof(System.Runtime.InteropServices.ComTypes.FILETIME), ParseTypeName("System.Runtime.InteropServices.ComTypes.FILETIME") },
             { nameof(Guid), ParseTypeName("System.Guid") },
+            { "OLD_LARGE_INTEGER", PredefinedType(Token(SyntaxKind.LongKeyword)) },
+            { "LARGE_INTEGER", PredefinedType(Token(SyntaxKind.LongKeyword)) },
+            { "ULARGE_INTEGER", PredefinedType(Token(SyntaxKind.ULongKeyword)) },
         };
 
         internal static readonly Dictionary<string, string> BannedAPIs = new Dictionary<string, string>
         {
             { "GetLastError", "Do not generate GetLastError. Call Marshal.GetLastWin32Error() instead. Learn more from https://docs.microsoft.com/dotnet/api/system.runtime.interopservices.marshal.getlastwin32error" },
+            { "OLD_LARGE_INTEGER", "Use the C# long keyword instead." },
+            { "LARGE_INTEGER", "Use the C# long keyword instead." },
+            { "ULARGE_INTEGER", "Use the C# ulong keyword instead." },
         };
 
         private const string SystemRuntimeCompilerServices = "System.Runtime.CompilerServices";

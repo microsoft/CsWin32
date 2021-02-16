@@ -15,8 +15,10 @@
 
 ## Prerequisites
 
-Source Generators require C# 9, which comes with the .NET 5 SDK or Visual Studio 2019 Update 8 (16.8).
+The .NET 5 SDK or Visual Studio 2019 Update 8 (16.8) for the C# compiler that added support for Source Generators.
 The experience with source generators in Visual Studio is still improving, and is noticeably better in VS 16.9. WPF projects have [additional requirements](https://github.com/microsoft/CsWin32/issues/7).
+
+In addition, some generated code may require use of the C# 9 language version (`<LangVersion>9</LangVersion>`) in your project file. See [issue #4](https://github.com/microsoft/CsWin32/issues/4) for more on this.
 
 See [dotnet/pinvoke](https://github.com/dotnet/pinvoke) for precompiled NuGet packages with Win32 P/Invokes.
 

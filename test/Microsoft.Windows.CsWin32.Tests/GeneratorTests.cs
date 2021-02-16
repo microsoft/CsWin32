@@ -177,6 +177,20 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         Assert.Equal("BSTR", ((IdentifierNameSyntax)bstrField.Declaration.Type).Identifier.ValueText);
     }
 
+    [Theory]
+    [InlineData("BOOL")]
+    [InlineData("HRESULT")]
+    [InlineData("MEMORY_BASIC_INFORMATION")]
+    public void StructsArePartial(string structName)
+    {
+        this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);
+        Assert.True(this.generator.TryGenerate(structName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        StructDeclarationSyntax structDecl = Assert.IsType<StructDeclarationSyntax>(this.FindGeneratedType(structName));
+        Assert.True(structDecl.Modifiers.Any(SyntaxKind.PartialKeyword));
+    }
+
     [Fact]
     public void GetLastErrorGenerationThrowsWhenExplicitlyCalled()
     {

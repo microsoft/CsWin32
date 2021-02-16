@@ -1341,6 +1341,13 @@ namespace Microsoft.Windows.CsWin32
                     IdentifierName(Enum.GetName(typeof(DebuggerBrowsableState), state)!))));
         }
 
+        private static AttributeSyntax DebuggerDisplay(string format)
+        {
+            return Attribute(IdentifierName("DebuggerDisplay"))
+                .AddArgumentListArguments(
+                AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(format))));
+        }
+
         private static SyntaxToken SafeIdentifier(string name) => SafeIdentifierName(name).Identifier;
 
         private static IdentifierNameSyntax SafeIdentifierName(string name) => IdentifierName(CSharpKeywords.Contains(name) ? "@" + name : name);
@@ -2081,7 +2088,8 @@ namespace Microsoft.Windows.CsWin32
             StructDeclarationSyntax result = StructDeclaration(name)
                 .AddBaseListTypes(SimpleBaseType(GenericName(nameof(IEquatable<int>)).AddTypeArgumentListArguments(IdentifierName(name))))
                 .WithMembers(members)
-                .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.ReadOnlyKeyword), Token(SyntaxKind.PartialKeyword)));
+                .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.ReadOnlyKeyword), Token(SyntaxKind.PartialKeyword)))
+                .AddAttributeLists(AttributeList().AddAttributes(DebuggerDisplay("{" + fieldName + "}")));
 
             result = AddApiDocumentation(name, result);
             return result;

@@ -239,17 +239,18 @@ namespace Microsoft.Windows.Sdk
                 CSharpSyntaxTree.ParseText($@"[assembly: System.Runtime.CompilerServices.InternalsVisibleToAttribute(""{this.compilation.AssemblyName}"")]", this.parseOptions));
         }
 
-        using var referencedGenerator = new Generator(OpenMetadata(), compilation: referencedProject, parseOptions: this.parseOptions);
+        using var referencedGenerator = new Generator(OpenMetadata(), new GeneratorOptions { ClassName = "P1" }, referencedProject, this.parseOptions);
         Assert.True(referencedGenerator.TryGenerate("LockWorkStation", CancellationToken.None));
+        Assert.True(referencedGenerator.TryGenerate("CreateFile", CancellationToken.None));
         referencedProject = this.AddGeneratedCode(referencedProject, referencedGenerator);
         this.AssertNoDiagnostics(referencedProject);
 
         // Now produce more code in a referencing project that includes at least one of the same types as generated in the referenced project.
         this.compilation = this.compilation.AddReferences(referencedProject.ToMetadataReference());
-        this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);
-        Assert.True(this.generator.TryGenerate("LockWorkStation", CancellationToken.None));
+        this.generator = new Generator(this.metadataStream, new GeneratorOptions { ClassName = "P2" }, this.compilation, this.parseOptions);
+        Assert.True(this.generator.TryGenerate("HidD_GetAttributes", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics(logGeneratedCode: false);
+        this.AssertNoDiagnostics();
     }
 
     private static ImmutableArray<Diagnostic> FilterDiagnostics(ImmutableArray<Diagnostic> diagnostics) => diagnostics.Where(d => d.Severity > DiagnosticSeverity.Hidden).ToImmutableArray();
@@ -300,7 +301,7 @@ namespace Microsoft.Windows.Sdk
 
         if (logGeneratedCode)
         {
-            this.LogGeneratedCode();
+            this.LogGeneratedCode(compilation);
         }
 
         Assert.Empty(diagnostics);
@@ -319,9 +320,9 @@ namespace Microsoft.Windows.Sdk
         }
     }
 
-    private void LogGeneratedCode()
+    private void LogGeneratedCode(CSharpCompilation compilation)
     {
-        foreach (SyntaxTree tree in this.compilation.SyntaxTrees)
+        foreach (SyntaxTree tree in compilation.SyntaxTrees)
         {
             this.logger.WriteLine(FileSeparator);
             this.logger.WriteLine($"{tree.FilePath} content:");

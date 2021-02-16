@@ -2,7 +2,8 @@
 
 ***A source generator to add a user-defined set of Win32 P/Invoke methods and supporting types to a C# project.***
 
-[![NuGet (prerelease)](https://img.shields.io/nuget/vpre/Microsoft.Windows.CsWin32)](https://www.nuget.org/packages/Microsoft.Windows.CsWin32) [![Build Status](https://dev.azure.com/microsoft/Dart/_apis/build/status/microsoft.CsWin32?branchName=main)](https://dev.azure.com/microsoft/Dart/_build/latest?definitionId=60888&branchName=main)
+[![NuGet (prerelease)](https://img.shields.io/nuget/vpre/Microsoft.Windows.CsWin32)](https://www.nuget.org/packages/Microsoft.Windows.CsWin32)
+[![Build Status](https://dev.azure.com/azure-public/vside/_apis/build/status/microsoft.CsWin32?branchName=main)](https://dev.azure.com/azure-public/vside/_build/latest?definitionId=46&branchName=main)
 
 ## Features
 

@@ -1,0 +1,83 @@
+steps:
+
+- task: EsrpCodeSigning@1
+  displayName: ✒ Authenticode sign
+  inputs:
+    ConnectedServiceName: Undocked RegFree Signing Connection
+    FolderPath: $(System.DefaultWorkingDirectory)\bin\Microsoft.Windows.CsWin32\$(BuildConfiguration)\netstandard2.0
+    Pattern: Microsoft.Windows.CsWin32.dll
+    signConfigType: inlineSignParams
+    inlineOperation: |
+      [
+        {
+          "keyCode": "CP-230012",
+          "operationSetCode": "SigntoolSign",
+          "parameters": [
+            {
+              "parameterName": "OpusName",
+              "parameterValue": "Microsoft"
+            },
+            {
+              "parameterName": "OpusInfo",
+              "parameterValue": "http://www.microsoft.com"
+            },
+            {
+              "parameterName": "PageHash",
+              "parameterValue": "/NPH"
+            },
+            {
+              "parameterName": "FileDigest",
+              "parameterValue": "/fd sha256"
+            },
+            {
+              "parameterName": "TimeStamp",
+              "parameterValue": "/tr \"http://rfc3161.gtm.corp.microsoft.com/TSS/HttpTspServer\" /td sha256"
+            }
+          ],
+          "toolName": "signtool.exe",
+          "toolVersion": "6.2.9304.0"
+        }
+      ]
+    SessionTimeout: 60
+    MaxConcurrency: 50
+    MaxRetryAttempts: 5
+  condition: and(succeeded(), eq(variables['Agent.OS'], 'Windows_NT'), eq(variables['SignSelection'], 'true'))
+
+- task: EsrpCodeSigning@1
+  enabled: false # till we get it working
+  displayName: ✒ Authenticode sign (3rd party)
+  inputs:
+    ConnectedServiceName: Undocked RegFree Signing Connection
+    FolderPath: $(NUGET_PACKAGES)\yamldotnet\9.1.0\lib\netstandard1.3
+    Pattern: YamlDotNet.dll
+    signConfigType: inlineSignParams
+    inlineOperation: |
+     [
+      {
+        "KeyCode" : "CP-231522",
+        "OperationCode" : "SigntoolSign",
+        "Parameters" : {
+          "OpusName" : "Microsoft Edge",
+          "OpusInfo" : "https://www.microsoft.com",
+          "Append" : "/as",
+          "PageHash" : "/NPH",
+          "FileDigest" : "/fd \"SHA256\"",
+          "TimeStamp" : "/tr \"http://rfc3161.gtm.corp.microsoft.com/TSS/HttpTspServer\" /td sha256"
+        },
+        "ToolName" : "sign",
+        "ToolVersion" : "1.0"
+      },
+      {
+        "KeyCode" : "CP-231522",
+        "OperationCode" : "SigntoolVerify",
+        "Parameters" : {
+          "VerifyAll" : "/all"
+        },
+        "ToolName" : "sign",
+        "ToolVersion" : "1.0"
+      }
+     ]
+    SessionTimeout: 60
+    MaxConcurrency: 50
+    MaxRetryAttempts: 5
+  condition: and(succeeded(), eq(variables['Agent.OS'], 'Windows_NT'), eq(variables['SignSelection'], 'true'))

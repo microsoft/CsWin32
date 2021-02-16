@@ -110,6 +110,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [InlineData("DsGetDcOpen")] // allocates a handle with a release function that returns HRESULT
     [InlineData("DXVAHDSW_CALLBACKS")] // pointers to handles
     [InlineData("HBITMAP_UserMarshal")] // in+out handle pointer
+    [InlineData("GetDiskFreeSpaceExW")] // ULARGE_INTEGER replaced with keyword: ulong.
     public void InterestingAPIs(string api)
     {
         this.generator = new Generator(this.metadataStream, options: new GeneratorOptions { EmitSingleFile = true }, compilation: this.compilation, parseOptions: this.parseOptions);

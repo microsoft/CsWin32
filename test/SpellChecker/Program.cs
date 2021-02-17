@@ -37,6 +37,7 @@ unsafe
         text,
         out IEnumSpellingError* errors).ThrowOnFailure();
 
+    Span<PWSTR> suggestionResult = stackalloc PWSTR[1];
     while (true)
     {
         if (errors->Next(out ISpellingError* error).ThrowOnFailure() == S_FALSE)
@@ -57,9 +58,8 @@ unsafe
                 Console.WriteLine(@"Delete ""{0}""", word);
                 break;
             case CORRECTIVE_ACTION.CORRECTIVE_ACTION_REPLACE:
-                // KNOWN ISSUE: ushort will be changed to string (https://github.com/microsoft/CsWin32/issues/121)
-                error->get_Replacement(out ushort* replacement).ThrowOnFailure();
-                Console.WriteLine(@"Replace ""{0}"" with ""{1}""", word, new string((char*)replacement));
+                error->get_Replacement(out PWSTR replacement).ThrowOnFailure();
+                Console.WriteLine(@"Replace ""{0}"" with ""{1}""", word, replacement);
                 CoTaskMemFree(replacement);
                 break;
             case CORRECTIVE_ACTION.CORRECTIVE_ACTION_GET_SUGGESTIONS:
@@ -67,15 +67,13 @@ unsafe
                 spellChecker->Suggest(word, out IEnumString* suggestions).ThrowOnFailure();
                 while (true)
                 {
-                    // KNOWN ISSUE: ushort will be changed to string (https://github.com/microsoft/CsWin32/issues/121)
-                    ushort* suggestion;
-                    if (suggestions->Next(1, &suggestion, null).ThrowOnFailure() != 0)
+                    if (suggestions->Next(suggestionResult, null).ThrowOnFailure() != S_OK)
                     {
                         break;
                     }
 
-                    l.Add(new string((char*)suggestion));
-                    CoTaskMemFree(suggestion);
+                    l.Add(suggestionResult[0].ToString());
+                    CoTaskMemFree(suggestionResult[0]);
                 }
 
                 suggestions->Release();

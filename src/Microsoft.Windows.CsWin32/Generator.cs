@@ -35,6 +35,7 @@ namespace Microsoft.Windows.CsWin32
         {
             { nameof(System.Runtime.InteropServices.ComTypes.FILETIME), ParseTypeName("System.Runtime.InteropServices.ComTypes.FILETIME") },
             { nameof(Guid), ParseTypeName("System.Guid") },
+            { "BOOL", PredefinedType(Token(SyntaxKind.BoolKeyword)) },
             { "OLD_LARGE_INTEGER", PredefinedType(Token(SyntaxKind.LongKeyword)) },
             { "LARGE_INTEGER", PredefinedType(Token(SyntaxKind.LongKeyword)) },
             { "ULARGE_INTEGER", PredefinedType(Token(SyntaxKind.ULongKeyword)) },

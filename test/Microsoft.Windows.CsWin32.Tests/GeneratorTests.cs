@@ -55,6 +55,10 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             assemblyName: "test",
             references: metadataReferences,
             options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, allowUnsafe: true));
+
+        // Add a namespace that WinUI projects define to ensure we prefix types with "global::" everywhere.
+        this.compilation = this.compilation.AddSyntaxTrees(
+            CSharpSyntaxTree.ParseText("namespace Microsoft.System { }", this.parseOptions, path: "Microsoft.System.cs"));
     }
 
     public Task DisposeAsync() => Task.CompletedTask;

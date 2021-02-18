@@ -33,8 +33,8 @@ namespace Microsoft.Windows.CsWin32
 
         internal static readonly Dictionary<string, TypeSyntax> BclInteropStructs = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)
         {
-            { nameof(System.Runtime.InteropServices.ComTypes.FILETIME), ParseTypeName("System.Runtime.InteropServices.ComTypes.FILETIME") },
-            { nameof(Guid), ParseTypeName("System.Guid") },
+            { nameof(System.Runtime.InteropServices.ComTypes.FILETIME), ParseTypeName("global::System.Runtime.InteropServices.ComTypes.FILETIME") },
+            { nameof(Guid), ParseTypeName("global::System.Guid") },
             { "OLD_LARGE_INTEGER", PredefinedType(Token(SyntaxKind.LongKeyword)) },
             { "LARGE_INTEGER", PredefinedType(Token(SyntaxKind.LongKeyword)) },
             { "ULARGE_INTEGER", PredefinedType(Token(SyntaxKind.ULongKeyword)) },

@@ -35,10 +35,14 @@ namespace Microsoft.Windows.CsWin32
         {
             { nameof(System.Runtime.InteropServices.ComTypes.FILETIME), ParseTypeName("System.Runtime.InteropServices.ComTypes.FILETIME") },
             { nameof(Guid), ParseTypeName("System.Guid") },
-            { "BOOL", PredefinedType(Token(SyntaxKind.BoolKeyword)) },
             { "OLD_LARGE_INTEGER", PredefinedType(Token(SyntaxKind.LongKeyword)) },
             { "LARGE_INTEGER", PredefinedType(Token(SyntaxKind.LongKeyword)) },
             { "ULARGE_INTEGER", PredefinedType(Token(SyntaxKind.ULongKeyword)) },
+        };
+
+        internal static readonly Dictionary<string, TypeSyntax> AdditionalBclInteropStructsMarshaled = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)
+        {
+            { "BOOL", PredefinedType(Token(SyntaxKind.BoolKeyword)) },
         };
 
         internal static readonly Dictionary<string, TypeSyntax> BclInteropSafeHandles = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)
@@ -219,8 +223,8 @@ namespace Microsoft.Windows.CsWin32
         private readonly MetadataReader mr;
         private readonly SignatureTypeProvider signatureTypeProvider;
         private readonly SignatureTypeProvider signatureTypeProviderAlwaysUseIntPtr;
-        private readonly SignatureTypeProvider signatureTypeProviderNoSafeHandles;
-        private readonly SignatureTypeProvider signatureTypeProviderNoSafeHandlesOrNint;
+        private readonly SignatureTypeProvider signatureTypeProviderNoMarshaledTypes;
+        private readonly SignatureTypeProvider signatureTypeProviderNoMarshaledTypesOrNint;
         private readonly CustomAttributeTypeProvider customAttributeTypeProvider;
         private readonly Dictionary<string, List<MemberDeclarationSyntax>> modulesAndMembers = new Dictionary<string, List<MemberDeclarationSyntax>>(StringComparer.OrdinalIgnoreCase);
 
@@ -281,10 +285,10 @@ namespace Microsoft.Windows.CsWin32
             this.peReader = new PEReader(this.metadataStream);
             this.mr = this.peReader.GetMetadataReader();
 
-            this.signatureTypeProvider = new SignatureTypeProvider(this, preferNativeInt: this.LanguageVersion >= LanguageVersion.CSharp9, preferSafeHandles: true);
-            this.signatureTypeProviderAlwaysUseIntPtr = new SignatureTypeProvider(this, preferNativeInt: false, preferSafeHandles: true);
-            this.signatureTypeProviderNoSafeHandles = new SignatureTypeProvider(this, preferNativeInt: true, preferSafeHandles: false);
-            this.signatureTypeProviderNoSafeHandlesOrNint = new SignatureTypeProvider(this, preferNativeInt: false, preferSafeHandles: false);
+            this.signatureTypeProvider = new SignatureTypeProvider(this, preferNativeInt: this.LanguageVersion >= LanguageVersion.CSharp9, preferMarshaledTypes: true);
+            this.signatureTypeProviderAlwaysUseIntPtr = new SignatureTypeProvider(this, preferNativeInt: false, preferMarshaledTypes: true);
+            this.signatureTypeProviderNoMarshaledTypes = new SignatureTypeProvider(this, preferNativeInt: true, preferMarshaledTypes: false);
+            this.signatureTypeProviderNoMarshaledTypesOrNint = new SignatureTypeProvider(this, preferNativeInt: false, preferMarshaledTypes: false);
             this.customAttributeTypeProvider = new CustomAttributeTypeProvider();
 
             this.Apis = this.mr.TypeDefinitions.Select(this.mr.GetTypeDefinition).Where(td => this.mr.StringComparer.Equals(td.Name, "Apis")).ToList();
@@ -722,7 +726,7 @@ namespace Microsoft.Windows.CsWin32
                 }
 
                 // If this method releases a handle, recreate the method signature such that we take the struct rather than the SafeHandle as a parameter.
-                var signatureTypeProvider = this.releaseMethods.Contains(entrypoint ?? methodName) ? this.signatureTypeProviderNoSafeHandlesOrNint : this.signatureTypeProvider;
+                var signatureTypeProvider = this.releaseMethods.Contains(entrypoint ?? methodName) ? this.signatureTypeProviderNoMarshaledTypesOrNint : this.signatureTypeProvider;
                 MethodSignature<TypeSyntax> signature = methodDefinition.DecodeSignature(signatureTypeProvider, null);
 
                 CustomAttributeHandleCollection? returnTypeAttributes = this.GetReturnTypeCustomAttributes(methodDefinition);
@@ -852,7 +856,7 @@ namespace Microsoft.Windows.CsWin32
                 : safeHandleTypeIdentifier;
             safeHandleType = safeHandleType.WithAdditionalAnnotations(IsManagedTypeAnnotation, IsSafeHandleTypeAnnotation);
 
-            var releaseMethodSignature = releaseMethodDef.DecodeSignature(this.signatureTypeProviderNoSafeHandlesOrNint, null);
+            var releaseMethodSignature = releaseMethodDef.DecodeSignature(this.signatureTypeProviderNoMarshaledTypesOrNint, null);
 
             // If the release method takes more than one parameter, we can't generate a SafeHandle for it.
             if (releaseMethodSignature.RequiredParameterCount != 1)
@@ -1654,7 +1658,7 @@ namespace Microsoft.Windows.CsWin32
             string name = this.mr.GetString(fieldDef.Name);
             try
             {
-                TypeSyntax fieldType = fieldDef.DecodeSignature(this.signatureTypeProviderNoSafeHandles, null);
+                TypeSyntax fieldType = fieldDef.DecodeSignature(this.signatureTypeProviderNoMarshaledTypes, null);
                 Constant constant = this.mr.GetConstant(fieldDef.GetDefaultValue());
                 ExpressionSyntax value = this.ToExpressionSyntax(constant);
                 if (fieldType is not PredefinedTypeSyntax)
@@ -1758,7 +1762,7 @@ namespace Microsoft.Windows.CsWin32
                 string methodName = this.mr.GetString(methodDefinition.Name);
                 IdentifierNameSyntax innerMethodName = IdentifierName($"{methodName}_{methodCounter}");
 
-                MethodSignature<TypeSyntax> signature = methodDefinition.DecodeSignature(this.signatureTypeProviderNoSafeHandles, null);
+                MethodSignature<TypeSyntax> signature = methodDefinition.DecodeSignature(this.signatureTypeProvider, null);
                 CustomAttributeHandleCollection? returnTypeAttributes = this.GetReturnTypeCustomAttributes(methodDefinition);
 
                 TypeSyntax returnType = signature.ReturnType;
@@ -1948,7 +1952,7 @@ namespace Microsoft.Windows.CsWin32
                 }
                 else
                 {
-                    var fieldInfo = this.ReinterpretFieldType(fieldDeclarator.Identifier.ValueText, fieldDef.DecodeSignature(this.signatureTypeProviderNoSafeHandles, null), fieldDef.GetCustomAttributes());
+                    var fieldInfo = this.ReinterpretFieldType(fieldDeclarator.Identifier.ValueText, fieldDef.DecodeSignature(this.signatureTypeProviderNoMarshaledTypes, null), fieldDef.GetCustomAttributes());
                     if (fieldInfo.AdditionalMembers.Count > 0)
                     {
                         fieldDeclarator = fieldDeclarator.WithIdentifier(Identifier(GetHiddenFieldName(fieldDeclarator.Identifier.ValueText)));
@@ -2880,11 +2884,11 @@ namespace Microsoft.Windows.CsWin32
             // If the field is a delegate type, we have to replace that with a native function pointer to avoid the struct becoming a 'managed type'.
             if (originalType is PointerTypeSyntax { ElementType: IdentifierNameSyntax idName } && this.IsDelegateReference(idName, out TypeDefinition typeDef))
             {
-                return (this.FunctionPointer(typeDef, this.signatureTypeProviderNoSafeHandles), default);
+                return (this.FunctionPointer(typeDef, this.signatureTypeProviderNoMarshaledTypes), default);
             }
             else if (originalType is IdentifierNameSyntax idName2 && this.IsDelegateReference(idName2, out typeDef))
             {
-                return (this.FunctionPointer(typeDef, this.signatureTypeProviderNoSafeHandles), default);
+                return (this.FunctionPointer(typeDef, this.signatureTypeProviderNoMarshaledTypes), default);
             }
 
             return (originalType, default);

@@ -17,13 +17,13 @@ namespace Microsoft.Windows.CsWin32
     {
         private readonly Generator owner;
         private readonly bool preferNativeInt;
-        private readonly bool preferSafeHandles;
+        private readonly bool preferMarshaledTypes;
 
-        internal SignatureTypeProvider(Generator owner, bool preferNativeInt, bool preferSafeHandles)
+        internal SignatureTypeProvider(Generator owner, bool preferNativeInt, bool preferMarshaledTypes)
         {
             this.owner = owner;
             this.preferNativeInt = preferNativeInt;
-            this.preferSafeHandles = preferSafeHandles;
+            this.preferMarshaledTypes = preferMarshaledTypes;
         }
 
         /// <inheritdoc/>
@@ -67,6 +67,11 @@ namespace Microsoft.Windows.CsWin32
                 return bclType;
             }
 
+            if (this.preferMarshaledTypes && Generator.AdditionalBclInteropStructsMarshaled.TryGetValue(name, out bclType))
+            {
+                return bclType;
+            }
+
             this.owner.GenerateInteropType(handle);
             TypeSyntax identifier = IdentifierName(name);
 
@@ -90,10 +95,15 @@ namespace Microsoft.Windows.CsWin32
                 return bclType;
             }
 
+            if (this.preferMarshaledTypes && Generator.AdditionalBclInteropStructsMarshaled.TryGetValue(name, out bclType))
+            {
+                return bclType;
+            }
+
             TypeDefinitionHandle? typeDefHandle = this.owner.GenerateInteropType(handle);
             if (typeDefHandle.HasValue)
             {
-                if (this.preferSafeHandles && this.owner.TryGetHandleReleaseMethod(name, out string? releaseMethod) && this.owner.GenerateSafeHandle(releaseMethod) is TypeSyntax safeHandleType)
+                if (this.preferMarshaledTypes && this.owner.TryGetHandleReleaseMethod(name, out string? releaseMethod) && this.owner.GenerateSafeHandle(releaseMethod) is TypeSyntax safeHandleType)
                 {
                     // Return the safe handle instead.
                     return safeHandleType;

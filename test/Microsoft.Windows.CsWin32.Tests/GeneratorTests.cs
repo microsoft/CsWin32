@@ -179,6 +179,33 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
+    public void BOOL_ReturnTypeBecomes_Boolean_InCOMInterface()
+    {
+        this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);
+        Assert.True(this.generator.TryGenerate("ISpellCheckerFactory", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        MethodDeclarationSyntax? method = this.FindGeneratedMethod("IsSupported");
+        Assert.NotNull(method);
+        Assert.Equal(SyntaxKind.BoolKeyword, Assert.IsType<PredefinedTypeSyntax>(method!.ParameterList.Parameters.Last().Type).Keyword.Kind());
+    }
+
+    /// <summary>
+    /// Verifies that fields are not converted from BOOL to bool.
+    /// </summary>
+    [Fact]
+    public void BOOL_FieldRemainsBOOL()
+    {
+        this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);
+        Assert.True(this.generator.TryGenerate("ICONINFO", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        var theStruct = (StructDeclarationSyntax?)this.FindGeneratedType("ICONINFO");
+        Assert.NotNull(theStruct);
+        Assert.Equal("BOOL", theStruct!.Members.OfType<FieldDeclarationSyntax>().Select(m => m.Declaration).Single(d => d.Variables.Any(v => v.Identifier.ValueText == "fIcon")).Type.ToString());
+    }
+
+    [Fact]
     public void BSTR_FieldsDoNotBecomeSafeHandles()
     {
         this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);

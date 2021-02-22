@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
@@ -15,6 +16,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Testing;
 using Microsoft.Windows.CsWin32;
+using Microsoft.Windows.CsWin32.Tests;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -378,6 +380,45 @@ namespace Microsoft.Windows.Sdk
     }
 
     [Fact]
+    public void CodeGenerationForFixedLengthInlineArray()
+    {
+        const string expected = @"
+    internal partial struct MainAVIHeader
+    {
+        internal uint dwMicroSecPerFrame;
+        internal uint dwMaxBytesPerSec;
+        internal uint dwPaddingGranularity;
+        internal uint dwFlags;
+        internal uint dwTotalFrames;
+        internal uint dwInitialFrames;
+        internal uint dwStreams;
+        internal uint dwSuggestedBufferSize;
+        internal uint dwWidth;
+        internal uint dwHeight;
+        internal unsafe Span<uint> dwReserved
+        {
+            get
+            {
+                fixed (void *p = &this.__dwReserved)
+                    return new Span<uint>(p, 4);
+            }
+        }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 1)]
+        private struct __dwReserved_4
+        {
+            private uint _1, _2, _3, _4;
+        }
+
+        [DebuggerBrowsable(DebuggerBrowsableState.Never)]
+        private __dwReserved_4 __dwReserved;
+    }
+";
+
+        this.AssertGeneratedType("MainAVIHeader", expected);
+    }
+
+    [Fact]
     public void FullGeneration()
     {
         this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);
@@ -489,5 +530,15 @@ namespace Microsoft.Windows.Sdk
             tree.GetRoot().WriteTo(lineWriter);
             lineWriter.WriteLine(string.Empty);
         }
+    }
+
+    private void AssertGeneratedType(string apiName, string expectedSyntax)
+    {
+        this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);
+        Assert.True(this.generator.TryGenerate(apiName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        BaseTypeDeclarationSyntax? syntax = Assert.Single(this.FindGeneratedType(apiName));
+        Assert.Equal(TestUtils.NormalizeToExpectedLineEndings(expectedSyntax), syntax?.ToFullString());
     }
 }

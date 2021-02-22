@@ -395,6 +395,7 @@ namespace Microsoft.Windows.Sdk
         internal uint dwSuggestedBufferSize;
         internal uint dwWidth;
         internal uint dwHeight;
+        internal __dwReserved_4 __dwReserved;
         internal unsafe Span<uint> dwReserved
         {
             get
@@ -409,8 +410,6 @@ namespace Microsoft.Windows.Sdk
         {
             internal uint _1, _2, _3, _4;
         }
-
-        internal __dwReserved_4 __dwReserved;
     }
 ";
 

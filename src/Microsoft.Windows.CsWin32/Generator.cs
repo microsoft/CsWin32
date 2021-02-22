@@ -1987,6 +1987,7 @@ namespace Microsoft.Windows.CsWin32
                 }
 
                 FieldDeclarationSyntax field;
+                SyntaxList<MemberDeclarationSyntax> additionalMembers;
                 VariableDeclaratorSyntax fieldDeclarator = VariableDeclarator(SafeIdentifier(fieldName));
                 if (fixedBufferAttribute.HasValue)
                 {
@@ -1999,15 +2000,16 @@ namespace Microsoft.Windows.CsWin32
                             fieldDeclarator
                                 .WithArgumentList(BracketedArgumentList(SingletonSeparatedList(Argument(size)))))
                         .AddModifiers(Token(this.Visibility), Token(SyntaxKind.UnsafeKeyword), Token(SyntaxKind.FixedKeyword));
+                    additionalMembers = default;
                 }
                 else
                 {
                     var fieldInfo = this.ReinterpretFieldType(fieldDeclarator.Identifier.ValueText, fieldDef.DecodeSignature(this.signatureTypeProviderNoMarshaledTypes, null), fieldDef.GetCustomAttributes());
+                    (_, additionalMembers) = fieldInfo;
+
                     if (fieldInfo.AdditionalMembers.Count > 0)
                     {
                         fieldDeclarator = fieldDeclarator.WithIdentifier(Identifier(GetHiddenFieldName(fieldDeclarator.Identifier.ValueText)));
-
-                        members.AddRange(fieldInfo.AdditionalMembers);
                     }
 
                     field = FieldDeclaration(VariableDeclaration(fieldInfo.FieldType).AddVariables(fieldDeclarator))
@@ -2031,6 +2033,7 @@ namespace Microsoft.Windows.CsWin32
                 }
 
                 members.Add(field);
+                members.AddRange(additionalMembers);
             }
 
             StructDeclarationSyntax result = StructDeclaration(name)

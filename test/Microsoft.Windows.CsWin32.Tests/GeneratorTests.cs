@@ -405,13 +405,12 @@ namespace Microsoft.Windows.Sdk
         }
 
         [StructLayout(LayoutKind.Sequential, Pack = 1)]
-        private struct __dwReserved_4
+        internal struct __dwReserved_4
         {
-            private uint _1, _2, _3, _4;
+            internal uint _1, _2, _3, _4;
         }
 
-        [DebuggerBrowsable(DebuggerBrowsableState.Never)]
-        private __dwReserved_4 __dwReserved;
+        internal __dwReserved_4 __dwReserved;
     }
 ";
 

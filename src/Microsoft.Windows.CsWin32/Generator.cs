@@ -86,7 +86,6 @@ namespace Microsoft.Windows.CsWin32
         private static readonly TypeSyntax SafeHandleTypeSyntax = IdentifierName("SafeHandle");
         private static readonly IdentifierNameSyntax IntPtrTypeSyntax = IdentifierName(nameof(IntPtr));
         private static readonly TypeSyntax VoidStar = SyntaxFactory.ParseTypeName("void*");
-        private static readonly AttributeListSyntax DebuggerBrowsableNever = AttributeList().AddAttributes(DebuggerBrowsable(DebuggerBrowsableState.Never));
 
         private static readonly HashSet<string> StringTypeDefNames = new HashSet<string>(StringComparer.Ordinal)
         {
@@ -2012,12 +2011,7 @@ namespace Microsoft.Windows.CsWin32
                     }
 
                     field = FieldDeclaration(VariableDeclaration(fieldInfo.FieldType).AddVariables(fieldDeclarator))
-                        .AddModifiers(Token(fieldInfo.AdditionalMembers.Count > 0 ? SyntaxKind.PrivateKeyword : this.Visibility));
-
-                    if (fieldInfo.AdditionalMembers.Count > 0)
-                    {
-                        field = field.AddAttributeLists(DebuggerBrowsableNever);
-                    }
+                        .AddModifiers(Token(this.Visibility));
 
                     if (fieldInfo.FieldType is PointerTypeSyntax || fieldInfo.FieldType is FunctionPointerTypeSyntax)
                     {
@@ -3117,11 +3111,11 @@ namespace Microsoft.Windows.CsWin32
                 //     private TheStruct _1, _2, _3, _4, _5, _6, _7, _8;
                 // }
                 var fixedLengthStruct = StructDeclaration($"__{fieldName}_{length}")
-                    .AddModifiers(Token(SyntaxKind.PrivateKeyword))
+                    .AddModifiers(Token(this.Visibility))
                     .AddAttributeLists(AttributeList().AddAttributes(StructLayout(TypeAttributes.SequentialLayout, new TypeLayout(0, packingSize: 1))))
                     .AddMembers(FieldDeclaration(VariableDeclaration(elementType)
                         .AddVariables(Enumerable.Range(1, length).Select(n => VariableDeclarator($"_{n}")).ToArray()))
-                        .AddModifiers(Token(SyntaxKind.PrivateKeyword)));
+                        .AddModifiers(Token(this.Visibility)));
 
                 // public unsafe Span<TheStruct> TheProperty {
                 //    get {

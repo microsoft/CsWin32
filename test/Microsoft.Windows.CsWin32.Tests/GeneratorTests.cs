@@ -117,7 +117,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [InlineData("GetDiskFreeSpaceExW")] // ULARGE_INTEGER replaced with keyword: ulong.
     public void InterestingAPIs(string api)
     {
-        this.generator = new Generator(this.metadataStream, options: new GeneratorOptions { EmitSingleFile = true }, compilation: this.compilation, parseOptions: this.parseOptions);
+        this.generator = new Generator(this.metadataStream, options: new GeneratorOptions { EmitSingleFile = true, WideCharOnly = false }, compilation: this.compilation, parseOptions: this.parseOptions);
         Assert.True(this.generator.TryGenerate(api, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -164,7 +164,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         Assert.True(this.generator.TryGenerate("CreateFile", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
-        MethodDeclarationSyntax? createFileMethod = this.FindGeneratedMethod("CreateFile");
+        MethodDeclarationSyntax? createFileMethod = this.FindGeneratedMethod("CreateFile").FirstOrDefault();
         Assert.NotNull(createFileMethod);
         Assert.Equal("Microsoft.Win32.SafeHandles.SafeFileHandle", createFileMethod!.ReturnType.ToString());
         Assert.Equal("SafeHandle", createFileMethod.ParameterList.Parameters.Last().Type?.ToString());
@@ -177,9 +177,20 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         Assert.True(this.generator.TryGenerate("WinUsb_FlushPipe", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
-        MethodDeclarationSyntax? createFileMethod = this.FindGeneratedMethod("WinUsb_FlushPipe");
+        MethodDeclarationSyntax? createFileMethod = this.FindGeneratedMethod("WinUsb_FlushPipe").FirstOrDefault();
         Assert.NotNull(createFileMethod);
         Assert.Equal(SyntaxKind.BoolKeyword, Assert.IsType<PredefinedTypeSyntax>(createFileMethod!.ReturnType).Keyword.Kind());
+    }
+
+    [Fact]
+    public void NativeArray_SizeParamIndex_ProducesSimplerFriendlyOverload()
+    {
+        this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);
+        Assert.True(this.generator.TryGenerate("EvtNext", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        IEnumerable<MethodDeclarationSyntax> overloads = this.FindGeneratedMethod("EvtNext");
+        Assert.NotEmpty(overloads.Where(o => o.ParameterList.Parameters.Count == 5 && (o.ParameterList.Parameters[1].Type?.ToString().StartsWith("Span<", StringComparison.Ordinal) ?? false)));
     }
 
     [Fact]
@@ -189,7 +200,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         Assert.True(this.generator.TryGenerate("ISpellCheckerFactory", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
-        MethodDeclarationSyntax? method = this.FindGeneratedMethod("IsSupported");
+        MethodDeclarationSyntax? method = this.FindGeneratedMethod("IsSupported").FirstOrDefault();
         Assert.NotNull(method);
         Assert.Equal(SyntaxKind.BoolKeyword, Assert.IsType<PredefinedTypeSyntax>(method!.ParameterList.Parameters.Last().Type).Keyword.Kind());
     }
@@ -221,6 +232,48 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         Assert.Equal("BSTR", ((IdentifierNameSyntax)bstrField.Declaration.Type).Identifier.ValueText);
     }
 
+    /// <summary>
+    /// Verifies that MSIHANDLE is not replaced with a SafeHandle, since it uses uint instead of IntPtr for its underlying type.
+    /// </summary>
+    [Fact]
+    public void MSIHANDLE_DoesNotBecomeSafeHandle()
+    {
+        this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);
+        Assert.True(this.generator.TryGenerate("MsiGetLastErrorRecord", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        MethodDeclarationSyntax? method = this.FindGeneratedMethod("MsiGetLastErrorRecord").FirstOrDefault();
+        Assert.NotNull(method);
+        Assert.Equal("MSIHANDLE", method!.ReturnType?.ToString());
+
+        MethodDeclarationSyntax? releaseMethod = this.FindGeneratedMethod("MsiCloseHandle").FirstOrDefault();
+        Assert.NotNull(method);
+        Assert.Equal("MSIHANDLE", Assert.IsType<IdentifierNameSyntax>(releaseMethod!.ParameterList.Parameters[0].Type).Identifier.ValueText);
+    }
+
+    [Fact]
+    public void Const_PWSTR_Becomes_PCWSTR_and_String()
+    {
+        this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);
+        Assert.True(this.generator.TryGenerate("StrCmpLogical", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        bool foundPCWSTROverload = false;
+        bool foundStringOverload = false;
+        IEnumerable<MethodDeclarationSyntax> overloads = this.FindGeneratedMethod("StrCmpLogical");
+        foreach (MethodDeclarationSyntax method in overloads)
+        {
+            foundPCWSTROverload |= method!.ParameterList.Parameters[0].Type?.ToString() == "PCWSTR";
+            foundStringOverload |= method!.ParameterList.Parameters[0].Type?.ToString() == "string";
+        }
+
+        Assert.True(foundPCWSTROverload, "PCWSTR overload is missing.");
+        Assert.True(foundStringOverload, "string overload is missing.");
+        Assert.Equal(2, overloads.Count());
+    }
+
     [Theory]
     [InlineData("BOOL")]
     [InlineData("HRESULT")]
@@ -249,7 +302,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         Assert.True(this.generator.TryGenerate("DeleteObject", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
-        MethodDeclarationSyntax? deleteObjectMethod = this.FindGeneratedMethod("DeleteObject");
+        MethodDeclarationSyntax? deleteObjectMethod = this.FindGeneratedMethod("DeleteObject").FirstOrDefault();
         Assert.NotNull(deleteObjectMethod);
         Assert.Equal("HGDIOBJ", Assert.IsType<IdentifierNameSyntax>(deleteObjectMethod!.ParameterList.Parameters[0].Type).Identifier.ValueText);
     }
@@ -334,11 +387,11 @@ namespace Microsoft.Windows.Sdk
 
     private void CollectGeneratedCode(Generator generator) => this.compilation = this.AddGeneratedCode(this.compilation, generator);
 
-    private MethodDeclarationSyntax? FindGeneratedMethod(string name) => this.compilation.SyntaxTrees.SelectMany(st => st.GetRoot().DescendantNodes().OfType<MethodDeclarationSyntax>()).FirstOrDefault(md => md.Identifier.ValueText == name);
+    private IEnumerable<MethodDeclarationSyntax> FindGeneratedMethod(string name) => this.compilation.SyntaxTrees.SelectMany(st => st.GetRoot().DescendantNodes().OfType<MethodDeclarationSyntax>()).Where(md => md.Identifier.ValueText == name);
 
     private BaseTypeDeclarationSyntax? FindGeneratedType(string name) => this.compilation.SyntaxTrees.SelectMany(st => st.GetRoot().DescendantNodes().OfType<BaseTypeDeclarationSyntax>()).FirstOrDefault(md => md.Identifier.ValueText == name);
 
-    private bool IsMethodGenerated(string name) => this.FindGeneratedMethod(name) is object;
+    private bool IsMethodGenerated(string name) => this.FindGeneratedMethod(name).Any();
 
     private void AssertNoDiagnostics(bool logGeneratedCode = true) => this.AssertNoDiagnostics(this.compilation, logGeneratedCode);
 

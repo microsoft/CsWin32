@@ -5,3 +5,4 @@ ISpellCheckerFactory
 ISpellChecker
 CLSCTX
 S_FALSE
+S_OK

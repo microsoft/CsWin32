@@ -396,19 +396,12 @@ namespace Microsoft.Windows.Sdk
         internal uint dwWidth;
         internal uint dwHeight;
         internal __dwReserved_4 __dwReserved;
-        internal unsafe Span<uint> dwReserved
-        {
-            get
-            {
-                fixed (void *p = &this.__dwReserved)
-                    return new Span<uint>(p, 4);
-            }
-        }
-
         [StructLayout(LayoutKind.Sequential, Pack = 1)]
         internal struct __dwReserved_4
         {
             internal uint _1, _2, _3, _4;
+            internal ref uint this[int index] => ref AsSpan()[index];
+            internal Span<uint> AsSpan() => MemoryMarshal.CreateSpan(ref _1, 4);
         }
     }
 ";

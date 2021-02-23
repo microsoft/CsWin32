@@ -85,7 +85,6 @@ namespace Microsoft.Windows.CsWin32
         private static readonly IdentifierNameSyntax ConstantsClassName = IdentifierName("Constants");
         private static readonly TypeSyntax SafeHandleTypeSyntax = IdentifierName("SafeHandle");
         private static readonly IdentifierNameSyntax IntPtrTypeSyntax = IdentifierName(nameof(IntPtr));
-        private static readonly TypeSyntax VoidStar = SyntaxFactory.ParseTypeName("void*");
 
         private static readonly HashSet<string> StringTypeDefNames = new HashSet<string>(StringComparer.Ordinal)
         {
@@ -3112,35 +3111,35 @@ namespace Microsoft.Windows.CsWin32
                 // private struct __TheStruct_Count
                 // {
                 //     private TheStruct _1, _2, _3, _4, _5, _6, _7, _8;
+                //
+                //     internal ref TheStruct this[int index] => ref AsSpan()[index];
+                //
+                //     internal Span<TheStruct> AsSpan() => MemoryMarshal.CreateSpan(ref _1, 4);
                 // }
                 var fixedLengthStruct = StructDeclaration($"__{fieldName}_{length}")
                     .AddModifiers(Token(this.Visibility))
                     .AddAttributeLists(AttributeList().AddAttributes(StructLayout(TypeAttributes.SequentialLayout, new TypeLayout(0, packingSize: 1))))
-                    .AddMembers(FieldDeclaration(VariableDeclaration(elementType)
-                        .AddVariables(Enumerable.Range(1, length).Select(n => VariableDeclarator($"_{n}")).ToArray()))
-                        .AddModifiers(Token(this.Visibility)));
+                    .AddMembers(
+                        FieldDeclaration(VariableDeclaration(elementType)
+                            .AddVariables(Enumerable.Range(1, length).Select(n => VariableDeclarator($"_{n}")).ToArray()))
+                            .AddModifiers(Token(this.Visibility)),
+                        IndexerDeclaration(RefType(elementType))
+                            .AddModifiers(Token(this.Visibility))
+                            .AddParameterListParameters(Parameter(Identifier("index")).WithType(PredefinedType(Token(SyntaxKind.IntKeyword))))
+                            .WithExpressionBody(ArrowExpressionClause(RefExpression(
+                                ElementAccessExpression(InvocationExpression(IdentifierName("AsSpan")))
+                                    .AddArgumentListArguments(Argument(IdentifierName("index"))))))
+                            .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)),
+                        MethodDeclaration(MakeSpanOfT(elementType), "AsSpan")
+                            .AddModifiers(Token(this.Visibility))
+                            .WithExpressionBody(ArrowExpressionClause(
+                                InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("MemoryMarshal"), IdentifierName("CreateSpan")))
+                                    .AddArgumentListArguments(
+                                        Argument(nameColon: null, Token(SyntaxKind.RefKeyword), IdentifierName("_1")),
+                                        Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(length))))))
+                            .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
 
-                // public unsafe Span<TheStruct> TheProperty {
-                //    get {
-                //       fixed (void* p = &__field)
-                //          return new Span<TheStruct>(p, count);
-                //    }
-                // }
-                ExpressionSyntax hiddenFieldAccess = GetHiddenFieldAccess();
-                var pointerName = IdentifierName("p");
-                var pointerDeclaration = VariableDeclaration(VoidStar).AddVariables(
-                    VariableDeclarator(pointerName.Identifier).WithInitializer(
-                        EqualsValueClause(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, hiddenFieldAccess))));
-                var property = PropertyDeclaration(MakeSpanOfT(elementType), fieldName)
-                    .AddModifiers(Token(this.Visibility), Token(SyntaxKind.UnsafeKeyword))
-                    .AddAccessorListAccessors(AccessorDeclaration(SyntaxKind.GetAccessorDeclaration).WithBody(
-                        Block(FixedStatement(
-                            pointerDeclaration,
-                            ReturnStatement(ObjectCreationExpression(MakeSpanOfT(elementType)).AddArgumentListArguments(
-                                Argument(pointerName),
-                                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(length)))))))));
-
-                return (IdentifierName(fixedLengthStruct.Identifier.ValueText), List<MemberDeclarationSyntax>().Add(property).Add(fixedLengthStruct));
+                return (IdentifierName(fixedLengthStruct.Identifier.ValueText), List<MemberDeclarationSyntax>().Add(fixedLengthStruct));
             }
 
             // If the field is a delegate type, we have to replace that with a native function pointer to avoid the struct becoming a 'managed type'.

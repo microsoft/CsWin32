@@ -103,12 +103,6 @@ namespace Microsoft.Windows.CsWin32
             TypeDefinitionHandle? typeDefHandle = this.owner.GenerateInteropType(handle);
             if (typeDefHandle.HasValue)
             {
-                if (this.preferMarshaledTypes && this.owner.TryGetHandleReleaseMethod(name, out string? releaseMethod) && this.owner.GenerateSafeHandle(releaseMethod) is TypeSyntax safeHandleType)
-                {
-                    // Return the safe handle instead.
-                    return safeHandleType;
-                }
-
                 TypeSyntax identifier = IdentifierName(name);
                 TypeDefinition td = reader.GetTypeDefinition(typeDefHandle.Value);
                 if ((td.Attributes & TypeAttributes.Interface) == TypeAttributes.Interface)

@@ -115,6 +115,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [InlineData("DXVAHDSW_CALLBACKS")] // pointers to handles
     [InlineData("HBITMAP_UserMarshal")] // in+out handle pointer
     [InlineData("GetDiskFreeSpaceExW")] // ULARGE_INTEGER replaced with keyword: ulong.
+    [InlineData("MsiGetProductPropertyW")] // MSIHANDLE (a 32-bit handle)
     public void InterestingAPIs(string api)
     {
         this.generator = new Generator(this.metadataStream, options: new GeneratorOptions { EmitSingleFile = true, WideCharOnly = false }, compilation: this.compilation, parseOptions: this.parseOptions);
@@ -164,10 +165,11 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         Assert.True(this.generator.TryGenerate("CreateFile", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
-        MethodDeclarationSyntax? createFileMethod = this.FindGeneratedMethod("CreateFile").FirstOrDefault();
-        Assert.NotNull(createFileMethod);
-        Assert.Equal("Microsoft.Win32.SafeHandles.SafeFileHandle", createFileMethod!.ReturnType.ToString());
-        Assert.Equal("SafeHandle", createFileMethod.ParameterList.Parameters.Last().Type?.ToString());
+
+        Assert.Contains(
+            this.FindGeneratedMethod("CreateFile"),
+            createFileMethod => createFileMethod!.ReturnType.ToString() == "Microsoft.Win32.SafeHandles.SafeFileHandle"
+                && createFileMethod.ParameterList.Parameters.Last().Type?.ToString() == "SafeHandle");
     }
 
     [Fact]
@@ -232,23 +234,45 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     }
 
     /// <summary>
-    /// Verifies that MSIHANDLE is not replaced with a SafeHandle, since it uses uint instead of IntPtr for its underlying type.
+    /// Verifies that MSIHANDLE is wrapped with a SafeHandle even though it is a 32-bit handle.
+    /// This is safe because we never pass SafeHandle directly to extern methods, so we can fix the length of the parameter or return value.
     /// </summary>
     [Fact]
-    public void MSIHANDLE_DoesNotBecomeSafeHandle()
+    public void MSIHANDLE_BecomesSafeHandle()
     {
         this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);
         Assert.True(this.generator.TryGenerate("MsiGetLastErrorRecord", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
 
-        MethodDeclarationSyntax? method = this.FindGeneratedMethod("MsiGetLastErrorRecord").FirstOrDefault();
-        Assert.NotNull(method);
-        Assert.Equal("MSIHANDLE", method!.ReturnType?.ToString());
+        Assert.Contains(
+            this.FindGeneratedMethod("MsiGetLastErrorRecord"),
+            method => method!.ReturnType?.ToString() == "MSIHANDLE");
 
-        MethodDeclarationSyntax? releaseMethod = this.FindGeneratedMethod("MsiCloseHandle").FirstOrDefault();
-        Assert.NotNull(method);
+        Assert.Contains(
+            this.FindGeneratedMethod("MsiGetLastErrorRecord_SafeHandle"),
+            method => method!.ReturnType?.ToString() == "MsiCloseHandleSafeHandle");
+
+        MethodDeclarationSyntax releaseMethod = this.FindGeneratedMethod("MsiCloseHandle").Single();
         Assert.Equal("MSIHANDLE", Assert.IsType<IdentifierNameSyntax>(releaseMethod!.ParameterList.Parameters[0].Type).Identifier.ValueText);
+    }
+
+    [Fact]
+    public void OutHandleParameterBecomesSafeHandle()
+    {
+        this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);
+        const string methodName = "TcAddFilter";
+        Assert.True(this.generator.TryGenerate(methodName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        Assert.Contains(
+            this.FindGeneratedMethod(methodName),
+            method => method!.ParameterList.Parameters[2].Type?.ToString() == typeof(Microsoft.Win32.SafeHandles.SafeFileHandle).FullName);
+
+        Assert.Contains(
+            this.FindGeneratedMethod(methodName),
+            method => method!.ParameterList.Parameters[(int)0].Type?.ToString() == nameof(SafeHandle));
     }
 
     [Fact]

@@ -149,4 +149,20 @@ public class BasicTests
         Assert.False(((HRESULT)1).Failed);
         Assert.True(((HRESULT)(-1)).Failed);
     }
+
+    [Fact]
+    public void NTSTATUS_Severity()
+    {
+        Assert.Equal(NTSTATUS.Severity.Success, ((NTSTATUS)0).SeverityCode);
+        Assert.Equal(NTSTATUS.Severity.Success, ((NTSTATUS)0x3fffffff).SeverityCode);
+
+        Assert.Equal(NTSTATUS.Severity.Informational, ((NTSTATUS)0x40000000).SeverityCode);
+        Assert.Equal(NTSTATUS.Severity.Informational, ((NTSTATUS)0x7fffffff).SeverityCode);
+
+        Assert.Equal(NTSTATUS.Severity.Warning, ((NTSTATUS)0x80000000).SeverityCode);
+        Assert.Equal(NTSTATUS.Severity.Warning, ((NTSTATUS)0xbfffffff).SeverityCode);
+
+        Assert.Equal(NTSTATUS.Severity.Error, ((NTSTATUS)0xc0000000).SeverityCode);
+        Assert.Equal(NTSTATUS.Severity.Error, ((NTSTATUS)0xffffffff).SeverityCode);
+    }
 }

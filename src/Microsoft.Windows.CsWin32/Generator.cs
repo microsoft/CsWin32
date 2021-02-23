@@ -1452,7 +1452,7 @@ namespace Microsoft.Windows.CsWin32
             return false;
         }
 
-        private static string FetchTemplate(string name)
+        private MemberDeclarationSyntax FetchTemplate(string name)
         {
             using Stream? templateStream = Assembly.GetExecutingAssembly().GetManifestResourceStream($"{ThisAssembly.RootNamespace}.templates.{name}");
             if (templateStream is null)
@@ -1461,7 +1461,10 @@ namespace Microsoft.Windows.CsWin32
             }
 
             using StreamReader sr = new(templateStream);
-            return sr.ReadToEnd();
+            string template = sr.ReadToEnd();
+            MemberDeclarationSyntax member = ParseMemberDeclaration(template) ?? throw new GenerationFailedException($"Unable to parse a type from a template: {name}");
+            MemberDeclarationSyntax memberWithVisibility = this.ElevateVisibility(member);
+            return memberWithVisibility;
         }
 
         private FunctionPointerTypeSyntax FunctionPointer(CallingConvention callingConvention, MethodSignature<TypeSyntax> signature, string delegateName)
@@ -1680,7 +1683,7 @@ namespace Microsoft.Windows.CsWin32
             {
                 MemberDeclarationSyntax? specialDeclaration = specialName switch
                 {
-                    "PCWSTR" or "PCSTR" => ParseMemberDeclaration(FetchTemplate($"{specialName}.cs")),
+                    "PCWSTR" or "PCSTR" => this.FetchTemplate($"{specialName}.cs"),
                     _ => throw new ArgumentException($"This special name is not recognized: \"{specialName}\".", nameof(specialName)),
                 };
 
@@ -2206,7 +2209,8 @@ namespace Microsoft.Windows.CsWin32
                     members = members.AddRange(this.CreateAdditionalTypeDefPWSTRMembers());
                     break;
                 case "HRESULT":
-                    members = members.AddRange(this.CreateAdditionalTypeDefHRESULTMembers());
+                case "NTSTATUS":
+                    members = members.AddRange(this.ExtractMembersFromTemplate(name));
                     break;
                 default:
                     break;
@@ -2227,6 +2231,36 @@ namespace Microsoft.Windows.CsWin32
 
             result = AddApiDocumentation(name, result);
             return result;
+        }
+
+        private IEnumerable<MemberDeclarationSyntax> ExtractMembersFromTemplate(string name) => ((TypeDeclarationSyntax)this.FetchTemplate($"{name}.cs")).Members;
+
+        /// <summary>
+        /// Promotes an <see langword="internal" /> member to be <see langword="public"/> if <see cref="Visibility"/> indicates that generated APIs should be public.
+        /// This change is applied recursively.
+        /// </summary>
+        /// <param name="member">The member to potentially make public.</param>
+        /// <returns>The modified or original <paramref name="member"/>.</returns>
+        private MemberDeclarationSyntax ElevateVisibility(MemberDeclarationSyntax member)
+        {
+            if (this.Visibility == SyntaxKind.PublicKeyword)
+            {
+                int indexOfInternal = member.Modifiers.IndexOf(SyntaxKind.InternalKeyword);
+                if (indexOfInternal >= 0)
+                {
+                    MemberDeclarationSyntax publicMember = member.WithModifiers(member.Modifiers.Replace(member.Modifiers[indexOfInternal], Token(this.Visibility)));
+
+                    // Apply change recursively.
+                    if (publicMember is TypeDeclarationSyntax memberContainer)
+                    {
+                        publicMember = memberContainer.WithMembers(List(memberContainer.Members.Select(this.ElevateVisibility)));
+                    }
+
+                    return publicMember;
+                }
+            }
+
+            return member;
         }
 
         private IEnumerable<MemberDeclarationSyntax> CreateAdditionalTypeDefBSTRMembers()
@@ -2330,27 +2364,6 @@ namespace Microsoft.Windows.CsWin32
                 .WithExpressionBody(ArrowExpressionClause(conditional))
                 .WithSemicolonToken(Token(SyntaxKind.SemicolonToken));
 #pragma warning restore SA1114 // Parameter list should follow declaration
-        }
-
-        private IEnumerable<MemberDeclarationSyntax> CreateAdditionalTypeDefHRESULTMembers()
-        {
-            ExpressionSyntax thisValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Value"));
-
-            // [DebuggerBrowsable(DebuggerBrowsableState.Never)]
-            // public bool Succeeded => this.Value >= 0;
-            yield return PropertyDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), "Succeeded")
-                .AddModifiers(Token(this.Visibility))
-                .WithExpressionBody(ArrowExpressionClause(BinaryExpression(SyntaxKind.GreaterThanOrEqualExpression, thisValue, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)))))
-                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
-                .AddAttributeLists(DebuggerBrowsableNever);
-
-            // [DebuggerBrowsable(DebuggerBrowsableState.Never)]
-            // public bool Failed => this.Value < 0;
-            yield return PropertyDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), "Failed")
-                .AddModifiers(Token(this.Visibility))
-                .WithExpressionBody(ArrowExpressionClause(BinaryExpression(SyntaxKind.LessThanExpression, thisValue, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)))))
-                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
-                .AddAttributeLists(DebuggerBrowsableNever);
         }
 
         private StructDeclarationSyntax CreateTypeDefBOOLStruct(TypeDefinition typeDef)

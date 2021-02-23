@@ -17,15 +17,5 @@ namespace Microsoft.Windows.Sdk
             ppv = (T*)o;
             return hr;
         }
-
-        /// <inheritdoc cref="Marshal.ThrowExceptionForHR(int, IntPtr)" />
-        /// <returns>The value from <paramref name="errorCode"/> if it does not reflect an error.</returns>
-        /// <seealso cref="Marshal.ThrowExceptionForHR(int, IntPtr)"/>
-        /// <seealso href="https://github.com/microsoft/CsWin32/issues/119" />
-        internal static HRESULT ThrowOnFailure(this HRESULT errorCode, IntPtr errorInfo = default)
-        {
-            Marshal.ThrowExceptionForHR(errorCode, errorInfo);
-            return errorCode;
-        }
     }
 }

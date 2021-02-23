@@ -47,7 +47,7 @@ steps:
   displayName: ✒ Authenticode sign (3rd party)
   inputs:
     ConnectedServiceName: Undocked RegFree Signing Connection
-    FolderPath: $(NUGET_PACKAGES)\yamldotnet\9.1.0\lib\netstandard1.3
+    FolderPath: $(NUGET_PACKAGES)\yamldotnet\9.1.4\lib\netstandard1.3
     Pattern: YamlDotNet.dll
     signConfigType: inlineSignParams
     inlineOperation: |

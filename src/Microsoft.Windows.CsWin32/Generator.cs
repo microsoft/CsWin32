@@ -2006,11 +2006,6 @@ namespace Microsoft.Windows.CsWin32
                     var fieldInfo = this.ReinterpretFieldType(fieldDeclarator.Identifier.ValueText, fieldDef.DecodeSignature(this.signatureTypeProviderNoMarshaledTypes, null), fieldDef.GetCustomAttributes());
                     (_, additionalMembers) = fieldInfo;
 
-                    if (fieldInfo.AdditionalMembers.Count > 0)
-                    {
-                        fieldDeclarator = fieldDeclarator.WithIdentifier(Identifier(GetHiddenFieldName(fieldDeclarator.Identifier.ValueText)));
-                    }
-
                     field = FieldDeclaration(VariableDeclaration(fieldInfo.FieldType).AddVariables(fieldDeclarator))
                         .AddModifiers(Token(this.Visibility));
 

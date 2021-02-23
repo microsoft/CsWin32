@@ -395,7 +395,7 @@ namespace Microsoft.Windows.Sdk
         internal uint dwSuggestedBufferSize;
         internal uint dwWidth;
         internal uint dwHeight;
-        internal __dwReserved_4 __dwReserved;
+        internal __dwReserved_4 dwReserved;
         [StructLayout(LayoutKind.Sequential, Pack = 1)]
         internal struct __dwReserved_4
         {

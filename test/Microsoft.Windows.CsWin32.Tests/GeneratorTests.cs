@@ -154,7 +154,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         Assert.True(this.generator.TryGenerate("CreatePrivateNamespace", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
-        Assert.Null(this.FindGeneratedType("ClosePrivateNamespaceSafeHandle"));
+        Assert.Empty(this.FindGeneratedType("ClosePrivateNamespaceSafeHandle"));
     }
 
     [Fact]
@@ -215,9 +215,8 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         Assert.True(this.generator.TryGenerate("ICONINFO", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
-        var theStruct = (StructDeclarationSyntax?)this.FindGeneratedType("ICONINFO");
-        Assert.NotNull(theStruct);
-        Assert.Equal("BOOL", theStruct!.Members.OfType<FieldDeclarationSyntax>().Select(m => m.Declaration).Single(d => d.Variables.Any(v => v.Identifier.ValueText == "fIcon")).Type.ToString());
+        var theStruct = (StructDeclarationSyntax)this.FindGeneratedType("ICONINFO").Single();
+        Assert.Equal("BOOL", theStruct.Members.OfType<FieldDeclarationSyntax>().Select(m => m.Declaration).Single(d => d.Variables.Any(v => v.Identifier.ValueText == "fIcon")).Type.ToString());
     }
 
     [Fact]
@@ -227,7 +226,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         Assert.True(this.generator.TryGenerate("DebugPropertyInfo", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
-        StructDeclarationSyntax structDecl = Assert.IsType<StructDeclarationSyntax>(this.FindGeneratedType("DebugPropertyInfo"));
+        StructDeclarationSyntax structDecl = Assert.IsType<StructDeclarationSyntax>(this.FindGeneratedType("DebugPropertyInfo").Single());
         var bstrField = structDecl.Members.OfType<FieldDeclarationSyntax>().First(m => m.Declaration.Variables.Any(v => v.Identifier.ValueText == "m_bstrName"));
         Assert.Equal("BSTR", ((IdentifierNameSyntax)bstrField.Declaration.Type).Identifier.ValueText);
     }
@@ -284,8 +283,32 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         Assert.True(this.generator.TryGenerate(structName, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
-        StructDeclarationSyntax structDecl = Assert.IsType<StructDeclarationSyntax>(this.FindGeneratedType(structName));
+        StructDeclarationSyntax structDecl = Assert.IsType<StructDeclarationSyntax>(this.FindGeneratedType(structName).Single());
         Assert.True(structDecl.Modifiers.Any(SyntaxKind.PartialKeyword));
+    }
+
+    [Fact]
+    public void PartialStructsAllowUserContributions()
+    {
+        const string structName = "HRESULT";
+        this.compilation = this.compilation.AddSyntaxTrees(
+            CSharpSyntaxTree.ParseText("namespace Microsoft.Windows.Sdk { partial struct HRESULT { void Foo() { } } }", this.parseOptions, "myHRESULT.cs"));
+
+        this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);
+        Assert.True(this.generator.TryGenerate(structName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        bool hasFooMethod = false;
+        bool hasValueProperty = false;
+        foreach (StructDeclarationSyntax structDecl in this.FindGeneratedType(structName))
+        {
+            hasFooMethod |= structDecl.Members.OfType<MethodDeclarationSyntax>().Any(m => m.Identifier.ValueText == "Foo");
+            hasValueProperty |= structDecl.Members.OfType<FieldDeclarationSyntax>().Any(p => p.Declaration.Variables.FirstOrDefault()?.Identifier.ValueText == "Value");
+        }
+
+        Assert.True(hasFooMethod, "User-defined method not found.");
+        Assert.True(hasValueProperty, "Projected members not found.");
     }
 
     [Fact]
@@ -389,7 +412,7 @@ namespace Microsoft.Windows.Sdk
 
     private IEnumerable<MethodDeclarationSyntax> FindGeneratedMethod(string name) => this.compilation.SyntaxTrees.SelectMany(st => st.GetRoot().DescendantNodes().OfType<MethodDeclarationSyntax>()).Where(md => md.Identifier.ValueText == name);
 
-    private BaseTypeDeclarationSyntax? FindGeneratedType(string name) => this.compilation.SyntaxTrees.SelectMany(st => st.GetRoot().DescendantNodes().OfType<BaseTypeDeclarationSyntax>()).FirstOrDefault(md => md.Identifier.ValueText == name);
+    private IEnumerable<BaseTypeDeclarationSyntax> FindGeneratedType(string name) => this.compilation.SyntaxTrees.SelectMany(st => st.GetRoot().DescendantNodes().OfType<BaseTypeDeclarationSyntax>()).Where(md => md.Identifier.ValueText == name);
 
     private bool IsMethodGenerated(string name) => this.FindGeneratedMethod(name).Any();
 

@@ -1582,7 +1582,10 @@ namespace Microsoft.Windows.CsWin32
                 if (this.compilation.Assembly.GetTypeByMetadataName(fullyQualifiedMetadataName) is { } ownSymbol)
                 {
                     // This assembly defines it.
-                    return ownSymbol;
+                    // But if it defines it as a partial, we should not consider it as fully defined so we populate our side.
+                    return ownSymbol.DeclaringSyntaxReferences.Any(sr => sr.GetSyntax() is BaseTypeDeclarationSyntax type && type.Modifiers.Any(SyntaxKind.PartialKeyword))
+                        ? null
+                        : ownSymbol;
                 }
 
                 foreach (var reference in this.compilation.References)

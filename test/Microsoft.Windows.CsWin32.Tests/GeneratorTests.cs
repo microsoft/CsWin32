@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -26,6 +27,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     private readonly ITestOutputHelper logger;
     private readonly FileStream metadataStream;
     private CSharpCompilation compilation;
+    private CSharpCompilation fastSpanCompilation;
     private CSharpParseOptions parseOptions;
     private Generator? generator;
 
@@ -37,30 +39,20 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.parseOptions = CSharpParseOptions.Default
             .WithDocumentationMode(DocumentationMode.Diagnose)
             .WithLanguageVersion(LanguageVersion.CSharp9);
-        this.compilation = null!; // set in InitializeAsync
+
+        // set in InitializeAsync
+        this.compilation = null!;
+        this.fastSpanCompilation = null!;
     }
 
     public async Task InitializeAsync()
     {
-        ReferenceAssemblies references = ReferenceAssemblies.NetStandard.NetStandard20
-            .AddPackages(ImmutableArray.Create(
-                new PackageIdentity("System.Memory", "4.5.4"),
-                new PackageIdentity("Microsoft.Windows.SDK.Contracts", "10.0.19041.1")));
-        ImmutableArray<MetadataReference> metadataReferences = await references.ResolveAsync(LanguageNames.CSharp, default);
+        this.compilation = await this.CreateCompilationAsync(
+            ReferenceAssemblies.NetStandard.NetStandard20
+                .AddPackages(ImmutableArray.Create(new PackageIdentity("System.Memory", "4.5.4"))));
 
-        // Workaround for https://github.com/dotnet/roslyn-sdk/issues/699
-        metadataReferences = metadataReferences.AddRange(
-            Directory.GetFiles(Path.Combine(Path.GetTempPath(), "test-packages", "Microsoft.Windows.SDK.Contracts.10.0.19041.1", "ref", "netstandard2.0"), "*.winmd").Select(p => MetadataReference.CreateFromFile(p)));
-
-        // CONSIDER: How can I pass in the source generator itself, with AdditionalFiles, so I'm exercising that code too?
-        this.compilation = CSharpCompilation.Create(
-            assemblyName: "test",
-            references: metadataReferences,
-            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, allowUnsafe: true));
-
-        // Add a namespace that WinUI projects define to ensure we prefix types with "global::" everywhere.
-        this.compilation = this.compilation.AddSyntaxTrees(
-            CSharpSyntaxTree.ParseText("namespace Microsoft.System { }", this.parseOptions, path: "Microsoft.System.cs"));
+        this.fastSpanCompilation = await this.CreateCompilationAsync(
+            ReferenceAssemblies.NetStandard.NetStandard21);
     }
 
     public Task DisposeAsync() => Task.CompletedTask;
@@ -379,8 +371,48 @@ namespace Microsoft.Windows.Sdk
         this.AssertNoDiagnostics();
     }
 
+    // Slow span can't safely create a span from a ref when the struct is on the heap.
     [Fact]
-    public void CodeGenerationForFixedLengthInlineArray()
+    public void CodeGenerationForFixedLengthInlineArrayWithSlowSpan()
+    {
+        const string expected = @"
+    internal partial struct MainAVIHeader
+    {
+        internal uint dwMicroSecPerFrame;
+        internal uint dwMaxBytesPerSec;
+        internal uint dwPaddingGranularity;
+        internal uint dwFlags;
+        internal uint dwTotalFrames;
+        internal uint dwInitialFrames;
+        internal uint dwStreams;
+        internal uint dwSuggestedBufferSize;
+        internal uint dwWidth;
+        internal uint dwHeight;
+        internal __dwReserved_4 dwReserved;
+        [StructLayout(LayoutKind.Sequential, Pack = 1)]
+        internal struct __dwReserved_4
+        {
+            internal uint _1, _2, _3, _4;
+            internal ref uint this[int index]
+            {
+                get
+                {
+                    unsafe
+                    {
+                        fixed (uint *p = &_1)
+                            return ref p[index];
+                    }
+                }
+            }
+        }
+    }
+";
+
+        this.AssertGeneratedType("MainAVIHeader", expected);
+    }
+
+    [Fact]
+    public void CodeGenerationForFixedLengthInlineArrayWithFastSpan()
     {
         const string expected = @"
     internal partial struct MainAVIHeader
@@ -406,6 +438,7 @@ namespace Microsoft.Windows.Sdk
     }
 ";
 
+        this.compilation = this.fastSpanCompilation;
         this.AssertGeneratedType("MainAVIHeader", expected);
     }
 
@@ -531,5 +564,28 @@ namespace Microsoft.Windows.Sdk
         this.AssertNoDiagnostics();
         BaseTypeDeclarationSyntax? syntax = Assert.Single(this.FindGeneratedType(apiName));
         Assert.Equal(TestUtils.NormalizeToExpectedLineEndings(expectedSyntax), syntax?.ToFullString());
+    }
+
+    private async Task<CSharpCompilation> CreateCompilationAsync(ReferenceAssemblies references)
+    {
+        ImmutableArray<MetadataReference> metadataReferences = await references
+            .AddPackages(ImmutableArray.Create(new PackageIdentity("Microsoft.Windows.SDK.Contracts", "10.0.19041.1")))
+            .ResolveAsync(LanguageNames.CSharp, default);
+
+        // Workaround for https://github.com/dotnet/roslyn-sdk/issues/699
+        metadataReferences = metadataReferences.AddRange(
+            Directory.GetFiles(Path.Combine(Path.GetTempPath(), "test-packages", "Microsoft.Windows.SDK.Contracts.10.0.19041.1", "ref", "netstandard2.0"), "*.winmd").Select(p => MetadataReference.CreateFromFile(p)));
+
+        // CONSIDER: How can I pass in the source generator itself, with AdditionalFiles, so I'm exercising that code too?
+        var compilation = CSharpCompilation.Create(
+            assemblyName: "test",
+            references: metadataReferences,
+            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, allowUnsafe: true));
+
+        // Add a namespace that WinUI projects define to ensure we prefix types with "global::" everywhere.
+        compilation = compilation.AddSyntaxTrees(
+            CSharpSyntaxTree.ParseText("namespace Microsoft.System { }", this.parseOptions, path: "Microsoft.System.cs"));
+
+        return compilation;
     }
 }

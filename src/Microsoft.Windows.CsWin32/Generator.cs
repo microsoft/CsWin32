@@ -3106,33 +3106,68 @@ namespace Microsoft.Windows.CsWin32
                 // private struct __TheStruct_Count
                 // {
                 //     private TheStruct _1, _2, _3, _4, _5, _6, _7, _8;
-                //
-                //     internal ref TheStruct this[int index] => ref AsSpan()[index];
-                //
-                //     internal Span<TheStruct> AsSpan() => MemoryMarshal.CreateSpan(ref _1, 4);
-                // }
+                // ...
                 var fixedLengthStruct = StructDeclaration($"__{fieldName}_{length}")
                     .AddModifiers(Token(this.Visibility))
                     .AddAttributeLists(AttributeList().AddAttributes(StructLayout(TypeAttributes.SequentialLayout, new TypeLayout(0, packingSize: 1))))
                     .AddMembers(
                         FieldDeclaration(VariableDeclaration(elementType)
                             .AddVariables(Enumerable.Range(1, length).Select(n => VariableDeclarator($"_{n}")).ToArray()))
-                            .AddModifiers(Token(this.Visibility)),
-                        IndexerDeclaration(RefType(elementType))
-                            .AddModifiers(Token(this.Visibility))
-                            .AddParameterListParameters(Parameter(Identifier("index")).WithType(PredefinedType(Token(SyntaxKind.IntKeyword))))
-                            .WithExpressionBody(ArrowExpressionClause(RefExpression(
-                                ElementAccessExpression(InvocationExpression(IdentifierName("AsSpan")))
-                                    .AddArgumentListArguments(Argument(IdentifierName("index"))))))
-                            .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)),
-                        MethodDeclaration(MakeSpanOfT(elementType), "AsSpan")
-                            .AddModifiers(Token(this.Visibility))
-                            .WithExpressionBody(ArrowExpressionClause(
-                                InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("MemoryMarshal"), IdentifierName("CreateSpan")))
-                                    .AddArgumentListArguments(
-                                        Argument(nameColon: null, Token(SyntaxKind.RefKeyword), IdentifierName("_1")),
-                                        Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(length))))))
-                            .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+                            .AddModifiers(Token(this.Visibility)));
+
+                var canCallCreateSpan = this.compilation?.GetTypeByMetadataName(typeof(MemoryMarshal).FullName)?.GetMembers("CreateSpan").Any() is true;
+                if (canCallCreateSpan)
+                {
+                    // ...
+                    //     internal ref TheStruct this[int index] => ref AsSpan()[index];
+                    //     internal Span<TheStruct> AsSpan() => MemoryMarshal.CreateSpan(ref _1, 4);
+                    fixedLengthStruct = fixedLengthStruct
+                        .AddMembers(
+                            IndexerDeclaration(RefType(elementType))
+                                .AddModifiers(Token(this.Visibility))
+                                .AddParameterListParameters(Parameter(Identifier("index")).WithType(PredefinedType(Token(SyntaxKind.IntKeyword))))
+                                .WithExpressionBody(ArrowExpressionClause(RefExpression(
+                                    ElementAccessExpression(InvocationExpression(IdentifierName("AsSpan")))
+                                        .AddArgumentListArguments(Argument(IdentifierName("index"))))))
+                                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)),
+                            MethodDeclaration(MakeSpanOfT(elementType), "AsSpan")
+                                .AddModifiers(Token(this.Visibility))
+                                .WithExpressionBody(ArrowExpressionClause(
+                                    InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("MemoryMarshal"), IdentifierName("CreateSpan")))
+                                        .AddArgumentListArguments(
+                                            Argument(nameColon: null, Token(SyntaxKind.RefKeyword), IdentifierName("_1")),
+                                            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(length))))))
+                                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+                }
+                else
+                {
+                    // ...
+                    //     internal ref TheStruct this[int index]
+                    //     {
+                    //         get
+                    //         {
+                    //             unsafe
+                    //             {
+                    //                 fixed (TheStruct* p = &_1)
+                    //                     return ref p[index];
+                    //             }
+                    //         }
+                    //     }
+                    fixedLengthStruct = fixedLengthStruct
+                       .AddMembers(
+                            IndexerDeclaration(RefType(elementType))
+                                .AddModifiers(Token(this.Visibility))
+                                .AddParameterListParameters(Parameter(Identifier("index")).WithType(PredefinedType(Token(SyntaxKind.IntKeyword))))
+                                .AddAccessorListAccessors(AccessorDeclaration(
+                                    SyntaxKind.GetAccessorDeclaration,
+                                    Block(UnsafeStatement(Block(
+                                        FixedStatement(
+                                            VariableDeclaration(PointerType(elementType)).AddVariables(
+                                                VariableDeclarator("p").WithInitializer(EqualsValueClause(
+                                                    PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName("_1"))))),
+                                            ReturnStatement(RefExpression(
+                                                ElementAccessExpression(IdentifierName("p")).AddArgumentListArguments(Argument(IdentifierName("index"))))))))))));
+                }
 
                 return (IdentifierName(fixedLengthStruct.Identifier.ValueText), List<MemberDeclarationSyntax>().Add(fixedLengthStruct));
             }

@@ -3,9 +3,9 @@
 ***A source generator to add a user-defined set of Win32 P/Invoke methods and supporting types to a C# project.***
 
 [![NuGet (prerelease)](https://img.shields.io/nuget/vpre/Microsoft.Windows.CsWin32)](https://www.nuget.org/packages/Microsoft.Windows.CsWin32)
-[![NuGet (daily)](https://img.shields.io/badge/nuget-daily-red)](https://dev.azure.com/azure-public/vside/_packaging?_a=package&feed=winsdk%40Local&package=Microsoft.Windows.CsWin32&protocolType=NuGet)
+[![NuGet (daily)](https://img.shields.io/badge/nuget-daily-red)](https://dev.azure.com/azure-public/winsdk/_packaging?_a=package&feed=CI%40Local&package=Microsoft.Windows.CsWin32&protocolType=NuGet)
 
-[![Build Status](https://dev.azure.com/azure-public/vside/_apis/build/status/microsoft.CsWin32?branchName=main)](https://dev.azure.com/azure-public/vside/_build/latest?definitionId=46&branchName=main)
+[![Build Status](https://dev.azure.com/azure-public/winsdk/_apis/build/status/microsoft.CsWin32?branchName=main)](https://dev.azure.com/azure-public/winsdk/_build/latest?definitionId=47&branchName=main)
 
 ## Features
 
@@ -108,5 +108,5 @@ Can't wait for the next release to try out a bug fix? Follow these steps to cons
 Just add this package feed to your nuget.config file:
 
    ```xml
-   <add key="winsdk" value="https://pkgs.dev.azure.com/azure-public/vside/_packaging/winsdk/nuget/v3/index.json" />
+   <add key="winsdk" value="https://pkgs.dev.azure.com/azure-public/winsdk/_packaging/CI/nuget/v3/index.json" />
    ```

@@ -395,6 +395,7 @@ namespace Microsoft.Windows.Sdk
             internal uint _1, _2, _3, _4;
             internal ref uint this[int index]
             {
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
                 get
                 {
                     unsafe

@@ -3110,7 +3110,6 @@ namespace Microsoft.Windows.CsWin32
                 // ...
                 var fixedLengthStruct = StructDeclaration($"__{fieldName}_{length}")
                     .AddModifiers(Token(this.Visibility))
-                    .AddAttributeLists(AttributeList().AddAttributes(StructLayout(TypeAttributes.SequentialLayout, new TypeLayout(0, packingSize: 1))))
                     .AddMembers(
                         FieldDeclaration(VariableDeclaration(elementType)
                             .AddVariables(Enumerable.Range(1, length).Select(n => VariableDeclarator($"_{n}")).ToArray()))

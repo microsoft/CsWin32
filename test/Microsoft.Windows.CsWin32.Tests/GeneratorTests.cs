@@ -389,7 +389,6 @@ namespace Microsoft.Windows.Sdk
         internal uint dwWidth;
         internal uint dwHeight;
         internal __dwReserved_4 dwReserved;
-        [StructLayout(LayoutKind.Sequential, Pack = 1)]
         internal struct __dwReserved_4
         {
             internal uint _1, _2, _3, _4;
@@ -429,7 +428,6 @@ namespace Microsoft.Windows.Sdk
         internal uint dwWidth;
         internal uint dwHeight;
         internal __dwReserved_4 dwReserved;
-        [StructLayout(LayoutKind.Sequential, Pack = 1)]
         internal struct __dwReserved_4
         {
             internal uint _1, _2, _3, _4;

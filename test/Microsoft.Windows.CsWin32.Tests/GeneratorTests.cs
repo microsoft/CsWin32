@@ -403,24 +403,24 @@ namespace Microsoft.Windows.Sdk
     }
 ";
 
-////        const string expectedIndexer = @"
-////    internal static partial class InlineArrayIndexerExtensions
-////    {
-////        internal static unsafe ref readonly uint GetAt(this in MainAVIHeader.__dwReserved_4 @this, int index)
-////        {
-////            fixed (uint *p0 = &@this._0)
-////                return ref p0[index];
-////        }
+        const string expectedIndexer = @"
+    internal static partial class InlineArrayIndexerExtensions
+    {
+        internal static unsafe ref readonly uint GetAt(this in MainAVIHeader.__dwReserved_4 @this, int index)
+        {
+            fixed (uint *p0 = &@this._0)
+                return ref p0[index];
+        }
 
-////        internal static unsafe ref uint GetOrSetAt(this ref MainAVIHeader.__dwReserved_4 @this, int index)
-////        {
-////            fixed (uint *p0 = &@this._0)
-////                return ref p0[index];
-////        }
-////    }
-////";
+        internal static unsafe ref uint GetOrSetAt(this ref MainAVIHeader.__dwReserved_4 @this, int index)
+        {
+            fixed (uint *p0 = &@this._0)
+                return ref p0[index];
+        }
+    }
+";
 
-        this.AssertGeneratedType("MainAVIHeader", expected/*, expectedIndexer*/); // https://github.com/microsoft/CsWin32/issues/152
+        this.AssertGeneratedType("MainAVIHeader", expected, expectedIndexer);
     }
 
     /// <summary>
@@ -452,25 +452,25 @@ namespace Microsoft.Windows.Sdk
     }
 ";
 
-////        const string expectedIndexer = @"
-////    internal static partial class InlineArrayIndexerExtensions
-////    {
-////        internal static unsafe ref readonly uint GetAt(this in MainAVIHeader.__dwReserved_4 @this, int index)
-////        {
-////            fixed (uint *p0 = &@this._0)
-////                return ref p0[index];
-////        }
+        const string expectedIndexer = @"
+    internal static partial class InlineArrayIndexerExtensions
+    {
+        internal static unsafe ref readonly uint GetAt(this in MainAVIHeader.__dwReserved_4 @this, int index)
+        {
+            fixed (uint *p0 = &@this._0)
+                return ref p0[index];
+        }
 
-////        internal static unsafe ref uint GetOrSetAt(this ref MainAVIHeader.__dwReserved_4 @this, int index)
-////        {
-////            fixed (uint *p0 = &@this._0)
-////                return ref p0[index];
-////        }
-////    }
-////";
+        internal static unsafe ref uint GetOrSetAt(this ref MainAVIHeader.__dwReserved_4 @this, int index)
+        {
+            fixed (uint *p0 = &@this._0)
+                return ref p0[index];
+        }
+    }
+";
 
         this.compilation = this.fastSpanCompilation;
-        this.AssertGeneratedType("MainAVIHeader", expected/*, expectedIndexer*/); // https://github.com/microsoft/CsWin32/issues/152
+        this.AssertGeneratedType("MainAVIHeader", expected, expectedIndexer);
     }
 
     [Fact]

@@ -18,12 +18,14 @@ namespace Microsoft.Windows.CsWin32
         private readonly Generator owner;
         private readonly bool preferNativeInt;
         private readonly bool preferMarshaledTypes;
+        private readonly bool fullyQualifiedNames;
 
-        internal SignatureTypeProvider(Generator owner, bool preferNativeInt, bool preferMarshaledTypes)
+        internal SignatureTypeProvider(Generator owner, bool preferNativeInt, bool preferMarshaledTypes, bool fullyQualifiedNames)
         {
             this.owner = owner;
             this.preferNativeInt = preferNativeInt;
             this.preferMarshaledTypes = preferMarshaledTypes;
+            this.fullyQualifiedNames = fullyQualifiedNames;
         }
 
         /// <inheritdoc/>
@@ -73,7 +75,7 @@ namespace Microsoft.Windows.CsWin32
             }
 
             this.owner.GenerateInteropType(handle);
-            TypeSyntax identifier = IdentifierName(name);
+            TypeSyntax identifier = this.fullyQualifiedNames ? this.owner.GetQualifiedName(td) : IdentifierName(name);
 
             if ((td.Attributes & TypeAttributes.Interface) == TypeAttributes.Interface)
             {
@@ -103,7 +105,7 @@ namespace Microsoft.Windows.CsWin32
             TypeDefinitionHandle? typeDefHandle = this.owner.GenerateInteropType(handle);
             if (typeDefHandle.HasValue)
             {
-                TypeSyntax identifier = IdentifierName(name);
+                TypeSyntax identifier = this.fullyQualifiedNames ? this.owner.GetQualifiedName(tr) : IdentifierName(name);
                 TypeDefinition td = reader.GetTypeDefinition(typeDefHandle.Value);
                 if ((td.Attributes & TypeAttributes.Interface) == TypeAttributes.Interface)
                 {

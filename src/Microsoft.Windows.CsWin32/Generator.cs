@@ -82,6 +82,20 @@ namespace Microsoft.Windows.CsWin32
 
         private const string SimpleFileNameAnnotation = "SimpleFileName";
         private const string OriginalDelegateAnnotation = "OriginalDelegate";
+        private static readonly SyntaxTriviaList InlineArrayUnsafeAsSpanComment = ParseLeadingTrivia(@"/// <summary>
+/// Gets this inline array as a span.
+/// </summary>
+/// <remarks>
+/// ⚠ Important ⚠: When this struct is on the stack, do not let the returned span outlive the stack frame that defines it.
+/// </remarks>
+");
+
+        private static readonly SyntaxTriviaList InlineArrayUnsafeIndexerComment = ParseLeadingTrivia(@"/// <summary>
+/// Gets a ref to an individual element of the inline array.
+/// ⚠ Important ⚠: When this struct is on the stack, do not let the returned reference outlive the stack frame that defines it.
+/// </summary>
+");
+
         private static readonly IdentifierNameSyntax ConstantsClassName = IdentifierName("Constants");
         private static readonly IdentifierNameSyntax InlineArrayIndexerExtensionsClassName = IdentifierName("InlineArrayIndexerExtensions");
         private static readonly TypeSyntax SafeHandleTypeSyntax = IdentifierName("SafeHandle");
@@ -3165,7 +3179,8 @@ namespace Microsoft.Windows.CsWin32
                                 .WithExpressionBody(ArrowExpressionClause(RefExpression(
                                     ElementAccessExpression(InvocationExpression(IdentifierName("AsSpan")))
                                         .AddArgumentListArguments(Argument(IdentifierName("index"))))))
-                                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)),
+                                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
+                                .WithLeadingTrivia(InlineArrayUnsafeIndexerComment),
                             MethodDeclaration(MakeSpanOfT(elementType), "AsSpan")
                                 .AddModifiers(Token(this.Visibility))
                                 .WithExpressionBody(ArrowExpressionClause(
@@ -3173,7 +3188,8 @@ namespace Microsoft.Windows.CsWin32
                                         .AddArgumentListArguments(
                                             Argument(nameColon: null, Token(SyntaxKind.RefKeyword), firstElementFieldName),
                                             Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(length))))))
-                                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+                                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
+                                .WithLeadingTrivia(InlineArrayUnsafeAsSpanComment));
                 }
 
                 IdentifierNameSyntax indexParamName = IdentifierName("index");

@@ -227,6 +227,7 @@ namespace Microsoft.Windows.CsWin32
         private readonly PEReader peReader;
         private readonly MetadataReader mr;
         private readonly SignatureTypeProvider signatureTypeProvider;
+        private readonly SignatureTypeProvider signatureTypeProviderFullyQualified;
         private readonly SignatureTypeProvider signatureTypeProviderAlwaysUseIntPtr;
         private readonly SignatureTypeProvider signatureTypeProviderNoMarshaledTypes;
         private readonly SignatureTypeProvider signatureTypeProviderNoMarshaledTypesOrNint;
@@ -307,10 +308,11 @@ namespace Microsoft.Windows.CsWin32
             this.peReader = new PEReader(this.metadataStream);
             this.mr = this.peReader.GetMetadataReader();
 
-            this.signatureTypeProvider = new SignatureTypeProvider(this, preferNativeInt: this.LanguageVersion >= LanguageVersion.CSharp9, preferMarshaledTypes: true);
-            this.signatureTypeProviderAlwaysUseIntPtr = new SignatureTypeProvider(this, preferNativeInt: false, preferMarshaledTypes: true);
-            this.signatureTypeProviderNoMarshaledTypes = new SignatureTypeProvider(this, preferNativeInt: true, preferMarshaledTypes: false);
-            this.signatureTypeProviderNoMarshaledTypesOrNint = new SignatureTypeProvider(this, preferNativeInt: false, preferMarshaledTypes: false);
+            this.signatureTypeProvider = new SignatureTypeProvider(this, preferNativeInt: this.LanguageVersion >= LanguageVersion.CSharp9, preferMarshaledTypes: true, fullyQualifiedNames: false);
+            this.signatureTypeProviderFullyQualified = new SignatureTypeProvider(this, preferNativeInt: this.LanguageVersion >= LanguageVersion.CSharp9, preferMarshaledTypes: true, fullyQualifiedNames: true);
+            this.signatureTypeProviderAlwaysUseIntPtr = new SignatureTypeProvider(this, preferNativeInt: false, preferMarshaledTypes: true, fullyQualifiedNames: false);
+            this.signatureTypeProviderNoMarshaledTypes = new SignatureTypeProvider(this, preferNativeInt: true, preferMarshaledTypes: false, fullyQualifiedNames: false);
+            this.signatureTypeProviderNoMarshaledTypesOrNint = new SignatureTypeProvider(this, preferNativeInt: false, preferMarshaledTypes: false, fullyQualifiedNames: false);
             this.customAttributeTypeProvider = new CustomAttributeTypeProvider();
 
             this.Apis = this.mr.TypeDefinitions.Select(this.mr.GetTypeDefinition).Where(td => this.mr.StringComparer.Equals(td.Name, "Apis")).ToList();
@@ -866,6 +868,20 @@ namespace Microsoft.Windows.CsWin32
             IdentifierNameSyntax ownName = IdentifierName(this.mr.GetString(typeDef.Name));
             TypeDefinitionHandle nestingType = typeDef.GetDeclaringType();
             return nestingType.IsNil ? ownName : QualifiedName(this.GetQualifiedName(nestingType), ownName);
+        }
+
+        internal NameSyntax GetQualifiedName(TypeReference typeRef)
+        {
+            SimpleNameSyntax typeName = IdentifierName(this.mr.GetString(typeRef.Name));
+
+            if (typeRef.ResolutionScope.Kind == HandleKind.TypeReference)
+            {
+                // A nested type must be looked up by its nesting parent qualified name.
+                TypeReference nestingTR = this.mr.GetTypeReference((TypeReferenceHandle)typeRef.ResolutionScope);
+                return QualifiedName(this.GetQualifiedName(nestingTR), typeName);
+            }
+
+            return typeName;
         }
 
         internal void GenerateConstant(FieldDefinitionHandle fieldDefHandle)
@@ -1786,6 +1802,12 @@ namespace Microsoft.Windows.CsWin32
         private bool TryGetTypeDefHandle(TypeReference typeRef, out TypeDefinitionHandle typeDefHandle)
         {
             string typeName = this.mr.GetString(typeRef.Name);
+            if (typeRef.ResolutionScope.Kind == HandleKind.TypeReference)
+            {
+                // A nested type must be looked up by its nesting parent qualified name.
+                TypeReference nestingTR = this.mr.GetTypeReference((TypeReferenceHandle)typeRef.ResolutionScope);
+            }
+
             return this.typesByName.TryGetValue(typeName, out typeDefHandle);
         }
 
@@ -2017,7 +2039,7 @@ namespace Microsoft.Windows.CsWin32
                 }
                 else
                 {
-                    var fieldInfo = this.ReinterpretFieldType(fieldDeclarator.Identifier.ValueText, fieldDef.DecodeSignature(this.signatureTypeProviderNoMarshaledTypes, null), fieldDef.GetCustomAttributes(), typeDef);
+                    var fieldInfo = this.ReinterpretFieldType(fieldDef, fieldDeclarator.Identifier.ValueText, fieldDef.DecodeSignature(this.signatureTypeProviderNoMarshaledTypes, null), fieldDef.GetCustomAttributes());
                     (_, additionalMembers) = fieldInfo;
 
                     field = FieldDeclaration(VariableDeclaration(fieldInfo.FieldType).AddVariables(fieldDeclarator))
@@ -2113,7 +2135,7 @@ namespace Microsoft.Windows.CsWin32
             IdentifierNameSyntax fieldIdentifierName = SafeIdentifierName(fieldName);
             VariableDeclaratorSyntax fieldDeclarator = VariableDeclarator(fieldIdentifierName.Identifier);
             (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers) fieldInfo =
-                this.ReinterpretFieldType(fieldDeclarator.Identifier.ValueText, fieldDef.DecodeSignature(signatureTypeProvider, null), fieldDef.GetCustomAttributes(), typeDef);
+                this.ReinterpretFieldType(fieldDef, fieldDeclarator.Identifier.ValueText, fieldDef.DecodeSignature(signatureTypeProvider, null), fieldDef.GetCustomAttributes());
             SyntaxList<MemberDeclarationSyntax> members = List<MemberDeclarationSyntax>();
 
             FieldDeclarationSyntax fieldSyntax = FieldDeclaration(
@@ -2379,7 +2401,7 @@ namespace Microsoft.Windows.CsWin32
             string fieldName = this.mr.GetString(fieldDef.Name);
             VariableDeclaratorSyntax fieldDeclarator = VariableDeclarator("value");
             (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers) fieldInfo =
-                this.ReinterpretFieldType(fieldDeclarator.Identifier.ValueText, fieldDef.DecodeSignature(this.signatureTypeProvider, null), fieldDef.GetCustomAttributes(), typeDef);
+                this.ReinterpretFieldType(fieldDef, fieldDeclarator.Identifier.ValueText, fieldDef.DecodeSignature(this.signatureTypeProvider, null), fieldDef.GetCustomAttributes());
             SyntaxList<MemberDeclarationSyntax> members = List<MemberDeclarationSyntax>();
 
             FieldDeclarationSyntax fieldSyntax = FieldDeclaration(
@@ -3037,7 +3059,7 @@ namespace Microsoft.Windows.CsWin32
             return (originalType, null);
         }
 
-        private (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers) ReinterpretFieldType(string fieldName, TypeSyntax originalType, CustomAttributeHandleCollection customAttributes, TypeDefinition declaringType)
+        private (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers) ReinterpretFieldType(FieldDefinition fieldDef, string fieldName, TypeSyntax originalType, CustomAttributeHandleCollection customAttributes)
         {
             ExpressionSyntax GetHiddenFieldAccess() => MemberAccessExpression(
                 SyntaxKind.SimpleMemberAccessExpression,
@@ -3137,7 +3159,7 @@ namespace Microsoft.Windows.CsWin32
                     //     internal Span<TheStruct> AsSpan() => MemoryMarshal.CreateSpan(ref _1, 4);
                     fixedLengthStruct = fixedLengthStruct
                         .AddMembers(
-                            IndexerDeclaration(RefType(elementType)) // TODO: qualify this
+                            IndexerDeclaration(RefType(elementType))
                                 .AddModifiers(Token(this.Visibility))
                                 .AddParameterListParameters(Parameter(Identifier("index")).WithType(PredefinedType(Token(SyntaxKind.IntKeyword))))
                                 .WithExpressionBody(ArrowExpressionClause(RefExpression(
@@ -3154,48 +3176,43 @@ namespace Microsoft.Windows.CsWin32
                                 .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
                 }
 
-                // https://github.com/microsoft/CsWin32/issues/152
-                if (false)
-                {
-                    ////internal static unsafe ref readonly uint GetAt(this in MainAVIHeader.__dwReserved_4 @this, int index)
-                    ////{
-                    ////    fixed (uint* p0 = &@this._1)
-                    ////        return ref p0[index];
-                    ////}
-#pragma warning disable CS0162 // Unreachable code detected
-                    IdentifierNameSyntax indexParamName = IdentifierName("index");
-#pragma warning restore CS0162 // Unreachable code detected
-                    IdentifierNameSyntax p0 = IdentifierName("p0");
-                    IdentifierNameSyntax atThis = IdentifierName("@this");
-                    TypeSyntax qualifiedElementType = this.typesByName.TryGetValue(elementType.ToString(), out TypeDefinitionHandle elementTypeDef) ? this.GetQualifiedName(elementTypeDef) : elementType;
-                    FixedStatementSyntax? fixedStatement = FixedStatement(
-                        VariableDeclaration(PointerType(qualifiedElementType)).AddVariables(
-                            VariableDeclarator(p0.Identifier).WithInitializer(EqualsValueClause(
-                                PrefixUnaryExpression(
-                                    SyntaxKind.AddressOfExpression,
-                                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, atThis, firstElementFieldName))))),
-                        ReturnStatement(RefExpression(ElementAccessExpression(p0).AddArgumentListArguments(Argument(indexParamName)))));
-                    BlockSyntax body = Block().AddStatements(fixedStatement);
-                    ParameterSyntax thisParameter = Parameter(atThis.Identifier).WithType(QualifiedName(this.GetQualifiedName(declaringType), fixedLengthStructName)).AddModifiers(Token(SyntaxKind.ThisKeyword));
-                    ParameterSyntax indexParameter = Parameter(indexParamName.Identifier).WithType(PredefinedType(Token(SyntaxKind.IntKeyword)));
-                    SyntaxTokenList methodModifiers = TokenList(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.UnsafeKeyword));
-                    MethodDeclarationSyntax getAtMethod = MethodDeclaration(RefType(qualifiedElementType).WithReadOnlyKeyword(Token(SyntaxKind.ReadOnlyKeyword)), "GetAt")
-                        .WithModifiers(methodModifiers)
-                        .AddParameterListParameters(thisParameter.AddModifiers(Token(SyntaxKind.InKeyword)), indexParameter)
-                        .WithBody(body);
-                    this.inlineArrayIndexerExtensionsMembers.Add(getAtMethod);
+                IdentifierNameSyntax indexParamName = IdentifierName("index");
+                IdentifierNameSyntax p0 = IdentifierName("p0");
+                IdentifierNameSyntax atThis = IdentifierName("@this");
+                TypeSyntax qualifiedElementType = elementType == IntPtrTypeSyntax ? elementType : ((ArrayTypeSyntax)fieldDef.DecodeSignature(this.signatureTypeProviderFullyQualified, null)).ElementType;
 
-                    ////internal static unsafe ref uint GetOrSetAt(this ref MainAVIHeader.__dwReserved_4 @this, int index)
-                    ////{
-                    ////    fixed (uint* p0 = &@this._1)
-                    ////        return ref p0[index];
-                    ////}
-                    MethodDeclarationSyntax getOrSetAtMethod = MethodDeclaration(RefType(qualifiedElementType), "GetOrSetAt")
-                        .WithModifiers(methodModifiers)
-                        .AddParameterListParameters(thisParameter.AddModifiers(Token(SyntaxKind.RefKeyword)), indexParameter)
-                        .WithBody(body);
-                    this.inlineArrayIndexerExtensionsMembers.Add(getOrSetAtMethod);
-                }
+                ////internal static unsafe ref readonly uint ReadOnlyItemRef(this in MainAVIHeader.__dwReserved_4 @this, int index)
+                ////{
+                ////    fixed (uint* p0 = &@this._1)
+                ////        return ref p0[index];
+                ////}
+                FixedStatementSyntax? fixedStatement = FixedStatement(
+                    VariableDeclaration(PointerType(qualifiedElementType)).AddVariables(
+                        VariableDeclarator(p0.Identifier).WithInitializer(EqualsValueClause(
+                            PrefixUnaryExpression(
+                                SyntaxKind.AddressOfExpression,
+                                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, atThis, firstElementFieldName))))),
+                    ReturnStatement(RefExpression(ElementAccessExpression(p0).AddArgumentListArguments(Argument(indexParamName)))));
+                BlockSyntax body = Block().AddStatements(fixedStatement);
+                ParameterSyntax thisParameter = Parameter(atThis.Identifier).WithType(QualifiedName(this.GetQualifiedName(fieldDef.GetDeclaringType()), fixedLengthStructName)).AddModifiers(Token(SyntaxKind.ThisKeyword));
+                ParameterSyntax indexParameter = Parameter(indexParamName.Identifier).WithType(PredefinedType(Token(SyntaxKind.IntKeyword)));
+                SyntaxTokenList methodModifiers = TokenList(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.UnsafeKeyword));
+                MethodDeclarationSyntax getAtMethod = MethodDeclaration(RefType(qualifiedElementType).WithReadOnlyKeyword(Token(SyntaxKind.ReadOnlyKeyword)), "ReadOnlyItemRef")
+                    .WithModifiers(methodModifiers)
+                    .AddParameterListParameters(thisParameter.AddModifiers(Token(SyntaxKind.InKeyword)), indexParameter)
+                    .WithBody(body);
+                this.inlineArrayIndexerExtensionsMembers.Add(getAtMethod);
+
+                ////internal static unsafe ref uint ItemRef(this ref MainAVIHeader.__dwReserved_4 @this, int index)
+                ////{
+                ////    fixed (uint* p0 = &@this._1)
+                ////        return ref p0[index];
+                ////}
+                MethodDeclarationSyntax getOrSetAtMethod = MethodDeclaration(RefType(qualifiedElementType), "ItemRef")
+                    .WithModifiers(methodModifiers)
+                    .AddParameterListParameters(thisParameter.AddModifiers(Token(SyntaxKind.RefKeyword)), indexParameter)
+                    .WithBody(body);
+                this.inlineArrayIndexerExtensionsMembers.Add(getOrSetAtMethod);
 
                 return (fixedLengthStructName, List<MemberDeclarationSyntax>().Add(fixedLengthStruct));
             }

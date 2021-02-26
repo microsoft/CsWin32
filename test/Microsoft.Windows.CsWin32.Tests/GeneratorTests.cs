@@ -406,13 +406,13 @@ namespace Microsoft.Windows.Sdk
         const string expectedIndexer = @"
     internal static partial class InlineArrayIndexerExtensions
     {
-        internal static unsafe ref readonly uint GetAt(this in MainAVIHeader.__dwReserved_4 @this, int index)
+        internal static unsafe ref readonly uint ReadOnlyItemRef(this in MainAVIHeader.__dwReserved_4 @this, int index)
         {
             fixed (uint *p0 = &@this._0)
                 return ref p0[index];
         }
 
-        internal static unsafe ref uint GetOrSetAt(this ref MainAVIHeader.__dwReserved_4 @this, int index)
+        internal static unsafe ref uint ItemRef(this ref MainAVIHeader.__dwReserved_4 @this, int index)
         {
             fixed (uint *p0 = &@this._0)
                 return ref p0[index];
@@ -455,13 +455,13 @@ namespace Microsoft.Windows.Sdk
         const string expectedIndexer = @"
     internal static partial class InlineArrayIndexerExtensions
     {
-        internal static unsafe ref readonly uint GetAt(this in MainAVIHeader.__dwReserved_4 @this, int index)
+        internal static unsafe ref readonly uint ReadOnlyItemRef(this in MainAVIHeader.__dwReserved_4 @this, int index)
         {
             fixed (uint *p0 = &@this._0)
                 return ref p0[index];
         }
 
-        internal static unsafe ref uint GetOrSetAt(this ref MainAVIHeader.__dwReserved_4 @this, int index)
+        internal static unsafe ref uint ItemRef(this ref MainAVIHeader.__dwReserved_4 @this, int index)
         {
             fixed (uint *p0 = &@this._0)
                 return ref p0[index];

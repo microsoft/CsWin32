@@ -3181,7 +3181,7 @@ namespace Microsoft.Windows.CsWin32
                 IdentifierNameSyntax atThis = IdentifierName("@this");
                 TypeSyntax qualifiedElementType = elementType == IntPtrTypeSyntax ? elementType : ((ArrayTypeSyntax)fieldDef.DecodeSignature(this.signatureTypeProviderFullyQualified, null)).ElementType;
 
-                ////internal static unsafe ref readonly uint GetAt(this in MainAVIHeader.__dwReserved_4 @this, int index)
+                ////internal static unsafe ref readonly uint ReadOnlyItemRef(this in MainAVIHeader.__dwReserved_4 @this, int index)
                 ////{
                 ////    fixed (uint* p0 = &@this._1)
                 ////        return ref p0[index];
@@ -3197,18 +3197,18 @@ namespace Microsoft.Windows.CsWin32
                 ParameterSyntax thisParameter = Parameter(atThis.Identifier).WithType(QualifiedName(this.GetQualifiedName(fieldDef.GetDeclaringType()), fixedLengthStructName)).AddModifiers(Token(SyntaxKind.ThisKeyword));
                 ParameterSyntax indexParameter = Parameter(indexParamName.Identifier).WithType(PredefinedType(Token(SyntaxKind.IntKeyword)));
                 SyntaxTokenList methodModifiers = TokenList(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.UnsafeKeyword));
-                MethodDeclarationSyntax getAtMethod = MethodDeclaration(RefType(qualifiedElementType).WithReadOnlyKeyword(Token(SyntaxKind.ReadOnlyKeyword)), "GetAt")
+                MethodDeclarationSyntax getAtMethod = MethodDeclaration(RefType(qualifiedElementType).WithReadOnlyKeyword(Token(SyntaxKind.ReadOnlyKeyword)), "ReadOnlyItemRef")
                     .WithModifiers(methodModifiers)
                     .AddParameterListParameters(thisParameter.AddModifiers(Token(SyntaxKind.InKeyword)), indexParameter)
                     .WithBody(body);
                 this.inlineArrayIndexerExtensionsMembers.Add(getAtMethod);
 
-                ////internal static unsafe ref uint GetOrSetAt(this ref MainAVIHeader.__dwReserved_4 @this, int index)
+                ////internal static unsafe ref uint ItemRef(this ref MainAVIHeader.__dwReserved_4 @this, int index)
                 ////{
                 ////    fixed (uint* p0 = &@this._1)
                 ////        return ref p0[index];
                 ////}
-                MethodDeclarationSyntax getOrSetAtMethod = MethodDeclaration(RefType(qualifiedElementType), "GetOrSetAt")
+                MethodDeclarationSyntax getOrSetAtMethod = MethodDeclaration(RefType(qualifiedElementType), "ItemRef")
                     .WithModifiers(methodModifiers)
                     .AddParameterListParameters(thisParameter.AddModifiers(Token(SyntaxKind.RefKeyword)), indexParameter)
                     .WithBody(body);

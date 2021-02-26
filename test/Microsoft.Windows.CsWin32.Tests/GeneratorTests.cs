@@ -604,14 +604,14 @@ namespace Microsoft.Windows.Sdk
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
         BaseTypeDeclarationSyntax syntax = Assert.Single(this.FindGeneratedType(apiName));
-        Assert.Equal(TestUtils.NormalizeToExpectedLineEndings(expectedSyntax), syntax.ToFullString());
+        Assert.Equal(TestUtils.NormalizeToExpectedLineEndings(expectedSyntax), TestUtils.NormalizeToExpectedLineEndings(syntax.ToFullString()));
 
         var extensionsClass = (ClassDeclarationSyntax?)this.FindGeneratedType("InlineArrayIndexerExtensions").SingleOrDefault();
         if (expectedExtensions is string)
         {
             Assert.NotNull(extensionsClass);
             string extensionsClassString = extensionsClass!.ToFullString();
-            Assert.Equal(TestUtils.NormalizeToExpectedLineEndings(expectedExtensions), extensionsClassString);
+            Assert.Equal(TestUtils.NormalizeToExpectedLineEndings(expectedExtensions), TestUtils.NormalizeToExpectedLineEndings(extensionsClassString));
         }
         else
         {

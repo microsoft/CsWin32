@@ -174,6 +174,7 @@ public class BasicTests
 #if NETCOREAPP
         header.dwReserved.AsSpan()[1] = 3;
         Assert.Equal(3u, header.dwReserved.AsSpan()[1]);
+        Assert.Equal(3u, header.dwReserved[1]);
         Assert.Equal(3u, header.dwReserved._1);
 #endif
 

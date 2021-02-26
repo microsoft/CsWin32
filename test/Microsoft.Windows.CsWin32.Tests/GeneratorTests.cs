@@ -446,7 +446,17 @@ namespace Microsoft.Windows.Sdk
         internal struct __dwReserved_4
         {
             internal uint _0, _1, _2, _3;
+            /// <summary>
+            /// Gets a ref to an individual element of the inline array.
+            /// ⚠ Important ⚠: When this struct is on the stack, do not let the returned reference outlive the stack frame that defines it.
+            /// </summary>
             internal ref uint this[int index] => ref AsSpan()[index];
+            /// <summary>
+            /// Gets this inline array as a span.
+            /// </summary>
+            /// <remarks>
+            /// ⚠ Important ⚠: When this struct is on the stack, do not let the returned span outlive the stack frame that defines it.
+            /// </remarks>
             internal Span<uint> AsSpan() => MemoryMarshal.CreateSpan(ref _0, 4);
         }
     }

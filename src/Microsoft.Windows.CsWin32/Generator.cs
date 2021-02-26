@@ -286,7 +286,6 @@ namespace Microsoft.Windows.CsWin32
         private readonly GeneratorOptions options;
         private readonly CSharpCompilation? compilation;
         private readonly CSharpParseOptions? parseOptions;
-        private readonly bool canCallCreateSpan;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="Generator"/> class.
@@ -301,8 +300,6 @@ namespace Microsoft.Windows.CsWin32
             this.options.Validate();
             this.compilation = compilation;
             this.parseOptions = parseOptions;
-
-            this.canCallCreateSpan = this.compilation?.GetTypeByMetadataName(typeof(MemoryMarshal).FullName)?.GetMembers("CreateSpan").Any() is true;
 
             this.metadataStream = metadataLibraryStream;
             this.peReader = new PEReader(this.metadataStream);
@@ -3152,29 +3149,6 @@ namespace Microsoft.Windows.CsWin32
                             .AddModifiers(Token(this.Visibility)));
 
                 var firstElementFieldName = IdentifierName("_0");
-                if (this.canCallCreateSpan)
-                {
-                    // ...
-                    //     internal ref TheStruct this[int index] => ref AsSpan()[index];
-                    //     internal Span<TheStruct> AsSpan() => MemoryMarshal.CreateSpan(ref _1, 4);
-                    fixedLengthStruct = fixedLengthStruct
-                        .AddMembers(
-                            IndexerDeclaration(RefType(elementType))
-                                .AddModifiers(Token(this.Visibility))
-                                .AddParameterListParameters(Parameter(Identifier("index")).WithType(PredefinedType(Token(SyntaxKind.IntKeyword))))
-                                .WithExpressionBody(ArrowExpressionClause(RefExpression(
-                                    ElementAccessExpression(InvocationExpression(IdentifierName("AsSpan")))
-                                        .AddArgumentListArguments(Argument(IdentifierName("index"))))))
-                                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)),
-                            MethodDeclaration(MakeSpanOfT(elementType), "AsSpan")
-                                .AddModifiers(Token(this.Visibility))
-                                .WithExpressionBody(ArrowExpressionClause(
-                                    InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("MemoryMarshal"), IdentifierName("CreateSpan")))
-                                        .AddArgumentListArguments(
-                                            Argument(nameColon: null, Token(SyntaxKind.RefKeyword), firstElementFieldName),
-                                            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(length))))))
-                                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
-                }
 
                 IdentifierNameSyntax indexParamName = IdentifierName("index");
                 IdentifierNameSyntax p0 = IdentifierName("p0");

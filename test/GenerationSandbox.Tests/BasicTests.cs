@@ -171,12 +171,6 @@ public class BasicTests
     {
         MainAVIHeader header = default;
 
-#if NETCOREAPP
-        header.dwReserved.AsSpan()[1] = 3;
-        Assert.Equal(3u, header.dwReserved.AsSpan()[1]);
-        Assert.Equal(3u, header.dwReserved._1);
-#endif
-
         header.dwReserved.ItemRef(2) = 4;
         Assert.Equal(4u, header.dwReserved.ReadOnlyItemRef(2));
         Assert.Equal(4u, header.dwReserved._2);

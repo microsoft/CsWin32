@@ -446,8 +446,6 @@ namespace Microsoft.Windows.Sdk
         internal struct __dwReserved_4
         {
             internal uint _0, _1, _2, _3;
-            internal ref uint this[int index] => ref AsSpan()[index];
-            internal Span<uint> AsSpan() => MemoryMarshal.CreateSpan(ref _0, 4);
         }
     }
 ";

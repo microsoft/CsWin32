@@ -4,10 +4,12 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
@@ -15,6 +17,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Testing;
 using Microsoft.Windows.CsWin32;
+using Microsoft.Windows.CsWin32.Tests;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -24,6 +27,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     private readonly ITestOutputHelper logger;
     private readonly FileStream metadataStream;
     private CSharpCompilation compilation;
+    private CSharpCompilation fastSpanCompilation;
     private CSharpParseOptions parseOptions;
     private Generator? generator;
 
@@ -35,30 +39,20 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.parseOptions = CSharpParseOptions.Default
             .WithDocumentationMode(DocumentationMode.Diagnose)
             .WithLanguageVersion(LanguageVersion.CSharp9);
-        this.compilation = null!; // set in InitializeAsync
+
+        // set in InitializeAsync
+        this.compilation = null!;
+        this.fastSpanCompilation = null!;
     }
 
     public async Task InitializeAsync()
     {
-        ReferenceAssemblies references = ReferenceAssemblies.NetStandard.NetStandard20
-            .AddPackages(ImmutableArray.Create(
-                new PackageIdentity("System.Memory", "4.5.4"),
-                new PackageIdentity("Microsoft.Windows.SDK.Contracts", "10.0.19041.1")));
-        ImmutableArray<MetadataReference> metadataReferences = await references.ResolveAsync(LanguageNames.CSharp, default);
+        this.compilation = await this.CreateCompilationAsync(
+            ReferenceAssemblies.NetStandard.NetStandard20
+                .AddPackages(ImmutableArray.Create(new PackageIdentity("System.Memory", "4.5.4"))));
 
-        // Workaround for https://github.com/dotnet/roslyn-sdk/issues/699
-        metadataReferences = metadataReferences.AddRange(
-            Directory.GetFiles(Path.Combine(Path.GetTempPath(), "test-packages", "Microsoft.Windows.SDK.Contracts.10.0.19041.1", "ref", "netstandard2.0"), "*.winmd").Select(p => MetadataReference.CreateFromFile(p)));
-
-        // CONSIDER: How can I pass in the source generator itself, with AdditionalFiles, so I'm exercising that code too?
-        this.compilation = CSharpCompilation.Create(
-            assemblyName: "test",
-            references: metadataReferences,
-            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, allowUnsafe: true));
-
-        // Add a namespace that WinUI projects define to ensure we prefix types with "global::" everywhere.
-        this.compilation = this.compilation.AddSyntaxTrees(
-            CSharpSyntaxTree.ParseText("namespace Microsoft.System { }", this.parseOptions, path: "Microsoft.System.cs"));
+        this.fastSpanCompilation = await this.CreateCompilationAsync(
+            ReferenceAssemblies.NetStandard.NetStandard21);
     }
 
     public Task DisposeAsync() => Task.CompletedTask;
@@ -116,6 +110,11 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [InlineData("HBITMAP_UserMarshal")] // in+out handle pointer
     [InlineData("GetDiskFreeSpaceExW")] // ULARGE_INTEGER replaced with keyword: ulong.
     [InlineData("MsiGetProductPropertyW")] // MSIHANDLE (a 32-bit handle)
+    [InlineData("tcp_opt_sack")] // nested structs with inline arrays with nested struct elements
+    [InlineData("HANDLETABLE")] // nested structs with inline arrays with nint element
+    [InlineData("SYSTEM_POLICY_INFORMATION")] // nested structs with inline arrays with IntPtr element
+    [InlineData("D3D11_BLEND_DESC1")] // nested structs with inline arrays with element that is NOT nested
+    [InlineData("RTM_DEST_INFO")] // nested structs with inline arrays with element whose name collides with another
     public void InterestingAPIs(string api)
     {
         this.generator = new Generator(this.metadataStream, options: new GeneratorOptions { EmitSingleFile = true, WideCharOnly = false }, compilation: this.compilation, parseOptions: this.parseOptions);
@@ -377,6 +376,103 @@ namespace Microsoft.Windows.Sdk
         this.AssertNoDiagnostics();
     }
 
+    /// <summary>
+    /// Validates that where MemoryMarshal.CreateSpan isn't available, a substitute indexer is offered.
+    /// </summary>
+    [Fact]
+    public void FixedLengthInlineArraysOfferExtensionIndexerWhereNoSpanPossible()
+    {
+        const string expected = @"
+    internal partial struct MainAVIHeader
+    {
+        internal uint dwMicroSecPerFrame;
+        internal uint dwMaxBytesPerSec;
+        internal uint dwPaddingGranularity;
+        internal uint dwFlags;
+        internal uint dwTotalFrames;
+        internal uint dwInitialFrames;
+        internal uint dwStreams;
+        internal uint dwSuggestedBufferSize;
+        internal uint dwWidth;
+        internal uint dwHeight;
+        internal __dwReserved_4 dwReserved;
+        internal struct __dwReserved_4
+        {
+            internal uint _0, _1, _2, _3;
+        }
+    }
+";
+
+////        const string expectedIndexer = @"
+////    internal static partial class InlineArrayIndexerExtensions
+////    {
+////        internal static unsafe ref readonly uint GetAt(this in MainAVIHeader.__dwReserved_4 @this, int index)
+////        {
+////            fixed (uint *p0 = &@this._0)
+////                return ref p0[index];
+////        }
+
+////        internal static unsafe ref uint GetOrSetAt(this ref MainAVIHeader.__dwReserved_4 @this, int index)
+////        {
+////            fixed (uint *p0 = &@this._0)
+////                return ref p0[index];
+////        }
+////    }
+////";
+
+        this.AssertGeneratedType("MainAVIHeader", expected/*, expectedIndexer*/); // https://github.com/microsoft/CsWin32/issues/152
+    }
+
+    /// <summary>
+    /// Validates that where MemoryMarshal.CreateSpan is available, a <see cref="Span{T}"/> method and proper indexer is offered.
+    /// </summary>
+    [Fact]
+    public void FixedLengthInlineArraysGetSpanWherePossible()
+    {
+        const string expected = @"
+    internal partial struct MainAVIHeader
+    {
+        internal uint dwMicroSecPerFrame;
+        internal uint dwMaxBytesPerSec;
+        internal uint dwPaddingGranularity;
+        internal uint dwFlags;
+        internal uint dwTotalFrames;
+        internal uint dwInitialFrames;
+        internal uint dwStreams;
+        internal uint dwSuggestedBufferSize;
+        internal uint dwWidth;
+        internal uint dwHeight;
+        internal __dwReserved_4 dwReserved;
+        internal struct __dwReserved_4
+        {
+            internal uint _0, _1, _2, _3;
+            internal ref uint this[int index] => ref AsSpan()[index];
+            internal Span<uint> AsSpan() => MemoryMarshal.CreateSpan(ref _0, 4);
+        }
+    }
+";
+
+////        const string expectedIndexer = @"
+////    internal static partial class InlineArrayIndexerExtensions
+////    {
+////        internal static unsafe ref readonly uint GetAt(this in MainAVIHeader.__dwReserved_4 @this, int index)
+////        {
+////            fixed (uint *p0 = &@this._0)
+////                return ref p0[index];
+////        }
+
+////        internal static unsafe ref uint GetOrSetAt(this ref MainAVIHeader.__dwReserved_4 @this, int index)
+////        {
+////            fixed (uint *p0 = &@this._0)
+////                return ref p0[index];
+////        }
+////    }
+////";
+
+        this.compilation = this.fastSpanCompilation;
+        this.AssertGeneratedType("MainAVIHeader", expected/*, expectedIndexer*/); // https://github.com/microsoft/CsWin32/issues/152
+    }
+
     [Fact]
     public void FullGeneration()
     {
@@ -489,5 +585,51 @@ namespace Microsoft.Windows.Sdk
             tree.GetRoot().WriteTo(lineWriter);
             lineWriter.WriteLine(string.Empty);
         }
+    }
+
+    private void AssertGeneratedType(string apiName, string expectedSyntax, string? expectedExtensions = null)
+    {
+        this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);
+        Assert.True(this.generator.TryGenerate(apiName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        BaseTypeDeclarationSyntax syntax = Assert.Single(this.FindGeneratedType(apiName));
+        Assert.Equal(TestUtils.NormalizeToExpectedLineEndings(expectedSyntax), syntax.ToFullString());
+
+        var extensionsClass = (ClassDeclarationSyntax?)this.FindGeneratedType("InlineArrayIndexerExtensions").SingleOrDefault();
+        if (expectedExtensions is string)
+        {
+            Assert.NotNull(extensionsClass);
+            string extensionsClassString = extensionsClass!.ToFullString();
+            Assert.Equal(TestUtils.NormalizeToExpectedLineEndings(expectedExtensions), extensionsClassString);
+        }
+        else
+        {
+            // Assert that no indexer was generated.
+            Assert.Null(extensionsClass);
+        }
+    }
+
+    private async Task<CSharpCompilation> CreateCompilationAsync(ReferenceAssemblies references)
+    {
+        ImmutableArray<MetadataReference> metadataReferences = await references
+            .AddPackages(ImmutableArray.Create(new PackageIdentity("Microsoft.Windows.SDK.Contracts", "10.0.19041.1")))
+            .ResolveAsync(LanguageNames.CSharp, default);
+
+        // Workaround for https://github.com/dotnet/roslyn-sdk/issues/699
+        metadataReferences = metadataReferences.AddRange(
+            Directory.GetFiles(Path.Combine(Path.GetTempPath(), "test-packages", "Microsoft.Windows.SDK.Contracts.10.0.19041.1", "ref", "netstandard2.0"), "*.winmd").Select(p => MetadataReference.CreateFromFile(p)));
+
+        // CONSIDER: How can I pass in the source generator itself, with AdditionalFiles, so I'm exercising that code too?
+        var compilation = CSharpCompilation.Create(
+            assemblyName: "test",
+            references: metadataReferences,
+            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, allowUnsafe: true));
+
+        // Add a namespace that WinUI projects define to ensure we prefix types with "global::" everywhere.
+        compilation = compilation.AddSyntaxTrees(
+            CSharpSyntaxTree.ParseText("namespace Microsoft.System { }", this.parseOptions, path: "Microsoft.System.cs"));
+
+        return compilation;
     }
 }

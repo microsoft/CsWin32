@@ -83,6 +83,7 @@ namespace Microsoft.Windows.CsWin32
         private const string SimpleFileNameAnnotation = "SimpleFileName";
         private const string OriginalDelegateAnnotation = "OriginalDelegate";
         private static readonly IdentifierNameSyntax ConstantsClassName = IdentifierName("Constants");
+        private static readonly IdentifierNameSyntax InlineArrayIndexerExtensionsClassName = IdentifierName("InlineArrayIndexerExtensions");
         private static readonly TypeSyntax SafeHandleTypeSyntax = IdentifierName("SafeHandle");
         private static readonly IdentifierNameSyntax IntPtrTypeSyntax = IdentifierName(nameof(IntPtr));
 
@@ -271,19 +272,20 @@ namespace Microsoft.Windows.CsWin32
         /// </summary>
         private readonly HashSet<string> specialTypesGenerating = new HashSet<string>(StringComparer.Ordinal);
 
-        private readonly Dictionary<TypeDefinitionHandle, TypeDefinitionHandle> nestedToDeclaringLookup = new Dictionary<TypeDefinitionHandle, TypeDefinitionHandle>();
-
         private readonly Dictionary<string, MethodDefinitionHandle> methodsByName;
 
         private readonly Dictionary<string, TypeDefinitionHandle> typesByName;
 
         private readonly Dictionary<string, TypeSyntax?> releaseMethodsWithSafeHandleTypesGenerating = new Dictionary<string, TypeSyntax?>();
 
+        private readonly List<MemberDeclarationSyntax> inlineArrayIndexerExtensionsMembers = new List<MemberDeclarationSyntax>();
+
         private readonly HashSet<string> releaseMethods = new HashSet<string>(StringComparer.Ordinal);
 
         private readonly GeneratorOptions options;
         private readonly CSharpCompilation? compilation;
         private readonly CSharpParseOptions? parseOptions;
+        private readonly bool canCallCreateSpan;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="Generator"/> class.
@@ -299,6 +301,8 @@ namespace Microsoft.Windows.CsWin32
             this.compilation = compilation;
             this.parseOptions = parseOptions;
 
+            this.canCallCreateSpan = this.compilation?.GetTypeByMetadataName(typeof(MemoryMarshal).FullName)?.GetMembers("CreateSpan").Any() is true;
+
             this.metadataStream = metadataLibraryStream;
             this.peReader = new PEReader(this.metadataStream);
             this.mr = this.peReader.GetMetadataReader();
@@ -310,7 +314,6 @@ namespace Microsoft.Windows.CsWin32
             this.customAttributeTypeProvider = new CustomAttributeTypeProvider();
 
             this.Apis = this.mr.TypeDefinitions.Select(this.mr.GetTypeDefinition).Where(td => this.mr.StringComparer.Equals(td.Name, "Apis")).ToList();
-            this.InitializeNestedToDeclaringLookupDictionary();
 
             this.methodsByName = new Dictionary<string, MethodDefinitionHandle>(StringComparer.Ordinal);
             foreach (MethodDefinitionHandle methodDefHandle in this.Apis.SelectMany(api => api.GetMethods()))
@@ -413,10 +416,16 @@ namespace Microsoft.Windows.CsWin32
                     .Concat(this.specialTypes.Values)
                     .Concat(this.types.Values);
 
-                var constantClass = this.CreateConstantDefiningClass();
+                ClassDeclarationSyntax constantClass = this.CreateConstantDefiningClass();
                 if (constantClass.Members.Count > 0)
                 {
                     result = result.Concat(new MemberDeclarationSyntax[] { constantClass });
+                }
+
+                ClassDeclarationSyntax inlineArrayIndexerExtensionsClass = this.CreateInlineArrayIndexerExtensionsClass();
+                if (inlineArrayIndexerExtensionsClass.Members.Count > 0)
+                {
+                    result = result.Concat(new MemberDeclarationSyntax[] { inlineArrayIndexerExtensionsClass });
                 }
 
                 return result;
@@ -806,8 +815,7 @@ namespace Microsoft.Windows.CsWin32
         internal TypeDefinitionHandle? GenerateInteropType(TypeReferenceHandle typeRefHandle)
         {
             TypeReference typeRef = this.mr.GetTypeReference(typeRefHandle);
-            string name = this.mr.GetString(typeRef.Name);
-            if (this.typesByName.TryGetValue(name, out TypeDefinitionHandle typeDefHandle))
+            if (this.TryGetTypeDefHandle(typeRef, out TypeDefinitionHandle typeDefHandle))
             {
                 this.GenerateInteropType(typeDefHandle);
                 return typeDefHandle;
@@ -822,7 +830,8 @@ namespace Microsoft.Windows.CsWin32
 
         internal void GenerateInteropType(TypeDefinitionHandle typeDefHandle)
         {
-            if (this.nestedToDeclaringLookup.TryGetValue(typeDefHandle, out TypeDefinitionHandle nestingParentHandle))
+            TypeDefinition typeDef = this.mr.GetTypeDefinition(typeDefHandle);
+            if (typeDef.GetDeclaringType() is { IsNil: false } nestingParentHandle)
             {
                 // We should only generate this type into its parent type.
                 this.GenerateInteropType(nestingParentHandle);
@@ -835,19 +844,28 @@ namespace Microsoft.Windows.CsWin32
             }
 
             // https://github.com/microsoft/CsWin32/issues/31
-            TypeDefinition typeDef = this.mr.GetTypeDefinition(typeDefHandle);
-            if (this.typesByName.TryGetValue(this.mr.GetString(typeDef.Name), out TypeDefinitionHandle expectedHandle) && !expectedHandle.Equals(typeDefHandle))
+            string name = this.mr.GetString(typeDef.Name);
+            if (this.typesByName.TryGetValue(name, out TypeDefinitionHandle expectedHandle) && !expectedHandle.Equals(typeDefHandle))
             {
                 // Skip generating types with conflicting names till we fix that issue.
                 return;
             }
 
-            MemberDeclarationSyntax? typeDeclaration = this.CreateInteropType(typeDefHandle);
+            MemberDeclarationSyntax? typeDeclaration = this.CreateInteropType(typeDefHandle, null);
 
             if (typeDeclaration is object)
             {
                 this.types.Add(typeDefHandle, typeDeclaration);
             }
+        }
+
+        internal NameSyntax GetQualifiedName(TypeDefinitionHandle typeDefHandle) => this.GetQualifiedName(this.mr.GetTypeDefinition(typeDefHandle));
+
+        internal NameSyntax GetQualifiedName(TypeDefinition typeDef)
+        {
+            IdentifierNameSyntax ownName = IdentifierName(this.mr.GetString(typeDef.Name));
+            TypeDefinitionHandle nestingType = typeDef.GetDeclaringType();
+            return nestingType.IsNil ? ownName : QualifiedName(this.GetQualifiedName(nestingType), ownName);
         }
 
         internal void GenerateConstant(FieldDefinitionHandle fieldDefHandle)
@@ -1565,7 +1583,7 @@ namespace Microsoft.Windows.CsWin32
             return null;
         }
 
-        private MemberDeclarationSyntax? CreateInteropType(TypeDefinitionHandle typeDefHandle)
+        private MemberDeclarationSyntax? CreateInteropType(TypeDefinitionHandle typeDefHandle, NameSyntax? declaringType)
         {
             TypeDefinition typeDef = this.mr.GetTypeDefinition(typeDefHandle);
             if (this.IsCompilerGenerated(typeDef))
@@ -1628,9 +1646,10 @@ namespace Microsoft.Windows.CsWin32
                         StructDeclarationSyntax structDeclaration = this.CreateInteropStruct(typeDef);
 
                         // Proactively generate all nested types as well.
+                        NameSyntax nestedDeclaringType = declaringType is null ? IdentifierName(name) : QualifiedName(declaringType, IdentifierName(name));
                         foreach (TypeDefinitionHandle nestedHandle in typeDef.GetNestedTypes())
                         {
-                            if (this.CreateInteropType(nestedHandle) is { } nestedType)
+                            if (this.CreateInteropType(nestedHandle, nestedDeclaringType) is { } nestedType)
                             {
                                 structDeclaration = structDeclaration.AddMembers(nestedType);
                             }
@@ -1754,6 +1773,22 @@ namespace Microsoft.Windows.CsWin32
                 .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.PartialKeyword)));
         }
 
+        private ClassDeclarationSyntax CreateInlineArrayIndexerExtensionsClass()
+        {
+            return ClassDeclaration(InlineArrayIndexerExtensionsClassName.Identifier)
+                .AddMembers(this.inlineArrayIndexerExtensionsMembers.ToArray())
+                .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.PartialKeyword)));
+        }
+
+        /// <summary>
+        /// Attempts to translate a <see cref="TypeReference"/> to a <see cref="TypeDefinitionHandle"/>.
+        /// </summary>
+        private bool TryGetTypeDefHandle(TypeReference typeRef, out TypeDefinitionHandle typeDefHandle)
+        {
+            string typeName = this.mr.GetString(typeRef.Name);
+            return this.typesByName.TryGetValue(typeName, out typeDefHandle);
+        }
+
         /// <summary>
         /// Generates a type to represent a COM interface.
         /// </summary>
@@ -1773,10 +1808,13 @@ namespace Microsoft.Windows.CsWin32
             {
                 InterfaceImplementation baseTypeImpl = this.mr.GetInterfaceImplementation(baseTypeHandle);
                 TypeReference baseTypeRef = this.mr.GetTypeReference((TypeReferenceHandle)baseTypeImpl.Interface);
-                string baseTypeName = this.mr.GetString(baseTypeRef.Name);
-                TypeDefinitionHandle typeDefHandle = this.typesByName[baseTypeName];
-                baseTypes.Push(typeDefHandle);
-                TypeDefinition baseType = this.mr.GetTypeDefinition(typeDefHandle);
+                if (!this.TryGetTypeDefHandle(baseTypeRef, out TypeDefinitionHandle baseTypeDefHandle))
+                {
+                    throw new GenerationFailedException("Failed to find base type.");
+                }
+
+                baseTypes.Push(baseTypeDefHandle);
+                TypeDefinition baseType = this.mr.GetTypeDefinition(baseTypeDefHandle);
                 baseTypeHandle = baseType.GetInterfaceImplementations().SingleOrDefault();
             }
 
@@ -1905,31 +1943,6 @@ namespace Microsoft.Windows.CsWin32
             return iface;
         }
 
-        private void InitializeNestedToDeclaringLookupDictionary()
-        {
-            foreach (TypeDefinitionHandle typeDefHandle in this.mr.TypeDefinitions)
-            {
-                TypeDefinition typeDefinition = this.mr.GetTypeDefinition(typeDefHandle);
-                if (!typeDefinition.IsNested)
-                {
-                    AddNestedTypesOf(typeDefHandle);
-                }
-            }
-
-            void AddNestedTypesOf(TypeDefinitionHandle parentHandle)
-            {
-                TypeDefinition typeDefinition = this.mr.GetTypeDefinition(parentHandle);
-                foreach (TypeDefinitionHandle nestedHandle in typeDefinition.GetNestedTypes())
-                {
-                    if (!nestedHandle.IsNil)
-                    {
-                        this.nestedToDeclaringLookup.Add(nestedHandle, parentHandle);
-                        AddNestedTypesOf(nestedHandle);
-                    }
-                }
-            }
-        }
-
         private DelegateDeclarationSyntax CreateInteropDelegate(TypeDefinition typeDef)
         {
             string name = this.mr.GetString(typeDef.Name);
@@ -1967,7 +1980,7 @@ namespace Microsoft.Windows.CsWin32
 
         private StructDeclarationSyntax CreateInteropStruct(TypeDefinition typeDef)
         {
-            string name = this.mr.GetString(typeDef.Name);
+            IdentifierNameSyntax name = IdentifierName(this.mr.GetString(typeDef.Name));
 
             var members = new List<MemberDeclarationSyntax>();
             foreach (FieldDefinitionHandle fieldDefHandle in typeDef.GetFields())
@@ -2004,7 +2017,7 @@ namespace Microsoft.Windows.CsWin32
                 }
                 else
                 {
-                    var fieldInfo = this.ReinterpretFieldType(fieldDeclarator.Identifier.ValueText, fieldDef.DecodeSignature(this.signatureTypeProviderNoMarshaledTypes, null), fieldDef.GetCustomAttributes());
+                    var fieldInfo = this.ReinterpretFieldType(fieldDeclarator.Identifier.ValueText, fieldDef.DecodeSignature(this.signatureTypeProviderNoMarshaledTypes, null), fieldDef.GetCustomAttributes(), typeDef);
                     (_, additionalMembers) = fieldInfo;
 
                     field = FieldDeclaration(VariableDeclaration(fieldInfo.FieldType).AddVariables(fieldDeclarator))
@@ -2031,7 +2044,7 @@ namespace Microsoft.Windows.CsWin32
                 members.AddRange(additionalMembers);
             }
 
-            StructDeclarationSyntax result = StructDeclaration(name)
+            StructDeclarationSyntax result = StructDeclaration(name.Identifier)
                 .AddMembers(members.ToArray())
                 .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.PartialKeyword)));
 
@@ -2057,7 +2070,7 @@ namespace Microsoft.Windows.CsWin32
                 result = result.AddAttributeLists(AttributeList().AddAttributes(GUID(guid)));
             }
 
-            result = AddApiDocumentation(name, result);
+            result = AddApiDocumentation(name.Identifier.ValueText, result);
 
             return result;
         }
@@ -2067,8 +2080,8 @@ namespace Microsoft.Windows.CsWin32
         /// </summary>
         private StructDeclarationSyntax CreateTypeDefStruct(TypeDefinition typeDef)
         {
-            string name = this.mr.GetString(typeDef.Name);
-            if (name == "BOOL")
+            IdentifierNameSyntax name = IdentifierName(this.mr.GetString(typeDef.Name));
+            if (name.Identifier.ValueText == "BOOL")
             {
                 return this.CreateTypeDefBOOLStruct(typeDef);
             }
@@ -2100,7 +2113,7 @@ namespace Microsoft.Windows.CsWin32
             IdentifierNameSyntax fieldIdentifierName = SafeIdentifierName(fieldName);
             VariableDeclaratorSyntax fieldDeclarator = VariableDeclarator(fieldIdentifierName.Identifier);
             (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers) fieldInfo =
-                this.ReinterpretFieldType(fieldDeclarator.Identifier.ValueText, fieldDef.DecodeSignature(signatureTypeProvider, null), fieldDef.GetCustomAttributes());
+                this.ReinterpretFieldType(fieldDeclarator.Identifier.ValueText, fieldDef.DecodeSignature(signatureTypeProvider, null), fieldDef.GetCustomAttributes(), typeDef);
             SyntaxList<MemberDeclarationSyntax> members = List<MemberDeclarationSyntax>();
 
             FieldDeclarationSyntax fieldSyntax = FieldDeclaration(
@@ -2111,7 +2124,7 @@ namespace Microsoft.Windows.CsWin32
             // Add constructor
             IdentifierNameSyntax valueParameter = IdentifierName("value");
             MemberAccessExpressionSyntax fieldAccessExpression = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), fieldIdentifierName);
-            members = members.Add(ConstructorDeclaration(name)
+            members = members.Add(ConstructorDeclaration(name.Identifier)
                 .AddModifiers(Token(this.Visibility))
                 .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(fieldInfo.FieldType))
                 .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, valueParameter)))
@@ -2119,17 +2132,17 @@ namespace Microsoft.Windows.CsWin32
 
             // public static implicit operator int(HWND value) => value.Value;
             members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), fieldInfo.FieldType)
-                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IdentifierName(name)))
+                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(name))
                 .WithExpressionBody(ArrowExpressionClause(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, fieldIdentifierName)))
                 .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
                 .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
 
             // public static explicit operator HWND(int value) => new HWND(value);
             // Except make converting char* or byte* to typedefs representing strings implicit.
-            SyntaxToken explicitOrImplicitModifier = Token(StringTypeDefNames.Contains(name) ? SyntaxKind.ImplicitKeyword : SyntaxKind.ExplicitKeyword);
-            members = members.Add(ConversionOperatorDeclaration(explicitOrImplicitModifier, IdentifierName(name))
+            SyntaxToken explicitOrImplicitModifier = Token(StringTypeDefNames.Contains(name.Identifier.ValueText) ? SyntaxKind.ImplicitKeyword : SyntaxKind.ExplicitKeyword);
+            members = members.Add(ConversionOperatorDeclaration(explicitOrImplicitModifier, name)
                 .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(fieldInfo.FieldType))
-                .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(IdentifierName(name)).AddArgumentListArguments(Argument(valueParameter))))
+                .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(Argument(valueParameter))))
                 .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
                 .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
 
@@ -2140,16 +2153,16 @@ namespace Microsoft.Windows.CsWin32
 
                 // public static implicit operator IntPtr(MSIHANDLE value) => new IntPtr(value.Value);
                 members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), IntPtrTypeSyntax)
-                    .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IdentifierName(name)))
+                    .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(name))
                     .WithExpressionBody(ArrowExpressionClause(
                         ObjectCreationExpression(IntPtrTypeSyntax).AddArgumentListArguments(Argument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, fieldIdentifierName)))))
                     .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
                     .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
 
                 // public static explicit operator MSIHANDLE(IntPtr value) => new MSIHANDLE((uint)value.ToInt32());
-                members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), IdentifierName(name))
+                members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
                     .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IntPtrTypeSyntax))
-                    .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(IdentifierName(name)).AddArgumentListArguments(
+                    .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(
                         Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToInt32)))))))))
                     .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
                     .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
@@ -2159,7 +2172,7 @@ namespace Microsoft.Windows.CsWin32
             IdentifierNameSyntax other = IdentifierName("other");
             members = members.Add(MethodDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), nameof(IEquatable<int>.Equals))
                 .AddModifiers(Token(SyntaxKind.PublicKeyword))
-                .AddParameterListParameters(Parameter(other.Identifier).WithType(IdentifierName(name)))
+                .AddParameterListParameters(Parameter(other.Identifier).WithType(name))
                 .WithExpressionBody(ArrowExpressionClause(
                     BinaryExpression(
                         SyntaxKind.EqualsExpression,
@@ -2175,7 +2188,7 @@ namespace Microsoft.Windows.CsWin32
                 .WithExpressionBody(ArrowExpressionClause(
                     BinaryExpression(
                         SyntaxKind.LogicalAndExpression,
-                        IsPatternExpression(objParam, DeclarationPattern(IdentifierName(name), SingleVariableDesignation(Identifier("other")))),
+                        IsPatternExpression(objParam, DeclarationPattern(name, SingleVariableDesignation(Identifier("other")))),
                         InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName(nameof(Equals)))).AddArgumentListArguments(Argument(IdentifierName("other"))))))
                 .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
 
@@ -2192,7 +2205,7 @@ namespace Microsoft.Windows.CsWin32
                 .WithExpressionBody(ArrowExpressionClause(hashExpr))
                 .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
 
-            switch (name)
+            switch (name.Identifier.ValueText)
             {
                 case "BSTR":
                     members = members.AddRange(this.CreateAdditionalTypeDefBSTRMembers());
@@ -2202,7 +2215,7 @@ namespace Microsoft.Windows.CsWin32
                     break;
                 case "HRESULT":
                 case "NTSTATUS":
-                    members = members.AddRange(this.ExtractMembersFromTemplate(name));
+                    members = members.AddRange(this.ExtractMembersFromTemplate(name.Identifier.ValueText));
                     break;
                 default:
                     break;
@@ -2215,13 +2228,13 @@ namespace Microsoft.Windows.CsWin32
             }
 
             structModifiers = structModifiers.Add(Token(SyntaxKind.ReadOnlyKeyword)).Add(Token(SyntaxKind.PartialKeyword));
-            StructDeclarationSyntax result = StructDeclaration(name)
-                .AddBaseListTypes(SimpleBaseType(GenericName(nameof(IEquatable<int>)).AddTypeArgumentListArguments(IdentifierName(name))))
+            StructDeclarationSyntax result = StructDeclaration(name.Identifier)
+                .AddBaseListTypes(SimpleBaseType(GenericName(nameof(IEquatable<int>)).AddTypeArgumentListArguments(name)))
                 .WithMembers(members)
                 .WithModifiers(structModifiers)
                 .AddAttributeLists(AttributeList().AddAttributes(DebuggerDisplay("{" + fieldName + "}")));
 
-            result = AddApiDocumentation(name, result);
+            result = AddApiDocumentation(name.Identifier.ValueText, result);
             return result;
         }
 
@@ -2360,13 +2373,13 @@ namespace Microsoft.Windows.CsWin32
 
         private StructDeclarationSyntax CreateTypeDefBOOLStruct(TypeDefinition typeDef)
         {
-            const string name = "BOOL";
+            IdentifierNameSyntax name = IdentifierName("BOOL");
 
             FieldDefinition fieldDef = this.mr.GetFieldDefinition(typeDef.GetFields().Single());
             string fieldName = this.mr.GetString(fieldDef.Name);
             VariableDeclaratorSyntax fieldDeclarator = VariableDeclarator("value");
             (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers) fieldInfo =
-                this.ReinterpretFieldType(fieldDeclarator.Identifier.ValueText, fieldDef.DecodeSignature(this.signatureTypeProvider, null), fieldDef.GetCustomAttributes());
+                this.ReinterpretFieldType(fieldDeclarator.Identifier.ValueText, fieldDef.DecodeSignature(this.signatureTypeProvider, null), fieldDef.GetCustomAttributes(), typeDef);
             SyntaxList<MemberDeclarationSyntax> members = List<MemberDeclarationSyntax>();
 
             FieldDeclarationSyntax fieldSyntax = FieldDeclaration(
@@ -2383,7 +2396,7 @@ namespace Microsoft.Windows.CsWin32
             // BOOL(bool value) => this.value = value ? 1 : 0;
             IdentifierNameSyntax valueParameter = IdentifierName("value");
             ExpressionSyntax boolToInt = ConditionalExpression(valueParameter, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(1)), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)));
-            members = members.Add(ConstructorDeclaration(name)
+            members = members.Add(ConstructorDeclaration(name.Identifier)
                 .AddModifiers(Token(this.Visibility))
                 .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(PredefinedType(Token(SyntaxKind.BoolKeyword))))
                 .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, boolToInt)))
@@ -2391,23 +2404,23 @@ namespace Microsoft.Windows.CsWin32
 
             // public static implicit operator bool(BOOL value) => value.Value;
             members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), PredefinedType(Token(SyntaxKind.BoolKeyword)))
-                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IdentifierName(name)))
+                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(name))
                 .WithExpressionBody(ArrowExpressionClause(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(fieldName))))
                 .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
                 .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
 
             // public static implicit operator BOOL(bool value) => new BOOL(value);
-            members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), IdentifierName(name))
+            members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), name)
                 .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(PredefinedType(Token(SyntaxKind.BoolKeyword))))
-                .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(IdentifierName(name)).AddArgumentListArguments(Argument(valueParameter))))
+                .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(Argument(valueParameter))))
                 .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
                 .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
 
-            StructDeclarationSyntax result = StructDeclaration(name)
+            StructDeclarationSyntax result = StructDeclaration(name.Identifier)
                 .WithMembers(members)
                 .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.ReadOnlyKeyword), Token(SyntaxKind.PartialKeyword)));
 
-            result = AddApiDocumentation(name, result);
+            result = AddApiDocumentation(name.Identifier.ValueText, result);
             return result;
         }
 
@@ -3024,7 +3037,7 @@ namespace Microsoft.Windows.CsWin32
             return (originalType, null);
         }
 
-        private (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers) ReinterpretFieldType(string fieldName, TypeSyntax originalType, CustomAttributeHandleCollection customAttributes)
+        private (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers) ReinterpretFieldType(string fieldName, TypeSyntax originalType, CustomAttributeHandleCollection customAttributes, TypeDefinition declaringType)
         {
             ExpressionSyntax GetHiddenFieldAccess() => MemberAccessExpression(
                 SyntaxKind.SimpleMemberAccessExpression,
@@ -3106,24 +3119,25 @@ namespace Microsoft.Windows.CsWin32
 
                 // private struct __TheStruct_Count
                 // {
-                //     private TheStruct _1, _2, _3, _4, _5, _6, _7, _8;
+                //     private TheStruct _0, _1, _2, _3, _4, _5, _6, _7, _8;
                 // ...
-                var fixedLengthStruct = StructDeclaration($"__{fieldName}_{length}")
+                IdentifierNameSyntax fixedLengthStructName = IdentifierName($"__{fieldName}_{length}");
+                var fixedLengthStruct = StructDeclaration(fixedLengthStructName.Identifier)
                     .AddModifiers(Token(this.Visibility))
                     .AddMembers(
                         FieldDeclaration(VariableDeclaration(elementType)
-                            .AddVariables(Enumerable.Range(1, length).Select(n => VariableDeclarator($"_{n}")).ToArray()))
+                            .AddVariables(Enumerable.Range(0, length).Select(n => VariableDeclarator($"_{n}")).ToArray()))
                             .AddModifiers(Token(this.Visibility)));
 
-                var canCallCreateSpan = this.compilation?.GetTypeByMetadataName(typeof(MemoryMarshal).FullName)?.GetMembers("CreateSpan").Any() is true;
-                if (canCallCreateSpan)
+                var firstElementFieldName = IdentifierName("_0");
+                if (this.canCallCreateSpan)
                 {
                     // ...
                     //     internal ref TheStruct this[int index] => ref AsSpan()[index];
                     //     internal Span<TheStruct> AsSpan() => MemoryMarshal.CreateSpan(ref _1, 4);
                     fixedLengthStruct = fixedLengthStruct
                         .AddMembers(
-                            IndexerDeclaration(RefType(elementType))
+                            IndexerDeclaration(RefType(elementType)) // TODO: qualify this
                                 .AddModifiers(Token(this.Visibility))
                                 .AddParameterListParameters(Parameter(Identifier("index")).WithType(PredefinedType(Token(SyntaxKind.IntKeyword))))
                                 .WithExpressionBody(ArrowExpressionClause(RefExpression(
@@ -3135,49 +3149,55 @@ namespace Microsoft.Windows.CsWin32
                                 .WithExpressionBody(ArrowExpressionClause(
                                     InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("MemoryMarshal"), IdentifierName("CreateSpan")))
                                         .AddArgumentListArguments(
-                                            Argument(nameColon: null, Token(SyntaxKind.RefKeyword), IdentifierName("_1")),
+                                            Argument(nameColon: null, Token(SyntaxKind.RefKeyword), firstElementFieldName),
                                             Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(length))))))
                                 .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
                 }
-                else
+
+                // https://github.com/microsoft/CsWin32/issues/152
+                if (false)
                 {
-                    // ...
-                    //     internal ref TheStruct this[int index]
-                    //     {
-                    //         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                    //         get
-                    //         {
-                    //             unsafe
-                    //             {
-                    //                 fixed (TheStruct* p = &_1)
-                    //                     return ref p[index];
-                    //             }
-                    //         }
-                    //     }
-                    fixedLengthStruct = fixedLengthStruct
-                       .AddMembers(
-                            IndexerDeclaration(RefType(elementType))
-                                .AddModifiers(Token(this.Visibility))
-                                .AddParameterListParameters(Parameter(Identifier("index")).WithType(PredefinedType(Token(SyntaxKind.IntKeyword))))
-                                .AddAccessorListAccessors(
-                                    AccessorDeclaration(
-                                        SyntaxKind.GetAccessorDeclaration,
-                                        Block(UnsafeStatement(Block(
-                                            FixedStatement(
-                                                VariableDeclaration(PointerType(elementType)).AddVariables(
-                                                    VariableDeclarator("p").WithInitializer(EqualsValueClause(
-                                                        PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName("_1"))))),
-                                                ReturnStatement(RefExpression(
-                                                    ElementAccessExpression(IdentifierName("p")).AddArgumentListArguments(Argument(IdentifierName("index"))))))))))
-                                    .AddAttributeLists(AttributeList().AddAttributes(
-                                        Attribute(IdentifierName("MethodImpl")).AddArgumentListArguments(
-                                            AttributeArgument(MemberAccessExpression(
-                                                SyntaxKind.SimpleMemberAccessExpression,
-                                                IdentifierName(nameof(MethodImplOptions)),
-                                                IdentifierName(nameof(MethodImplOptions.AggressiveInlining)))))))));
+                    ////internal static unsafe ref readonly uint GetAt(this in MainAVIHeader.__dwReserved_4 @this, int index)
+                    ////{
+                    ////    fixed (uint* p0 = &@this._1)
+                    ////        return ref p0[index];
+                    ////}
+#pragma warning disable CS0162 // Unreachable code detected
+                    IdentifierNameSyntax indexParamName = IdentifierName("index");
+#pragma warning restore CS0162 // Unreachable code detected
+                    IdentifierNameSyntax p0 = IdentifierName("p0");
+                    IdentifierNameSyntax atThis = IdentifierName("@this");
+                    TypeSyntax qualifiedElementType = this.typesByName.TryGetValue(elementType.ToString(), out TypeDefinitionHandle elementTypeDef) ? this.GetQualifiedName(elementTypeDef) : elementType;
+                    FixedStatementSyntax? fixedStatement = FixedStatement(
+                        VariableDeclaration(PointerType(qualifiedElementType)).AddVariables(
+                            VariableDeclarator(p0.Identifier).WithInitializer(EqualsValueClause(
+                                PrefixUnaryExpression(
+                                    SyntaxKind.AddressOfExpression,
+                                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, atThis, firstElementFieldName))))),
+                        ReturnStatement(RefExpression(ElementAccessExpression(p0).AddArgumentListArguments(Argument(indexParamName)))));
+                    BlockSyntax body = Block().AddStatements(fixedStatement);
+                    ParameterSyntax thisParameter = Parameter(atThis.Identifier).WithType(QualifiedName(this.GetQualifiedName(declaringType), fixedLengthStructName)).AddModifiers(Token(SyntaxKind.ThisKeyword));
+                    ParameterSyntax indexParameter = Parameter(indexParamName.Identifier).WithType(PredefinedType(Token(SyntaxKind.IntKeyword)));
+                    SyntaxTokenList methodModifiers = TokenList(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.UnsafeKeyword));
+                    MethodDeclarationSyntax getAtMethod = MethodDeclaration(RefType(qualifiedElementType).WithReadOnlyKeyword(Token(SyntaxKind.ReadOnlyKeyword)), "GetAt")
+                        .WithModifiers(methodModifiers)
+                        .AddParameterListParameters(thisParameter.AddModifiers(Token(SyntaxKind.InKeyword)), indexParameter)
+                        .WithBody(body);
+                    this.inlineArrayIndexerExtensionsMembers.Add(getAtMethod);
+
+                    ////internal static unsafe ref uint GetOrSetAt(this ref MainAVIHeader.__dwReserved_4 @this, int index)
+                    ////{
+                    ////    fixed (uint* p0 = &@this._1)
+                    ////        return ref p0[index];
+                    ////}
+                    MethodDeclarationSyntax getOrSetAtMethod = MethodDeclaration(RefType(qualifiedElementType), "GetOrSetAt")
+                        .WithModifiers(methodModifiers)
+                        .AddParameterListParameters(thisParameter.AddModifiers(Token(SyntaxKind.RefKeyword)), indexParameter)
+                        .WithBody(body);
+                    this.inlineArrayIndexerExtensionsMembers.Add(getOrSetAtMethod);
                 }
 
-                return (IdentifierName(fixedLengthStruct.Identifier.ValueText), List<MemberDeclarationSyntax>().Add(fixedLengthStruct));
+                return (fixedLengthStructName, List<MemberDeclarationSyntax>().Add(fixedLengthStruct));
             }
 
             // If the field is a delegate type, we have to replace that with a native function pointer to avoid the struct becoming a 'managed type'.

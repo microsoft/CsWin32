@@ -110,6 +110,11 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [InlineData("HBITMAP_UserMarshal")] // in+out handle pointer
     [InlineData("GetDiskFreeSpaceExW")] // ULARGE_INTEGER replaced with keyword: ulong.
     [InlineData("MsiGetProductPropertyW")] // MSIHANDLE (a 32-bit handle)
+    [InlineData("tcp_opt_sack")] // nested structs with inline arrays with nested struct elements
+    [InlineData("HANDLETABLE")] // nested structs with inline arrays with nint element
+    [InlineData("SYSTEM_POLICY_INFORMATION")] // nested structs with inline arrays with IntPtr element
+    [InlineData("D3D11_BLEND_DESC1")] // nested structs with inline arrays with element that is NOT nested
+    [InlineData("RTM_DEST_INFO")] // nested structs with inline arrays with element whose name collides with another
     public void InterestingAPIs(string api)
     {
         this.generator = new Generator(this.metadataStream, options: new GeneratorOptions { EmitSingleFile = true, WideCharOnly = false }, compilation: this.compilation, parseOptions: this.parseOptions);
@@ -371,9 +376,11 @@ namespace Microsoft.Windows.Sdk
         this.AssertNoDiagnostics();
     }
 
-    // Slow span can't safely create a span from a ref when the struct is on the heap.
+    /// <summary>
+    /// Validates that where MemoryMarshal.CreateSpan isn't available, a substitute indexer is offered.
+    /// </summary>
     [Fact]
-    public void CodeGenerationForFixedLengthInlineArrayWithSlowSpan()
+    public void FixedLengthInlineArraysOfferExtensionIndexerWhereNoSpanPossible()
     {
         const string expected = @"
     internal partial struct MainAVIHeader
@@ -391,28 +398,36 @@ namespace Microsoft.Windows.Sdk
         internal __dwReserved_4 dwReserved;
         internal struct __dwReserved_4
         {
-            internal uint _1, _2, _3, _4;
-            internal ref uint this[int index]
-            {
-                [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                get
-                {
-                    unsafe
-                    {
-                        fixed (uint *p = &_1)
-                            return ref p[index];
-                    }
-                }
-            }
+            internal uint _0, _1, _2, _3;
         }
     }
 ";
 
-        this.AssertGeneratedType("MainAVIHeader", expected);
+////        const string expectedIndexer = @"
+////    internal static partial class InlineArrayIndexerExtensions
+////    {
+////        internal static unsafe ref readonly uint GetAt(this in MainAVIHeader.__dwReserved_4 @this, int index)
+////        {
+////            fixed (uint *p0 = &@this._0)
+////                return ref p0[index];
+////        }
+
+////        internal static unsafe ref uint GetOrSetAt(this ref MainAVIHeader.__dwReserved_4 @this, int index)
+////        {
+////            fixed (uint *p0 = &@this._0)
+////                return ref p0[index];
+////        }
+////    }
+////";
+
+        this.AssertGeneratedType("MainAVIHeader", expected/*, expectedIndexer*/); // https://github.com/microsoft/CsWin32/issues/152
     }
 
+    /// <summary>
+    /// Validates that where MemoryMarshal.CreateSpan is available, a <see cref="Span{T}"/> method and proper indexer is offered.
+    /// </summary>
     [Fact]
-    public void CodeGenerationForFixedLengthInlineArrayWithFastSpan()
+    public void FixedLengthInlineArraysGetSpanWherePossible()
     {
         const string expected = @"
     internal partial struct MainAVIHeader
@@ -430,15 +445,32 @@ namespace Microsoft.Windows.Sdk
         internal __dwReserved_4 dwReserved;
         internal struct __dwReserved_4
         {
-            internal uint _1, _2, _3, _4;
+            internal uint _0, _1, _2, _3;
             internal ref uint this[int index] => ref AsSpan()[index];
-            internal Span<uint> AsSpan() => MemoryMarshal.CreateSpan(ref _1, 4);
+            internal Span<uint> AsSpan() => MemoryMarshal.CreateSpan(ref _0, 4);
         }
     }
 ";
+
+////        const string expectedIndexer = @"
+////    internal static partial class InlineArrayIndexerExtensions
+////    {
+////        internal static unsafe ref readonly uint GetAt(this in MainAVIHeader.__dwReserved_4 @this, int index)
+////        {
+////            fixed (uint *p0 = &@this._0)
+////                return ref p0[index];
+////        }
+
+////        internal static unsafe ref uint GetOrSetAt(this ref MainAVIHeader.__dwReserved_4 @this, int index)
+////        {
+////            fixed (uint *p0 = &@this._0)
+////                return ref p0[index];
+////        }
+////    }
+////";
 
         this.compilation = this.fastSpanCompilation;
-        this.AssertGeneratedType("MainAVIHeader", expected);
+        this.AssertGeneratedType("MainAVIHeader", expected/*, expectedIndexer*/); // https://github.com/microsoft/CsWin32/issues/152
     }
 
     [Fact]
@@ -555,14 +587,27 @@ namespace Microsoft.Windows.Sdk
         }
     }
 
-    private void AssertGeneratedType(string apiName, string expectedSyntax)
+    private void AssertGeneratedType(string apiName, string expectedSyntax, string? expectedExtensions = null)
     {
         this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);
         Assert.True(this.generator.TryGenerate(apiName, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
-        BaseTypeDeclarationSyntax? syntax = Assert.Single(this.FindGeneratedType(apiName));
-        Assert.Equal(TestUtils.NormalizeToExpectedLineEndings(expectedSyntax), syntax?.ToFullString());
+        BaseTypeDeclarationSyntax syntax = Assert.Single(this.FindGeneratedType(apiName));
+        Assert.Equal(TestUtils.NormalizeToExpectedLineEndings(expectedSyntax), syntax.ToFullString());
+
+        var extensionsClass = (ClassDeclarationSyntax?)this.FindGeneratedType("InlineArrayIndexerExtensions").SingleOrDefault();
+        if (expectedExtensions is string)
+        {
+            Assert.NotNull(extensionsClass);
+            string extensionsClassString = extensionsClass!.ToFullString();
+            Assert.Equal(TestUtils.NormalizeToExpectedLineEndings(expectedExtensions), extensionsClassString);
+        }
+        else
+        {
+            // Assert that no indexer was generated.
+            Assert.Null(extensionsClass);
+        }
     }
 
     private async Task<CSharpCompilation> CreateCompilationAsync(ReferenceAssemblies references)

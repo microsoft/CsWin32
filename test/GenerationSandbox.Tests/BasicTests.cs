@@ -165,4 +165,20 @@ public class BasicTests
         Assert.Equal(NTSTATUS.Severity.Error, ((NTSTATUS)0xc0000000).SeverityCode);
         Assert.Equal(NTSTATUS.Severity.Error, ((NTSTATUS)0xffffffff).SeverityCode);
     }
+
+    [Fact]
+    public void FixedLengthInlineArrayAccess()
+    {
+#if NETCOREAPP
+        MainAVIHeader header = default;
+        header.dwReserved.AsSpan()[1] = 3;
+        Assert.Equal(3u, header.dwReserved.AsSpan()[1]);
+        Assert.Equal(3u, header.dwReserved._1);
+#endif
+
+        // https://github.com/microsoft/CsWin32/issues/152
+        ////header.dwReserved.GetOrSetAt(2) = 4;
+        ////Assert.Equal(4u, header.dwReserved.GetAt(2));
+        ////Assert.Equal(4u, header.dwReserved._2);
+    }
 }

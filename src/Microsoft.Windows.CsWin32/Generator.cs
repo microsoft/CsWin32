@@ -905,7 +905,9 @@ namespace Microsoft.Windows.CsWin32
                 return;
             }
 
-            this.fieldsToSyntax.Add(fieldDefHandle, this.CreateField(fieldDefHandle));
+            FieldDeclarationSyntax constantDeclaration = this.CreateField(fieldDefHandle);
+            constantDeclaration = AddApiDocumentation(constantDeclaration.Declaration.Variables[0].Identifier.ValueText, constantDeclaration);
+            this.fieldsToSyntax.Add(fieldDefHandle, constantDeclaration);
         }
 
         internal TypeSyntax? GenerateSafeHandle(string releaseMethod)
@@ -1208,19 +1210,22 @@ namespace Microsoft.Windows.CsWin32
                     docCommentsBuilder.AppendLine("</returns>");
                 }
 
-                docCommentsBuilder.Append($"/// <remarks>");
-                if (docs.Remarks is object)
+                if (docs.Remarks is object || docs.HelpLink is object)
                 {
-                    EmitDoc(docs.Remarks, docCommentsBuilder, docs, string.Empty);
-                }
-                else
-                {
-                    docCommentsBuilder.AppendLine();
-                    docCommentsBuilder.AppendLine($@"/// <para><see href=""{docs.HelpLink}"">Learn more about this API from docs.microsoft.com</see>.</para>");
-                    docCommentsBuilder.Append("/// ");
-                }
+                    docCommentsBuilder.Append($"/// <remarks>");
+                    if (docs.Remarks is object)
+                    {
+                        EmitDoc(docs.Remarks, docCommentsBuilder, docs, string.Empty);
+                    }
+                    else if (docs.HelpLink is object)
+                    {
+                        docCommentsBuilder.AppendLine();
+                        docCommentsBuilder.AppendLine($@"/// <para><see href=""{docs.HelpLink}"">Learn more about this API from docs.microsoft.com</see>.</para>");
+                        docCommentsBuilder.Append("/// ");
+                    }
 
-                docCommentsBuilder.AppendLine($"</remarks>");
+                    docCommentsBuilder.AppendLine($"</remarks>");
+                }
 
                 memberDeclaration = memberDeclaration.WithLeadingTrivia(
                     ParseLeadingTrivia(docCommentsBuilder.ToString()));

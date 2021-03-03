@@ -96,6 +96,9 @@ namespace Microsoft.Windows.CsWin32
 /// </summary>
 ");
 
+        private static readonly XmlTextSyntax DocCommentStart = XmlText(" ").WithLeadingTrivia(DocumentationCommentExterior("///"));
+        private static readonly XmlTextSyntax DocCommentEnd = XmlText(XmlTextNewLine("\r\n", continueXmlDocumentationComment: false));
+
         private static readonly IdentifierNameSyntax ConstantsClassName = IdentifierName("Constants");
         private static readonly IdentifierNameSyntax InlineArrayIndexerExtensionsClassName = IdentifierName("InlineArrayIndexerExtensions");
         private static readonly TypeSyntax SafeHandleTypeSyntax = IdentifierName("SafeHandle");
@@ -3158,9 +3161,13 @@ namespace Microsoft.Windows.CsWin32
                     elementType = IntPtrTypeSyntax;
                 }
 
-                // private struct __TheStruct_Count
+                var lengthLiteralSyntax = LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(length));
+
+                // internal struct __TheStruct_Count
                 // {
-                //     private TheStruct _0, _1, _2, _3, _4, _5, _6, _7, _8;
+                //     internal TheStruct _0, _1, _2, _3, _4, _5, _6, _7, _8;
+                //     /// <summary>Always <c>8</c>.</summary>
+                //     internal int Length => 8;
                 // ...
                 IdentifierNameSyntax fixedLengthStructName = IdentifierName($"__{fieldName}_{length}");
                 var fixedLengthStruct = StructDeclaration(fixedLengthStructName.Identifier)
@@ -3168,7 +3175,20 @@ namespace Microsoft.Windows.CsWin32
                     .AddMembers(
                         FieldDeclaration(VariableDeclaration(elementType)
                             .AddVariables(Enumerable.Range(0, length).Select(n => VariableDeclarator($"_{n}")).ToArray()))
-                            .AddModifiers(Token(this.Visibility)));
+                            .AddModifiers(Token(this.Visibility)),
+                        PropertyDeclaration(PredefinedType(Token(SyntaxKind.IntKeyword)), "Length")
+                            .AddModifiers(Token(this.Visibility))
+                            .WithExpressionBody(ArrowExpressionClause(lengthLiteralSyntax))
+                            .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
+                            .WithLeadingTrivia(Trivia(DocumentationCommentTrivia(SyntaxKind.SingleLineDocumentationCommentTrivia).AddContent(
+                                DocCommentStart,
+                                XmlElement("summary", List(new XmlNodeSyntax[]
+                                {
+                                    XmlText("Always "),
+                                    XmlElement("c", List(new XmlNodeSyntax[] { XmlText(lengthLiteralSyntax.Token.ValueText) })),
+                                    XmlText("."),
+                                })),
+                                DocCommentEnd))));
 
                 var firstElementFieldName = IdentifierName("_0");
                 if (this.canCallCreateSpan)
@@ -3192,7 +3212,7 @@ namespace Microsoft.Windows.CsWin32
                                     InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("MemoryMarshal"), IdentifierName("CreateSpan")))
                                         .AddArgumentListArguments(
                                             Argument(nameColon: null, Token(SyntaxKind.RefKeyword), firstElementFieldName),
-                                            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(length))))))
+                                            Argument(lengthLiteralSyntax))))
                                 .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
                                 .WithLeadingTrivia(InlineArrayUnsafeAsSpanComment));
                 }

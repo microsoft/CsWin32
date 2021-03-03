@@ -37,7 +37,7 @@ unsafe
         text,
         out IEnumSpellingError* errors).ThrowOnFailure();
 
-    Span<PWSTR> suggestionResult = stackalloc PWSTR[1];
+    Span<PWSTR> suggestionResult = new PWSTR[1];
     while (true)
     {
         if (errors->Next(out ISpellingError* error).ThrowOnFailure() == S_FALSE)

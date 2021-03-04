@@ -3,18 +3,12 @@
 
 namespace ScrapeDocs
 {
+    using System;
     using System.Collections.Generic;
     using System.Linq;
-    using System.Reflection.Metadata;
-    using Microsoft.CodeAnalysis.CSharp;
-    using Microsoft.CodeAnalysis.CSharp.Syntax;
-    using static GeneratorUtilities;
-    using static Microsoft.CodeAnalysis.CSharp.SyntaxFactory;
 
     internal class DocEnum
     {
-        private static readonly AttributeListSyntax FlagsAttributeList = AttributeList().AddAttributes(Attribute(IdentifierName("Flags")));
-
         internal DocEnum(bool isFlags, IReadOnlyDictionary<string, (ulong? Value, string? Doc)> members)
         {
             this.IsFlags = isFlags;
@@ -75,83 +69,68 @@ namespace ScrapeDocs
             return true;
         }
 
-        internal (string Namespace, EnumDeclarationSyntax Enum)? Emit(string name, MetadataReader mr, HashSet<TypeDefinitionHandle> apiClassHandles)
+        internal string? GetRecommendedName(List<(string MethodName, string ParameterName, string HelpLink, bool IsMethod)> uses)
         {
-            if (this.Members.Count == 2 && this.Members.ContainsKey("TRUE") && this.Members.ContainsKey("FALSE"))
+            string? enumName = null;
+            if (uses.Count == 1)
             {
-                return null;
-            }
-
-            PredefinedTypeSyntax? baseType = null;
-            string? ns = null;
-
-            // Look up values for each constant.
-            var values = new Dictionary<string, ExpressionSyntax>();
-            foreach (var item in this.Members)
-            {
-                bool found = false;
-                foreach (FieldDefinitionHandle handle in mr.FieldDefinitions)
+                var oneValue = uses[0];
+                if (oneValue.ParameterName.Contains("flags", StringComparison.OrdinalIgnoreCase))
                 {
-                    FieldDefinition fieldDef = mr.GetFieldDefinition(handle);
-                    if (apiClassHandles.Contains(fieldDef.GetDeclaringType()) && mr.StringComparer.Equals(fieldDef.Name, item.Key))
+                    // Only appears in one method, on a parameter named something like "flags".
+                    enumName = $"{oneValue.MethodName}Flags";
+                }
+                else
+                {
+                    enumName = $"{oneValue.MethodName}_{oneValue.ParameterName}Flags";
+                }
+            }
+            else
+            {
+                string firstName = this.Members.Keys.First();
+                int commonPrefixLength = firstName.Length;
+                foreach (string key in this.Members.Keys)
+                {
+                    commonPrefixLength = Math.Min(commonPrefixLength, GetCommonPrefixLength(key, firstName));
+                }
+
+                if (commonPrefixLength > 1)
+                {
+                    int last_ = firstName.LastIndexOf('_', commonPrefixLength - 1);
+                    if (last_ != -1 && last_ != commonPrefixLength - 1)
                     {
-                        found = true;
-                        Constant constant = mr.GetConstant(fieldDef.GetDefaultValue());
-                        values.Add(item.Key, this.IsFlags ? ToHexExpressionSyntax(mr, constant) : ToExpressionSyntax(mr, constant));
-                        baseType ??= ToTypeOfConstant(mr, constant);
-                        ns ??= mr.GetString(mr.GetTypeDefinition(fieldDef.GetDeclaringType()).Namespace);
-                        break;
+                        // Trim down to last underscore
+                        commonPrefixLength = last_;
+                    }
+
+                    if (commonPrefixLength > 1 && firstName[commonPrefixLength - 1] == '_')
+                    {
+                        // The enum values share a common prefix suitable to imply a name for the enum.
+                        enumName = firstName.Substring(0, commonPrefixLength - 1);
                     }
                 }
+            }
 
-                if (!found)
+            return enumName;
+        }
+
+        private static int GetCommonPrefixLength(ReadOnlySpan<char> first, ReadOnlySpan<char> second)
+        {
+            int count = 0;
+            int minLength = Math.Min(first.Length, second.Length);
+            for (int i = 0; i < minLength; i++)
+            {
+                if (first[i] == second[i])
                 {
-                    // We couldn't find all the constants required.
-                    return null;
+                    count++;
+                }
+                else
+                {
+                    break;
                 }
             }
 
-            if (baseType is null || ns is null)
-            {
-                // We don't know all the values.
-                return null;
-            }
-
-            // Strip the method's declaring interface from the enum name, where applicable.
-            NameSyntax enumNameSyntax = ParseName(name);
-            if (enumNameSyntax is QualifiedNameSyntax qname)
-            {
-                enumNameSyntax = qname.Right;
-            }
-
-            EnumDeclarationSyntax enumDecl = EnumDeclaration(Identifier(enumNameSyntax.ToString()))
-                .AddModifiers(Token(SyntaxKind.PublicKeyword))
-                .AddMembers(this.Members
-                    .Select(kv => EnumMemberDeclaration(Identifier(kv.Key)).WithEqualsValue(EqualsValueClause(values[kv.Key]))).ToArray());
-
-            if (this.IsFlags)
-            {
-                // For flags enums, prefer typing as unsigned integers.
-                baseType = PredefinedType(Token(baseType.Keyword.Kind() switch
-                {
-                    SyntaxKind.ShortKeyword => SyntaxKind.UShortKeyword,
-                    SyntaxKind.IntKeyword => SyntaxKind.UIntKeyword,
-                    SyntaxKind.LongKeyword => SyntaxKind.ULongKeyword,
-                    _ => baseType.Keyword.Kind(),
-                }));
-            }
-
-            if (baseType is not PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.IntKeyword } })
-            {
-                enumDecl = enumDecl.AddBaseListTypes(SimpleBaseType(baseType));
-            }
-
-            if (this.IsFlags)
-            {
-                enumDecl = enumDecl.AddAttributeLists(FlagsAttributeList);
-            }
-
-            return (ns, enumDecl);
+            return count;
         }
     }
 }

@@ -6,21 +6,16 @@ namespace ScrapeDocs
     using System;
     using System.Collections.Concurrent;
     using System.Collections.Generic;
-    using System.Collections.Immutable;
     using System.Diagnostics;
     using System.Diagnostics.CodeAnalysis;
     using System.Globalization;
     using System.IO;
     using System.Linq;
     using System.Reflection;
-    using System.Reflection.Metadata;
-    using System.Reflection.PortableExecutable;
     using System.Text;
+    using System.Text.Json;
     using System.Text.RegularExpressions;
     using System.Threading;
-    using Microsoft.CodeAnalysis;
-    using Microsoft.CodeAnalysis.CSharp;
-    using Microsoft.CodeAnalysis.CSharp.Syntax;
     using YamlDotNet.RepresentationModel;
 
     /// <summary>
@@ -87,51 +82,42 @@ namespace ScrapeDocs
             }
         }
 
-        private static int GetCommonPrefixLength(ReadOnlySpan<char> first, ReadOnlySpan<char> second)
+        // Skip the NULL constant due to https://github.com/aaubry/YamlDotNet/issues/591.
+        private static bool IsYamlProblematicKey(string key) => string.Equals(key, "null", StringComparison.OrdinalIgnoreCase);
+
+        private int AnalyzeEnums(ConcurrentDictionary<YamlNode, YamlNode> results, ConcurrentDictionary<(string MethodName, string ParameterName, string HelpLink), DocEnum> parameterEnums, ConcurrentDictionary<(string MethodName, string ParameterName, string HelpLink), DocEnum> fieldEnums)
         {
-            int count = 0;
-            int minLength = Math.Min(first.Length, second.Length);
-            for (int i = 0; i < minLength; i++)
+            var uniqueEnums = new Dictionary<DocEnum, List<(string MethodOrStructName, string ParameterOrFieldName, string HelpLink, bool IsMethod)>>();
+            var constantsDocs = new Dictionary<string, List<(string MethodOrStructName, string HelpLink, string Doc)>>();
+
+            void Collect(ConcurrentDictionary<(string MethodName, string ParameterName, string HelpLink), DocEnum> enums, bool isMethod)
             {
-                if (first[i] == second[i])
+                foreach (var item in enums)
                 {
-                    count++;
-                }
-                else
-                {
-                    break;
-                }
-            }
-
-            return count;
-        }
-
-        private int AnalyzeEnums(ConcurrentDictionary<YamlNode, YamlNode> results, ConcurrentDictionary<(string MethodName, string ParameterName, string HelpLink), DocEnum> documentedEnums)
-        {
-            var uniqueEnums = new Dictionary<DocEnum, List<(string MethodName, string ParameterName, string HelpLink)>>();
-            var constantsDocs = new Dictionary<string, List<(string MethodName, string HelpLink, string Doc)>>();
-            foreach (var item in documentedEnums)
-            {
-                if (!uniqueEnums.TryGetValue(item.Value, out List<(string MethodName, string ParameterName, string HelpLink)>? list))
-                {
-                    uniqueEnums.Add(item.Value, list = new());
-                }
-
-                list.Add(item.Key);
-
-                foreach (KeyValuePair<string, (ulong? Value, string? Doc)> enumValue in item.Value.Members)
-                {
-                    if (enumValue.Value.Doc is object)
+                    if (!uniqueEnums.TryGetValue(item.Value, out List<(string MethodName, string ParameterName, string HelpLink, bool IsMethod)>? list))
                     {
-                        if (!constantsDocs.TryGetValue(enumValue.Key, out List<(string MethodName, string HelpLink, string Doc)>? values))
-                        {
-                            constantsDocs.Add(enumValue.Key, values = new());
-                        }
+                        uniqueEnums.Add(item.Value, list = new());
+                    }
 
-                        values.Add((item.Key.MethodName, item.Key.HelpLink, enumValue.Value.Doc));
+                    list.Add((item.Key.MethodName, item.Key.ParameterName, item.Key.HelpLink, isMethod));
+
+                    foreach (KeyValuePair<string, (ulong? Value, string? Doc)> enumValue in item.Value.Members)
+                    {
+                        if (enumValue.Value.Doc is object)
+                        {
+                            if (!constantsDocs.TryGetValue(enumValue.Key, out List<(string MethodName, string HelpLink, string Doc)>? values))
+                            {
+                                constantsDocs.Add(enumValue.Key, values = new());
+                            }
+
+                            values.Add((item.Key.MethodName, item.Key.HelpLink, enumValue.Value.Doc));
+                        }
                     }
                 }
             }
+
+            Collect(parameterEnums, isMethod: true);
+            Collect(fieldEnums, isMethod: false);
 
             foreach (var item in constantsDocs)
             {
@@ -151,7 +137,7 @@ namespace ScrapeDocs
                 var docNode = new YamlMappingNode();
                 if (differenceDetected)
                 {
-                    doc = "Documentation varies per use. Refer to each: " + string.Join(", ", item.Value.Select(v => @$"<see href=""{v.HelpLink}"">{v.MethodName}</see>")) + ".";
+                    doc = "Documentation varies per use. Refer to each: " + string.Join(", ", item.Value.Select(v => @$"<see href=""{v.HelpLink}"">{v.MethodOrStructName}</see>")) + ".";
                 }
                 else
                 {
@@ -161,9 +147,7 @@ namespace ScrapeDocs
 
                 docNode.Add("Description", doc);
 
-                // Skip the NULL constant due to https://github.com/aaubry/YamlDotNet/issues/591.
-                // Besides--documenting null probably isn't necessary.
-                if (item.Key != "NULL")
+                if (!IsYamlProblematicKey(item.Key))
                 {
                     results.TryAdd(new YamlScalarNode(item.Key), docNode);
                 }
@@ -171,98 +155,65 @@ namespace ScrapeDocs
 
             if (this.EmitEnums)
             {
-                using var metadataStream = File.OpenRead(Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!, "Windows.Win32.winmd"));
-                using var peReader = new PEReader(metadataStream);
-                var mr = peReader.GetMetadataReader();
-
-                var apiClassHandles = new HashSet<TypeDefinitionHandle>(
-                    from typeDefHandle in mr.TypeDefinitions
-                    let typeDef = mr.GetTypeDefinition(typeDefHandle)
-                    where mr.StringComparer.Equals(typeDef.Name, "Apis")
-                    select typeDefHandle);
-
                 string enumDirectory = Path.GetDirectoryName(this.outputPath) ?? throw new InvalidOperationException("Unable to determine where to write enums.");
-                using var enumRewrite = new StreamWriter(File.OpenWrite(Path.Combine(enumDirectory, "remap.rsp")));
-                var enumsByNamespace = new Dictionary<string, List<EnumDeclarationSyntax>>();
-                int anonymousEnumCounter = 0;
-                foreach (KeyValuePair<DocEnum, List<(string MethodName, string ParameterName, string HelpLink)>> item in uniqueEnums)
+                Directory.CreateDirectory(enumDirectory);
+                using var enumsJsonStream = File.OpenWrite(Path.Combine(enumDirectory, "enums.json"));
+                using var writer = new Utf8JsonWriter(enumsJsonStream, new JsonWriterOptions { Indented = true });
+                writer.WriteStartArray();
+
+                foreach (KeyValuePair<DocEnum, List<(string MethodName, string ParameterName, string HelpLink, bool IsMethod)>> item in uniqueEnums)
                 {
-                    string? enumName = null;
-                    if (item.Value.Count == 1)
+                    writer.WriteStartObject();
+
+                    if (item.Key.GetRecommendedName(item.Value) is string enumName)
                     {
-                        var oneValue = item.Value[0];
-                        if (oneValue.ParameterName.Contains("flags", StringComparison.OrdinalIgnoreCase))
-                        {
-                            // Only appears in one method, on a parameter named something like "flags".
-                            enumName = $"{oneValue.MethodName}Flags";
-                        }
-                        else
-                        {
-                            enumName = $"{oneValue.MethodName}_{oneValue.ParameterName}Flags";
-                        }
-                    }
-                    else
-                    {
-                        string firstName = item.Key.Members.Keys.First();
-                        int commonPrefixLength = firstName.Length;
-                        foreach (string key in item.Key.Members.Keys)
-                        {
-                            commonPrefixLength = Math.Min(commonPrefixLength, GetCommonPrefixLength(key, firstName));
-                        }
-
-                        if (commonPrefixLength > 1)
-                        {
-                            int last_ = firstName.LastIndexOf('_', commonPrefixLength - 1);
-                            if (last_ != -1 && last_ != commonPrefixLength - 1)
-                            {
-                                // Trim down to last underscore
-                                commonPrefixLength = last_;
-                            }
-
-                            if (commonPrefixLength > 1 && firstName[commonPrefixLength - 1] == '_')
-                            {
-                                // The enum values share a common prefix suitable to imply a name for the enum.
-                                enumName = firstName.Substring(0, commonPrefixLength - 1);
-                            }
-                        }
-
-                        if (enumName is null)
-                        {
-                            enumName = $"AnonymousEnum{++anonymousEnumCounter}";
-                        }
+                        writer.WriteString("name", enumName);
                     }
 
-                    var enumWithNamespace = item.Key.Emit(enumName, mr, apiClassHandles);
-                    if (enumWithNamespace is object)
+                    writer.WriteBoolean("flags", item.Key.IsFlags);
+
+                    writer.WritePropertyName("members");
+                    writer.WriteStartArray();
+                    foreach (var member in item.Key.Members)
                     {
-                        if (!enumsByNamespace.TryGetValue(enumWithNamespace.Value.Namespace, out var list))
+                        writer.WriteStartObject();
+                        writer.WriteString("name", member.Key);
+                        if (member.Value.Value is ulong value)
                         {
-                            enumsByNamespace.Add(enumWithNamespace.Value.Namespace, list = new());
+                            writer.WriteString("value", value.ToString(CultureInfo.InvariantCulture));
                         }
 
-                        list.Add(enumWithNamespace.Value.Enum);
-
-                        foreach (var tuple in item.Value)
-                        {
-                            enumRewrite.WriteLine($"{tuple.MethodName}:{tuple.ParameterName}={enumName}");
-                        }
+                        writer.WriteEndObject();
                     }
+
+                    writer.WriteEndArray();
+
+                    writer.WritePropertyName("uses");
+                    writer.WriteStartArray();
+                    foreach (var uses in item.Value)
+                    {
+                        writer.WriteStartObject();
+
+                        int periodIndex = uses.MethodName.IndexOf('.', StringComparison.Ordinal);
+                        string? iface = periodIndex >= 0 ? uses.MethodName.Substring(0, periodIndex) : null;
+                        string name = periodIndex >= 0 ? uses.MethodName.Substring(periodIndex + 1) : uses.MethodName;
+
+                        if (iface is string)
+                        {
+                            writer.WriteString("interface", iface);
+                        }
+
+                        writer.WriteString(uses.IsMethod ? "method" : "struct", name);
+                        writer.WriteString(uses.IsMethod ? "parameter" : "field", uses.ParameterName);
+
+                        writer.WriteEndObject();
+                    }
+
+                    writer.WriteEndArray();
+                    writer.WriteEndObject();
                 }
 
-                foreach (var e in enumsByNamespace)
-                {
-                    var compilationUnit = SyntaxFactory.CompilationUnit()
-                        .AddUsings(SyntaxFactory.UsingDirective(SyntaxFactory.IdentifierName("System")))
-                        .AddMembers(
-                            SyntaxFactory.NamespaceDeclaration(SyntaxFactory.ParseName(e.Key))
-                                .AddMembers(e.Value.ToArray<MemberDeclarationSyntax>()))
-                        .NormalizeWhitespace();
-
-                    string simpleNamespace = e.Key.Substring("Windows.Win32.".Length);
-                    File.WriteAllText(
-                        Path.Combine(enumDirectory, $"{simpleNamespace}.manual.cs"),
-                        compilationUnit.ToFullString());
-                }
+                writer.WriteEndArray();
             }
 
             return constantsDocs.Count;
@@ -272,7 +223,7 @@ namespace ScrapeDocs
         {
             Console.WriteLine("Enumerating documents to be parsed...");
             string[] paths = Directory.GetFiles(this.contentBasePath, "??-*-*.md", SearchOption.AllDirectories)
-                ////.Where(p => p.Contains(@"ext\sdk-api\sdk-api-src\content\winuser\nf-winuser-setwindowpos.md")).ToArray()
+                ////.Where(p => p.Contains(@"DNS_RECORDA", StringComparison.OrdinalIgnoreCase)).ToArray()
                 ;
 
             Console.WriteLine("Parsing documents...");
@@ -280,23 +231,30 @@ namespace ScrapeDocs
             var parsedNodes = from path in paths.AsParallel()
                               let result = this.ParseDocFile(path)
                               where result is not null
-                              select (Path: path, result.Value.ApiName, result.Value.YamlNode, result.Value.EnumsByParameter);
+                              select (Path: path, result.Value.ApiName, result.Value.YamlNode, result.Value.EnumsByParameter, result.Value.EnumsByField);
             var results = new ConcurrentDictionary<YamlNode, YamlNode>();
-            var documentedEnums = new ConcurrentDictionary<(string MethodName, string ParameterName, string HelpLink), DocEnum>();
+            var parameterEnums = new ConcurrentDictionary<(string MethodName, string ParameterName, string HelpLink), DocEnum>();
+            var fieldEnums = new ConcurrentDictionary<(string StructName, string FieldName, string HelpLink), DocEnum>();
             if (Debugger.IsAttached)
             {
                 parsedNodes = parsedNodes.WithDegreeOfParallelism(1); // improve debuggability
             }
 
             parsedNodes
-                .WithCancellation<(string Path, string ApiName, YamlNode YamlNode, IReadOnlyDictionary<string, DocEnum> EnumsByParameter)>(cancellationToken)
+                .WithCancellation<(string Path, string ApiName, YamlNode YamlNode, IReadOnlyDictionary<string, DocEnum> EnumsByParameter, IReadOnlyDictionary<string, DocEnum> EnumsByField)>(cancellationToken)
                 .ForAll(result =>
                 {
                     results.TryAdd(new YamlScalarNode(result.ApiName), result.YamlNode);
                     foreach (var e in result.EnumsByParameter)
                     {
                         string helpLink = ((YamlScalarNode)result.YamlNode["HelpLink"]).Value!;
-                        documentedEnums.TryAdd((result.ApiName, e.Key, helpLink), e.Value);
+                        parameterEnums.TryAdd((result.ApiName, e.Key, helpLink), e.Value);
+                    }
+
+                    foreach (var e in result.EnumsByField)
+                    {
+                        string helpLink = ((YamlScalarNode)result.YamlNode["HelpLink"]).Value!;
+                        fieldEnums.TryAdd((result.ApiName, e.Key, helpLink), e.Value);
                     }
                 });
             if (paths.Length == 0)
@@ -306,11 +264,11 @@ namespace ScrapeDocs
             else
             {
                 Console.WriteLine("Parsed {2} documents in {0} ({1} per document)", timer.Elapsed, timer.Elapsed / paths.Length, paths.Length);
-                Console.WriteLine($"Found {documentedEnums.Count} enums.");
+                Console.WriteLine($"Found {parameterEnums.Count + fieldEnums.Count} enums.");
             }
 
             Console.WriteLine("Analyzing and naming enums and collecting docs on their members...");
-            int constantsCount = this.AnalyzeEnums(results, documentedEnums);
+            int constantsCount = this.AnalyzeEnums(results, parameterEnums, fieldEnums);
             Console.WriteLine($"Found docs for {constantsCount} constants.");
 
             Console.WriteLine("Writing results to \"{0}\"", this.outputPath);
@@ -322,11 +280,12 @@ namespace ScrapeDocs
             yamlStream.Save(yamlWriter);
         }
 
-        private (string ApiName, YamlNode YamlNode, IReadOnlyDictionary<string, DocEnum> EnumsByParameter)? ParseDocFile(string filePath)
+        private (string ApiName, YamlNode YamlNode, IReadOnlyDictionary<string, DocEnum> EnumsByParameter, IReadOnlyDictionary<string, DocEnum> EnumsByField)? ParseDocFile(string filePath)
         {
             try
             {
-                IDictionary<string, DocEnum>? enumsByParameter = null;
+                var enumsByParameter = new Dictionary<string, DocEnum>();
+                var enumsByField = new Dictionary<string, DocEnum>();
                 var yaml = new YamlStream();
                 using StreamReader mdFileReader = File.OpenText(filePath);
                 using var markdownToYamlReader = new YamlSectionReader(mdFileReader);
@@ -527,7 +486,7 @@ namespace ScrapeDocs
                     return enums;
                 }
 
-                void ParseSection(Match match, YamlMappingNode receivingMap, bool lookForEnums = false)
+                void ParseSection(Match match, YamlMappingNode receivingMap, bool lookForParameterEnums = false, bool lookForFieldEnums = false)
                 {
                     string sectionName = match.Groups[1].Value;
                     bool foundEnum = false;
@@ -539,7 +498,7 @@ namespace ScrapeDocs
                             break;
                         }
 
-                        if (lookForEnums)
+                        if (lookForParameterEnums || lookForFieldEnums)
                         {
                             if (foundEnum)
                             {
@@ -548,14 +507,15 @@ namespace ScrapeDocs
                                     IReadOnlyDictionary<string, (ulong? Value, string? Doc)> enumNamesAndDocs = ParseEnumTable();
                                     if (enumNamesAndDocs.Count > 0)
                                     {
-                                        enumsByParameter ??= new Dictionary<string, DocEnum>();
-                                        if (!enumsByParameter.ContainsKey(sectionName))
+                                        var enums = lookForParameterEnums ? enumsByParameter : enumsByField;
+                                        if (!enums.ContainsKey(sectionName))
                                         {
-                                            enumsByParameter.Add(sectionName, new DocEnum(foundEnumIsFlags, enumNamesAndDocs));
+                                            enums.Add(sectionName, new DocEnum(foundEnumIsFlags, enumNamesAndDocs));
                                         }
                                     }
 
-                                    lookForEnums = false;
+                                    lookForParameterEnums = false;
+                                    lookForFieldEnums = false;
                                 }
                             }
                             else
@@ -577,7 +537,10 @@ namespace ScrapeDocs
 
                     try
                     {
-                        receivingMap.Add(sectionName, docBuilder.ToString().Trim());
+                        if (!IsYamlProblematicKey(sectionName))
+                        {
+                            receivingMap.Add(sectionName, docBuilder.ToString().Trim());
+                        }
                     }
                     catch (ArgumentException)
                     {
@@ -590,11 +553,11 @@ namespace ScrapeDocs
                 {
                     if (ParameterHeaderPattern.Match(line) is Match { Success: true } parameterMatch)
                     {
-                        ParseSection(parameterMatch, parametersMap, lookForEnums: true);
+                        ParseSection(parameterMatch, parametersMap, lookForParameterEnums: true);
                     }
                     else if (FieldHeaderPattern.Match(line) is Match { Success: true } fieldMatch)
                     {
-                        ParseSection(fieldMatch, fieldsMap, lookForEnums: true);
+                        ParseSection(fieldMatch, fieldsMap, lookForFieldEnums: true);
                     }
                     else if (RemarksHeaderPattern.Match(line) is Match { Success: true } remarksMatch)
                     {
@@ -652,8 +615,7 @@ namespace ScrapeDocs
                     }
                 }
 
-                enumsByParameter ??= ImmutableDictionary<string, DocEnum>.Empty;
-                return (properName, methodNode, (IReadOnlyDictionary<string, DocEnum>)enumsByParameter);
+                return (properName, methodNode, enumsByParameter, enumsByField);
             }
             catch (Exception ex)
             {

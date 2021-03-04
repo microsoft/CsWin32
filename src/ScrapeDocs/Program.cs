@@ -13,9 +13,14 @@ namespace ScrapeDocs
     using System.IO;
     using System.Linq;
     using System.Reflection;
+    using System.Reflection.Metadata;
+    using System.Reflection.PortableExecutable;
     using System.Text;
     using System.Text.RegularExpressions;
     using System.Threading;
+    using Microsoft.CodeAnalysis;
+    using Microsoft.CodeAnalysis.CSharp;
+    using Microsoft.CodeAnalysis.CSharp.Syntax;
     using YamlDotNet.RepresentationModel;
 
     /// <summary>
@@ -25,11 +30,12 @@ namespace ScrapeDocs
     {
         private static readonly Regex FileNamePattern = new Regex(@"^\w\w-\w+-([\w\-]+)$", RegexOptions.Compiled);
         private static readonly Regex ParameterHeaderPattern = new Regex(@"^### -param (\w+)", RegexOptions.Compiled);
-        private static readonly Regex FieldHeaderPattern = new Regex(@"^### -field (\w+)", RegexOptions.Compiled);
+        private static readonly Regex FieldHeaderPattern = new Regex(@"^### -field (?:\w+\.)*(\w+)", RegexOptions.Compiled);
         private static readonly Regex ReturnHeaderPattern = new Regex(@"^## -returns", RegexOptions.Compiled);
         private static readonly Regex RemarksHeaderPattern = new Regex(@"^## -remarks", RegexOptions.Compiled);
         private static readonly Regex InlineCodeTag = new Regex(@"\<code\>(.*)\</code\>", RegexOptions.Compiled);
         private static readonly Regex EnumNameCell = new Regex(@"\<td[^\>]*\>\<a id=""([^""]+)""", RegexOptions.Compiled);
+        private static readonly Regex EnumOrdinalValue = new Regex(@"\<dt\>([\dxa-f]+)\<\/dt\>", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private readonly string contentBasePath;
         private readonly string outputPath;
 
@@ -38,6 +44,8 @@ namespace ScrapeDocs
             this.contentBasePath = contentBasePath;
             this.outputPath = outputPath;
         }
+
+        private bool EmitEnums { get; set; }
 
         private static int Main(string[] args)
         {
@@ -49,18 +57,19 @@ namespace ScrapeDocs
                 e.Cancel = true;
             };
 
-            if (args.Length != 2)
+            if (args.Length < 2)
             {
-                Console.Error.WriteLine("USAGE: {0} <path-to-docs> <path-to-output-yml>");
+                Console.Error.WriteLine("USAGE: {0} <path-to-docs> <path-to-output-yml> [enums]");
                 return 1;
             }
 
             string contentBasePath = args[0];
             string outputPath = args[1];
+            bool emitEnums = args.Length > 2 ? args[2] == "enums" : false;
 
             try
             {
-                new Program(contentBasePath, outputPath).Worker(cts.Token);
+                new Program(contentBasePath, outputPath) { EmitEnums = true }.Worker(cts.Token);
             }
             catch (OperationCanceledException ex) when (ex.CancellationToken == cts.Token)
             {
@@ -78,7 +87,26 @@ namespace ScrapeDocs
             }
         }
 
-        private static int AnalyzeEnums(ConcurrentDictionary<YamlNode, YamlNode> results, ConcurrentDictionary<(string MethodName, string ParameterName, string HelpLink), DocEnum> documentedEnums)
+        private static int GetCommonPrefixLength(ReadOnlySpan<char> first, ReadOnlySpan<char> second)
+        {
+            int count = 0;
+            int minLength = Math.Min(first.Length, second.Length);
+            for (int i = 0; i < minLength; i++)
+            {
+                if (first[i] == second[i])
+                {
+                    count++;
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            return count;
+        }
+
+        private int AnalyzeEnums(ConcurrentDictionary<YamlNode, YamlNode> results, ConcurrentDictionary<(string MethodName, string ParameterName, string HelpLink), DocEnum> documentedEnums)
         {
             var uniqueEnums = new Dictionary<DocEnum, List<(string MethodName, string ParameterName, string HelpLink)>>();
             var constantsDocs = new Dictionary<string, List<(string MethodName, string HelpLink, string Doc)>>();
@@ -91,16 +119,16 @@ namespace ScrapeDocs
 
                 list.Add(item.Key);
 
-                foreach (KeyValuePair<string, string?> enumValue in item.Value.MemberNamesAndDocs)
+                foreach (KeyValuePair<string, (ulong? Value, string? Doc)> enumValue in item.Value.Members)
                 {
-                    if (enumValue.Value is object)
+                    if (enumValue.Value.Doc is object)
                     {
                         if (!constantsDocs.TryGetValue(enumValue.Key, out List<(string MethodName, string HelpLink, string Doc)>? values))
                         {
                             constantsDocs.Add(enumValue.Key, values = new());
                         }
 
-                        values.Add((item.Key.MethodName, item.Key.HelpLink, enumValue.Value));
+                        values.Add((item.Key.MethodName, item.Key.HelpLink, enumValue.Value.Doc));
                     }
                 }
             }
@@ -138,6 +166,102 @@ namespace ScrapeDocs
                 if (item.Key != "NULL")
                 {
                     results.TryAdd(new YamlScalarNode(item.Key), docNode);
+                }
+            }
+
+            if (this.EmitEnums)
+            {
+                using var metadataStream = File.OpenRead(Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!, "Windows.Win32.winmd"));
+                using var peReader = new PEReader(metadataStream);
+                var mr = peReader.GetMetadataReader();
+
+                var apiClassHandles = new HashSet<TypeDefinitionHandle>(
+                    from typeDefHandle in mr.TypeDefinitions
+                    let typeDef = mr.GetTypeDefinition(typeDefHandle)
+                    where mr.StringComparer.Equals(typeDef.Name, "Apis")
+                    select typeDefHandle);
+
+                string enumDirectory = Path.GetDirectoryName(this.outputPath) ?? throw new InvalidOperationException("Unable to determine where to write enums.");
+                using var enumRewrite = new StreamWriter(File.OpenWrite(Path.Combine(enumDirectory, "remap.rsp")));
+                var enumsByNamespace = new Dictionary<string, List<EnumDeclarationSyntax>>();
+                int anonymousEnumCounter = 0;
+                foreach (KeyValuePair<DocEnum, List<(string MethodName, string ParameterName, string HelpLink)>> item in uniqueEnums)
+                {
+                    string? enumName = null;
+                    if (item.Value.Count == 1)
+                    {
+                        var oneValue = item.Value[0];
+                        if (oneValue.ParameterName.Contains("flags", StringComparison.OrdinalIgnoreCase))
+                        {
+                            // Only appears in one method, on a parameter named something like "flags".
+                            enumName = $"{oneValue.MethodName}Flags";
+                        }
+                        else
+                        {
+                            enumName = $"{oneValue.MethodName}_{oneValue.ParameterName}Flags";
+                        }
+                    }
+                    else
+                    {
+                        string firstName = item.Key.Members.Keys.First();
+                        int commonPrefixLength = firstName.Length;
+                        foreach (string key in item.Key.Members.Keys)
+                        {
+                            commonPrefixLength = Math.Min(commonPrefixLength, GetCommonPrefixLength(key, firstName));
+                        }
+
+                        if (commonPrefixLength > 1)
+                        {
+                            int last_ = firstName.LastIndexOf('_', commonPrefixLength - 1);
+                            if (last_ != -1 && last_ != commonPrefixLength - 1)
+                            {
+                                // Trim down to last underscore
+                                commonPrefixLength = last_;
+                            }
+
+                            if (commonPrefixLength > 1 && firstName[commonPrefixLength - 1] == '_')
+                            {
+                                // The enum values share a common prefix suitable to imply a name for the enum.
+                                enumName = firstName.Substring(0, commonPrefixLength - 1);
+                            }
+                        }
+
+                        if (enumName is null)
+                        {
+                            enumName = $"AnonymousEnum{++anonymousEnumCounter}";
+                        }
+                    }
+
+                    var enumWithNamespace = item.Key.Emit(enumName, mr, apiClassHandles);
+                    if (enumWithNamespace is object)
+                    {
+                        if (!enumsByNamespace.TryGetValue(enumWithNamespace.Value.Namespace, out var list))
+                        {
+                            enumsByNamespace.Add(enumWithNamespace.Value.Namespace, list = new());
+                        }
+
+                        list.Add(enumWithNamespace.Value.Enum);
+
+                        foreach (var tuple in item.Value)
+                        {
+                            enumRewrite.WriteLine($"{tuple.MethodName}:{tuple.ParameterName}={enumName}");
+                        }
+                    }
+                }
+
+                foreach (var e in enumsByNamespace)
+                {
+                    var compilationUnit = SyntaxFactory.CompilationUnit()
+                        .AddUsings(SyntaxFactory.UsingDirective(SyntaxFactory.IdentifierName("System")))
+                        .AddMembers(
+                            SyntaxFactory.NamespaceDeclaration(SyntaxFactory.ParseName(e.Key))
+                                .AddMembers(e.Value.ToArray<MemberDeclarationSyntax>()))
+                        .NormalizeWhitespace();
+
+                    string simpleNamespace = e.Key.Substring("Windows.Win32.".Length);
+                    File.WriteAllText(
+                        Path.Combine(enumDirectory, $"{simpleNamespace}.manual.cs"),
+                        compilationUnit.ToFullString());
                 }
             }
 
@@ -186,7 +310,7 @@ namespace ScrapeDocs
             }
 
             Console.WriteLine("Analyzing and naming enums and collecting docs on their members...");
-            int constantsCount = AnalyzeEnums(results, documentedEnums);
+            int constantsCount = this.AnalyzeEnums(results, documentedEnums);
             Console.WriteLine($"Found docs for {constantsCount} constants.");
 
             Console.WriteLine("Writing results to \"{0}\"", this.outputPath);
@@ -302,15 +426,16 @@ namespace ScrapeDocs
                     docBuilder.Clear();
                 }
 
-                IReadOnlyDictionary<string, string?> ParseEnumTable()
+                IReadOnlyDictionary<string, (ulong? Value, string? Doc)> ParseEnumTable()
                 {
-                    var enums = new Dictionary<string, string?>();
+                    var enums = new Dictionary<string, (ulong? Value, string? Doc)>();
                     int state = 0;
                     const int StateReadingHeader = 0;
                     const int StateReadingName = 1;
-                    const int StateLookingForDocColumn = 2;
+                    const int StateLookingForDetail = 2;
                     const int StateReadingDocColumn = 3;
                     string? enumName = null;
+                    ulong? enumValue = null;
                     var docsBuilder = new StringBuilder();
                     while ((line = mdFileReader.ReadLine()) is object)
                     {
@@ -336,14 +461,32 @@ namespace ScrapeDocs
                                 if (m.Success)
                                 {
                                     enumName = m.Groups[1].Value;
-                                    state = StateLookingForDocColumn;
+                                    if (enumName == "0")
+                                    {
+                                        enumName = "None";
+                                        enumValue = 0;
+                                    }
+
+                                    state = StateLookingForDetail;
                                 }
 
                                 break;
 
-                            case 2:
+                            case StateLookingForDetail:
                                 // Looking for an enum row's doc column.
-                                if (line.StartsWith("<td", StringComparison.OrdinalIgnoreCase))
+                                m = EnumOrdinalValue.Match(line);
+                                if (m.Success)
+                                {
+                                    string value = m.Groups[1].Value;
+                                    bool hex = value.StartsWith("0x", StringComparison.OrdinalIgnoreCase);
+                                    if (hex)
+                                    {
+                                        value = value.Substring(2);
+                                    }
+
+                                    enumValue = ulong.Parse(value, hex ? NumberStyles.HexNumber : NumberStyles.Integer, CultureInfo.InvariantCulture);
+                                }
+                                else if (line.StartsWith("<td", StringComparison.OrdinalIgnoreCase))
                                 {
                                     state = StateReadingDocColumn;
                                 }
@@ -351,13 +494,14 @@ namespace ScrapeDocs
                                 {
                                     // The row ended before we found the doc column.
                                     state = StateReadingName;
-                                    enums.Add(enumName!, null);
+                                    enums.Add(enumName!, (enumValue, null));
                                     enumName = null;
+                                    enumValue = null;
                                 }
 
                                 break;
 
-                            case 3:
+                            case StateReadingDocColumn:
                                 // Reading the enum row's doc column.
                                 if (line.StartsWith("</td>", StringComparison.OrdinalIgnoreCase))
                                 {
@@ -366,10 +510,11 @@ namespace ScrapeDocs
                                     // Some docs are invalid in documenting the same enum multiple times.
                                     if (!enums.ContainsKey(enumName!))
                                     {
-                                        enums.Add(enumName!, docsBuilder.ToString().Trim());
+                                        enums.Add(enumName!, (enumValue, docsBuilder.ToString().Trim()));
                                     }
 
                                     enumName = null;
+                                    enumValue = null;
                                     docsBuilder.Clear();
                                     break;
                                 }
@@ -400,16 +545,26 @@ namespace ScrapeDocs
                             {
                                 if (line == "<table>")
                                 {
-                                    IReadOnlyDictionary<string, string?> enumNamesAndDocs = ParseEnumTable();
-                                    enumsByParameter ??= new Dictionary<string, DocEnum>();
-                                    enumsByParameter.Add(sectionName, new DocEnum(foundEnumIsFlags, enumNamesAndDocs));
+                                    IReadOnlyDictionary<string, (ulong? Value, string? Doc)> enumNamesAndDocs = ParseEnumTable();
+                                    if (enumNamesAndDocs.Count > 0)
+                                    {
+                                        enumsByParameter ??= new Dictionary<string, DocEnum>();
+                                        if (!enumsByParameter.ContainsKey(sectionName))
+                                        {
+                                            enumsByParameter.Add(sectionName, new DocEnum(foundEnumIsFlags, enumNamesAndDocs));
+                                        }
+                                    }
+
                                     lookForEnums = false;
                                 }
                             }
                             else
                             {
                                 foundEnum = line.Contains("of the following values", StringComparison.OrdinalIgnoreCase);
-                                foundEnumIsFlags = line.Contains("combination of", StringComparison.OrdinalIgnoreCase);
+                                foundEnumIsFlags = line.Contains("combination of", StringComparison.OrdinalIgnoreCase)
+                                    || line.Contains("zero or more of", StringComparison.OrdinalIgnoreCase)
+                                    || line.Contains("one or both of", StringComparison.OrdinalIgnoreCase)
+                                    || line.Contains("one or more of", StringComparison.OrdinalIgnoreCase);
                             }
                         }
 
@@ -439,7 +594,7 @@ namespace ScrapeDocs
                     }
                     else if (FieldHeaderPattern.Match(line) is Match { Success: true } fieldMatch)
                     {
-                        ParseSection(fieldMatch, fieldsMap);
+                        ParseSection(fieldMatch, fieldsMap, lookForEnums: true);
                     }
                     else if (RemarksHeaderPattern.Match(line) is Match { Success: true } remarksMatch)
                     {

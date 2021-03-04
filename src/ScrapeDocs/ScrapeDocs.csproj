@@ -7,6 +7,18 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="..\Microsoft.Windows.CsWin32\GeneratorUtilities.cs" Link="GeneratorUtilities.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="$(PkgMicrosoft_Windows_SDK_Win32Metadata)\Windows.Win32.winmd">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="3.8.0" />
+    <PackageReference Include="Microsoft.Windows.SDK.Win32Metadata" Version="$(MetadataVersion)" GeneratePathProperty="true" ExcludeAssets="all" />
     <PackageReference Include="YamlDotNet" Version="9.1.4" />
   </ItemGroup>
 

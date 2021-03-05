@@ -399,6 +399,8 @@ namespace Microsoft.Windows.Sdk
         internal struct __dwReserved_4
         {
             internal uint _0, _1, _2, _3;
+            /// <summary>Always <c>4</c>.</summary>
+            internal int Length => 4;
         }
     }
 ";
@@ -446,6 +448,8 @@ namespace Microsoft.Windows.Sdk
         internal struct __dwReserved_4
         {
             internal uint _0, _1, _2, _3;
+            /// <summary>Always <c>4</c>.</summary>
+            internal int Length => 4;
             /// <summary>
             /// Gets a ref to an individual element of the inline array.
             /// ⚠ Important ⚠: When this struct is on the stack, do not let the returned reference outlive the stack frame that defines it.

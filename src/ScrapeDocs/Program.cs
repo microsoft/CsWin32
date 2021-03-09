@@ -307,13 +307,13 @@ namespace ScrapeDocs
                 }
 
                 YamlSequenceNode methodNames = (YamlSequenceNode)yaml.Documents[0].RootNode["api_name"];
-                bool TryGetProperName(string searchFor, char? suffix, [NotNullWhen(true)] out string? match)
+                bool TryGetProperName(string searchFor, string? suffix, [NotNullWhen(true)] out string? match)
                 {
-                    if (suffix.HasValue)
+                    if (suffix is string)
                     {
-                        if (searchFor.EndsWith(suffix.Value))
+                        if (searchFor.EndsWith(suffix, StringComparison.Ordinal))
                         {
-                            searchFor = searchFor.Substring(0, searchFor.Length - 1);
+                            searchFor = searchFor.Substring(0, searchFor.Length - suffix.Length);
                         }
                         else
                         {
@@ -324,9 +324,9 @@ namespace ScrapeDocs
 
                     match = methodNames.Children.Cast<YamlScalarNode>().FirstOrDefault(c => string.Equals(c.Value?.Replace('.', '-'), searchFor, StringComparison.OrdinalIgnoreCase))?.Value;
 
-                    if (suffix.HasValue && match is object)
+                    if (suffix is string && match is object)
                     {
-                        match += char.ToUpper(suffix.Value, CultureInfo.InvariantCulture);
+                        match += suffix.ToUpper(CultureInfo.InvariantCulture);
                     }
 
                     return match is object;
@@ -336,8 +336,10 @@ namespace ScrapeDocs
 
                 // Some structures have filenames that include the W or A suffix when the content doesn't. So try some fuzzy matching.
                 if (!TryGetProperName(presumedMethodName, null, out string? properName) &&
-                    !TryGetProperName(presumedMethodName, 'a', out properName) &&
-                    !TryGetProperName(presumedMethodName, 'w', out properName))
+                    !TryGetProperName(presumedMethodName, "a", out properName) &&
+                    !TryGetProperName(presumedMethodName, "w", out properName) &&
+                    !TryGetProperName(presumedMethodName, "32", out properName) &&
+                    !TryGetProperName(presumedMethodName, "64", out properName))
                 {
                     Debug.WriteLine("WARNING: Could not find proper API name in: {0}", filePath);
                     return null;

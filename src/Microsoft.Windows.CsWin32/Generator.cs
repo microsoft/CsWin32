@@ -103,6 +103,8 @@ namespace Microsoft.Windows.CsWin32
         private static readonly IdentifierNameSyntax InlineArrayIndexerExtensionsClassName = IdentifierName("InlineArrayIndexerExtensions");
         private static readonly TypeSyntax SafeHandleTypeSyntax = IdentifierName("SafeHandle");
         private static readonly IdentifierNameSyntax IntPtrTypeSyntax = IdentifierName(nameof(IntPtr));
+        private static readonly AttributeListSyntax DefaultDllImportSearchPathsAttributeList = AttributeList().AddAttributes(
+            Attribute(IdentifierName("DefaultDllImportSearchPaths")).AddArgumentListArguments(AttributeArgument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(DllImportSearchPath)), IdentifierName(nameof(DllImportSearchPath.System32))))));
 
         private static readonly HashSet<string> StringTypeDefNames = new HashSet<string>(StringComparer.Ordinal)
         {
@@ -796,7 +798,9 @@ namespace Microsoft.Windows.CsWin32
                 }
 
                 MethodDeclarationSyntax methodDeclaration = MethodDeclaration(
-                    List<AttributeListSyntax>().Add(AttributeList().AddAttributes(DllImport(import, moduleName, entrypoint))),
+                    List<AttributeListSyntax>()
+                        .Add(AttributeList().AddAttributes(DllImport(import, moduleName, entrypoint)))
+                        .Add(DefaultDllImportSearchPathsAttributeList),
                     modifiers: TokenList(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.ExternKeyword)),
                     returnType,
                     explicitInterfaceSpecifier: null!,

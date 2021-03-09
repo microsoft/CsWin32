@@ -195,7 +195,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
-    public void BOOL_ReturnTypeBecomes_Boolean_InCOMInterface()
+    public void BOOL_ReturnTypeRemains_BOOL_InCOMInterface()
     {
         this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);
         Assert.True(this.generator.TryGenerate("ISpellCheckerFactory", CancellationToken.None));
@@ -203,7 +203,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.AssertNoDiagnostics();
         MethodDeclarationSyntax? method = this.FindGeneratedMethod("IsSupported").FirstOrDefault();
         Assert.NotNull(method);
-        Assert.Equal(SyntaxKind.BoolKeyword, Assert.IsType<PredefinedTypeSyntax>(method!.ParameterList.Parameters.Last().Type).Keyword.Kind());
+        Assert.Equal("BOOL", Assert.IsType<IdentifierNameSyntax>(method!.ParameterList.Parameters.Last().Type).Identifier.ValueText);
     }
 
     /// <summary>

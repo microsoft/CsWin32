@@ -18,7 +18,7 @@ unsafe
 
     spellCheckerFactory->IsSupported(
         "en-US",
-        out bool supported).ThrowOnFailure();
+        out BOOL supported).ThrowOnFailure();
 
     if (!supported)
     {

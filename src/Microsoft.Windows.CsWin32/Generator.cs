@@ -1928,17 +1928,6 @@ namespace Microsoft.Windows.CsWin32
                 baseTypeHandle = baseType.GetInterfaceImplementations().SingleOrDefault();
             }
 
-            Guid guid = Guid.Empty;
-            foreach (CustomAttributeHandle attHandle in typeDef.GetCustomAttributes())
-            {
-                var att = this.mr.GetCustomAttribute(attHandle);
-                if (this.IsAttribute(att, SystemRuntimeInteropServices, nameof(GuidAttribute)))
-                {
-                    var args = att.DecodeValue(this.customAttributeTypeProvider);
-                    guid = Guid.Parse((string)args.FixedArguments[0].Value!);
-                }
-            }
-
             IdentifierNameSyntax vtblFieldName = IdentifierName("lpVtbl");
             var members = new List<MemberDeclarationSyntax>();
             var vtblMembers = new List<MemberDeclarationSyntax>();
@@ -2045,12 +2034,40 @@ namespace Microsoft.Windows.CsWin32
                 .AddMembers(members.ToArray())
                 .AddModifiers(Token(this.Visibility), Token(SyntaxKind.UnsafeKeyword));
 
+            Guid guid = this.FindGuidFromAttribute(typeDef);
             if (guid != Guid.Empty)
             {
                 iface = iface.AddAttributeLists().AddAttributeLists(AttributeList().AddAttributes(GUID(guid)));
             }
 
             return iface;
+        }
+
+        private Guid FindGuidFromAttribute(TypeDefinition typeDef)
+        {
+            Guid guid = Guid.Empty;
+            foreach (CustomAttributeHandle attHandle in typeDef.GetCustomAttributes())
+            {
+                CustomAttribute att = this.mr.GetCustomAttribute(attHandle);
+                if (this.IsAttribute(att, InteropDecorationNamespace, nameof(GuidAttribute)))
+                {
+                    CustomAttributeValue<TypeSyntax> args = att.DecodeValue(this.customAttributeTypeProvider);
+                    guid = new Guid(
+                        (uint)args.FixedArguments[0].Value!,
+                        (ushort)args.FixedArguments[1].Value!,
+                        (ushort)args.FixedArguments[2].Value!,
+                        (byte)args.FixedArguments[3].Value!,
+                        (byte)args.FixedArguments[4].Value!,
+                        (byte)args.FixedArguments[5].Value!,
+                        (byte)args.FixedArguments[6].Value!,
+                        (byte)args.FixedArguments[7].Value!,
+                        (byte)args.FixedArguments[8].Value!,
+                        (byte)args.FixedArguments[9].Value!,
+                        (byte)args.FixedArguments[10].Value!);
+                }
+            }
+
+            return guid;
         }
 
         private DelegateDeclarationSyntax CreateInteropDelegate(TypeDefinition typeDef)
@@ -2164,17 +2181,7 @@ namespace Microsoft.Windows.CsWin32
                 result = result.AddAttributeLists(AttributeList().AddAttributes(StructLayout(typeDef.Attributes, layout)));
             }
 
-            Guid guid = Guid.Empty;
-            foreach (CustomAttributeHandle attHandle in typeDef.GetCustomAttributes())
-            {
-                CustomAttribute att = this.mr.GetCustomAttribute(attHandle);
-                if (this.IsAttribute(att, SystemRuntimeInteropServices, nameof(GuidAttribute)))
-                {
-                    var args = att.DecodeValue(this.customAttributeTypeProvider);
-                    guid = Guid.Parse((string)args.FixedArguments[0].Value!);
-                }
-            }
-
+            Guid guid = this.FindGuidFromAttribute(typeDef);
             if (guid != Guid.Empty)
             {
                 result = result.AddAttributeLists(AttributeList().AddAttributes(GUID(guid)));

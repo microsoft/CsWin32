@@ -1131,7 +1131,7 @@ namespace Microsoft.Windows.CsWin32
                             case "LSTATUS":
                                 this.TryGenerateConstant("ERROR_SUCCESS");
                                 ExpressionSyntax errorSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ConstantsClassName, IdentifierName("ERROR_SUCCESS"));
-                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, CastExpression(IdentifierName("LSTATUS"), errorSuccess));
+                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, CastExpression(IdentifierName("LSTATUS"), CastExpression(PredefinedType(Token(SyntaxKind.IntKeyword)), errorSuccess)));
                                 break;
                             case "NTSTATUS":
                                 // https://github.com/microsoft/win32metadata/issues/136

@@ -63,6 +63,18 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.metadataStream.Dispose();
     }
 
+    [Theory]
+    [InlineData("CREATE_ALWAYS", "FILE_CREATE_FLAGS")]
+    [InlineData("S_OK", null)]
+    [InlineData("__zz__not_defined", null)]
+    public void TryGetEnumName(string candidate, string? declaringEnum)
+    {
+        this.generator = new Generator(this.metadataStream, compilation: this.compilation, parseOptions: this.parseOptions);
+
+        Assert.Equal(declaringEnum is object, this.generator.TryGetEnumName(candidate, out string? actualDeclaringEnum));
+        Assert.Equal(declaringEnum, actualDeclaringEnum);
+    }
+
     [Fact]
     public void SimplestMethod()
     {

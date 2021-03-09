@@ -506,6 +506,68 @@ namespace Microsoft.Windows.CsWin32
         }
 
         /// <summary>
+        /// Gets the name of the declaring enum if a supplied value matches the name of an enum's value.
+        /// </summary>
+        /// <param name="enumValueName">A string that may match an enum value name.</param>
+        /// <param name="declaringEnum">Receives the name of the declaring enum if a match is found.</param>
+        /// <returns><see langword="true"/> if a match was found; otherwise <see langword="false"/>.</returns>
+        public bool TryGetEnumName(string enumValueName, [NotNullWhen(true)] out string? declaringEnum)
+        {
+            // First find the type reference for System.Enum
+            TypeReferenceHandle? enumTypeRefHandle = null;
+            foreach (TypeReferenceHandle typeRefHandle in this.mr.TypeReferences)
+            {
+                TypeReference typeRef = this.mr.GetTypeReference(typeRefHandle);
+                if (this.mr.StringComparer.Equals(typeRef.Name, nameof(Enum)) && this.mr.StringComparer.Equals(typeRef.Namespace, nameof(System)))
+                {
+                    enumTypeRefHandle = typeRefHandle;
+                    break;
+                }
+            }
+
+            Debug.Assert(enumTypeRefHandle.HasValue, "We always expect at least one enum.");
+            if (enumTypeRefHandle is null)
+            {
+                // No enums -> it couldn't be what the caller is looking for.
+                declaringEnum = null;
+                return false;
+            }
+
+            foreach (TypeDefinitionHandle typeDefHandle in this.mr.TypeDefinitions)
+            {
+                TypeDefinition typeDef = this.mr.GetTypeDefinition(typeDefHandle);
+                if (typeDef.BaseType.IsNil)
+                {
+                    continue;
+                }
+
+                if (typeDef.BaseType.Kind != HandleKind.TypeReference)
+                {
+                    continue;
+                }
+
+                var baseTypeHandle = (TypeReferenceHandle)typeDef.BaseType;
+                if (!baseTypeHandle.Equals(enumTypeRefHandle.Value))
+                {
+                    continue;
+                }
+
+                foreach (FieldDefinitionHandle fieldDefHandle in typeDef.GetFields())
+                {
+                    FieldDefinition fieldDef = this.mr.GetFieldDefinition(fieldDefHandle);
+                    if (this.mr.StringComparer.Equals(fieldDef.Name, enumValueName))
+                    {
+                        declaringEnum = this.mr.GetString(typeDef.Name);
+                        return true;
+                    }
+                }
+            }
+
+            declaringEnum = null;
+            return false;
+        }
+
+        /// <summary>
         /// Generates a projection of all extern methods and their supporting types.
         /// </summary>
         /// <param name="cancellationToken">A cancellation token.</param>

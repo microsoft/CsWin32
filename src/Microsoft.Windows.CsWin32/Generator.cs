@@ -1533,11 +1533,11 @@ namespace Microsoft.Windows.CsWin32
         {
             if (this.IsDelegateReference(parameter.Type as IdentifierNameSyntax, out TypeDefinition delegateTypeDef))
             {
-                return FunctionPointerParameter(this.FunctionPointer(delegateTypeDef, this.signatureTypeProvider));
+                return FunctionPointerParameter(this.FunctionPointer(delegateTypeDef));
             }
             else if (parameter.Type is PointerTypeSyntax { ElementType: IdentifierNameSyntax idName } && this.IsDelegateReference(idName, out TypeDefinition delegateTypeDef2))
             {
-                return FunctionPointerParameter(PointerType(this.FunctionPointer(delegateTypeDef2, this.signatureTypeProvider)));
+                return FunctionPointerParameter(PointerType(this.FunctionPointer(delegateTypeDef2)));
             }
 
             return parameter;
@@ -1894,7 +1894,7 @@ namespace Microsoft.Windows.CsWin32
                 string methodName = this.mr.GetString(methodDefinition.Name);
                 IdentifierNameSyntax innerMethodName = IdentifierName($"{methodName}_{methodCounter}");
 
-                MethodSignature<TypeSyntax> signature = methodDefinition.DecodeSignature(this.signatureTypeProvider, null);
+                MethodSignature<TypeSyntax> signature = methodDefinition.DecodeSignature(this.signatureTypeProviderNoMarshaledTypes, null);
                 CustomAttributeHandleCollection? returnTypeAttributes = this.GetReturnTypeCustomAttributes(methodDefinition);
 
                 TypeSyntax returnType = signature.ReturnType;
@@ -3058,7 +3058,7 @@ namespace Microsoft.Windows.CsWin32
         {
             if (originalType is PointerTypeSyntax { ElementType: IdentifierNameSyntax idName } && this.IsDelegateReference(idName, out TypeDefinition delegateTypeDef))
             {
-                return (this.FunctionPointer(delegateTypeDef, this.signatureTypeProvider), null);
+                return (this.FunctionPointer(delegateTypeDef), null);
             }
 
             if (!isReturnOrOutParam && originalType.HasAnnotation(IsSafeHandleTypeAnnotation))
@@ -3261,23 +3261,23 @@ namespace Microsoft.Windows.CsWin32
             // If the field is a delegate type, we have to replace that with a native function pointer to avoid the struct becoming a 'managed type'.
             if (originalType is PointerTypeSyntax { ElementType: IdentifierNameSyntax idName } && this.IsDelegateReference(idName, out TypeDefinition typeDef))
             {
-                return (this.FunctionPointer(typeDef, this.signatureTypeProviderNoMarshaledTypes), default);
+                return (this.FunctionPointer(typeDef), default);
             }
             else if (originalType is IdentifierNameSyntax idName2 && this.IsDelegateReference(idName2, out typeDef))
             {
-                return (this.FunctionPointer(typeDef, this.signatureTypeProviderNoMarshaledTypes), default);
+                return (this.FunctionPointer(typeDef), default);
             }
 
             return (originalType, default);
         }
 
-        private FunctionPointerTypeSyntax FunctionPointer(TypeDefinition delegateType, SignatureTypeProvider signatureTypeProvider)
+        private FunctionPointerTypeSyntax FunctionPointer(TypeDefinition delegateType)
         {
             CustomAttribute ufpAtt = delegateType.GetCustomAttributes().Select(ah => this.mr.GetCustomAttribute(ah)).Single(a => this.IsAttribute(a, SystemRuntimeInteropServices, nameof(UnmanagedFunctionPointerAttribute)));
             var attArgs = ufpAtt.DecodeValue(this.customAttributeTypeProvider);
             CallingConvention callingConvention = (CallingConvention)attArgs.FixedArguments[0].Value!;
 
-            this.GetSignatureForDelegate(delegateType, signatureTypeProvider, out MethodDefinition invokeMethodDef, out MethodSignature<TypeSyntax> signature);
+            this.GetSignatureForDelegate(delegateType, this.signatureTypeProviderNoMarshaledTypes, out MethodDefinition invokeMethodDef, out MethodSignature<TypeSyntax> signature);
             return this.FunctionPointer(CallingConvention.StdCall, signature, this.mr.GetString(delegateType.Name));
         }
 

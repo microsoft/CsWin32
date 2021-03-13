@@ -8,7 +8,10 @@
   "properties": {
     "$schema": {
       "title": "The URL for the schema used by this document.",
-      "type": "string"
+      "type": "string",
+      "examples": [
+        "https://aka.ms/CsWin32.schema.json"
+      ]
     },
     "namespace": {
       "title": "Namespace for generated code.",
@@ -18,6 +21,26 @@
         "PInvoke"
       ],
       "pattern": "^\\w+(?:\\.\\w+)*$"
+    },
+    "comInterop": {
+      "title": "Details around code generation for COM interop",
+      "type": "object",
+      "properties": {
+        "structsInsteadOfInterfaces": {
+          "title": "Generate structs instead of interfaces, allowing 0 GC pressure and exact lifetime management.",
+          "type": "boolean",
+          "default": false
+        },
+        "preserveSigMethods": {
+          "title": "Identifies methods or interfaces that should be generated as [PreserveSig].",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "uniqueItems": true,
+            "pattern": "^[\\w_]+(?:\\.[\\w_]+)?$"
+          }
+        }
+      }
     },
     "wideCharOnly": {
       "title": "Omit ANSI functions and remove `W` suffix from UTF-16 functions.",

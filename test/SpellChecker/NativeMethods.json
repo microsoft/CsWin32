@@ -1,9 +1,8 @@
 ﻿{
   "$schema": "..\\..\\src\\Microsoft.Windows.CsWin32\\settings.schema.json",
-  "emitSingleFile": true,
   "comInterop": {
     "preserveSigMethods": [
-      "IEnumDebugPropertyInfo.Next"
+      "IEnumSpellingError.Next"
     ]
   }
 }

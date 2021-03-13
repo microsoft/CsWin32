@@ -11,25 +11,10 @@ using Microsoft.Windows.Sdk;
 /// </summary>
 internal static unsafe class GeneratedForm
 {
-    private static void IEnumDebugPropertyInfo(IEnumDebugPropertyInfo* info)
+    private static void IEnumDebugPropertyInfo(IEnumDebugPropertyInfo info)
     {
-        Span<DebugPropertyInfo> span = stackalloc DebugPropertyInfo[2];
-        HRESULT result = info->Next(span, out uint initialized);
-        result = info->Clone(out IEnumDebugPropertyInfo* ppepi);
-    }
-
-    private static void IUnknown(IUnknown* pUnk)
-    {
-        HRESULT hr = pUnk->QueryInterface(Guid.NewGuid(), out void* ppvObject);
-        uint c = pUnk->AddRef();
-        uint r = pUnk->Release();
-    }
-
-    private static void IDispatch(IDispatch* pUnk)
-    {
-        HRESULT hr = pUnk->QueryInterface(Guid.NewGuid(), out void* ppvObject);
-        uint c = pUnk->AddRef();
-        uint r = pUnk->Release();
-        HRESULT gti = pUnk->GetTypeInfo(0u, 0u, out ITypeInfo* ppTInfo);
+        Span<DebugPropertyInfo> span = new DebugPropertyInfo[2];
+        HRESULT result = info.Next(span, out uint initialized);
+        result = info.Clone(out IEnumDebugPropertyInfo ppepi);
     }
 }

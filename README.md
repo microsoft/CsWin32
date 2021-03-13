@@ -78,7 +78,7 @@ Specifying the `$schema` property adds completions, descriptions and validation 
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/microsoft/CsWin32/main/src/Microsoft.Windows.CsWin32/settings.schema.json",
+  "$schema": "https://aka.ms/CsWin32.schema.json",
   "emitSingleFile": false
 }
 ```

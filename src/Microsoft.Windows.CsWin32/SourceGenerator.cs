@@ -133,7 +133,7 @@ namespace Microsoft.Windows.CsWin32
 
                 name = name.Trim();
                 var location = Location.Create(nativeMethodsTxtFile.Path, line.Span, nativeMethodsTxt.Lines.GetLinePositionSpan(line.Span));
-                if (Generator.BannedAPIs.TryGetValue(name, out string? reason))
+                if (generator.BannedAPIs.TryGetValue(name, out string? reason))
                 {
                     context.ReportDiagnostic(Diagnostic.Create(BannedApi, location, reason));
                 }

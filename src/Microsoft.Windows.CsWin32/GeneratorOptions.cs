@@ -4,6 +4,8 @@
 namespace Microsoft.Windows.CsWin32
 {
     using System;
+    using System.Collections.Immutable;
+    using System.Runtime.InteropServices;
 
     /// <summary>
     /// Describes the options that feed into code generation.
@@ -39,6 +41,11 @@ namespace Microsoft.Windows.CsWin32
         public bool Public { get; init; }
 
         /// <summary>
+        /// Gets options related to COM interop.
+        /// </summary>
+        public ComInteropOptions ComInterop { get; init; } = new ComInteropOptions();
+
+        /// <summary>
         /// Throws an exception when this instance is not initialized with a valid set of values.
         /// </summary>
         /// <exception cref="InvalidOperationException">Thrown when some setting is invalid.</exception>
@@ -48,6 +55,25 @@ namespace Microsoft.Windows.CsWin32
             {
                 throw new InvalidOperationException("The namespace must be set.");
             }
+        }
+
+        /// <summary>
+        /// Options for COM interop.
+        /// </summary>
+#pragma warning disable CA1034 // Nested types should not be visible
+        public record ComInteropOptions
+#pragma warning restore CA1034 // Nested types should not be visible
+        {
+            /// <summary>
+            /// Gets a value indicating whether COM interfaces should be generated as structs instead of interfaces.
+            /// </summary>
+            /// <value>The default value is <see langword="false"/>.</value>
+            public bool StructsInsteadOfInterfaces { get; init; }
+
+            /// <summary>
+            /// Gets an array of "interface.method" strings that identify methods that should be generated with <see cref="PreserveSigAttribute"/>.
+            /// </summary>
+            public ImmutableArray<string> PreserveSigMethods { get; init; } = ImmutableArray.Create<string>();
         }
     }
 }

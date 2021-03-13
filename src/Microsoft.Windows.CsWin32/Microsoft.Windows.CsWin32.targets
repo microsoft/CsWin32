@@ -8,7 +8,7 @@
           BeforeTargets="CoreCompile"
           Inputs="@(ScraperTool)"
           Outputs="@(YamlDocOutputPath)"
-          Condition=" '$(DesignTimeBuild)' != 'true' ">
+          Condition=" false and '$(DesignTimeBuild)' != 'true' ">
     <Message Importance="high" Text="Regenerating @(YamlDocOutputPath->'%(FullPath)'). This may take a few minutes..." />
     <Exec Command="dotnet @(ScraperTool) ../../ext/sdk-api/sdk-api-src/content @(YamlDocOutputPath)"
           StandardOutputImportance="high"/>

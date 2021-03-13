@@ -3373,7 +3373,7 @@ namespace Microsoft.Windows.CsWin32
                 IdentifierName(GetHiddenFieldName(fieldName)));
 
             // If the field is a fixed length array, we have to work some code gen magic since C# does not allow those.
-            if (originalType is ArrayTypeSyntax arrayType && arrayType.RankSpecifiers.Count > 0)
+            if (originalType is ArrayTypeSyntax arrayType && arrayType.RankSpecifiers.Count > 0 && arrayType.RankSpecifiers[0].Sizes.Count == 1)
             {
                 int length = int.Parse(((LiteralExpressionSyntax)arrayType.RankSpecifiers[0].Sizes[0]).Token.ValueText, CultureInfo.InvariantCulture);
                 TypeSyntax elementType = arrayType.ElementType;
@@ -3507,7 +3507,7 @@ namespace Microsoft.Windows.CsWin32
             // then we must type it as an array.
             if (fieldTypeHandleInfo is PointerTypeHandleInfo ptr3 && this.IsManagedType(ptr3.ElementType))
             {
-                return (ArrayType(ptr3.ElementType.ToTypeSyntax(typeSettings, null).Type), default);
+                return (ArrayType(ptr3.ElementType.ToTypeSyntax(typeSettings, null).Type).AddRankSpecifiers(ArrayRankSpecifier()), default);
             }
 
             return (originalType, default);
@@ -3718,7 +3718,8 @@ namespace Microsoft.Windows.CsWin32
                     }
                     else if (this.mr.StringComparer.Equals(baseName, nameof(MulticastDelegate)) && this.mr.StringComparer.Equals(baseNamespace, nameof(System)))
                     {
-                        return true;
+                        // Delegates appear as unmanaged function pointers when using structs instead of COM interfaces.
+                        return !this.options.ComInterop.StructsInsteadOfInterfaces;
                     }
 
                     throw new NotSupportedException();

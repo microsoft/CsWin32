@@ -49,7 +49,11 @@ namespace Microsoft.Windows.CsWin32
                 }
                 else
                 {
-                    throw new NotSupportedException("Pointer to marshaled value.");
+                    // We can replace a pointer to a struct with a managed equivalent by changing the pointer to an array.
+                    // We only want to enter this branch for struct fields, since method parameters can use in/out/ref modifiers.
+                    return new TypeSyntaxAndMarshaling(
+                        ArrayType(elementSyntax).AddRankSpecifiers(ArrayRankSpecifier()),
+                        marshalAs is object ? new MarshalAsAttribute(UnmanagedType.LPArray) { ArraySubType = marshalAs.Value } : null);
                 }
             }
 

@@ -1543,11 +1543,15 @@ namespace Microsoft.Windows.CsWin32
 
             FunctionPointerParameterListSyntax parametersList = FunctionPointerParameterList();
 
-            int parameterIndex = 0;
             foreach (ParameterHandle parameterHandle in methodDefinition.GetParameters())
             {
-                var parameterTypeInfo = signature.ParameterTypes[parameterIndex++];
                 var parameter = this.mr.GetParameter(parameterHandle);
+                if (parameter.SequenceNumber == 0)
+                {
+                    continue;
+                }
+
+                var parameterTypeInfo = signature.ParameterTypes[parameter.SequenceNumber - 1];
                 var parameterType = parameterTypeInfo.ToTypeSyntax(this.functionPointerTypeSettings, parameter.GetCustomAttributes());
                 parametersList = parametersList.AddParameters(this.TranslateDelegateToFunctionPointer(FunctionPointerParameter(parameterType.GetUnmarshaledType())));
             }
@@ -3516,7 +3520,7 @@ namespace Microsoft.Windows.CsWin32
             CallingConvention callingConvention = (CallingConvention)attArgs.FixedArguments[0].Value!;
 
             this.GetSignatureForDelegate(delegateType, out MethodDefinition invokeMethodDef, out MethodSignature<TypeHandleInfo> signature, out CustomAttributeHandleCollection? returnTypeAttributes);
-            if (returnTypeAttributes is object)
+            if (returnTypeAttributes?.Count > 0)
             {
                 throw new NotSupportedException("Marshaling is not supported for function pointers.");
             }

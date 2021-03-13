@@ -1957,7 +1957,7 @@ namespace Microsoft.Windows.CsWin32
         /// <summary>
         /// Attempts to translate a <see cref="TypeReferenceHandle"/> to a <see cref="TypeDefinitionHandle"/>.
         /// </summary>
-        private bool TryGetTypeDefHandle(TypeReferenceHandle typeRefHandle, out TypeDefinitionHandle typeDefHandle)
+        internal bool TryGetTypeDefHandle(TypeReferenceHandle typeRefHandle, out TypeDefinitionHandle typeDefHandle)
         {
             if (this.refToDefCache.TryGetValue(typeRefHandle, out typeDefHandle))
             {
@@ -3513,7 +3513,7 @@ namespace Microsoft.Windows.CsWin32
             return (originalType, default);
         }
 
-        private FunctionPointerTypeSyntax FunctionPointer(TypeDefinition delegateType)
+        internal FunctionPointerTypeSyntax FunctionPointer(TypeDefinition delegateType)
         {
             CustomAttribute ufpAtt = delegateType.GetCustomAttributes().Select(ah => this.mr.GetCustomAttribute(ah)).Single(a => this.IsAttribute(a, SystemRuntimeInteropServices, nameof(UnmanagedFunctionPointerAttribute)));
             var attArgs = ufpAtt.DecodeValue(CustomAttributeTypeProvider.Instance);
@@ -3528,7 +3528,7 @@ namespace Microsoft.Windows.CsWin32
             return this.FunctionPointer(invokeMethodDef, signature, this.mr.GetString(delegateType.Name));
         }
 
-        private bool IsDelegate(TypeDefinition typeDef) => (typeDef.Attributes & TypeAttributes.Class) == TypeAttributes.Class && typeDef.BaseType.Kind == HandleKind.TypeReference && this.mr.StringComparer.Equals(this.mr.GetTypeReference((TypeReferenceHandle)typeDef.BaseType).Name, nameof(MulticastDelegate));
+        internal bool IsDelegate(TypeDefinition typeDef) => (typeDef.Attributes & TypeAttributes.Class) == TypeAttributes.Class && typeDef.BaseType.Kind == HandleKind.TypeReference && this.mr.StringComparer.Equals(this.mr.GetTypeReference((TypeReferenceHandle)typeDef.BaseType).Name, nameof(MulticastDelegate));
 
         private bool IsTypeDefStruct(IdentifierNameSyntax? identifierName)
         {

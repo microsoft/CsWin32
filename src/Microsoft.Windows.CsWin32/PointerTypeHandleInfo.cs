@@ -30,7 +30,7 @@ namespace Microsoft.Windows.CsWin32
                         xIn && !xOut ? Generator.MakeReadOnlySpanOfT(elementSyntax) : Generator.MakeSpanOfT(elementSyntax),
                         marshalAs is object ? new MarshalAsAttribute(UnmanagedType.LPArray) { ArraySubType = marshalAs.Value } : null);
                 }
-                else
+                else if (xIn || xOut)
                 {
                     // But we can use a modifier to emulate a pointer and thereby enable marshaling.
                     return new TypeSyntaxAndMarshaling(elementSyntax, marshalAs)
@@ -38,13 +38,45 @@ namespace Microsoft.Windows.CsWin32
                         ParameterModifier = Token(
                             xIn && xOut ? SyntaxKind.RefKeyword :
                             xIn ? SyntaxKind.InKeyword :
-                            xOut ? SyntaxKind.OutKeyword :
-                            throw new NotSupportedException("Pointer to marshaled value.")),
+                            SyntaxKind.OutKeyword),
                     };
+                }
+                else if (inputs.Generator is object
+                    && this.TryGetElementTypeDefinition(inputs.Generator, out TypeDefinition elementTypeDef)
+                    && inputs.Generator?.IsDelegate(elementTypeDef) is true)
+                {
+                    return new TypeSyntaxAndMarshaling(inputs.Generator.FunctionPointer(elementTypeDef));
+                }
+                else
+                {
+                    throw new NotSupportedException("Pointer to marshaled value.");
                 }
             }
 
             return new TypeSyntaxAndMarshaling(PointerType(elementSyntax));
+        }
+
+        private bool TryGetElementTypeDefinition(Generator generator, out TypeDefinition typeDef)
+        {
+            if (this.ElementType is HandleTypeHandleInfo handleElement)
+            {
+                if (handleElement.Handle.Kind == HandleKind.TypeReference)
+                {
+                    if (generator.TryGetTypeDefHandle((TypeReferenceHandle)handleElement.Handle, out TypeDefinitionHandle tdr))
+                    {
+                        typeDef = generator.Reader.GetTypeDefinition(tdr);
+                        return true;
+                    }
+                }
+                else if (handleElement.Handle.Kind == HandleKind.TypeDefinition)
+                {
+                    typeDef = generator.Reader.GetTypeDefinition((TypeDefinitionHandle)handleElement.Handle);
+                    return true;
+                }
+            }
+
+            typeDef = default;
+            return false;
         }
     }
 }

@@ -34,17 +34,22 @@ namespace Microsoft.Windows.CsWin32
         internal override TypeSyntaxAndMarshaling ToTypeSyntax(TypeSyntaxSettings inputs, CustomAttributeHandleCollection? customAttributes, ParameterAttributes parameterAttributes = default)
         {
             NameSyntax? nameSyntax;
-            bool? isInterface = null;
+            bool isInterface;
+            bool isNonCOMConformingInterface;
             switch (this.Handle.Kind)
             {
                 case HandleKind.TypeDefinition:
                     TypeDefinition td = this.reader.GetTypeDefinition((TypeDefinitionHandle)this.Handle);
                     nameSyntax = inputs.QualifyNames ? GetNestingQualifiedName(this.reader, td) : IdentifierName(this.reader.GetString(td.Name));
                     isInterface = (td.Attributes & TypeAttributes.Interface) == TypeAttributes.Interface;
+                    isNonCOMConformingInterface = isInterface && inputs.Generator?.IsNonCOMInterface(td) is true;
                     break;
                 case HandleKind.TypeReference:
-                    TypeReference tr = this.reader.GetTypeReference((TypeReferenceHandle)this.Handle);
+                    var trh = (TypeReferenceHandle)this.Handle;
+                    TypeReference tr = this.reader.GetTypeReference(trh);
                     nameSyntax = inputs.QualifyNames ? GetNestingQualifiedName(this.reader, tr) : IdentifierName(this.reader.GetString(tr.Name));
+                    isInterface = inputs.Generator?.IsInterface(trh) is true;
+                    isNonCOMConformingInterface = isInterface && inputs.Generator?.IsNonCOMInterface(trh) is true;
                     break;
                 default:
                     throw new NotSupportedException("Unrecognized handle type.");
@@ -90,7 +95,7 @@ namespace Microsoft.Windows.CsWin32
 
             if (isInterface is true)
             {
-                syntax = inputs.UseComInterfaces ? syntax.WithAdditionalAnnotations(Generator.IsManagedTypeAnnotation) : PointerType(syntax);
+                syntax = inputs.UseComInterfaces && !isNonCOMConformingInterface ? syntax.WithAdditionalAnnotations(Generator.IsManagedTypeAnnotation) : PointerType(syntax);
             }
 
             return new TypeSyntaxAndMarshaling(syntax);

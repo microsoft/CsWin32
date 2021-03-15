@@ -240,8 +240,6 @@ namespace Microsoft.Windows.CsWin32
             "CS1658", // C# bug: https://github.com/microsoft/CsWin32/issues/24
         };
 
-        private static readonly AttributeSyntax InAttributeSyntax = Attribute(IdentifierName("In"));
-        private static readonly AttributeSyntax OutAttributeSyntax = Attribute(IdentifierName("Out"));
         private static readonly AttributeSyntax OptionalAttributeSyntax = Attribute(IdentifierName("Optional"));
         private static readonly AttributeSyntax FlagsAttributeSyntax = Attribute(IdentifierName("Flags"));
         private static readonly AttributeSyntax FieldOffsetAttributeSyntax = Attribute(IdentifierName("FieldOffset"));
@@ -2055,10 +2053,14 @@ namespace Microsoft.Windows.CsWin32
                 baseTypeHandle = baseType.GetInterfaceImplementations().SingleOrDefault();
             }
 
-            return this.options.ComInterop.StructsInsteadOfInterfaces
+            return this.options.ComInterop.StructsInsteadOfInterfaces || this.IsNonCOMInterface(typeDef)
                 ? this.DeclareInterfaceAsStruct(typeDef, ifaceName, baseTypes)
                 : this.DeclareInterfaceAsInterface(typeDef, ifaceName, baseTypes);
         }
+
+        internal bool IsNonCOMInterface(TypeDefinition interfaceTypeDef) => !interfaceTypeDef.GetInterfaceImplementations().Any() && !this.mr.StringComparer.Equals(interfaceTypeDef.Name, "IUnknown");
+
+        internal bool IsNonCOMInterface(TypeReferenceHandle interfaceTypeRefHandle) => this.TryGetTypeDefHandle(interfaceTypeRefHandle, out TypeDefinitionHandle tdh) && this.IsNonCOMInterface(this.mr.GetTypeDefinition(tdh));
 
         private TypeDeclarationSyntax DeclareInterfaceAsStruct(TypeDefinition typeDef, IdentifierNameSyntax ifaceName, Stack<TypeDefinitionHandle> baseTypes)
         {
@@ -2156,9 +2158,15 @@ namespace Microsoft.Windows.CsWin32
             members.Add(FieldDeclaration(VariableDeclaration(PointerType(IdentifierName(vtblStruct.Identifier))).AddVariables(VariableDeclarator(vtblFieldName.Identifier))).AddModifiers(Token(SyntaxKind.PrivateKeyword)));
 
             StructDeclarationSyntax iface = StructDeclaration(ifaceName.Identifier)
-                .AddAttributeLists(AttributeList().AddAttributes(GUID(this.FindGuidFromAttribute(typeDef))))
                 .AddModifiers(Token(this.Visibility), Token(SyntaxKind.UnsafeKeyword))
                 .AddMembers(members.ToArray());
+
+            Guid guid = this.FindGuidFromAttribute(typeDef);
+            if (guid != Guid.Empty)
+            {
+                iface = iface
+                    .AddAttributeLists(AttributeList().AddAttributes(GUID(guid)));
+            }
 
             return iface;
         }
@@ -3675,7 +3683,7 @@ namespace Microsoft.Windows.CsWin32
                 {
                     if ((typeDef.Attributes & TypeAttributes.Interface) == TypeAttributes.Interface)
                     {
-                        return !this.options.ComInterop.StructsInsteadOfInterfaces;
+                        return !this.options.ComInterop.StructsInsteadOfInterfaces && !this.IsNonCOMInterface(typeDef);
                     }
 
                     this.GetBaseTypeInfo(typeDef, out StringHandle baseName, out StringHandle baseNamespace);

@@ -245,6 +245,21 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     }
 
     [Theory, PairwiseData]
+    public void NonCOMInterfaceReferences(bool comStructs)
+    {
+        var options = DefaultTestGeneratorOptions with { ComInterop = new GeneratorOptions.ComInteropOptions { StructsInsteadOfInterfaces = comStructs } };
+        this.generator = new Generator(this.metadataStream, options, this.compilation, this.parseOptions);
+        const string methodName = "D3DCompile"; // A method whose signature references non-COM interface ID3DInclude
+        Assert.True(this.generator.TryGenerate(methodName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        // The generated methods MUST reference the "interface" (which must actually be generated as a struct) by pointer.
+        Assert.Contains(this.FindGeneratedType("ID3DInclude"), t => t is StructDeclarationSyntax);
+        Assert.All(this.FindGeneratedMethod(methodName), m => Assert.True(m.ParameterList.Parameters[4].Type is PointerTypeSyntax { ElementType: IdentifierNameSyntax { Identifier: { ValueText: "ID3DInclude" } } }));
+    }
+
+    [Theory, PairwiseData]
     public void BOOL_ReturnType_InCOMInterface(bool comStructs)
     {
         var options = DefaultTestGeneratorOptions with { ComInterop = new GeneratorOptions.ComInteropOptions { StructsInsteadOfInterfaces = comStructs } };

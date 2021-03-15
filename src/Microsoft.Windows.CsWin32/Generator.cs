@@ -1559,8 +1559,7 @@ namespace Microsoft.Windows.CsWin32
             var returnValue = signature.ReturnType.ToTypeSyntax(this.functionPointerTypeSettings, this.GetReturnTypeCustomAttributes(methodDefinition));
             parametersList = parametersList.AddParameters(this.TranslateDelegateToFunctionPointer(FunctionPointerParameter(returnValue.GetUnmarshaledType())));
 
-            return FunctionPointerType(callingConventionSyntax, parametersList)
-                .WithAdditionalAnnotations(new SyntaxAnnotation(OriginalDelegateAnnotation, delegateName));
+            return FunctionPointerType(callingConventionSyntax, parametersList);
         }
 
         private FunctionPointerParameterSyntax TranslateDelegateToFunctionPointer(FunctionPointerParameterSyntax parameter)
@@ -1676,29 +1675,7 @@ namespace Microsoft.Windows.CsWin32
             try
             {
                 StringHandle baseTypeName, baseTypeNamespace;
-                if (typeDef.BaseType.IsNil)
-                {
-                    baseTypeName = default;
-                    baseTypeNamespace = default;
-                }
-                else
-                {
-                    switch (typeDef.BaseType.Kind)
-                    {
-                        case HandleKind.TypeReference:
-                            TypeReference baseTypeRef = this.mr.GetTypeReference((TypeReferenceHandle)typeDef.BaseType);
-                            baseTypeName = baseTypeRef.Name;
-                            baseTypeNamespace = baseTypeRef.Namespace;
-                            break;
-                        case HandleKind.TypeDefinition:
-                            TypeDefinition baseTypeDef = this.mr.GetTypeDefinition((TypeDefinitionHandle)typeDef.BaseType);
-                            baseTypeName = baseTypeDef.Name;
-                            baseTypeNamespace = baseTypeDef.Namespace;
-                            break;
-                        default:
-                            throw new NotSupportedException("Unsupported base type handle: " + typeDef.BaseType.Kind);
-                    }
-                }
+                this.GetBaseTypeInfo(typeDef, out baseTypeName, out baseTypeNamespace);
 
                 MemberDeclarationSyntax? typeDeclaration;
 
@@ -1715,7 +1692,7 @@ namespace Microsoft.Windows.CsWin32
                     }
                     else
                     {
-                        StructDeclarationSyntax structDeclaration = this.DeclareInteropStruct(typeDef);
+                        StructDeclarationSyntax structDeclaration = this.DeclareStruct(typeDef);
 
                         // Proactively generate all nested types as well.
                         NameSyntax nestedDeclaringType = declaringType is null ? IdentifierName(name) : QualifiedName(declaringType, IdentifierName(name));
@@ -1733,11 +1710,11 @@ namespace Microsoft.Windows.CsWin32
                 else if (this.mr.StringComparer.Equals(baseTypeName, nameof(Enum)) && this.mr.StringComparer.Equals(baseTypeNamespace, nameof(System)))
                 {
                     // Consider reusing .NET types like FILE_SHARE_FLAGS -> System.IO.FileShare
-                    typeDeclaration = this.DeclareInteropEnum(typeDef);
+                    typeDeclaration = this.DeclareEnum(typeDef);
                 }
                 else if (this.mr.StringComparer.Equals(baseTypeName, nameof(MulticastDelegate)) && this.mr.StringComparer.Equals(baseTypeNamespace, nameof(System)))
                 {
-                    typeDeclaration = this.DeclareInteropDelegate(typeDef);
+                    typeDeclaration = this.DeclareDelegate(typeDef);
                 }
                 else
                 {
@@ -1750,6 +1727,33 @@ namespace Microsoft.Windows.CsWin32
             catch (Exception ex)
             {
                 throw new GenerationFailedException("Failed to generate " + this.mr.GetString(typeDef.Name), ex);
+            }
+        }
+
+        internal void GetBaseTypeInfo(TypeDefinition typeDef, out StringHandle baseTypeName, out StringHandle baseTypeNamespace)
+        {
+            if (typeDef.BaseType.IsNil)
+            {
+                baseTypeName = default;
+                baseTypeNamespace = default;
+            }
+            else
+            {
+                switch (typeDef.BaseType.Kind)
+                {
+                    case HandleKind.TypeReference:
+                        TypeReference baseTypeRef = this.mr.GetTypeReference((TypeReferenceHandle)typeDef.BaseType);
+                        baseTypeName = baseTypeRef.Name;
+                        baseTypeNamespace = baseTypeRef.Namespace;
+                        break;
+                    case HandleKind.TypeDefinition:
+                        TypeDefinition baseTypeDef = this.mr.GetTypeDefinition((TypeDefinitionHandle)typeDef.BaseType);
+                        baseTypeName = baseTypeDef.Name;
+                        baseTypeNamespace = baseTypeDef.Namespace;
+                        break;
+                    default:
+                        throw new NotSupportedException("Unsupported base type handle: " + typeDef.BaseType.Kind);
+                }
             }
         }
 
@@ -1957,6 +1961,9 @@ namespace Microsoft.Windows.CsWin32
         /// <summary>
         /// Attempts to translate a <see cref="TypeReferenceHandle"/> to a <see cref="TypeDefinitionHandle"/>.
         /// </summary>
+        /// <param name="typeRefHandle">The reference handle.</param>
+        /// <param name="typeDefHandle">Receives the type def handle, if one was discovered.</param>
+        /// <returns><see langword="true"/> if a TypeDefinition was found; otherwise <see langword="false"/>.</returns>
         internal bool TryGetTypeDefHandle(TypeReferenceHandle typeRefHandle, out TypeDefinitionHandle typeDefHandle)
         {
             if (this.refToDefCache.TryGetValue(typeRefHandle, out typeDefHandle))
@@ -1965,6 +1972,8 @@ namespace Microsoft.Windows.CsWin32
             }
 
             var typeRef = this.mr.GetTypeReference(typeRefHandle);
+
+            // PERF: check that the ResolutionScope is Module before proceeding.
             foreach (TypeDefinitionHandle tdh in this.mr.TypeDefinitions)
             {
                 TypeDefinition typeDef = this.mr.GetTypeDefinition(tdh);
@@ -2292,8 +2301,13 @@ namespace Microsoft.Windows.CsWin32
             return guid;
         }
 
-        private DelegateDeclarationSyntax DeclareInteropDelegate(TypeDefinition typeDef)
+        private DelegateDeclarationSyntax DeclareDelegate(TypeDefinition typeDef)
         {
+            if (this.options.ComInterop.StructsInsteadOfInterfaces)
+            {
+                throw new NotSupportedException("Delegates are not declared while in all-structs mode.");
+            }
+
             string name = this.mr.GetString(typeDef.Name);
             TypeSyntaxSettings typeSettings = this.delegateSignatureTypeSettings;
 
@@ -2331,7 +2345,7 @@ namespace Microsoft.Windows.CsWin32
             returnTypeAttributes = this.GetReturnTypeCustomAttributes(invokeMethodDef);
         }
 
-        private StructDeclarationSyntax DeclareInteropStruct(TypeDefinition typeDef)
+        private StructDeclarationSyntax DeclareStruct(TypeDefinition typeDef)
         {
             IdentifierNameSyntax name = IdentifierName(this.mr.GetString(typeDef.Name));
             TypeSyntaxSettings typeSettings = this.fieldTypeSettings;
@@ -2782,7 +2796,7 @@ namespace Microsoft.Windows.CsWin32
             return result;
         }
 
-        private EnumDeclarationSyntax DeclareInteropEnum(TypeDefinition typeDef)
+        private EnumDeclarationSyntax DeclareEnum(TypeDefinition typeDef)
         {
             bool flagsEnum = false;
             foreach (CustomAttributeHandle attributeHandle in typeDef.GetCustomAttributes())
@@ -2962,7 +2976,7 @@ namespace Microsoft.Windows.CsWin32
                     && !IsVoid(ptrType.ElementType)
                     && !(ptrType.ElementType is IdentifierNameSyntax id && this.IsInterface(id.Identifier.ValueText)))
                 {
-                    bool isPointerToPointer = ptrType.ElementType is PointerTypeSyntax;
+                    bool isPointerToPointer = ptrType.ElementType is PointerTypeSyntax or FunctionPointerTypeSyntax;
 
                     // If there are no SAL annotations at all...
                     if (!isOptional && !isIn && !isOut)
@@ -3541,26 +3555,6 @@ namespace Microsoft.Windows.CsWin32
             return false;
         }
 
-        private bool IsDelegateReference(HandleTypeHandleInfo typeHandle, out TypeDefinition delegateTypeDef)
-        {
-            if (typeHandle.Handle.Kind == HandleKind.TypeReference)
-            {
-                var trHandle = (TypeReferenceHandle)typeHandle.Handle;
-                TypeReference tr = this.mr.GetTypeReference(trHandle);
-                if (this.mr.StringComparer.Equals(tr.Name, nameof(MulticastDelegate)) && this.mr.StringComparer.Equals(tr.Namespace, nameof(System)))
-                {
-                    if (this.TryGetTypeDefHandle(trHandle, out TypeDefinitionHandle tdh))
-                    {
-                        delegateTypeDef = this.mr.GetTypeDefinition(tdh);
-                        return true;
-                    }
-                }
-            }
-
-            delegateTypeDef = default;
-            return false;
-        }
-
         private bool IsDelegateReference(IdentifierNameSyntax? identifierName, out TypeDefinition delegateTypeDef)
         {
             if (identifierName is object)
@@ -3635,31 +3629,7 @@ namespace Microsoft.Windows.CsWin32
                         return !this.options.ComInterop.StructsInsteadOfInterfaces;
                     }
 
-                    StringHandle baseName, baseNamespace;
-                    if (typeDef.BaseType.IsNil)
-                    {
-                        baseName = default;
-                        baseNamespace = default;
-                    }
-                    else
-                    {
-                        switch (typeDef.BaseType.Kind)
-                        {
-                            case HandleKind.TypeReference:
-                                TypeReference baseTypeRef = this.mr.GetTypeReference((TypeReferenceHandle)typeDef.BaseType);
-                                baseName = baseTypeRef.Name;
-                                baseNamespace = baseTypeRef.Namespace;
-                                break;
-                            case HandleKind.TypeDefinition:
-                                TypeDefinition baseTypeDef = this.mr.GetTypeDefinition((TypeDefinitionHandle)typeDef.BaseType);
-                                baseName = baseTypeDef.Name;
-                                baseNamespace = baseTypeDef.Namespace;
-                                break;
-                            default:
-                                throw new NotSupportedException("Unrecognized basetype kind: " + typeDef.BaseType.Kind);
-                        }
-                    }
-
+                    this.GetBaseTypeInfo(typeDef, out StringHandle baseName, out StringHandle baseNamespace);
                     if (this.mr.StringComparer.Equals(baseName, nameof(ValueType)) && this.mr.StringComparer.Equals(baseNamespace, nameof(System)))
                     {
                         if (this.IsTypeDefStruct(typeDef))

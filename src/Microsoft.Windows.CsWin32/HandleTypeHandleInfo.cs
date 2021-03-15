@@ -77,6 +77,10 @@ namespace Microsoft.Windows.CsWin32
             {
                 return new TypeSyntaxAndMarshaling(PredefinedType(Token(SyntaxKind.ObjectKeyword)).WithAdditionalAnnotations(Generator.IsManagedTypeAnnotation), marshalAs);
             }
+            else if (!inputs.UseComInterfaces && this.IsDelegate(inputs, out TypeDefinition delegateDefinition) && inputs.Generator is object)
+            {
+                return new TypeSyntaxAndMarshaling(inputs.Generator.FunctionPointer(delegateDefinition));
+            }
             else
             {
                 this.RequestTypeGeneration(inputs.Generator);
@@ -130,6 +134,41 @@ namespace Microsoft.Windows.CsWin32
             return tr.ResolutionScope.Kind == HandleKind.TypeReference
                 ? QualifiedName(GetNestingQualifiedName(reader, (TypeReferenceHandle)tr.ResolutionScope), typeName)
                 : typeName;
+        }
+
+        private bool IsDelegate(TypeSyntaxSettings inputs, out TypeDefinition delegateTypeDef)
+        {
+            TypeDefinitionHandle tdh = default;
+            switch (this.Handle.Kind)
+            {
+                case HandleKind.TypeReference:
+                    var trHandle = (TypeReferenceHandle)this.Handle;
+                    inputs.Generator?.TryGetTypeDefHandle(trHandle, out tdh);
+                    break;
+                case HandleKind.TypeDefinition:
+                    tdh = (TypeDefinitionHandle)this.Handle;
+                    break;
+            }
+
+            if (!tdh.IsNil && inputs.Generator is object)
+            {
+                TypeDefinition td = this.reader.GetTypeDefinition(tdh);
+                if ((td.Attributes & TypeAttributes.Class) == TypeAttributes.Class)
+                {
+                    inputs.Generator.GetBaseTypeInfo(td, out StringHandle baseTypeName, out StringHandle baseTypeNamespace);
+                    if (!baseTypeName.IsNil)
+                    {
+                        if (this.reader.StringComparer.Equals(baseTypeName, nameof(MulticastDelegate)) && this.reader.StringComparer.Equals(baseTypeNamespace, nameof(System)))
+                        {
+                            delegateTypeDef = this.reader.GetTypeDefinition(tdh);
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            delegateTypeDef = default;
+            return false;
         }
 
         private void RequestTypeGeneration(Generator? generator)

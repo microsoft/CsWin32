@@ -2,7 +2,8 @@
   "$schema": "..\\..\\src\\Microsoft.Windows.CsWin32\\settings.schema.json",
   "comInterop": {
     "preserveSigMethods": [
-      "IEnumSpellingError.Next"
+      "IEnumSpellingError.Next",
+      "IEnumString.Next"
     ]
   }
 }

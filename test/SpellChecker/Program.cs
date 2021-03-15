@@ -14,43 +14,37 @@ unsafe
         null,
         (uint)CLSCTX.CLSCTX_INPROC_SERVER, // https://github.com/microsoft/win32metadata/issues/185
         typeof(ISpellCheckerFactory).GUID,
-        out ISpellCheckerFactory* spellCheckerFactory).ThrowOnFailure();
+        out ISpellCheckerFactory spellCheckerFactory).ThrowOnFailure();
 
-    spellCheckerFactory->IsSupported(
-        "en-US",
-        out BOOL supported).ThrowOnFailure();
+    BOOL supported = spellCheckerFactory.IsSupported("en-US");
 
     if (!supported)
     {
         return;
     }
 
-    spellCheckerFactory->CreateSpellChecker(
-        "en-US",
-        out ISpellChecker* spellChecker).ThrowOnFailure();
+    ISpellChecker spellChecker = spellCheckerFactory.CreateSpellChecker("en-US");
 
     var text = @"""Cann I I haev some?""";
 
     Console.WriteLine(@"Check {0}", text);
 
-    spellChecker->Check(
-        text,
-        out IEnumSpellingError* errors).ThrowOnFailure();
+    IEnumSpellingError errors = spellChecker.Check(text);
 
     Span<PWSTR> suggestionResult = new PWSTR[1];
     while (true)
     {
-        if (errors->Next(out ISpellingError* error).ThrowOnFailure() == S_FALSE)
+        if (errors.Next(out ISpellingError error).ThrowOnFailure() == S_FALSE)
         {
             break;
         }
 
-        error->get_StartIndex(out uint startIndex).ThrowOnFailure();
-        error->get_Length(out uint length).ThrowOnFailure();
+        uint startIndex = error.get_StartIndex();
+        uint length = error.get_Length();
 
         var word = text.Substring((int)startIndex, (int)length);
 
-        error->get_CorrectiveAction(out CORRECTIVE_ACTION action).ThrowOnFailure();
+        CORRECTIVE_ACTION action = error.get_CorrectiveAction();
 
         switch (action)
         {
@@ -58,16 +52,16 @@ unsafe
                 Console.WriteLine(@"Delete ""{0}""", word);
                 break;
             case CORRECTIVE_ACTION.CORRECTIVE_ACTION_REPLACE:
-                error->get_Replacement(out PWSTR replacement).ThrowOnFailure();
+                PWSTR replacement = error.get_Replacement();
                 Console.WriteLine(@"Replace ""{0}"" with ""{1}""", word, replacement);
                 CoTaskMemFree(replacement);
                 break;
             case CORRECTIVE_ACTION.CORRECTIVE_ACTION_GET_SUGGESTIONS:
                 var l = new List<string>();
-                spellChecker->Suggest(word, out IEnumString* suggestions).ThrowOnFailure();
+                IEnumString suggestions = spellChecker.Suggest(word);
                 while (true)
                 {
-                    if (suggestions->Next(suggestionResult, null).ThrowOnFailure() != S_OK)
+                    if (suggestions.Next(suggestionResult, null).ThrowOnFailure() != S_OK)
                     {
                         break;
                     }
@@ -76,7 +70,6 @@ unsafe
                     CoTaskMemFree(suggestionResult[0]);
                 }
 
-                suggestions->Release();
                 Console.WriteLine(@"Suggest replacing ""{0}"" with:", word);
                 foreach (var s in l)
                 {
@@ -87,10 +80,5 @@ unsafe
             default:
                 break;
         }
-
-        error->Release();
     }
-
-    errors->Release();
-    spellChecker->Release();
 }

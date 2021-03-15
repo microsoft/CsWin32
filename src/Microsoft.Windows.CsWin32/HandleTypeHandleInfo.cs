@@ -123,7 +123,9 @@ namespace Microsoft.Windows.CsWin32
         private static NameSyntax GetNestingQualifiedName(MetadataReader reader, TypeDefinition td)
         {
             IdentifierNameSyntax name = IdentifierName(reader.GetString(td.Name));
-            return td.GetDeclaringType() is { IsNil: false } nestingType ? QualifiedName(GetNestingQualifiedName(reader, nestingType), name) : name;
+            return td.GetDeclaringType() is { IsNil: false } nestingType
+                ? QualifiedName(GetNestingQualifiedName(reader, nestingType), name)
+                : name;
         }
 
         private static NameSyntax GetNestingQualifiedName(MetadataReader reader, TypeReferenceHandle handle) => GetNestingQualifiedName(reader, reader.GetTypeReference(handle));
@@ -133,7 +135,7 @@ namespace Microsoft.Windows.CsWin32
             SimpleNameSyntax typeName = IdentifierName(reader.GetString(tr.Name));
             return tr.ResolutionScope.Kind == HandleKind.TypeReference
                 ? QualifiedName(GetNestingQualifiedName(reader, (TypeReferenceHandle)tr.ResolutionScope), typeName)
-                : typeName;
+                : tr.ResolutionScope.Kind == HandleKind.ModuleDefinition ? typeName : QualifiedName(ParseName(Generator.GlobalNamespacePrefix + reader.GetString(tr.Namespace)), typeName);
         }
 
         private bool IsDelegate(TypeSyntaxSettings inputs, out TypeDefinition delegateTypeDef)

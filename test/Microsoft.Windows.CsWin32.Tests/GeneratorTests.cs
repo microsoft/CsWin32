@@ -132,6 +132,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             "DISPPARAMS",
             "JsVariantToValue",
             "FILE_TYPE_NOTIFICATION_INPUT",
+            "ISpellCheckerFactory", // COM interface that includes `ref` parameters
             "LocalSystemTimeToLocalFileTime", // small step
             "ID3D12Resource", // COM interface with base types
             "ID2D1RectangleGeometry")] // COM interface with base types

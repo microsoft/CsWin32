@@ -103,6 +103,7 @@ namespace Microsoft.Windows.CsWin32
 
         private static readonly IdentifierNameSyntax ConstantsClassName = IdentifierName("Constants");
         private static readonly IdentifierNameSyntax InlineArrayIndexerExtensionsClassName = IdentifierName("InlineArrayIndexerExtensions");
+        private static readonly IdentifierNameSyntax ComInterfaceFriendlyExtensionsClassName = IdentifierName("FriendlyOverloadExtensions");
         private static readonly TypeSyntax SafeHandleTypeSyntax = IdentifierName("SafeHandle");
         private static readonly IdentifierNameSyntax IntPtrTypeSyntax = IdentifierName(nameof(IntPtr));
         private static readonly AttributeSyntax PreserveSigAttribute = Attribute(IdentifierName("PreserveSig"));
@@ -309,6 +310,8 @@ namespace Microsoft.Windows.CsWin32
 
         private readonly List<MethodDeclarationSyntax> inlineArrayIndexerExtensionsMembers = new();
 
+        private readonly List<MethodDeclarationSyntax> comInterfaceFriendlyExtensionsMembers = new();
+
         private readonly HashSet<string> releaseMethods = new HashSet<string>(StringComparer.Ordinal);
 
         private readonly Dictionary<TypeReferenceHandle, TypeDefinitionHandle> refToDefCache = new();
@@ -474,6 +477,12 @@ namespace Microsoft.Windows.CsWin32
                 if (inlineArrayIndexerExtensionsClass.Members.Count > 0)
                 {
                     result = result.Concat(new MemberDeclarationSyntax[] { inlineArrayIndexerExtensionsClass });
+                }
+
+                ClassDeclarationSyntax comInterfaceFriendlyExtensionsClass = this.DeclareComInterfaceFriendlyExtensionsClass();
+                if (comInterfaceFriendlyExtensionsClass.Members.Count > 0)
+                {
+                    result = result.Concat(new MemberDeclarationSyntax[] { comInterfaceFriendlyExtensionsClass });
                 }
 
                 return result;
@@ -1886,7 +1895,7 @@ namespace Microsoft.Windows.CsWin32
                     methodDeclaration = methodDeclaration.AddModifiers(Token(SyntaxKind.UnsafeKeyword));
                 }
 
-                methodsList.AddRange(this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, this.GroupByModule ? GetClassNameForModule(moduleName) : this.SingleClassName, isStatic: true));
+                methodsList.AddRange(this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, this.GroupByModule ? GetClassNameForModule(moduleName) : this.SingleClassName, FriendlyOverloadOf.ExternMethod));
 
                 methodsList.Add(methodDeclaration);
             }
@@ -1956,6 +1965,13 @@ namespace Microsoft.Windows.CsWin32
         {
             return ClassDeclaration(InlineArrayIndexerExtensionsClassName.Identifier)
                 .AddMembers(this.inlineArrayIndexerExtensionsMembers.ToArray())
+                .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.PartialKeyword)));
+        }
+
+        private ClassDeclarationSyntax DeclareComInterfaceFriendlyExtensionsClass()
+        {
+            return ClassDeclaration(ComInterfaceFriendlyExtensionsClassName.Identifier)
+                .AddMembers(this.comInterfaceFriendlyExtensionsMembers.ToArray())
                 .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.PartialKeyword)));
         }
 
@@ -2127,7 +2143,7 @@ namespace Microsoft.Windows.CsWin32
                 // Add documentation if we can find it.
                 methodDeclaration = AddApiDocumentation($"{ifaceName}.{methodName}", methodDeclaration);
 
-                members.AddRange(this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, ifaceName.Identifier.ValueText, isStatic: false));
+                members.AddRange(this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, ifaceName.Identifier.ValueText, FriendlyOverloadOf.StructMethod));
                 members.Add(methodDeclaration);
             }
 
@@ -2253,6 +2269,10 @@ namespace Microsoft.Windows.CsWin32
                     // Add documentation if we can find it.
                     methodDeclaration = AddApiDocumentation($"{ifaceName}.{methodName}", methodDeclaration);
                     members.Add(methodDeclaration);
+
+                    var atThis = IdentifierName("@this");
+                    this.comInterfaceFriendlyExtensionsMembers.AddRange(
+                        this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, ifaceName.Identifier.ValueText, FriendlyOverloadOf.InterfaceMethod));
                 }
                 catch (Exception ex)
                 {
@@ -2857,7 +2877,14 @@ namespace Microsoft.Windows.CsWin32
             return result;
         }
 
-        private IEnumerable<MethodDeclarationSyntax> DeclareFriendlyOverloads(MethodDefinition methodDefinition, MethodDeclarationSyntax externMethodDeclaration, string declaringTypeName, bool isStatic)
+        private enum FriendlyOverloadOf
+        {
+            ExternMethod,
+            StructMethod,
+            InterfaceMethod,
+        }
+
+        private IEnumerable<MethodDeclarationSyntax> DeclareFriendlyOverloads(MethodDefinition methodDefinition, MethodDeclarationSyntax externMethodDeclaration, string declaringTypeName, FriendlyOverloadOf overloadOf)
         {
 #pragma warning disable SA1114 // Parameter list should follow declaration
             static ParameterSyntax StripAttributes(ParameterSyntax parameter) => parameter.WithAttributeLists(List<AttributeListSyntax>());
@@ -2867,7 +2894,8 @@ namespace Microsoft.Windows.CsWin32
             var originalSignature = methodDefinition.DecodeSignature(SignatureHandleProvider.Instance, null);
             var parameters = externMethodDeclaration.ParameterList.Parameters.Select(StripAttributes).ToList();
             var lengthParamUsedBy = new Dictionary<int, int>();
-            var arguments = externMethodDeclaration.ParameterList.Parameters.Select(p => Argument(IdentifierName(p.Identifier.Text))).ToList();
+            var arguments = externMethodDeclaration.ParameterList.Parameters.Select(p => Argument(IdentifierName(p.Identifier.Text)).WithRefKindKeyword(p.Modifiers.FirstOrDefault(p => p.Kind() is SyntaxKind.RefKeyword or SyntaxKind.OutKeyword or SyntaxKind.InKeyword))).ToList();
+            var externMethodReturnType = externMethodDeclaration.ReturnType.WithoutLeadingTrivia();
             var fixedBlocks = new List<VariableDeclarationSyntax>();
             var leadingOutsideTryStatements = new List<StatementSyntax>();
             var leadingStatements = new List<StatementSyntax>();
@@ -2877,7 +2905,7 @@ namespace Microsoft.Windows.CsWin32
             foreach (ParameterHandle paramHandle in methodDefinition.GetParameters())
             {
                 var param = this.mr.GetParameter(paramHandle);
-                if (param.SequenceNumber == 0)
+                if (param.SequenceNumber == 0 || param.SequenceNumber - 1 >= parameters.Count)
                 {
                     continue;
                 }
@@ -3153,7 +3181,7 @@ namespace Microsoft.Windows.CsWin32
                 }
             }
 
-            TypeSyntax? returnSafeHandleType = externMethodDeclaration.ReturnType is IdentifierNameSyntax returnType
+            TypeSyntax? returnSafeHandleType = externMethodReturnType is IdentifierNameSyntax returnType
                 && this.TryGetHandleReleaseMethod(returnType.Identifier.ValueText, out string? returnReleaseMethod)
                 ? this.RequestSafeHandle(returnReleaseMethod) : null;
             SyntaxToken friendlyMethodName = externMethodDeclaration.Identifier;
@@ -3179,23 +3207,30 @@ namespace Microsoft.Windows.CsWin32
                     }
                 }
 
+                TypeSyntax docRefExternName = overloadOf == FriendlyOverloadOf.InterfaceMethod
+                    ? QualifiedName(IdentifierName(declaringTypeName), IdentifierName(externMethodDeclaration.Identifier))
+                    : IdentifierName(externMethodDeclaration.Identifier);
                 var leadingTrivia = Trivia(
                     DocumentationCommentTrivia(SyntaxKind.SingleLineDocumentationCommentTrivia).AddContent(
                         XmlText("/// "),
-                        XmlEmptyElement("inheritdoc").AddAttributes(XmlCrefAttribute(NameMemberCref(IdentifierName(externMethodDeclaration.Identifier), ToCref(externMethodDeclaration.ParameterList)))),
+                        XmlEmptyElement("inheritdoc").AddAttributes(XmlCrefAttribute(NameMemberCref(docRefExternName, ToCref(externMethodDeclaration.ParameterList)))),
                         XmlText().AddTextTokens(XmlTextNewLine(TriviaList(), "\r\n", "\r\n", TriviaList()))));
                 InvocationExpressionSyntax externInvocation = InvocationExpression(
-                    isStatic
-                        ? QualifiedName(IdentifierName(declaringTypeName), IdentifierName(externMethodDeclaration.Identifier.Text))
-                        : MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName(externMethodDeclaration.Identifier.Text)))
+                    overloadOf switch
+                    {
+                        FriendlyOverloadOf.ExternMethod => QualifiedName(IdentifierName(declaringTypeName), IdentifierName(externMethodDeclaration.Identifier.Text)),
+                        FriendlyOverloadOf.StructMethod => MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName(externMethodDeclaration.Identifier.Text)),
+                        FriendlyOverloadOf.InterfaceMethod => MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("@this"), IdentifierName(externMethodDeclaration.Identifier.Text)),
+                        _ => throw new NotSupportedException("Unrecognized friendly overload mode " + overloadOf),
+                    })
                     .AddArgumentListArguments(arguments.ToArray());
-                bool hasVoidReturn = externMethodDeclaration.ReturnType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.VoidKeyword } };
+                bool hasVoidReturn = externMethodReturnType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.VoidKeyword } };
                 var body = Block().AddStatements(leadingStatements.ToArray());
                 IdentifierNameSyntax resultLocal = IdentifierName("__result");
                 if (returnSafeHandleType is object)
                 {
                     //// HANDLE result = invocation();
-                    body = body.AddStatements(LocalDeclarationStatement(VariableDeclaration(externMethodDeclaration.ReturnType)
+                    body = body.AddStatements(LocalDeclarationStatement(VariableDeclaration(externMethodReturnType)
                         .AddVariables(VariableDeclarator(resultLocal.Identifier).WithInitializer(EqualsValueClause(externInvocation)))));
 
                     body = body.AddStatements(trailingStatements.ToArray());
@@ -3213,7 +3248,7 @@ namespace Microsoft.Windows.CsWin32
                 else
                 {
                     // var result = externInvocation();
-                    body = body.AddStatements(LocalDeclarationStatement(VariableDeclaration(externMethodDeclaration.ReturnType)
+                    body = body.AddStatements(LocalDeclarationStatement(VariableDeclaration(externMethodReturnType)
                         .AddVariables(VariableDeclarator(resultLocal.Identifier).WithInitializer(EqualsValueClause(externInvocation)))));
 
                     body = body.AddStatements(trailingStatements.ToArray());
@@ -3239,12 +3274,18 @@ namespace Microsoft.Windows.CsWin32
                 }
 
                 var modifiers = TokenList(Token(this.Visibility), Token(SyntaxKind.UnsafeKeyword));
-                if (isStatic)
+                if (overloadOf != FriendlyOverloadOf.StructMethod)
                 {
                     modifiers = modifiers.Insert(1, Token(SyntaxKind.StaticKeyword));
                 }
 
+                if (overloadOf == FriendlyOverloadOf.InterfaceMethod)
+                {
+                    parameters.Insert(0, Parameter(Identifier("@this")).WithType(IdentifierName(declaringTypeName)).AddModifiers(Token(SyntaxKind.ThisKeyword)));
+                }
+
                 MethodDeclarationSyntax friendlyDeclaration = externMethodDeclaration
+                    .WithReturnType(externMethodReturnType)
                     .WithIdentifier(friendlyMethodName)
                     .WithModifiers(modifiers)
                     .WithAttributeLists(List<AttributeListSyntax>())

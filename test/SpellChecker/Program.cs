@@ -13,8 +13,7 @@ unsafe
         typeof(SpellCheckerFactory).GUID,
         null,
         (uint)CLSCTX.CLSCTX_INPROC_SERVER, // https://github.com/microsoft/win32metadata/issues/185
-        typeof(ISpellCheckerFactory).GUID,
-        out ISpellCheckerFactory spellCheckerFactory).ThrowOnFailure();
+        out ISpellCheckerFactory spellCheckerFactory);
 
     BOOL supported = spellCheckerFactory.IsSupported("en-US");
 
@@ -34,7 +33,7 @@ unsafe
     Span<PWSTR> suggestionResult = new PWSTR[1];
     while (true)
     {
-        if (errors.Next(out ISpellingError error).ThrowOnFailure() == S_FALSE)
+        if (errors.Next() is not ISpellingError error)
         {
             break;
         }
@@ -57,24 +56,18 @@ unsafe
                 CoTaskMemFree(replacement);
                 break;
             case CORRECTIVE_ACTION.CORRECTIVE_ACTION_GET_SUGGESTIONS:
-                var l = new List<string>();
-                IEnumString suggestions = spellChecker.Suggest(word);
-                while (true)
-                {
-                    if (suggestions.Next(suggestionResult, null).ThrowOnFailure() != S_OK)
-                    {
-                        break;
-                    }
-
-                    l.Add(suggestionResult[0].ToString());
-                    CoTaskMemFree(suggestionResult[0]);
-                }
-
                 Console.WriteLine(@"Suggest replacing ""{0}"" with:", word);
-                foreach (var s in l)
+                IEnumString suggestions = spellChecker.Suggest(word);
+                do
                 {
-                    Console.WriteLine("\t{0}", s);
+                    suggestions.Next(suggestionResult, null);
+                    if (suggestionResult[0].Value is not null)
+                    {
+                        Console.WriteLine($"\t{suggestionResult[0]}");
+                        CoTaskMemFree(suggestionResult[0]);
+                    }
                 }
+                while (suggestionResult[0].Value is not null);
 
                 break;
             default:

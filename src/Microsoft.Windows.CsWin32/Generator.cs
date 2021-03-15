@@ -3037,7 +3037,7 @@ namespace Microsoft.Windows.CsWin32
                             sizeParamIndex = (short?)args.NamedArguments.FirstOrDefault(a => a.Name == "SizeParamIndex").Value;
                             sizeConst = (int?)args.NamedArguments.FirstOrDefault(a => a.Name == "SizeConst").Value;
 
-                            continue;
+                            break;
                         }
                     }
 

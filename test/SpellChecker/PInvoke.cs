@@ -7,14 +7,14 @@ namespace Microsoft.Windows.Sdk
 
     internal partial class PInvoke
     {
-        /// <inheritdoc cref="CoCreateInstance(System.Guid*, object, uint, System.Guid*, void**)"/>
+        /// <inheritdoc cref="CoCreateInstance(System.Guid*, object, uint, System.Guid*, out object)"/>
         /// <seealso href="https://github.com/microsoft/CsWin32/issues/103" />
-        internal static unsafe HRESULT CoCreateInstance<T>(in Guid rclsid, object? pUnkOuter, uint dwClsContext, in Guid riid, out T ppv)
+        internal static unsafe void CoCreateInstance<T>(in Guid rclsid, object? pUnkOuter, uint dwClsContext, out T ppv)
             where T : class
         {
-            HRESULT hr = CoCreateInstance(rclsid, pUnkOuter, dwClsContext, riid, out T* o);
+            HRESULT hr = CoCreateInstance(rclsid, pUnkOuter, dwClsContext, typeof(T).GUID, out object o);
+            hr.ThrowOnFailure();
             ppv = (T)o;
-            return hr;
         }
     }
 }

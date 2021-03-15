@@ -4,6 +4,7 @@
 namespace Microsoft.Windows.CsWin32
 {
     using System;
+    using System.Linq;
     using System.Reflection;
     using System.Reflection.Metadata;
     using System.Runtime.InteropServices;
@@ -55,6 +56,11 @@ namespace Microsoft.Windows.CsWin32
                         ArrayType(elementSyntax).AddRankSpecifiers(ArrayRankSpecifier()),
                         marshalAs is object ? new MarshalAsAttribute(UnmanagedType.LPArray) { ArraySubType = marshalAs.Value } : null);
                 }
+            }
+            else if (inputs.UseComInterfaces && inputs.Generator is object
+                && customAttributes?.Any(ah => Generator.IsAttribute(inputs.Generator.Reader, inputs.Generator!.Reader.GetCustomAttribute(ah), Generator.InteropDecorationNamespace, "ComOutPtrAttribute")) is true)
+            {
+                return new TypeSyntaxAndMarshaling(PredefinedType(Token(SyntaxKind.ObjectKeyword)), new MarshalAsAttribute(UnmanagedType.IUnknown));
             }
 
             return new TypeSyntaxAndMarshaling(PointerType(elementSyntax));

@@ -172,7 +172,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         Assert.True(this.generator.TryGenerate(ifaceName, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
-        Assert.Contains(this.FindGeneratedMethod("Next"), m => m.ParameterList.Parameters.Count == 2);
+        Assert.Contains(this.FindGeneratedMethod("Next"), m => m.ParameterList.Parameters.Count == 3 && m.ParameterList.Parameters[0].Modifiers.Any(SyntaxKind.ThisKeyword));
     }
 
     [Fact]

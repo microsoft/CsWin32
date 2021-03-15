@@ -28,7 +28,7 @@ namespace Microsoft.Windows.CsWin32
                 {
                     // But this pointer represents an array, so type as an array.
                     return new TypeSyntaxAndMarshaling(
-                        xIn && !xOut ? Generator.MakeReadOnlySpanOfT(elementSyntax) : Generator.MakeSpanOfT(elementSyntax),
+                        ArrayType(elementSyntax).AddRankSpecifiers(ArrayRankSpecifier()),
                         marshalAs is object ? new MarshalAsAttribute(UnmanagedType.LPArray) { ArraySubType = marshalAs.Value } : null);
                 }
                 else if (xIn || xOut)

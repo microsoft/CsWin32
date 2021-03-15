@@ -3001,11 +3001,15 @@ namespace Microsoft.Windows.CsWin32
                     // hParamNameLocal;
                     arguments[param.SequenceNumber - 1] = Argument(typeDefHandleName);
                 }
-                else if (externParam.Type is PointerTypeSyntax ptrType
-                    && !IsVoid(ptrType.ElementType)
-                    && !(ptrType.ElementType is IdentifierNameSyntax id && this.IsInterface(id.Identifier.ValueText)))
+                else if ((externParam.Type is PointerTypeSyntax { ElementType: TypeSyntax ptrElementType }
+                    && !IsVoid(ptrElementType)
+                    && !(ptrElementType is IdentifierNameSyntax id && this.IsInterface(id.Identifier.ValueText))) ||
+                    externParam.Type is ArrayTypeSyntax)
                 {
-                    bool isPointerToPointer = ptrType.ElementType is PointerTypeSyntax or FunctionPointerTypeSyntax;
+                    TypeSyntax elementType = externParam.Type is PointerTypeSyntax ptr ? ptr.ElementType
+                        : externParam.Type is ArrayTypeSyntax array ? array.ElementType
+                        : throw new InvalidOperationException();
+                    bool isPointerToPointer = elementType is PointerTypeSyntax or FunctionPointerTypeSyntax;
 
                     // If there are no SAL annotations at all...
                     if (!isOptional && !isIn && !isOut)
@@ -3071,11 +3075,14 @@ namespace Microsoft.Windows.CsWin32
                                 lengthParamUsedBy.Add(sizeParamIndex.Value, param.SequenceNumber - 1);
                             }
 
-                            parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
-                                .WithType(isIn && isConst ? MakeReadOnlySpanOfT(ptrType.ElementType) : MakeSpanOfT(ptrType.ElementType));
-                            fixedBlocks.Add(VariableDeclaration(ptrType).AddVariables(
-                                VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
-                            arguments[param.SequenceNumber - 1] = Argument(localName);
+                            if (externParam.Type is PointerTypeSyntax)
+                            {
+                                parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
+                                    .WithType(isIn && isConst ? MakeReadOnlySpanOfT(elementType) : MakeSpanOfT(elementType));
+                                fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
+                                    VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
+                                arguments[param.SequenceNumber - 1] = Argument(localName);
+                            }
 
                             ExpressionSyntax sizeArgExpression = GetSpanLength(origName);
                             if (!(parameters[sizeParamIndex.Value].Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.IntKeyword } }))
@@ -3092,8 +3099,8 @@ namespace Microsoft.Windows.CsWin32
 
                             // Accept a span instead of a pointer.
                             parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
-                                .WithType(isIn && isConst ? MakeReadOnlySpanOfT(ptrType.ElementType) : MakeSpanOfT(ptrType.ElementType));
-                            fixedBlocks.Add(VariableDeclaration(ptrType).AddVariables(
+                                .WithType(isIn && isConst ? MakeReadOnlySpanOfT(elementType) : MakeSpanOfT(elementType));
+                            fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
                                 VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
                             arguments[param.SequenceNumber - 1] = Argument(localName);
 
@@ -3111,7 +3118,7 @@ namespace Microsoft.Windows.CsWin32
                             signatureChanged = true;
                             parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
                                 .WithType(PredefinedType(Token(SyntaxKind.StringKeyword)));
-                            fixedBlocks.Add(VariableDeclaration(ptrType).AddVariables(
+                            fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
                                 VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
                             arguments[param.SequenceNumber - 1] = Argument(localName);
                         }
@@ -3120,14 +3127,14 @@ namespace Microsoft.Windows.CsWin32
                     {
                         signatureChanged = true;
                         parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
-                            .WithType(NullableType(ptrType.ElementType));
+                            .WithType(NullableType(elementType));
                         leadingStatements.Add(
-                            LocalDeclarationStatement(VariableDeclaration(ptrType.ElementType)
+                            LocalDeclarationStatement(VariableDeclaration(elementType)
                                 .AddVariables(VariableDeclarator(localName.Identifier).WithInitializer(
                                     EqualsValueClause(ConditionalExpression(
                                         MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName("HasValue")),
                                         MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName("Value")),
-                                        DefaultExpression(ptrType.ElementType)))))));
+                                        DefaultExpression(elementType)))))));
                         arguments[param.SequenceNumber - 1] = Argument(ConditionalExpression(
                             MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName("HasValue")),
                             PrefixUnaryExpression(SyntaxKind.AddressOfExpression, localName),
@@ -3137,9 +3144,9 @@ namespace Microsoft.Windows.CsWin32
                     {
                         signatureChanged = true;
                         parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
-                            .WithType(ptrType.ElementType)
+                            .WithType(elementType)
                             .WithModifiers(TokenList(Token(SyntaxKind.RefKeyword)));
-                        fixedBlocks.Add(VariableDeclaration(ptrType).AddVariables(
+                        fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
                             VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(
                                 PrefixUnaryExpression(SyntaxKind.AddressOfExpression, origName)))));
                         arguments[param.SequenceNumber - 1] = Argument(localName);
@@ -3148,9 +3155,9 @@ namespace Microsoft.Windows.CsWin32
                     {
                         signatureChanged = true;
                         parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
-                            .WithType(ptrType.ElementType)
+                            .WithType(elementType)
                             .WithModifiers(TokenList(Token(SyntaxKind.OutKeyword)));
-                        fixedBlocks.Add(VariableDeclaration(ptrType).AddVariables(
+                        fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
                             VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(
                                 PrefixUnaryExpression(SyntaxKind.AddressOfExpression, origName)))));
                         arguments[param.SequenceNumber - 1] = Argument(localName);
@@ -3160,9 +3167,9 @@ namespace Microsoft.Windows.CsWin32
                         // Use the "in" modifier to avoid copying the struct.
                         signatureChanged = true;
                         parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
-                            .WithType(ptrType.ElementType)
+                            .WithType(elementType)
                             .WithModifiers(TokenList(Token(SyntaxKind.InKeyword)));
-                        fixedBlocks.Add(VariableDeclaration(ptrType).AddVariables(
+                        fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
                             VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(
                                 PrefixUnaryExpression(SyntaxKind.AddressOfExpression, origName)))));
                         arguments[param.SequenceNumber - 1] = Argument(localName);

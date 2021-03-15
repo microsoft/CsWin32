@@ -1713,7 +1713,7 @@ namespace Microsoft.Windows.CsWin32
                     // Consider reusing .NET types like FILE_SHARE_FLAGS -> System.IO.FileShare
                     typeDeclaration = this.DeclareEnum(typeDef);
                 }
-                else if (this.mr.StringComparer.Equals(baseTypeName, nameof(MulticastDelegate)) && this.mr.StringComparer.Equals(baseTypeNamespace, nameof(System)))
+                else if (!this.options.ComInterop.StructsInsteadOfInterfaces && this.mr.StringComparer.Equals(baseTypeName, nameof(MulticastDelegate)) && this.mr.StringComparer.Equals(baseTypeNamespace, nameof(System)))
                 {
                     typeDeclaration = this.DeclareDelegate(typeDef);
                 }
@@ -3407,7 +3407,7 @@ namespace Microsoft.Windows.CsWin32
                 //     /// <summary>Always <c>8</c>.</summary>
                 //     internal int Length => 8;
                 // ...
-                IdentifierNameSyntax fixedLengthStructName = IdentifierName($"__{elementType.ToString().Replace('.', '_')}_{length}");
+                IdentifierNameSyntax fixedLengthStructName = IdentifierName($"__{elementType.ToString().Replace('.', '_').Replace(':', '_')}_{length}");
                 var fixedLengthStruct = StructDeclaration(fixedLengthStructName.Identifier)
                     .AddModifiers(Token(this.Visibility))
                     .AddMembers(
@@ -3535,7 +3535,7 @@ namespace Microsoft.Windows.CsWin32
             CallingConvention callingConvention = (CallingConvention)attArgs.FixedArguments[0].Value!;
 
             this.GetSignatureForDelegate(delegateType, out MethodDefinition invokeMethodDef, out MethodSignature<TypeHandleInfo> signature, out CustomAttributeHandleCollection? returnTypeAttributes);
-            if (returnTypeAttributes?.Count > 0)
+            if (returnTypeAttributes?.Any(h => this.IsAttribute(this.mr.GetCustomAttribute(h), SystemRuntimeInteropServices, nameof(MarshalAsAttribute))) is true)
             {
                 throw new NotSupportedException("Marshaling is not supported for function pointers.");
             }

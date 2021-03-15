@@ -131,6 +131,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             "RTM_DEST_INFO", // nested structs with inline arrays with element whose name collides with another
             "DISPPARAMS",
             "JsVariantToValue",
+            "FILE_TYPE_NOTIFICATION_INPUT",
             "LocalSystemTimeToLocalFileTime", // small step
             "ID3D12Resource", // COM interface with base types
             "ID2D1RectangleGeometry")] // COM interface with base types
@@ -596,7 +597,7 @@ namespace Microsoft.Windows.Sdk
 
     private void AssertNoDiagnostics(bool logGeneratedCode = true) => this.AssertNoDiagnostics(this.compilation, logGeneratedCode);
 
-    private void AssertNoDiagnostics(CSharpCompilation compilation, bool logGeneratedCode = true)
+    private void AssertNoDiagnostics(CSharpCompilation compilation, bool logAllGeneratedCode = true)
     {
         var diagnostics = FilterDiagnostics(compilation.GetDiagnostics());
         this.LogDiagnostics(diagnostics);
@@ -611,9 +612,19 @@ namespace Microsoft.Windows.Sdk
             this.LogDiagnostics(emitDiagnostics);
         }
 
-        if (logGeneratedCode)
+        if (logAllGeneratedCode)
         {
             this.LogGeneratedCode(compilation);
+        }
+        else
+        {
+            foreach (SyntaxTree? fileWithDiagnosticts in diagnostics.Select(d => d.Location.SourceTree).Distinct())
+            {
+                if (fileWithDiagnosticts is object)
+                {
+                    this.LogGeneratedCode(fileWithDiagnosticts);
+                }
+            }
         }
 
         Assert.Empty(diagnostics);
@@ -636,13 +647,18 @@ namespace Microsoft.Windows.Sdk
     {
         foreach (SyntaxTree tree in compilation.SyntaxTrees)
         {
-            this.logger.WriteLine(FileSeparator);
-            this.logger.WriteLine($"{tree.FilePath} content:");
-            this.logger.WriteLine(FileSeparator);
-            using var lineWriter = new NumberedLineWriter(this.logger);
-            tree.GetRoot().WriteTo(lineWriter);
-            lineWriter.WriteLine(string.Empty);
+            this.LogGeneratedCode(tree);
         }
+    }
+
+    private void LogGeneratedCode(SyntaxTree tree)
+    {
+        this.logger.WriteLine(FileSeparator);
+        this.logger.WriteLine($"{tree.FilePath} content:");
+        this.logger.WriteLine(FileSeparator);
+        using var lineWriter = new NumberedLineWriter(this.logger);
+        tree.GetRoot().WriteTo(lineWriter);
+        lineWriter.WriteLine(string.Empty);
     }
 
     private void AssertGeneratedType(string apiName, string expectedSyntax, string? expectedExtensions = null)

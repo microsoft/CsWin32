@@ -134,6 +134,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             "WIA_CATEGORY_FINISHED_FILE", // GUID constant
             "DEVPKEY_MTPBTH_IsConnected", // PROPERTYKEY constant
             "RT_CURSOR", // PCWSTR constant
+            "TRUE", // BOOL constant
             "IOleUILinkContainerW", // An IUnknown-derived interface with no GUID
             "RTM_ENTITY_EXPORT_METHODS",
             "FILE_TYPE_NOTIFICATION_INPUT",

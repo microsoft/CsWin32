@@ -30,7 +30,7 @@ See [dotnet/pinvoke](https://github.com/dotnet/pinvoke) for precompiled NuGet pa
 Install the `Microsoft.Windows.CsWin32` package:
 
 ```ps1
-dotnet add package Microsoft.Windows.CsWin32 -pre
+dotnet add package Microsoft.Windows.CsWin32 --prerelease
 ```
 
 Your project must allow unsafe code to support the generated code that will likely use pointers.

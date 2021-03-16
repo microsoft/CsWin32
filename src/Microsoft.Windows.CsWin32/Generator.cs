@@ -414,7 +414,7 @@ namespace Microsoft.Windows.CsWin32
             foreach (FieldDefinitionHandle fieldDefHandle in this.Apis.SelectMany(api => api.GetFields()))
             {
                 FieldDefinition fieldDef = this.mr.GetFieldDefinition(fieldDefHandle);
-                const FieldAttributes expectedFlags = FieldAttributes.Literal | FieldAttributes.Static | FieldAttributes.Public;
+                const FieldAttributes expectedFlags = FieldAttributes.Static | FieldAttributes.Public;
                 if ((fieldDef.Attributes & expectedFlags) == expectedFlags)
                 {
                     string name = this.mr.GetString(fieldDef.Name);
@@ -1262,6 +1262,20 @@ namespace Microsoft.Windows.CsWin32
             return null;
         }
 
+        internal CustomAttribute? FindInteropDecorativeAttribute(CustomAttributeHandleCollection customAttributeHandles, string attributeName)
+        {
+            foreach (var handle in customAttributeHandles)
+            {
+                CustomAttribute att = this.mr.GetCustomAttribute(handle);
+                if (this.IsAttribute(att, InteropDecorationNamespace, attributeName))
+                {
+                    return att;
+                }
+            }
+
+            return null;
+        }
+
         /// <summary>
         /// Attempts to translate a <see cref="TypeReferenceHandle"/> to a <see cref="TypeDefinitionHandle"/>.
         /// </summary>
@@ -1805,6 +1819,65 @@ namespace Microsoft.Windows.CsWin32
             return false;
         }
 
+        private static unsafe string ToHex<T>(T value)
+            where T : unmanaged
+        {
+            int fullHexLength = sizeof(T) * 2;
+            string hex = string.Format(CultureInfo.InvariantCulture, "0x{0:X" + fullHexLength + "}", value);
+            return hex;
+        }
+
+        private static ObjectCreationExpressionSyntax GuidValue(CustomAttribute guidAttribute)
+        {
+            CustomAttributeValue<TypeSyntax> args = guidAttribute.DecodeValue(CustomAttributeTypeProvider.Instance);
+            var a = (uint)args.FixedArguments[0].Value!;
+            var b = (ushort)args.FixedArguments[1].Value!;
+            var c = (ushort)args.FixedArguments[2].Value!;
+            var d = (byte)args.FixedArguments[3].Value!;
+            var e = (byte)args.FixedArguments[4].Value!;
+            var f = (byte)args.FixedArguments[5].Value!;
+            var g = (byte)args.FixedArguments[6].Value!;
+            var h = (byte)args.FixedArguments[7].Value!;
+            var i = (byte)args.FixedArguments[8].Value!;
+            var j = (byte)args.FixedArguments[9].Value!;
+            var k = (byte)args.FixedArguments[10].Value!;
+
+            return ObjectCreationExpression(IdentifierName(nameof(Guid))).AddArgumentListArguments(
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(a), a))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(b), b))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(c), c))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(d), d))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(e), e))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(f), f))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(g), g))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(h), h))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(i), i))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(j), j))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(k), k))));
+        }
+
+        private static ObjectCreationExpressionSyntax PropertyKeyValue(CustomAttribute propertyKeyAttribute)
+        {
+            CustomAttributeValue<TypeSyntax> args = propertyKeyAttribute.DecodeValue(CustomAttributeTypeProvider.Instance);
+            var a = (uint)args.FixedArguments[0].Value!;
+            var b = (ushort)args.FixedArguments[1].Value!;
+            var c = (ushort)args.FixedArguments[2].Value!;
+            var d = (byte)args.FixedArguments[3].Value!;
+            var e = (byte)args.FixedArguments[4].Value!;
+            var f = (byte)args.FixedArguments[5].Value!;
+            var g = (byte)args.FixedArguments[6].Value!;
+            var h = (byte)args.FixedArguments[7].Value!;
+            var i = (byte)args.FixedArguments[8].Value!;
+            var j = (byte)args.FixedArguments[9].Value!;
+            var k = (byte)args.FixedArguments[10].Value!;
+            var pid = (uint)args.FixedArguments[11].Value!;
+
+            return ObjectCreationExpression(IdentifierName("PROPERTYKEY")).WithInitializer(
+                InitializerExpression(SyntaxKind.ObjectInitializerExpression).AddExpressions(
+                    AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, IdentifierName("fmtid"), GuidValue(propertyKeyAttribute)),
+                    AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, IdentifierName("pid"), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(pid)))));
+        }
+
         private MemberDeclarationSyntax FetchTemplate(string name)
         {
             using Stream? templateStream = Assembly.GetExecutingAssembly().GetManifestResourceStream($"{ThisAssembly.RootNamespace}.templates.{name}");
@@ -2101,9 +2174,12 @@ namespace Microsoft.Windows.CsWin32
                 TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null);
                 var customAttributes = fieldDef.GetCustomAttributes();
                 var fieldType = fieldTypeInfo.ToTypeSyntax(this.fieldTypeSettings, customAttributes);
-                Constant constant = this.mr.GetConstant(fieldDef.GetDefaultValue());
-                ExpressionSyntax value = this.ToExpressionSyntax(constant);
-                if (fieldType.Type is not PredefinedTypeSyntax)
+                ExpressionSyntax value =
+                    fieldDef.GetDefaultValue() is { IsNil: false } constantHandle ? this.ToExpressionSyntax(this.mr.GetConstant(constantHandle)) :
+                    this.FindInteropDecorativeAttribute(customAttributes, nameof(GuidAttribute)) is CustomAttribute guidAttribute ? GuidValue(guidAttribute) :
+                    this.FindInteropDecorativeAttribute(customAttributes, "PropertyKeyAttribute") is CustomAttribute propertyKeyAttribute ? PropertyKeyValue(propertyKeyAttribute) :
+                    throw new NotSupportedException("Unsupported constant: " + name);
+                if (fieldType.Type is not PredefinedTypeSyntax && value is not ObjectCreationExpressionSyntax)
                 {
                     if (fieldType.Type is IdentifierNameSyntax { Identifier: { ValueText: string typeName } } && this.TryGetHandleReleaseMethod(typeName, out _))
                     {
@@ -2117,7 +2193,7 @@ namespace Microsoft.Windows.CsWin32
                 }
 
                 var modifiers = TokenList(Token(this.Visibility));
-                if (this.IsTypeDefStruct(fieldType.Type as IdentifierNameSyntax))
+                if (this.IsTypeDefStruct(fieldType.Type as IdentifierNameSyntax) || value is ObjectCreationExpressionSyntax)
                 {
                     modifiers = modifiers.Add(Token(SyntaxKind.StaticKeyword)).Add(Token(SyntaxKind.ReadOnlyKeyword));
                 }
@@ -2300,11 +2376,9 @@ namespace Microsoft.Windows.CsWin32
                 .AddModifiers(Token(this.Visibility), Token(SyntaxKind.UnsafeKeyword))
                 .AddMembers(members.ToArray());
 
-            Guid guid = this.FindGuidFromAttribute(typeDef);
-            if (guid != Guid.Empty)
+            if (this.FindGuidFromAttribute(typeDef) is Guid guid)
             {
-                iface = iface
-                    .AddAttributeLists(AttributeList().AddAttributes(GUID(guid)));
+                iface = iface.AddAttributeLists(AttributeList().AddAttributes(GUID(guid)));
             }
 
             return iface;
@@ -2443,11 +2517,14 @@ namespace Microsoft.Windows.CsWin32
                 }
             }
 
-            Guid guid = this.FindGuidFromAttribute(typeDef);
             InterfaceDeclarationSyntax ifaceDeclaration = InterfaceDeclaration(ifaceName.Identifier)
-                .AddAttributeLists(AttributeList().AddAttributes(GUID(guid), ifaceType))
                 .AddModifiers(Token(this.Visibility))
                 .AddMembers(members.ToArray());
+
+            if (this.FindGuidFromAttribute(typeDef) is Guid guid)
+            {
+                ifaceDeclaration = ifaceDeclaration.AddAttributeLists(AttributeList().AddAttributes(GUID(guid), ifaceType));
+            }
 
             if (baseTypeSyntaxList.Count > 0)
             {
@@ -2458,28 +2535,26 @@ namespace Microsoft.Windows.CsWin32
             return ifaceDeclaration;
         }
 
-        private Guid FindGuidFromAttribute(TypeDefinition typeDef)
+        private Guid? FindGuidFromAttribute(TypeDefinition typeDef) => this.FindGuidFromAttribute(typeDef.GetCustomAttributes());
+
+        private Guid? FindGuidFromAttribute(CustomAttributeHandleCollection attributes)
         {
-            Guid guid = Guid.Empty;
-            foreach (CustomAttributeHandle attHandle in typeDef.GetCustomAttributes())
+            Guid? guid = null;
+            if (this.FindInteropDecorativeAttribute(attributes, nameof(GuidAttribute)) is CustomAttribute att)
             {
-                CustomAttribute att = this.mr.GetCustomAttribute(attHandle);
-                if (this.IsAttribute(att, InteropDecorationNamespace, nameof(GuidAttribute)))
-                {
-                    CustomAttributeValue<TypeSyntax> args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
-                    guid = new Guid(
-                        (uint)args.FixedArguments[0].Value!,
-                        (ushort)args.FixedArguments[1].Value!,
-                        (ushort)args.FixedArguments[2].Value!,
-                        (byte)args.FixedArguments[3].Value!,
-                        (byte)args.FixedArguments[4].Value!,
-                        (byte)args.FixedArguments[5].Value!,
-                        (byte)args.FixedArguments[6].Value!,
-                        (byte)args.FixedArguments[7].Value!,
-                        (byte)args.FixedArguments[8].Value!,
-                        (byte)args.FixedArguments[9].Value!,
-                        (byte)args.FixedArguments[10].Value!);
-                }
+                CustomAttributeValue<TypeSyntax> args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
+                guid = new Guid(
+                    (uint)args.FixedArguments[0].Value!,
+                    (ushort)args.FixedArguments[1].Value!,
+                    (ushort)args.FixedArguments[2].Value!,
+                    (byte)args.FixedArguments[3].Value!,
+                    (byte)args.FixedArguments[4].Value!,
+                    (byte)args.FixedArguments[5].Value!,
+                    (byte)args.FixedArguments[6].Value!,
+                    (byte)args.FixedArguments[7].Value!,
+                    (byte)args.FixedArguments[8].Value!,
+                    (byte)args.FixedArguments[9].Value!,
+                    (byte)args.FixedArguments[10].Value!);
             }
 
             return guid;
@@ -2617,8 +2692,7 @@ namespace Microsoft.Windows.CsWin32
                 result = result.AddAttributeLists(AttributeList().AddAttributes(StructLayout(typeDef.Attributes, layout)));
             }
 
-            Guid guid = this.FindGuidFromAttribute(typeDef);
-            if (guid != Guid.Empty)
+            if (this.FindGuidFromAttribute(typeDef) is Guid guid)
             {
                 result = result.AddAttributeLists(AttributeList().AddAttributes(GUID(guid)));
             }
@@ -3991,14 +4065,6 @@ namespace Microsoft.Windows.CsWin32
                 ConstantTypeCode.UInt64 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadUInt64()), blobReader2.ReadUInt64())),
                 _ => throw new NotSupportedException("ConstantTypeCode not supported: " + constant.TypeCode),
             };
-
-            unsafe string ToHex<T>(T value)
-                where T : unmanaged
-            {
-                int fullHexLength = sizeof(T) * 2;
-                string hex = string.Format(CultureInfo.InvariantCulture, "0x{0:X" + fullHexLength + "}", value);
-                return hex;
-            }
         }
     }
 }

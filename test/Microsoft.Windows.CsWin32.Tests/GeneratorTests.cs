@@ -131,6 +131,9 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             "RTM_DEST_INFO", // nested structs with inline arrays with element whose name collides with another
             "DISPPARAMS",
             "JsVariantToValue",
+            "WIA_CATEGORY_FINISHED_FILE", // GUID constant
+            "DEVPKEY_MTPBTH_IsConnected", // PROPERTYKEY constant
+            "IOleUILinkContainerW", // An IUnknown-derived interface with no GUID
             "FILE_TYPE_NOTIFICATION_INPUT",
             "DS_SELECTION_LIST", // A struct with a fixed-length inline array of potentially managed structs
             "ISpellCheckerFactory", // COM interface that includes `ref` parameters

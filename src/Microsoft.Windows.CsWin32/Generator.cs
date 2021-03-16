@@ -109,6 +109,12 @@ namespace Microsoft.Windows.CsWin32
             "PSTR",
         };
 
+        private static readonly HashSet<string> SpecialTypeDefNames = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "PCWSTR",
+            "PCSTR",
+        };
+
         /// <summary>
         /// This is the preferred capitalizations for modules and class names.
         /// If they are not in this list, the capitalization will come from the metadata assembly.
@@ -2179,12 +2185,18 @@ namespace Microsoft.Windows.CsWin32
                     this.FindInteropDecorativeAttribute(customAttributes, nameof(GuidAttribute)) is CustomAttribute guidAttribute ? GuidValue(guidAttribute) :
                     this.FindInteropDecorativeAttribute(customAttributes, "PropertyKeyAttribute") is CustomAttribute propertyKeyAttribute ? PropertyKeyValue(propertyKeyAttribute) :
                     throw new NotSupportedException("Unsupported constant: " + name);
+                bool requiresUnsafe = false;
                 if (fieldType.Type is not PredefinedTypeSyntax && value is not ObjectCreationExpressionSyntax)
                 {
                     if (fieldType.Type is IdentifierNameSyntax { Identifier: { ValueText: string typeName } } && this.TryGetHandleReleaseMethod(typeName, out _))
                     {
                         // Cast to IntPtr first, then the actual handle struct.
                         value = CastExpression(fieldType.Type, CastExpression(IntPtrTypeSyntax, ParenthesizedExpression(value)));
+                    }
+                    else if (fieldType.Type is IdentifierNameSyntax { Identifier: { ValueText: "PCWSTR" } })
+                    {
+                        value = CastExpression(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword))), ParenthesizedExpression(value));
+                        requiresUnsafe = true;
                     }
                     else
                     {
@@ -2200,6 +2212,11 @@ namespace Microsoft.Windows.CsWin32
                 else
                 {
                     modifiers = modifiers.Add(Token(SyntaxKind.ConstKeyword));
+                }
+
+                if (requiresUnsafe)
+                {
+                    modifiers = modifiers.Add(Token(SyntaxKind.UnsafeKeyword));
                 }
 
                 var result = FieldDeclaration(VariableDeclaration(fieldType.Type).AddVariables(
@@ -3794,10 +3811,18 @@ namespace Microsoft.Windows.CsWin32
 
         private bool IsTypeDefStruct(IdentifierNameSyntax? identifierName)
         {
-            if (identifierName is object && this.typesByName.TryGetValue(identifierName.Identifier.ValueText, out TypeDefinitionHandle value))
+            if (identifierName is object)
             {
-                TypeDefinition typeDef = this.mr.GetTypeDefinition(value);
-                return this.IsTypeDefStruct(typeDef);
+                if (this.typesByName.TryGetValue(identifierName.Identifier.ValueText, out TypeDefinitionHandle value))
+                {
+                    TypeDefinition typeDef = this.mr.GetTypeDefinition(value);
+                    return this.IsTypeDefStruct(typeDef);
+                }
+
+                if (SpecialTypeDefNames.Contains(identifierName.Identifier.ValueText))
+                {
+                    return true;
+                }
             }
 
             return false;

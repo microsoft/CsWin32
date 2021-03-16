@@ -13,7 +13,7 @@ internal static unsafe class GeneratedForm
 {
     private static void IEnumDebugPropertyInfo(IEnumDebugPropertyInfo info)
     {
-        Span<DebugPropertyInfo> span = new DebugPropertyInfo[2];
+        var span = new DebugPropertyInfo[2];
         HRESULT result = info.Next(span, out uint initialized);
         info.Clone(out IEnumDebugPropertyInfo ppepi);
     }

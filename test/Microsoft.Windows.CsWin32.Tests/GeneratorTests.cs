@@ -132,6 +132,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             "DISPPARAMS",
             "JsVariantToValue",
             "FILE_TYPE_NOTIFICATION_INPUT",
+            "DS_SELECTION_LIST", // A struct with a fixed-length inline array of potentially managed structs
             "ISpellCheckerFactory", // COM interface that includes `ref` parameters
             "LocalSystemTimeToLocalFileTime", // small step
             "ID3D12Resource", // COM interface with base types
@@ -173,6 +174,17 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
         Assert.Contains(this.FindGeneratedMethod("Next"), m => m.ParameterList.Parameters.Count == 3 && m.ParameterList.Parameters[0].Modifiers.Any(SyntaxKind.ThisKeyword));
+    }
+
+    [Fact]
+    public void IDispatchDerivedInterface()
+    {
+        const string ifaceName = "IInkRectangle";
+        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        Assert.True(this.generator.TryGenerate(ifaceName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        Assert.Contains(this.FindGeneratedType(ifaceName), t => t.BaseList is null && t.AttributeLists.Any(al => al.Attributes.Any(a => a.Name is IdentifierNameSyntax { Identifier: { ValueText: "InterfaceType" } } && a.ArgumentList?.Arguments[0].Expression is MemberAccessExpressionSyntax { Name: IdentifierNameSyntax { Identifier: { ValueText: "InterfaceIsIDispatch" } } })));
     }
 
     [Fact]

@@ -65,7 +65,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     }
 
     [Theory]
-    [InlineData("CREATE_ALWAYS", "FILE_CREATE_FLAGS")]
+    [InlineData("COPYFILE2_CALLBACK_NONE", "COPYFILE2_MESSAGE_TYPE")]
     [InlineData("RTL_RUN_ONCE_ASYNC", null)]
     [InlineData("__zz__not_defined", null)]
     public void TryGetEnumName(string candidate, string? declaringEnum)

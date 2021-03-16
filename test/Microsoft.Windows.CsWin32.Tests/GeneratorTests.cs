@@ -184,7 +184,20 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         Assert.True(this.generator.TryGenerate(ifaceName, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
-        Assert.Contains(this.FindGeneratedType(ifaceName), t => t.BaseList is null && t.AttributeLists.Any(al => al.Attributes.Any(a => a.Name is IdentifierNameSyntax { Identifier: { ValueText: "InterfaceType" } } && a.ArgumentList?.Arguments[0].Expression is MemberAccessExpressionSyntax { Name: IdentifierNameSyntax { Identifier: { ValueText: "InterfaceIsIDispatch" } } })));
+#pragma warning disable CS0618 // Type or member is obsolete
+        Assert.Contains(this.FindGeneratedType(ifaceName), t => t.BaseList is null && t.AttributeLists.Any(al => al.Attributes.Any(a => a.Name is IdentifierNameSyntax { Identifier: { ValueText: "InterfaceType" } } && a.ArgumentList?.Arguments[0].Expression is MemberAccessExpressionSyntax { Name: IdentifierNameSyntax { Identifier: { ValueText: nameof(ComInterfaceType.InterfaceIsIDispatch) } } })));
+#pragma warning restore CS0618 // Type or member is obsolete
+    }
+
+    [Fact]
+    public void IInpectableDerivedInterface()
+    {
+        const string ifaceName = "IUserConsentVerifierInterop";
+        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        Assert.True(this.generator.TryGenerate(ifaceName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        Assert.Contains(this.FindGeneratedType(ifaceName), t => t.BaseList is null && ((InterfaceDeclarationSyntax)t).Members.Count == 1 && t.AttributeLists.Any(al => al.Attributes.Any(a => a.Name is IdentifierNameSyntax { Identifier: { ValueText: "InterfaceType" } } && a.ArgumentList?.Arguments[0].Expression is MemberAccessExpressionSyntax { Name: IdentifierNameSyntax { Identifier: { ValueText: nameof(ComInterfaceType.InterfaceIsIInspectable) } } })));
     }
 
     [Fact]

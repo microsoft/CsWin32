@@ -2324,6 +2324,7 @@ namespace Microsoft.Windows.CsWin32
             var allMethods = new List<MethodDefinitionHandle>();
             bool foundIUnknown = false;
             bool foundIDispatch = false;
+            bool foundIInspectable = false;
             var baseTypeSyntaxList = new List<BaseTypeSyntax>();
             while (baseTypes.Count > 0)
             {
@@ -2344,6 +2345,10 @@ namespace Microsoft.Windows.CsWin32
                     {
                         foundIDispatch = true;
                     }
+                    else if (this.mr.StringComparer.Equals(baseType.Name, "IInspectable"))
+                    {
+                        foundIInspectable = true;
+                    }
                     else
                     {
                         this.RequestInteropType(baseTypeHandle);
@@ -2357,6 +2362,7 @@ namespace Microsoft.Windows.CsWin32
             allMethods.AddRange(typeDef.GetMethods());
 
             AttributeSyntax ifaceType = InterfaceType(
+                foundIInspectable ? ComInterfaceType.InterfaceIsIInspectable :
                 foundIDispatch ? ComInterfaceType.InterfaceIsIDispatch :
                 foundIUnknown ? ComInterfaceType.InterfaceIsIUnknown :
                 throw new NotSupportedException("No COM interface base type found."));

@@ -3650,13 +3650,19 @@ namespace Microsoft.Windows.CsWin32
                 //     /// <summary>Always <c>8</c>.</summary>
                 //     internal int Length => 8;
                 // ...
-                IdentifierNameSyntax fixedLengthStructName = IdentifierName($"__{elementType.ToString().Replace('.', '_').Replace(':', '_')}_{length}");
+                IdentifierNameSyntax fixedLengthStructName = IdentifierName($"__{elementType.ToString().Replace('.', '_').Replace(':', '_').Replace('*', '_').Replace('<', '_').Replace('>', '_').Replace('[', '_').Replace(']', '_').Replace(',', '_')}_{length}");
+                SyntaxTokenList fieldModifiers = TokenList(Token(this.Visibility));
+                if (RequiresUnsafe(elementType))
+                {
+                    fieldModifiers = fieldModifiers.Add(Token(SyntaxKind.UnsafeKeyword));
+                }
+
                 var fixedLengthStruct = StructDeclaration(fixedLengthStructName.Identifier)
                     .AddModifiers(Token(this.Visibility))
                     .AddMembers(
                         FieldDeclaration(VariableDeclaration(elementType)
                             .AddVariables(Enumerable.Range(0, length).Select(n => VariableDeclarator($"_{n}")).ToArray()))
-                            .AddModifiers(Token(this.Visibility)),
+                            .WithModifiers(fieldModifiers),
                         PropertyDeclaration(PredefinedType(Token(SyntaxKind.IntKeyword)), "Length")
                             .AddModifiers(Token(this.Visibility))
                             .WithExpressionBody(ArrowExpressionClause(lengthLiteralSyntax))

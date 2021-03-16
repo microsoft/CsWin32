@@ -6,3 +6,6 @@ BOOL
 HDC_UserSize
 NTSTATUS
 MainAVIHeader
+EnumWindows
+GetWindowTextLength
+GetWindowText

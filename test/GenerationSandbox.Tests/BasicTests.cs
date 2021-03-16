@@ -2,15 +2,23 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
+using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
 using Microsoft.Windows.Sdk;
 using Xunit;
+using Xunit.Abstractions;
 
 [Trait("WindowsOnly", "true")]
 public class BasicTests
 {
     private const int FILE_FLAG_DELETE_ON_CLOSE = 0x04000000; // remove when https://github.com/microsoft/win32metadata/issues/98 is fixed.
+    private readonly ITestOutputHelper logger;
+
+    public BasicTests(ITestOutputHelper logger)
+    {
+        this.logger = logger;
+    }
 
     [Fact]
     public void GetTickCount_Nonzero()
@@ -125,7 +133,7 @@ public class BasicTests
             path,
             FILE_ACCESS_FLAGS.FILE_GENERIC_WRITE,
             FILE_SHARE_FLAGS.FILE_SHARE_NONE,
-            lpSecurityAttributes: null,
+            lpSecurityAttributes: default,
             FILE_CREATE_FLAGS.CREATE_NEW,
             FILE_FLAGS_AND_ATTRIBUTES.FILE_ATTRIBUTE_TEMPORARY | (FILE_FLAGS_AND_ATTRIBUTES)FILE_FLAG_DELETE_ON_CLOSE,
             hTemplateFile: null);
@@ -181,5 +189,37 @@ public class BasicTests
         header.dwReserved.ItemRef(2) = 4;
         Assert.Equal(4u, header.dwReserved.ReadOnlyItemRef(2));
         Assert.Equal(4u, header.dwReserved._2);
+    }
+
+    [Fact]
+    public void GetAllWindowsInfo()
+    {
+        bool windowReturn = PInvoke.EnumWindows(
+            (HWND handle, LPARAM customParam) =>
+            {
+                int bufferSize = PInvoke.GetWindowTextLength(handle) + 1;
+                unsafe
+                {
+                    fixed (char* windowNameChars = new char[bufferSize])
+                    {
+                        if (PInvoke.GetWindowText(handle, windowNameChars, bufferSize) == 0)
+                        {
+                            int errorCode = Marshal.GetLastWin32Error();
+                            if (errorCode != 0)
+                            {
+                                throw new Win32Exception(errorCode);
+                            }
+
+                            return true;
+                        }
+
+                        string windowName = new string(windowNameChars);
+                        this.logger.WriteLine(windowName);
+                    }
+
+                    return true;
+                }
+            },
+            (LPARAM)0);
     }
 }

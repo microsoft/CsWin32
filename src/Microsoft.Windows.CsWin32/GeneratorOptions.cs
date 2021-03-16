@@ -71,7 +71,7 @@ namespace Microsoft.Windows.CsWin32
 #pragma warning restore CA1034 // Nested types should not be visible
         {
             /// <summary>
-            /// Gets an array of "interface.method" strings that identify methods that should be generated with <see cref="PreserveSigAttribute"/>.
+            /// Gets an array of "interface.method" or "interface" strings that identify methods and interfaces that should be generated with <see cref="PreserveSigAttribute"/>.
             /// </summary>
             public ImmutableArray<string> PreserveSigMethods { get; init; } = ImmutableArray.Create<string>();
         }

@@ -72,6 +72,8 @@ Several aspects of the generated code can be customized, including:
 * The namespace that declares all interop types
 * Whether to emit interop types as `public` or `internal`
 * Whether to emit ANSI functions as well where Wide character functions also exist
+* Set `PreserveSig` for COM interfaces or individual members
+* Force generation of blittable structs, COM structs instead of interfaces (for super high performance with 0 GC pressure), etc.
 
 To configure these settings, create a `NativeMethods.json` file in your project directory.
 Specifying the `$schema` property adds completions, descriptions and validation in many JSON editors.

@@ -109,6 +109,12 @@ namespace Microsoft.Windows.CsWin32
             "PSTR",
         };
 
+        private static readonly HashSet<string> SpecialTypeDefNames = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "PCWSTR",
+            "PCSTR",
+        };
+
         /// <summary>
         /// This is the preferred capitalizations for modules and class names.
         /// If they are not in this list, the capitalization will come from the metadata assembly.
@@ -414,7 +420,7 @@ namespace Microsoft.Windows.CsWin32
             foreach (FieldDefinitionHandle fieldDefHandle in this.Apis.SelectMany(api => api.GetFields()))
             {
                 FieldDefinition fieldDef = this.mr.GetFieldDefinition(fieldDefHandle);
-                const FieldAttributes expectedFlags = FieldAttributes.Literal | FieldAttributes.Static | FieldAttributes.Public;
+                const FieldAttributes expectedFlags = FieldAttributes.Static | FieldAttributes.Public;
                 if ((fieldDef.Attributes & expectedFlags) == expectedFlags)
                 {
                     string name = this.mr.GetString(fieldDef.Name);
@@ -1262,6 +1268,20 @@ namespace Microsoft.Windows.CsWin32
             return null;
         }
 
+        internal CustomAttribute? FindInteropDecorativeAttribute(CustomAttributeHandleCollection customAttributeHandles, string attributeName)
+        {
+            foreach (var handle in customAttributeHandles)
+            {
+                CustomAttribute att = this.mr.GetCustomAttribute(handle);
+                if (this.IsAttribute(att, InteropDecorationNamespace, attributeName))
+                {
+                    return att;
+                }
+            }
+
+            return null;
+        }
+
         /// <summary>
         /// Attempts to translate a <see cref="TypeReferenceHandle"/> to a <see cref="TypeDefinitionHandle"/>.
         /// </summary>
@@ -1805,6 +1825,65 @@ namespace Microsoft.Windows.CsWin32
             return false;
         }
 
+        private static unsafe string ToHex<T>(T value)
+            where T : unmanaged
+        {
+            int fullHexLength = sizeof(T) * 2;
+            string hex = string.Format(CultureInfo.InvariantCulture, "0x{0:X" + fullHexLength + "}", value);
+            return hex;
+        }
+
+        private static ObjectCreationExpressionSyntax GuidValue(CustomAttribute guidAttribute)
+        {
+            CustomAttributeValue<TypeSyntax> args = guidAttribute.DecodeValue(CustomAttributeTypeProvider.Instance);
+            var a = (uint)args.FixedArguments[0].Value!;
+            var b = (ushort)args.FixedArguments[1].Value!;
+            var c = (ushort)args.FixedArguments[2].Value!;
+            var d = (byte)args.FixedArguments[3].Value!;
+            var e = (byte)args.FixedArguments[4].Value!;
+            var f = (byte)args.FixedArguments[5].Value!;
+            var g = (byte)args.FixedArguments[6].Value!;
+            var h = (byte)args.FixedArguments[7].Value!;
+            var i = (byte)args.FixedArguments[8].Value!;
+            var j = (byte)args.FixedArguments[9].Value!;
+            var k = (byte)args.FixedArguments[10].Value!;
+
+            return ObjectCreationExpression(IdentifierName(nameof(Guid))).AddArgumentListArguments(
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(a), a))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(b), b))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(c), c))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(d), d))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(e), e))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(f), f))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(g), g))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(h), h))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(i), i))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(j), j))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(k), k))));
+        }
+
+        private static ObjectCreationExpressionSyntax PropertyKeyValue(CustomAttribute propertyKeyAttribute)
+        {
+            CustomAttributeValue<TypeSyntax> args = propertyKeyAttribute.DecodeValue(CustomAttributeTypeProvider.Instance);
+            var a = (uint)args.FixedArguments[0].Value!;
+            var b = (ushort)args.FixedArguments[1].Value!;
+            var c = (ushort)args.FixedArguments[2].Value!;
+            var d = (byte)args.FixedArguments[3].Value!;
+            var e = (byte)args.FixedArguments[4].Value!;
+            var f = (byte)args.FixedArguments[5].Value!;
+            var g = (byte)args.FixedArguments[6].Value!;
+            var h = (byte)args.FixedArguments[7].Value!;
+            var i = (byte)args.FixedArguments[8].Value!;
+            var j = (byte)args.FixedArguments[9].Value!;
+            var k = (byte)args.FixedArguments[10].Value!;
+            var pid = (uint)args.FixedArguments[11].Value!;
+
+            return ObjectCreationExpression(IdentifierName("PROPERTYKEY")).WithInitializer(
+                InitializerExpression(SyntaxKind.ObjectInitializerExpression).AddExpressions(
+                    AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, IdentifierName("fmtid"), GuidValue(propertyKeyAttribute)),
+                    AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, IdentifierName("pid"), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(pid)))));
+        }
+
         private MemberDeclarationSyntax FetchTemplate(string name)
         {
             using Stream? templateStream = Assembly.GetExecutingAssembly().GetManifestResourceStream($"{ThisAssembly.RootNamespace}.templates.{name}");
@@ -2101,14 +2180,23 @@ namespace Microsoft.Windows.CsWin32
                 TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null);
                 var customAttributes = fieldDef.GetCustomAttributes();
                 var fieldType = fieldTypeInfo.ToTypeSyntax(this.fieldTypeSettings, customAttributes);
-                Constant constant = this.mr.GetConstant(fieldDef.GetDefaultValue());
-                ExpressionSyntax value = this.ToExpressionSyntax(constant);
-                if (fieldType.Type is not PredefinedTypeSyntax)
+                ExpressionSyntax value =
+                    fieldDef.GetDefaultValue() is { IsNil: false } constantHandle ? this.ToExpressionSyntax(this.mr.GetConstant(constantHandle)) :
+                    this.FindInteropDecorativeAttribute(customAttributes, nameof(GuidAttribute)) is CustomAttribute guidAttribute ? GuidValue(guidAttribute) :
+                    this.FindInteropDecorativeAttribute(customAttributes, "PropertyKeyAttribute") is CustomAttribute propertyKeyAttribute ? PropertyKeyValue(propertyKeyAttribute) :
+                    throw new NotSupportedException("Unsupported constant: " + name);
+                bool requiresUnsafe = false;
+                if (fieldType.Type is not PredefinedTypeSyntax && value is not ObjectCreationExpressionSyntax)
                 {
                     if (fieldType.Type is IdentifierNameSyntax { Identifier: { ValueText: string typeName } } && this.TryGetHandleReleaseMethod(typeName, out _))
                     {
                         // Cast to IntPtr first, then the actual handle struct.
                         value = CastExpression(fieldType.Type, CastExpression(IntPtrTypeSyntax, ParenthesizedExpression(value)));
+                    }
+                    else if (fieldType.Type is IdentifierNameSyntax { Identifier: { ValueText: "PCWSTR" } })
+                    {
+                        value = CastExpression(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword))), ParenthesizedExpression(value));
+                        requiresUnsafe = true;
                     }
                     else
                     {
@@ -2117,13 +2205,18 @@ namespace Microsoft.Windows.CsWin32
                 }
 
                 var modifiers = TokenList(Token(this.Visibility));
-                if (this.IsTypeDefStruct(fieldType.Type as IdentifierNameSyntax))
+                if (this.IsTypeDefStruct(fieldType.Type as IdentifierNameSyntax) || value is ObjectCreationExpressionSyntax)
                 {
                     modifiers = modifiers.Add(Token(SyntaxKind.StaticKeyword)).Add(Token(SyntaxKind.ReadOnlyKeyword));
                 }
                 else
                 {
                     modifiers = modifiers.Add(Token(SyntaxKind.ConstKeyword));
+                }
+
+                if (requiresUnsafe)
+                {
+                    modifiers = modifiers.Add(Token(SyntaxKind.UnsafeKeyword));
                 }
 
                 var result = FieldDeclaration(VariableDeclaration(fieldType.Type).AddVariables(
@@ -2300,11 +2393,9 @@ namespace Microsoft.Windows.CsWin32
                 .AddModifiers(Token(this.Visibility), Token(SyntaxKind.UnsafeKeyword))
                 .AddMembers(members.ToArray());
 
-            Guid guid = this.FindGuidFromAttribute(typeDef);
-            if (guid != Guid.Empty)
+            if (this.FindGuidFromAttribute(typeDef) is Guid guid)
             {
-                iface = iface
-                    .AddAttributeLists(AttributeList().AddAttributes(GUID(guid)));
+                iface = iface.AddAttributeLists(AttributeList().AddAttributes(GUID(guid)));
             }
 
             return iface;
@@ -2443,11 +2534,14 @@ namespace Microsoft.Windows.CsWin32
                 }
             }
 
-            Guid guid = this.FindGuidFromAttribute(typeDef);
             InterfaceDeclarationSyntax ifaceDeclaration = InterfaceDeclaration(ifaceName.Identifier)
-                .AddAttributeLists(AttributeList().AddAttributes(GUID(guid), ifaceType))
                 .AddModifiers(Token(this.Visibility))
                 .AddMembers(members.ToArray());
+
+            if (this.FindGuidFromAttribute(typeDef) is Guid guid)
+            {
+                ifaceDeclaration = ifaceDeclaration.AddAttributeLists(AttributeList().AddAttributes(GUID(guid), ifaceType));
+            }
 
             if (baseTypeSyntaxList.Count > 0)
             {
@@ -2458,28 +2552,26 @@ namespace Microsoft.Windows.CsWin32
             return ifaceDeclaration;
         }
 
-        private Guid FindGuidFromAttribute(TypeDefinition typeDef)
+        private Guid? FindGuidFromAttribute(TypeDefinition typeDef) => this.FindGuidFromAttribute(typeDef.GetCustomAttributes());
+
+        private Guid? FindGuidFromAttribute(CustomAttributeHandleCollection attributes)
         {
-            Guid guid = Guid.Empty;
-            foreach (CustomAttributeHandle attHandle in typeDef.GetCustomAttributes())
+            Guid? guid = null;
+            if (this.FindInteropDecorativeAttribute(attributes, nameof(GuidAttribute)) is CustomAttribute att)
             {
-                CustomAttribute att = this.mr.GetCustomAttribute(attHandle);
-                if (this.IsAttribute(att, InteropDecorationNamespace, nameof(GuidAttribute)))
-                {
-                    CustomAttributeValue<TypeSyntax> args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
-                    guid = new Guid(
-                        (uint)args.FixedArguments[0].Value!,
-                        (ushort)args.FixedArguments[1].Value!,
-                        (ushort)args.FixedArguments[2].Value!,
-                        (byte)args.FixedArguments[3].Value!,
-                        (byte)args.FixedArguments[4].Value!,
-                        (byte)args.FixedArguments[5].Value!,
-                        (byte)args.FixedArguments[6].Value!,
-                        (byte)args.FixedArguments[7].Value!,
-                        (byte)args.FixedArguments[8].Value!,
-                        (byte)args.FixedArguments[9].Value!,
-                        (byte)args.FixedArguments[10].Value!);
-                }
+                CustomAttributeValue<TypeSyntax> args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
+                guid = new Guid(
+                    (uint)args.FixedArguments[0].Value!,
+                    (ushort)args.FixedArguments[1].Value!,
+                    (ushort)args.FixedArguments[2].Value!,
+                    (byte)args.FixedArguments[3].Value!,
+                    (byte)args.FixedArguments[4].Value!,
+                    (byte)args.FixedArguments[5].Value!,
+                    (byte)args.FixedArguments[6].Value!,
+                    (byte)args.FixedArguments[7].Value!,
+                    (byte)args.FixedArguments[8].Value!,
+                    (byte)args.FixedArguments[9].Value!,
+                    (byte)args.FixedArguments[10].Value!);
             }
 
             return guid;
@@ -2617,8 +2709,7 @@ namespace Microsoft.Windows.CsWin32
                 result = result.AddAttributeLists(AttributeList().AddAttributes(StructLayout(typeDef.Attributes, layout)));
             }
 
-            Guid guid = this.FindGuidFromAttribute(typeDef);
-            if (guid != Guid.Empty)
+            if (this.FindGuidFromAttribute(typeDef) is Guid guid)
             {
                 result = result.AddAttributeLists(AttributeList().AddAttributes(GUID(guid)));
             }
@@ -2714,13 +2805,26 @@ namespace Microsoft.Windows.CsWin32
                     .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
                     .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
 
-                // public static explicit operator MSIHANDLE(IntPtr value) => new MSIHANDLE((uint)value.ToInt32());
-                members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
-                    .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IntPtrTypeSyntax))
-                    .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(
-                        Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToInt32)))))))))
-                    .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
-                    .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+                if (fieldInfo.FieldType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.UIntKeyword } })
+                {
+                    // public static explicit operator MSIHANDLE(IntPtr value) => new MSIHANDLE((uint)value.ToInt32());
+                    members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
+                        .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IntPtrTypeSyntax))
+                        .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(
+                            Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToInt32)))))))))
+                        .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
+                        .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+                }
+                else if (fieldInfo.FieldType is PointerTypeSyntax)
+                {
+                    // public static explicit operator MSIHANDLE(IntPtr value) => new MSIHANDLE(value.ToPointer());
+                    members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
+                        .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IntPtrTypeSyntax))
+                        .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(
+                            Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToPointer)))))))))
+                        .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
+                        .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+                }
             }
 
             // public bool Equals(HWND other) => this.Value == other.Value;
@@ -2827,7 +2931,7 @@ namespace Microsoft.Windows.CsWin32
         {
             ExpressionSyntax thisValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Value"));
 
-            // public override string ToString() => Marshal.PtrToStringBSTR(this.Value);
+            // public override string ToString() => Marshal.PtrToStringBSTR(new IntPtr(this.Value));
             yield return MethodDeclaration(PredefinedType(Token(SyntaxKind.StringKeyword)), nameof(this.ToString))
                 .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.OverrideKeyword))
                 .WithExpressionBody(ArrowExpressionClause(
@@ -2836,14 +2940,13 @@ namespace Microsoft.Windows.CsWin32
                             SyntaxKind.SimpleMemberAccessExpression,
                             IdentifierName(nameof(Marshal)),
                             IdentifierName(nameof(Marshal.PtrToStringBSTR))))
-                .AddArgumentListArguments(Argument(thisValue))))
+                .AddArgumentListArguments(Argument(ObjectCreationExpression(IntPtrTypeSyntax).AddArgumentListArguments(Argument(thisValue))))))
                 .WithSemicolonToken(Token(SyntaxKind.SemicolonToken));
 
-            // public static implicit operator ReadOnlySpan<char>(BSTR bstr) => bstr.Value != IntPtr.Zero ? new ReadOnlySpan<char>(bstr.Value.ToPointer(), *((int*)bstr.Value.ToPointer() - 1) / 2) : default;
+            // public static implicit operator ReadOnlySpan<char>(BSTR bstr) => bstr.Value != null ? new ReadOnlySpan<char>(bstr.Value, *((int*)bstr.Value - 1) / 2) : default;
             TypeSyntax rosChar = MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword)));
             IdentifierNameSyntax bstrParam = IdentifierName("bstr");
             ExpressionSyntax bstrValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, bstrParam, IdentifierName("Value"));
-            ExpressionSyntax bstrPointer = InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, bstrValue, IdentifierName(nameof(IntPtr.ToPointer))), ArgumentList());
             ExpressionSyntax length = BinaryExpression(
                 SyntaxKind.DivideExpression,
                 PrefixUnaryExpression(
@@ -2851,12 +2954,12 @@ namespace Microsoft.Windows.CsWin32
                     ParenthesizedExpression(
                         BinaryExpression(
                             SyntaxKind.SubtractExpression,
-                            CastExpression(PointerType(PredefinedType(Token(SyntaxKind.IntKeyword))), bstrPointer),
+                            CastExpression(PointerType(PredefinedType(Token(SyntaxKind.IntKeyword))), bstrValue),
                             LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(1))))),
                 LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(2)));
-            ExpressionSyntax rosCreation = ObjectCreationExpression(rosChar).AddArgumentListArguments(Argument(bstrPointer), Argument(length));
-            ExpressionSyntax bstrNotZero = BinaryExpression(SyntaxKind.NotEqualsExpression, bstrValue, DefaultExpression(IntPtrTypeSyntax));
-            ExpressionSyntax conditional = ConditionalExpression(bstrNotZero, rosCreation, DefaultExpression(rosChar));
+            ExpressionSyntax rosCreation = ObjectCreationExpression(rosChar).AddArgumentListArguments(Argument(bstrValue), Argument(length));
+            ExpressionSyntax bstrNotNull = BinaryExpression(SyntaxKind.NotEqualsExpression, bstrValue, LiteralExpression(SyntaxKind.NullLiteralExpression));
+            ExpressionSyntax conditional = ConditionalExpression(bstrNotNull, rosCreation, DefaultExpression(rosChar));
             yield return ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), rosChar)
                 .AddParameterListParameters(Parameter(bstrParam.Identifier).WithType(IdentifierName("BSTR")))
                 .WithExpressionBody(ArrowExpressionClause(conditional))
@@ -2945,8 +3048,8 @@ namespace Microsoft.Windows.CsWin32
             MemberAccessExpressionSyntax fieldAccessExpression = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("value"));
 
             // Add property accessor
-            members = members.Add(PropertyDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), "Value")
-                .WithExpressionBody(ArrowExpressionClause(BinaryExpression(SyntaxKind.NotEqualsExpression, fieldAccessExpression, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))))).WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
+            members = members.Add(PropertyDeclaration(PredefinedType(Token(SyntaxKind.IntKeyword)), "Value")
+                .WithExpressionBody(ArrowExpressionClause(fieldAccessExpression)).WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
                 .AddModifiers(Token(this.Visibility)));
 
             // BOOL(bool value) => this.value = value ? 1 : 0;
@@ -2958,16 +3061,30 @@ namespace Microsoft.Windows.CsWin32
                 .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, boolToInt)))
                 .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
 
-            // public static implicit operator bool(BOOL value) => value.Value;
+            // BOOL(int value) => this.value = value;
+            members = members.Add(ConstructorDeclaration(name.Identifier)
+                .AddModifiers(Token(this.Visibility))
+                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(PredefinedType(Token(SyntaxKind.IntKeyword))))
+                .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, valueParameter)))
+                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+
+            // public static implicit operator bool(BOOL value) => value.value != 0 ? true : false;
             members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), PredefinedType(Token(SyntaxKind.BoolKeyword)))
                 .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(name))
-                .WithExpressionBody(ArrowExpressionClause(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(fieldName))))
+                .WithExpressionBody(ArrowExpressionClause(BinaryExpression(SyntaxKind.NotEqualsExpression, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(fieldName)), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)))))
                 .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
                 .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
 
             // public static implicit operator BOOL(bool value) => new BOOL(value);
             members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), name)
                 .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(PredefinedType(Token(SyntaxKind.BoolKeyword))))
+                .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(Argument(valueParameter))))
+                .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
+                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+
+            // public static explicit operator BOOL(int value) => new BOOL(value);
+            members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
+                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(PredefinedType(Token(SyntaxKind.IntKeyword))))
                 .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(Argument(valueParameter))))
                 .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
                 .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
@@ -3564,13 +3681,19 @@ namespace Microsoft.Windows.CsWin32
                 //     /// <summary>Always <c>8</c>.</summary>
                 //     internal int Length => 8;
                 // ...
-                IdentifierNameSyntax fixedLengthStructName = IdentifierName($"__{elementType.ToString().Replace('.', '_').Replace(':', '_')}_{length}");
+                IdentifierNameSyntax fixedLengthStructName = IdentifierName($"__{elementType.ToString().Replace('.', '_').Replace(':', '_').Replace('*', '_').Replace('<', '_').Replace('>', '_').Replace('[', '_').Replace(']', '_').Replace(',', '_')}_{length}");
+                SyntaxTokenList fieldModifiers = TokenList(Token(this.Visibility));
+                if (RequiresUnsafe(elementType))
+                {
+                    fieldModifiers = fieldModifiers.Add(Token(SyntaxKind.UnsafeKeyword));
+                }
+
                 var fixedLengthStruct = StructDeclaration(fixedLengthStructName.Identifier)
                     .AddModifiers(Token(this.Visibility))
                     .AddMembers(
                         FieldDeclaration(VariableDeclaration(elementType)
                             .AddVariables(Enumerable.Range(0, length).Select(n => VariableDeclarator($"_{n}")).ToArray()))
-                            .AddModifiers(Token(this.Visibility)),
+                            .WithModifiers(fieldModifiers),
                         PropertyDeclaration(PredefinedType(Token(SyntaxKind.IntKeyword)), "Length")
                             .AddModifiers(Token(this.Visibility))
                             .WithExpressionBody(ArrowExpressionClause(lengthLiteralSyntax))
@@ -3702,10 +3825,18 @@ namespace Microsoft.Windows.CsWin32
 
         private bool IsTypeDefStruct(IdentifierNameSyntax? identifierName)
         {
-            if (identifierName is object && this.typesByName.TryGetValue(identifierName.Identifier.ValueText, out TypeDefinitionHandle value))
+            if (identifierName is object)
             {
-                TypeDefinition typeDef = this.mr.GetTypeDefinition(value);
-                return this.IsTypeDefStruct(typeDef);
+                if (this.typesByName.TryGetValue(identifierName.Identifier.ValueText, out TypeDefinitionHandle value))
+                {
+                    TypeDefinition typeDef = this.mr.GetTypeDefinition(value);
+                    return this.IsTypeDefStruct(typeDef);
+                }
+
+                if (SpecialTypeDefNames.Contains(identifierName.Identifier.ValueText))
+                {
+                    return true;
+                }
             }
 
             return false;
@@ -3991,14 +4122,6 @@ namespace Microsoft.Windows.CsWin32
                 ConstantTypeCode.UInt64 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadUInt64()), blobReader2.ReadUInt64())),
                 _ => throw new NotSupportedException("ConstantTypeCode not supported: " + constant.TypeCode),
             };
-
-            unsafe string ToHex<T>(T value)
-                where T : unmanaged
-            {
-                int fullHexLength = sizeof(T) * 2;
-                string hex = string.Format(CultureInfo.InvariantCulture, "0x{0:X" + fullHexLength + "}", value);
-                return hex;
-            }
         }
     }
 }

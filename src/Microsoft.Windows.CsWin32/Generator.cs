@@ -2788,13 +2788,26 @@ namespace Microsoft.Windows.CsWin32
                     .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
                     .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
 
-                // public static explicit operator MSIHANDLE(IntPtr value) => new MSIHANDLE((uint)value.ToInt32());
-                members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
-                    .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IntPtrTypeSyntax))
-                    .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(
-                        Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToInt32)))))))))
-                    .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
-                    .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+                if (fieldInfo.FieldType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.UIntKeyword } })
+                {
+                    // public static explicit operator MSIHANDLE(IntPtr value) => new MSIHANDLE((uint)value.ToInt32());
+                    members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
+                        .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IntPtrTypeSyntax))
+                        .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(
+                            Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToInt32)))))))))
+                        .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
+                        .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+                }
+                else if (fieldInfo.FieldType is PointerTypeSyntax)
+                {
+                    // public static explicit operator MSIHANDLE(IntPtr value) => new MSIHANDLE(value.ToPointer());
+                    members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
+                        .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IntPtrTypeSyntax))
+                        .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(
+                            Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToPointer)))))))))
+                        .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
+                        .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+                }
             }
 
             // public bool Equals(HWND other) => this.Value == other.Value;
@@ -2901,7 +2914,7 @@ namespace Microsoft.Windows.CsWin32
         {
             ExpressionSyntax thisValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Value"));
 
-            // public override string ToString() => Marshal.PtrToStringBSTR(this.Value);
+            // public override string ToString() => Marshal.PtrToStringBSTR(new IntPtr(this.Value));
             yield return MethodDeclaration(PredefinedType(Token(SyntaxKind.StringKeyword)), nameof(this.ToString))
                 .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.OverrideKeyword))
                 .WithExpressionBody(ArrowExpressionClause(
@@ -2910,14 +2923,13 @@ namespace Microsoft.Windows.CsWin32
                             SyntaxKind.SimpleMemberAccessExpression,
                             IdentifierName(nameof(Marshal)),
                             IdentifierName(nameof(Marshal.PtrToStringBSTR))))
-                .AddArgumentListArguments(Argument(thisValue))))
+                .AddArgumentListArguments(Argument(ObjectCreationExpression(IntPtrTypeSyntax).AddArgumentListArguments(Argument(thisValue))))))
                 .WithSemicolonToken(Token(SyntaxKind.SemicolonToken));
 
-            // public static implicit operator ReadOnlySpan<char>(BSTR bstr) => bstr.Value != IntPtr.Zero ? new ReadOnlySpan<char>(bstr.Value.ToPointer(), *((int*)bstr.Value.ToPointer() - 1) / 2) : default;
+            // public static implicit operator ReadOnlySpan<char>(BSTR bstr) => bstr.Value != null ? new ReadOnlySpan<char>(bstr.Value, *((int*)bstr.Value - 1) / 2) : default;
             TypeSyntax rosChar = MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword)));
             IdentifierNameSyntax bstrParam = IdentifierName("bstr");
             ExpressionSyntax bstrValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, bstrParam, IdentifierName("Value"));
-            ExpressionSyntax bstrPointer = InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, bstrValue, IdentifierName(nameof(IntPtr.ToPointer))), ArgumentList());
             ExpressionSyntax length = BinaryExpression(
                 SyntaxKind.DivideExpression,
                 PrefixUnaryExpression(
@@ -2925,12 +2937,12 @@ namespace Microsoft.Windows.CsWin32
                     ParenthesizedExpression(
                         BinaryExpression(
                             SyntaxKind.SubtractExpression,
-                            CastExpression(PointerType(PredefinedType(Token(SyntaxKind.IntKeyword))), bstrPointer),
+                            CastExpression(PointerType(PredefinedType(Token(SyntaxKind.IntKeyword))), bstrValue),
                             LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(1))))),
                 LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(2)));
-            ExpressionSyntax rosCreation = ObjectCreationExpression(rosChar).AddArgumentListArguments(Argument(bstrPointer), Argument(length));
-            ExpressionSyntax bstrNotZero = BinaryExpression(SyntaxKind.NotEqualsExpression, bstrValue, DefaultExpression(IntPtrTypeSyntax));
-            ExpressionSyntax conditional = ConditionalExpression(bstrNotZero, rosCreation, DefaultExpression(rosChar));
+            ExpressionSyntax rosCreation = ObjectCreationExpression(rosChar).AddArgumentListArguments(Argument(bstrValue), Argument(length));
+            ExpressionSyntax bstrNotNull = BinaryExpression(SyntaxKind.NotEqualsExpression, bstrValue, LiteralExpression(SyntaxKind.NullLiteralExpression));
+            ExpressionSyntax conditional = ConditionalExpression(bstrNotNull, rosCreation, DefaultExpression(rosChar));
             yield return ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), rosChar)
                 .AddParameterListParameters(Parameter(bstrParam.Identifier).WithType(IdentifierName("BSTR")))
                 .WithExpressionBody(ArrowExpressionClause(conditional))

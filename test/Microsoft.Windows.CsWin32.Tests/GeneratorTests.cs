@@ -138,12 +138,12 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             "ID3D12Resource", // COM interface with base types
             "ID2D1RectangleGeometry")] // COM interface with base types
         string api,
-        bool comStructs)
+        bool allowMarshaling)
     {
         var options = DefaultTestGeneratorOptions with
         {
             WideCharOnly = false,
-            ComInterop = new GeneratorOptions.ComInteropOptions { StructsInsteadOfInterfaces = comStructs },
+            AllowMarshaling = allowMarshaling,
         };
         this.generator = new Generator(this.metadataStream, options, this.compilation, this.parseOptions);
         Assert.True(this.generator.TryGenerate(api, CancellationToken.None));
@@ -245,9 +245,9 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     }
 
     [Theory, PairwiseData]
-    public void NativeArray_SizeParamIndex_ProducesSimplerFriendlyOverload(bool comStructs)
+    public void NativeArray_SizeParamIndex_ProducesSimplerFriendlyOverload(bool allowMarshaling)
     {
-        var options = DefaultTestGeneratorOptions with { ComInterop = new GeneratorOptions.ComInteropOptions { StructsInsteadOfInterfaces = comStructs } };
+        var options = DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling };
         this.generator = new Generator(this.metadataStream, options, this.compilation, this.parseOptions);
         Assert.True(this.generator.TryGenerate("EvtNext", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
@@ -257,9 +257,9 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     }
 
     [Theory, PairwiseData]
-    public void NonCOMInterfaceReferences(bool comStructs)
+    public void NonCOMInterfaceReferences(bool allowMarshaling)
     {
-        var options = DefaultTestGeneratorOptions with { ComInterop = new GeneratorOptions.ComInteropOptions { StructsInsteadOfInterfaces = comStructs } };
+        var options = DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling };
         this.generator = new Generator(this.metadataStream, options, this.compilation, this.parseOptions);
         const string methodName = "D3DCompile"; // A method whose signature references non-COM interface ID3DInclude
         Assert.True(this.generator.TryGenerate(methodName, CancellationToken.None));
@@ -272,20 +272,20 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     }
 
     [Theory, PairwiseData]
-    public void BOOL_ReturnType_InCOMInterface(bool comStructs)
+    public void BOOL_ReturnType_InCOMInterface(bool allowMarshaling)
     {
-        var options = DefaultTestGeneratorOptions with { ComInterop = new GeneratorOptions.ComInteropOptions { StructsInsteadOfInterfaces = comStructs } };
+        var options = DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling };
         this.generator = new Generator(this.metadataStream, options, this.compilation, this.parseOptions);
         Assert.True(this.generator.TryGenerate("ISpellCheckerFactory", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
-        if (comStructs)
+        if (allowMarshaling)
         {
-            Assert.Contains(this.FindGeneratedMethod("IsSupported"), method => method.ParameterList.Parameters.Last().Type is PointerTypeSyntax { ElementType: IdentifierNameSyntax { Identifier: { ValueText: "BOOL" } } });
+            Assert.Contains(this.FindGeneratedMethod("IsSupported"), method => method.ReturnType is IdentifierNameSyntax { Identifier: { ValueText: "BOOL" } });
         }
         else
         {
-            Assert.Contains(this.FindGeneratedMethod("IsSupported"), method => method.ReturnType is IdentifierNameSyntax { Identifier: { ValueText: "BOOL" } });
+            Assert.Contains(this.FindGeneratedMethod("IsSupported"), method => method.ParameterList.Parameters.Last().Type is PointerTypeSyntax { ElementType: IdentifierNameSyntax { Identifier: { ValueText: "BOOL" } } });
         }
     }
 
@@ -304,9 +304,9 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     }
 
     [Theory, PairwiseData]
-    public void BSTR_FieldsDoNotBecomeSafeHandles(bool comStructs)
+    public void BSTR_FieldsDoNotBecomeSafeHandles(bool allowMarshaling)
     {
-        var options = DefaultTestGeneratorOptions with { ComInterop = new GeneratorOptions.ComInteropOptions { StructsInsteadOfInterfaces = comStructs } };
+        var options = DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling };
         this.generator = new Generator(this.metadataStream, options, this.compilation, this.parseOptions);
         Assert.True(this.generator.TryGenerate("DebugPropertyInfo", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
@@ -582,9 +582,9 @@ namespace Microsoft.Windows.Sdk
     }
 
     [Theory, PairwiseData]
-    public void FullGeneration(bool comStructs)
+    public void FullGeneration(bool allowMarshaling)
     {
-        var generatorOptions = new GeneratorOptions { ComInterop = new GeneratorOptions.ComInteropOptions { StructsInsteadOfInterfaces = comStructs } };
+        var generatorOptions = new GeneratorOptions { AllowMarshaling = allowMarshaling };
         this.generator = new Generator(this.metadataStream, generatorOptions, this.compilation, this.parseOptions);
         this.generator.GenerateAll(CancellationToken.None);
         this.CollectGeneratedCode(this.generator);

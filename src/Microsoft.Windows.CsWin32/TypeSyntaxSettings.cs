@@ -3,7 +3,7 @@
 
 namespace Microsoft.Windows.CsWin32
 {
-    internal record TypeSyntaxSettings(Generator? Generator, bool PreferNativeInt, bool PreferMarshaledTypes, bool UseComInterfaces, bool QualifyNames)
+    internal record TypeSyntaxSettings(Generator? Generator, bool PreferNativeInt, bool PreferMarshaledTypes, bool AllowMarshaling, bool QualifyNames)
     {
     }
 }

@@ -26,11 +26,6 @@
       "title": "Details around code generation for COM interop",
       "type": "object",
       "properties": {
-        "structsInsteadOfInterfaces": {
-          "title": "Generate structs instead of interfaces, allowing 0 GC pressure and exact lifetime management.",
-          "type": "boolean",
-          "default": false
-        },
         "preserveSigMethods": {
           "title": "Identifies methods or interfaces that should be generated as [PreserveSig].",
           "type": "array",
@@ -41,6 +36,11 @@
           }
         }
       }
+    },
+    "allowMarshaling": {
+      "title": "Emit COM interfaces instead of structs, and allow generation of non-blittable structs for the sake of an easier to use API.",
+      "type": "boolean",
+      "default": true
     },
     "wideCharOnly": {
       "title": "Omit ANSI functions and remove `W` suffix from UTF-16 functions.",

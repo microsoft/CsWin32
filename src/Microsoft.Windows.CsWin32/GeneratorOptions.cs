@@ -46,6 +46,12 @@ namespace Microsoft.Windows.CsWin32
         public ComInteropOptions ComInterop { get; init; } = new ComInteropOptions();
 
         /// <summary>
+        /// Gets a value indicating whether to emit COM interfaces instead of structs, and allow generation of non-blittable structs for the sake of an easier to use API.
+        /// </summary>
+        /// <value>The default value is <see langword="true"/>.</value>
+        public bool AllowMarshaling { get; init; } = true;
+
+        /// <summary>
         /// Throws an exception when this instance is not initialized with a valid set of values.
         /// </summary>
         /// <exception cref="InvalidOperationException">Thrown when some setting is invalid.</exception>
@@ -64,12 +70,6 @@ namespace Microsoft.Windows.CsWin32
         public record ComInteropOptions
 #pragma warning restore CA1034 // Nested types should not be visible
         {
-            /// <summary>
-            /// Gets a value indicating whether COM interfaces should be generated as structs instead of interfaces.
-            /// </summary>
-            /// <value>The default value is <see langword="false"/>.</value>
-            public bool StructsInsteadOfInterfaces { get; init; }
-
             /// <summary>
             /// Gets an array of "interface.method" strings that identify methods that should be generated with <see cref="PreserveSigAttribute"/>.
             /// </summary>

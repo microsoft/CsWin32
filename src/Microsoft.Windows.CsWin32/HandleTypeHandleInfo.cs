@@ -82,7 +82,7 @@ namespace Microsoft.Windows.CsWin32
             {
                 return new TypeSyntaxAndMarshaling(PredefinedType(Token(SyntaxKind.ObjectKeyword)).WithAdditionalAnnotations(Generator.IsManagedTypeAnnotation), marshalAs);
             }
-            else if (!inputs.UseComInterfaces && this.IsDelegate(inputs, out TypeDefinition delegateDefinition) && inputs.Generator is object)
+            else if (!inputs.AllowMarshaling && this.IsDelegate(inputs, out TypeDefinition delegateDefinition) && inputs.Generator is object)
             {
                 return new TypeSyntaxAndMarshaling(inputs.Generator.FunctionPointer(delegateDefinition));
             }
@@ -95,7 +95,7 @@ namespace Microsoft.Windows.CsWin32
 
             if (isInterface is true)
             {
-                syntax = inputs.UseComInterfaces && !isNonCOMConformingInterface ? syntax.WithAdditionalAnnotations(Generator.IsManagedTypeAnnotation) : PointerType(syntax);
+                syntax = inputs.AllowMarshaling && !isNonCOMConformingInterface ? syntax.WithAdditionalAnnotations(Generator.IsManagedTypeAnnotation) : PointerType(syntax);
             }
 
             return new TypeSyntaxAndMarshaling(syntax);
@@ -103,7 +103,7 @@ namespace Microsoft.Windows.CsWin32
 
         private static bool TryMarshalAsObject(TypeSyntaxSettings inputs, string name, [NotNullWhen(true)] out MarshalAsAttribute? marshalAs)
         {
-            if (inputs.UseComInterfaces)
+            if (inputs.AllowMarshaling)
             {
                 switch (name)
                 {

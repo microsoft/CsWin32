@@ -329,7 +329,7 @@ namespace Microsoft.Windows.CsWin32
 
             this.canCallCreateSpan = this.compilation?.GetTypeByMetadataName(typeof(MemoryMarshal).FullName)?.GetMembers("CreateSpan").Any() is true;
 
-            if (!this.options.ComInterop.StructsInsteadOfInterfaces)
+            if (options.AllowMarshaling)
             {
                 this.BannedAPIs.Add("VARIANT", "Use `object` instead of VARIANT when in COM interface mode. VARIANT can only be emitted when emitting COM interfaces as structs.");
             }
@@ -338,12 +338,12 @@ namespace Microsoft.Windows.CsWin32
             this.peReader = new PEReader(this.metadataStream);
             this.mr = this.peReader.GetMetadataReader();
 
-            bool useComInterfaces = !options.ComInterop.StructsInsteadOfInterfaces;
+            bool useComInterfaces = options.AllowMarshaling;
             this.generalTypeSettings = new TypeSyntaxSettings(
                 this,
                 PreferNativeInt: this.LanguageVersion >= LanguageVersion.CSharp9,
                 PreferMarshaledTypes: false,
-                UseComInterfaces: !options.ComInterop.StructsInsteadOfInterfaces,
+                AllowMarshaling: options.AllowMarshaling,
                 QualifyNames: false);
             this.fieldTypeSettings = this.generalTypeSettings;
             this.delegateSignatureTypeSettings = this.generalTypeSettings;
@@ -1997,7 +1997,7 @@ namespace Microsoft.Windows.CsWin32
                     // Consider reusing .NET types like FILE_SHARE_FLAGS -> System.IO.FileShare
                     typeDeclaration = this.DeclareEnum(typeDef);
                 }
-                else if (!this.options.ComInterop.StructsInsteadOfInterfaces && this.mr.StringComparer.Equals(baseTypeName, nameof(MulticastDelegate)) && this.mr.StringComparer.Equals(baseTypeNamespace, nameof(System)))
+                else if (this.options.AllowMarshaling && this.mr.StringComparer.Equals(baseTypeName, nameof(MulticastDelegate)) && this.mr.StringComparer.Equals(baseTypeNamespace, nameof(System)))
                 {
                     typeDeclaration = this.DeclareDelegate(typeDef);
                 }
@@ -2196,7 +2196,7 @@ namespace Microsoft.Windows.CsWin32
                 baseTypeHandle = baseType.GetInterfaceImplementations().SingleOrDefault();
             }
 
-            return this.options.ComInterop.StructsInsteadOfInterfaces || this.IsNonCOMInterface(typeDef)
+            return !this.options.AllowMarshaling || this.IsNonCOMInterface(typeDef)
                 ? this.DeclareInterfaceAsStruct(typeDef, ifaceName, baseTypes)
                 : this.DeclareInterfaceAsInterface(typeDef, ifaceName, baseTypes);
         }
@@ -2481,7 +2481,7 @@ namespace Microsoft.Windows.CsWin32
 
         private DelegateDeclarationSyntax DeclareDelegate(TypeDefinition typeDef)
         {
-            if (this.options.ComInterop.StructsInsteadOfInterfaces)
+            if (!this.options.AllowMarshaling)
             {
                 throw new NotSupportedException("Delegates are not declared while in all-structs mode.");
             }
@@ -3671,7 +3671,7 @@ namespace Microsoft.Windows.CsWin32
                 return (fixedLengthStructName, List<MemberDeclarationSyntax>().Add(fixedLengthStruct));
             }
 
-            if (this.options.ComInterop.StructsInsteadOfInterfaces)
+            if (!this.options.AllowMarshaling)
             {
                 // If the field is a delegate type, we have to replace that with a native function pointer to avoid the struct becoming a 'managed type'.
                 if (originalType is PointerTypeSyntax { ElementType: IdentifierNameSyntax idName } && this.IsDelegateReference(idName, out TypeDefinition typeDef))
@@ -3738,7 +3738,7 @@ namespace Microsoft.Windows.CsWin32
                 {
                     if ((typeDef.Attributes & TypeAttributes.Interface) == TypeAttributes.Interface)
                     {
-                        return !this.options.ComInterop.StructsInsteadOfInterfaces && !this.IsNonCOMInterface(typeDef);
+                        return this.options.AllowMarshaling && !this.IsNonCOMInterface(typeDef);
                     }
 
                     this.GetBaseTypeInfo(typeDef, out StringHandle baseName, out StringHandle baseNamespace);
@@ -3801,7 +3801,7 @@ namespace Microsoft.Windows.CsWin32
                     else if (this.mr.StringComparer.Equals(baseName, nameof(MulticastDelegate)) && this.mr.StringComparer.Equals(baseNamespace, nameof(System)))
                     {
                         // Delegates appear as unmanaged function pointers when using structs instead of COM interfaces.
-                        return !this.options.ComInterop.StructsInsteadOfInterfaces;
+                        return this.options.AllowMarshaling;
                     }
 
                     throw new NotSupportedException();

@@ -4,12 +4,10 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
@@ -28,7 +26,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     private readonly ITestOutputHelper logger;
     private readonly FileStream metadataStream;
     private CSharpCompilation compilation;
-    private CSharpCompilation fastSpanCompilation;
+    private CSharpCompilation net50Compilation;
     private CSharpParseOptions parseOptions;
     private Generator? generator;
 
@@ -43,7 +41,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
 
         // set in InitializeAsync
         this.compilation = null!;
-        this.fastSpanCompilation = null!;
+        this.net50Compilation = null!;
     }
 
     public async Task InitializeAsync()
@@ -52,8 +50,8 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             ReferenceAssemblies.NetStandard.NetStandard20
                 .AddPackages(ImmutableArray.Create(new PackageIdentity("System.Memory", "4.5.4"))));
 
-        this.fastSpanCompilation = await this.CreateCompilationAsync(
-            ReferenceAssemblies.NetStandard.NetStandard21);
+        this.net50Compilation = await this.CreateCompilationAsync(
+            ReferenceAssemblies.Net.Net50);
     }
 
     public Task DisposeAsync() => Task.CompletedTask;
@@ -76,13 +74,55 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         Assert.Equal(declaringEnum, actualDeclaringEnum);
     }
 
-    [Fact]
-    public void SimplestMethod()
+    [Theory, PairwiseData]
+    public void SimplestMethod(bool net50)
     {
+        if (net50)
+        {
+            this.compilation = this.net50Compilation;
+        }
+
         this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
-        Assert.True(this.generator.TryGenerateExternMethod("GetTickCount"));
+        const string methodName = "GetTickCount";
+        Assert.True(this.generator.TryGenerateExternMethod(methodName));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
+
+        var generatedMethod = this.FindGeneratedMethod(methodName).Single();
+        if (net50)
+        {
+            Assert.Contains(generatedMethod.AttributeLists, this.IsAttributePresent);
+        }
+        else
+        {
+            Assert.DoesNotContain(generatedMethod.AttributeLists, this.IsAttributePresent);
+        }
+    }
+
+    [Theory, PairwiseData]
+    public void COMInterfaceWithSupportedOSPlatform(bool net50, bool allowMarshaling)
+    {
+        if (net50)
+        {
+            this.compilation = this.net50Compilation;
+        }
+
+        const string typeName = "IInkCursors";
+        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling }, this.compilation, this.parseOptions);
+        Assert.True(this.generator.TryGenerateType(typeName));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        var iface = this.FindGeneratedType(typeName).Single();
+
+        if (net50 && !allowMarshaling)
+        {
+            Assert.Contains(iface.AttributeLists, this.IsAttributePresent);
+        }
+        else
+        {
+            Assert.DoesNotContain(iface.AttributeLists, this.IsAttributePresent);
+        }
     }
 
     [Theory]
@@ -597,7 +637,7 @@ namespace Microsoft.Windows.Sdk
     }
 ";
 
-        this.compilation = this.fastSpanCompilation;
+        this.compilation = this.net50Compilation;
         this.AssertGeneratedType("MainAVIHeader", expected, expectedIndexer);
     }
 
@@ -753,6 +793,8 @@ namespace Microsoft.Windows.Sdk
             Assert.Null(extensionsClass);
         }
     }
+
+    private bool IsAttributePresent(AttributeListSyntax al) => al.Attributes.Any(a => a.Name.ToString() == "SupportedOSPlatform");
 
     private async Task<CSharpCompilation> CreateCompilationAsync(ReferenceAssemblies references)
     {

@@ -2,7 +2,7 @@
   <Import Project="..\..\src\Microsoft.Windows.CsWin32\build\Microsoft.Windows.CsWin32.props" />
 
   <PropertyGroup>
-    <TargetFrameworks>net5.0;netcoreapp3.1;net472</TargetFrameworks>
+    <TargetFrameworks>net5.0-windows7.0;netcoreapp3.1;net472</TargetFrameworks>
     <RootNamespace />
   </PropertyGroup>
 

@@ -762,6 +762,38 @@ namespace Microsoft.Windows.CsWin32
         }
 
         /// <summary>
+        /// Produces a sequence of suggested APIs with a similar name to the specified one.
+        /// </summary>
+        /// <param name="name">The user-supplied name.</param>
+        /// <returns>A sequence of API names.</returns>
+        public IEnumerable<string> GetSuggestions(string name)
+        {
+            if (name is null)
+            {
+                throw new ArgumentNullException(nameof(name));
+            }
+
+            // Trim suffixes off the name.
+            var suffixes = new List<string> { "A", "W", "32", "64", "Ex" };
+            foreach (string suffix in suffixes)
+            {
+                if (name.EndsWith(suffix, StringComparison.Ordinal))
+                {
+                    name = name.Substring(0, name.Length - suffix.Length);
+                }
+            }
+
+            // We should match on any API for which the given string is a substring.
+            foreach (string candidate in this.fieldsByName.Keys.Concat(this.typesByName.Keys).Concat(this.methodsByName.Keys))
+            {
+                if (candidate.Contains(name))
+                {
+                    yield return candidate;
+                }
+            }
+        }
+
+        /// <summary>
         /// Collects the result of code generation.
         /// </summary>
         /// <param name="cancellationToken">A cancellation token.</param>

@@ -9,3 +9,4 @@ MainAVIHeader
 EnumWindows
 GetWindowTextLength
 GetWindowText
+WPARAM

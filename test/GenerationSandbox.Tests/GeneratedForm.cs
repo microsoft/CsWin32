@@ -17,4 +17,14 @@ internal static unsafe class GeneratedForm
         HRESULT result = info.Next(span, out uint initialized);
         info.Clone(out IEnumDebugPropertyInfo ppepi);
     }
+
+    private static void LPARAM_From_NInt()
+    {
+        LPARAM p = 1;
+    }
+
+    private static void WPARAM_From_NInt()
+    {
+        WPARAM p = 1;
+    }
 }

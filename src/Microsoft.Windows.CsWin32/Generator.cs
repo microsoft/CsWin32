@@ -103,10 +103,12 @@ namespace Microsoft.Windows.CsWin32
         private static readonly AttributeListSyntax DefaultDllImportSearchPathsAttributeList = AttributeList().AddAttributes(
             Attribute(IdentifierName("DefaultDllImportSearchPaths")).AddArgumentListArguments(AttributeArgument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(DllImportSearchPath)), IdentifierName(nameof(DllImportSearchPath.System32))))));
 
-        private static readonly HashSet<string> StringTypeDefNames = new HashSet<string>(StringComparer.Ordinal)
+        private static readonly HashSet<string> ImplicitConversionTypeDefs = new HashSet<string>(StringComparer.Ordinal)
         {
             "PWSTR",
             "PSTR",
+            "LPARAM",
+            "WPARAM",
         };
 
         private static readonly HashSet<string> SpecialTypeDefNames = new HashSet<string>(StringComparer.Ordinal)
@@ -2784,8 +2786,8 @@ namespace Microsoft.Windows.CsWin32
                 .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
 
             // public static explicit operator HWND(int value) => new HWND(value);
-            // Except make converting char* or byte* to typedefs representing strings implicit.
-            SyntaxToken explicitOrImplicitModifier = Token(StringTypeDefNames.Contains(name.Identifier.ValueText) ? SyntaxKind.ImplicitKeyword : SyntaxKind.ExplicitKeyword);
+            // Except make converting char* or byte* to typedefs representing strings, and LPARAM/WPARAM to nint/nuint, implicit.
+            SyntaxToken explicitOrImplicitModifier = Token(ImplicitConversionTypeDefs.Contains(name.Identifier.ValueText) ? SyntaxKind.ImplicitKeyword : SyntaxKind.ExplicitKeyword);
             members = members.Add(ConversionOperatorDeclaration(explicitOrImplicitModifier, name)
                 .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(fieldInfo.FieldType))
                 .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(Argument(valueParameter))))

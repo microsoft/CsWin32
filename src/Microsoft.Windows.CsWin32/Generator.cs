@@ -1229,11 +1229,11 @@ namespace Microsoft.Windows.CsWin32
                 switch (specialName)
                 {
                     case "PCWSTR":
-                        specialDeclaration = this.FetchTemplate($"{specialName}.cs");
+                        specialDeclaration = this.FetchTemplate($"{specialName}");
                         this.TryGenerateType("PWSTR"); // the template references this type
                         break;
                     case "PCSTR":
-                        specialDeclaration = this.FetchTemplate($"{specialName}.cs");
+                        specialDeclaration = this.FetchTemplate($"{specialName}");
                         this.TryGenerateType("PSTR"); // the template references this type
                         break;
                     default:
@@ -1886,17 +1886,28 @@ namespace Microsoft.Windows.CsWin32
 
         private MemberDeclarationSyntax FetchTemplate(string name)
         {
-            using Stream? templateStream = Assembly.GetExecutingAssembly().GetManifestResourceStream($"{ThisAssembly.RootNamespace}.templates.{name}");
-            if (templateStream is null)
+            if (!this.TryFetchTemplate(name, out MemberDeclarationSyntax? result))
             {
                 throw new KeyNotFoundException();
             }
 
+            return result;
+        }
+
+        private bool TryFetchTemplate(string name, [NotNullWhen(true)] out MemberDeclarationSyntax? member)
+        {
+            using Stream? templateStream = Assembly.GetExecutingAssembly().GetManifestResourceStream($"{ThisAssembly.RootNamespace}.templates.{name.Replace('/', '.')}.cs");
+            if (templateStream is null)
+            {
+                member = null;
+                return false;
+            }
+
             using StreamReader sr = new(templateStream);
             string template = sr.ReadToEnd();
-            MemberDeclarationSyntax member = ParseMemberDeclaration(template) ?? throw new GenerationFailedException($"Unable to parse a type from a template: {name}");
-            MemberDeclarationSyntax memberWithVisibility = this.ElevateVisibility(member);
-            return memberWithVisibility;
+            member = ParseMemberDeclaration(template) ?? throw new GenerationFailedException($"Unable to parse a type from a template: {name}");
+            member = this.ElevateVisibility(member);
+            return true;
         }
 
         private FunctionPointerTypeSyntax FunctionPointer(MethodDefinition methodDefinition, MethodSignature<TypeHandleInfo> signature)
@@ -2897,7 +2908,7 @@ namespace Microsoft.Windows.CsWin32
             return result;
         }
 
-        private IEnumerable<MemberDeclarationSyntax> ExtractMembersFromTemplate(string name) => ((TypeDeclarationSyntax)this.FetchTemplate($"{name}.cs")).Members;
+        private IEnumerable<MemberDeclarationSyntax> ExtractMembersFromTemplate(string name) => ((TypeDeclarationSyntax)this.FetchTemplate($"{name}")).Members;
 
         /// <summary>
         /// Promotes an <see langword="internal" /> member to be <see langword="public"/> if <see cref="Visibility"/> indicates that generated APIs should be public.
@@ -3159,6 +3170,21 @@ namespace Microsoft.Windows.CsWin32
 
         private IEnumerable<MethodDeclarationSyntax> DeclareFriendlyOverloads(MethodDefinition methodDefinition, MethodDeclarationSyntax externMethodDeclaration, string declaringTypeName, FriendlyOverloadOf overloadOf)
         {
+            if (this.TryFetchTemplate(externMethodDeclaration.Identifier.ValueText, out MemberDeclarationSyntax? templateFriendlyOverload))
+            {
+                yield return (MethodDeclarationSyntax)templateFriendlyOverload;
+            }
+
+            if (this.options.AllowMarshaling && this.TryFetchTemplate("marshaling/" + externMethodDeclaration.Identifier.ValueText, out templateFriendlyOverload))
+            {
+                yield return (MethodDeclarationSyntax)templateFriendlyOverload;
+            }
+
+            if (!this.options.AllowMarshaling && this.TryFetchTemplate("no_marshaling/" + externMethodDeclaration.Identifier.ValueText, out templateFriendlyOverload))
+            {
+                yield return (MethodDeclarationSyntax)templateFriendlyOverload;
+            }
+
 #pragma warning disable SA1114 // Parameter list should follow declaration
             static ParameterSyntax StripAttributes(ParameterSyntax parameter) => parameter.WithAttributeLists(List<AttributeListSyntax>());
             static ExpressionSyntax GetSpanLength(ExpressionSyntax span) => MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, span, IdentifierName(nameof(Span<int>.Length)));

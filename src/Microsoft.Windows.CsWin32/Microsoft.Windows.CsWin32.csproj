@@ -18,7 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Remove="templates\*.cs" />
+    <Compile Remove="templates\**\*.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -35,7 +35,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="templates\*.cs" />
+    <EmbeddedResource Include="templates\**\*.cs" />
     <EmbeddedResource Include="@(YamlDocOutputPath)" />
   </ItemGroup>
 

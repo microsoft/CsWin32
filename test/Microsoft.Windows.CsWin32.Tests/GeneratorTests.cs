@@ -130,6 +130,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             "D3D11_BLEND_DESC1", // nested structs with inline arrays with element that is NOT nested
             "RTM_DEST_INFO", // nested structs with inline arrays with element whose name collides with another
             "DISPPARAMS",
+            "CoCreateInstance", // a hand-written friendly overload
             "JsVariantToValue",
             "WIA_CATEGORY_FINISHED_FILE", // GUID constant
             "DEVPKEY_MTPBTH_IsConnected", // PROPERTYKEY constant

@@ -31,6 +31,14 @@ namespace Microsoft.Windows.CsWin32
             DiagnosticSeverity.Warning,
             isEnabledByDefault: true);
 
+        private static readonly DiagnosticDescriptor NoMatchingMethodOrTypeWithSuggestions = new DiagnosticDescriptor(
+            "PInvoke001",
+            "No matching method or type found",
+            "Method or type \"{0}\" not found. Did you mean {1}?",
+            "Functionality",
+            DiagnosticSeverity.Warning,
+            isEnabledByDefault: true);
+
         private static readonly DiagnosticDescriptor NoMethodsForModule = new DiagnosticDescriptor(
             "PInvoke001",
             "No module found",
@@ -152,12 +160,12 @@ namespace Microsoft.Windows.CsWin32
                         context.ReportDiagnostic(Diagnostic.Create(UseEnumValueDeclaringType, location, declaringEnum));
                         if (!generator.TryGenerate(declaringEnum, context.CancellationToken))
                         {
-                            context.ReportDiagnostic(Diagnostic.Create(NoMatchingMethodOrType, location, declaringEnum));
+                            ReportNoMatch(location, declaringEnum);
                         }
                     }
                     else
                     {
-                        context.ReportDiagnostic(Diagnostic.Create(NoMatchingMethodOrType, location, name));
+                        ReportNoMatch(location, name);
                     }
                 }
             }
@@ -166,6 +174,32 @@ namespace Microsoft.Windows.CsWin32
             foreach (var unit in compilationUnits)
             {
                 context.AddSource(unit.Key, unit.Value.ToFullString());
+            }
+
+            void ReportNoMatch(Location? location, string failedAttempt)
+            {
+                var suggestions = generator.GetSuggestions(failedAttempt).Take(4).ToList();
+                if (suggestions.Count > 0)
+                {
+                    var suggestionBuilder = new StringBuilder();
+                    for (int i = 0; i < suggestions.Count; i++)
+                    {
+                        if (i > 0)
+                        {
+                            suggestionBuilder.Append(i < suggestions.Count - 1 ? ", " : " or ");
+                        }
+
+                        suggestionBuilder.Append('"');
+                        suggestionBuilder.Append(suggestions[i]);
+                        suggestionBuilder.Append('"');
+                    }
+
+                    context.ReportDiagnostic(Diagnostic.Create(NoMatchingMethodOrTypeWithSuggestions, location, failedAttempt, suggestionBuilder));
+                }
+                else
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(NoMatchingMethodOrType, location, failedAttempt));
+                }
             }
         }
     }

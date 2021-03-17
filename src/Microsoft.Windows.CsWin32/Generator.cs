@@ -323,6 +323,7 @@ namespace Microsoft.Windows.CsWin32
         private readonly bool canCallCreateSpan;
         private readonly bool generateSupportedOSPlatformAttributes;
         private readonly bool generateSupportedOSPlatformAttributesOnInterfaces; // only supported on net6.0 (https://github.com/dotnet/runtime/pull/48838)
+        private readonly bool generateDefaultDllImportSearchPathsAttribute;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="Generator"/> class.
@@ -339,6 +340,7 @@ namespace Microsoft.Windows.CsWin32
             this.parseOptions = parseOptions;
 
             this.canCallCreateSpan = this.compilation?.GetTypeByMetadataName(typeof(MemoryMarshal).FullName)?.GetMembers("CreateSpan").Any() is true;
+            this.generateDefaultDllImportSearchPathsAttribute = this.compilation?.GetTypeByMetadataName(typeof(DefaultDllImportSearchPathsAttribute).FullName) is object;
             if (this.compilation?.GetTypeByMetadataName("System.Runtime.Versioning.SupportedOSPlatformAttribute") is { } attribute)
             {
                 this.generateSupportedOSPlatformAttributes = true;
@@ -2203,8 +2205,7 @@ namespace Microsoft.Windows.CsWin32
 
                 MethodDeclarationSyntax methodDeclaration = MethodDeclaration(
                     List<AttributeListSyntax>()
-                        .Add(AttributeList().AddAttributes(DllImport(import, moduleName, entrypoint)))
-                        .Add(DefaultDllImportSearchPathsAttributeList),
+                        .Add(AttributeList().AddAttributes(DllImport(import, moduleName, entrypoint))),
                     modifiers: TokenList(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.ExternKeyword)),
                     returnType.Type,
                     explicitInterfaceSpecifier: null!,
@@ -2215,6 +2216,11 @@ namespace Microsoft.Windows.CsWin32
                     body: null!,
                     Token(SyntaxKind.SemicolonToken));
                 methodDeclaration = returnType.AddReturnMarshalAs(methodDeclaration);
+
+                if (this.generateDefaultDllImportSearchPathsAttribute)
+                {
+                    methodDeclaration = methodDeclaration.AddAttributeLists(DefaultDllImportSearchPathsAttributeList);
+                }
 
                 if (this.GetSupportedOSPlatformAttribute(methodDefinition.GetCustomAttributes()) is AttributeSyntax supportedOSPlatformAttribute)
                 {

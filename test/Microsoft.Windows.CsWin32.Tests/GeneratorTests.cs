@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
@@ -25,8 +26,8 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     private static readonly string FileSeparator = new string('=', 140);
     private readonly ITestOutputHelper logger;
     private readonly FileStream metadataStream;
+    private readonly Dictionary<string, CSharpCompilation> starterCompilations = new();
     private CSharpCompilation compilation;
-    private CSharpCompilation net50Compilation;
     private CSharpParseOptions parseOptions;
     private Generator? generator;
 
@@ -41,17 +42,23 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
 
         // set in InitializeAsync
         this.compilation = null!;
-        this.net50Compilation = null!;
     }
+
+    public static IEnumerable<object[]> TFMData =>
+        new object[][]
+        {
+            new object[] { "net40" },
+            new object[] { "netstandard2.0" },
+            new object[] { "net5.0" },
+        };
 
     public async Task InitializeAsync()
     {
-        this.compilation = await this.CreateCompilationAsync(
-            ReferenceAssemblies.NetStandard.NetStandard20
-                .AddPackages(ImmutableArray.Create(new PackageIdentity("System.Memory", "4.5.4"))));
+        this.starterCompilations.Add("net40", await this.CreateCompilationAsync(ReferenceAssemblies.NetFramework.Net40.Default));
+        this.starterCompilations.Add("netstandard2.0", await this.CreateCompilationAsync(ReferenceAssemblies.NetStandard.NetStandard20.AddPackages(ImmutableArray.Create(new PackageIdentity("System.Memory", "4.5.4")))));
+        this.starterCompilations.Add("net5.0", await this.CreateCompilationAsync(ReferenceAssemblies.Net.Net50));
 
-        this.net50Compilation = await this.CreateCompilationAsync(
-            ReferenceAssemblies.Net.Net50);
+        this.compilation = this.starterCompilations["netstandard2.0"];
     }
 
     public Task DisposeAsync() => Task.CompletedTask;
@@ -74,14 +81,11 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         Assert.Equal(declaringEnum, actualDeclaringEnum);
     }
 
-    [Theory, PairwiseData]
-    public void SimplestMethod(bool net50)
+    [Theory]
+    [MemberData(nameof(TFMData))]
+    public void SimplestMethod(string tfm)
     {
-        if (net50)
-        {
-            this.compilation = this.net50Compilation;
-        }
-
+        this.compilation = this.starterCompilations[tfm];
         this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
         const string methodName = "GetTickCount";
         Assert.True(this.generator.TryGenerateExternMethod(methodName));
@@ -89,24 +93,25 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.AssertNoDiagnostics();
 
         var generatedMethod = this.FindGeneratedMethod(methodName).Single();
-        if (net50)
+        if (tfm == "net5.0")
         {
-            Assert.Contains(generatedMethod.AttributeLists, this.IsAttributePresent);
+            Assert.Contains(generatedMethod.AttributeLists, al => IsAttributePresent(al, "SupportedOSPlatform"));
         }
         else
         {
-            Assert.DoesNotContain(generatedMethod.AttributeLists, this.IsAttributePresent);
+            Assert.DoesNotContain(generatedMethod.AttributeLists, al => IsAttributePresent(al, "SupportedOSPlatform"));
+        }
+
+        if (tfm != "net40")
+        {
+            Assert.Contains(generatedMethod.AttributeLists, al => IsAttributePresent(al, "DefaultDllImportSearchPaths"));
         }
     }
 
     [Theory, PairwiseData]
     public void COMInterfaceWithSupportedOSPlatform(bool net50, bool allowMarshaling)
     {
-        if (net50)
-        {
-            this.compilation = this.net50Compilation;
-        }
-
+        this.compilation = this.starterCompilations[net50 ? "net5.0" : "netstandard2.0"];
         const string typeName = "IInkCursors";
         this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling }, this.compilation, this.parseOptions);
         Assert.True(this.generator.TryGenerateType(typeName));
@@ -117,11 +122,11 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
 
         if (net50 && !allowMarshaling)
         {
-            Assert.Contains(iface.AttributeLists, this.IsAttributePresent);
+            Assert.Contains(iface.AttributeLists, al => IsAttributePresent(al, "SupportedOSPlatform"));
         }
         else
         {
-            Assert.DoesNotContain(iface.AttributeLists, this.IsAttributePresent);
+            Assert.DoesNotContain(iface.AttributeLists, al => IsAttributePresent(al, "SupportedOSPlatform"));
         }
     }
 
@@ -637,7 +642,7 @@ namespace Microsoft.Windows.Sdk
     }
 ";
 
-        this.compilation = this.net50Compilation;
+        this.compilation = this.starterCompilations["net5.0"];
         this.AssertGeneratedType("MainAVIHeader", expected, expectedIndexer);
     }
 
@@ -682,6 +687,8 @@ namespace Microsoft.Windows.Sdk
     {
         return File.OpenRead(Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "Windows.Win32.winmd"));
     }
+
+    private static bool IsAttributePresent(AttributeListSyntax al, string attributeName) => al.Attributes.Any(a => a.Name.ToString() == attributeName);
 
     private CSharpCompilation AddGeneratedCode(CSharpCompilation compilation, Generator generator)
     {
@@ -793,8 +800,6 @@ namespace Microsoft.Windows.Sdk
             Assert.Null(extensionsClass);
         }
     }
-
-    private bool IsAttributePresent(AttributeListSyntax al) => al.Attributes.Any(a => a.Name.ToString() == "SupportedOSPlatform");
 
     private async Task<CSharpCompilation> CreateCompilationAsync(ReferenceAssemblies references)
     {

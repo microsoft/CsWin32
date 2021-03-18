@@ -99,6 +99,7 @@ namespace Microsoft.Windows.CsWin32
         private static readonly IdentifierNameSyntax ComInterfaceFriendlyExtensionsClassName = IdentifierName("FriendlyOverloadExtensions");
         private static readonly TypeSyntax SafeHandleTypeSyntax = IdentifierName("SafeHandle");
         private static readonly IdentifierNameSyntax IntPtrTypeSyntax = IdentifierName(nameof(IntPtr));
+        private static readonly AttributeSyntax ComImportAttribute = Attribute(IdentifierName("ComImport"));
         private static readonly AttributeSyntax PreserveSigAttribute = Attribute(IdentifierName("PreserveSig"));
         private static readonly AttributeSyntax SupportedOSPlatformAttribute = Attribute(IdentifierName("SupportedOSPlatform"));
         private static readonly AttributeListSyntax DefaultDllImportSearchPathsAttributeList = AttributeList().AddAttributes(
@@ -2632,7 +2633,7 @@ namespace Microsoft.Windows.CsWin32
 
             if (this.FindGuidFromAttribute(typeDef) is Guid guid)
             {
-                ifaceDeclaration = ifaceDeclaration.AddAttributeLists(AttributeList().AddAttributes(GUID(guid), ifaceType));
+                ifaceDeclaration = ifaceDeclaration.AddAttributeLists(AttributeList().AddAttributes(GUID(guid), ifaceType, ComImportAttribute));
             }
 
             if (baseTypeSyntaxList.Count > 0)

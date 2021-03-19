@@ -132,9 +132,9 @@ public class BasicTests
         using var fileHandle = PInvoke.CreateFile(
             path,
             FILE_ACCESS_FLAGS.FILE_GENERIC_WRITE,
-            FILE_SHARE_FLAGS.FILE_SHARE_NONE,
+            FILE_SHARE_MODE.FILE_SHARE_NONE,
             lpSecurityAttributes: default,
-            FILE_CREATE_FLAGS.CREATE_NEW,
+            FILE_CREATION_DISPOSITION.CREATE_NEW,
             FILE_FLAGS_AND_ATTRIBUTES.FILE_ATTRIBUTE_TEMPORARY | (FILE_FLAGS_AND_ATTRIBUTES)FILE_FLAG_DELETE_ON_CLOSE,
             hTemplateFile: null);
         Assert.True(File.Exists(path));

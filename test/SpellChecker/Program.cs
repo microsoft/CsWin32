@@ -12,7 +12,7 @@ unsafe
     CoCreateInstance(
         typeof(SpellCheckerFactory).GUID,
         null,
-        (uint)CLSCTX.CLSCTX_INPROC_SERVER, // https://github.com/microsoft/win32metadata/issues/185
+        CLSCTX.CLSCTX_INPROC_SERVER,
         out ISpellCheckerFactory spellCheckerFactory).ThrowOnFailure();
 
     BOOL supported = spellCheckerFactory.IsSupported("en-US");

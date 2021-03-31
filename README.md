@@ -102,6 +102,7 @@ Alternatively, you may set the `MicrosoftWindowsSdkWin32MetadataBasePath` proper
 ## Known issues
 
 - [**WPF projects** issue and workaround](https://github.com/microsoft/CsWin32/issues/7).
+- [**WinUI / Reunion** issue](https://github.com/microsoft/CsWin32/issues/231)
 
 ## Consuming daily builds
 

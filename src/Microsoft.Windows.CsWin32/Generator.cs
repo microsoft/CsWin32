@@ -3683,7 +3683,6 @@ namespace Microsoft.Windows.CsWin32
                     .WithModifiers(modifiers)
                     .WithAttributeLists(List<AttributeListSyntax>())
                     .WithParameterList(ParameterList().AddParameters(parameters.ToArray()))
-                    .WithLeadingTrivia(leadingTrivia)
                     .WithBody(body)
                     .WithSemicolonToken(default);
 
@@ -3691,6 +3690,14 @@ namespace Microsoft.Windows.CsWin32
                 {
                     friendlyDeclaration = friendlyDeclaration.WithReturnType(returnSafeHandleType);
                 }
+
+                if (this.GetSupportedOSPlatformAttribute(methodDefinition.GetCustomAttributes()) is AttributeSyntax supportedOSPlatformAttribute)
+                {
+                    friendlyDeclaration = friendlyDeclaration.AddAttributeLists(AttributeList().AddAttributes(supportedOSPlatformAttribute));
+                }
+
+                friendlyDeclaration = friendlyDeclaration
+                    .WithLeadingTrivia(leadingTrivia);
 
                 yield return friendlyDeclaration;
             }

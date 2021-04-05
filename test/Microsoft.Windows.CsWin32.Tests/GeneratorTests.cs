@@ -108,6 +108,18 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         }
     }
 
+    [Fact]
+    public void SupportedOSPlatform_AppearsOnFriendlyOverloads()
+    {
+        const string methodName = "GetStagedPackagePathByFullName2";
+        this.compilation = this.starterCompilations["net5.0"];
+        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        Assert.True(this.generator.TryGenerate(methodName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        Assert.All(this.FindGeneratedMethod(methodName), method => Assert.Contains(method.AttributeLists, al => IsAttributePresent(al, "SupportedOSPlatform")));
+    }
+
     [Theory, PairwiseData]
     public void COMInterfaceWithSupportedOSPlatform(bool net50, bool allowMarshaling)
     {

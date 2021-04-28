@@ -200,7 +200,10 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             "ISpellCheckerFactory", // COM interface that includes `ref` parameters
             "LocalSystemTimeToLocalFileTime", // small step
             "ID3D12Resource", // COM interface with base types
-            "ID2D1RectangleGeometry")] // COM interface with base types
+            "ID2D1RectangleGeometry", // COM interface with base types
+            "GetCurrentProcess", // A handle for the current process
+            "GetCurrentProcessId", // An ID of the current process
+            "GetCurrentThreadId")] // An ID of the current thread of the current process
         string api,
         bool allowMarshaling)
     {
@@ -227,6 +230,33 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.CollectGeneratedCode(this.generator);
         Assert.True(this.IsMethodGenerated("CreateFile"));
         Assert.False(this.IsMethodGenerated("GetLastError"));
+    }
+
+    /// <summary>
+    /// Verifies that the MINIDUMP_TYPE enum is generated.
+    /// </summary>
+    // TODO: Figure out why this enum is not being generated and get it to generate as it should be constant with every platform.
+    [Fact]
+    public void GetMINIDUMP_TYPEGeneration()
+    {
+        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        Assert.True(this.generator.TryGenerate("MINIDUMP_TYPE", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        Assert.True(this.generator.TryGetEnumName("MINIDUMP_TYPE", out string? actualDeclaringEnum));
+        Assert.Equal("MINIDUMP_TYPE", actualDeclaringEnum);
+    }
+
+    /// <summary>
+    ///  Verifies that MiniDumpWriteDump is generated.
+    /// </summary>
+    // TODO: Make test try to generate using x86, x64, arm, and arm64 instead of AnyCPU so that it passes.
+    [Fact(Skip="Currently does not work due to MINIDUMP_EXCEPTION_INFORMATION not being available for AnyCPU.")]
+    public void GetMiniDumpWriteDumpGeneration()
+    {
+        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        Assert.True(this.generator.TryGenerate("MiniDumpWriteDump", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        Assert.True(this.IsMethodGenerated("MiniDumpWriteDump"));
     }
 
     [Fact]

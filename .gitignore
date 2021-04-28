@@ -346,3 +346,9 @@ MigrationBackup/
 
 # dotnet tool local install directory
 .store/
+
+# JetBrains Rider on Mac can generate these .DS_Store files on every folder in the repository.
+.DS_Store
+
+# Ignore these from rider too.
+.idea/

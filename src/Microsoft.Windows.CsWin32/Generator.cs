@@ -2874,6 +2874,15 @@ namespace Microsoft.Windows.CsWin32
                 .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, valueParameter)))
                 .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
 
+            if (fieldInfo.FieldType is IdentifierNameSyntax { Identifier: { Value: "nint" or "nuint" or nameof(IntPtr) or nameof(UIntPtr) } })
+            {
+                // internal static bool IsNull => value == default;
+                members = members.Add(PropertyDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), "IsNull")
+                    .AddModifiers(Token(this.Visibility))
+                    .WithExpressionBody(ArrowExpressionClause(BinaryExpression(SyntaxKind.EqualsExpression, fieldIdentifierName, LiteralExpression(SyntaxKind.DefaultLiteralExpression))))
+                    .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+            }
+
             // public static implicit operator int(HWND value) => value.Value;
             members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), fieldInfo.FieldType)
                 .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(name))

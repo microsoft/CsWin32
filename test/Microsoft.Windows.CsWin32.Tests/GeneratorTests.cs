@@ -286,6 +286,14 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
+    public void HandleStructsHaveIsNullProperty()
+    {
+        // A null HGDIOBJ has a specific meaning beyond just the concept of an invalid handle:
+        // https://docs.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-selectobject#return-value
+        this.AssertGeneratedMember("HGDIOBJ", "IsNull", "internal bool IsNull => Value == default;");
+    }
+
+    [Fact]
     public void NamespaceHandleGetsNoSafeHandle()
     {
         this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
@@ -811,6 +819,21 @@ namespace Microsoft.Windows.Sdk
             // Assert that no indexer was generated.
             Assert.Null(extensionsClass);
         }
+    }
+
+    private void AssertGeneratedMember(string apiName, string memberName, string expectedSyntax)
+    {
+        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        Assert.True(this.generator.TryGenerate(apiName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        BaseTypeDeclarationSyntax typeSyntax = Assert.Single(this.FindGeneratedType(apiName));
+        var semanticModel = this.compilation.GetSemanticModel(typeSyntax.SyntaxTree, ignoreAccessibility: false);
+        var member = Assert.Single(semanticModel.GetDeclaredSymbol(typeSyntax, CancellationToken.None)!.GetMembers(memberName));
+        var memberSyntax = member.DeclaringSyntaxReferences.Single().GetSyntax(CancellationToken.None);
+        Assert.Equal(
+            TestUtils.NormalizeToExpectedLineEndings(expectedSyntax).Trim(),
+            TestUtils.NormalizeToExpectedLineEndings(memberSyntax.ToFullString()).Trim());
     }
 
     private async Task<CSharpCompilation> CreateCompilationAsync(ReferenceAssemblies references)

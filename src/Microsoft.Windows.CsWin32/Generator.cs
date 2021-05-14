@@ -304,7 +304,12 @@ namespace Microsoft.Windows.CsWin32
         /// </summary>
         private readonly HashSet<string> specialTypesGenerating = new HashSet<string>(StringComparer.Ordinal);
 
-        private readonly Dictionary<string, MethodDefinitionHandle> methodsByName;
+        private readonly Dictionary<StringHandle, Dictionary<string, MethodDefinitionHandle>> methodsByByNamespaceAndName = new();
+
+        /// <summary>
+        /// A collection with values that are either <see cref="MethodDefinitionHandle"/> or a <see cref="System.Collections.Generic.List{T}"/> of these, indexed by method name.
+        /// </summary>
+        private readonly Dictionary<string, object> methodsByName = new(StringComparer.Ordinal);
 
         private readonly Dictionary<string, TypeDefinitionHandle> typesByName;
 
@@ -317,6 +322,11 @@ namespace Microsoft.Windows.CsWin32
         private readonly HashSet<string> releaseMethods = new HashSet<string>(StringComparer.Ordinal);
 
         private readonly Dictionary<TypeReferenceHandle, TypeDefinitionHandle> refToDefCache = new();
+
+        /// <summary>
+        /// The ref handle to the constructor on the SupportedArchitectureAttribute, if there is one.
+        /// </summary>
+        private readonly MemberReferenceHandle supportedArchitectureAttributeCtor;
 
         private readonly GeneratorOptions options;
         private readonly CSharpCompilation? compilation;
@@ -377,13 +387,63 @@ namespace Microsoft.Windows.CsWin32
             this.functionPointerTypeSettings = this.generalTypeSettings;
             this.errorMessageTypeSettings = this.generalTypeSettings with { QualifyNames = true };
 
-            this.Apis = this.mr.TypeDefinitions.Select(this.mr.GetTypeDefinition).Where(td => this.mr.StringComparer.Equals(td.Name, "Apis")).ToList();
-
-            this.methodsByName = new Dictionary<string, MethodDefinitionHandle>(StringComparer.Ordinal);
-            foreach (MethodDefinitionHandle methodDefHandle in this.Apis.SelectMany(api => api.GetMethods()))
+            foreach (MemberReferenceHandle memberRefHandle in this.mr.MemberReferences)
             {
-                string methodName = this.mr.GetString(this.mr.GetMethodDefinition(methodDefHandle).Name);
-                this.methodsByName.Add(methodName, methodDefHandle);
+                MemberReference memberReference = this.mr.GetMemberReference(memberRefHandle);
+                if (memberReference.GetKind() == MemberReferenceKind.Method)
+                {
+                    if (memberReference.Parent.Kind == HandleKind.TypeReference)
+                    {
+                        if (this.mr.StringComparer.Equals(memberReference.Name, ".ctor"))
+                        {
+                            var trh = (TypeReferenceHandle)memberReference.Parent;
+                            TypeReference tr = this.mr.GetTypeReference(trh);
+                            if (this.mr.StringComparer.Equals(tr.Name, "SupportedArchitectureAttribute") &&
+                                this.mr.StringComparer.Equals(tr.Namespace, "Windows.Win32.Interop"))
+                            {
+                                this.supportedArchitectureAttributeCtor = memberRefHandle;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            this.Apis = this.mr.TypeDefinitions.Select(this.mr.GetTypeDefinition).Where(td => this.mr.StringComparer.Equals(td.Name, "Apis")).ToList();
+            foreach (TypeDefinition apisClass in this.Apis)
+            {
+                var methods = new Dictionary<string, MethodDefinitionHandle>(StringComparer.Ordinal);
+                this.methodsByByNamespaceAndName.Add(apisClass.Namespace, methods);
+
+                foreach (MethodDefinitionHandle methodDefHandle in apisClass.GetMethods())
+                {
+                    MethodDefinition methodDef = this.mr.GetMethodDefinition(methodDefHandle);
+                    if (this.IsCompatibleWithPlatform(methodDef))
+                    {
+                        string methodName = this.mr.GetString(methodDef.Name);
+                        methods.Add(methodName, methodDefHandle);
+
+                        if (this.methodsByName.TryGetValue(methodName, out object? collidingMethodOrList))
+                        {
+                            if (collidingMethodOrList is MethodDefinitionHandle collidingHandle)
+                            {
+                                this.methodsByName[methodName] = new List<MethodDefinitionHandle> { collidingHandle, methodDefHandle };
+                            }
+                            else if (collidingMethodOrList is List<MethodDefinitionHandle> collidingHandleList)
+                            {
+                                collidingHandleList.Add(methodDefHandle);
+                            }
+                            else
+                            {
+                                throw new Exception("Internal error.");
+                            }
+                        }
+                        else
+                        {
+                            this.methodsByName.Add(methodName, methodDefHandle);
+                        }
+                    }
+                }
             }
 
             this.typesByName = new Dictionary<string, TypeDefinitionHandle>(StringComparer.Ordinal);
@@ -449,6 +509,16 @@ namespace Microsoft.Windows.CsWin32
             ExternMethod,
             StructMethod,
             InterfaceMethod,
+        }
+
+        [Flags]
+        private enum InteropArchitecture
+        {
+            None = 0x0,
+            X86 = 0x1,
+            X64 = 0x2,
+            Arm64 = 0x4,
+            All = 0x7,
         }
 
         internal Dictionary<string, string> BannedAPIs { get; } = new Dictionary<string, string>
@@ -720,22 +790,48 @@ namespace Microsoft.Windows.CsWin32
                 throw new NotSupportedException(reason);
             }
 
-            if (this.methodsByName.TryGetValue(name, out MethodDefinitionHandle handle))
+            if (this.methodsByName.TryGetValue(name, out object? handle))
             {
-                this.RequestExternMethod(handle);
-                return true;
+                if (handle is MethodDefinitionHandle methodHandle)
+                {
+                    this.RequestExternMethod(methodHandle);
+                    return true;
+                }
+                else
+                {
+                    // TODO: Emit a warning to the user that they should fully-qualify the method name to disambiguate.
+                    return false;
+                }
             }
 
             bool successful = false;
             if (this.methodsByName.TryGetValue(name + "W", out handle))
             {
-                this.RequestExternMethod(handle);
+                if (handle is MethodDefinitionHandle methodHandle)
+                {
+                    this.RequestExternMethod(methodHandle);
+                }
+                else
+                {
+                    // TODO: Emit a warning to the user that they should fully-qualify the method name to disambiguate.
+                    return false;
+                }
+
                 successful = true;
             }
 
             if (this.methodsByName.TryGetValue(name + "A", out handle))
             {
-                this.RequestExternMethod(handle);
+                if (handle is MethodDefinitionHandle methodHandle)
+                {
+                    this.RequestExternMethod(methodHandle);
+                }
+                else
+                {
+                    // TODO: Emit a warning to the user that they should fully-qualify the method name to disambiguate.
+                    return false;
+                }
+
                 successful = true;
             }
 
@@ -1051,7 +1147,7 @@ namespace Microsoft.Windows.CsWin32
 
             string safeHandleClassName = $"{releaseMethod}SafeHandle";
 
-            MethodDefinitionHandle releaseMethodHandle = this.methodsByName[releaseMethod];
+            MethodDefinitionHandle releaseMethodHandle = (MethodDefinitionHandle)this.methodsByName[releaseMethod];
             MethodDefinition releaseMethodDef = this.mr.GetMethodDefinition(releaseMethodHandle);
             string releaseMethodModule = this.GetNormalizedModuleName(releaseMethodDef.GetImport());
 
@@ -2245,6 +2341,41 @@ namespace Microsoft.Windows.CsWin32
             {
                 throw new GenerationFailedException($"Failed while generating extern method: {methodName}", ex);
             }
+        }
+
+        private bool IsCompatibleWithPlatform(MethodDefinition methodDef)
+        {
+            if (this.supportedArchitectureAttributeCtor == default)
+            {
+                // This metadata never uses the SupportedArchitectureAttribute, so we assume this member is compatible.
+                return true;
+            }
+
+            foreach (CustomAttributeHandle attHandle in methodDef.GetCustomAttributes())
+            {
+                CustomAttribute att = this.mr.GetCustomAttribute(attHandle);
+                if (att.Constructor.Equals(this.supportedArchitectureAttributeCtor))
+                {
+                    if (this.compilation is null)
+                    {
+                        // Without a compilation, we cannot ascertain compatibility.
+                        return false;
+                    }
+
+                    var requiredPlatform = (InteropArchitecture)(int)att.DecodeValue(CustomAttributeTypeProvider.Instance).FixedArguments[0].Value!;
+                    return this.compilation.Options.Platform switch
+                    {
+                        Platform.AnyCpu => requiredPlatform == InteropArchitecture.All,
+                        Platform.Arm64 => (requiredPlatform & InteropArchitecture.Arm64) == InteropArchitecture.Arm64,
+                        Platform.X86 => (requiredPlatform & InteropArchitecture.X86) == InteropArchitecture.X86,
+                        Platform.X64 => (requiredPlatform & InteropArchitecture.X64) == InteropArchitecture.X64,
+                        _ => false,
+                    };
+                }
+            }
+
+            // No SupportedArchitectureAttribute on this member, so assume it is compatible.
+            return true;
         }
 
         private AttributeSyntax? GetSupportedOSPlatformAttribute(CustomAttributeHandleCollection attributes)

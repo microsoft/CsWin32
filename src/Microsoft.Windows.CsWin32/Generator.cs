@@ -270,8 +270,6 @@ namespace Microsoft.Windows.CsWin32
         /// </summary>
         private readonly Dictionary<TypeDefinitionHandle, MemberDeclarationSyntax> types = new Dictionary<TypeDefinitionHandle, MemberDeclarationSyntax>();
 
-        private readonly Dictionary<string, FieldDefinitionHandle> fieldsByName = new Dictionary<string, FieldDefinitionHandle>(StringComparer.Ordinal);
-
         private readonly Dictionary<FieldDefinitionHandle, MemberDeclarationSyntax> fieldsToSyntax = new Dictionary<FieldDefinitionHandle, MemberDeclarationSyntax>();
 
         private readonly List<ClassDeclarationSyntax> safeHandleTypes = new List<ClassDeclarationSyntax>();
@@ -304,14 +302,10 @@ namespace Microsoft.Windows.CsWin32
         /// </summary>
         private readonly HashSet<string> specialTypesGenerating = new HashSet<string>(StringComparer.Ordinal);
 
-        private readonly Dictionary<StringHandle, Dictionary<string, MethodDefinitionHandle>> methodsByByNamespaceAndName = new();
-
         /// <summary>
-        /// A collection with values that are either <see cref="MethodDefinitionHandle"/> or a <see cref="System.Collections.Generic.List{T}"/> of these, indexed by method name.
+        /// A dictionary of namespace metadata, indexed by the string handle to their namespace.
         /// </summary>
-        private readonly Dictionary<string, object> methodsByName = new(StringComparer.Ordinal);
-
-        private readonly Dictionary<string, TypeDefinitionHandle> typesByName;
+        private readonly Dictionary<string, NamespaceMetadata> metadataByNamespace = new();
 
         private readonly Dictionary<string, TypeSyntax?> releaseMethodsWithSafeHandleTypesGenerating = new Dictionary<string, TypeSyntax?>();
 
@@ -409,98 +403,95 @@ namespace Microsoft.Windows.CsWin32
                 }
             }
 
-            this.Apis = this.mr.TypeDefinitions.Select(this.mr.GetTypeDefinition).Where(td => this.mr.StringComparer.Equals(td.Name, "Apis")).ToList();
-            foreach (TypeDefinition apisClass in this.Apis)
+            this.Apis = new List<TypeDefinition>();
+
+            void PopulateNamespace(NamespaceDefinition ns, string? parentNamespace)
             {
-                var methods = new Dictionary<string, MethodDefinitionHandle>(StringComparer.Ordinal);
-                this.methodsByByNamespaceAndName.Add(apisClass.Namespace, methods);
+                string nsLeafName = this.mr.GetString(ns.Name);
+                string nsFullName = string.IsNullOrEmpty(parentNamespace) ? nsLeafName : $"{parentNamespace}.{nsLeafName}";
 
-                foreach (MethodDefinitionHandle methodDefHandle in apisClass.GetMethods())
+                var nsMetadata = new NamespaceMetadata();
+                this.metadataByNamespace.Add(nsFullName, nsMetadata);
+
+                foreach (TypeDefinitionHandle tdh in ns.TypeDefinitions)
                 {
-                    MethodDefinition methodDef = this.mr.GetMethodDefinition(methodDefHandle);
-                    if (this.IsCompatibleWithPlatform(methodDef))
+                    TypeDefinition td = this.mr.GetTypeDefinition(tdh);
+                    if (this.mr.StringComparer.Equals(td.Name, "Apis"))
                     {
-                        string methodName = this.mr.GetString(methodDef.Name);
-                        methods.Add(methodName, methodDefHandle);
-
-                        if (this.methodsByName.TryGetValue(methodName, out object? collidingMethodOrList))
+                        this.Apis.Add(td);
+                        foreach (MethodDefinitionHandle methodDefHandle in td.GetMethods())
                         {
-                            if (collidingMethodOrList is MethodDefinitionHandle collidingHandle)
+                            MethodDefinition methodDef = this.mr.GetMethodDefinition(methodDefHandle);
+                            if (this.IsCompatibleWithPlatform(methodDef.GetCustomAttributes()))
                             {
-                                this.methodsByName[methodName] = new List<MethodDefinitionHandle> { collidingHandle, methodDefHandle };
-                            }
-                            else if (collidingMethodOrList is List<MethodDefinitionHandle> collidingHandleList)
-                            {
-                                collidingHandleList.Add(methodDefHandle);
-                            }
-                            else
-                            {
-                                throw new Exception("Internal error.");
+                                string methodName = this.mr.GetString(methodDef.Name);
+                                nsMetadata.Methods.Add(methodName, methodDefHandle);
                             }
                         }
-                        else
+
+                        foreach (FieldDefinitionHandle fieldDefHandle in td.GetFields())
                         {
-                            this.methodsByName.Add(methodName, methodDefHandle);
+                            FieldDefinition fieldDef = this.mr.GetFieldDefinition(fieldDefHandle);
+                            const FieldAttributes expectedFlags = FieldAttributes.Static | FieldAttributes.Public;
+                            if ((fieldDef.Attributes & expectedFlags) == expectedFlags)
+                            {
+                                string name = this.mr.GetString(fieldDef.Name);
+                                nsMetadata.Fields.Add(name, fieldDefHandle);
+                            }
                         }
                     }
-                }
-            }
-
-            this.typesByName = new Dictionary<string, TypeDefinitionHandle>(StringComparer.Ordinal);
-            foreach (TypeDefinitionHandle typeDefinitionHandle in this.mr.TypeDefinitions)
-            {
-                TypeDefinition typeDefinition = this.mr.GetTypeDefinition(typeDefinitionHandle);
-                string name = this.mr.GetString(typeDefinition.Name);
-
-                // https://github.com/microsoft/CsWin32/issues/31
-                if (!this.typesByName.ContainsKey(name))
-                {
-                    this.typesByName.Add(name, typeDefinitionHandle);
-                }
-
-                // Detect if this is a struct representing a native handle.
-                if (typeDefinition.GetFields().Count == 1 && typeDefinition.BaseType.Kind == HandleKind.TypeReference)
-                {
-                    TypeReference baseType = this.mr.GetTypeReference((TypeReferenceHandle)typeDefinition.BaseType);
-                    if (this.mr.StringComparer.Equals(baseType.Name, nameof(ValueType)) && this.mr.StringComparer.Equals(baseType.Namespace, nameof(System)))
+                    else if (this.mr.StringComparer.Equals(td.Name, "<Module>"))
                     {
-                        foreach (CustomAttributeHandle h in typeDefinition.GetCustomAttributes())
-                        {
-                            CustomAttribute att = this.mr.GetCustomAttribute(h);
-                            if (this.IsAttribute(att, InteropDecorationNamespace, RAIIFreeAttribute))
-                            {
-                                var args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
-                                if (args.FixedArguments[0].Value is string freeMethodName)
-                                {
-                                    this.handleTypeReleaseMethod.Add(name, freeMethodName);
-                                    this.releaseMethods.Add(freeMethodName);
+                    }
+                    else if (this.IsCompatibleWithPlatform(td.GetCustomAttributes()))
+                    {
+                        string name = this.mr.GetString(td.Name);
+                        nsMetadata.Types.Add(name, tdh);
 
-                                    using FieldDefinitionHandleCollection.Enumerator fieldEnum = typeDefinition.GetFields().GetEnumerator();
-                                    fieldEnum.MoveNext();
-                                    FieldDefinitionHandle fieldHandle = fieldEnum.Current;
-                                    FieldDefinition fieldDef = this.mr.GetFieldDefinition(fieldHandle);
-                                    if (fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null) is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.IntPtr })
+                        // Detect if this is a struct representing a native handle.
+                        if (td.GetFields().Count == 1 && td.BaseType.Kind == HandleKind.TypeReference)
+                        {
+                            TypeReference baseType = this.mr.GetTypeReference((TypeReferenceHandle)td.BaseType);
+                            if (this.mr.StringComparer.Equals(baseType.Name, nameof(ValueType)) && this.mr.StringComparer.Equals(baseType.Namespace, nameof(System)))
+                            {
+                                foreach (CustomAttributeHandle h in td.GetCustomAttributes())
+                                {
+                                    CustomAttribute att = this.mr.GetCustomAttribute(h);
+                                    if (this.IsAttribute(att, InteropDecorationNamespace, RAIIFreeAttribute))
                                     {
-                                        this.handleTypeStructsWithIntPtrSizeFields.Add(name);
+                                        var args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
+                                        if (args.FixedArguments[0].Value is string freeMethodName)
+                                        {
+                                            this.handleTypeReleaseMethod.Add(name, freeMethodName);
+                                            this.releaseMethods.Add(freeMethodName);
+
+                                            using FieldDefinitionHandleCollection.Enumerator fieldEnum = td.GetFields().GetEnumerator();
+                                            fieldEnum.MoveNext();
+                                            FieldDefinitionHandle fieldHandle = fieldEnum.Current;
+                                            FieldDefinition fieldDef = this.mr.GetFieldDefinition(fieldHandle);
+                                            if (fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null) is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.IntPtr })
+                                            {
+                                                this.handleTypeStructsWithIntPtrSizeFields.Add(name);
+                                            }
+                                        }
+
+                                        break;
                                     }
                                 }
-
-                                break;
                             }
                         }
                     }
                 }
+
+                foreach (NamespaceDefinitionHandle childNsHandle in ns.NamespaceDefinitions)
+                {
+                    PopulateNamespace(this.mr.GetNamespaceDefinition(childNsHandle), nsFullName);
+                }
             }
 
-            foreach (FieldDefinitionHandle fieldDefHandle in this.Apis.SelectMany(api => api.GetFields()))
+            foreach (NamespaceDefinitionHandle childNsHandle in this.mr.GetNamespaceDefinitionRoot().NamespaceDefinitions)
             {
-                FieldDefinition fieldDef = this.mr.GetFieldDefinition(fieldDefHandle);
-                const FieldAttributes expectedFlags = FieldAttributes.Static | FieldAttributes.Public;
-                if ((fieldDef.Attributes & expectedFlags) == expectedFlags)
-                {
-                    string name = this.mr.GetString(fieldDef.Name);
-                    this.fieldsByName.Add(name, fieldDefHandle);
-                }
+                PopulateNamespace(this.mr.GetNamespaceDefinitionRoot(), parentNamespace: null);
             }
         }
 
@@ -781,74 +772,63 @@ namespace Microsoft.Windows.CsWin32
         /// <summary>
         /// Generate code for the named extern method, if it is recognized.
         /// </summary>
-        /// <param name="name">The name of the extern method.</param>
+        /// <param name="possiblyQualifiedName">The name of the extern method, optionally qualified with a namespace.</param>
         /// <returns><see langword="true"/> if a match was found and the extern method generated; otherwise <see langword="false"/>.</returns>
-        public bool TryGenerateExternMethod(string name)
+        public bool TryGenerateExternMethod(string possiblyQualifiedName)
         {
-            if (this.BannedAPIs.TryGetValue(name, out string? reason))
+            if (possiblyQualifiedName is null)
             {
-                throw new NotSupportedException(reason);
+                throw new ArgumentNullException(nameof(possiblyQualifiedName));
             }
 
-            if (this.methodsByName.TryGetValue(name, out object? handle))
+            if (this.GetMethodByName(possiblyQualifiedName) is MethodDefinitionHandle methodDef)
             {
-                if (handle is MethodDefinitionHandle methodHandle)
-                {
-                    this.RequestExternMethod(methodHandle);
-                    return true;
-                }
-                else
-                {
-                    // TODO: Emit a warning to the user that they should fully-qualify the method name to disambiguate.
-                    return false;
-                }
+                this.RequestExternMethod(methodDef);
+                return true;
             }
 
-            bool successful = false;
-            if (this.methodsByName.TryGetValue(name + "W", out handle))
-            {
-                if (handle is MethodDefinitionHandle methodHandle)
-                {
-                    this.RequestExternMethod(methodHandle);
-                }
-                else
-                {
-                    // TODO: Emit a warning to the user that they should fully-qualify the method name to disambiguate.
-                    return false;
-                }
-
-                successful = true;
-            }
-
-            if (this.methodsByName.TryGetValue(name + "A", out handle))
-            {
-                if (handle is MethodDefinitionHandle methodHandle)
-                {
-                    this.RequestExternMethod(methodHandle);
-                }
-                else
-                {
-                    // TODO: Emit a warning to the user that they should fully-qualify the method name to disambiguate.
-                    return false;
-                }
-
-                successful = true;
-            }
-
-            return successful;
+            return false;
         }
 
         /// <summary>
         /// Generate code for the named type, if it is recognized.
         /// </summary>
-        /// <param name="name">The name of the type.</param>
+        /// <param name="possiblyQualifiedName">The name of the interop type, optionally qualified with a namespace.</param>
         /// <returns><see langword="true"/> if a match was found and the type generated; otherwise <see langword="false"/>.</returns>
-        public bool TryGenerateType(string name)
+        public bool TryGenerateType(string possiblyQualifiedName)
         {
-            if (this.typesByName.TryGetValue(name, out TypeDefinitionHandle typeDefHandle))
+            if (possiblyQualifiedName is null)
             {
-                this.RequestInteropType(typeDefHandle);
+                throw new ArgumentNullException(nameof(possiblyQualifiedName));
+            }
+
+            TrySplitPossiblyQualifiedName(possiblyQualifiedName, out string? typeNamespace, out string typeName);
+            var matchingTypeHandles = new List<TypeDefinitionHandle>();
+            var namespaces = this.GetNamespacesToSearch(typeNamespace);
+
+            foreach (var nsMetadata in namespaces)
+            {
+                if (nsMetadata.Types.TryGetValue(typeName, out TypeDefinitionHandle handle))
+                {
+                    matchingTypeHandles.Add(handle);
+                }
+            }
+
+            if (matchingTypeHandles.Count == 1)
+            {
+                this.RequestInteropType(matchingTypeHandles[0]);
                 return true;
+            }
+            else if (matchingTypeHandles.Count > 1)
+            {
+                string matches = string.Join(
+                    ", ",
+                    matchingTypeHandles.Select(h =>
+                    {
+                        TypeDefinition td = this.mr.GetTypeDefinition(h);
+                        return $"{this.mr.GetString(td.Namespace)}.{this.mr.GetString(td.Name)}";
+                    }));
+                throw new ArgumentException("The type name is ambiguous. Use the fully-qualified name instead. Possible matches: " + matches);
             }
 
             return false;
@@ -857,14 +837,43 @@ namespace Microsoft.Windows.CsWin32
         /// <summary>
         /// Generate code for the named constant, if it is recognized.
         /// </summary>
-        /// <param name="name">The name of the constant.</param>
+        /// <param name="possiblyQualifiedName">The name of the constant, optionally qualified with a namespace.</param>
         /// <returns><see langword="true"/> if a match was found and the constant generated; otherwise <see langword="false"/>.</returns>
-        public bool TryGenerateConstant(string name)
+        public bool TryGenerateConstant(string possiblyQualifiedName)
         {
-            if (this.fieldsByName.TryGetValue(name, out FieldDefinitionHandle fieldDefHandle))
+            if (possiblyQualifiedName is null)
             {
-                this.RequestConstant(fieldDefHandle);
+                throw new ArgumentNullException(nameof(possiblyQualifiedName));
+            }
+
+            TrySplitPossiblyQualifiedName(possiblyQualifiedName, out string? constantNamespace, out string constantName);
+            var matchingFieldHandles = new List<FieldDefinitionHandle>();
+            var namespaces = this.GetNamespacesToSearch(constantName);
+
+            foreach (var nsMetadata in namespaces)
+            {
+                if (nsMetadata.Fields.TryGetValue(constantName, out FieldDefinitionHandle fieldDefHandle))
+                {
+                    matchingFieldHandles.Add(fieldDefHandle);
+                }
+            }
+
+            if (matchingFieldHandles.Count == 1)
+            {
+                this.RequestConstant(matchingFieldHandles[0]);
                 return true;
+            }
+            else if (matchingFieldHandles.Count > 1)
+            {
+                string matches = string.Join(
+                    ", ",
+                    matchingFieldHandles.Select(h =>
+                    {
+                        FieldDefinition fd = this.mr.GetFieldDefinition(h);
+                        TypeDefinition td = this.mr.GetTypeDefinition(fd.GetDeclaringType());
+                        return $"{this.mr.GetString(td.Namespace)}.{this.mr.GetString(fd.Name)}";
+                    }));
+                throw new ArgumentException("The type name is ambiguous. Use the fully-qualified name instead. Possible matches: " + matches);
             }
 
             return false;
@@ -893,11 +902,14 @@ namespace Microsoft.Windows.CsWin32
             }
 
             // We should match on any API for which the given string is a substring.
-            foreach (string candidate in this.fieldsByName.Keys.Concat(this.typesByName.Keys).Concat(this.methodsByName.Keys))
+            foreach (NamespaceMetadata nsMetadata in this.metadataByNamespace.Values)
             {
-                if (candidate.Contains(name))
+                foreach (string candidate in nsMetadata.Fields.Keys.Concat(nsMetadata.Types.Keys).Concat(nsMetadata.Methods.Keys))
                 {
-                    yield return candidate;
+                    if (candidate.Contains(name))
+                    {
+                        yield return candidate;
+                    }
                 }
             }
         }
@@ -1077,7 +1089,25 @@ namespace Microsoft.Windows.CsWin32
             }
         }
 
-        internal bool IsInterface(string name) => this.typesByName.TryGetValue(name, out TypeDefinitionHandle tdh) && (this.mr.GetTypeDefinition(tdh).Attributes & TypeAttributes.Interface) == TypeAttributes.Interface;
+        internal bool IsInterface(HandleTypeHandleInfo typeInfo)
+        {
+            return typeInfo.Handle.Kind == HandleKind.TypeDefinition
+                && (this.mr.GetTypeDefinition((TypeDefinitionHandle)typeInfo.Handle).Attributes & TypeAttributes.Interface) == TypeAttributes.Interface;
+        }
+
+        internal bool IsInterface(TypeHandleInfo handleInfo)
+        {
+            if (handleInfo is HandleTypeHandleInfo typeInfo)
+            {
+                return this.IsInterface(typeInfo);
+            }
+            else if (handleInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo typeInfo2 })
+            {
+                return this.IsInterface(typeInfo2);
+            }
+
+            return false;
+        }
 
         internal bool IsInterface(TypeReferenceHandle typeRefHandle)
         {
@@ -1105,17 +1135,7 @@ namespace Microsoft.Windows.CsWin32
                 return;
             }
 
-            // https://github.com/microsoft/CsWin32/issues/31
-            string name = this.mr.GetString(typeDef.Name);
-            if (this.typesByName.TryGetValue(name, out TypeDefinitionHandle expectedHandle) && !expectedHandle.Equals(typeDefHandle))
-            {
-                // Skip generating types with conflicting names till we fix that issue.
-                return;
-            }
-
-            MemberDeclarationSyntax? typeDeclaration = this.RequestInteropType(typeDefHandle, null);
-
-            if (typeDeclaration is object)
+            if (this.RequestInteropType(typeDefHandle, null) is MemberDeclarationSyntax typeDeclaration)
             {
                 this.types.Add(typeDefHandle, typeDeclaration);
             }
@@ -1147,8 +1167,13 @@ namespace Microsoft.Windows.CsWin32
 
             string safeHandleClassName = $"{releaseMethod}SafeHandle";
 
-            MethodDefinitionHandle releaseMethodHandle = (MethodDefinitionHandle)this.methodsByName[releaseMethod];
-            MethodDefinition releaseMethodDef = this.mr.GetMethodDefinition(releaseMethodHandle);
+            MethodDefinitionHandle? releaseMethodHandle = this.GetMethodByName(releaseMethod);
+            if (!releaseMethodHandle.HasValue)
+            {
+                throw new GenerationFailedException("Unable to find release method named: " + releaseMethod);
+            }
+
+            MethodDefinition releaseMethodDef = this.mr.GetMethodDefinition(releaseMethodHandle.Value);
             string releaseMethodModule = this.GetNormalizedModuleName(releaseMethodDef.GetImport());
 
             var safeHandleTypeIdentifier = IdentifierName(safeHandleClassName);
@@ -1178,7 +1203,7 @@ namespace Microsoft.Windows.CsWin32
                 return safeHandleType;
             }
 
-            this.RequestExternMethod(releaseMethodHandle);
+            this.RequestExternMethod(releaseMethodHandle.Value);
 
             var atts = this.GetReturnTypeCustomAttributes(releaseMethodDef);
             var releaseMethodReturnType = releaseMethodSignature.ReturnType.ToTypeSyntax(this.externSignatureTypeSettings, atts);
@@ -2036,6 +2061,21 @@ namespace Microsoft.Windows.CsWin32
                     AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, IdentifierName("pid"), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(pid)))));
         }
 
+        /// <summary>
+        /// Checks for periods in a name and if found, splits off the last element as the name and considers everything before it to be a namespace.
+        /// </summary>
+        /// <param name="possiblyQualifiedName">A name or qualified name (e.g. "String" or "System.String").</param>
+        /// <param name="namespace">Receives the namespace portion if present in <paramref name="possiblyQualifiedName"/> (e.g. "System"); otherwise <see langword="null"/>.</param>
+        /// <param name="name">Receives the name portion from <paramref name="possiblyQualifiedName"/>.</param>
+        /// <returns>A value indicating whether a namespace was present in <paramref name="possiblyQualifiedName"/>.</returns>
+        private static bool TrySplitPossiblyQualifiedName(string possiblyQualifiedName, [NotNullWhen(true)] out string? @namespace, out string name)
+        {
+            int nameIdx = possiblyQualifiedName.LastIndexOf('.');
+            @namespace = nameIdx >= 0 ? possiblyQualifiedName.Substring(0, nameIdx) : null;
+            name = nameIdx >= 0 ? possiblyQualifiedName.Substring(nameIdx) : possiblyQualifiedName;
+            return @namespace is object;
+        }
+
         private MemberDeclarationSyntax FetchTemplate(string name)
         {
             if (!this.TryFetchTemplate(name, out MemberDeclarationSyntax? result))
@@ -2079,28 +2119,22 @@ namespace Microsoft.Windows.CsWin32
                 }
 
                 var parameterTypeInfo = signature.ParameterTypes[parameter.SequenceNumber - 1];
-                var parameterType = parameterTypeInfo.ToTypeSyntax(this.functionPointerTypeSettings, parameter.GetCustomAttributes());
-                parametersList = parametersList.AddParameters(this.TranslateDelegateToFunctionPointer(FunctionPointerParameter(parameterType.GetUnmarshaledType())));
+                parametersList = parametersList.AddParameters(this.TranslateDelegateToFunctionPointer(parameterTypeInfo, parameter.GetCustomAttributes()));
             }
 
-            var returnValue = signature.ReturnType.ToTypeSyntax(this.functionPointerTypeSettings, this.GetReturnTypeCustomAttributes(methodDefinition));
-            parametersList = parametersList.AddParameters(this.TranslateDelegateToFunctionPointer(FunctionPointerParameter(returnValue.GetUnmarshaledType())));
+            parametersList = parametersList.AddParameters(this.TranslateDelegateToFunctionPointer(signature.ReturnType, this.GetReturnTypeCustomAttributes(methodDefinition)));
 
             return FunctionPointerType(callingConventionSyntax, parametersList);
         }
 
-        private FunctionPointerParameterSyntax TranslateDelegateToFunctionPointer(FunctionPointerParameterSyntax parameter)
+        private FunctionPointerParameterSyntax TranslateDelegateToFunctionPointer(TypeHandleInfo parameterTypeInfo, CustomAttributeHandleCollection? customAttributeHandles)
         {
-            if (this.IsDelegateReference(parameter.Type as IdentifierNameSyntax, out TypeDefinition delegateTypeDef))
+            if (this.IsDelegateReference(parameterTypeInfo, out TypeDefinition delegateTypeDef))
             {
                 return FunctionPointerParameter(this.FunctionPointer(delegateTypeDef));
             }
-            else if (parameter.Type is PointerTypeSyntax { ElementType: IdentifierNameSyntax idName } && this.IsDelegateReference(idName, out TypeDefinition delegateTypeDef2))
-            {
-                return FunctionPointerParameter(PointerType(this.FunctionPointer(delegateTypeDef2)));
-            }
 
-            return parameter;
+            return FunctionPointerParameter(parameterTypeInfo.ToTypeSyntax(this.functionPointerTypeSettings, customAttributeHandles).GetUnmarshaledType());
         }
 
         private bool TryGetRenamedMethod(string methodName, [NotNullWhen(true)] out string? newName)
@@ -2108,7 +2142,7 @@ namespace Microsoft.Windows.CsWin32
             if (this.WideCharOnly && IsWideFunction(methodName))
             {
                 newName = methodName.Substring(0, methodName.Length - 1);
-                return !this.methodsByName.ContainsKey(newName);
+                return !this.GetMethodByName(newName, exactNameMatchOnly: true).HasValue;
             }
 
             newName = null;
@@ -2280,12 +2314,6 @@ namespace Microsoft.Windows.CsWin32
 
                 var moduleName = this.GetNormalizedModuleName(import);
 
-                if (false && !CanonicalCapitalizations.Contains(moduleName))
-                {
-                    // Skip methods for modules we are not prepared to export.
-                    return;
-                }
-
                 string? entrypoint = null;
                 if (this.TryGetRenamedMethod(methodName, out string? newName))
                 {
@@ -2343,7 +2371,7 @@ namespace Microsoft.Windows.CsWin32
             }
         }
 
-        private bool IsCompatibleWithPlatform(MethodDefinition methodDef)
+        private bool IsCompatibleWithPlatform(CustomAttributeHandleCollection customAttributesOnMember)
         {
             if (this.supportedArchitectureAttributeCtor == default)
             {
@@ -2351,7 +2379,7 @@ namespace Microsoft.Windows.CsWin32
                 return true;
             }
 
-            foreach (CustomAttributeHandle attHandle in methodDef.GetCustomAttributes())
+            foreach (CustomAttributeHandle attHandle in customAttributesOnMember)
             {
                 CustomAttribute att = this.mr.GetCustomAttribute(attHandle);
                 if (att.Constructor.Equals(this.supportedArchitectureAttributeCtor))
@@ -2390,6 +2418,59 @@ namespace Microsoft.Windows.CsWin32
             return supportedOSPlatformAttribute;
         }
 
+        /// <summary>
+        /// Searches for an extern method.
+        /// </summary>
+        /// <param name="possiblyQualifiedName">A simple method name or one qualified with a namespace.</param>
+        /// <param name="exactNameMatchOnly"><see langword="true"/> to only match on an exact method name; <see langword="false"/> to allow for fuzzy matching such as an omitted W or A suffix.</param>
+        /// <returns>The matching method if exactly one is found, or <see langword="null"/> if none was found.</returns>
+        /// <exception cref="ArgumentException">Thrown if the <paramref name="possiblyQualifiedName"/> argument is not qualified and more than one matching method name was found.</exception>
+        private MethodDefinitionHandle? GetMethodByName(string possiblyQualifiedName, bool exactNameMatchOnly = false)
+        {
+            TrySplitPossiblyQualifiedName(possiblyQualifiedName, out string? methodNamespace, out string methodName);
+            IEnumerable<NamespaceMetadata> namespaces = this.GetNamespacesToSearch(methodNamespace);
+
+            var matchingMethodHandles = new List<MethodDefinitionHandle>();
+            foreach (var nsMetadata in namespaces)
+            {
+                if (nsMetadata.Methods.TryGetValue(methodName, out MethodDefinitionHandle handle))
+                {
+                    matchingMethodHandles.Add(handle);
+                }
+            }
+
+            if (!exactNameMatchOnly && matchingMethodHandles.Count == 0)
+            {
+                foreach (var nsMetadata in namespaces)
+                {
+                    if (nsMetadata.Methods.TryGetValue(methodName + "W", out MethodDefinitionHandle handle) ||
+                        nsMetadata.Methods.TryGetValue(methodName + "A", out handle))
+                    {
+                        matchingMethodHandles.Add(handle);
+                    }
+                }
+            }
+
+            if (matchingMethodHandles.Count == 1)
+            {
+                return matchingMethodHandles[0];
+            }
+            else if (matchingMethodHandles.Count > 1)
+            {
+                string matches = string.Join(
+                    ", ",
+                    matchingMethodHandles.Select(h =>
+                    {
+                        MethodDefinition md = this.mr.GetMethodDefinition(h);
+                        TypeDefinition td = this.mr.GetTypeDefinition(md.GetDeclaringType());
+                        return $"{this.mr.GetString(td.Namespace)}.{this.mr.GetString(md.Name)}";
+                    }));
+                throw new ArgumentException("The method name is ambiguous. Use the fully-qualified name instead. Possible matches: " + matches);
+            }
+
+            return null;
+        }
+
         private FieldDeclarationSyntax DeclareField(FieldDefinitionHandle fieldDefHandle)
         {
             FieldDefinition fieldDef = this.mr.GetFieldDefinition(fieldDefHandle);
@@ -2424,7 +2505,7 @@ namespace Microsoft.Windows.CsWin32
                 }
 
                 var modifiers = TokenList(Token(this.Visibility));
-                if (this.IsTypeDefStruct(fieldType.Type as IdentifierNameSyntax) || value is ObjectCreationExpressionSyntax)
+                if (this.IsTypeDefStruct(fieldTypeInfo) || value is ObjectCreationExpressionSyntax)
                 {
                     modifiers = modifiers.Add(Token(SyntaxKind.StaticKeyword)).Add(Token(SyntaxKind.ReadOnlyKeyword));
                 }
@@ -2472,12 +2553,6 @@ namespace Microsoft.Windows.CsWin32
             return ClassDeclaration(ComInterfaceFriendlyExtensionsClassName.Identifier)
                 .AddMembers(this.comInterfaceFriendlyExtensionsMembers.ToArray())
                 .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.PartialKeyword)));
-        }
-
-        private bool TryGetTypeDefHandle(TypeSyntax typeSyntax, out TypeDefinitionHandle typeDefHandle)
-        {
-            string typeName = typeSyntax.ToString();
-            return this.typesByName.TryGetValue(typeName, out typeDefHandle);
         }
 
         /// <summary>
@@ -3437,7 +3512,8 @@ namespace Microsoft.Windows.CsWin32
                 // * Review double/triple pointer scenarios.
                 //   * Consider CredEnumerateA, which is a "pointer to an array of pointers" (3-asterisks!). How does FriendlyAttribute improve this, if at all? The memory must be freed through another p/invoke.
                 ParameterSyntax externParam = parameters[param.SequenceNumber - 1];
-                if (this.IsManagedType(originalSignature.ParameterTypes[param.SequenceNumber - 1]) && (externParam.Modifiers.Any(SyntaxKind.OutKeyword) || externParam.Modifiers.Any(SyntaxKind.RefKeyword)))
+                TypeHandleInfo parameterTypeInfo = originalSignature.ParameterTypes[param.SequenceNumber - 1];
+                if (this.IsManagedType(parameterTypeInfo) && (externParam.Modifiers.Any(SyntaxKind.OutKeyword) || externParam.Modifiers.Any(SyntaxKind.RefKeyword)))
                 {
                     bool hasOut = externParam.Modifiers.Any(SyntaxKind.OutKeyword);
                     arguments[param.SequenceNumber - 1] = arguments[param.SequenceNumber - 1].WithRefKindKeyword(Token(hasOut ? SyntaxKind.OutKeyword : SyntaxKind.RefKeyword));
@@ -3520,7 +3596,7 @@ namespace Microsoft.Windows.CsWin32
                 }
                 else if ((externParam.Type is PointerTypeSyntax { ElementType: TypeSyntax ptrElementType }
                     && !IsVoid(ptrElementType)
-                    && !(ptrElementType is IdentifierNameSyntax id && this.IsInterface(id.Identifier.ValueText))) ||
+                    && !this.IsInterface(parameterTypeInfo)) ||
                     externParam.Type is ArrayTypeSyntax)
                 {
                     TypeSyntax elementType = externParam.Type is PointerTypeSyntax ptr ? ptr.ElementType
@@ -4054,11 +4130,7 @@ namespace Microsoft.Windows.CsWin32
             if (!this.options.AllowMarshaling)
             {
                 // If the field is a delegate type, we have to replace that with a native function pointer to avoid the struct becoming a 'managed type'.
-                if (originalType is PointerTypeSyntax { ElementType: IdentifierNameSyntax idName } && this.IsDelegateReference(idName, out TypeDefinition typeDef))
-                {
-                    return (this.FunctionPointer(typeDef), default);
-                }
-                else if (originalType is IdentifierNameSyntax idName2 && this.IsDelegateReference(idName2, out typeDef))
+                if (this.IsDelegateReference(fieldTypeHandleInfo, out TypeDefinition typeDef))
                 {
                     return (this.FunctionPointer(typeDef), default);
                 }
@@ -4074,34 +4146,46 @@ namespace Microsoft.Windows.CsWin32
             return (originalType, default);
         }
 
-        private bool IsTypeDefStruct(IdentifierNameSyntax? identifierName)
+        private bool IsTypeDefStruct(TypeHandleInfo? typeHandleInfo)
         {
-            if (identifierName is object)
+            if (typeHandleInfo is HandleTypeHandleInfo handleInfo)
             {
-                if (this.typesByName.TryGetValue(identifierName.Identifier.ValueText, out TypeDefinitionHandle value))
+                if (handleInfo.Handle.Kind == HandleKind.TypeDefinition)
                 {
-                    TypeDefinition typeDef = this.mr.GetTypeDefinition(value);
+                    TypeDefinition typeDef = this.mr.GetTypeDefinition((TypeDefinitionHandle)handleInfo.Handle);
                     return this.IsTypeDefStruct(typeDef);
                 }
-
-                if (SpecialTypeDefNames.Contains(identifierName.Identifier.ValueText))
-                {
-                    return true;
-                }
+            }
+            else if (SpecialTypeDefNames.Contains(null!/*TODO*/))
+            {
+                return true;
             }
 
             return false;
         }
 
-        private bool IsDelegateReference(IdentifierNameSyntax? identifierName, out TypeDefinition delegateTypeDef)
+        private bool IsDelegateReference(TypeHandleInfo typeHandleInfo, out TypeDefinition delegateTypeDef)
         {
-            if (identifierName is object)
+            if (typeHandleInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo handleInfo })
             {
-                if (this.typesByName.TryGetValue(identifierName.Identifier.ValueText, out TypeDefinitionHandle value))
-                {
-                    delegateTypeDef = this.mr.GetTypeDefinition(value);
-                    return this.IsDelegate(delegateTypeDef);
-                }
+                return this.IsDelegateReference(handleInfo, out delegateTypeDef);
+            }
+            else if (typeHandleInfo is HandleTypeHandleInfo handleInfo1)
+            {
+                return this.IsDelegateReference(handleInfo1, out delegateTypeDef);
+            }
+
+            delegateTypeDef = default;
+            return false;
+        }
+
+        private bool IsDelegateReference(HandleTypeHandleInfo typeHandleInfo, out TypeDefinition delegateTypeDef)
+        {
+            if (typeHandleInfo.Handle.Kind == HandleKind.TypeDefinition)
+            {
+                var tdh = (TypeDefinitionHandle)typeHandleInfo.Handle;
+                delegateTypeDef = this.mr.GetTypeDefinition(tdh);
+                return this.IsDelegate(delegateTypeDef);
             }
 
             delegateTypeDef = default;
@@ -4373,6 +4457,17 @@ namespace Microsoft.Windows.CsWin32
                 ConstantTypeCode.UInt64 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadUInt64()), blobReader2.ReadUInt64())),
                 _ => throw new NotSupportedException("ConstantTypeCode not supported: " + constant.TypeCode),
             };
+        }
+
+        private IEnumerable<NamespaceMetadata> GetNamespacesToSearch(string? @namespace) => @namespace is object ? new[] { this.metadataByNamespace[@namespace] } : this.metadataByNamespace.Values;
+
+        private class NamespaceMetadata
+        {
+            internal Dictionary<string, FieldDefinitionHandle> Fields { get; } = new(StringComparer.Ordinal);
+
+            internal Dictionary<string, MethodDefinitionHandle> Methods { get; } = new(StringComparer.Ordinal);
+
+            internal Dictionary<string, TypeDefinitionHandle> Types { get; } = new(StringComparer.Ordinal);
         }
     }
 }

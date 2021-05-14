@@ -285,12 +285,14 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         Assert.True(this.IsMethodGenerated("CloseHandle"));
     }
 
-    [Fact]
-    public void HandleStructsHaveIsNullProperty()
+    [Theory]
+    [InlineData("HANDLE")]
+    [InlineData("HGDIOBJ")]
+    public void HandleStructsHaveIsNullProperty(string handleName)
     {
         // A null HGDIOBJ has a specific meaning beyond just the concept of an invalid handle:
         // https://docs.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-selectobject#return-value
-        this.AssertGeneratedMember("HGDIOBJ", "IsNull", "internal bool IsNull => Value == default;");
+        this.AssertGeneratedMember(handleName, "IsNull", "internal bool IsNull => Value == default;");
     }
 
     [Fact]

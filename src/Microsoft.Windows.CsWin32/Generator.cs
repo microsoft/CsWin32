@@ -2828,7 +2828,7 @@ namespace Microsoft.Windows.CsWin32
                 return this.DeclareTypeDefBOOLStruct(typeDef);
             }
 
-            bool isHandle = false;
+            bool isHandle = name.Identifier.ValueText == "HGDIOBJ";
             foreach (CustomAttributeHandle attHandle in typeDef.GetCustomAttributes())
             {
                 CustomAttribute att = this.mr.GetCustomAttribute(attHandle);
@@ -2874,7 +2874,8 @@ namespace Microsoft.Windows.CsWin32
                 .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, valueParameter)))
                 .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
 
-            if (fieldInfo.FieldType is IdentifierNameSyntax { Identifier: { Value: "nint" or "nuint" or nameof(IntPtr) or nameof(UIntPtr) } })
+            // If this typedef struct represents a pointer, add an IsNull property.
+            if (fieldInfo.FieldType is IdentifierNameSyntax { Identifier: { Value: nameof(IntPtr) or nameof(UIntPtr) } })
             {
                 // internal static bool IsNull => value == default;
                 members = members.Add(PropertyDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), "IsNull")

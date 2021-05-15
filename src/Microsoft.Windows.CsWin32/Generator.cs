@@ -1091,8 +1091,18 @@ namespace Microsoft.Windows.CsWin32
 
         internal bool IsInterface(HandleTypeHandleInfo typeInfo)
         {
-            return typeInfo.Handle.Kind == HandleKind.TypeDefinition
-                && (this.mr.GetTypeDefinition((TypeDefinitionHandle)typeInfo.Handle).Attributes & TypeAttributes.Interface) == TypeAttributes.Interface;
+            TypeDefinitionHandle tdh = default;
+            if (typeInfo.Handle.Kind == HandleKind.TypeReference)
+            {
+                var trh = (TypeReferenceHandle)typeInfo.Handle;
+                this.TryGetTypeDefHandle(trh, out tdh);
+            }
+            else if (typeInfo.Handle.Kind == HandleKind.TypeDefinition)
+            {
+                tdh = (TypeDefinitionHandle)typeInfo.Handle;
+            }
+
+            return !tdh.IsNil && (this.mr.GetTypeDefinition(tdh).Attributes & TypeAttributes.Interface) == TypeAttributes.Interface;
         }
 
         internal bool IsInterface(TypeHandleInfo handleInfo)

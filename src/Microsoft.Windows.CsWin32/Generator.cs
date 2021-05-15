@@ -410,7 +410,7 @@ namespace Microsoft.Windows.CsWin32
                 string nsLeafName = this.mr.GetString(ns.Name);
                 string nsFullName = string.IsNullOrEmpty(parentNamespace) ? nsLeafName : $"{parentNamespace}.{nsLeafName}";
 
-                var nsMetadata = new NamespaceMetadata();
+                var nsMetadata = new NamespaceMetadata(nsFullName);
                 this.metadataByNamespace.Add(nsFullName, nsMetadata);
 
                 foreach (TypeDefinitionHandle tdh in ns.TypeDefinitions)
@@ -848,7 +848,7 @@ namespace Microsoft.Windows.CsWin32
 
             TrySplitPossiblyQualifiedName(possiblyQualifiedName, out string? constantNamespace, out string constantName);
             var matchingFieldHandles = new List<FieldDefinitionHandle>();
-            var namespaces = this.GetNamespacesToSearch(constantName);
+            var namespaces = this.GetNamespacesToSearch(constantNamespace);
 
             foreach (var nsMetadata in namespaces)
             {
@@ -1307,8 +1307,8 @@ namespace Microsoft.Windows.CsWin32
                         switch (identifierName.Identifier.ValueText)
                         {
                             case "LSTATUS":
-                                this.TryGenerateConstant("ERROR_SUCCESS");
-                                ExpressionSyntax errorSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ConstantsClassName, IdentifierName("ERROR_SUCCESS"));
+                                this.TryGenerateTypeOrThrow("WIN32_ERROR");
+                                ExpressionSyntax errorSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("WIN32_ERROR"), IdentifierName("ERROR_SUCCESS"));
                                 releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, CastExpression(IdentifierName("LSTATUS"), CastExpression(PredefinedType(Token(SyntaxKind.IntKeyword)), errorSuccess)));
                                 break;
                             case "NTSTATUS":
@@ -1317,7 +1317,7 @@ namespace Microsoft.Windows.CsWin32
                                 releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, CastExpression(IdentifierName("NTSTATUS"), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))));
                                 break;
                             case "HRESULT":
-                                this.TryGenerateConstant("S_OK");
+                                this.TryGenerateConstantOrThrow("S_OK");
                                 ExpressionSyntax ok = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ConstantsClassName, IdentifierName("S_OK"));
                                 releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, CastExpression(IdentifierName("HRESULT"), ok));
                                 break;
@@ -2469,6 +2469,22 @@ namespace Microsoft.Windows.CsWin32
             }
 
             return null;
+        }
+
+        private void TryGenerateTypeOrThrow(string possiblyQualifiedName)
+        {
+            if (!this.TryGenerateType(possiblyQualifiedName))
+            {
+                throw new GenerationFailedException("Unable to find expected type: " + possiblyQualifiedName);
+            }
+        }
+
+        private void TryGenerateConstantOrThrow(string possiblyQualifiedName)
+        {
+            if (!this.TryGenerateConstant(possiblyQualifiedName))
+            {
+                throw new GenerationFailedException("Unable to find expected constant: " + possiblyQualifiedName);
+            }
         }
 
         private FieldDeclarationSyntax DeclareField(FieldDefinitionHandle fieldDefHandle)
@@ -4155,6 +4171,11 @@ namespace Microsoft.Windows.CsWin32
                     TypeDefinition typeDef = this.mr.GetTypeDefinition((TypeDefinitionHandle)handleInfo.Handle);
                     return this.IsTypeDefStruct(typeDef);
                 }
+                else if (handleInfo.Handle.Kind == HandleKind.TypeReference && this.TryGetTypeDefHandle((TypeReferenceHandle)handleInfo.Handle, out TypeDefinitionHandle tdh))
+                {
+                    TypeDefinition typeDef = this.mr.GetTypeDefinition(tdh);
+                    return this.IsTypeDefStruct(typeDef);
+                }
             }
             else if (SpecialTypeDefNames.Contains(null!/*TODO*/))
             {
@@ -4461,13 +4482,23 @@ namespace Microsoft.Windows.CsWin32
 
         private IEnumerable<NamespaceMetadata> GetNamespacesToSearch(string? @namespace) => @namespace is object ? new[] { this.metadataByNamespace[@namespace] } : this.metadataByNamespace.Values;
 
+        [DebuggerDisplay("{" + nameof(DebuggerDisplay) + ",nq}")]
         private class NamespaceMetadata
         {
+            internal NamespaceMetadata(string name)
+            {
+                this.Name = name;
+            }
+
+            public string Name { get; }
+
             internal Dictionary<string, FieldDefinitionHandle> Fields { get; } = new(StringComparer.Ordinal);
 
             internal Dictionary<string, MethodDefinitionHandle> Methods { get; } = new(StringComparer.Ordinal);
 
             internal Dictionary<string, TypeDefinitionHandle> Types { get; } = new(StringComparer.Ordinal);
+
+            private string DebuggerDisplay => $"{this.Name} (Constants: {this.Fields.Count}, Methods: {this.Methods.Count}, Types: {this.Types.Count}";
         }
     }
 }

@@ -3657,8 +3657,8 @@ namespace Microsoft.Windows.CsWin32
                         {
                             var args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
                             isArray = true;
-                            sizeParamIndex = (short?)args.NamedArguments.FirstOrDefault(a => a.Name == "SizeParamIndex").Value;
-                            sizeConst = (int?)args.NamedArguments.FirstOrDefault(a => a.Name == "SizeConst").Value;
+                            sizeParamIndex = (short?)args.NamedArguments.FirstOrDefault(a => a.Name == "CountParamIndex").Value;
+                            sizeConst = (int?)args.NamedArguments.FirstOrDefault(a => a.Name == "CountConst").Value;
 
                             break;
                         }

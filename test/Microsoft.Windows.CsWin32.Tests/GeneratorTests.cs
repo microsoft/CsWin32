@@ -677,9 +677,10 @@ namespace Microsoft.Windows.Sdk
     }
 
     [Theory, PairwiseData]
-    public void FullGeneration(bool allowMarshaling)
+    public void FullGeneration(bool allowMarshaling, [CombinatorialValues(Platform.AnyCpu, Platform.X86, Platform.X64, Platform.Arm64)] Platform platform)
     {
         var generatorOptions = new GeneratorOptions { AllowMarshaling = allowMarshaling };
+        this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(platform));
         this.generator = new Generator(this.metadataStream, generatorOptions, this.compilation, this.parseOptions);
         this.generator.GenerateAll(CancellationToken.None);
         this.CollectGeneratedCode(this.generator);

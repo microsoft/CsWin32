@@ -57,6 +57,8 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.starterCompilations.Add("net40", await this.CreateCompilationAsync(ReferenceAssemblies.NetFramework.Net40.Default));
         this.starterCompilations.Add("netstandard2.0", await this.CreateCompilationAsync(ReferenceAssemblies.NetStandard.NetStandard20.AddPackages(ImmutableArray.Create(new PackageIdentity("System.Memory", "4.5.4")))));
         this.starterCompilations.Add("net5.0", await this.CreateCompilationAsync(ReferenceAssemblies.Net.Net50));
+        this.starterCompilations.Add("net5.0-x86", await this.CreateCompilationAsync(ReferenceAssemblies.Net.Net50, Platform.X86));
+        this.starterCompilations.Add("net5.0-x64", await this.CreateCompilationAsync(ReferenceAssemblies.Net.Net50, Platform.X64));
 
         this.compilation = this.starterCompilations["netstandard2.0"];
     }
@@ -468,11 +470,27 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     }
 
     [Theory]
+    [InlineData("MEMORY_BASIC_INFORMATION")]
+    public void ArchitectureSpecificAPIsTreatment(string apiName)
+    {
+        // AnyCPU targets should throw an exception with a helpful error message when asked for arch-specific APIs
+        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        var ex = Assert.Throws<GenerationFailedException>(() => this.generator.TryGenerate(apiName, CancellationToken.None));
+        this.logger.WriteLine(ex.Message);
+
+        // Arch-specific compilations should generate the requested APIs.
+        this.compilation = this.starterCompilations["net5.0-x64"];
+        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        Assert.True(this.generator.TryGenerate(apiName, CancellationToken.None));
+    }
+
+    [Theory]
     [InlineData("BOOL")]
     [InlineData("HRESULT")]
     [InlineData("MEMORY_BASIC_INFORMATION")]
     public void StructsArePartial(string structName)
     {
+        this.compilation = this.starterCompilations["net5.0-x64"]; // MEMORY_BASIC_INFORMATION is arch-specific
         this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
         Assert.True(this.generator.TryGenerate(structName, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
@@ -813,7 +831,7 @@ namespace Microsoft.Windows.Sdk
         }
     }
 
-    private async Task<CSharpCompilation> CreateCompilationAsync(ReferenceAssemblies references)
+    private async Task<CSharpCompilation> CreateCompilationAsync(ReferenceAssemblies references, Platform platform = Platform.AnyCpu)
     {
         ImmutableArray<MetadataReference> metadataReferences = await references
             .AddPackages(ImmutableArray.Create(new PackageIdentity("Microsoft.Windows.SDK.Contracts", "10.0.19041.1")))
@@ -827,7 +845,7 @@ namespace Microsoft.Windows.Sdk
         var compilation = CSharpCompilation.Create(
             assemblyName: "test",
             references: metadataReferences,
-            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, allowUnsafe: true));
+            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, platform: platform, allowUnsafe: true));
 
         // Add a namespace that WinUI projects define to ensure we prefix types with "global::" everywhere.
         compilation = compilation.AddSyntaxTrees(

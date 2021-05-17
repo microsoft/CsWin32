@@ -2410,7 +2410,7 @@ namespace Microsoft.Windows.CsWin32
                     var requiredPlatform = (InteropArchitecture)(int)att.DecodeValue(CustomAttributeTypeProvider.Instance).FixedArguments[0].Value!;
                     return this.compilation.Options.Platform switch
                     {
-                        Platform.AnyCpu => requiredPlatform == InteropArchitecture.All,
+                        Platform.AnyCpu or Platform.AnyCpu32BitPreferred => requiredPlatform == InteropArchitecture.All,
                         Platform.Arm64 => (requiredPlatform & InteropArchitecture.Arm64) == InteropArchitecture.Arm64,
                         Platform.X86 => (requiredPlatform & InteropArchitecture.X86) == InteropArchitecture.X86,
                         Platform.X64 => (requiredPlatform & InteropArchitecture.X64) == InteropArchitecture.X64,

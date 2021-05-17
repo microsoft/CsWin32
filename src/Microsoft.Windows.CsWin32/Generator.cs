@@ -781,9 +781,16 @@ namespace Microsoft.Windows.CsWin32
                 throw new ArgumentNullException(nameof(possiblyQualifiedName));
             }
 
-            if (this.GetMethodByName(possiblyQualifiedName) is MethodDefinitionHandle methodDef)
+            if (this.GetMethodByName(possiblyQualifiedName) is MethodDefinitionHandle methodDefHandle)
             {
-                this.RequestExternMethod(methodDef);
+                MethodDefinition methodDef = this.mr.GetMethodDefinition(methodDefHandle);
+                string methodName = this.mr.StringComparer.Equals(methodDef.Name, possiblyQualifiedName) ? possiblyQualifiedName : this.mr.GetString(methodDef.Name);
+                if (this.BannedAPIs.TryGetValue(methodName, out string? reason))
+                {
+                    throw new NotSupportedException(reason);
+                }
+
+                this.RequestExternMethod(methodDefHandle);
                 return true;
             }
 
@@ -2438,6 +2445,18 @@ namespace Microsoft.Windows.CsWin32
         private MethodDefinitionHandle? GetMethodByName(string possiblyQualifiedName, bool exactNameMatchOnly = false)
         {
             TrySplitPossiblyQualifiedName(possiblyQualifiedName, out string? methodNamespace, out string methodName);
+            return this.GetMethodByName(methodNamespace, methodName, exactNameMatchOnly);
+        }
+
+        /// <summary>
+        /// Searches for an extern method.
+        /// </summary>
+        /// <param name="methodNamespace">The namespace the method is found in, if known.</param>
+        /// <param name="methodName">The simple name of the method.</param>
+        /// <param name="exactNameMatchOnly"><see langword="true"/> to only match on an exact method name; <see langword="false"/> to allow for fuzzy matching such as an omitted W or A suffix.</param>
+        /// <returns>The matching method if exactly one is found, or <see langword="null"/> if none was found.</returns>
+        private MethodDefinitionHandle? GetMethodByName(string? methodNamespace, string methodName, bool exactNameMatchOnly = false)
+        {
             IEnumerable<NamespaceMetadata> namespaces = this.GetNamespacesToSearch(methodNamespace);
 
             var matchingMethodHandles = new List<MethodDefinitionHandle>();

@@ -12,6 +12,8 @@ namespace Microsoft.Windows.CsWin32
     {
         private static readonly TypeSyntaxSettings DebuggerDisplaySettings = new TypeSyntaxSettings(null, PreferNativeInt: false, PreferMarshaledTypes: false, AllowMarshaling: false, QualifyNames: true);
 
+        internal bool IsConstantField { get; init; }
+
         internal abstract TypeSyntaxAndMarshaling ToTypeSyntax(TypeSyntaxSettings inputs, CustomAttributeHandleCollection? customAttributes, ParameterAttributes parameterAttributes = default);
 
         protected static bool TryGetSimpleName(TypeSyntax nameSyntax, [NotNullWhen(true)] out string? simpleName)

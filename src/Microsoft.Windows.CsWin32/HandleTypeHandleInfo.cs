@@ -71,7 +71,7 @@ namespace Microsoft.Windows.CsWin32
                 return new TypeSyntaxAndMarshaling(bclType);
             }
 
-            if (simpleName is "PWSTR" or "PSTR" && customAttributes?.Any(ah => Generator.IsAttribute(this.reader, this.reader.GetCustomAttribute(ah), Generator.InteropDecorationNamespace, "ConstAttribute")) is true)
+            if (simpleName is "PWSTR" or "PSTR" && (this.IsConstantField || customAttributes?.Any(ah => Generator.IsAttribute(this.reader, this.reader.GetCustomAttribute(ah), Generator.InteropDecorationNamespace, "ConstAttribute")) is true))
             {
                 IdentifierNameSyntax constantTypeIdentifierName = IdentifierName("PC" + simpleName.Substring(1));
 

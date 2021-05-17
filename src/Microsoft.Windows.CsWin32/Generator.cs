@@ -1165,7 +1165,7 @@ namespace Microsoft.Windows.CsWin32
                 return;
             }
 
-            FieldDeclarationSyntax constantDeclaration = this.DeclareField(fieldDefHandle);
+            FieldDeclarationSyntax constantDeclaration = this.DeclareConstant(fieldDefHandle);
             constantDeclaration = AddApiDocumentation(constantDeclaration.Declaration.Variables[0].Identifier.ValueText, constantDeclaration);
             this.fieldsToSyntax.Add(fieldDefHandle, constantDeclaration);
         }
@@ -2516,13 +2516,14 @@ namespace Microsoft.Windows.CsWin32
             }
         }
 
-        private FieldDeclarationSyntax DeclareField(FieldDefinitionHandle fieldDefHandle)
+        private FieldDeclarationSyntax DeclareConstant(FieldDefinitionHandle fieldDefHandle)
         {
             FieldDefinition fieldDef = this.mr.GetFieldDefinition(fieldDefHandle);
             string name = this.mr.GetString(fieldDef.Name);
             try
             {
-                TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null);
+                bool isConst = (fieldDef.Attributes & FieldAttributes.HasDefault) == FieldAttributes.HasDefault;
+                TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null) with { IsConstantField = true };
                 var customAttributes = fieldDef.GetCustomAttributes();
                 var fieldType = fieldTypeInfo.ToTypeSyntax(this.fieldTypeSettings, customAttributes);
                 ExpressionSyntax value =

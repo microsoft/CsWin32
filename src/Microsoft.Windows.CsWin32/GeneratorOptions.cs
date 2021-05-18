@@ -26,8 +26,8 @@ namespace Microsoft.Windows.CsWin32
         /// <summary>
         /// Gets the namespace for generated code.
         /// </summary>
-        /// <value>The default value is "Microsoft.Windows.Sdk". Must be non-empty.</value>
-        public string Namespace { get; init; } = "Microsoft.Windows.Sdk";
+        /// <value>The default value is "Windows.Win32". Must be non-empty.</value>
+        public string Namespace { get; init; } = "Windows.Win32";
 
         /// <summary>
         /// Gets a value indicating whether to emit a single source file as opposed to types spread across many files.

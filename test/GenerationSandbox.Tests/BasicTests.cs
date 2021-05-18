@@ -5,7 +5,7 @@ using System;
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
-using Microsoft.Windows.Sdk;
+using Windows.Win32;
 using Xunit;
 using Xunit.Abstractions;
 

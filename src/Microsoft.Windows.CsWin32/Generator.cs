@@ -469,7 +469,7 @@ namespace Microsoft.Windows.CsWin32
                                             fieldEnum.MoveNext();
                                             FieldDefinitionHandle fieldHandle = fieldEnum.Current;
                                             FieldDefinition fieldDef = this.mr.GetFieldDefinition(fieldHandle);
-                                            if (fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null) is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.IntPtr })
+                                            if (fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null) is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.IntPtr or PrimitiveTypeCode.UIntPtr })
                                             {
                                                 this.handleTypeStructsWithIntPtrSizeFields.Add(name);
                                             }
@@ -3148,10 +3148,16 @@ namespace Microsoft.Windows.CsWin32
                 // we need to create new conversion operators.
 
                 // public static implicit operator IntPtr(MSIHANDLE value) => new IntPtr(value.Value);
+                ExpressionSyntax valueValueArg = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, fieldIdentifierName);
+                if (fieldInfo.FieldType is IdentifierNameSyntax { Identifier: { ValueText: nameof(UIntPtr) } })
+                {
+                    valueValueArg = CastExpression(PredefinedType(Token(SyntaxKind.LongKeyword)), valueValueArg);
+                }
+
                 members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), IntPtrTypeSyntax)
                     .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(name))
                     .WithExpressionBody(ArrowExpressionClause(
-                        ObjectCreationExpression(IntPtrTypeSyntax).AddArgumentListArguments(Argument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, fieldIdentifierName)))))
+                        ObjectCreationExpression(IntPtrTypeSyntax).AddArgumentListArguments(Argument(valueValueArg))))
                     .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
                     .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
 

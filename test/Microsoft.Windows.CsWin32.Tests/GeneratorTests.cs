@@ -278,6 +278,14 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
+    public void AmbiguousApiName()
+    {
+        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        var ex = Assert.Throws<ArgumentException>(() => this.generator.TryGenerate("IDENTITY_TYPE", CancellationToken.None));
+        this.logger.WriteLine(ex.Message);
+    }
+
+    [Fact]
     public void ReleaseMethodGeneratedWithHandleStruct()
     {
         this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);

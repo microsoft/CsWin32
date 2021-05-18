@@ -159,7 +159,6 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             "MFVideoAlphaBitmap", // field named params
             "DDRAWI_DDVIDEOPORT_INT", // field that is never used
             "MainAVIHeader", // dwReserved field is a fixed length array
-            "JsRuntimeVersionEdge", // Constant typed as an enum
             "POSITIVE_INFINITY", // Special float imaginary number
             "NEGATIVE_INFINITY", // Special float imaginary number
             "NaN", // Special float imaginary number

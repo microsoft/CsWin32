@@ -416,16 +416,21 @@ namespace Microsoft.Windows.CsWin32
                 foreach (TypeDefinitionHandle tdh in ns.TypeDefinitions)
                 {
                     TypeDefinition td = this.mr.GetTypeDefinition(tdh);
-                    if (this.mr.StringComparer.Equals(td.Name, "Apis"))
+                    string typeName = this.mr.GetString(td.Name);
+                    if (typeName == "Apis")
                     {
                         this.Apis.Add(td);
                         foreach (MethodDefinitionHandle methodDefHandle in td.GetMethods())
                         {
                             MethodDefinition methodDef = this.mr.GetMethodDefinition(methodDefHandle);
+                            string methodName = this.mr.GetString(methodDef.Name);
                             if (this.IsCompatibleWithPlatform(methodDef.GetCustomAttributes()))
                             {
-                                string methodName = this.mr.GetString(methodDef.Name);
                                 nsMetadata.Methods.Add(methodName, methodDefHandle);
+                            }
+                            else
+                            {
+                                nsMetadata.MethodsForOtherPlatform.Add(methodName);
                             }
                         }
 
@@ -435,18 +440,17 @@ namespace Microsoft.Windows.CsWin32
                             const FieldAttributes expectedFlags = FieldAttributes.Static | FieldAttributes.Public;
                             if ((fieldDef.Attributes & expectedFlags) == expectedFlags)
                             {
-                                string name = this.mr.GetString(fieldDef.Name);
-                                nsMetadata.Fields.Add(name, fieldDefHandle);
+                                string fieldName = this.mr.GetString(fieldDef.Name);
+                                nsMetadata.Fields.Add(fieldName, fieldDefHandle);
                             }
                         }
                     }
-                    else if (this.mr.StringComparer.Equals(td.Name, "<Module>"))
+                    else if (typeName == "<Module>")
                     {
                     }
                     else if (this.IsCompatibleWithPlatform(td.GetCustomAttributes()))
                     {
-                        string name = this.mr.GetString(td.Name);
-                        nsMetadata.Types.Add(name, tdh);
+                        nsMetadata.Types.Add(typeName, tdh);
 
                         // Detect if this is a struct representing a native handle.
                         if (td.GetFields().Count == 1 && td.BaseType.Kind == HandleKind.TypeReference)
@@ -462,7 +466,7 @@ namespace Microsoft.Windows.CsWin32
                                         var args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
                                         if (args.FixedArguments[0].Value is string freeMethodName)
                                         {
-                                            this.handleTypeReleaseMethod.Add(name, freeMethodName);
+                                            this.handleTypeReleaseMethod.Add(typeName, freeMethodName);
                                             this.releaseMethods.Add(freeMethodName);
 
                                             using FieldDefinitionHandleCollection.Enumerator fieldEnum = td.GetFields().GetEnumerator();
@@ -471,7 +475,7 @@ namespace Microsoft.Windows.CsWin32
                                             FieldDefinition fieldDef = this.mr.GetFieldDefinition(fieldHandle);
                                             if (fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null) is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.IntPtr or PrimitiveTypeCode.UIntPtr })
                                             {
-                                                this.handleTypeStructsWithIntPtrSizeFields.Add(name);
+                                                this.handleTypeStructsWithIntPtrSizeFields.Add(typeName);
                                             }
                                         }
 
@@ -480,6 +484,10 @@ namespace Microsoft.Windows.CsWin32
                                 }
                             }
                         }
+                    }
+                    else
+                    {
+                        nsMetadata.TypesForOtherPlatform.Add(typeName);
                     }
                 }
 
@@ -704,7 +712,18 @@ namespace Microsoft.Windows.CsWin32
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                this.RequestExternMethod(methodHandle);
+                MethodDefinition methodDef = this.mr.GetMethodDefinition(methodHandle);
+                if (this.IsCompatibleWithPlatform(methodDef.GetCustomAttributes()))
+                {
+                    try
+                    {
+                        this.RequestExternMethod(methodHandle);
+                    }
+                    catch (GenerationFailedException ex) when (IsPlatformCompatibleException(ex))
+                    {
+                        // Something transitively required for this method is not available for this platform, so skip this method.
+                    }
+                }
             }
         }
 
@@ -718,7 +737,18 @@ namespace Microsoft.Windows.CsWin32
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                this.RequestConstant(fieldDefHandle);
+                FieldDefinition fieldDef = this.mr.GetFieldDefinition(fieldDefHandle);
+                if (this.IsCompatibleWithPlatform(fieldDef.GetCustomAttributes()))
+                {
+                    try
+                    {
+                        this.RequestConstant(fieldDefHandle);
+                    }
+                    catch (GenerationFailedException ex) when (IsPlatformCompatibleException(ex))
+                    {
+                        // Something transitively required for this field is not available for this platform, so skip this method.
+                    }
+                }
             }
         }
 
@@ -761,7 +791,18 @@ namespace Microsoft.Windows.CsWin32
                         continue;
                     }
 
-                    this.RequestExternMethod(methodHandle);
+                    if (this.IsCompatibleWithPlatform(methodDef.GetCustomAttributes()))
+                    {
+                        try
+                        {
+                            this.RequestExternMethod(methodHandle);
+                        }
+                        catch (GenerationFailedException ex) when (IsPlatformCompatibleException(ex))
+                        {
+                            // Something transitively required for this method is not available for this platform, so skip this method.
+                        }
+                    }
+
                     successful = true;
                 }
             }
@@ -812,12 +853,17 @@ namespace Microsoft.Windows.CsWin32
             TrySplitPossiblyQualifiedName(possiblyQualifiedName, out string? typeNamespace, out string typeName);
             var matchingTypeHandles = new List<TypeDefinitionHandle>();
             var namespaces = this.GetNamespacesToSearch(typeNamespace);
+            bool foundApiWithMismatchedPlatform = false;
 
             foreach (var nsMetadata in namespaces)
             {
                 if (nsMetadata.Types.TryGetValue(typeName, out TypeDefinitionHandle handle))
                 {
                     matchingTypeHandles.Add(handle);
+                }
+                else if (nsMetadata.TypesForOtherPlatform.Contains(typeName))
+                {
+                    foundApiWithMismatchedPlatform = true;
                 }
             }
 
@@ -836,6 +882,11 @@ namespace Microsoft.Windows.CsWin32
                         return $"{this.mr.GetString(td.Namespace)}.{this.mr.GetString(td.Name)}";
                     }));
                 throw new ArgumentException("The type name is ambiguous. Use the fully-qualified name instead. Possible matches: " + matches);
+            }
+
+            if (foundApiWithMismatchedPlatform)
+            {
+                throw new PlatformIncompatibleException($"The requested API ({possiblyQualifiedName}) was found but is not available given the target platform ({this.compilation?.Options.Platform}).");
             }
 
             return false;
@@ -1062,7 +1113,17 @@ namespace Microsoft.Windows.CsWin32
                     continue;
                 }
 
-                this.RequestInteropType(typeDefinitionHandle);
+                if (this.IsCompatibleWithPlatform(typeDef.GetCustomAttributes()))
+                {
+                    try
+                    {
+                        this.RequestInteropType(typeDefinitionHandle);
+                    }
+                    catch (GenerationFailedException ex) when (IsPlatformCompatibleException(ex))
+                    {
+                        // Something transitively required for this type is not available for this platform, so skip this method.
+                    }
+                }
             }
         }
 
@@ -1073,27 +1134,27 @@ namespace Microsoft.Windows.CsWin32
                 return;
             }
 
+            MethodDefinition methodDefinition = this.mr.GetMethodDefinition(methodDefinitionHandle);
+            if (!this.IsCompatibleWithPlatform(methodDefinition.GetCustomAttributes()))
+            {
+                // We've been asked for an interop type that does not apply. This happens because the metadata
+                // may use a TypeReferenceHandle or TypeDefinitionHandle to just one of many arch-specific definitions of this type.
+                // Try to find the appropriate definition for our target architecture.
+                TypeDefinition declaringTypeDef = this.mr.GetTypeDefinition(methodDefinition.GetDeclaringType());
+                string ns = this.mr.GetString(declaringTypeDef.Namespace);
+                string methodName = this.mr.GetString(methodDefinition.Name);
+                if (this.metadataByNamespace[ns].MethodsForOtherPlatform.Contains(methodName))
+                {
+                    throw new PlatformIncompatibleException($"Request for method ({methodName}) that is not available given the target platform.");
+                }
+            }
+
             if (!this.methodsGenerating.Add(methodDefinitionHandle))
             {
                 return;
             }
 
             this.DeclareExternMethod(methodDefinitionHandle);
-        }
-
-        internal TypeDefinitionHandle? RequestInteropType(TypeReferenceHandle typeRefHandle)
-        {
-            if (this.TryGetTypeDefHandle(typeRefHandle, out TypeDefinitionHandle typeDefHandle))
-            {
-                this.RequestInteropType(typeDefHandle);
-                return typeDefHandle;
-            }
-            else
-            {
-                // System.Guid reaches here, but doesn't need to be generated.
-                ////throw new NotSupportedException($"Could not find a type def for: {this.mr.GetString(typeRef.Namespace)}.{name}");
-                return null;
-            }
         }
 
         internal bool IsInterface(HandleTypeHandleInfo typeInfo)
@@ -1147,6 +1208,20 @@ namespace Microsoft.Windows.CsWin32
                 return;
             }
 
+            if (!this.IsCompatibleWithPlatform(typeDef.GetCustomAttributes()))
+            {
+                // We've been asked for an interop type that does not apply. This happens because the metadata
+                // may use a TypeReferenceHandle or TypeDefinitionHandle to just one of many arch-specific definitions of this type.
+                // Try to find the appropriate definition for our target architecture.
+                string ns = this.mr.GetString(typeDef.Namespace);
+                string name = this.mr.GetString(typeDef.Name);
+                NamespaceMetadata namespaceMetadata = this.metadataByNamespace[ns];
+                if (!namespaceMetadata.Types.TryGetValue(name, out typeDefHandle) && namespaceMetadata.TypesForOtherPlatform.Contains(name))
+                {
+                    throw new PlatformIncompatibleException($"Request for type ({ns}.{name}) that is not available given the target platform.");
+                }
+            }
+
             if (!this.typesGenerating.Add(typeDefHandle))
             {
                 return;
@@ -1155,6 +1230,21 @@ namespace Microsoft.Windows.CsWin32
             if (this.RequestInteropType(typeDefHandle, null) is MemberDeclarationSyntax typeDeclaration)
             {
                 this.types.Add(typeDefHandle, typeDeclaration);
+            }
+        }
+
+        internal TypeDefinitionHandle? RequestInteropType(TypeReferenceHandle typeRefHandle)
+        {
+            if (this.TryGetTypeDefHandle(typeRefHandle, out TypeDefinitionHandle typeDefHandle))
+            {
+                this.RequestInteropType(typeDefHandle);
+                return typeDefHandle;
+            }
+            else
+            {
+                // System.Guid reaches here, but doesn't need to be generated.
+                ////throw new NotSupportedException($"Could not find a type def for: {this.mr.GetString(typeRef.Namespace)}.{name}");
+                return null;
             }
         }
 
@@ -1640,6 +1730,19 @@ namespace Microsoft.Windows.CsWin32
                 this.peReader.Dispose();
                 this.metadataStream.Dispose();
             }
+        }
+
+        /// <summary>
+        /// Checks whether an exception was originally thrown because of a target platform incompatibility.
+        /// </summary>
+        private static bool IsPlatformCompatibleException(Exception? ex)
+        {
+            if (ex is null)
+            {
+                return false;
+            }
+
+            return ex is PlatformIncompatibleException || IsPlatformCompatibleException(ex?.InnerException);
         }
 
         private static T AddApiDocumentation<T>(string api, T memberDeclaration)
@@ -2458,6 +2561,7 @@ namespace Microsoft.Windows.CsWin32
         private MethodDefinitionHandle? GetMethodByName(string? methodNamespace, string methodName, bool exactNameMatchOnly = false)
         {
             IEnumerable<NamespaceMetadata> namespaces = this.GetNamespacesToSearch(methodNamespace);
+            bool foundApiWithMismatchedPlatform = false;
 
             var matchingMethodHandles = new List<MethodDefinitionHandle>();
             foreach (var nsMetadata in namespaces)
@@ -2465,6 +2569,10 @@ namespace Microsoft.Windows.CsWin32
                 if (nsMetadata.Methods.TryGetValue(methodName, out MethodDefinitionHandle handle))
                 {
                     matchingMethodHandles.Add(handle);
+                }
+                else if (nsMetadata.MethodsForOtherPlatform.Contains(methodName))
+                {
+                    foundApiWithMismatchedPlatform = true;
                 }
             }
 
@@ -2495,6 +2603,11 @@ namespace Microsoft.Windows.CsWin32
                         return $"{this.mr.GetString(td.Namespace)}.{this.mr.GetString(md.Name)}";
                     }));
                 throw new ArgumentException("The method name is ambiguous. Use the fully-qualified name instead. Possible matches: " + matches);
+            }
+
+            if (foundApiWithMismatchedPlatform)
+            {
+                throw new PlatformIncompatibleException($"The requested API ({methodName}) was found but is not available given the target platform ({this.compilation?.Options.Platform}).");
             }
 
             return null;
@@ -4543,6 +4656,10 @@ namespace Microsoft.Windows.CsWin32
             internal Dictionary<string, MethodDefinitionHandle> Methods { get; } = new(StringComparer.Ordinal);
 
             internal Dictionary<string, TypeDefinitionHandle> Types { get; } = new(StringComparer.Ordinal);
+
+            internal HashSet<string> MethodsForOtherPlatform { get; } = new HashSet<string>(StringComparer.Ordinal);
+
+            internal HashSet<string> TypesForOtherPlatform { get; } = new HashSet<string>(StringComparer.Ordinal);
 
             private string DebuggerDisplay => $"{this.Name} (Constants: {this.Fields.Count}, Methods: {this.Methods.Count}, Types: {this.Types.Count}";
         }

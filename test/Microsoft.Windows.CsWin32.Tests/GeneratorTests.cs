@@ -210,6 +210,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             WideCharOnly = false,
             AllowMarshaling = allowMarshaling,
         };
+        this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(Platform.X64));
         this.generator = new Generator(this.metadataStream, options, this.compilation, this.parseOptions);
         Assert.True(this.generator.TryGenerate(api, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
@@ -478,19 +479,58 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         Assert.Equal(2, overloads.Count());
     }
 
-    [Theory]
-    [InlineData("MEMORY_BASIC_INFORMATION")]
-    public void ArchitectureSpecificAPIsTreatment(string apiName)
+    [Theory, CombinatorialData]
+    public void ArchitectureSpecificAPIsTreatment(
+        [CombinatorialValues("MEMORY_BASIC_INFORMATION", "SP_PROPCHANGE_PARAMS", "JsCreateContext")] string apiName,
+        [CombinatorialValues(Platform.AnyCpu, Platform.X64, Platform.X86)] Platform platform)
     {
-        // AnyCPU targets should throw an exception with a helpful error message when asked for arch-specific APIs
+        this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(platform));
         this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
-        var ex = Assert.Throws<GenerationFailedException>(() => this.generator.TryGenerate(apiName, CancellationToken.None));
-        this.logger.WriteLine(ex.Message);
+        if (platform == Platform.AnyCpu)
+        {
+            // AnyCPU targets should throw an exception with a helpful error message when asked for arch-specific APIs
+            var ex = Assert.Throws<PlatformIncompatibleException>(() => this.generator.TryGenerate(apiName, CancellationToken.None));
+            this.logger.WriteLine(ex.Message);
+        }
+        else
+        {
+            // Arch-specific compilations should generate the requested APIs.
+            Assert.True(this.generator.TryGenerate(apiName, CancellationToken.None));
+            this.CollectGeneratedCode(this.generator);
+            this.AssertNoDiagnostics();
+        }
+    }
 
-        // Arch-specific compilations should generate the requested APIs.
-        this.compilation = this.starterCompilations["net5.0-x64"];
+    [Theory, CombinatorialData]
+    public void TypeRefsToArchSpecificApis(
+        [CombinatorialValues(Platform.X64, Platform.X86)] Platform platform)
+    {
+        this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(platform));
         this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
-        Assert.True(this.generator.TryGenerate(apiName, CancellationToken.None));
+
+        // Request a struct directly, and indirectly through another that references it.
+        // This verifies that even if the metadata references a particular arch of the structure,
+        // the right one for the CPU architecture is generated.
+        Assert.True(this.generator.TryGenerate("SP_PROPCHANGE_PARAMS", CancellationToken.None));
+        Assert.True(this.generator.TryGenerate("SP_CLASSINSTALL_HEADER", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        // Verify that [Pack = 1] appears on both structures.
+        foreach (string structName in new[] { "SP_CLASSINSTALL_HEADER", "SP_PROPCHANGE_PARAMS" })
+        {
+            var header = this.FindGeneratedType(structName).Single();
+            SeparatedSyntaxList<AttributeArgumentSyntax> attributes = header.AttributeLists.SelectMany(al => al.Attributes).FirstOrDefault(att => att.Name is IdentifierNameSyntax { Identifier: { ValueText: "StructLayout" } })?.ArgumentList?.Arguments ?? default;
+            Predicate<AttributeArgumentSyntax> matchPredicate = att => att.NameEquals is { Name: { Identifier: { ValueText: "Pack" } } };
+            if (platform == Platform.X86)
+            {
+                Assert.Contains(attributes, matchPredicate);
+            }
+            else
+            {
+                Assert.DoesNotContain(attributes, matchPredicate);
+            }
+        }
     }
 
     [Theory]

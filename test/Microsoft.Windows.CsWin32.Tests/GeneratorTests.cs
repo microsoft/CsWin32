@@ -499,8 +499,10 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         if (platform == Platform.AnyCpu)
         {
             // AnyCPU targets should throw an exception with a helpful error message when asked for arch-specific APIs
-            var ex = Assert.Throws<PlatformIncompatibleException>(() => this.generator.TryGenerate(apiName, CancellationToken.None));
+            var ex = Assert.ThrowsAny<GenerationFailedException>(() => this.generator.TryGenerate(apiName, CancellationToken.None));
             this.logger.WriteLine(ex.Message);
+            this.CollectGeneratedCode(this.generator);
+            this.AssertNoDiagnostics();
         }
         else
         {
@@ -509,6 +511,23 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             this.CollectGeneratedCode(this.generator);
             this.AssertNoDiagnostics();
         }
+    }
+
+    [Fact]
+    public void MultipleEntrypointsToOmittedArchSpecificApis()
+    {
+        this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(Platform.AnyCpu));
+        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+
+        // Request a struct that depends on arch-specific IP6_ADDRESS.
+        Assert.ThrowsAny<GenerationFailedException>(() => this.generator.TryGenerate("DNS_SERVICE_INSTANCE", CancellationToken.None));
+
+        // Request a struct that depends on DNS_SERVICE_INSTANCE.
+        Assert.ThrowsAny<GenerationFailedException>(() => this.generator.TryGenerate("DNS_SERVICE_REGISTER_REQUEST", CancellationToken.None));
+
+        // Verify that no uncompilable code was generated.
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
     }
 
     [Theory, CombinatorialData]

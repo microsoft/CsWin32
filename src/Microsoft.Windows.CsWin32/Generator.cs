@@ -292,17 +292,17 @@ namespace Microsoft.Windows.CsWin32
         /// <summary>
         /// The set of types that are or have been generated so we don't stack overflow for self-referencing types.
         /// </summary>
-        private readonly HashSet<TypeDefinitionHandle> typesGenerating = new HashSet<TypeDefinitionHandle>();
+        private readonly Dictionary<TypeDefinitionHandle, Exception?> typesGenerating = new();
 
         /// <summary>
         /// The set of methods that are or have been generated.
         /// </summary>
-        private readonly HashSet<MethodDefinitionHandle> methodsGenerating = new HashSet<MethodDefinitionHandle>();
+        private readonly Dictionary<MethodDefinitionHandle, Exception?> methodsGenerating = new();
 
         /// <summary>
         /// A collection of the names of special types we are or have generated.
         /// </summary>
-        private readonly HashSet<string> specialTypesGenerating = new HashSet<string>(StringComparer.Ordinal);
+        private readonly Dictionary<string, Exception?> specialTypesGenerating = new(StringComparer.Ordinal);
 
         /// <summary>
         /// A dictionary of namespace metadata, indexed by the string handle to their namespace.
@@ -1208,12 +1208,26 @@ namespace Microsoft.Windows.CsWin32
                 }
             }
 
-            if (!this.methodsGenerating.Add(methodDefinitionHandle))
+            if (this.methodsGenerating.TryGetValue(methodDefinitionHandle, out Exception? failure))
             {
+                if (failure is object)
+                {
+                    throw new GenerationFailedException("This member already failed in generation previously.", failure);
+                }
+
                 return;
             }
 
-            this.DeclareExternMethod(methodDefinitionHandle);
+            this.methodsGenerating.Add(methodDefinitionHandle, null);
+            try
+            {
+                this.DeclareExternMethod(methodDefinitionHandle);
+            }
+            catch (Exception ex)
+            {
+                this.methodsGenerating[methodDefinitionHandle] = ex;
+                throw;
+            }
         }
 
         internal bool IsInterface(HandleTypeHandleInfo typeInfo)
@@ -1281,25 +1295,39 @@ namespace Microsoft.Windows.CsWin32
                 }
             }
 
-            if (!this.typesGenerating.Add(typeDefHandle))
+            if (this.typesGenerating.TryGetValue(typeDefHandle, out Exception? failure))
             {
+                if (failure is object)
+                {
+                    throw new GenerationFailedException("This member already failed in generation previously.", failure);
+                }
+
                 return;
             }
 
-            if (this.RequestInteropType(typeDefHandle, null) is MemberDeclarationSyntax typeDeclaration)
+            this.typesGenerating.Add(typeDefHandle, null);
+            try
             {
-                if (!TryStripCommonNamespace(ns, out string? shortNamespace))
+                if (this.RequestInteropType(typeDefHandle, null) is MemberDeclarationSyntax typeDeclaration)
                 {
-                    throw new GenerationFailedException("Unexpected namespace: " + ns);
-                }
+                    if (!TryStripCommonNamespace(ns, out string? shortNamespace))
+                    {
+                        throw new GenerationFailedException("Unexpected namespace: " + ns);
+                    }
 
-                if (shortNamespace.Length > 0)
-                {
-                    typeDeclaration = typeDeclaration.WithAdditionalAnnotations(
-                        new SyntaxAnnotation(NamespaceContainerAnnotation, shortNamespace));
-                }
+                    if (shortNamespace.Length > 0)
+                    {
+                        typeDeclaration = typeDeclaration.WithAdditionalAnnotations(
+                            new SyntaxAnnotation(NamespaceContainerAnnotation, shortNamespace));
+                    }
 
-                this.types.Add(typeDefHandle, typeDeclaration);
+                    this.types.Add(typeDefHandle, typeDeclaration);
+                }
+            }
+            catch (Exception ex)
+            {
+                this.typesGenerating[typeDefHandle] = ex;
+                throw;
             }
         }
 
@@ -1574,12 +1602,18 @@ namespace Microsoft.Windows.CsWin32
                 return null;
             }
 
-            if (!this.specialTypesGenerating.Add(specialName))
+            if (this.specialTypesGenerating.TryGetValue(specialName, out Exception? failure))
             {
+                if (failure is object)
+                {
+                    throw new GenerationFailedException("This member already failed in generation previously.", failure);
+                }
+
                 // Already generated.
                 return null;
             }
 
+            this.specialTypesGenerating.Add(specialName, null);
             try
             {
                 MemberDeclarationSyntax? specialDeclaration = null;
@@ -1609,6 +1643,7 @@ namespace Microsoft.Windows.CsWin32
             }
             catch (Exception ex)
             {
+                this.specialTypesGenerating[specialName] = ex;
                 throw new GenerationFailedException("Failed to generate " + specialName, ex);
             }
         }

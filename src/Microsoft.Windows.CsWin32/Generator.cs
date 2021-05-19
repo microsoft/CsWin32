@@ -3345,14 +3345,13 @@ namespace Microsoft.Windows.CsWin32
             {
                 // Handle types must interop with IntPtr for SafeHandle support, so if IntPtr isn't the field type,
                 // we need to create new conversion operators.
-
-                // public static implicit operator IntPtr(MSIHANDLE value) => new IntPtr(value.Value);
                 ExpressionSyntax valueValueArg = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, fieldIdentifierName);
                 if (fieldInfo.FieldType is IdentifierNameSyntax { Identifier: { ValueText: nameof(UIntPtr) } })
                 {
                     valueValueArg = CastExpression(PredefinedType(Token(SyntaxKind.LongKeyword)), valueValueArg);
                 }
 
+                // public static implicit operator IntPtr(MSIHANDLE value) => new IntPtr(value.Value);
                 members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), IntPtrTypeSyntax)
                     .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(name))
                     .WithExpressionBody(ArrowExpressionClause(
@@ -3377,6 +3376,16 @@ namespace Microsoft.Windows.CsWin32
                         .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IntPtrTypeSyntax))
                         .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(
                             Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToPointer)))))))))
+                        .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
+                        .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+                }
+                else if (fieldInfo.FieldType is IdentifierNameSyntax { Identifier: { ValueText: nameof(UIntPtr) } })
+                {
+                    // public static explicit operator SOCKET(IntPtr value) => new SOCKET((UIntPtr)value.ToInt64());
+                    members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
+                        .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IntPtrTypeSyntax))
+                        .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(
+                            Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToInt64)))))))))
                         .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
                         .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
                 }

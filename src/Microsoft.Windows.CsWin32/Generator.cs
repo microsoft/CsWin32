@@ -31,6 +31,7 @@ namespace Microsoft.Windows.CsWin32
         internal const string InteropDecorationNamespace = "Windows.Win32.Interop";
         internal const string NativeArrayInfoAttribute = "NativeArrayInfoAttribute";
         internal const string GlobalNamespacePrefix = "global::";
+        internal const string GlobalWin32NamespaceAlias = "win32";
 
         internal static readonly SyntaxAnnotation IsManagedTypeAnnotation = new SyntaxAnnotation("IsManagedType");
         internal static readonly SyntaxAnnotation IsSafeHandleTypeAnnotation = new SyntaxAnnotation("IsSafeHandleType");
@@ -76,6 +77,7 @@ namespace Microsoft.Windows.CsWin32
 ";
 
         private const string SimpleFileNameAnnotation = "SimpleFileName";
+        private const string NamespaceContainerAnnotation = "NamespaceContainer";
         private const string OriginalDelegateAnnotation = "OriginalDelegate";
         private static readonly SyntaxTriviaList InlineArrayUnsafeAsSpanComment = ParseLeadingTrivia(@"/// <summary>
 /// Gets this inline array as a span.
@@ -279,7 +281,7 @@ namespace Microsoft.Windows.CsWin32
         /// <summary>
         /// A dictionary where the key is the typedef struct name and the value is the method used to release it.
         /// </summary>
-        private readonly Dictionary<string, string> handleTypeReleaseMethod = new Dictionary<string, string>(StringComparer.Ordinal);
+        private readonly Dictionary<TypeDefinitionHandle, string> handleTypeReleaseMethod = new();
 
         /// <summary>
         /// The set of names of typedef structs that represent handles where the handle has length of <see cref="IntPtr"/>
@@ -370,15 +372,15 @@ namespace Microsoft.Windows.CsWin32
                 PreferMarshaledTypes: false,
                 AllowMarshaling: options.AllowMarshaling,
                 QualifyNames: false);
-            this.fieldTypeSettings = this.generalTypeSettings;
-            this.delegateSignatureTypeSettings = this.generalTypeSettings;
+            this.fieldTypeSettings = this.generalTypeSettings with { QualifyNames = true };
+            this.delegateSignatureTypeSettings = this.generalTypeSettings with { QualifyNames = true };
             this.enumTypeSettings = this.generalTypeSettings;
             this.fieldOfHandleTypeDefTypeSettings = this.generalTypeSettings with { PreferNativeInt = false };
             this.externSignatureTypeSettings = this.generalTypeSettings with { QualifyNames = true, PreferMarshaledTypes = true };
-            this.externReleaseSignatureTypeSettings = this.generalTypeSettings with { PreferNativeInt = false };
-            this.comSignatureTypeSettings = this.generalTypeSettings;
+            this.externReleaseSignatureTypeSettings = this.externSignatureTypeSettings with { PreferNativeInt = false, PreferMarshaledTypes = false };
+            this.comSignatureTypeSettings = this.generalTypeSettings with { QualifyNames = true };
             this.extensionMethodSignatureTypeSettings = this.generalTypeSettings with { QualifyNames = true };
-            this.functionPointerTypeSettings = this.generalTypeSettings;
+            this.functionPointerTypeSettings = this.generalTypeSettings with { QualifyNames = true };
             this.errorMessageTypeSettings = this.generalTypeSettings with { QualifyNames = true };
 
             foreach (MemberReferenceHandle memberRefHandle in this.mr.MemberReferences)
@@ -466,7 +468,7 @@ namespace Microsoft.Windows.CsWin32
                                         var args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
                                         if (args.FixedArguments[0].Value is string freeMethodName)
                                         {
-                                            this.handleTypeReleaseMethod.Add(typeName, freeMethodName);
+                                            this.handleTypeReleaseMethod.Add(tdh, freeMethodName);
                                             this.releaseMethods.Add(freeMethodName);
 
                                             using FieldDefinitionHandleCollection.Enumerator fieldEnum = td.GetFields().GetEnumerator();
@@ -985,11 +987,21 @@ namespace Microsoft.Windows.CsWin32
             const string FilenamePattern = "{0}.g.cs";
             var results = new Dictionary<string, NamespaceDeclarationSyntax>(StringComparer.OrdinalIgnoreCase);
 
+            IEnumerable<MemberDeclarationSyntax> GroupMembersByNamespace(IEnumerable<MemberDeclarationSyntax> members)
+            {
+                return members.GroupBy(member =>
+                    member.HasAnnotations(NamespaceContainerAnnotation) ? member.GetAnnotations(NamespaceContainerAnnotation).Single().Data : null)
+                    .SelectMany(nsContents =>
+                        nsContents.Key is object
+                            ? new MemberDeclarationSyntax[] { NamespaceDeclaration(ParseName(nsContents.Key)).AddMembers(nsContents.ToArray()) }
+                            : nsContents.ToArray());
+            }
+
             if (this.options.EmitSingleFile)
             {
                 results.Add(
                     string.Format(CultureInfo.InvariantCulture, FilenamePattern, "NativeMethods"),
-                    starterNamespace.AddMembers(this.NamespaceMembers.ToArray()));
+                    starterNamespace.AddMembers(GroupMembersByNamespace(this.NamespaceMembers).ToArray()));
             }
             else
             {
@@ -1013,7 +1025,7 @@ namespace Microsoft.Windows.CsWin32
                     {
                         results.Add(
                             string.Format(CultureInfo.InvariantCulture, FilenamePattern, fileSimpleName.Key),
-                            starterNamespace.AddMembers(fileSimpleName.ToArray()));
+                            starterNamespace.AddMembers(GroupMembersByNamespace(fileSimpleName).ToArray()));
                     }
                     catch (ArgumentException ex)
                     {
@@ -1034,6 +1046,8 @@ namespace Microsoft.Windows.CsWin32
             {
                 usingDirectives.Add(UsingDirective(ParseName(GlobalNamespacePrefix + "System.Runtime.Versioning")));
             }
+
+            usingDirectives.Add(UsingDirective(NameEquals(GlobalWin32NamespaceAlias), ParseName(GlobalNamespacePrefix + this.Namespace)));
 
             var normalizedResults = new Dictionary<string, CompilationUnitSyntax>(StringComparer.OrdinalIgnoreCase);
             results.AsParallel().WithCancellation(cancellationToken).ForAll(kv =>
@@ -1095,11 +1109,56 @@ namespace Microsoft.Windows.CsWin32
             return reader.StringComparer.Equals(actualName, name) && reader.StringComparer.Equals(actualNamespace, ns);
         }
 
+        internal static string ReplaceCommonNamespaceWithAlias(string fullNamespace) => TryStripCommonNamespace(fullNamespace, out string? stripped) ? $"{GlobalWin32NamespaceAlias}.{stripped}" : fullNamespace;
+
+        internal static bool TryStripCommonNamespace(string fullNamespace, [NotNullWhen(true)] out string? strippedNamespace)
+        {
+            const string CommonNamespaceDot = "Windows.Win32.";
+            const string CommonNamespace = "Windows.Win32";
+            if (fullNamespace.StartsWith(CommonNamespaceDot, StringComparison.Ordinal))
+            {
+                strippedNamespace = fullNamespace.Substring(CommonNamespaceDot.Length);
+                return true;
+            }
+            else if (fullNamespace == CommonNamespace)
+            {
+                strippedNamespace = string.Empty;
+                return true;
+            }
+
+            strippedNamespace = null;
+            return false;
+        }
+
         internal bool IsAttribute(CustomAttribute attribute, string ns, string name) => IsAttribute(this.mr, attribute, ns, name);
 
-        internal bool TryGetHandleReleaseMethod(string handleStructName, [NotNullWhen(true)] out string? releaseMethod)
+        internal bool TryGetHandleReleaseMethod(EntityHandle handleStructDefHandle, [NotNullWhen(true)] out string? releaseMethod)
         {
-            return this.handleTypeReleaseMethod.TryGetValue(handleStructName, out releaseMethod);
+            if (handleStructDefHandle.IsNil)
+            {
+                releaseMethod = null;
+                return false;
+            }
+
+            if (handleStructDefHandle.Kind == HandleKind.TypeReference)
+            {
+                if (this.TryGetTypeDefHandle((TypeReferenceHandle)handleStructDefHandle, out TypeDefinitionHandle typeDefHandle))
+                {
+                    return this.TryGetHandleReleaseMethod(typeDefHandle, out releaseMethod);
+                }
+            }
+            else if (handleStructDefHandle.Kind == HandleKind.TypeDefinition)
+            {
+                return this.TryGetHandleReleaseMethod((TypeDefinitionHandle)handleStructDefHandle, out releaseMethod);
+            }
+
+            releaseMethod = null;
+            return false;
+        }
+
+        internal bool TryGetHandleReleaseMethod(TypeDefinitionHandle handleStructDefHandle, [NotNullWhen(true)] out string? releaseMethod)
+        {
+            return this.handleTypeReleaseMethod.TryGetValue(handleStructDefHandle, out releaseMethod);
         }
 
         internal void RequestAllInteropTypes(CancellationToken cancellationToken)
@@ -1208,12 +1267,12 @@ namespace Microsoft.Windows.CsWin32
                 return;
             }
 
+            string ns = this.mr.GetString(typeDef.Namespace);
             if (!this.IsCompatibleWithPlatform(typeDef.GetCustomAttributes()))
             {
                 // We've been asked for an interop type that does not apply. This happens because the metadata
                 // may use a TypeReferenceHandle or TypeDefinitionHandle to just one of many arch-specific definitions of this type.
                 // Try to find the appropriate definition for our target architecture.
-                string ns = this.mr.GetString(typeDef.Namespace);
                 string name = this.mr.GetString(typeDef.Name);
                 NamespaceMetadata namespaceMetadata = this.metadataByNamespace[ns];
                 if (!namespaceMetadata.Types.TryGetValue(name, out typeDefHandle) && namespaceMetadata.TypesForOtherPlatform.Contains(name))
@@ -1229,6 +1288,17 @@ namespace Microsoft.Windows.CsWin32
 
             if (this.RequestInteropType(typeDefHandle, null) is MemberDeclarationSyntax typeDeclaration)
             {
+                if (!TryStripCommonNamespace(ns, out string? shortNamespace))
+                {
+                    throw new GenerationFailedException("Unexpected namespace: " + ns);
+                }
+
+                if (shortNamespace.Length > 0)
+                {
+                    typeDeclaration = typeDeclaration.WithAdditionalAnnotations(
+                        new SyntaxAnnotation(NamespaceContainerAnnotation, shortNamespace));
+                }
+
                 this.types.Add(typeDefHandle, typeDeclaration);
             }
         }
@@ -1410,23 +1480,23 @@ namespace Microsoft.Windows.CsWin32
                         }
 
                         break;
-                    case IdentifierNameSyntax identifierName:
+                    case QualifiedNameSyntax { Right: IdentifierNameSyntax identifierName }:
                         switch (identifierName.Identifier.ValueText)
                         {
                             case "LSTATUS":
                                 this.TryGenerateTypeOrThrow("WIN32_ERROR");
-                                ExpressionSyntax errorSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("WIN32_ERROR"), IdentifierName("ERROR_SUCCESS"));
-                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, CastExpression(IdentifierName("LSTATUS"), CastExpression(PredefinedType(Token(SyntaxKind.IntKeyword)), errorSuccess)));
+                                ExpressionSyntax errorSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseTypeName(GlobalWin32NamespaceAlias + ".System.Diagnostics.Debug.WIN32_ERROR"), IdentifierName("ERROR_SUCCESS"));
+                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, CastExpression(ParseTypeName(GlobalWin32NamespaceAlias + ".System.SystemServices.LSTATUS"), CastExpression(PredefinedType(Token(SyntaxKind.IntKeyword)), errorSuccess)));
                                 break;
                             case "NTSTATUS":
-                                // https://github.com/microsoft/win32metadata/issues/136
-                                ////ExpressionSyntax statusSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("NTSTATUS"), IdentifierName("STATUS_SUCCESS"));
-                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, CastExpression(IdentifierName("NTSTATUS"), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))));
+                                this.TryGenerateConstantOrThrow("STATUS_SUCCESS");
+                                ExpressionSyntax statusSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ConstantsClassName, IdentifierName("STATUS_SUCCESS"));
+                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, statusSuccess);
                                 break;
                             case "HRESULT":
                                 this.TryGenerateConstantOrThrow("S_OK");
                                 ExpressionSyntax ok = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ConstantsClassName, IdentifierName("S_OK"));
-                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, CastExpression(IdentifierName("HRESULT"), ok));
+                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, ok);
                                 break;
                             default:
                                 throw new NotSupportedException($"Return type {identifierName.Identifier.ValueText} on release method {releaseMethod} not supported.");
@@ -1491,10 +1561,13 @@ namespace Microsoft.Windows.CsWin32
             }
         }
 
-        internal MemberDeclarationSyntax? RequestTypeDefStruct(string specialName)
+        internal MemberDeclarationSyntax? RequestSpecialTypeDefStruct(string specialName, out string fullyQualifiedName)
         {
+            string subNamespace = "System.SystemServices";
+            string ns = $"{this.Namespace}.{subNamespace}";
+            fullyQualifiedName = $"{ns}.{specialName}";
+
             // Skip if the compilation already defines this type or can access it from elsewhere.
-            string fullyQualifiedName = this.Namespace + "." + specialName;
             if (this.FindSymbolIfAlreadyAvailable(fullyQualifiedName) is object)
             {
                 // The type already exists either in this project or a referenced one.
@@ -1528,6 +1601,8 @@ namespace Microsoft.Windows.CsWin32
                 {
                     throw new GenerationFailedException("Failed to parse template.");
                 }
+
+                specialDeclaration = specialDeclaration.WithAdditionalAnnotations(new SyntaxAnnotation(NamespaceContainerAnnotation, subNamespace));
 
                 this.specialTypes.Add(specialName, specialDeclaration);
                 return specialDeclaration;
@@ -2175,7 +2250,7 @@ namespace Microsoft.Windows.CsWin32
             var k = (byte)args.FixedArguments[10].Value!;
             var pid = (uint)args.FixedArguments[11].Value!;
 
-            return ObjectCreationExpression(IdentifierName("PROPERTYKEY")).WithInitializer(
+            return ObjectCreationExpression(IdentifierName("win32.System.PropertiesSystem.PROPERTYKEY")).WithInitializer(
                 InitializerExpression(SyntaxKind.ObjectInitializerExpression).AddExpressions(
                     AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, IdentifierName("fmtid"), GuidValue(propertyKeyAttribute)),
                     AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, IdentifierName("pid"), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(pid)))));
@@ -2346,7 +2421,7 @@ namespace Microsoft.Windows.CsWin32
             // Skip if the compilation already defines this type or can access it from elsewhere.
             string name = this.mr.GetString(typeDef.Name);
             string ns = this.mr.GetString(typeDef.Namespace);
-            string fullyQualifiedName = this.Namespace + "." + name;
+            string fullyQualifiedName = ns + "." + name;
             if (this.FindSymbolIfAlreadyAvailable(fullyQualifiedName) is object)
             {
                 // The type already exists either in this project or a referenced one.
@@ -2481,7 +2556,8 @@ namespace Microsoft.Windows.CsWin32
                     methodDeclaration = methodDeclaration.AddModifiers(Token(SyntaxKind.UnsafeKeyword));
                 }
 
-                methodsList.AddRange(this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, this.GroupByModule ? GetClassNameForModule(moduleName) : this.SingleClassName, FriendlyOverloadOf.ExternMethod));
+                NameSyntax declaringTypeName = ParseName(this.GroupByModule ? GetClassNameForModule(moduleName) : this.SingleClassName);
+                methodsList.AddRange(this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, declaringTypeName, FriendlyOverloadOf.ExternMethod));
 
                 methodsList.Add(methodDeclaration);
             }
@@ -2647,12 +2723,12 @@ namespace Microsoft.Windows.CsWin32
                 bool requiresUnsafe = false;
                 if (fieldType.Type is not PredefinedTypeSyntax && value is not ObjectCreationExpressionSyntax)
                 {
-                    if (fieldType.Type is IdentifierNameSyntax { Identifier: { ValueText: string typeName } } && this.TryGetHandleReleaseMethod(typeName, out _))
+                    if (fieldTypeInfo is HandleTypeHandleInfo handleFieldTypeInfo && this.TryGetHandleReleaseMethod(handleFieldTypeInfo.Handle, out _))
                     {
                         // Cast to IntPtr first, then the actual handle struct.
                         value = CastExpression(fieldType.Type, CastExpression(IntPtrTypeSyntax, ParenthesizedExpression(value)));
                     }
-                    else if (fieldType.Type is IdentifierNameSyntax { Identifier: { ValueText: "PCWSTR" } })
+                    else if (fieldType.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "PCWSTR" } } })
                     {
                         value = CastExpression(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword))), ParenthesizedExpression(value));
                         requiresUnsafe = true;
@@ -2725,8 +2801,6 @@ namespace Microsoft.Windows.CsWin32
         /// </remarks>
         private TypeDeclarationSyntax? DeclareInterface(TypeDefinition typeDef)
         {
-            IdentifierNameSyntax ifaceName = IdentifierName(this.mr.GetString(typeDef.Name));
-
             Stack<TypeDefinitionHandle> baseTypes = new Stack<TypeDefinitionHandle>();
             InterfaceImplementationHandle baseTypeHandle = typeDef.GetInterfaceImplementations().SingleOrDefault();
             while (!baseTypeHandle.IsNil)
@@ -2743,12 +2817,13 @@ namespace Microsoft.Windows.CsWin32
             }
 
             return !this.options.AllowMarshaling || this.IsNonCOMInterface(typeDef)
-                ? this.DeclareInterfaceAsStruct(typeDef, ifaceName, baseTypes)
-                : this.DeclareInterfaceAsInterface(typeDef, ifaceName, baseTypes);
+                ? this.DeclareInterfaceAsStruct(typeDef, baseTypes)
+                : this.DeclareInterfaceAsInterface(typeDef, baseTypes);
         }
 
-        private TypeDeclarationSyntax DeclareInterfaceAsStruct(TypeDefinition typeDef, IdentifierNameSyntax ifaceName, Stack<TypeDefinitionHandle> baseTypes)
+        private TypeDeclarationSyntax DeclareInterfaceAsStruct(TypeDefinition typeDef, Stack<TypeDefinitionHandle> baseTypes)
         {
+            IdentifierNameSyntax ifaceName = IdentifierName(this.mr.GetString(typeDef.Name));
             IdentifierNameSyntax vtblFieldName = IdentifierName("lpVtbl");
             var members = new List<MemberDeclarationSyntax>();
             var vtblMembers = new List<MemberDeclarationSyntax>();
@@ -2830,7 +2905,7 @@ namespace Microsoft.Windows.CsWin32
                 // Add documentation if we can find it.
                 methodDeclaration = AddApiDocumentation($"{ifaceName}.{methodName}", methodDeclaration);
 
-                members.AddRange(this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, ifaceName.Identifier.ValueText, FriendlyOverloadOf.StructMethod));
+                members.AddRange(this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, IdentifierName(ifaceName.Identifier.ValueText), FriendlyOverloadOf.StructMethod));
                 members.Add(methodDeclaration);
             }
 
@@ -2859,14 +2934,15 @@ namespace Microsoft.Windows.CsWin32
             return iface;
         }
 
-        private TypeDeclarationSyntax? DeclareInterfaceAsInterface(TypeDefinition typeDef, IdentifierNameSyntax ifaceName, Stack<TypeDefinitionHandle> baseTypes)
+        private TypeDeclarationSyntax? DeclareInterfaceAsInterface(TypeDefinition typeDef, Stack<TypeDefinitionHandle> baseTypes)
         {
-            if (ifaceName.Identifier.ValueText is "IUnknown" or "IDispatch")
+            if (this.mr.StringComparer.Equals(typeDef.Name, "IUnknown") || this.mr.StringComparer.Equals(typeDef.Name, "IDispatch"))
             {
                 // We do not generate interfaces for these COM base types.
                 return null;
             }
 
+            IdentifierNameSyntax ifaceName = IdentifierName(this.mr.GetString(typeDef.Name));
             TypeSyntaxSettings typeSettings = this.comSignatureTypeSettings;
 
             // It is imperative that we generate methods for all base interfaces as well, ahead of any implemented by *this* interface.
@@ -2931,7 +3007,7 @@ namespace Microsoft.Windows.CsWin32
                     var (returnType, marshalAs) = signature.ReturnType.ToTypeSyntax(typeSettings, returnTypeAttributes);
                     AttributeSyntax? returnsAttribute = MarshalAs(marshalAs);
 
-                    bool preserveSig = returnType is not IdentifierNameSyntax { Identifier: { ValueText: "HRESULT" } }
+                    bool preserveSig = returnType is not QualifiedNameSyntax { Right: { Identifier: { ValueText: "HRESULT" } } }
                         || this.options.ComInterop.PreserveSigMethods.Contains($"{ifaceName}.{methodName}")
                         || this.options.ComInterop.PreserveSigMethods.Contains(ifaceName.ToString());
 
@@ -2982,9 +3058,9 @@ namespace Microsoft.Windows.CsWin32
                     methodDeclaration = AddApiDocumentation($"{ifaceName}.{methodName}", methodDeclaration);
                     members.Add(methodDeclaration);
 
-                    var atThis = IdentifierName("@this");
+                    NameSyntax declaringTypeName = HandleTypeHandleInfo.GetNestingQualifiedName(this.mr, typeDef);
                     this.comInterfaceFriendlyExtensionsMembers.AddRange(
-                        this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, ifaceName.Identifier.ValueText, FriendlyOverloadOf.InterfaceMethod));
+                        this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, declaringTypeName, FriendlyOverloadOf.InterfaceMethod));
                 }
                 catch (Exception ex)
                 {
@@ -3636,7 +3712,7 @@ namespace Microsoft.Windows.CsWin32
             return result;
         }
 
-        private IEnumerable<MethodDeclarationSyntax> DeclareFriendlyOverloads(MethodDefinition methodDefinition, MethodDeclarationSyntax externMethodDeclaration, string declaringTypeName, FriendlyOverloadOf overloadOf)
+        private IEnumerable<MethodDeclarationSyntax> DeclareFriendlyOverloads(MethodDefinition methodDefinition, MethodDeclarationSyntax externMethodDeclaration, NameSyntax declaringTypeName, FriendlyOverloadOf overloadOf)
         {
             if (this.TryFetchTemplate(externMethodDeclaration.Identifier.ValueText, out MemberDeclarationSyntax? templateFriendlyOverload))
             {
@@ -3687,13 +3763,18 @@ namespace Microsoft.Windows.CsWin32
                 // * Review double/triple pointer scenarios.
                 //   * Consider CredEnumerateA, which is a "pointer to an array of pointers" (3-asterisks!). How does FriendlyAttribute improve this, if at all? The memory must be freed through another p/invoke.
                 ParameterSyntax externParam = parameters[param.SequenceNumber - 1];
+                if (externParam.Type is null)
+                {
+                    throw new GenerationFailedException();
+                }
+
                 TypeHandleInfo parameterTypeInfo = originalSignature.ParameterTypes[param.SequenceNumber - 1];
                 if (this.IsManagedType(parameterTypeInfo) && (externParam.Modifiers.Any(SyntaxKind.OutKeyword) || externParam.Modifiers.Any(SyntaxKind.RefKeyword)))
                 {
                     bool hasOut = externParam.Modifiers.Any(SyntaxKind.OutKeyword);
                     arguments[param.SequenceNumber - 1] = arguments[param.SequenceNumber - 1].WithRefKindKeyword(Token(hasOut ? SyntaxKind.OutKeyword : SyntaxKind.RefKeyword));
                 }
-                else if (isOut && !isIn && !isReleaseMethod && externParam.Type is PointerTypeSyntax { ElementType: IdentifierNameSyntax outTypeId } && this.TryGetHandleReleaseMethod(outTypeId.Identifier.ValueText, out string? outReleaseMethod) && !this.mr.StringComparer.Equals(methodDefinition.Name, outReleaseMethod))
+                else if (isOut && !isIn && !isReleaseMethod && parameterTypeInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo pointedElementInfo } && this.TryGetHandleReleaseMethod(pointedElementInfo.Handle, out string? outReleaseMethod) && !this.mr.StringComparer.Equals(methodDefinition.Name, outReleaseMethod))
                 {
                     if (this.RequestSafeHandle(outReleaseMethod) is TypeSyntax safeHandleType)
                     {
@@ -3708,7 +3789,7 @@ namespace Microsoft.Windows.CsWin32
                             .WithModifiers(TokenList(Token(SyntaxKind.OutKeyword)));
 
                         // HANDLE SomeLocal;
-                        leadingStatements.Add(LocalDeclarationStatement(VariableDeclaration(outTypeId).AddVariables(
+                        leadingStatements.Add(LocalDeclarationStatement(VariableDeclaration(pointedElementInfo.ToTypeSyntax(this.externSignatureTypeSettings, null).Type).AddVariables(
                             VariableDeclarator(typeDefHandleName.Identifier))));
 
                         // Argument: &SomeLocal
@@ -3723,7 +3804,7 @@ namespace Microsoft.Windows.CsWin32
                                 Argument(LiteralExpression(SyntaxKind.TrueLiteralExpression)).WithNameColon(NameColon("ownsHandle"))))));
                     }
                 }
-                else if (isIn && !isOut && !isReleaseMethod && externParam.Type is IdentifierNameSyntax typeId && this.TryGetHandleReleaseMethod(typeId.Identifier.ValueText, out string? releaseMethod) && !this.mr.StringComparer.Equals(methodDefinition.Name, releaseMethod))
+                else if (isIn && !isOut && !isReleaseMethod && parameterTypeInfo is HandleTypeHandleInfo parameterHandleTypeInfo && this.TryGetHandleReleaseMethod(parameterHandleTypeInfo.Handle, out string? releaseMethod) && !this.mr.StringComparer.Equals(methodDefinition.Name, releaseMethod))
                 {
                     IdentifierNameSyntax origName = IdentifierName(externParam.Identifier.ValueText);
                     IdentifierNameSyntax typeDefHandleName = IdentifierName(externParam.Identifier.ValueText + "Local");
@@ -3943,7 +4024,7 @@ namespace Microsoft.Windows.CsWin32
                         arguments[param.SequenceNumber - 1] = Argument(localName);
                     }
                 }
-                else if (isIn && !isOut && isConst && externParam.Type is IdentifierNameSyntax { Identifier: { ValueText: "PCWSTR" } })
+                else if (isIn && !isOut && isConst && externParam.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "PCWSTR" } } })
                 {
                     IdentifierNameSyntax origName = IdentifierName(externParam.Identifier.ValueText);
                     IdentifierNameSyntax localName = IdentifierName(origName + "Local");
@@ -3956,8 +4037,8 @@ namespace Microsoft.Windows.CsWin32
                 }
             }
 
-            TypeSyntax? returnSafeHandleType = externMethodReturnType is IdentifierNameSyntax returnType
-                && this.TryGetHandleReleaseMethod(returnType.Identifier.ValueText, out string? returnReleaseMethod)
+            TypeSyntax? returnSafeHandleType = originalSignature.ReturnType is HandleTypeHandleInfo returnTypeHandleInfo
+                && this.TryGetHandleReleaseMethod(returnTypeHandleInfo.Handle, out string? returnReleaseMethod)
                 ? this.RequestSafeHandle(returnReleaseMethod) : null;
             SyntaxToken friendlyMethodName = externMethodDeclaration.Identifier;
 
@@ -3983,7 +4064,7 @@ namespace Microsoft.Windows.CsWin32
                 }
 
                 TypeSyntax docRefExternName = overloadOf == FriendlyOverloadOf.InterfaceMethod
-                    ? QualifiedName(IdentifierName(declaringTypeName), IdentifierName(externMethodDeclaration.Identifier))
+                    ? QualifiedName(declaringTypeName, IdentifierName(externMethodDeclaration.Identifier))
                     : IdentifierName(externMethodDeclaration.Identifier);
                 var leadingTrivia = Trivia(
                     DocumentationCommentTrivia(SyntaxKind.SingleLineDocumentationCommentTrivia).AddContent(
@@ -3993,7 +4074,7 @@ namespace Microsoft.Windows.CsWin32
                 InvocationExpressionSyntax externInvocation = InvocationExpression(
                     overloadOf switch
                     {
-                        FriendlyOverloadOf.ExternMethod => QualifiedName(IdentifierName(declaringTypeName), IdentifierName(externMethodDeclaration.Identifier.Text)),
+                        FriendlyOverloadOf.ExternMethod => QualifiedName(declaringTypeName, IdentifierName(externMethodDeclaration.Identifier.Text)),
                         FriendlyOverloadOf.StructMethod => MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName(externMethodDeclaration.Identifier.Text)),
                         FriendlyOverloadOf.InterfaceMethod => MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("@this"), IdentifierName(externMethodDeclaration.Identifier.Text)),
                         _ => throw new NotSupportedException("Unrecognized friendly overload mode " + overloadOf),
@@ -4056,7 +4137,7 @@ namespace Microsoft.Windows.CsWin32
 
                 if (overloadOf == FriendlyOverloadOf.InterfaceMethod)
                 {
-                    parameters.Insert(0, Parameter(Identifier("@this")).WithType(IdentifierName(declaringTypeName)).AddModifiers(Token(SyntaxKind.ThisKeyword)));
+                    parameters.Insert(0, Parameter(Identifier("@this")).WithType(declaringTypeName).AddModifiers(Token(SyntaxKind.ThisKeyword)));
                 }
 
                 MethodDeclarationSyntax friendlyDeclaration = externMethodDeclaration

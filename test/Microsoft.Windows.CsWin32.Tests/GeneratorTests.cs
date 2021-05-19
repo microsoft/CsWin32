@@ -365,7 +365,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
 
         // The generated methods MUST reference the "interface" (which must actually be generated as a struct) by pointer.
         Assert.Contains(this.FindGeneratedType("ID3DInclude"), t => t is StructDeclarationSyntax);
-        Assert.All(this.FindGeneratedMethod(methodName), m => Assert.True(m.ParameterList.Parameters[4].Type is PointerTypeSyntax { ElementType: IdentifierNameSyntax { Identifier: { ValueText: "ID3DInclude" } } }));
+        Assert.All(this.FindGeneratedMethod(methodName), m => Assert.True(m.ParameterList.Parameters[4].Type is PointerTypeSyntax { ElementType: QualifiedNameSyntax { Right: IdentifierNameSyntax { Identifier: { ValueText: "ID3DInclude" } } } }));
     }
 
     [Theory, PairwiseData]
@@ -378,11 +378,11 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.AssertNoDiagnostics();
         if (allowMarshaling)
         {
-            Assert.Contains(this.FindGeneratedMethod("IsSupported"), method => method.ReturnType is IdentifierNameSyntax { Identifier: { ValueText: "BOOL" } });
+            Assert.Contains(this.FindGeneratedMethod("IsSupported"), method => method.ReturnType is QualifiedNameSyntax { Right: IdentifierNameSyntax { Identifier: { ValueText: "BOOL" } } });
         }
         else
         {
-            Assert.Contains(this.FindGeneratedMethod("IsSupported"), method => method.ParameterList.Parameters.Last().Type is PointerTypeSyntax { ElementType: IdentifierNameSyntax { Identifier: { ValueText: "BOOL" } } });
+            Assert.Contains(this.FindGeneratedMethod("IsSupported"), method => method.ParameterList.Parameters.Last().Type is PointerTypeSyntax { ElementType: QualifiedNameSyntax { Right: IdentifierNameSyntax { Identifier: { ValueText: "BOOL" } } } });
         }
     }
 
@@ -397,7 +397,8 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
         var theStruct = (StructDeclarationSyntax)this.FindGeneratedType("ICONINFO").Single();
-        Assert.Equal("BOOL", theStruct.Members.OfType<FieldDeclarationSyntax>().Select(m => m.Declaration).Single(d => d.Variables.Any(v => v.Identifier.ValueText == "fIcon")).Type.ToString());
+        VariableDeclarationSyntax field = theStruct.Members.OfType<FieldDeclarationSyntax>().Select(m => m.Declaration).Single(d => d.Variables.Any(v => v.Identifier.ValueText == "fIcon"));
+        Assert.Equal("BOOL", Assert.IsType<QualifiedNameSyntax>(field.Type).Right.Identifier.ValueText);
     }
 
     [Theory, PairwiseData]
@@ -410,7 +411,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.AssertNoDiagnostics();
         StructDeclarationSyntax structDecl = Assert.IsType<StructDeclarationSyntax>(this.FindGeneratedType("DebugPropertyInfo").Single());
         var bstrField = structDecl.Members.OfType<FieldDeclarationSyntax>().First(m => m.Declaration.Variables.Any(v => v.Identifier.ValueText == "m_bstrName"));
-        Assert.Equal("BSTR", ((IdentifierNameSyntax)bstrField.Declaration.Type).Identifier.ValueText);
+        Assert.Equal("BSTR", Assert.IsType<QualifiedNameSyntax>(bstrField.Declaration.Type).Right.Identifier.ValueText);
     }
 
     [Fact]
@@ -437,14 +438,14 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
 
         Assert.Contains(
             this.FindGeneratedMethod("MsiGetLastErrorRecord"),
-            method => method!.ReturnType?.ToString() == "MSIHANDLE");
+            method => method!.ReturnType is QualifiedNameSyntax { Right: { Identifier: { ValueText: "MSIHANDLE" } } });
 
         Assert.Contains(
             this.FindGeneratedMethod("MsiGetLastErrorRecord_SafeHandle"),
             method => method!.ReturnType?.ToString() == "MsiCloseHandleSafeHandle");
 
         MethodDeclarationSyntax releaseMethod = this.FindGeneratedMethod("MsiCloseHandle").Single();
-        Assert.Equal("MSIHANDLE", Assert.IsType<IdentifierNameSyntax>(releaseMethod!.ParameterList.Parameters[0].Type).Identifier.ValueText);
+        Assert.Equal("MSIHANDLE", Assert.IsType<QualifiedNameSyntax>(releaseMethod!.ParameterList.Parameters[0].Type).Right.Identifier.ValueText);
     }
 
     [Fact]
@@ -458,11 +459,11 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
 
         Assert.Contains(
             this.FindGeneratedMethod(methodName),
-            method => method!.ParameterList.Parameters[2].Type?.ToString() == typeof(Microsoft.Win32.SafeHandles.SafeFileHandle).FullName);
+            method => method!.ParameterList.Parameters[2].Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: nameof(Microsoft.Win32.SafeHandles.SafeFileHandle) } } });
 
         Assert.Contains(
             this.FindGeneratedMethod(methodName),
-            method => method!.ParameterList.Parameters[(int)0].Type?.ToString() == nameof(SafeHandle));
+            method => method!.ParameterList.Parameters[0].Type is IdentifierNameSyntax { Identifier: { ValueText: nameof(SafeHandle) } });
     }
 
     [Fact]
@@ -478,7 +479,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         IEnumerable<MethodDeclarationSyntax> overloads = this.FindGeneratedMethod("StrCmpLogical");
         foreach (MethodDeclarationSyntax method in overloads)
         {
-            foundPCWSTROverload |= method!.ParameterList.Parameters[0].Type?.ToString() == "PCWSTR";
+            foundPCWSTROverload |= method!.ParameterList.Parameters[0].Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "PCWSTR" } } };
             foundStringOverload |= method!.ParameterList.Parameters[0].Type?.ToString() == "string";
         }
 
@@ -628,39 +629,38 @@ namespace Microsoft.Windows.Sdk
     [Fact]
     public void FixedLengthInlineArraysOfferExtensionIndexerWhereNoSpanPossible()
     {
-        const string expected = @"
-    internal partial struct MainAVIHeader
-    {
-        internal uint dwMicroSecPerFrame;
-        internal uint dwMaxBytesPerSec;
-        internal uint dwPaddingGranularity;
-        internal uint dwFlags;
-        internal uint dwTotalFrames;
-        internal uint dwInitialFrames;
-        internal uint dwStreams;
-        internal uint dwSuggestedBufferSize;
-        internal uint dwWidth;
-        internal uint dwHeight;
-        internal __uint_4 dwReserved;
-        internal struct __uint_4
+        const string expected = @"        internal partial struct MainAVIHeader
         {
-            internal uint _0, _1, _2, _3;
-            /// <summary>Always <c>4</c>.</summary>
-            internal int Length => 4;
+            internal uint dwMicroSecPerFrame;
+            internal uint dwMaxBytesPerSec;
+            internal uint dwPaddingGranularity;
+            internal uint dwFlags;
+            internal uint dwTotalFrames;
+            internal uint dwInitialFrames;
+            internal uint dwStreams;
+            internal uint dwSuggestedBufferSize;
+            internal uint dwWidth;
+            internal uint dwHeight;
+            internal __uint_4 dwReserved;
+            internal struct __uint_4
+            {
+                internal uint _0, _1, _2, _3;
+                /// <summary>Always <c>4</c>.</summary>
+                internal int Length => 4;
+            }
         }
-    }
 ";
 
         const string expectedIndexer = @"
     internal static partial class InlineArrayIndexerExtensions
     {
-        internal static unsafe ref readonly uint ReadOnlyItemRef(this in MainAVIHeader.__uint_4 @this, int index)
+        internal static unsafe ref readonly uint ReadOnlyItemRef(this in win32.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
         {
             fixed (uint *p0 = &@this._0)
                 return ref p0[index];
         }
 
-        internal static unsafe ref uint ItemRef(this ref MainAVIHeader.__uint_4 @this, int index)
+        internal static unsafe ref uint ItemRef(this ref win32.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
         {
             fixed (uint *p0 = &@this._0)
                 return ref p0[index];
@@ -677,51 +677,50 @@ namespace Microsoft.Windows.Sdk
     [Fact]
     public void FixedLengthInlineArraysGetSpanWherePossible()
     {
-        const string expected = @"
-    internal partial struct MainAVIHeader
-    {
-        internal uint dwMicroSecPerFrame;
-        internal uint dwMaxBytesPerSec;
-        internal uint dwPaddingGranularity;
-        internal uint dwFlags;
-        internal uint dwTotalFrames;
-        internal uint dwInitialFrames;
-        internal uint dwStreams;
-        internal uint dwSuggestedBufferSize;
-        internal uint dwWidth;
-        internal uint dwHeight;
-        internal __uint_4 dwReserved;
-        internal struct __uint_4
+        const string expected = @"        internal partial struct MainAVIHeader
         {
-            internal uint _0, _1, _2, _3;
-            /// <summary>Always <c>4</c>.</summary>
-            internal int Length => 4;
-            /// <summary>
-            /// Gets a ref to an individual element of the inline array.
-            /// ⚠ Important ⚠: When this struct is on the stack, do not let the returned reference outlive the stack frame that defines it.
-            /// </summary>
-            internal ref uint this[int index] => ref AsSpan()[index];
-            /// <summary>
-            /// Gets this inline array as a span.
-            /// </summary>
-            /// <remarks>
-            /// ⚠ Important ⚠: When this struct is on the stack, do not let the returned span outlive the stack frame that defines it.
-            /// </remarks>
-            internal Span<uint> AsSpan() => MemoryMarshal.CreateSpan(ref _0, 4);
+            internal uint dwMicroSecPerFrame;
+            internal uint dwMaxBytesPerSec;
+            internal uint dwPaddingGranularity;
+            internal uint dwFlags;
+            internal uint dwTotalFrames;
+            internal uint dwInitialFrames;
+            internal uint dwStreams;
+            internal uint dwSuggestedBufferSize;
+            internal uint dwWidth;
+            internal uint dwHeight;
+            internal __uint_4 dwReserved;
+            internal struct __uint_4
+            {
+                internal uint _0, _1, _2, _3;
+                /// <summary>Always <c>4</c>.</summary>
+                internal int Length => 4;
+                /// <summary>
+                /// Gets a ref to an individual element of the inline array.
+                /// ⚠ Important ⚠: When this struct is on the stack, do not let the returned reference outlive the stack frame that defines it.
+                /// </summary>
+                internal ref uint this[int index] => ref AsSpan()[index];
+                /// <summary>
+                /// Gets this inline array as a span.
+                /// </summary>
+                /// <remarks>
+                /// ⚠ Important ⚠: When this struct is on the stack, do not let the returned span outlive the stack frame that defines it.
+                /// </remarks>
+                internal Span<uint> AsSpan() => MemoryMarshal.CreateSpan(ref _0, 4);
+            }
         }
-    }
 ";
 
         const string expectedIndexer = @"
     internal static partial class InlineArrayIndexerExtensions
     {
-        internal static unsafe ref readonly uint ReadOnlyItemRef(this in MainAVIHeader.__uint_4 @this, int index)
+        internal static unsafe ref readonly uint ReadOnlyItemRef(this in win32.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
         {
             fixed (uint *p0 = &@this._0)
                 return ref p0[index];
         }
 
-        internal static unsafe ref uint ItemRef(this ref MainAVIHeader.__uint_4 @this, int index)
+        internal static unsafe ref uint ItemRef(this ref win32.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
         {
             fixed (uint *p0 = &@this._0)
                 return ref p0[index];
@@ -920,9 +919,10 @@ namespace Microsoft.Windows.Sdk
             references: metadataReferences,
             options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, platform: platform, allowUnsafe: true));
 
-        // Add a namespace that WinUI projects define to ensure we prefix types with "global::" everywhere.
+        // Add namespaces that projects may define to ensure we prefix types with "global::" everywhere.
         compilation = compilation.AddSyntaxTrees(
-            CSharpSyntaxTree.ParseText("namespace Microsoft.System { }", this.parseOptions, path: "Microsoft.System.cs"));
+            CSharpSyntaxTree.ParseText("namespace Microsoft.System { }", this.parseOptions, path: "Microsoft.System.cs"),
+            CSharpSyntaxTree.ParseText("namespace Windows.Win32.System { }", this.parseOptions, path: "Windows.Win32.System.cs"));
 
         return compilation;
     }

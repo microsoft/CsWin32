@@ -201,6 +201,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             "ISpellCheckerFactory", // COM interface that includes `ref` parameters
             "LocalSystemTimeToLocalFileTime", // small step
             "WSAHtons", // A method that references SOCKET (which is typed as UIntPtr) so that a SafeHandle will be generated.
+            "IDelayedPropertyStoreFactory", // interface inheritance across namespaces
             "ID3D12Resource", // COM interface with base types
             "ID2D1RectangleGeometry")] // COM interface with base types
         string api,

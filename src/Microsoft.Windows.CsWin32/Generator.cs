@@ -3012,7 +3012,7 @@ namespace Microsoft.Windows.CsWin32
                     else
                     {
                         this.RequestInteropType(baseTypeHandle);
-                        baseTypeSyntaxList.Add(SimpleBaseType(new HandleTypeHandleInfo(this.mr, baseTypeHandle).ToTypeSyntax(this.generalTypeSettings, null).Type));
+                        baseTypeSyntaxList.Add(SimpleBaseType(new HandleTypeHandleInfo(this.mr, baseTypeHandle).ToTypeSyntax(this.comSignatureTypeSettings, null).Type));
                         allMethods.AddRange(baseType.GetMethods());
                     }
                 }

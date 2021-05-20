@@ -265,18 +265,6 @@ namespace Microsoft.Windows.CsWin32
         private readonly Stream metadataStream;
         private readonly PEReader peReader;
         private readonly MetadataReader mr;
-        private readonly Dictionary<string, List<MemberDeclarationSyntax>> modulesAndMembers = new Dictionary<string, List<MemberDeclarationSyntax>>(StringComparer.OrdinalIgnoreCase);
-
-        /// <summary>
-        /// The structs, enums, delegates and other supporting types for extern methods.
-        /// </summary>
-        private readonly Dictionary<TypeDefinitionHandle, MemberDeclarationSyntax> types = new Dictionary<TypeDefinitionHandle, MemberDeclarationSyntax>();
-
-        private readonly Dictionary<FieldDefinitionHandle, MemberDeclarationSyntax> fieldsToSyntax = new Dictionary<FieldDefinitionHandle, MemberDeclarationSyntax>();
-
-        private readonly List<ClassDeclarationSyntax> safeHandleTypes = new List<ClassDeclarationSyntax>();
-
-        private readonly Dictionary<string, MemberDeclarationSyntax> specialTypes = new Dictionary<string, MemberDeclarationSyntax>(StringComparer.Ordinal);
 
         /// <summary>
         /// A dictionary where the key is the typedef struct name and the value is the method used to release it.
@@ -290,30 +278,9 @@ namespace Microsoft.Windows.CsWin32
         private readonly HashSet<string> handleTypeStructsWithIntPtrSizeFields = new HashSet<string>(StringComparer.Ordinal);
 
         /// <summary>
-        /// The set of types that are or have been generated so we don't stack overflow for self-referencing types.
-        /// </summary>
-        private readonly Dictionary<TypeDefinitionHandle, Exception?> typesGenerating = new();
-
-        /// <summary>
-        /// The set of methods that are or have been generated.
-        /// </summary>
-        private readonly Dictionary<MethodDefinitionHandle, Exception?> methodsGenerating = new();
-
-        /// <summary>
-        /// A collection of the names of special types we are or have generated.
-        /// </summary>
-        private readonly Dictionary<string, Exception?> specialTypesGenerating = new(StringComparer.Ordinal);
-
-        /// <summary>
         /// A dictionary of namespace metadata, indexed by the string handle to their namespace.
         /// </summary>
         private readonly Dictionary<string, NamespaceMetadata> metadataByNamespace = new();
-
-        private readonly Dictionary<string, TypeSyntax?> releaseMethodsWithSafeHandleTypesGenerating = new Dictionary<string, TypeSyntax?>();
-
-        private readonly List<MethodDeclarationSyntax> inlineArrayIndexerExtensionsMembers = new();
-
-        private readonly List<MethodDeclarationSyntax> comInterfaceFriendlyExtensionsMembers = new();
 
         private readonly HashSet<string> releaseMethods = new HashSet<string>(StringComparer.Ordinal);
 
@@ -331,6 +298,8 @@ namespace Microsoft.Windows.CsWin32
         private readonly bool generateSupportedOSPlatformAttributes;
         private readonly bool generateSupportedOSPlatformAttributesOnInterfaces; // only supported on net6.0 (https://github.com/dotnet/runtime/pull/48838)
         private readonly bool generateDefaultDllImportSearchPathsAttribute;
+        private readonly GeneratedCode committedCode = new();
+        private readonly GeneratedCode volatileCode;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="Generator"/> class.
@@ -345,6 +314,7 @@ namespace Microsoft.Windows.CsWin32
             this.options.Validate();
             this.compilation = compilation;
             this.parseOptions = parseOptions;
+            this.volatileCode = new(this.committedCode);
 
             this.canCallCreateSpan = this.compilation?.GetTypeByMetadataName(typeof(MemoryMarshal).FullName)?.GetMembers("CreateSpan").Any() is true;
             this.generateDefaultDllImportSearchPathsAttribute = this.compilation?.GetTypeByMetadataName(typeof(DefaultDllImportSearchPathsAttribute).FullName) is object;
@@ -555,16 +525,13 @@ namespace Microsoft.Windows.CsWin32
                         ClassDeclaration(Identifier(GetClassNameForModule(kv.Key)))
                         .AddModifiers(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.PartialKeyword))
                         .AddMembers(kv.ToArray()))
-                    : from entry in this.modulesAndMembers
+                    : from entry in this.committedCode.MembersByModule
                       select ClassDeclaration(Identifier(this.SingleClassName))
                         .AddModifiers(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.PartialKeyword))
-                        .AddMembers(entry.Value.ToArray())
+                        .AddMembers(entry.ToArray())
                         .WithLeadingTrivia(ParseLeadingTrivia(string.Format(CultureInfo.InvariantCulture, PartialPInvokeContentComment, entry.Key)))
                         .WithAdditionalAnnotations(new SyntaxAnnotation(SimpleFileNameAnnotation, $"{this.SingleClassName}.{entry.Key}"));
-                result = result
-                    .Concat(this.safeHandleTypes)
-                    .Concat(this.specialTypes.Values)
-                    .Concat(this.types.Values);
+                result = result.Concat(this.committedCode.GeneratedTypes);
 
                 ClassDeclarationSyntax constantClass = this.DeclareConstantDefiningClass();
                 if (constantClass.Members.Count > 0)
@@ -589,8 +556,8 @@ namespace Microsoft.Windows.CsWin32
         }
 
         private IEnumerable<IGrouping<string, MemberDeclarationSyntax>> ExternMethodsByModuleClassName =>
-            from entry in this.modulesAndMembers
-            from method in entry.Value
+            from entry in this.committedCode.MembersByModule
+            from method in entry
             group method by GetClassNameForModule(entry.Key) into x
             select x;
 
@@ -719,7 +686,10 @@ namespace Microsoft.Windows.CsWin32
                 {
                     try
                     {
-                        this.RequestExternMethod(methodHandle);
+                        this.volatileCode.GenerationTransaction(delegate
+                        {
+                            this.RequestExternMethod(methodHandle);
+                        });
                     }
                     catch (GenerationFailedException ex) when (IsPlatformCompatibleException(ex))
                     {
@@ -744,7 +714,10 @@ namespace Microsoft.Windows.CsWin32
                 {
                     try
                     {
-                        this.RequestConstant(fieldDefHandle);
+                        this.volatileCode.GenerationTransaction(delegate
+                        {
+                            this.RequestConstant(fieldDefHandle);
+                        });
                     }
                     catch (GenerationFailedException ex) when (IsPlatformCompatibleException(ex))
                     {
@@ -797,7 +770,10 @@ namespace Microsoft.Windows.CsWin32
                     {
                         try
                         {
-                            this.RequestExternMethod(methodHandle);
+                            this.volatileCode.GenerationTransaction(delegate
+                            {
+                                this.RequestExternMethod(methodHandle);
+                            });
                         }
                         catch (GenerationFailedException ex) when (IsPlatformCompatibleException(ex))
                         {
@@ -833,7 +809,11 @@ namespace Microsoft.Windows.CsWin32
                     throw new NotSupportedException(reason);
                 }
 
-                this.RequestExternMethod(methodDefHandle);
+                this.volatileCode.GenerationTransaction(delegate
+                {
+                    this.RequestExternMethod(methodDefHandle);
+                });
+
                 return true;
             }
 
@@ -871,7 +851,11 @@ namespace Microsoft.Windows.CsWin32
 
             if (matchingTypeHandles.Count == 1)
             {
-                this.RequestInteropType(matchingTypeHandles[0]);
+                this.volatileCode.GenerationTransaction(delegate
+                {
+                    this.RequestInteropType(matchingTypeHandles[0]);
+                });
+
                 return true;
             }
             else if (matchingTypeHandles.Count > 1)
@@ -920,7 +904,11 @@ namespace Microsoft.Windows.CsWin32
 
             if (matchingFieldHandles.Count == 1)
             {
-                this.RequestConstant(matchingFieldHandles[0]);
+                this.volatileCode.GenerationTransaction(delegate
+                {
+                    this.RequestConstant(matchingFieldHandles[0]);
+                });
+
                 return true;
             }
             else if (matchingFieldHandles.Count > 1)
@@ -1176,7 +1164,10 @@ namespace Microsoft.Windows.CsWin32
                 {
                     try
                     {
-                        this.RequestInteropType(typeDefinitionHandle);
+                        this.volatileCode.GenerationTransaction(delegate
+                        {
+                            this.RequestInteropType(typeDefinitionHandle);
+                        });
                     }
                     catch (GenerationFailedException ex) when (IsPlatformCompatibleException(ex))
                     {
@@ -1208,26 +1199,7 @@ namespace Microsoft.Windows.CsWin32
                 }
             }
 
-            if (this.methodsGenerating.TryGetValue(methodDefinitionHandle, out Exception? failure))
-            {
-                if (failure is object)
-                {
-                    throw new GenerationFailedException("This member already failed in generation previously.", failure);
-                }
-
-                return;
-            }
-
-            this.methodsGenerating.Add(methodDefinitionHandle, null);
-            try
-            {
-                this.DeclareExternMethod(methodDefinitionHandle);
-            }
-            catch (Exception ex)
-            {
-                this.methodsGenerating[methodDefinitionHandle] = ex;
-                throw;
-            }
+            this.volatileCode.GenerateMethod(methodDefinitionHandle, () => this.DeclareExternMethod(methodDefinitionHandle));
         }
 
         internal bool IsInterface(HandleTypeHandleInfo typeInfo)
@@ -1295,18 +1267,7 @@ namespace Microsoft.Windows.CsWin32
                 }
             }
 
-            if (this.typesGenerating.TryGetValue(typeDefHandle, out Exception? failure))
-            {
-                if (failure is object)
-                {
-                    throw new GenerationFailedException("This member already failed in generation previously.", failure);
-                }
-
-                return;
-            }
-
-            this.typesGenerating.Add(typeDefHandle, null);
-            try
+            this.volatileCode.GenerateType(typeDefHandle, delegate
             {
                 if (this.RequestInteropType(typeDefHandle, null) is MemberDeclarationSyntax typeDeclaration)
                 {
@@ -1321,14 +1282,9 @@ namespace Microsoft.Windows.CsWin32
                             new SyntaxAnnotation(NamespaceContainerAnnotation, shortNamespace));
                     }
 
-                    this.types.Add(typeDefHandle, typeDeclaration);
+                    this.volatileCode.AddInteropType(typeDefHandle, typeDeclaration);
                 }
-            }
-            catch (Exception ex)
-            {
-                this.typesGenerating[typeDefHandle] = ex;
-                throw;
-            }
+            });
         }
 
         internal TypeDefinitionHandle? RequestInteropType(TypeReferenceHandle typeRefHandle)
@@ -1348,19 +1304,17 @@ namespace Microsoft.Windows.CsWin32
 
         internal void RequestConstant(FieldDefinitionHandle fieldDefHandle)
         {
-            if (this.fieldsToSyntax.ContainsKey(fieldDefHandle))
+            this.volatileCode.GenerateConstant(fieldDefHandle, delegate
             {
-                return;
-            }
-
-            FieldDeclarationSyntax constantDeclaration = this.DeclareConstant(fieldDefHandle);
-            constantDeclaration = AddApiDocumentation(constantDeclaration.Declaration.Variables[0].Identifier.ValueText, constantDeclaration);
-            this.fieldsToSyntax.Add(fieldDefHandle, constantDeclaration);
+                FieldDeclarationSyntax constantDeclaration = this.DeclareConstant(fieldDefHandle);
+                constantDeclaration = AddApiDocumentation(constantDeclaration.Declaration.Variables[0].Identifier.ValueText, constantDeclaration);
+                this.volatileCode.AddConstant(fieldDefHandle, constantDeclaration);
+            });
         }
 
         internal TypeSyntax? RequestSafeHandle(string releaseMethod)
         {
-            if (this.releaseMethodsWithSafeHandleTypesGenerating.TryGetValue(releaseMethod, out TypeSyntax? safeHandleType))
+            if (this.volatileCode.TryGetSafeHandleForReleaseMethod(releaseMethod, out TypeSyntax? safeHandleType))
             {
                 return safeHandleType;
             }
@@ -1396,7 +1350,7 @@ namespace Microsoft.Windows.CsWin32
                 safeHandleType = null;
             }
 
-            this.releaseMethodsWithSafeHandleTypesGenerating.Add(releaseMethod, safeHandleType);
+            this.volatileCode.AddSafeHandleNameForReleaseMethod(releaseMethod, safeHandleType);
 
             if (safeHandleType is null)
             {
@@ -1553,10 +1507,10 @@ namespace Microsoft.Windows.CsWin32
         /// </summary>
 "));
 
-            this.safeHandleTypes.Add(safeHandleDeclaration);
+            this.volatileCode.AddSafeHandleType(safeHandleDeclaration);
             if (this.GroupByModule)
             {
-                this.GetModuleMemberList(releaseMethodModule).Add(safeHandleDeclaration);
+                this.volatileCode.AddMemberToModule(releaseMethodModule, safeHandleDeclaration);
             }
 
             return safeHandleType;
@@ -1602,21 +1556,9 @@ namespace Microsoft.Windows.CsWin32
                 return null;
             }
 
-            if (this.specialTypesGenerating.TryGetValue(specialName, out Exception? failure))
+            MemberDeclarationSyntax? specialDeclaration = null;
+            this.volatileCode.GenerateSpecialType(specialName, delegate
             {
-                if (failure is object)
-                {
-                    throw new GenerationFailedException("This member already failed in generation previously.", failure);
-                }
-
-                // Already generated.
-                return null;
-            }
-
-            this.specialTypesGenerating.Add(specialName, null);
-            try
-            {
-                MemberDeclarationSyntax? specialDeclaration = null;
                 switch (specialName)
                 {
                     case "PCWSTR":
@@ -1638,14 +1580,9 @@ namespace Microsoft.Windows.CsWin32
 
                 specialDeclaration = specialDeclaration.WithAdditionalAnnotations(new SyntaxAnnotation(NamespaceContainerAnnotation, subNamespace));
 
-                this.specialTypes.Add(specialName, specialDeclaration);
-                return specialDeclaration;
-            }
-            catch (Exception ex)
-            {
-                this.specialTypesGenerating[specialName] = ex;
-                throw new GenerationFailedException("Failed to generate " + specialName, ex);
-            }
+                this.volatileCode.AddSpecialType(specialName, specialDeclaration);
+            });
+            return specialDeclaration;
         }
 
         internal CustomAttribute? FindNativeArrayInfoAttribute(CustomAttributeHandleCollection customAttributeHandles)
@@ -2585,16 +2522,14 @@ namespace Microsoft.Windows.CsWin32
                 // Add documentation if we can find it.
                 methodDeclaration = AddApiDocumentation(entrypoint ?? methodName, methodDeclaration);
 
-                List<MemberDeclarationSyntax> methodsList = this.GetModuleMemberList(moduleName);
                 if (RequiresUnsafe(methodDeclaration.ReturnType) || methodDeclaration.ParameterList.Parameters.Any(p => RequiresUnsafe(p.Type)))
                 {
                     methodDeclaration = methodDeclaration.AddModifiers(Token(SyntaxKind.UnsafeKeyword));
                 }
 
                 NameSyntax declaringTypeName = ParseName(this.GroupByModule ? GetClassNameForModule(moduleName) : this.SingleClassName);
-                methodsList.AddRange(this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, declaringTypeName, FriendlyOverloadOf.ExternMethod));
-
-                methodsList.Add(methodDeclaration);
+                this.volatileCode.AddMemberToModule(moduleName, this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, declaringTypeName, FriendlyOverloadOf.ExternMethod));
+                this.volatileCode.AddMemberToModule(moduleName, methodDeclaration);
             }
             catch (Exception ex)
             {
@@ -2807,21 +2742,21 @@ namespace Microsoft.Windows.CsWin32
         private ClassDeclarationSyntax DeclareConstantDefiningClass()
         {
             return ClassDeclaration(ConstantsClassName.Identifier)
-                .AddMembers(this.fieldsToSyntax.Values.ToArray())
+                .AddMembers(this.committedCode.Fields.ToArray())
                 .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.PartialKeyword)));
         }
 
         private ClassDeclarationSyntax DeclareInlineArrayIndexerExtensionsClass()
         {
             return ClassDeclaration(InlineArrayIndexerExtensionsClassName.Identifier)
-                .AddMembers(this.inlineArrayIndexerExtensionsMembers.ToArray())
+                .AddMembers(this.committedCode.InlineArrayIndexerExtensions.ToArray())
                 .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.PartialKeyword)));
         }
 
         private ClassDeclarationSyntax DeclareComInterfaceFriendlyExtensionsClass()
         {
             return ClassDeclaration(ComInterfaceFriendlyExtensionsClassName.Identifier)
-                .AddMembers(this.comInterfaceFriendlyExtensionsMembers.ToArray())
+                .AddMembers(this.committedCode.ComInterfaceExtensions.ToArray())
                 .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.PartialKeyword)));
         }
 
@@ -3126,7 +3061,7 @@ namespace Microsoft.Windows.CsWin32
 
             // Only add overloads to instance collections after everything else is done,
             // so we don't leave extension methods behind if we fail to generate the target interface.
-            this.comInterfaceFriendlyExtensionsMembers.AddRange(friendlyOverloads);
+            this.volatileCode.AddComInterfaceExtension(friendlyOverloads);
 
             return ifaceDeclaration;
         }
@@ -4216,16 +4151,6 @@ namespace Microsoft.Windows.CsWin32
 #pragma warning restore SA1114 // Parameter list should follow declaration
         }
 
-        private List<MemberDeclarationSyntax> GetModuleMemberList(string moduleName)
-        {
-            if (!this.modulesAndMembers.TryGetValue(moduleName, out var methodsList))
-            {
-                this.modulesAndMembers.Add(moduleName, methodsList = new List<MemberDeclarationSyntax>());
-            }
-
-            return methodsList;
-        }
-
         private string GetNormalizedModuleName(MethodImport import)
         {
             ModuleReference module = this.mr.GetModuleReference(import.Module);
@@ -4407,7 +4332,7 @@ namespace Microsoft.Windows.CsWin32
                     .WithModifiers(methodModifiers)
                     .AddParameterListParameters(thisParameter.AddModifiers(Token(SyntaxKind.InKeyword)), indexParameter)
                     .WithBody(body);
-                AddExtensionMethod(getAtMethod);
+                this.volatileCode.AddInlineArrayIndexerExtension(getAtMethod);
 
                 ////internal static unsafe ref uint ItemRef(this ref MainAVIHeader.__dwReserved_4 @this, int index)
                 ////{
@@ -4418,16 +4343,7 @@ namespace Microsoft.Windows.CsWin32
                     .WithModifiers(methodModifiers)
                     .AddParameterListParameters(thisParameter.AddModifiers(Token(SyntaxKind.RefKeyword)), indexParameter)
                     .WithBody(body);
-                AddExtensionMethod(getOrSetAtMethod);
-
-                void AddExtensionMethod(MethodDeclarationSyntax extensionMethod)
-                {
-                    string thisParameter = extensionMethod.ParameterList.Parameters[0].Type!.ToString();
-                    if (!this.inlineArrayIndexerExtensionsMembers.Any(m => m.Identifier.ValueText == extensionMethod.Identifier.ValueText && m.ParameterList.Parameters[0].Type!.ToString() == thisParameter))
-                    {
-                        this.inlineArrayIndexerExtensionsMembers.Add(extensionMethod);
-                    }
-                }
+                this.volatileCode.AddInlineArrayIndexerExtension(getOrSetAtMethod);
 
                 return (fixedLengthStructName, List<MemberDeclarationSyntax>().Add(fixedLengthStruct));
             }
@@ -4770,6 +4686,358 @@ namespace Microsoft.Windows.CsWin32
         }
 
         private IEnumerable<NamespaceMetadata> GetNamespacesToSearch(string? @namespace) => @namespace is object ? new[] { this.metadataByNamespace[@namespace] } : this.metadataByNamespace.Values;
+
+        private class GeneratedCode
+        {
+            private readonly GeneratedCode? parent;
+
+            private Dictionary<string, List<MemberDeclarationSyntax>> modulesAndMembers = new Dictionary<string, List<MemberDeclarationSyntax>>(StringComparer.OrdinalIgnoreCase);
+
+            /// <summary>
+            /// The structs, enums, delegates and other supporting types for extern methods.
+            /// </summary>
+            private Dictionary<TypeDefinitionHandle, MemberDeclarationSyntax> types = new();
+
+            private Dictionary<FieldDefinitionHandle, FieldDeclarationSyntax> fieldsToSyntax = new();
+
+            private List<ClassDeclarationSyntax> safeHandleTypes = new();
+
+            private Dictionary<string, MemberDeclarationSyntax> specialTypes = new(StringComparer.Ordinal);
+
+            /// <summary>
+            /// The set of types that are or have been generated so we don't stack overflow for self-referencing types.
+            /// </summary>
+            private Dictionary<TypeDefinitionHandle, Exception?> typesGenerating = new();
+
+            /// <summary>
+            /// The set of methods that are or have been generated.
+            /// </summary>
+            private Dictionary<MethodDefinitionHandle, Exception?> methodsGenerating = new();
+
+            /// <summary>
+            /// A collection of the names of special types we are or have generated.
+            /// </summary>
+            private Dictionary<string, Exception?> specialTypesGenerating = new(StringComparer.Ordinal);
+
+            private Dictionary<string, TypeSyntax?> releaseMethodsWithSafeHandleTypesGenerating = new();
+
+            private List<MethodDeclarationSyntax> inlineArrayIndexerExtensionsMembers = new();
+
+            private List<MethodDeclarationSyntax> comInterfaceFriendlyExtensionsMembers = new();
+
+            private bool generating;
+
+            internal GeneratedCode()
+            {
+            }
+
+            internal GeneratedCode(GeneratedCode parent)
+            {
+                this.parent = parent;
+            }
+
+            internal IEnumerable<MemberDeclarationSyntax> GeneratedTypes => this.types.Values.Concat(this.specialTypes.Values).Concat(this.safeHandleTypes);
+
+            internal IEnumerable<MethodDeclarationSyntax> ComInterfaceExtensions => this.comInterfaceFriendlyExtensionsMembers;
+
+            internal IEnumerable<MethodDeclarationSyntax> InlineArrayIndexerExtensions => this.inlineArrayIndexerExtensionsMembers;
+
+            internal IEnumerable<FieldDeclarationSyntax> Fields => this.fieldsToSyntax.Values;
+
+            internal IEnumerable<IGrouping<string, MemberDeclarationSyntax>> MembersByModule
+            {
+                get
+                {
+                    foreach (var item in this.modulesAndMembers)
+                    {
+                        yield return new Grouping<string, MemberDeclarationSyntax>(item.Key, item.Value);
+                    }
+                }
+            }
+
+            internal void AddSafeHandleType(ClassDeclarationSyntax safeHandleDeclaration)
+            {
+                this.ThrowIfNotGenerating();
+
+                this.safeHandleTypes.Add(safeHandleDeclaration);
+            }
+
+            internal void AddMemberToModule(string moduleName, MemberDeclarationSyntax member)
+            {
+                this.ThrowIfNotGenerating();
+
+                if (!this.modulesAndMembers.TryGetValue(moduleName, out var methodsList))
+                {
+                    this.modulesAndMembers.Add(moduleName, methodsList = new List<MemberDeclarationSyntax>());
+                }
+
+                methodsList.Add(member);
+            }
+
+            internal void AddMemberToModule(string moduleName, IEnumerable<MemberDeclarationSyntax> members)
+            {
+                this.ThrowIfNotGenerating();
+
+                if (!this.modulesAndMembers.TryGetValue(moduleName, out var methodsList))
+                {
+                    this.modulesAndMembers.Add(moduleName, methodsList = new List<MemberDeclarationSyntax>());
+                }
+
+                methodsList.AddRange(members);
+            }
+
+            internal void AddConstant(FieldDefinitionHandle fieldDefHandle, FieldDeclarationSyntax constantDeclaration)
+            {
+                this.ThrowIfNotGenerating();
+                this.fieldsToSyntax.Add(fieldDefHandle, constantDeclaration);
+            }
+
+            internal void AddInlineArrayIndexerExtension(MethodDeclarationSyntax inlineIndexer)
+            {
+                this.ThrowIfNotGenerating();
+
+                string thisParameter = inlineIndexer.ParameterList.Parameters[0].Type!.ToString();
+                if (!this.inlineArrayIndexerExtensionsMembers.Any(m => m.Identifier.ValueText == inlineIndexer.Identifier.ValueText && m.ParameterList.Parameters[0].Type!.ToString() == thisParameter))
+                {
+                    this.inlineArrayIndexerExtensionsMembers.Add(inlineIndexer);
+                }
+            }
+
+            internal void AddComInterfaceExtension(MethodDeclarationSyntax extension)
+            {
+                this.ThrowIfNotGenerating();
+                this.comInterfaceFriendlyExtensionsMembers.Add(extension);
+            }
+
+            internal void AddComInterfaceExtension(IEnumerable<MethodDeclarationSyntax> extension)
+            {
+                this.ThrowIfNotGenerating();
+                this.comInterfaceFriendlyExtensionsMembers.AddRange(extension);
+            }
+
+            internal void AddSpecialType(string specialName, MemberDeclarationSyntax specialDeclaration)
+            {
+                this.ThrowIfNotGenerating();
+                this.specialTypes.Add(specialName, specialDeclaration);
+            }
+
+            internal void AddInteropType(TypeDefinitionHandle typeDefinitionHandle, MemberDeclarationSyntax typeDeclaration)
+            {
+                this.ThrowIfNotGenerating();
+                this.types.Add(typeDefinitionHandle, typeDeclaration);
+            }
+
+            internal void GenerationTransaction(Action generator)
+            {
+                if (this.parent is null)
+                {
+                    throw new InvalidOperationException("Code generation should occur in a volatile instance.");
+                }
+
+                if (this.generating)
+                {
+                    // A transaction is already running. Just run the generator.
+                    generator();
+                    return;
+                }
+
+                try
+                {
+                    this.generating = true;
+                    generator();
+                    this.Commit(this.parent);
+                }
+                catch
+                {
+                    this.Commit(null);
+                    throw;
+                }
+                finally
+                {
+                    this.generating = false;
+                }
+            }
+
+            internal void GenerateMethod(MethodDefinitionHandle methodDefinitionHandle, Action generator)
+            {
+                this.ThrowIfNotGenerating();
+
+                if (this.methodsGenerating.TryGetValue(methodDefinitionHandle, out Exception? failure) || this.parent?.methodsGenerating.TryGetValue(methodDefinitionHandle, out failure) is true)
+                {
+                    if (failure is object)
+                    {
+                        throw new GenerationFailedException("This member already failed in generation previously.", failure);
+                    }
+
+                    return;
+                }
+
+                this.methodsGenerating.Add(methodDefinitionHandle, null);
+                try
+                {
+                    generator();
+                }
+                catch (Exception ex)
+                {
+                    this.methodsGenerating[methodDefinitionHandle] = ex;
+                    throw;
+                }
+            }
+
+            internal void GenerateSpecialType(string name, Action generator)
+            {
+                this.ThrowIfNotGenerating();
+
+                if (this.specialTypesGenerating.TryGetValue(name, out Exception? failure) || this.parent?.specialTypesGenerating.TryGetValue(name, out failure) is true)
+                {
+                    if (failure is object)
+                    {
+                        throw new GenerationFailedException("This type already failed in generation previously.", failure);
+                    }
+
+                    return;
+                }
+
+                this.specialTypesGenerating.Add(name, null);
+                try
+                {
+                    generator();
+                }
+                catch (Exception ex)
+                {
+                    this.specialTypesGenerating[name] = ex;
+                    throw;
+                }
+            }
+
+            internal void GenerateType(TypeDefinitionHandle typeDefinitionHandle, Action generator)
+            {
+                this.ThrowIfNotGenerating();
+
+                if (this.typesGenerating.TryGetValue(typeDefinitionHandle, out Exception? failure) || this.parent?.typesGenerating.TryGetValue(typeDefinitionHandle, out failure) is true)
+                {
+                    if (failure is object)
+                    {
+                        throw new GenerationFailedException("This type already failed in generation previously.", failure);
+                    }
+
+                    return;
+                }
+
+                this.typesGenerating.Add(typeDefinitionHandle, null);
+                try
+                {
+                    generator();
+                }
+                catch (Exception ex)
+                {
+                    this.typesGenerating[typeDefinitionHandle] = ex;
+                    throw;
+                }
+            }
+
+            internal void GenerateConstant(FieldDefinitionHandle fieldDefinitionHandle, Action generator)
+            {
+                this.ThrowIfNotGenerating();
+
+                if (this.fieldsToSyntax.ContainsKey(fieldDefinitionHandle) || this.parent?.fieldsToSyntax.ContainsKey(fieldDefinitionHandle) is true)
+                {
+                    return;
+                }
+
+                generator();
+            }
+
+            internal bool TryGetSafeHandleForReleaseMethod(string releaseMethod, out TypeSyntax? safeHandleType)
+            {
+                return this.releaseMethodsWithSafeHandleTypesGenerating.TryGetValue(releaseMethod, out safeHandleType)
+                    || this.parent?.releaseMethodsWithSafeHandleTypesGenerating.TryGetValue(releaseMethod, out safeHandleType) is true;
+            }
+
+            internal void AddSafeHandleNameForReleaseMethod(string releaseMethod, TypeSyntax? safeHandleType)
+            {
+                this.ThrowIfNotGenerating();
+
+                this.releaseMethodsWithSafeHandleTypesGenerating.Add(releaseMethod, safeHandleType);
+            }
+
+            private static void Commit<TKey, TValue>(Dictionary<TKey, TValue> source, Dictionary<TKey, TValue>? target)
+            {
+                if (target is object)
+                {
+                    foreach (var item in source)
+                    {
+                        target.Add(item.Key, item.Value);
+                    }
+                }
+
+                source.Clear();
+            }
+
+            private static void Commit<T>(List<T> source, List<T>? target)
+            {
+                if (target is object)
+                {
+                    target.AddRange(source);
+                }
+
+                source.Clear();
+            }
+
+            private void Commit(GeneratedCode? parent)
+            {
+                foreach (var item in this.modulesAndMembers)
+                {
+                    if (parent is object)
+                    {
+                        if (!parent.modulesAndMembers.TryGetValue(item.Key, out var list))
+                        {
+                            parent.modulesAndMembers.Add(item.Key, list = new());
+                        }
+
+                        list.AddRange(item.Value);
+                    }
+
+                    item.Value.Clear();
+                }
+
+                Commit(this.types, parent?.types);
+                Commit(this.fieldsToSyntax, parent?.fieldsToSyntax);
+                Commit(this.safeHandleTypes, parent?.safeHandleTypes);
+                Commit(this.specialTypes, parent?.specialTypes);
+                Commit(this.typesGenerating, parent?.typesGenerating);
+                Commit(this.methodsGenerating, parent?.methodsGenerating);
+                Commit(this.specialTypesGenerating, parent?.specialTypesGenerating);
+                Commit(this.releaseMethodsWithSafeHandleTypesGenerating, parent?.releaseMethodsWithSafeHandleTypesGenerating);
+                Commit(this.inlineArrayIndexerExtensionsMembers, parent?.inlineArrayIndexerExtensionsMembers);
+                Commit(this.comInterfaceFriendlyExtensionsMembers, parent?.comInterfaceFriendlyExtensionsMembers);
+            }
+
+            private void ThrowIfNotGenerating()
+            {
+                if (!this.generating)
+                {
+                    throw new InvalidOperationException("Generating code must take place within a recognized top-level call.");
+                }
+            }
+
+            private class Grouping<TKey, TElement> : IGrouping<TKey, TElement>
+            {
+                private readonly IEnumerable<TElement> values;
+
+                internal Grouping(TKey key, IEnumerable<TElement> values)
+                {
+                    this.Key = key;
+                    this.values = values;
+                }
+
+                public TKey Key { get; }
+
+                public IEnumerator<TElement> GetEnumerator() => this.values.GetEnumerator();
+
+                System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => this.GetEnumerator();
+            }
+        }
 
         [DebuggerDisplay("{" + nameof(DebuggerDisplay) + ",nq}")]
         private class NamespaceMetadata

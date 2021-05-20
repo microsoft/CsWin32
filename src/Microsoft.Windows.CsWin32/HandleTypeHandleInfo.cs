@@ -71,12 +71,18 @@ namespace Microsoft.Windows.CsWin32
                 return new TypeSyntaxAndMarshaling(bclType);
             }
 
-            if (simpleName is "PWSTR" or "PSTR" && customAttributes?.Any(ah => Generator.IsAttribute(this.reader, this.reader.GetCustomAttribute(ah), Generator.InteropDecorationNamespace, "ConstAttribute")) is true)
+            if (simpleName is "PWSTR" or "PSTR" && (this.IsConstantField || customAttributes?.Any(ah => Generator.IsAttribute(this.reader, this.reader.GetCustomAttribute(ah), Generator.InteropDecorationNamespace, "ConstAttribute")) is true))
             {
-                IdentifierNameSyntax constantTypeIdentifierName = IdentifierName("PC" + simpleName.Substring(1));
-
-                inputs.Generator?.RequestTypeDefStruct(constantTypeIdentifierName.Identifier.ValueText);
-                return new TypeSyntaxAndMarshaling(constantTypeIdentifierName);
+                string specialName = "PC" + simpleName.Substring(1);
+                if (inputs.Generator is object)
+                {
+                    inputs.Generator.RequestSpecialTypeDefStruct(specialName, out string fullyQualifiedName);
+                    return new TypeSyntaxAndMarshaling(ParseName(Generator.ReplaceCommonNamespaceWithAlias(fullyQualifiedName)));
+                }
+                else
+                {
+                    return new TypeSyntaxAndMarshaling(IdentifierName(specialName));
+                }
             }
             else if (TryMarshalAsObject(inputs, simpleName, out MarshalAsAttribute? marshalAs))
             {
@@ -125,12 +131,12 @@ namespace Microsoft.Windows.CsWin32
 
         private static NameSyntax GetNestingQualifiedName(MetadataReader reader, TypeDefinitionHandle handle) => GetNestingQualifiedName(reader, reader.GetTypeDefinition(handle));
 
-        private static NameSyntax GetNestingQualifiedName(MetadataReader reader, TypeDefinition td)
+        internal static NameSyntax GetNestingQualifiedName(MetadataReader reader, TypeDefinition td)
         {
             IdentifierNameSyntax name = IdentifierName(reader.GetString(td.Name));
             return td.GetDeclaringType() is { IsNil: false } nestingType
                 ? QualifiedName(GetNestingQualifiedName(reader, nestingType), name)
-                : name;
+                : QualifiedName(ParseName(Generator.ReplaceCommonNamespaceWithAlias(reader.GetString(td.Namespace))), name);
         }
 
         private static NameSyntax GetNestingQualifiedName(MetadataReader reader, TypeReferenceHandle handle) => GetNestingQualifiedName(reader, reader.GetTypeReference(handle));
@@ -140,7 +146,7 @@ namespace Microsoft.Windows.CsWin32
             SimpleNameSyntax typeName = IdentifierName(reader.GetString(tr.Name));
             return tr.ResolutionScope.Kind == HandleKind.TypeReference
                 ? QualifiedName(GetNestingQualifiedName(reader, (TypeReferenceHandle)tr.ResolutionScope), typeName)
-                : tr.ResolutionScope.Kind == HandleKind.ModuleDefinition ? typeName : QualifiedName(ParseName(Generator.GlobalNamespacePrefix + reader.GetString(tr.Namespace)), typeName);
+                : QualifiedName(ParseName(Generator.ReplaceCommonNamespaceWithAlias(reader.GetString(tr.Namespace))), typeName);
         }
 
         private bool IsDelegate(TypeSyntaxSettings inputs, out TypeDefinition delegateTypeDef)

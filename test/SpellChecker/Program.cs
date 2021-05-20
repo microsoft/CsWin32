@@ -3,9 +3,12 @@
 
 using System;
 using System.Collections.Generic;
-using Microsoft.Windows.Sdk;
-using static Microsoft.Windows.Sdk.Constants;
-using static Microsoft.Windows.Sdk.PInvoke;
+using Windows.Win32;
+using Windows.Win32.Globalization;
+using Windows.Win32.System.Com;
+using Windows.Win32.System.SystemServices;
+using static Windows.Win32.Constants;
+using static Windows.Win32.PInvoke;
 
 unsafe
 {

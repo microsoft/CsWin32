@@ -1,8 +1,8 @@
-﻿/// <inheritdoc cref="CoCreateInstance(Guid*, object, CLSCTX, Guid*, out object)"/>
-internal static unsafe HRESULT CoCreateInstance<T>(in Guid rclsid, object pUnkOuter, CLSCTX dwClsContext, out T ppv)
+﻿/// <inheritdoc cref="CoCreateInstance(Guid*, object, win32.System.Com.CLSCTX, Guid*, out object)"/>
+internal static unsafe win32.System.Com.HRESULT CoCreateInstance<T>(in Guid rclsid, object pUnkOuter, win32.System.Com.CLSCTX dwClsContext, out T ppv)
     where T : class
 {
-    HRESULT hr = CoCreateInstance(rclsid, pUnkOuter, dwClsContext, typeof(T).GUID, out object o);
+    win32.System.Com.HRESULT hr = CoCreateInstance(rclsid, pUnkOuter, dwClsContext, typeof(T).GUID, out object o);
     ppv = (T)o;
     return hr;
 }

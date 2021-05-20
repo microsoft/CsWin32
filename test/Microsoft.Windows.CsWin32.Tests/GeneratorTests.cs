@@ -57,6 +57,8 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.starterCompilations.Add("net40", await this.CreateCompilationAsync(ReferenceAssemblies.NetFramework.Net40.Default));
         this.starterCompilations.Add("netstandard2.0", await this.CreateCompilationAsync(ReferenceAssemblies.NetStandard.NetStandard20.AddPackages(ImmutableArray.Create(new PackageIdentity("System.Memory", "4.5.4")))));
         this.starterCompilations.Add("net5.0", await this.CreateCompilationAsync(ReferenceAssemblies.Net.Net50));
+        this.starterCompilations.Add("net5.0-x86", await this.CreateCompilationAsync(ReferenceAssemblies.Net.Net50, Platform.X86));
+        this.starterCompilations.Add("net5.0-x64", await this.CreateCompilationAsync(ReferenceAssemblies.Net.Net50, Platform.X64));
 
         this.compilation = this.starterCompilations["netstandard2.0"];
     }
@@ -157,7 +159,6 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             "MFVideoAlphaBitmap", // field named params
             "DDRAWI_DDVIDEOPORT_INT", // field that is never used
             "MainAVIHeader", // dwReserved field is a fixed length array
-            "JsRuntimeVersionEdge", // Constant typed as an enum
             "POSITIVE_INFINITY", // Special float imaginary number
             "NEGATIVE_INFINITY", // Special float imaginary number
             "NaN", // Special float imaginary number
@@ -199,6 +200,8 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             "DS_SELECTION_LIST", // A struct with a fixed-length inline array of potentially managed structs
             "ISpellCheckerFactory", // COM interface that includes `ref` parameters
             "LocalSystemTimeToLocalFileTime", // small step
+            "WSAHtons", // A method that references SOCKET (which is typed as UIntPtr) so that a SafeHandle will be generated.
+            "IDelayedPropertyStoreFactory", // interface inheritance across namespaces
             "ID3D12Resource", // COM interface with base types
             "ID2D1RectangleGeometry")] // COM interface with base types
         string api,
@@ -209,6 +212,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             WideCharOnly = false,
             AllowMarshaling = allowMarshaling,
         };
+        this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(Platform.X64));
         this.generator = new Generator(this.metadataStream, options, this.compilation, this.parseOptions);
         Assert.True(this.generator.TryGenerate(api, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
@@ -273,6 +277,14 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
         Assert.Contains(this.FindGeneratedMethod(methodName), m => m.ParameterList.Parameters.Last() is { } last && last.Modifiers.Any(SyntaxKind.OutKeyword) && last.Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.ObjectKeyword } });
+    }
+
+    [Fact]
+    public void AmbiguousApiName()
+    {
+        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        var ex = Assert.Throws<ArgumentException>(() => this.generator.TryGenerate("IDENTITY_TYPE", CancellationToken.None));
+        this.logger.WriteLine(ex.Message);
     }
 
     [Fact]
@@ -355,7 +367,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
 
         // The generated methods MUST reference the "interface" (which must actually be generated as a struct) by pointer.
         Assert.Contains(this.FindGeneratedType("ID3DInclude"), t => t is StructDeclarationSyntax);
-        Assert.All(this.FindGeneratedMethod(methodName), m => Assert.True(m.ParameterList.Parameters[4].Type is PointerTypeSyntax { ElementType: IdentifierNameSyntax { Identifier: { ValueText: "ID3DInclude" } } }));
+        Assert.All(this.FindGeneratedMethod(methodName), m => Assert.True(m.ParameterList.Parameters[4].Type is PointerTypeSyntax { ElementType: QualifiedNameSyntax { Right: IdentifierNameSyntax { Identifier: { ValueText: "ID3DInclude" } } } }));
     }
 
     [Theory, PairwiseData]
@@ -368,11 +380,11 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.AssertNoDiagnostics();
         if (allowMarshaling)
         {
-            Assert.Contains(this.FindGeneratedMethod("IsSupported"), method => method.ReturnType is IdentifierNameSyntax { Identifier: { ValueText: "BOOL" } });
+            Assert.Contains(this.FindGeneratedMethod("IsSupported"), method => method.ReturnType is QualifiedNameSyntax { Right: IdentifierNameSyntax { Identifier: { ValueText: "BOOL" } } });
         }
         else
         {
-            Assert.Contains(this.FindGeneratedMethod("IsSupported"), method => method.ParameterList.Parameters.Last().Type is PointerTypeSyntax { ElementType: IdentifierNameSyntax { Identifier: { ValueText: "BOOL" } } });
+            Assert.Contains(this.FindGeneratedMethod("IsSupported"), method => method.ParameterList.Parameters.Last().Type is PointerTypeSyntax { ElementType: QualifiedNameSyntax { Right: IdentifierNameSyntax { Identifier: { ValueText: "BOOL" } } } });
         }
     }
 
@@ -387,7 +399,8 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
         var theStruct = (StructDeclarationSyntax)this.FindGeneratedType("ICONINFO").Single();
-        Assert.Equal("BOOL", theStruct.Members.OfType<FieldDeclarationSyntax>().Select(m => m.Declaration).Single(d => d.Variables.Any(v => v.Identifier.ValueText == "fIcon")).Type.ToString());
+        VariableDeclarationSyntax field = theStruct.Members.OfType<FieldDeclarationSyntax>().Select(m => m.Declaration).Single(d => d.Variables.Any(v => v.Identifier.ValueText == "fIcon"));
+        Assert.Equal("BOOL", Assert.IsType<QualifiedNameSyntax>(field.Type).Right.Identifier.ValueText);
     }
 
     [Theory, PairwiseData]
@@ -400,7 +413,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.AssertNoDiagnostics();
         StructDeclarationSyntax structDecl = Assert.IsType<StructDeclarationSyntax>(this.FindGeneratedType("DebugPropertyInfo").Single());
         var bstrField = structDecl.Members.OfType<FieldDeclarationSyntax>().First(m => m.Declaration.Variables.Any(v => v.Identifier.ValueText == "m_bstrName"));
-        Assert.Equal("BSTR", ((IdentifierNameSyntax)bstrField.Declaration.Type).Identifier.ValueText);
+        Assert.Equal("BSTR", Assert.IsType<QualifiedNameSyntax>(bstrField.Declaration.Type).Right.Identifier.ValueText);
     }
 
     [Fact]
@@ -427,14 +440,14 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
 
         Assert.Contains(
             this.FindGeneratedMethod("MsiGetLastErrorRecord"),
-            method => method!.ReturnType?.ToString() == "MSIHANDLE");
+            method => method!.ReturnType is QualifiedNameSyntax { Right: { Identifier: { ValueText: "MSIHANDLE" } } });
 
         Assert.Contains(
             this.FindGeneratedMethod("MsiGetLastErrorRecord_SafeHandle"),
             method => method!.ReturnType?.ToString() == "MsiCloseHandleSafeHandle");
 
         MethodDeclarationSyntax releaseMethod = this.FindGeneratedMethod("MsiCloseHandle").Single();
-        Assert.Equal("MSIHANDLE", Assert.IsType<IdentifierNameSyntax>(releaseMethod!.ParameterList.Parameters[0].Type).Identifier.ValueText);
+        Assert.Equal("MSIHANDLE", Assert.IsType<QualifiedNameSyntax>(releaseMethod!.ParameterList.Parameters[0].Type).Right.Identifier.ValueText);
     }
 
     [Fact]
@@ -448,11 +461,11 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
 
         Assert.Contains(
             this.FindGeneratedMethod(methodName),
-            method => method!.ParameterList.Parameters[2].Type?.ToString() == typeof(Microsoft.Win32.SafeHandles.SafeFileHandle).FullName);
+            method => method!.ParameterList.Parameters[2].Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: nameof(Microsoft.Win32.SafeHandles.SafeFileHandle) } } });
 
         Assert.Contains(
             this.FindGeneratedMethod(methodName),
-            method => method!.ParameterList.Parameters[(int)0].Type?.ToString() == nameof(SafeHandle));
+            method => method!.ParameterList.Parameters[0].Type is IdentifierNameSyntax { Identifier: { ValueText: nameof(SafeHandle) } });
     }
 
     [Fact]
@@ -468,7 +481,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         IEnumerable<MethodDeclarationSyntax> overloads = this.FindGeneratedMethod("StrCmpLogical");
         foreach (MethodDeclarationSyntax method in overloads)
         {
-            foundPCWSTROverload |= method!.ParameterList.Parameters[0].Type?.ToString() == "PCWSTR";
+            foundPCWSTROverload |= method!.ParameterList.Parameters[0].Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "PCWSTR" } } };
             foundStringOverload |= method!.ParameterList.Parameters[0].Type?.ToString() == "string";
         }
 
@@ -477,12 +490,87 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         Assert.Equal(2, overloads.Count());
     }
 
+    [Theory, CombinatorialData]
+    public void ArchitectureSpecificAPIsTreatment(
+        [CombinatorialValues("MEMORY_BASIC_INFORMATION", "SP_PROPCHANGE_PARAMS", "JsCreateContext", "IShellBrowser")] string apiName,
+        [CombinatorialValues(Platform.AnyCpu, Platform.X64, Platform.X86)] Platform platform,
+        bool allowMarshaling)
+    {
+        this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(platform));
+        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling }, this.compilation, this.parseOptions);
+        if (platform == Platform.AnyCpu)
+        {
+            // AnyCPU targets should throw an exception with a helpful error message when asked for arch-specific APIs
+            var ex = Assert.ThrowsAny<GenerationFailedException>(() => this.generator.TryGenerate(apiName, CancellationToken.None));
+            this.logger.WriteLine(ex.Message);
+            this.CollectGeneratedCode(this.generator);
+            this.AssertNoDiagnostics();
+        }
+        else
+        {
+            // Arch-specific compilations should generate the requested APIs.
+            Assert.True(this.generator.TryGenerate(apiName, CancellationToken.None));
+            this.CollectGeneratedCode(this.generator);
+            this.AssertNoDiagnostics();
+        }
+    }
+
+    [Fact]
+    public void MultipleEntrypointsToOmittedArchSpecificApis()
+    {
+        this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(Platform.AnyCpu));
+        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+
+        // Request a struct that depends on arch-specific IP6_ADDRESS.
+        Assert.ThrowsAny<GenerationFailedException>(() => this.generator.TryGenerate("DNS_SERVICE_INSTANCE", CancellationToken.None));
+
+        // Request a struct that depends on DNS_SERVICE_INSTANCE.
+        Assert.ThrowsAny<GenerationFailedException>(() => this.generator.TryGenerate("DNS_SERVICE_REGISTER_REQUEST", CancellationToken.None));
+
+        // Verify that no uncompilable code was generated.
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+    }
+
+    [Theory, CombinatorialData]
+    public void TypeRefsToArchSpecificApis(
+        [CombinatorialValues(Platform.X64, Platform.X86)] Platform platform)
+    {
+        this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(platform));
+        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+
+        // Request a struct directly, and indirectly through another that references it.
+        // This verifies that even if the metadata references a particular arch of the structure,
+        // the right one for the CPU architecture is generated.
+        Assert.True(this.generator.TryGenerate("SP_PROPCHANGE_PARAMS", CancellationToken.None));
+        Assert.True(this.generator.TryGenerate("SP_CLASSINSTALL_HEADER", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        // Verify that [Pack = 1] appears on both structures.
+        foreach (string structName in new[] { "SP_CLASSINSTALL_HEADER", "SP_PROPCHANGE_PARAMS" })
+        {
+            var header = this.FindGeneratedType(structName).Single();
+            SeparatedSyntaxList<AttributeArgumentSyntax> attributes = header.AttributeLists.SelectMany(al => al.Attributes).FirstOrDefault(att => att.Name is IdentifierNameSyntax { Identifier: { ValueText: "StructLayout" } })?.ArgumentList?.Arguments ?? default;
+            Predicate<AttributeArgumentSyntax> matchPredicate = att => att.NameEquals is { Name: { Identifier: { ValueText: "Pack" } } };
+            if (platform == Platform.X86)
+            {
+                Assert.Contains(attributes, matchPredicate);
+            }
+            else
+            {
+                Assert.DoesNotContain(attributes, matchPredicate);
+            }
+        }
+    }
+
     [Theory]
     [InlineData("BOOL")]
     [InlineData("HRESULT")]
     [InlineData("MEMORY_BASIC_INFORMATION")]
     public void StructsArePartial(string structName)
     {
+        this.compilation = this.starterCompilations["net5.0-x64"]; // MEMORY_BASIC_INFORMATION is arch-specific
         this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
         Assert.True(this.generator.TryGenerate(structName, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
@@ -563,39 +651,38 @@ namespace Microsoft.Windows.Sdk
     [Fact]
     public void FixedLengthInlineArraysOfferExtensionIndexerWhereNoSpanPossible()
     {
-        const string expected = @"
-    internal partial struct MainAVIHeader
-    {
-        internal uint dwMicroSecPerFrame;
-        internal uint dwMaxBytesPerSec;
-        internal uint dwPaddingGranularity;
-        internal uint dwFlags;
-        internal uint dwTotalFrames;
-        internal uint dwInitialFrames;
-        internal uint dwStreams;
-        internal uint dwSuggestedBufferSize;
-        internal uint dwWidth;
-        internal uint dwHeight;
-        internal __uint_4 dwReserved;
-        internal struct __uint_4
+        const string expected = @"        internal partial struct MainAVIHeader
         {
-            internal uint _0, _1, _2, _3;
-            /// <summary>Always <c>4</c>.</summary>
-            internal int Length => 4;
+            internal uint dwMicroSecPerFrame;
+            internal uint dwMaxBytesPerSec;
+            internal uint dwPaddingGranularity;
+            internal uint dwFlags;
+            internal uint dwTotalFrames;
+            internal uint dwInitialFrames;
+            internal uint dwStreams;
+            internal uint dwSuggestedBufferSize;
+            internal uint dwWidth;
+            internal uint dwHeight;
+            internal __uint_4 dwReserved;
+            internal struct __uint_4
+            {
+                internal uint _0, _1, _2, _3;
+                /// <summary>Always <c>4</c>.</summary>
+                internal int Length => 4;
+            }
         }
-    }
 ";
 
         const string expectedIndexer = @"
     internal static partial class InlineArrayIndexerExtensions
     {
-        internal static unsafe ref readonly uint ReadOnlyItemRef(this in MainAVIHeader.__uint_4 @this, int index)
+        internal static unsafe ref readonly uint ReadOnlyItemRef(this in win32.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
         {
             fixed (uint *p0 = &@this._0)
                 return ref p0[index];
         }
 
-        internal static unsafe ref uint ItemRef(this ref MainAVIHeader.__uint_4 @this, int index)
+        internal static unsafe ref uint ItemRef(this ref win32.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
         {
             fixed (uint *p0 = &@this._0)
                 return ref p0[index];
@@ -612,51 +699,50 @@ namespace Microsoft.Windows.Sdk
     [Fact]
     public void FixedLengthInlineArraysGetSpanWherePossible()
     {
-        const string expected = @"
-    internal partial struct MainAVIHeader
-    {
-        internal uint dwMicroSecPerFrame;
-        internal uint dwMaxBytesPerSec;
-        internal uint dwPaddingGranularity;
-        internal uint dwFlags;
-        internal uint dwTotalFrames;
-        internal uint dwInitialFrames;
-        internal uint dwStreams;
-        internal uint dwSuggestedBufferSize;
-        internal uint dwWidth;
-        internal uint dwHeight;
-        internal __uint_4 dwReserved;
-        internal struct __uint_4
+        const string expected = @"        internal partial struct MainAVIHeader
         {
-            internal uint _0, _1, _2, _3;
-            /// <summary>Always <c>4</c>.</summary>
-            internal int Length => 4;
-            /// <summary>
-            /// Gets a ref to an individual element of the inline array.
-            /// ⚠ Important ⚠: When this struct is on the stack, do not let the returned reference outlive the stack frame that defines it.
-            /// </summary>
-            internal ref uint this[int index] => ref AsSpan()[index];
-            /// <summary>
-            /// Gets this inline array as a span.
-            /// </summary>
-            /// <remarks>
-            /// ⚠ Important ⚠: When this struct is on the stack, do not let the returned span outlive the stack frame that defines it.
-            /// </remarks>
-            internal Span<uint> AsSpan() => MemoryMarshal.CreateSpan(ref _0, 4);
+            internal uint dwMicroSecPerFrame;
+            internal uint dwMaxBytesPerSec;
+            internal uint dwPaddingGranularity;
+            internal uint dwFlags;
+            internal uint dwTotalFrames;
+            internal uint dwInitialFrames;
+            internal uint dwStreams;
+            internal uint dwSuggestedBufferSize;
+            internal uint dwWidth;
+            internal uint dwHeight;
+            internal __uint_4 dwReserved;
+            internal struct __uint_4
+            {
+                internal uint _0, _1, _2, _3;
+                /// <summary>Always <c>4</c>.</summary>
+                internal int Length => 4;
+                /// <summary>
+                /// Gets a ref to an individual element of the inline array.
+                /// ⚠ Important ⚠: When this struct is on the stack, do not let the returned reference outlive the stack frame that defines it.
+                /// </summary>
+                internal ref uint this[int index] => ref AsSpan()[index];
+                /// <summary>
+                /// Gets this inline array as a span.
+                /// </summary>
+                /// <remarks>
+                /// ⚠ Important ⚠: When this struct is on the stack, do not let the returned span outlive the stack frame that defines it.
+                /// </remarks>
+                internal Span<uint> AsSpan() => MemoryMarshal.CreateSpan(ref _0, 4);
+            }
         }
-    }
 ";
 
         const string expectedIndexer = @"
     internal static partial class InlineArrayIndexerExtensions
     {
-        internal static unsafe ref readonly uint ReadOnlyItemRef(this in MainAVIHeader.__uint_4 @this, int index)
+        internal static unsafe ref readonly uint ReadOnlyItemRef(this in win32.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
         {
             fixed (uint *p0 = &@this._0)
                 return ref p0[index];
         }
 
-        internal static unsafe ref uint ItemRef(this ref MainAVIHeader.__uint_4 @this, int index)
+        internal static unsafe ref uint ItemRef(this ref win32.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
         {
             fixed (uint *p0 = &@this._0)
                 return ref p0[index];
@@ -669,9 +755,10 @@ namespace Microsoft.Windows.Sdk
     }
 
     [Theory, PairwiseData]
-    public void FullGeneration(bool allowMarshaling)
+    public void FullGeneration(bool allowMarshaling, [CombinatorialValues(Platform.AnyCpu, Platform.X86, Platform.X64, Platform.Arm64)] Platform platform)
     {
         var generatorOptions = new GeneratorOptions { AllowMarshaling = allowMarshaling };
+        this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(platform));
         this.generator = new Generator(this.metadataStream, generatorOptions, this.compilation, this.parseOptions);
         this.generator.GenerateAll(CancellationToken.None);
         this.CollectGeneratedCode(this.generator);
@@ -838,7 +925,7 @@ namespace Microsoft.Windows.Sdk
             TestUtils.NormalizeToExpectedLineEndings(memberSyntax.ToFullString()).Trim());
     }
 
-    private async Task<CSharpCompilation> CreateCompilationAsync(ReferenceAssemblies references)
+    private async Task<CSharpCompilation> CreateCompilationAsync(ReferenceAssemblies references, Platform platform = Platform.AnyCpu)
     {
         ImmutableArray<MetadataReference> metadataReferences = await references
             .AddPackages(ImmutableArray.Create(new PackageIdentity("Microsoft.Windows.SDK.Contracts", "10.0.19041.1")))
@@ -852,11 +939,12 @@ namespace Microsoft.Windows.Sdk
         var compilation = CSharpCompilation.Create(
             assemblyName: "test",
             references: metadataReferences,
-            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, allowUnsafe: true));
+            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, platform: platform, allowUnsafe: true));
 
-        // Add a namespace that WinUI projects define to ensure we prefix types with "global::" everywhere.
+        // Add namespaces that projects may define to ensure we prefix types with "global::" everywhere.
         compilation = compilation.AddSyntaxTrees(
-            CSharpSyntaxTree.ParseText("namespace Microsoft.System { }", this.parseOptions, path: "Microsoft.System.cs"));
+            CSharpSyntaxTree.ParseText("namespace Microsoft.System { }", this.parseOptions, path: "Microsoft.System.cs"),
+            CSharpSyntaxTree.ParseText("namespace Windows.Win32.System { }", this.parseOptions, path: "Windows.Win32.System.cs"));
 
         return compilation;
     }

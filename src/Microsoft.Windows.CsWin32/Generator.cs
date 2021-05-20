@@ -31,6 +31,7 @@ namespace Microsoft.Windows.CsWin32
         internal const string InteropDecorationNamespace = "Windows.Win32.Interop";
         internal const string NativeArrayInfoAttribute = "NativeArrayInfoAttribute";
         internal const string GlobalNamespacePrefix = "global::";
+        internal const string GlobalWin32NamespaceAlias = "win32";
 
         internal static readonly SyntaxAnnotation IsManagedTypeAnnotation = new SyntaxAnnotation("IsManagedType");
         internal static readonly SyntaxAnnotation IsSafeHandleTypeAnnotation = new SyntaxAnnotation("IsSafeHandleType");
@@ -76,6 +77,7 @@ namespace Microsoft.Windows.CsWin32
 ";
 
         private const string SimpleFileNameAnnotation = "SimpleFileName";
+        private const string NamespaceContainerAnnotation = "NamespaceContainer";
         private const string OriginalDelegateAnnotation = "OriginalDelegate";
         private static readonly SyntaxTriviaList InlineArrayUnsafeAsSpanComment = ParseLeadingTrivia(@"/// <summary>
 /// Gets this inline array as a span.
@@ -263,25 +265,11 @@ namespace Microsoft.Windows.CsWin32
         private readonly Stream metadataStream;
         private readonly PEReader peReader;
         private readonly MetadataReader mr;
-        private readonly Dictionary<string, List<MemberDeclarationSyntax>> modulesAndMembers = new Dictionary<string, List<MemberDeclarationSyntax>>(StringComparer.OrdinalIgnoreCase);
-
-        /// <summary>
-        /// The structs, enums, delegates and other supporting types for extern methods.
-        /// </summary>
-        private readonly Dictionary<TypeDefinitionHandle, MemberDeclarationSyntax> types = new Dictionary<TypeDefinitionHandle, MemberDeclarationSyntax>();
-
-        private readonly Dictionary<string, FieldDefinitionHandle> fieldsByName = new Dictionary<string, FieldDefinitionHandle>(StringComparer.Ordinal);
-
-        private readonly Dictionary<FieldDefinitionHandle, MemberDeclarationSyntax> fieldsToSyntax = new Dictionary<FieldDefinitionHandle, MemberDeclarationSyntax>();
-
-        private readonly List<ClassDeclarationSyntax> safeHandleTypes = new List<ClassDeclarationSyntax>();
-
-        private readonly Dictionary<string, MemberDeclarationSyntax> specialTypes = new Dictionary<string, MemberDeclarationSyntax>(StringComparer.Ordinal);
 
         /// <summary>
         /// A dictionary where the key is the typedef struct name and the value is the method used to release it.
         /// </summary>
-        private readonly Dictionary<string, string> handleTypeReleaseMethod = new Dictionary<string, string>(StringComparer.Ordinal);
+        private readonly Dictionary<TypeDefinitionHandle, string> handleTypeReleaseMethod = new();
 
         /// <summary>
         /// The set of names of typedef structs that represent handles where the handle has length of <see cref="IntPtr"/>
@@ -290,33 +278,18 @@ namespace Microsoft.Windows.CsWin32
         private readonly HashSet<string> handleTypeStructsWithIntPtrSizeFields = new HashSet<string>(StringComparer.Ordinal);
 
         /// <summary>
-        /// The set of types that are or have been generated so we don't stack overflow for self-referencing types.
+        /// A dictionary of namespace metadata, indexed by the string handle to their namespace.
         /// </summary>
-        private readonly HashSet<TypeDefinitionHandle> typesGenerating = new HashSet<TypeDefinitionHandle>();
-
-        /// <summary>
-        /// The set of methods that are or have been generated.
-        /// </summary>
-        private readonly HashSet<MethodDefinitionHandle> methodsGenerating = new HashSet<MethodDefinitionHandle>();
-
-        /// <summary>
-        /// A collection of the names of special types we are or have generated.
-        /// </summary>
-        private readonly HashSet<string> specialTypesGenerating = new HashSet<string>(StringComparer.Ordinal);
-
-        private readonly Dictionary<string, MethodDefinitionHandle> methodsByName;
-
-        private readonly Dictionary<string, TypeDefinitionHandle> typesByName;
-
-        private readonly Dictionary<string, TypeSyntax?> releaseMethodsWithSafeHandleTypesGenerating = new Dictionary<string, TypeSyntax?>();
-
-        private readonly List<MethodDeclarationSyntax> inlineArrayIndexerExtensionsMembers = new();
-
-        private readonly List<MethodDeclarationSyntax> comInterfaceFriendlyExtensionsMembers = new();
+        private readonly Dictionary<string, NamespaceMetadata> metadataByNamespace = new();
 
         private readonly HashSet<string> releaseMethods = new HashSet<string>(StringComparer.Ordinal);
 
         private readonly Dictionary<TypeReferenceHandle, TypeDefinitionHandle> refToDefCache = new();
+
+        /// <summary>
+        /// The ref handle to the constructor on the SupportedArchitectureAttribute, if there is one.
+        /// </summary>
+        private readonly MemberReferenceHandle supportedArchitectureAttributeCtor;
 
         private readonly GeneratorOptions options;
         private readonly CSharpCompilation? compilation;
@@ -325,6 +298,8 @@ namespace Microsoft.Windows.CsWin32
         private readonly bool generateSupportedOSPlatformAttributes;
         private readonly bool generateSupportedOSPlatformAttributesOnInterfaces; // only supported on net6.0 (https://github.com/dotnet/runtime/pull/48838)
         private readonly bool generateDefaultDllImportSearchPathsAttribute;
+        private readonly GeneratedCode committedCode = new();
+        private readonly GeneratedCode volatileCode;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="Generator"/> class.
@@ -339,6 +314,7 @@ namespace Microsoft.Windows.CsWin32
             this.options.Validate();
             this.compilation = compilation;
             this.parseOptions = parseOptions;
+            this.volatileCode = new(this.committedCode);
 
             this.canCallCreateSpan = this.compilation?.GetTypeByMetadataName(typeof(MemoryMarshal).FullName)?.GetMembers("CreateSpan").Any() is true;
             this.generateDefaultDllImportSearchPathsAttribute = this.compilation?.GetTypeByMetadataName(typeof(DefaultDllImportSearchPathsAttribute).FullName) is object;
@@ -366,65 +342,32 @@ namespace Microsoft.Windows.CsWin32
                 PreferMarshaledTypes: false,
                 AllowMarshaling: options.AllowMarshaling,
                 QualifyNames: false);
-            this.fieldTypeSettings = this.generalTypeSettings;
-            this.delegateSignatureTypeSettings = this.generalTypeSettings;
+            this.fieldTypeSettings = this.generalTypeSettings with { QualifyNames = true };
+            this.delegateSignatureTypeSettings = this.generalTypeSettings with { QualifyNames = true };
             this.enumTypeSettings = this.generalTypeSettings;
             this.fieldOfHandleTypeDefTypeSettings = this.generalTypeSettings with { PreferNativeInt = false };
             this.externSignatureTypeSettings = this.generalTypeSettings with { QualifyNames = true, PreferMarshaledTypes = true };
-            this.externReleaseSignatureTypeSettings = this.generalTypeSettings with { PreferNativeInt = false };
-            this.comSignatureTypeSettings = this.generalTypeSettings;
+            this.externReleaseSignatureTypeSettings = this.externSignatureTypeSettings with { PreferNativeInt = false, PreferMarshaledTypes = false };
+            this.comSignatureTypeSettings = this.generalTypeSettings with { QualifyNames = true };
             this.extensionMethodSignatureTypeSettings = this.generalTypeSettings with { QualifyNames = true };
-            this.functionPointerTypeSettings = this.generalTypeSettings;
+            this.functionPointerTypeSettings = this.generalTypeSettings with { QualifyNames = true };
             this.errorMessageTypeSettings = this.generalTypeSettings with { QualifyNames = true };
 
-            this.Apis = this.mr.TypeDefinitions.Select(this.mr.GetTypeDefinition).Where(td => this.mr.StringComparer.Equals(td.Name, "Apis")).ToList();
-
-            this.methodsByName = new Dictionary<string, MethodDefinitionHandle>(StringComparer.Ordinal);
-            foreach (MethodDefinitionHandle methodDefHandle in this.Apis.SelectMany(api => api.GetMethods()))
+            foreach (MemberReferenceHandle memberRefHandle in this.mr.MemberReferences)
             {
-                string methodName = this.mr.GetString(this.mr.GetMethodDefinition(methodDefHandle).Name);
-                this.methodsByName.Add(methodName, methodDefHandle);
-            }
-
-            this.typesByName = new Dictionary<string, TypeDefinitionHandle>(StringComparer.Ordinal);
-            foreach (TypeDefinitionHandle typeDefinitionHandle in this.mr.TypeDefinitions)
-            {
-                TypeDefinition typeDefinition = this.mr.GetTypeDefinition(typeDefinitionHandle);
-                string name = this.mr.GetString(typeDefinition.Name);
-
-                // https://github.com/microsoft/CsWin32/issues/31
-                if (!this.typesByName.ContainsKey(name))
+                MemberReference memberReference = this.mr.GetMemberReference(memberRefHandle);
+                if (memberReference.GetKind() == MemberReferenceKind.Method)
                 {
-                    this.typesByName.Add(name, typeDefinitionHandle);
-                }
-
-                // Detect if this is a struct representing a native handle.
-                if (typeDefinition.GetFields().Count == 1 && typeDefinition.BaseType.Kind == HandleKind.TypeReference)
-                {
-                    TypeReference baseType = this.mr.GetTypeReference((TypeReferenceHandle)typeDefinition.BaseType);
-                    if (this.mr.StringComparer.Equals(baseType.Name, nameof(ValueType)) && this.mr.StringComparer.Equals(baseType.Namespace, nameof(System)))
+                    if (memberReference.Parent.Kind == HandleKind.TypeReference)
                     {
-                        foreach (CustomAttributeHandle h in typeDefinition.GetCustomAttributes())
+                        if (this.mr.StringComparer.Equals(memberReference.Name, ".ctor"))
                         {
-                            CustomAttribute att = this.mr.GetCustomAttribute(h);
-                            if (this.IsAttribute(att, InteropDecorationNamespace, RAIIFreeAttribute))
+                            var trh = (TypeReferenceHandle)memberReference.Parent;
+                            TypeReference tr = this.mr.GetTypeReference(trh);
+                            if (this.mr.StringComparer.Equals(tr.Name, "SupportedArchitectureAttribute") &&
+                                this.mr.StringComparer.Equals(tr.Namespace, "Windows.Win32.Interop"))
                             {
-                                var args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
-                                if (args.FixedArguments[0].Value is string freeMethodName)
-                                {
-                                    this.handleTypeReleaseMethod.Add(name, freeMethodName);
-                                    this.releaseMethods.Add(freeMethodName);
-
-                                    using FieldDefinitionHandleCollection.Enumerator fieldEnum = typeDefinition.GetFields().GetEnumerator();
-                                    fieldEnum.MoveNext();
-                                    FieldDefinitionHandle fieldHandle = fieldEnum.Current;
-                                    FieldDefinition fieldDef = this.mr.GetFieldDefinition(fieldHandle);
-                                    if (fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null) is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.IntPtr })
-                                    {
-                                        this.handleTypeStructsWithIntPtrSizeFields.Add(name);
-                                    }
-                                }
-
+                                this.supportedArchitectureAttributeCtor = memberRefHandle;
                                 break;
                             }
                         }
@@ -432,15 +375,103 @@ namespace Microsoft.Windows.CsWin32
                 }
             }
 
-            foreach (FieldDefinitionHandle fieldDefHandle in this.Apis.SelectMany(api => api.GetFields()))
+            this.Apis = new List<TypeDefinition>();
+
+            void PopulateNamespace(NamespaceDefinition ns, string? parentNamespace)
             {
-                FieldDefinition fieldDef = this.mr.GetFieldDefinition(fieldDefHandle);
-                const FieldAttributes expectedFlags = FieldAttributes.Static | FieldAttributes.Public;
-                if ((fieldDef.Attributes & expectedFlags) == expectedFlags)
+                string nsLeafName = this.mr.GetString(ns.Name);
+                string nsFullName = string.IsNullOrEmpty(parentNamespace) ? nsLeafName : $"{parentNamespace}.{nsLeafName}";
+
+                var nsMetadata = new NamespaceMetadata(nsFullName);
+                this.metadataByNamespace.Add(nsFullName, nsMetadata);
+
+                foreach (TypeDefinitionHandle tdh in ns.TypeDefinitions)
                 {
-                    string name = this.mr.GetString(fieldDef.Name);
-                    this.fieldsByName.Add(name, fieldDefHandle);
+                    TypeDefinition td = this.mr.GetTypeDefinition(tdh);
+                    string typeName = this.mr.GetString(td.Name);
+                    if (typeName == "Apis")
+                    {
+                        this.Apis.Add(td);
+                        foreach (MethodDefinitionHandle methodDefHandle in td.GetMethods())
+                        {
+                            MethodDefinition methodDef = this.mr.GetMethodDefinition(methodDefHandle);
+                            string methodName = this.mr.GetString(methodDef.Name);
+                            if (this.IsCompatibleWithPlatform(methodDef.GetCustomAttributes()))
+                            {
+                                nsMetadata.Methods.Add(methodName, methodDefHandle);
+                            }
+                            else
+                            {
+                                nsMetadata.MethodsForOtherPlatform.Add(methodName);
+                            }
+                        }
+
+                        foreach (FieldDefinitionHandle fieldDefHandle in td.GetFields())
+                        {
+                            FieldDefinition fieldDef = this.mr.GetFieldDefinition(fieldDefHandle);
+                            const FieldAttributes expectedFlags = FieldAttributes.Static | FieldAttributes.Public;
+                            if ((fieldDef.Attributes & expectedFlags) == expectedFlags)
+                            {
+                                string fieldName = this.mr.GetString(fieldDef.Name);
+                                nsMetadata.Fields.Add(fieldName, fieldDefHandle);
+                            }
+                        }
+                    }
+                    else if (typeName == "<Module>")
+                    {
+                    }
+                    else if (this.IsCompatibleWithPlatform(td.GetCustomAttributes()))
+                    {
+                        nsMetadata.Types.Add(typeName, tdh);
+
+                        // Detect if this is a struct representing a native handle.
+                        if (td.GetFields().Count == 1 && td.BaseType.Kind == HandleKind.TypeReference)
+                        {
+                            TypeReference baseType = this.mr.GetTypeReference((TypeReferenceHandle)td.BaseType);
+                            if (this.mr.StringComparer.Equals(baseType.Name, nameof(ValueType)) && this.mr.StringComparer.Equals(baseType.Namespace, nameof(System)))
+                            {
+                                foreach (CustomAttributeHandle h in td.GetCustomAttributes())
+                                {
+                                    CustomAttribute att = this.mr.GetCustomAttribute(h);
+                                    if (this.IsAttribute(att, InteropDecorationNamespace, RAIIFreeAttribute))
+                                    {
+                                        var args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
+                                        if (args.FixedArguments[0].Value is string freeMethodName)
+                                        {
+                                            this.handleTypeReleaseMethod.Add(tdh, freeMethodName);
+                                            this.releaseMethods.Add(freeMethodName);
+
+                                            using FieldDefinitionHandleCollection.Enumerator fieldEnum = td.GetFields().GetEnumerator();
+                                            fieldEnum.MoveNext();
+                                            FieldDefinitionHandle fieldHandle = fieldEnum.Current;
+                                            FieldDefinition fieldDef = this.mr.GetFieldDefinition(fieldHandle);
+                                            if (fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null) is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.IntPtr or PrimitiveTypeCode.UIntPtr })
+                                            {
+                                                this.handleTypeStructsWithIntPtrSizeFields.Add(typeName);
+                                            }
+                                        }
+
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        nsMetadata.TypesForOtherPlatform.Add(typeName);
+                    }
                 }
+
+                foreach (NamespaceDefinitionHandle childNsHandle in ns.NamespaceDefinitions)
+                {
+                    PopulateNamespace(this.mr.GetNamespaceDefinition(childNsHandle), nsFullName);
+                }
+            }
+
+            foreach (NamespaceDefinitionHandle childNsHandle in this.mr.GetNamespaceDefinitionRoot().NamespaceDefinitions)
+            {
+                PopulateNamespace(this.mr.GetNamespaceDefinitionRoot(), parentNamespace: null);
             }
         }
 
@@ -449,6 +480,16 @@ namespace Microsoft.Windows.CsWin32
             ExternMethod,
             StructMethod,
             InterfaceMethod,
+        }
+
+        [Flags]
+        private enum InteropArchitecture
+        {
+            None = 0x0,
+            X86 = 0x1,
+            X64 = 0x2,
+            Arm64 = 0x4,
+            All = 0x7,
         }
 
         internal Dictionary<string, string> BannedAPIs { get; } = new Dictionary<string, string>
@@ -484,16 +525,13 @@ namespace Microsoft.Windows.CsWin32
                         ClassDeclaration(Identifier(GetClassNameForModule(kv.Key)))
                         .AddModifiers(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.PartialKeyword))
                         .AddMembers(kv.ToArray()))
-                    : from entry in this.modulesAndMembers
+                    : from entry in this.committedCode.MembersByModule
                       select ClassDeclaration(Identifier(this.SingleClassName))
                         .AddModifiers(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.PartialKeyword))
-                        .AddMembers(entry.Value.ToArray())
+                        .AddMembers(entry.ToArray())
                         .WithLeadingTrivia(ParseLeadingTrivia(string.Format(CultureInfo.InvariantCulture, PartialPInvokeContentComment, entry.Key)))
                         .WithAdditionalAnnotations(new SyntaxAnnotation(SimpleFileNameAnnotation, $"{this.SingleClassName}.{entry.Key}"));
-                result = result
-                    .Concat(this.safeHandleTypes)
-                    .Concat(this.specialTypes.Values)
-                    .Concat(this.types.Values);
+                result = result.Concat(this.committedCode.GeneratedTypes);
 
                 ClassDeclarationSyntax constantClass = this.DeclareConstantDefiningClass();
                 if (constantClass.Members.Count > 0)
@@ -518,8 +556,8 @@ namespace Microsoft.Windows.CsWin32
         }
 
         private IEnumerable<IGrouping<string, MemberDeclarationSyntax>> ExternMethodsByModuleClassName =>
-            from entry in this.modulesAndMembers
-            from method in entry.Value
+            from entry in this.committedCode.MembersByModule
+            from method in entry
             group method by GetClassNameForModule(entry.Key) into x
             select x;
 
@@ -643,7 +681,21 @@ namespace Microsoft.Windows.CsWin32
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                this.RequestExternMethod(methodHandle);
+                MethodDefinition methodDef = this.mr.GetMethodDefinition(methodHandle);
+                if (this.IsCompatibleWithPlatform(methodDef.GetCustomAttributes()))
+                {
+                    try
+                    {
+                        this.volatileCode.GenerationTransaction(delegate
+                        {
+                            this.RequestExternMethod(methodHandle);
+                        });
+                    }
+                    catch (GenerationFailedException ex) when (IsPlatformCompatibleException(ex))
+                    {
+                        // Something transitively required for this method is not available for this platform, so skip this method.
+                    }
+                }
             }
         }
 
@@ -657,7 +709,21 @@ namespace Microsoft.Windows.CsWin32
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                this.RequestConstant(fieldDefHandle);
+                FieldDefinition fieldDef = this.mr.GetFieldDefinition(fieldDefHandle);
+                if (this.IsCompatibleWithPlatform(fieldDef.GetCustomAttributes()))
+                {
+                    try
+                    {
+                        this.volatileCode.GenerationTransaction(delegate
+                        {
+                            this.RequestConstant(fieldDefHandle);
+                        });
+                    }
+                    catch (GenerationFailedException ex) when (IsPlatformCompatibleException(ex))
+                    {
+                        // Something transitively required for this field is not available for this platform, so skip this method.
+                    }
+                }
             }
         }
 
@@ -700,7 +766,21 @@ namespace Microsoft.Windows.CsWin32
                         continue;
                     }
 
-                    this.RequestExternMethod(methodHandle);
+                    if (this.IsCompatibleWithPlatform(methodDef.GetCustomAttributes()))
+                    {
+                        try
+                        {
+                            this.volatileCode.GenerationTransaction(delegate
+                            {
+                                this.RequestExternMethod(methodHandle);
+                            });
+                        }
+                        catch (GenerationFailedException ex) when (IsPlatformCompatibleException(ex))
+                        {
+                            // Something transitively required for this method is not available for this platform, so skip this method.
+                        }
+                    }
+
                     successful = true;
                 }
             }
@@ -711,48 +791,88 @@ namespace Microsoft.Windows.CsWin32
         /// <summary>
         /// Generate code for the named extern method, if it is recognized.
         /// </summary>
-        /// <param name="name">The name of the extern method.</param>
+        /// <param name="possiblyQualifiedName">The name of the extern method, optionally qualified with a namespace.</param>
         /// <returns><see langword="true"/> if a match was found and the extern method generated; otherwise <see langword="false"/>.</returns>
-        public bool TryGenerateExternMethod(string name)
+        public bool TryGenerateExternMethod(string possiblyQualifiedName)
         {
-            if (this.BannedAPIs.TryGetValue(name, out string? reason))
+            if (possiblyQualifiedName is null)
             {
-                throw new NotSupportedException(reason);
+                throw new ArgumentNullException(nameof(possiblyQualifiedName));
             }
 
-            if (this.methodsByName.TryGetValue(name, out MethodDefinitionHandle handle))
+            if (this.GetMethodByName(possiblyQualifiedName) is MethodDefinitionHandle methodDefHandle)
             {
-                this.RequestExternMethod(handle);
+                MethodDefinition methodDef = this.mr.GetMethodDefinition(methodDefHandle);
+                string methodName = this.mr.StringComparer.Equals(methodDef.Name, possiblyQualifiedName) ? possiblyQualifiedName : this.mr.GetString(methodDef.Name);
+                if (this.BannedAPIs.TryGetValue(methodName, out string? reason))
+                {
+                    throw new NotSupportedException(reason);
+                }
+
+                this.volatileCode.GenerationTransaction(delegate
+                {
+                    this.RequestExternMethod(methodDefHandle);
+                });
+
                 return true;
             }
 
-            bool successful = false;
-            if (this.methodsByName.TryGetValue(name + "W", out handle))
-            {
-                this.RequestExternMethod(handle);
-                successful = true;
-            }
-
-            if (this.methodsByName.TryGetValue(name + "A", out handle))
-            {
-                this.RequestExternMethod(handle);
-                successful = true;
-            }
-
-            return successful;
+            return false;
         }
 
         /// <summary>
         /// Generate code for the named type, if it is recognized.
         /// </summary>
-        /// <param name="name">The name of the type.</param>
+        /// <param name="possiblyQualifiedName">The name of the interop type, optionally qualified with a namespace.</param>
         /// <returns><see langword="true"/> if a match was found and the type generated; otherwise <see langword="false"/>.</returns>
-        public bool TryGenerateType(string name)
+        public bool TryGenerateType(string possiblyQualifiedName)
         {
-            if (this.typesByName.TryGetValue(name, out TypeDefinitionHandle typeDefHandle))
+            if (possiblyQualifiedName is null)
             {
-                this.RequestInteropType(typeDefHandle);
+                throw new ArgumentNullException(nameof(possiblyQualifiedName));
+            }
+
+            TrySplitPossiblyQualifiedName(possiblyQualifiedName, out string? typeNamespace, out string typeName);
+            var matchingTypeHandles = new List<TypeDefinitionHandle>();
+            var namespaces = this.GetNamespacesToSearch(typeNamespace);
+            bool foundApiWithMismatchedPlatform = false;
+
+            foreach (var nsMetadata in namespaces)
+            {
+                if (nsMetadata.Types.TryGetValue(typeName, out TypeDefinitionHandle handle))
+                {
+                    matchingTypeHandles.Add(handle);
+                }
+                else if (nsMetadata.TypesForOtherPlatform.Contains(typeName))
+                {
+                    foundApiWithMismatchedPlatform = true;
+                }
+            }
+
+            if (matchingTypeHandles.Count == 1)
+            {
+                this.volatileCode.GenerationTransaction(delegate
+                {
+                    this.RequestInteropType(matchingTypeHandles[0]);
+                });
+
                 return true;
+            }
+            else if (matchingTypeHandles.Count > 1)
+            {
+                string matches = string.Join(
+                    ", ",
+                    matchingTypeHandles.Select(h =>
+                    {
+                        TypeDefinition td = this.mr.GetTypeDefinition(h);
+                        return $"{this.mr.GetString(td.Namespace)}.{this.mr.GetString(td.Name)}";
+                    }));
+                throw new ArgumentException("The type name is ambiguous. Use the fully-qualified name instead. Possible matches: " + matches);
+            }
+
+            if (foundApiWithMismatchedPlatform)
+            {
+                throw new PlatformIncompatibleException($"The requested API ({possiblyQualifiedName}) was found but is not available given the target platform ({this.compilation?.Options.Platform}).");
             }
 
             return false;
@@ -761,14 +881,47 @@ namespace Microsoft.Windows.CsWin32
         /// <summary>
         /// Generate code for the named constant, if it is recognized.
         /// </summary>
-        /// <param name="name">The name of the constant.</param>
+        /// <param name="possiblyQualifiedName">The name of the constant, optionally qualified with a namespace.</param>
         /// <returns><see langword="true"/> if a match was found and the constant generated; otherwise <see langword="false"/>.</returns>
-        public bool TryGenerateConstant(string name)
+        public bool TryGenerateConstant(string possiblyQualifiedName)
         {
-            if (this.fieldsByName.TryGetValue(name, out FieldDefinitionHandle fieldDefHandle))
+            if (possiblyQualifiedName is null)
             {
-                this.RequestConstant(fieldDefHandle);
+                throw new ArgumentNullException(nameof(possiblyQualifiedName));
+            }
+
+            TrySplitPossiblyQualifiedName(possiblyQualifiedName, out string? constantNamespace, out string constantName);
+            var matchingFieldHandles = new List<FieldDefinitionHandle>();
+            var namespaces = this.GetNamespacesToSearch(constantNamespace);
+
+            foreach (var nsMetadata in namespaces)
+            {
+                if (nsMetadata.Fields.TryGetValue(constantName, out FieldDefinitionHandle fieldDefHandle))
+                {
+                    matchingFieldHandles.Add(fieldDefHandle);
+                }
+            }
+
+            if (matchingFieldHandles.Count == 1)
+            {
+                this.volatileCode.GenerationTransaction(delegate
+                {
+                    this.RequestConstant(matchingFieldHandles[0]);
+                });
+
                 return true;
+            }
+            else if (matchingFieldHandles.Count > 1)
+            {
+                string matches = string.Join(
+                    ", ",
+                    matchingFieldHandles.Select(h =>
+                    {
+                        FieldDefinition fd = this.mr.GetFieldDefinition(h);
+                        TypeDefinition td = this.mr.GetTypeDefinition(fd.GetDeclaringType());
+                        return $"{this.mr.GetString(td.Namespace)}.{this.mr.GetString(fd.Name)}";
+                    }));
+                throw new ArgumentException("The type name is ambiguous. Use the fully-qualified name instead. Possible matches: " + matches);
             }
 
             return false;
@@ -797,11 +950,14 @@ namespace Microsoft.Windows.CsWin32
             }
 
             // We should match on any API for which the given string is a substring.
-            foreach (string candidate in this.fieldsByName.Keys.Concat(this.typesByName.Keys).Concat(this.methodsByName.Keys))
+            foreach (NamespaceMetadata nsMetadata in this.metadataByNamespace.Values)
             {
-                if (candidate.Contains(name))
+                foreach (string candidate in nsMetadata.Fields.Keys.Concat(nsMetadata.Types.Keys).Concat(nsMetadata.Methods.Keys))
                 {
-                    yield return candidate;
+                    if (candidate.Contains(name))
+                    {
+                        yield return candidate;
+                    }
                 }
             }
         }
@@ -819,11 +975,21 @@ namespace Microsoft.Windows.CsWin32
             const string FilenamePattern = "{0}.g.cs";
             var results = new Dictionary<string, NamespaceDeclarationSyntax>(StringComparer.OrdinalIgnoreCase);
 
+            IEnumerable<MemberDeclarationSyntax> GroupMembersByNamespace(IEnumerable<MemberDeclarationSyntax> members)
+            {
+                return members.GroupBy(member =>
+                    member.HasAnnotations(NamespaceContainerAnnotation) ? member.GetAnnotations(NamespaceContainerAnnotation).Single().Data : null)
+                    .SelectMany(nsContents =>
+                        nsContents.Key is object
+                            ? new MemberDeclarationSyntax[] { NamespaceDeclaration(ParseName(nsContents.Key)).AddMembers(nsContents.ToArray()) }
+                            : nsContents.ToArray());
+            }
+
             if (this.options.EmitSingleFile)
             {
                 results.Add(
                     string.Format(CultureInfo.InvariantCulture, FilenamePattern, "NativeMethods"),
-                    starterNamespace.AddMembers(this.NamespaceMembers.ToArray()));
+                    starterNamespace.AddMembers(GroupMembersByNamespace(this.NamespaceMembers).ToArray()));
             }
             else
             {
@@ -847,7 +1013,7 @@ namespace Microsoft.Windows.CsWin32
                     {
                         results.Add(
                             string.Format(CultureInfo.InvariantCulture, FilenamePattern, fileSimpleName.Key),
-                            starterNamespace.AddMembers(fileSimpleName.ToArray()));
+                            starterNamespace.AddMembers(GroupMembersByNamespace(fileSimpleName).ToArray()));
                     }
                     catch (ArgumentException ex)
                     {
@@ -868,6 +1034,8 @@ namespace Microsoft.Windows.CsWin32
             {
                 usingDirectives.Add(UsingDirective(ParseName(GlobalNamespacePrefix + "System.Runtime.Versioning")));
             }
+
+            usingDirectives.Add(UsingDirective(NameEquals(GlobalWin32NamespaceAlias), ParseName(GlobalNamespacePrefix + this.Namespace)));
 
             var normalizedResults = new Dictionary<string, CompilationUnitSyntax>(StringComparer.OrdinalIgnoreCase);
             results.AsParallel().WithCancellation(cancellationToken).ForAll(kv =>
@@ -929,11 +1097,56 @@ namespace Microsoft.Windows.CsWin32
             return reader.StringComparer.Equals(actualName, name) && reader.StringComparer.Equals(actualNamespace, ns);
         }
 
+        internal static string ReplaceCommonNamespaceWithAlias(string fullNamespace) => TryStripCommonNamespace(fullNamespace, out string? stripped) ? $"{GlobalWin32NamespaceAlias}.{stripped}" : fullNamespace;
+
+        internal static bool TryStripCommonNamespace(string fullNamespace, [NotNullWhen(true)] out string? strippedNamespace)
+        {
+            const string CommonNamespaceDot = "Windows.Win32.";
+            const string CommonNamespace = "Windows.Win32";
+            if (fullNamespace.StartsWith(CommonNamespaceDot, StringComparison.Ordinal))
+            {
+                strippedNamespace = fullNamespace.Substring(CommonNamespaceDot.Length);
+                return true;
+            }
+            else if (fullNamespace == CommonNamespace)
+            {
+                strippedNamespace = string.Empty;
+                return true;
+            }
+
+            strippedNamespace = null;
+            return false;
+        }
+
         internal bool IsAttribute(CustomAttribute attribute, string ns, string name) => IsAttribute(this.mr, attribute, ns, name);
 
-        internal bool TryGetHandleReleaseMethod(string handleStructName, [NotNullWhen(true)] out string? releaseMethod)
+        internal bool TryGetHandleReleaseMethod(EntityHandle handleStructDefHandle, [NotNullWhen(true)] out string? releaseMethod)
         {
-            return this.handleTypeReleaseMethod.TryGetValue(handleStructName, out releaseMethod);
+            if (handleStructDefHandle.IsNil)
+            {
+                releaseMethod = null;
+                return false;
+            }
+
+            if (handleStructDefHandle.Kind == HandleKind.TypeReference)
+            {
+                if (this.TryGetTypeDefHandle((TypeReferenceHandle)handleStructDefHandle, out TypeDefinitionHandle typeDefHandle))
+                {
+                    return this.TryGetHandleReleaseMethod(typeDefHandle, out releaseMethod);
+                }
+            }
+            else if (handleStructDefHandle.Kind == HandleKind.TypeDefinition)
+            {
+                return this.TryGetHandleReleaseMethod((TypeDefinitionHandle)handleStructDefHandle, out releaseMethod);
+            }
+
+            releaseMethod = null;
+            return false;
+        }
+
+        internal bool TryGetHandleReleaseMethod(TypeDefinitionHandle handleStructDefHandle, [NotNullWhen(true)] out string? releaseMethod)
+        {
+            return this.handleTypeReleaseMethod.TryGetValue(handleStructDefHandle, out releaseMethod);
         }
 
         internal void RequestAllInteropTypes(CancellationToken cancellationToken)
@@ -947,7 +1160,20 @@ namespace Microsoft.Windows.CsWin32
                     continue;
                 }
 
-                this.RequestInteropType(typeDefinitionHandle);
+                if (this.IsCompatibleWithPlatform(typeDef.GetCustomAttributes()))
+                {
+                    try
+                    {
+                        this.volatileCode.GenerationTransaction(delegate
+                        {
+                            this.RequestInteropType(typeDefinitionHandle);
+                        });
+                    }
+                    catch (GenerationFailedException ex) when (IsPlatformCompatibleException(ex))
+                    {
+                        // Something transitively required for this type is not available for this platform, so skip this method.
+                    }
+                }
             }
         }
 
@@ -958,30 +1184,53 @@ namespace Microsoft.Windows.CsWin32
                 return;
             }
 
-            if (!this.methodsGenerating.Add(methodDefinitionHandle))
+            MethodDefinition methodDefinition = this.mr.GetMethodDefinition(methodDefinitionHandle);
+            if (!this.IsCompatibleWithPlatform(methodDefinition.GetCustomAttributes()))
             {
-                return;
+                // We've been asked for an interop type that does not apply. This happens because the metadata
+                // may use a TypeReferenceHandle or TypeDefinitionHandle to just one of many arch-specific definitions of this type.
+                // Try to find the appropriate definition for our target architecture.
+                TypeDefinition declaringTypeDef = this.mr.GetTypeDefinition(methodDefinition.GetDeclaringType());
+                string ns = this.mr.GetString(declaringTypeDef.Namespace);
+                string methodName = this.mr.GetString(methodDefinition.Name);
+                if (this.metadataByNamespace[ns].MethodsForOtherPlatform.Contains(methodName))
+                {
+                    throw new PlatformIncompatibleException($"Request for method ({methodName}) that is not available given the target platform.");
+                }
             }
 
-            this.DeclareExternMethod(methodDefinitionHandle);
+            this.volatileCode.GenerateMethod(methodDefinitionHandle, () => this.DeclareExternMethod(methodDefinitionHandle));
         }
 
-        internal TypeDefinitionHandle? RequestInteropType(TypeReferenceHandle typeRefHandle)
+        internal bool IsInterface(HandleTypeHandleInfo typeInfo)
         {
-            if (this.TryGetTypeDefHandle(typeRefHandle, out TypeDefinitionHandle typeDefHandle))
+            TypeDefinitionHandle tdh = default;
+            if (typeInfo.Handle.Kind == HandleKind.TypeReference)
             {
-                this.RequestInteropType(typeDefHandle);
-                return typeDefHandle;
+                var trh = (TypeReferenceHandle)typeInfo.Handle;
+                this.TryGetTypeDefHandle(trh, out tdh);
             }
-            else
+            else if (typeInfo.Handle.Kind == HandleKind.TypeDefinition)
             {
-                // System.Guid reaches here, but doesn't need to be generated.
-                ////throw new NotSupportedException($"Could not find a type def for: {this.mr.GetString(typeRef.Namespace)}.{name}");
-                return null;
+                tdh = (TypeDefinitionHandle)typeInfo.Handle;
             }
+
+            return !tdh.IsNil && (this.mr.GetTypeDefinition(tdh).Attributes & TypeAttributes.Interface) == TypeAttributes.Interface;
         }
 
-        internal bool IsInterface(string name) => this.typesByName.TryGetValue(name, out TypeDefinitionHandle tdh) && (this.mr.GetTypeDefinition(tdh).Attributes & TypeAttributes.Interface) == TypeAttributes.Interface;
+        internal bool IsInterface(TypeHandleInfo handleInfo)
+        {
+            if (handleInfo is HandleTypeHandleInfo typeInfo)
+            {
+                return this.IsInterface(typeInfo);
+            }
+            else if (handleInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo typeInfo2 })
+            {
+                return this.IsInterface(typeInfo2);
+            }
+
+            return false;
+        }
 
         internal bool IsInterface(TypeReferenceHandle typeRefHandle)
         {
@@ -1004,42 +1253,68 @@ namespace Microsoft.Windows.CsWin32
                 return;
             }
 
-            if (!this.typesGenerating.Add(typeDefHandle))
+            string ns = this.mr.GetString(typeDef.Namespace);
+            if (!this.IsCompatibleWithPlatform(typeDef.GetCustomAttributes()))
             {
-                return;
+                // We've been asked for an interop type that does not apply. This happens because the metadata
+                // may use a TypeReferenceHandle or TypeDefinitionHandle to just one of many arch-specific definitions of this type.
+                // Try to find the appropriate definition for our target architecture.
+                string name = this.mr.GetString(typeDef.Name);
+                NamespaceMetadata namespaceMetadata = this.metadataByNamespace[ns];
+                if (!namespaceMetadata.Types.TryGetValue(name, out typeDefHandle) && namespaceMetadata.TypesForOtherPlatform.Contains(name))
+                {
+                    throw new PlatformIncompatibleException($"Request for type ({ns}.{name}) that is not available given the target platform.");
+                }
             }
 
-            // https://github.com/microsoft/CsWin32/issues/31
-            string name = this.mr.GetString(typeDef.Name);
-            if (this.typesByName.TryGetValue(name, out TypeDefinitionHandle expectedHandle) && !expectedHandle.Equals(typeDefHandle))
+            this.volatileCode.GenerateType(typeDefHandle, delegate
             {
-                // Skip generating types with conflicting names till we fix that issue.
-                return;
+                if (this.RequestInteropType(typeDefHandle, null) is MemberDeclarationSyntax typeDeclaration)
+                {
+                    if (!TryStripCommonNamespace(ns, out string? shortNamespace))
+                    {
+                        throw new GenerationFailedException("Unexpected namespace: " + ns);
+                    }
+
+                    if (shortNamespace.Length > 0)
+                    {
+                        typeDeclaration = typeDeclaration.WithAdditionalAnnotations(
+                            new SyntaxAnnotation(NamespaceContainerAnnotation, shortNamespace));
+                    }
+
+                    this.volatileCode.AddInteropType(typeDefHandle, typeDeclaration);
+                }
+            });
+        }
+
+        internal TypeDefinitionHandle? RequestInteropType(TypeReferenceHandle typeRefHandle)
+        {
+            if (this.TryGetTypeDefHandle(typeRefHandle, out TypeDefinitionHandle typeDefHandle))
+            {
+                this.RequestInteropType(typeDefHandle);
+                return typeDefHandle;
             }
-
-            MemberDeclarationSyntax? typeDeclaration = this.RequestInteropType(typeDefHandle, null);
-
-            if (typeDeclaration is object)
+            else
             {
-                this.types.Add(typeDefHandle, typeDeclaration);
+                // System.Guid reaches here, but doesn't need to be generated.
+                ////throw new NotSupportedException($"Could not find a type def for: {this.mr.GetString(typeRef.Namespace)}.{name}");
+                return null;
             }
         }
 
         internal void RequestConstant(FieldDefinitionHandle fieldDefHandle)
         {
-            if (this.fieldsToSyntax.ContainsKey(fieldDefHandle))
+            this.volatileCode.GenerateConstant(fieldDefHandle, delegate
             {
-                return;
-            }
-
-            FieldDeclarationSyntax constantDeclaration = this.DeclareField(fieldDefHandle);
-            constantDeclaration = AddApiDocumentation(constantDeclaration.Declaration.Variables[0].Identifier.ValueText, constantDeclaration);
-            this.fieldsToSyntax.Add(fieldDefHandle, constantDeclaration);
+                FieldDeclarationSyntax constantDeclaration = this.DeclareConstant(fieldDefHandle);
+                constantDeclaration = AddApiDocumentation(constantDeclaration.Declaration.Variables[0].Identifier.ValueText, constantDeclaration);
+                this.volatileCode.AddConstant(fieldDefHandle, constantDeclaration);
+            });
         }
 
         internal TypeSyntax? RequestSafeHandle(string releaseMethod)
         {
-            if (this.releaseMethodsWithSafeHandleTypesGenerating.TryGetValue(releaseMethod, out TypeSyntax? safeHandleType))
+            if (this.volatileCode.TryGetSafeHandleForReleaseMethod(releaseMethod, out TypeSyntax? safeHandleType))
             {
                 return safeHandleType;
             }
@@ -1051,8 +1326,13 @@ namespace Microsoft.Windows.CsWin32
 
             string safeHandleClassName = $"{releaseMethod}SafeHandle";
 
-            MethodDefinitionHandle releaseMethodHandle = this.methodsByName[releaseMethod];
-            MethodDefinition releaseMethodDef = this.mr.GetMethodDefinition(releaseMethodHandle);
+            MethodDefinitionHandle? releaseMethodHandle = this.GetMethodByName(releaseMethod);
+            if (!releaseMethodHandle.HasValue)
+            {
+                throw new GenerationFailedException("Unable to find release method named: " + releaseMethod);
+            }
+
+            MethodDefinition releaseMethodDef = this.mr.GetMethodDefinition(releaseMethodHandle.Value);
             string releaseMethodModule = this.GetNormalizedModuleName(releaseMethodDef.GetImport());
 
             var safeHandleTypeIdentifier = IdentifierName(safeHandleClassName);
@@ -1070,7 +1350,7 @@ namespace Microsoft.Windows.CsWin32
                 safeHandleType = null;
             }
 
-            this.releaseMethodsWithSafeHandleTypesGenerating.Add(releaseMethod, safeHandleType);
+            this.volatileCode.AddSafeHandleNameForReleaseMethod(releaseMethod, safeHandleType);
 
             if (safeHandleType is null)
             {
@@ -1082,7 +1362,7 @@ namespace Microsoft.Windows.CsWin32
                 return safeHandleType;
             }
 
-            this.RequestExternMethod(releaseMethodHandle);
+            this.RequestExternMethod(releaseMethodHandle.Value);
 
             var atts = this.GetReturnTypeCustomAttributes(releaseMethodDef);
             var releaseMethodReturnType = releaseMethodSignature.ReturnType.ToTypeSyntax(this.externSignatureTypeSettings, atts);
@@ -1182,23 +1462,23 @@ namespace Microsoft.Windows.CsWin32
                         }
 
                         break;
-                    case IdentifierNameSyntax identifierName:
+                    case QualifiedNameSyntax { Right: IdentifierNameSyntax identifierName }:
                         switch (identifierName.Identifier.ValueText)
                         {
                             case "LSTATUS":
-                                this.TryGenerateConstant("ERROR_SUCCESS");
-                                ExpressionSyntax errorSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ConstantsClassName, IdentifierName("ERROR_SUCCESS"));
-                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, CastExpression(IdentifierName("LSTATUS"), CastExpression(PredefinedType(Token(SyntaxKind.IntKeyword)), errorSuccess)));
+                                this.TryGenerateTypeOrThrow("WIN32_ERROR");
+                                ExpressionSyntax errorSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseTypeName(GlobalWin32NamespaceAlias + ".System.Diagnostics.Debug.WIN32_ERROR"), IdentifierName("ERROR_SUCCESS"));
+                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, CastExpression(ParseTypeName(GlobalWin32NamespaceAlias + ".System.SystemServices.LSTATUS"), CastExpression(PredefinedType(Token(SyntaxKind.IntKeyword)), errorSuccess)));
                                 break;
                             case "NTSTATUS":
-                                // https://github.com/microsoft/win32metadata/issues/136
-                                ////ExpressionSyntax statusSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("NTSTATUS"), IdentifierName("STATUS_SUCCESS"));
-                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, CastExpression(IdentifierName("NTSTATUS"), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))));
+                                this.TryGenerateConstantOrThrow("STATUS_SUCCESS");
+                                ExpressionSyntax statusSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ConstantsClassName, IdentifierName("STATUS_SUCCESS"));
+                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, statusSuccess);
                                 break;
                             case "HRESULT":
-                                this.TryGenerateConstant("S_OK");
+                                this.TryGenerateConstantOrThrow("S_OK");
                                 ExpressionSyntax ok = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ConstantsClassName, IdentifierName("S_OK"));
-                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, CastExpression(IdentifierName("HRESULT"), ok));
+                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, ok);
                                 break;
                             default:
                                 throw new NotSupportedException($"Return type {identifierName.Identifier.ValueText} on release method {releaseMethod} not supported.");
@@ -1227,10 +1507,10 @@ namespace Microsoft.Windows.CsWin32
         /// </summary>
 "));
 
-            this.safeHandleTypes.Add(safeHandleDeclaration);
+            this.volatileCode.AddSafeHandleType(safeHandleDeclaration);
             if (this.GroupByModule)
             {
-                this.GetModuleMemberList(releaseMethodModule).Add(safeHandleDeclaration);
+                this.volatileCode.AddMemberToModule(releaseMethodModule, safeHandleDeclaration);
             }
 
             return safeHandleType;
@@ -1263,25 +1543,22 @@ namespace Microsoft.Windows.CsWin32
             }
         }
 
-        internal MemberDeclarationSyntax? RequestTypeDefStruct(string specialName)
+        internal MemberDeclarationSyntax? RequestSpecialTypeDefStruct(string specialName, out string fullyQualifiedName)
         {
+            string subNamespace = "System.SystemServices";
+            string ns = $"{this.Namespace}.{subNamespace}";
+            fullyQualifiedName = $"{ns}.{specialName}";
+
             // Skip if the compilation already defines this type or can access it from elsewhere.
-            string fullyQualifiedName = this.Namespace + "." + specialName;
             if (this.FindSymbolIfAlreadyAvailable(fullyQualifiedName) is object)
             {
                 // The type already exists either in this project or a referenced one.
                 return null;
             }
 
-            if (!this.specialTypesGenerating.Add(specialName))
+            MemberDeclarationSyntax? specialDeclaration = null;
+            this.volatileCode.GenerateSpecialType(specialName, delegate
             {
-                // Already generated.
-                return null;
-            }
-
-            try
-            {
-                MemberDeclarationSyntax? specialDeclaration = null;
                 switch (specialName)
                 {
                     case "PCWSTR":
@@ -1301,13 +1578,11 @@ namespace Microsoft.Windows.CsWin32
                     throw new GenerationFailedException("Failed to parse template.");
                 }
 
-                this.specialTypes.Add(specialName, specialDeclaration);
-                return specialDeclaration;
-            }
-            catch (Exception ex)
-            {
-                throw new GenerationFailedException("Failed to generate " + specialName, ex);
-            }
+                specialDeclaration = specialDeclaration.WithAdditionalAnnotations(new SyntaxAnnotation(NamespaceContainerAnnotation, subNamespace));
+
+                this.volatileCode.AddSpecialType(specialName, specialDeclaration);
+            });
+            return specialDeclaration;
         }
 
         internal CustomAttribute? FindNativeArrayInfoAttribute(CustomAttributeHandleCollection customAttributeHandles)
@@ -1502,6 +1777,19 @@ namespace Microsoft.Windows.CsWin32
                 this.peReader.Dispose();
                 this.metadataStream.Dispose();
             }
+        }
+
+        /// <summary>
+        /// Checks whether an exception was originally thrown because of a target platform incompatibility.
+        /// </summary>
+        private static bool IsPlatformCompatibleException(Exception? ex)
+        {
+            if (ex is null)
+            {
+                return false;
+            }
+
+            return ex is PlatformIncompatibleException || IsPlatformCompatibleException(ex?.InnerException);
         }
 
         private static T AddApiDocumentation<T>(string api, T memberDeclaration)
@@ -1934,10 +2222,25 @@ namespace Microsoft.Windows.CsWin32
             var k = (byte)args.FixedArguments[10].Value!;
             var pid = (uint)args.FixedArguments[11].Value!;
 
-            return ObjectCreationExpression(IdentifierName("PROPERTYKEY")).WithInitializer(
+            return ObjectCreationExpression(IdentifierName("win32.System.PropertiesSystem.PROPERTYKEY")).WithInitializer(
                 InitializerExpression(SyntaxKind.ObjectInitializerExpression).AddExpressions(
                     AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, IdentifierName("fmtid"), GuidValue(propertyKeyAttribute)),
                     AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, IdentifierName("pid"), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(pid)))));
+        }
+
+        /// <summary>
+        /// Checks for periods in a name and if found, splits off the last element as the name and considers everything before it to be a namespace.
+        /// </summary>
+        /// <param name="possiblyQualifiedName">A name or qualified name (e.g. "String" or "System.String").</param>
+        /// <param name="namespace">Receives the namespace portion if present in <paramref name="possiblyQualifiedName"/> (e.g. "System"); otherwise <see langword="null"/>.</param>
+        /// <param name="name">Receives the name portion from <paramref name="possiblyQualifiedName"/>.</param>
+        /// <returns>A value indicating whether a namespace was present in <paramref name="possiblyQualifiedName"/>.</returns>
+        private static bool TrySplitPossiblyQualifiedName(string possiblyQualifiedName, [NotNullWhen(true)] out string? @namespace, out string name)
+        {
+            int nameIdx = possiblyQualifiedName.LastIndexOf('.');
+            @namespace = nameIdx >= 0 ? possiblyQualifiedName.Substring(0, nameIdx) : null;
+            name = nameIdx >= 0 ? possiblyQualifiedName.Substring(nameIdx) : possiblyQualifiedName;
+            return @namespace is object;
         }
 
         private MemberDeclarationSyntax FetchTemplate(string name)
@@ -1983,28 +2286,22 @@ namespace Microsoft.Windows.CsWin32
                 }
 
                 var parameterTypeInfo = signature.ParameterTypes[parameter.SequenceNumber - 1];
-                var parameterType = parameterTypeInfo.ToTypeSyntax(this.functionPointerTypeSettings, parameter.GetCustomAttributes());
-                parametersList = parametersList.AddParameters(this.TranslateDelegateToFunctionPointer(FunctionPointerParameter(parameterType.GetUnmarshaledType())));
+                parametersList = parametersList.AddParameters(this.TranslateDelegateToFunctionPointer(parameterTypeInfo, parameter.GetCustomAttributes()));
             }
 
-            var returnValue = signature.ReturnType.ToTypeSyntax(this.functionPointerTypeSettings, this.GetReturnTypeCustomAttributes(methodDefinition));
-            parametersList = parametersList.AddParameters(this.TranslateDelegateToFunctionPointer(FunctionPointerParameter(returnValue.GetUnmarshaledType())));
+            parametersList = parametersList.AddParameters(this.TranslateDelegateToFunctionPointer(signature.ReturnType, this.GetReturnTypeCustomAttributes(methodDefinition)));
 
             return FunctionPointerType(callingConventionSyntax, parametersList);
         }
 
-        private FunctionPointerParameterSyntax TranslateDelegateToFunctionPointer(FunctionPointerParameterSyntax parameter)
+        private FunctionPointerParameterSyntax TranslateDelegateToFunctionPointer(TypeHandleInfo parameterTypeInfo, CustomAttributeHandleCollection? customAttributeHandles)
         {
-            if (this.IsDelegateReference(parameter.Type as IdentifierNameSyntax, out TypeDefinition delegateTypeDef))
+            if (this.IsDelegateReference(parameterTypeInfo, out TypeDefinition delegateTypeDef))
             {
                 return FunctionPointerParameter(this.FunctionPointer(delegateTypeDef));
             }
-            else if (parameter.Type is PointerTypeSyntax { ElementType: IdentifierNameSyntax idName } && this.IsDelegateReference(idName, out TypeDefinition delegateTypeDef2))
-            {
-                return FunctionPointerParameter(PointerType(this.FunctionPointer(delegateTypeDef2)));
-            }
 
-            return parameter;
+            return FunctionPointerParameter(parameterTypeInfo.ToTypeSyntax(this.functionPointerTypeSettings, customAttributeHandles).GetUnmarshaledType());
         }
 
         private bool TryGetRenamedMethod(string methodName, [NotNullWhen(true)] out string? newName)
@@ -2012,7 +2309,7 @@ namespace Microsoft.Windows.CsWin32
             if (this.WideCharOnly && IsWideFunction(methodName))
             {
                 newName = methodName.Substring(0, methodName.Length - 1);
-                return !this.methodsByName.ContainsKey(newName);
+                return !this.GetMethodByName(newName, exactNameMatchOnly: true).HasValue;
             }
 
             newName = null;
@@ -2096,7 +2393,7 @@ namespace Microsoft.Windows.CsWin32
             // Skip if the compilation already defines this type or can access it from elsewhere.
             string name = this.mr.GetString(typeDef.Name);
             string ns = this.mr.GetString(typeDef.Namespace);
-            string fullyQualifiedName = this.Namespace + "." + name;
+            string fullyQualifiedName = ns + "." + name;
             if (this.FindSymbolIfAlreadyAvailable(fullyQualifiedName) is object)
             {
                 // The type already exists either in this project or a referenced one.
@@ -2184,12 +2481,6 @@ namespace Microsoft.Windows.CsWin32
 
                 var moduleName = this.GetNormalizedModuleName(import);
 
-                if (false && !CanonicalCapitalizations.Contains(moduleName))
-                {
-                    // Skip methods for modules we are not prepared to export.
-                    return;
-                }
-
                 string? entrypoint = null;
                 if (this.TryGetRenamedMethod(methodName, out string? newName))
                 {
@@ -2231,20 +2522,54 @@ namespace Microsoft.Windows.CsWin32
                 // Add documentation if we can find it.
                 methodDeclaration = AddApiDocumentation(entrypoint ?? methodName, methodDeclaration);
 
-                List<MemberDeclarationSyntax> methodsList = this.GetModuleMemberList(moduleName);
                 if (RequiresUnsafe(methodDeclaration.ReturnType) || methodDeclaration.ParameterList.Parameters.Any(p => RequiresUnsafe(p.Type)))
                 {
                     methodDeclaration = methodDeclaration.AddModifiers(Token(SyntaxKind.UnsafeKeyword));
                 }
 
-                methodsList.AddRange(this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, this.GroupByModule ? GetClassNameForModule(moduleName) : this.SingleClassName, FriendlyOverloadOf.ExternMethod));
-
-                methodsList.Add(methodDeclaration);
+                NameSyntax declaringTypeName = ParseName(this.GroupByModule ? GetClassNameForModule(moduleName) : this.SingleClassName);
+                this.volatileCode.AddMemberToModule(moduleName, this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, declaringTypeName, FriendlyOverloadOf.ExternMethod));
+                this.volatileCode.AddMemberToModule(moduleName, methodDeclaration);
             }
             catch (Exception ex)
             {
                 throw new GenerationFailedException($"Failed while generating extern method: {methodName}", ex);
             }
+        }
+
+        private bool IsCompatibleWithPlatform(CustomAttributeHandleCollection customAttributesOnMember)
+        {
+            if (this.supportedArchitectureAttributeCtor == default)
+            {
+                // This metadata never uses the SupportedArchitectureAttribute, so we assume this member is compatible.
+                return true;
+            }
+
+            foreach (CustomAttributeHandle attHandle in customAttributesOnMember)
+            {
+                CustomAttribute att = this.mr.GetCustomAttribute(attHandle);
+                if (att.Constructor.Equals(this.supportedArchitectureAttributeCtor))
+                {
+                    if (this.compilation is null)
+                    {
+                        // Without a compilation, we cannot ascertain compatibility.
+                        return false;
+                    }
+
+                    var requiredPlatform = (InteropArchitecture)(int)att.DecodeValue(CustomAttributeTypeProvider.Instance).FixedArguments[0].Value!;
+                    return this.compilation.Options.Platform switch
+                    {
+                        Platform.AnyCpu or Platform.AnyCpu32BitPreferred => requiredPlatform == InteropArchitecture.All,
+                        Platform.Arm64 => (requiredPlatform & InteropArchitecture.Arm64) == InteropArchitecture.Arm64,
+                        Platform.X86 => (requiredPlatform & InteropArchitecture.X86) == InteropArchitecture.X86,
+                        Platform.X64 => (requiredPlatform & InteropArchitecture.X64) == InteropArchitecture.X64,
+                        _ => false,
+                    };
+                }
+            }
+
+            // No SupportedArchitectureAttribute on this member, so assume it is compatible.
+            return true;
         }
 
         private AttributeSyntax? GetSupportedOSPlatformAttribute(CustomAttributeHandleCollection attributes)
@@ -2259,13 +2584,105 @@ namespace Microsoft.Windows.CsWin32
             return supportedOSPlatformAttribute;
         }
 
-        private FieldDeclarationSyntax DeclareField(FieldDefinitionHandle fieldDefHandle)
+        /// <summary>
+        /// Searches for an extern method.
+        /// </summary>
+        /// <param name="possiblyQualifiedName">A simple method name or one qualified with a namespace.</param>
+        /// <param name="exactNameMatchOnly"><see langword="true"/> to only match on an exact method name; <see langword="false"/> to allow for fuzzy matching such as an omitted W or A suffix.</param>
+        /// <returns>The matching method if exactly one is found, or <see langword="null"/> if none was found.</returns>
+        /// <exception cref="ArgumentException">Thrown if the <paramref name="possiblyQualifiedName"/> argument is not qualified and more than one matching method name was found.</exception>
+        private MethodDefinitionHandle? GetMethodByName(string possiblyQualifiedName, bool exactNameMatchOnly = false)
+        {
+            TrySplitPossiblyQualifiedName(possiblyQualifiedName, out string? methodNamespace, out string methodName);
+            return this.GetMethodByName(methodNamespace, methodName, exactNameMatchOnly);
+        }
+
+        /// <summary>
+        /// Searches for an extern method.
+        /// </summary>
+        /// <param name="methodNamespace">The namespace the method is found in, if known.</param>
+        /// <param name="methodName">The simple name of the method.</param>
+        /// <param name="exactNameMatchOnly"><see langword="true"/> to only match on an exact method name; <see langword="false"/> to allow for fuzzy matching such as an omitted W or A suffix.</param>
+        /// <returns>The matching method if exactly one is found, or <see langword="null"/> if none was found.</returns>
+        private MethodDefinitionHandle? GetMethodByName(string? methodNamespace, string methodName, bool exactNameMatchOnly = false)
+        {
+            IEnumerable<NamespaceMetadata> namespaces = this.GetNamespacesToSearch(methodNamespace);
+            bool foundApiWithMismatchedPlatform = false;
+
+            var matchingMethodHandles = new List<MethodDefinitionHandle>();
+            foreach (var nsMetadata in namespaces)
+            {
+                if (nsMetadata.Methods.TryGetValue(methodName, out MethodDefinitionHandle handle))
+                {
+                    matchingMethodHandles.Add(handle);
+                }
+                else if (nsMetadata.MethodsForOtherPlatform.Contains(methodName))
+                {
+                    foundApiWithMismatchedPlatform = true;
+                }
+            }
+
+            if (!exactNameMatchOnly && matchingMethodHandles.Count == 0)
+            {
+                foreach (var nsMetadata in namespaces)
+                {
+                    if (nsMetadata.Methods.TryGetValue(methodName + "W", out MethodDefinitionHandle handle) ||
+                        nsMetadata.Methods.TryGetValue(methodName + "A", out handle))
+                    {
+                        matchingMethodHandles.Add(handle);
+                    }
+                }
+            }
+
+            if (matchingMethodHandles.Count == 1)
+            {
+                return matchingMethodHandles[0];
+            }
+            else if (matchingMethodHandles.Count > 1)
+            {
+                string matches = string.Join(
+                    ", ",
+                    matchingMethodHandles.Select(h =>
+                    {
+                        MethodDefinition md = this.mr.GetMethodDefinition(h);
+                        TypeDefinition td = this.mr.GetTypeDefinition(md.GetDeclaringType());
+                        return $"{this.mr.GetString(td.Namespace)}.{this.mr.GetString(md.Name)}";
+                    }));
+                throw new ArgumentException("The method name is ambiguous. Use the fully-qualified name instead. Possible matches: " + matches);
+            }
+
+            if (foundApiWithMismatchedPlatform)
+            {
+                throw new PlatformIncompatibleException($"The requested API ({methodName}) was found but is not available given the target platform ({this.compilation?.Options.Platform}).");
+            }
+
+            return null;
+        }
+
+        private void TryGenerateTypeOrThrow(string possiblyQualifiedName)
+        {
+            if (!this.TryGenerateType(possiblyQualifiedName))
+            {
+                throw new GenerationFailedException("Unable to find expected type: " + possiblyQualifiedName);
+            }
+        }
+
+        private void TryGenerateConstantOrThrow(string possiblyQualifiedName)
+        {
+            if (!this.TryGenerateConstant(possiblyQualifiedName))
+            {
+                throw new GenerationFailedException("Unable to find expected constant: " + possiblyQualifiedName);
+            }
+        }
+
+        private FieldDeclarationSyntax DeclareConstant(FieldDefinitionHandle fieldDefHandle)
         {
             FieldDefinition fieldDef = this.mr.GetFieldDefinition(fieldDefHandle);
             string name = this.mr.GetString(fieldDef.Name);
             try
             {
-                TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null);
+                bool isConst = (fieldDef.Attributes & FieldAttributes.HasDefault) == FieldAttributes.HasDefault;
+                TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null) with { IsConstantField = true };
                 var customAttributes = fieldDef.GetCustomAttributes();
                 var fieldType = fieldTypeInfo.ToTypeSyntax(this.fieldTypeSettings, customAttributes);
                 ExpressionSyntax value =
@@ -2276,12 +2693,12 @@ namespace Microsoft.Windows.CsWin32
                 bool requiresUnsafe = false;
                 if (fieldType.Type is not PredefinedTypeSyntax && value is not ObjectCreationExpressionSyntax)
                 {
-                    if (fieldType.Type is IdentifierNameSyntax { Identifier: { ValueText: string typeName } } && this.TryGetHandleReleaseMethod(typeName, out _))
+                    if (fieldTypeInfo is HandleTypeHandleInfo handleFieldTypeInfo && this.TryGetHandleReleaseMethod(handleFieldTypeInfo.Handle, out _))
                     {
                         // Cast to IntPtr first, then the actual handle struct.
                         value = CastExpression(fieldType.Type, CastExpression(IntPtrTypeSyntax, ParenthesizedExpression(value)));
                     }
-                    else if (fieldType.Type is IdentifierNameSyntax { Identifier: { ValueText: "PCWSTR" } })
+                    else if (fieldType.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "PCWSTR" } } })
                     {
                         value = CastExpression(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword))), ParenthesizedExpression(value));
                         requiresUnsafe = true;
@@ -2293,7 +2710,7 @@ namespace Microsoft.Windows.CsWin32
                 }
 
                 var modifiers = TokenList(Token(this.Visibility));
-                if (this.IsTypeDefStruct(fieldType.Type as IdentifierNameSyntax) || value is ObjectCreationExpressionSyntax)
+                if (this.IsTypeDefStruct(fieldTypeInfo) || value is ObjectCreationExpressionSyntax)
                 {
                     modifiers = modifiers.Add(Token(SyntaxKind.StaticKeyword)).Add(Token(SyntaxKind.ReadOnlyKeyword));
                 }
@@ -2325,28 +2742,22 @@ namespace Microsoft.Windows.CsWin32
         private ClassDeclarationSyntax DeclareConstantDefiningClass()
         {
             return ClassDeclaration(ConstantsClassName.Identifier)
-                .AddMembers(this.fieldsToSyntax.Values.ToArray())
+                .AddMembers(this.committedCode.Fields.ToArray())
                 .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.PartialKeyword)));
         }
 
         private ClassDeclarationSyntax DeclareInlineArrayIndexerExtensionsClass()
         {
             return ClassDeclaration(InlineArrayIndexerExtensionsClassName.Identifier)
-                .AddMembers(this.inlineArrayIndexerExtensionsMembers.ToArray())
+                .AddMembers(this.committedCode.InlineArrayIndexerExtensions.ToArray())
                 .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.PartialKeyword)));
         }
 
         private ClassDeclarationSyntax DeclareComInterfaceFriendlyExtensionsClass()
         {
             return ClassDeclaration(ComInterfaceFriendlyExtensionsClassName.Identifier)
-                .AddMembers(this.comInterfaceFriendlyExtensionsMembers.ToArray())
+                .AddMembers(this.committedCode.ComInterfaceExtensions.ToArray())
                 .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.PartialKeyword)));
-        }
-
-        private bool TryGetTypeDefHandle(TypeSyntax typeSyntax, out TypeDefinitionHandle typeDefHandle)
-        {
-            string typeName = typeSyntax.ToString();
-            return this.typesByName.TryGetValue(typeName, out typeDefHandle);
         }
 
         /// <summary>
@@ -2360,8 +2771,6 @@ namespace Microsoft.Windows.CsWin32
         /// </remarks>
         private TypeDeclarationSyntax? DeclareInterface(TypeDefinition typeDef)
         {
-            IdentifierNameSyntax ifaceName = IdentifierName(this.mr.GetString(typeDef.Name));
-
             Stack<TypeDefinitionHandle> baseTypes = new Stack<TypeDefinitionHandle>();
             InterfaceImplementationHandle baseTypeHandle = typeDef.GetInterfaceImplementations().SingleOrDefault();
             while (!baseTypeHandle.IsNil)
@@ -2378,12 +2787,13 @@ namespace Microsoft.Windows.CsWin32
             }
 
             return !this.options.AllowMarshaling || this.IsNonCOMInterface(typeDef)
-                ? this.DeclareInterfaceAsStruct(typeDef, ifaceName, baseTypes)
-                : this.DeclareInterfaceAsInterface(typeDef, ifaceName, baseTypes);
+                ? this.DeclareInterfaceAsStruct(typeDef, baseTypes)
+                : this.DeclareInterfaceAsInterface(typeDef, baseTypes);
         }
 
-        private TypeDeclarationSyntax DeclareInterfaceAsStruct(TypeDefinition typeDef, IdentifierNameSyntax ifaceName, Stack<TypeDefinitionHandle> baseTypes)
+        private TypeDeclarationSyntax DeclareInterfaceAsStruct(TypeDefinition typeDef, Stack<TypeDefinitionHandle> baseTypes)
         {
+            IdentifierNameSyntax ifaceName = IdentifierName(this.mr.GetString(typeDef.Name));
             IdentifierNameSyntax vtblFieldName = IdentifierName("lpVtbl");
             var members = new List<MemberDeclarationSyntax>();
             var vtblMembers = new List<MemberDeclarationSyntax>();
@@ -2465,7 +2875,7 @@ namespace Microsoft.Windows.CsWin32
                 // Add documentation if we can find it.
                 methodDeclaration = AddApiDocumentation($"{ifaceName}.{methodName}", methodDeclaration);
 
-                members.AddRange(this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, ifaceName.Identifier.ValueText, FriendlyOverloadOf.StructMethod));
+                members.AddRange(this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, IdentifierName(ifaceName.Identifier.ValueText), FriendlyOverloadOf.StructMethod));
                 members.Add(methodDeclaration);
             }
 
@@ -2494,14 +2904,15 @@ namespace Microsoft.Windows.CsWin32
             return iface;
         }
 
-        private TypeDeclarationSyntax? DeclareInterfaceAsInterface(TypeDefinition typeDef, IdentifierNameSyntax ifaceName, Stack<TypeDefinitionHandle> baseTypes)
+        private TypeDeclarationSyntax? DeclareInterfaceAsInterface(TypeDefinition typeDef, Stack<TypeDefinitionHandle> baseTypes)
         {
-            if (ifaceName.Identifier.ValueText is "IUnknown" or "IDispatch")
+            if (this.mr.StringComparer.Equals(typeDef.Name, "IUnknown") || this.mr.StringComparer.Equals(typeDef.Name, "IDispatch"))
             {
                 // We do not generate interfaces for these COM base types.
                 return null;
             }
 
+            IdentifierNameSyntax ifaceName = IdentifierName(this.mr.GetString(typeDef.Name));
             TypeSyntaxSettings typeSettings = this.comSignatureTypeSettings;
 
             // It is imperative that we generate methods for all base interfaces as well, ahead of any implemented by *this* interface.
@@ -2536,7 +2947,7 @@ namespace Microsoft.Windows.CsWin32
                     else
                     {
                         this.RequestInteropType(baseTypeHandle);
-                        baseTypeSyntaxList.Add(SimpleBaseType(new HandleTypeHandleInfo(this.mr, baseTypeHandle).ToTypeSyntax(this.generalTypeSettings, null).Type));
+                        baseTypeSyntaxList.Add(SimpleBaseType(new HandleTypeHandleInfo(this.mr, baseTypeHandle).ToTypeSyntax(this.comSignatureTypeSettings, null).Type));
                         allMethods.AddRange(baseType.GetMethods());
                     }
                 }
@@ -2552,6 +2963,7 @@ namespace Microsoft.Windows.CsWin32
                 throw new NotSupportedException("No COM interface base type found."));
 
             var members = new List<MemberDeclarationSyntax>();
+            var friendlyOverloads = new List<MethodDeclarationSyntax>();
 
             foreach (MethodDefinitionHandle methodDefHandle in allMethods)
             {
@@ -2566,7 +2978,7 @@ namespace Microsoft.Windows.CsWin32
                     var (returnType, marshalAs) = signature.ReturnType.ToTypeSyntax(typeSettings, returnTypeAttributes);
                     AttributeSyntax? returnsAttribute = MarshalAs(marshalAs);
 
-                    bool preserveSig = returnType is not IdentifierNameSyntax { Identifier: { ValueText: "HRESULT" } }
+                    bool preserveSig = returnType is not QualifiedNameSyntax { Right: { Identifier: { ValueText: "HRESULT" } } }
                         || this.options.ComInterop.PreserveSigMethods.Contains($"{ifaceName}.{methodName}")
                         || this.options.ComInterop.PreserveSigMethods.Contains(ifaceName.ToString());
 
@@ -2617,9 +3029,9 @@ namespace Microsoft.Windows.CsWin32
                     methodDeclaration = AddApiDocumentation($"{ifaceName}.{methodName}", methodDeclaration);
                     members.Add(methodDeclaration);
 
-                    var atThis = IdentifierName("@this");
-                    this.comInterfaceFriendlyExtensionsMembers.AddRange(
-                        this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, ifaceName.Identifier.ValueText, FriendlyOverloadOf.InterfaceMethod));
+                    NameSyntax declaringTypeName = HandleTypeHandleInfo.GetNestingQualifiedName(this.mr, typeDef);
+                    friendlyOverloads.AddRange(
+                        this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, declaringTypeName, FriendlyOverloadOf.InterfaceMethod));
                 }
                 catch (Exception ex)
                 {
@@ -2646,6 +3058,10 @@ namespace Microsoft.Windows.CsWin32
             {
                 ifaceDeclaration = ifaceDeclaration.AddAttributeLists(AttributeList().AddAttributes(supportedOSPlatformAttribute));
             }
+
+            // Only add overloads to instance collections after everything else is done,
+            // so we don't leave extension methods behind if we fail to generate the target interface.
+            this.volatileCode.AddComInterfaceExtension(friendlyOverloads);
 
             return ifaceDeclaration;
         }
@@ -2904,12 +3320,17 @@ namespace Microsoft.Windows.CsWin32
             {
                 // Handle types must interop with IntPtr for SafeHandle support, so if IntPtr isn't the field type,
                 // we need to create new conversion operators.
+                ExpressionSyntax valueValueArg = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, fieldIdentifierName);
+                if (fieldInfo.FieldType is IdentifierNameSyntax { Identifier: { ValueText: nameof(UIntPtr) } })
+                {
+                    valueValueArg = CastExpression(PredefinedType(Token(SyntaxKind.LongKeyword)), valueValueArg);
+                }
 
                 // public static implicit operator IntPtr(MSIHANDLE value) => new IntPtr(value.Value);
                 members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), IntPtrTypeSyntax)
                     .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(name))
                     .WithExpressionBody(ArrowExpressionClause(
-                        ObjectCreationExpression(IntPtrTypeSyntax).AddArgumentListArguments(Argument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, fieldIdentifierName)))))
+                        ObjectCreationExpression(IntPtrTypeSyntax).AddArgumentListArguments(Argument(valueValueArg))))
                     .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
                     .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
 
@@ -2930,6 +3351,16 @@ namespace Microsoft.Windows.CsWin32
                         .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IntPtrTypeSyntax))
                         .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(
                             Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToPointer)))))))))
+                        .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
+                        .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+                }
+                else if (fieldInfo.FieldType is IdentifierNameSyntax { Identifier: { ValueText: nameof(UIntPtr) } })
+                {
+                    // public static explicit operator SOCKET(IntPtr value) => new SOCKET((UIntPtr)value.ToInt64());
+                    members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
+                        .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IntPtrTypeSyntax))
+                        .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(
+                            Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToInt64)))))))))
                         .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
                         .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
                 }
@@ -3265,7 +3696,7 @@ namespace Microsoft.Windows.CsWin32
             return result;
         }
 
-        private IEnumerable<MethodDeclarationSyntax> DeclareFriendlyOverloads(MethodDefinition methodDefinition, MethodDeclarationSyntax externMethodDeclaration, string declaringTypeName, FriendlyOverloadOf overloadOf)
+        private IEnumerable<MethodDeclarationSyntax> DeclareFriendlyOverloads(MethodDefinition methodDefinition, MethodDeclarationSyntax externMethodDeclaration, NameSyntax declaringTypeName, FriendlyOverloadOf overloadOf)
         {
             if (this.TryFetchTemplate(externMethodDeclaration.Identifier.ValueText, out MemberDeclarationSyntax? templateFriendlyOverload))
             {
@@ -3316,12 +3747,18 @@ namespace Microsoft.Windows.CsWin32
                 // * Review double/triple pointer scenarios.
                 //   * Consider CredEnumerateA, which is a "pointer to an array of pointers" (3-asterisks!). How does FriendlyAttribute improve this, if at all? The memory must be freed through another p/invoke.
                 ParameterSyntax externParam = parameters[param.SequenceNumber - 1];
-                if (this.IsManagedType(originalSignature.ParameterTypes[param.SequenceNumber - 1]) && (externParam.Modifiers.Any(SyntaxKind.OutKeyword) || externParam.Modifiers.Any(SyntaxKind.RefKeyword)))
+                if (externParam.Type is null)
+                {
+                    throw new GenerationFailedException();
+                }
+
+                TypeHandleInfo parameterTypeInfo = originalSignature.ParameterTypes[param.SequenceNumber - 1];
+                if (this.IsManagedType(parameterTypeInfo) && (externParam.Modifiers.Any(SyntaxKind.OutKeyword) || externParam.Modifiers.Any(SyntaxKind.RefKeyword)))
                 {
                     bool hasOut = externParam.Modifiers.Any(SyntaxKind.OutKeyword);
                     arguments[param.SequenceNumber - 1] = arguments[param.SequenceNumber - 1].WithRefKindKeyword(Token(hasOut ? SyntaxKind.OutKeyword : SyntaxKind.RefKeyword));
                 }
-                else if (isOut && !isIn && !isReleaseMethod && externParam.Type is PointerTypeSyntax { ElementType: IdentifierNameSyntax outTypeId } && this.TryGetHandleReleaseMethod(outTypeId.Identifier.ValueText, out string? outReleaseMethod) && !this.mr.StringComparer.Equals(methodDefinition.Name, outReleaseMethod))
+                else if (isOut && !isIn && !isReleaseMethod && parameterTypeInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo pointedElementInfo } && this.TryGetHandleReleaseMethod(pointedElementInfo.Handle, out string? outReleaseMethod) && !this.mr.StringComparer.Equals(methodDefinition.Name, outReleaseMethod))
                 {
                     if (this.RequestSafeHandle(outReleaseMethod) is TypeSyntax safeHandleType)
                     {
@@ -3336,7 +3773,7 @@ namespace Microsoft.Windows.CsWin32
                             .WithModifiers(TokenList(Token(SyntaxKind.OutKeyword)));
 
                         // HANDLE SomeLocal;
-                        leadingStatements.Add(LocalDeclarationStatement(VariableDeclaration(outTypeId).AddVariables(
+                        leadingStatements.Add(LocalDeclarationStatement(VariableDeclaration(pointedElementInfo.ToTypeSyntax(this.externSignatureTypeSettings, null).Type).AddVariables(
                             VariableDeclarator(typeDefHandleName.Identifier))));
 
                         // Argument: &SomeLocal
@@ -3351,7 +3788,7 @@ namespace Microsoft.Windows.CsWin32
                                 Argument(LiteralExpression(SyntaxKind.TrueLiteralExpression)).WithNameColon(NameColon("ownsHandle"))))));
                     }
                 }
-                else if (isIn && !isOut && !isReleaseMethod && externParam.Type is IdentifierNameSyntax typeId && this.TryGetHandleReleaseMethod(typeId.Identifier.ValueText, out string? releaseMethod) && !this.mr.StringComparer.Equals(methodDefinition.Name, releaseMethod))
+                else if (isIn && !isOut && !isReleaseMethod && parameterTypeInfo is HandleTypeHandleInfo parameterHandleTypeInfo && this.TryGetHandleReleaseMethod(parameterHandleTypeInfo.Handle, out string? releaseMethod) && !this.mr.StringComparer.Equals(methodDefinition.Name, releaseMethod))
                 {
                     IdentifierNameSyntax origName = IdentifierName(externParam.Identifier.ValueText);
                     IdentifierNameSyntax typeDefHandleName = IdentifierName(externParam.Identifier.ValueText + "Local");
@@ -3399,7 +3836,7 @@ namespace Microsoft.Windows.CsWin32
                 }
                 else if ((externParam.Type is PointerTypeSyntax { ElementType: TypeSyntax ptrElementType }
                     && !IsVoid(ptrElementType)
-                    && !(ptrElementType is IdentifierNameSyntax id && this.IsInterface(id.Identifier.ValueText))) ||
+                    && !this.IsInterface(parameterTypeInfo)) ||
                     externParam.Type is ArrayTypeSyntax)
                 {
                     TypeSyntax elementType = externParam.Type is PointerTypeSyntax ptr ? ptr.ElementType
@@ -3434,8 +3871,8 @@ namespace Microsoft.Windows.CsWin32
                         {
                             var args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
                             isArray = true;
-                            sizeParamIndex = (short?)args.NamedArguments.FirstOrDefault(a => a.Name == "SizeParamIndex").Value;
-                            sizeConst = (int?)args.NamedArguments.FirstOrDefault(a => a.Name == "SizeConst").Value;
+                            sizeParamIndex = (short?)args.NamedArguments.FirstOrDefault(a => a.Name == "CountParamIndex").Value;
+                            sizeConst = (int?)args.NamedArguments.FirstOrDefault(a => a.Name == "CountConst").Value;
 
                             break;
                         }
@@ -3571,7 +4008,7 @@ namespace Microsoft.Windows.CsWin32
                         arguments[param.SequenceNumber - 1] = Argument(localName);
                     }
                 }
-                else if (isIn && !isOut && isConst && externParam.Type is IdentifierNameSyntax { Identifier: { ValueText: "PCWSTR" } })
+                else if (isIn && !isOut && isConst && externParam.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "PCWSTR" } } })
                 {
                     IdentifierNameSyntax origName = IdentifierName(externParam.Identifier.ValueText);
                     IdentifierNameSyntax localName = IdentifierName(origName + "Local");
@@ -3584,8 +4021,8 @@ namespace Microsoft.Windows.CsWin32
                 }
             }
 
-            TypeSyntax? returnSafeHandleType = externMethodReturnType is IdentifierNameSyntax returnType
-                && this.TryGetHandleReleaseMethod(returnType.Identifier.ValueText, out string? returnReleaseMethod)
+            TypeSyntax? returnSafeHandleType = originalSignature.ReturnType is HandleTypeHandleInfo returnTypeHandleInfo
+                && this.TryGetHandleReleaseMethod(returnTypeHandleInfo.Handle, out string? returnReleaseMethod)
                 ? this.RequestSafeHandle(returnReleaseMethod) : null;
             SyntaxToken friendlyMethodName = externMethodDeclaration.Identifier;
 
@@ -3611,7 +4048,7 @@ namespace Microsoft.Windows.CsWin32
                 }
 
                 TypeSyntax docRefExternName = overloadOf == FriendlyOverloadOf.InterfaceMethod
-                    ? QualifiedName(IdentifierName(declaringTypeName), IdentifierName(externMethodDeclaration.Identifier))
+                    ? QualifiedName(declaringTypeName, IdentifierName(externMethodDeclaration.Identifier))
                     : IdentifierName(externMethodDeclaration.Identifier);
                 var leadingTrivia = Trivia(
                     DocumentationCommentTrivia(SyntaxKind.SingleLineDocumentationCommentTrivia).AddContent(
@@ -3621,7 +4058,7 @@ namespace Microsoft.Windows.CsWin32
                 InvocationExpressionSyntax externInvocation = InvocationExpression(
                     overloadOf switch
                     {
-                        FriendlyOverloadOf.ExternMethod => QualifiedName(IdentifierName(declaringTypeName), IdentifierName(externMethodDeclaration.Identifier.Text)),
+                        FriendlyOverloadOf.ExternMethod => QualifiedName(declaringTypeName, IdentifierName(externMethodDeclaration.Identifier.Text)),
                         FriendlyOverloadOf.StructMethod => MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName(externMethodDeclaration.Identifier.Text)),
                         FriendlyOverloadOf.InterfaceMethod => MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("@this"), IdentifierName(externMethodDeclaration.Identifier.Text)),
                         _ => throw new NotSupportedException("Unrecognized friendly overload mode " + overloadOf),
@@ -3684,7 +4121,7 @@ namespace Microsoft.Windows.CsWin32
 
                 if (overloadOf == FriendlyOverloadOf.InterfaceMethod)
                 {
-                    parameters.Insert(0, Parameter(Identifier("@this")).WithType(IdentifierName(declaringTypeName)).AddModifiers(Token(SyntaxKind.ThisKeyword)));
+                    parameters.Insert(0, Parameter(Identifier("@this")).WithType(declaringTypeName).AddModifiers(Token(SyntaxKind.ThisKeyword)));
                 }
 
                 MethodDeclarationSyntax friendlyDeclaration = externMethodDeclaration
@@ -3712,16 +4149,6 @@ namespace Microsoft.Windows.CsWin32
                 yield return friendlyDeclaration;
             }
 #pragma warning restore SA1114 // Parameter list should follow declaration
-        }
-
-        private List<MemberDeclarationSyntax> GetModuleMemberList(string moduleName)
-        {
-            if (!this.modulesAndMembers.TryGetValue(moduleName, out var methodsList))
-            {
-                this.modulesAndMembers.Add(moduleName, methodsList = new List<MemberDeclarationSyntax>());
-            }
-
-            return methodsList;
         }
 
         private string GetNormalizedModuleName(MethodImport import)
@@ -3905,7 +4332,7 @@ namespace Microsoft.Windows.CsWin32
                     .WithModifiers(methodModifiers)
                     .AddParameterListParameters(thisParameter.AddModifiers(Token(SyntaxKind.InKeyword)), indexParameter)
                     .WithBody(body);
-                AddExtensionMethod(getAtMethod);
+                this.volatileCode.AddInlineArrayIndexerExtension(getAtMethod);
 
                 ////internal static unsafe ref uint ItemRef(this ref MainAVIHeader.__dwReserved_4 @this, int index)
                 ////{
@@ -3916,16 +4343,7 @@ namespace Microsoft.Windows.CsWin32
                     .WithModifiers(methodModifiers)
                     .AddParameterListParameters(thisParameter.AddModifiers(Token(SyntaxKind.RefKeyword)), indexParameter)
                     .WithBody(body);
-                AddExtensionMethod(getOrSetAtMethod);
-
-                void AddExtensionMethod(MethodDeclarationSyntax extensionMethod)
-                {
-                    string thisParameter = extensionMethod.ParameterList.Parameters[0].Type!.ToString();
-                    if (!this.inlineArrayIndexerExtensionsMembers.Any(m => m.Identifier.ValueText == extensionMethod.Identifier.ValueText && m.ParameterList.Parameters[0].Type!.ToString() == thisParameter))
-                    {
-                        this.inlineArrayIndexerExtensionsMembers.Add(extensionMethod);
-                    }
-                }
+                this.volatileCode.AddInlineArrayIndexerExtension(getOrSetAtMethod);
 
                 return (fixedLengthStructName, List<MemberDeclarationSyntax>().Add(fixedLengthStruct));
             }
@@ -3933,11 +4351,7 @@ namespace Microsoft.Windows.CsWin32
             if (!this.options.AllowMarshaling)
             {
                 // If the field is a delegate type, we have to replace that with a native function pointer to avoid the struct becoming a 'managed type'.
-                if (originalType is PointerTypeSyntax { ElementType: IdentifierNameSyntax idName } && this.IsDelegateReference(idName, out TypeDefinition typeDef))
-                {
-                    return (this.FunctionPointer(typeDef), default);
-                }
-                else if (originalType is IdentifierNameSyntax idName2 && this.IsDelegateReference(idName2, out typeDef))
+                if (this.IsDelegateReference(fieldTypeHandleInfo, out TypeDefinition typeDef))
                 {
                     return (this.FunctionPointer(typeDef), default);
                 }
@@ -3953,34 +4367,51 @@ namespace Microsoft.Windows.CsWin32
             return (originalType, default);
         }
 
-        private bool IsTypeDefStruct(IdentifierNameSyntax? identifierName)
+        private bool IsTypeDefStruct(TypeHandleInfo? typeHandleInfo)
         {
-            if (identifierName is object)
+            if (typeHandleInfo is HandleTypeHandleInfo handleInfo)
             {
-                if (this.typesByName.TryGetValue(identifierName.Identifier.ValueText, out TypeDefinitionHandle value))
+                if (handleInfo.Handle.Kind == HandleKind.TypeDefinition)
                 {
-                    TypeDefinition typeDef = this.mr.GetTypeDefinition(value);
+                    TypeDefinition typeDef = this.mr.GetTypeDefinition((TypeDefinitionHandle)handleInfo.Handle);
                     return this.IsTypeDefStruct(typeDef);
                 }
-
-                if (SpecialTypeDefNames.Contains(identifierName.Identifier.ValueText))
+                else if (handleInfo.Handle.Kind == HandleKind.TypeReference && this.TryGetTypeDefHandle((TypeReferenceHandle)handleInfo.Handle, out TypeDefinitionHandle tdh))
                 {
-                    return true;
+                    TypeDefinition typeDef = this.mr.GetTypeDefinition(tdh);
+                    return this.IsTypeDefStruct(typeDef);
                 }
+            }
+            else if (SpecialTypeDefNames.Contains(null!/*TODO*/))
+            {
+                return true;
             }
 
             return false;
         }
 
-        private bool IsDelegateReference(IdentifierNameSyntax? identifierName, out TypeDefinition delegateTypeDef)
+        private bool IsDelegateReference(TypeHandleInfo typeHandleInfo, out TypeDefinition delegateTypeDef)
         {
-            if (identifierName is object)
+            if (typeHandleInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo handleInfo })
             {
-                if (this.typesByName.TryGetValue(identifierName.Identifier.ValueText, out TypeDefinitionHandle value))
-                {
-                    delegateTypeDef = this.mr.GetTypeDefinition(value);
-                    return this.IsDelegate(delegateTypeDef);
-                }
+                return this.IsDelegateReference(handleInfo, out delegateTypeDef);
+            }
+            else if (typeHandleInfo is HandleTypeHandleInfo handleInfo1)
+            {
+                return this.IsDelegateReference(handleInfo1, out delegateTypeDef);
+            }
+
+            delegateTypeDef = default;
+            return false;
+        }
+
+        private bool IsDelegateReference(HandleTypeHandleInfo typeHandleInfo, out TypeDefinition delegateTypeDef)
+        {
+            if (typeHandleInfo.Handle.Kind == HandleKind.TypeDefinition)
+            {
+                var tdh = (TypeDefinitionHandle)typeHandleInfo.Handle;
+                delegateTypeDef = this.mr.GetTypeDefinition(tdh);
+                return this.IsDelegate(delegateTypeDef);
             }
 
             delegateTypeDef = default;
@@ -4252,6 +4683,383 @@ namespace Microsoft.Windows.CsWin32
                 ConstantTypeCode.UInt64 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadUInt64()), blobReader2.ReadUInt64())),
                 _ => throw new NotSupportedException("ConstantTypeCode not supported: " + constant.TypeCode),
             };
+        }
+
+        private IEnumerable<NamespaceMetadata> GetNamespacesToSearch(string? @namespace) => @namespace is object ? new[] { this.metadataByNamespace[@namespace] } : this.metadataByNamespace.Values;
+
+        private class GeneratedCode
+        {
+            private readonly GeneratedCode? parent;
+
+            private Dictionary<string, List<MemberDeclarationSyntax>> modulesAndMembers = new Dictionary<string, List<MemberDeclarationSyntax>>(StringComparer.OrdinalIgnoreCase);
+
+            /// <summary>
+            /// The structs, enums, delegates and other supporting types for extern methods.
+            /// </summary>
+            private Dictionary<TypeDefinitionHandle, MemberDeclarationSyntax> types = new();
+
+            private Dictionary<FieldDefinitionHandle, FieldDeclarationSyntax> fieldsToSyntax = new();
+
+            private List<ClassDeclarationSyntax> safeHandleTypes = new();
+
+            private Dictionary<string, MemberDeclarationSyntax> specialTypes = new(StringComparer.Ordinal);
+
+            /// <summary>
+            /// The set of types that are or have been generated so we don't stack overflow for self-referencing types.
+            /// </summary>
+            private Dictionary<TypeDefinitionHandle, Exception?> typesGenerating = new();
+
+            /// <summary>
+            /// The set of methods that are or have been generated.
+            /// </summary>
+            private Dictionary<MethodDefinitionHandle, Exception?> methodsGenerating = new();
+
+            /// <summary>
+            /// A collection of the names of special types we are or have generated.
+            /// </summary>
+            private Dictionary<string, Exception?> specialTypesGenerating = new(StringComparer.Ordinal);
+
+            private Dictionary<string, TypeSyntax?> releaseMethodsWithSafeHandleTypesGenerating = new();
+
+            private List<MethodDeclarationSyntax> inlineArrayIndexerExtensionsMembers = new();
+
+            private List<MethodDeclarationSyntax> comInterfaceFriendlyExtensionsMembers = new();
+
+            private bool generating;
+
+            internal GeneratedCode()
+            {
+            }
+
+            internal GeneratedCode(GeneratedCode parent)
+            {
+                this.parent = parent;
+            }
+
+            internal IEnumerable<MemberDeclarationSyntax> GeneratedTypes => this.types.Values.Concat(this.specialTypes.Values).Concat(this.safeHandleTypes);
+
+            internal IEnumerable<MethodDeclarationSyntax> ComInterfaceExtensions => this.comInterfaceFriendlyExtensionsMembers;
+
+            internal IEnumerable<MethodDeclarationSyntax> InlineArrayIndexerExtensions => this.inlineArrayIndexerExtensionsMembers;
+
+            internal IEnumerable<FieldDeclarationSyntax> Fields => this.fieldsToSyntax.Values;
+
+            internal IEnumerable<IGrouping<string, MemberDeclarationSyntax>> MembersByModule
+            {
+                get
+                {
+                    foreach (var item in this.modulesAndMembers)
+                    {
+                        yield return new Grouping<string, MemberDeclarationSyntax>(item.Key, item.Value);
+                    }
+                }
+            }
+
+            internal void AddSafeHandleType(ClassDeclarationSyntax safeHandleDeclaration)
+            {
+                this.ThrowIfNotGenerating();
+
+                this.safeHandleTypes.Add(safeHandleDeclaration);
+            }
+
+            internal void AddMemberToModule(string moduleName, MemberDeclarationSyntax member)
+            {
+                this.ThrowIfNotGenerating();
+
+                if (!this.modulesAndMembers.TryGetValue(moduleName, out var methodsList))
+                {
+                    this.modulesAndMembers.Add(moduleName, methodsList = new List<MemberDeclarationSyntax>());
+                }
+
+                methodsList.Add(member);
+            }
+
+            internal void AddMemberToModule(string moduleName, IEnumerable<MemberDeclarationSyntax> members)
+            {
+                this.ThrowIfNotGenerating();
+
+                if (!this.modulesAndMembers.TryGetValue(moduleName, out var methodsList))
+                {
+                    this.modulesAndMembers.Add(moduleName, methodsList = new List<MemberDeclarationSyntax>());
+                }
+
+                methodsList.AddRange(members);
+            }
+
+            internal void AddConstant(FieldDefinitionHandle fieldDefHandle, FieldDeclarationSyntax constantDeclaration)
+            {
+                this.ThrowIfNotGenerating();
+                this.fieldsToSyntax.Add(fieldDefHandle, constantDeclaration);
+            }
+
+            internal void AddInlineArrayIndexerExtension(MethodDeclarationSyntax inlineIndexer)
+            {
+                this.ThrowIfNotGenerating();
+
+                string thisParameter = inlineIndexer.ParameterList.Parameters[0].Type!.ToString();
+                if (!this.inlineArrayIndexerExtensionsMembers.Any(m => m.Identifier.ValueText == inlineIndexer.Identifier.ValueText && m.ParameterList.Parameters[0].Type!.ToString() == thisParameter))
+                {
+                    this.inlineArrayIndexerExtensionsMembers.Add(inlineIndexer);
+                }
+            }
+
+            internal void AddComInterfaceExtension(MethodDeclarationSyntax extension)
+            {
+                this.ThrowIfNotGenerating();
+                this.comInterfaceFriendlyExtensionsMembers.Add(extension);
+            }
+
+            internal void AddComInterfaceExtension(IEnumerable<MethodDeclarationSyntax> extension)
+            {
+                this.ThrowIfNotGenerating();
+                this.comInterfaceFriendlyExtensionsMembers.AddRange(extension);
+            }
+
+            internal void AddSpecialType(string specialName, MemberDeclarationSyntax specialDeclaration)
+            {
+                this.ThrowIfNotGenerating();
+                this.specialTypes.Add(specialName, specialDeclaration);
+            }
+
+            internal void AddInteropType(TypeDefinitionHandle typeDefinitionHandle, MemberDeclarationSyntax typeDeclaration)
+            {
+                this.ThrowIfNotGenerating();
+                this.types.Add(typeDefinitionHandle, typeDeclaration);
+            }
+
+            internal void GenerationTransaction(Action generator)
+            {
+                if (this.parent is null)
+                {
+                    throw new InvalidOperationException("Code generation should occur in a volatile instance.");
+                }
+
+                if (this.generating)
+                {
+                    // A transaction is already running. Just run the generator.
+                    generator();
+                    return;
+                }
+
+                try
+                {
+                    this.generating = true;
+                    generator();
+                    this.Commit(this.parent);
+                }
+                catch
+                {
+                    this.Commit(null);
+                    throw;
+                }
+                finally
+                {
+                    this.generating = false;
+                }
+            }
+
+            internal void GenerateMethod(MethodDefinitionHandle methodDefinitionHandle, Action generator)
+            {
+                this.ThrowIfNotGenerating();
+
+                if (this.methodsGenerating.TryGetValue(methodDefinitionHandle, out Exception? failure) || this.parent?.methodsGenerating.TryGetValue(methodDefinitionHandle, out failure) is true)
+                {
+                    if (failure is object)
+                    {
+                        throw new GenerationFailedException("This member already failed in generation previously.", failure);
+                    }
+
+                    return;
+                }
+
+                this.methodsGenerating.Add(methodDefinitionHandle, null);
+                try
+                {
+                    generator();
+                }
+                catch (Exception ex)
+                {
+                    this.methodsGenerating[methodDefinitionHandle] = ex;
+                    throw;
+                }
+            }
+
+            internal void GenerateSpecialType(string name, Action generator)
+            {
+                this.ThrowIfNotGenerating();
+
+                if (this.specialTypesGenerating.TryGetValue(name, out Exception? failure) || this.parent?.specialTypesGenerating.TryGetValue(name, out failure) is true)
+                {
+                    if (failure is object)
+                    {
+                        throw new GenerationFailedException("This type already failed in generation previously.", failure);
+                    }
+
+                    return;
+                }
+
+                this.specialTypesGenerating.Add(name, null);
+                try
+                {
+                    generator();
+                }
+                catch (Exception ex)
+                {
+                    this.specialTypesGenerating[name] = ex;
+                    throw;
+                }
+            }
+
+            internal void GenerateType(TypeDefinitionHandle typeDefinitionHandle, Action generator)
+            {
+                this.ThrowIfNotGenerating();
+
+                if (this.typesGenerating.TryGetValue(typeDefinitionHandle, out Exception? failure) || this.parent?.typesGenerating.TryGetValue(typeDefinitionHandle, out failure) is true)
+                {
+                    if (failure is object)
+                    {
+                        throw new GenerationFailedException("This type already failed in generation previously.", failure);
+                    }
+
+                    return;
+                }
+
+                this.typesGenerating.Add(typeDefinitionHandle, null);
+                try
+                {
+                    generator();
+                }
+                catch (Exception ex)
+                {
+                    this.typesGenerating[typeDefinitionHandle] = ex;
+                    throw;
+                }
+            }
+
+            internal void GenerateConstant(FieldDefinitionHandle fieldDefinitionHandle, Action generator)
+            {
+                this.ThrowIfNotGenerating();
+
+                if (this.fieldsToSyntax.ContainsKey(fieldDefinitionHandle) || this.parent?.fieldsToSyntax.ContainsKey(fieldDefinitionHandle) is true)
+                {
+                    return;
+                }
+
+                generator();
+            }
+
+            internal bool TryGetSafeHandleForReleaseMethod(string releaseMethod, out TypeSyntax? safeHandleType)
+            {
+                return this.releaseMethodsWithSafeHandleTypesGenerating.TryGetValue(releaseMethod, out safeHandleType)
+                    || this.parent?.releaseMethodsWithSafeHandleTypesGenerating.TryGetValue(releaseMethod, out safeHandleType) is true;
+            }
+
+            internal void AddSafeHandleNameForReleaseMethod(string releaseMethod, TypeSyntax? safeHandleType)
+            {
+                this.ThrowIfNotGenerating();
+
+                this.releaseMethodsWithSafeHandleTypesGenerating.Add(releaseMethod, safeHandleType);
+            }
+
+            private static void Commit<TKey, TValue>(Dictionary<TKey, TValue> source, Dictionary<TKey, TValue>? target)
+            {
+                if (target is object)
+                {
+                    foreach (var item in source)
+                    {
+                        target.Add(item.Key, item.Value);
+                    }
+                }
+
+                source.Clear();
+            }
+
+            private static void Commit<T>(List<T> source, List<T>? target)
+            {
+                if (target is object)
+                {
+                    target.AddRange(source);
+                }
+
+                source.Clear();
+            }
+
+            private void Commit(GeneratedCode? parent)
+            {
+                foreach (var item in this.modulesAndMembers)
+                {
+                    if (parent is object)
+                    {
+                        if (!parent.modulesAndMembers.TryGetValue(item.Key, out var list))
+                        {
+                            parent.modulesAndMembers.Add(item.Key, list = new());
+                        }
+
+                        list.AddRange(item.Value);
+                    }
+
+                    item.Value.Clear();
+                }
+
+                Commit(this.types, parent?.types);
+                Commit(this.fieldsToSyntax, parent?.fieldsToSyntax);
+                Commit(this.safeHandleTypes, parent?.safeHandleTypes);
+                Commit(this.specialTypes, parent?.specialTypes);
+                Commit(this.typesGenerating, parent?.typesGenerating);
+                Commit(this.methodsGenerating, parent?.methodsGenerating);
+                Commit(this.specialTypesGenerating, parent?.specialTypesGenerating);
+                Commit(this.releaseMethodsWithSafeHandleTypesGenerating, parent?.releaseMethodsWithSafeHandleTypesGenerating);
+                Commit(this.inlineArrayIndexerExtensionsMembers, parent?.inlineArrayIndexerExtensionsMembers);
+                Commit(this.comInterfaceFriendlyExtensionsMembers, parent?.comInterfaceFriendlyExtensionsMembers);
+            }
+
+            private void ThrowIfNotGenerating()
+            {
+                if (!this.generating)
+                {
+                    throw new InvalidOperationException("Generating code must take place within a recognized top-level call.");
+                }
+            }
+
+            private class Grouping<TKey, TElement> : IGrouping<TKey, TElement>
+            {
+                private readonly IEnumerable<TElement> values;
+
+                internal Grouping(TKey key, IEnumerable<TElement> values)
+                {
+                    this.Key = key;
+                    this.values = values;
+                }
+
+                public TKey Key { get; }
+
+                public IEnumerator<TElement> GetEnumerator() => this.values.GetEnumerator();
+
+                System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => this.GetEnumerator();
+            }
+        }
+
+        [DebuggerDisplay("{" + nameof(DebuggerDisplay) + ",nq}")]
+        private class NamespaceMetadata
+        {
+            internal NamespaceMetadata(string name)
+            {
+                this.Name = name;
+            }
+
+            public string Name { get; }
+
+            internal Dictionary<string, FieldDefinitionHandle> Fields { get; } = new(StringComparer.Ordinal);
+
+            internal Dictionary<string, MethodDefinitionHandle> Methods { get; } = new(StringComparer.Ordinal);
+
+            internal Dictionary<string, TypeDefinitionHandle> Types { get; } = new(StringComparer.Ordinal);
+
+            internal HashSet<string> MethodsForOtherPlatform { get; } = new HashSet<string>(StringComparer.Ordinal);
+
+            internal HashSet<string> TypesForOtherPlatform { get; } = new HashSet<string>(StringComparer.Ordinal);
+
+            private string DebuggerDisplay => $"{this.Name} (Constants: {this.Fields.Count}, Methods: {this.Methods.Count}, Types: {this.Types.Count}";
         }
     }
 }

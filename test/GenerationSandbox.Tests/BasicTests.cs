@@ -6,6 +6,13 @@ using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
 using Windows.Win32;
+using Windows.Win32.Graphics.DirectShow;
+using Windows.Win32.Storage.FileSystem;
+using Windows.Win32.System.Com;
+using Windows.Win32.System.OleAutomation;
+using Windows.Win32.System.SystemServices;
+using Windows.Win32.UI.DisplayDevices;
+using Windows.Win32.UI.WindowsAndMessaging;
 using Xunit;
 using Xunit.Abstractions;
 

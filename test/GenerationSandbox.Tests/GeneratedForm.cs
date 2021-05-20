@@ -3,6 +3,9 @@
 
 using System;
 using Windows.Win32;
+using Windows.Win32.System.Com;
+using Windows.Win32.System.Diagnostics.Debug;
+using Windows.Win32.UI.WindowsAndMessaging;
 
 #pragma warning disable CA1812 // dead code
 

@@ -3028,6 +3028,7 @@ namespace Microsoft.Windows.CsWin32
                 throw new NotSupportedException("No COM interface base type found."));
 
             var members = new List<MemberDeclarationSyntax>();
+            var friendlyOverloads = new List<MethodDeclarationSyntax>();
 
             foreach (MethodDefinitionHandle methodDefHandle in allMethods)
             {
@@ -3094,7 +3095,7 @@ namespace Microsoft.Windows.CsWin32
                     members.Add(methodDeclaration);
 
                     NameSyntax declaringTypeName = HandleTypeHandleInfo.GetNestingQualifiedName(this.mr, typeDef);
-                    this.comInterfaceFriendlyExtensionsMembers.AddRange(
+                    friendlyOverloads.AddRange(
                         this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, declaringTypeName, FriendlyOverloadOf.InterfaceMethod));
                 }
                 catch (Exception ex)
@@ -3122,6 +3123,10 @@ namespace Microsoft.Windows.CsWin32
             {
                 ifaceDeclaration = ifaceDeclaration.AddAttributeLists(AttributeList().AddAttributes(supportedOSPlatformAttribute));
             }
+
+            // Only add overloads to instance collections after everything else is done,
+            // so we don't leave extension methods behind if we fail to generate the target interface.
+            this.comInterfaceFriendlyExtensionsMembers.AddRange(friendlyOverloads);
 
             return ifaceDeclaration;
         }

@@ -492,11 +492,12 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
 
     [Theory, CombinatorialData]
     public void ArchitectureSpecificAPIsTreatment(
-        [CombinatorialValues("MEMORY_BASIC_INFORMATION", "SP_PROPCHANGE_PARAMS", "JsCreateContext")] string apiName,
-        [CombinatorialValues(Platform.AnyCpu, Platform.X64, Platform.X86)] Platform platform)
+        [CombinatorialValues("MEMORY_BASIC_INFORMATION", "SP_PROPCHANGE_PARAMS", "JsCreateContext", "IShellBrowser")] string apiName,
+        [CombinatorialValues(Platform.AnyCpu, Platform.X64, Platform.X86)] Platform platform,
+        bool allowMarshaling)
     {
         this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(platform));
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling }, this.compilation, this.parseOptions);
         if (platform == Platform.AnyCpu)
         {
             // AnyCPU targets should throw an exception with a helpful error message when asked for arch-specific APIs

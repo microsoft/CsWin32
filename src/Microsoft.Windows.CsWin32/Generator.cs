@@ -1118,6 +1118,21 @@ namespace Microsoft.Windows.CsWin32
             return false;
         }
 
+        /// <summary>
+        /// Checks whether an exception was originally thrown because of a target platform incompatibility.
+        /// </summary>
+        /// <param name="ex">An exception that may be or contain a <see cref="PlatformIncompatibleException"/>.</param>
+        /// <returns><see langword="true"/> if <paramref name="ex"/> or an inner exception is a <see cref="PlatformIncompatibleException"/>; otherwise <see langword="false" />.</returns>
+        internal static bool IsPlatformCompatibleException(Exception? ex)
+        {
+            if (ex is null)
+            {
+                return false;
+            }
+
+            return ex is PlatformIncompatibleException || IsPlatformCompatibleException(ex?.InnerException);
+        }
+
         internal bool IsAttribute(CustomAttribute attribute, string ns, string name) => IsAttribute(this.mr, attribute, ns, name);
 
         internal bool TryGetHandleReleaseMethod(EntityHandle handleStructDefHandle, [NotNullWhen(true)] out string? releaseMethod)
@@ -1777,19 +1792,6 @@ namespace Microsoft.Windows.CsWin32
                 this.peReader.Dispose();
                 this.metadataStream.Dispose();
             }
-        }
-
-        /// <summary>
-        /// Checks whether an exception was originally thrown because of a target platform incompatibility.
-        /// </summary>
-        private static bool IsPlatformCompatibleException(Exception? ex)
-        {
-            if (ex is null)
-            {
-                return false;
-            }
-
-            return ex is PlatformIncompatibleException || IsPlatformCompatibleException(ex?.InnerException);
         }
 
         private static T AddApiDocumentation<T>(string api, T memberDeclaration)

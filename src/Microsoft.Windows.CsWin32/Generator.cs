@@ -56,6 +56,8 @@ namespace Microsoft.Windows.CsWin32
             { "CloseHandle", ParseTypeName("Microsoft.Win32.SafeHandles.SafeFileHandle").WithAdditionalAnnotations(IsManagedTypeAnnotation, IsSafeHandleTypeAnnotation) },
         };
 
+        private const string CommonNamespaceDot = "Windows.Win32.";
+        private const string CommonNamespace = "Windows.Win32";
         private const string SystemRuntimeCompilerServices = "System.Runtime.CompilerServices";
         private const string SystemRuntimeInteropServices = "System.Runtime.InteropServices";
         private const string RAIIFreeAttribute = "RAIIFreeAttribute";
@@ -603,10 +605,66 @@ namespace Microsoft.Windows.CsWin32
             else
             {
                 return
+                    this.TryGenerateNamespace(apiNameOrModuleWildcard) ||
                     this.TryGenerateExternMethod(apiNameOrModuleWildcard) ||
                     this.TryGenerateType(apiNameOrModuleWildcard) ||
                     this.TryGenerateConstant(apiNameOrModuleWildcard);
             }
+        }
+
+        /// <summary>
+        /// Generates all APIs within a given namespace, and their dependencies.
+        /// </summary>
+        /// <param name="namespace">The namespace to generate APIs for.</param>
+        /// <returns><see langword="true"/> if a matching namespace was found; otherwise <see langword="false"/>.</returns>
+        public bool TryGenerateNamespace(string @namespace)
+        {
+            if (@namespace is null)
+            {
+                throw new ArgumentNullException(nameof(@namespace));
+            }
+
+            NamespaceMetadata? metadata;
+            if (!this.metadataByNamespace.TryGetValue(@namespace, out metadata))
+            {
+                // Fallback to case insensitive search if it looks promising to do so.
+                if (@namespace.StartsWith(CommonNamespace, StringComparison.OrdinalIgnoreCase))
+                {
+                    foreach (var item in this.metadataByNamespace)
+                    {
+                        if (string.Equals(item.Key, @namespace, StringComparison.OrdinalIgnoreCase))
+                        {
+                            metadata = item.Value;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (metadata is object)
+            {
+                this.volatileCode.GenerationTransaction(delegate
+                {
+                    foreach (var method in metadata.Methods)
+                    {
+                        this.RequestExternMethod(method.Value);
+                    }
+
+                    foreach (var type in metadata.Types)
+                    {
+                        this.RequestInteropType(type.Value);
+                    }
+
+                    foreach (var field in metadata.Fields)
+                    {
+                        this.RequestConstant(field.Value);
+                    }
+                });
+
+                return true;
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -1101,8 +1159,6 @@ namespace Microsoft.Windows.CsWin32
 
         internal static bool TryStripCommonNamespace(string fullNamespace, [NotNullWhen(true)] out string? strippedNamespace)
         {
-            const string CommonNamespaceDot = "Windows.Win32.";
-            const string CommonNamespace = "Windows.Win32";
             if (fullNamespace.StartsWith(CommonNamespaceDot, StringComparison.Ordinal))
             {
                 strippedNamespace = fullNamespace.Substring(CommonNamespaceDot.Length);
@@ -4687,7 +4743,19 @@ namespace Microsoft.Windows.CsWin32
             };
         }
 
-        private IEnumerable<NamespaceMetadata> GetNamespacesToSearch(string? @namespace) => @namespace is object ? new[] { this.metadataByNamespace[@namespace] } : this.metadataByNamespace.Values;
+        private IEnumerable<NamespaceMetadata> GetNamespacesToSearch(string? @namespace)
+        {
+            if (@namespace is object)
+            {
+                return this.metadataByNamespace.TryGetValue(@namespace, out var metadata)
+                    ? new[] { metadata }
+                    : Array.Empty<NamespaceMetadata>();
+            }
+            else
+            {
+                return this.metadataByNamespace.Values;
+            }
+        }
 
         private class GeneratedCode
         {

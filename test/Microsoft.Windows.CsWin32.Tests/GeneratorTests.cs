@@ -384,6 +384,23 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         }
     }
 
+    [Theory, PairwiseData]
+    public void GenerateByNamespace(bool correctCase)
+    {
+        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        string ns = "Windows.Win32.Foundation";
+        if (!correctCase)
+        {
+            ns = ns.ToUpperInvariant();
+        }
+
+        Assert.True(this.generator.TryGenerate(ns, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        Assert.NotEmpty(this.FindGeneratedType("BOOL"));
+        Assert.NotEmpty(this.FindGeneratedType("SIZE"));
+    }
+
     /// <summary>
     /// Verifies that fields are not converted from BOOL to bool.
     /// </summary>

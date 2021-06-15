@@ -43,6 +43,7 @@ Create a `NativeMethods.txt` file in your project directory that lists the APIs 
 Each line may consist of *one* of the following:
 
 * Exported method name (e.g. `CreateFile`). This *may* include the `A` or `W` suffix, where applicable.
+* A namespace to generate all APIs within (e.g. `Windows.Win32.Storage.FileSystem`).
 * Module name followed by `.*` to generate all methods exported from that module (e.g. `Kernel32.*`).
 * The name of a struct, enum, constant or interface to generate.
 * A comment (i.e. any line starting with `//`) or white space line, which will be ignored.

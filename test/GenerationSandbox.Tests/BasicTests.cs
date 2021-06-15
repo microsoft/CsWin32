@@ -130,6 +130,29 @@ public class BasicTests
     }
 
     [Fact]
+    public void HANDLE_OverridesEqualityOperator()
+    {
+        var handle5 = new HANDLE((IntPtr)5);
+        var handle5b = handle5;
+        var handle8 = new HANDLE((IntPtr)8);
+        Assert.True(handle5 == handle5b);
+        Assert.False(handle5 != handle5b);
+        Assert.True(handle5 != handle8);
+        Assert.False(handle5 == handle8);
+    }
+
+    [Fact]
+    public void BOOL_OverridesEqualityOperator()
+    {
+        var @true = new BOOL(true);
+        var @false = new BOOL(false);
+        Assert.True(@true == new BOOL(true));
+        Assert.False(@true != new BOOL(true));
+        Assert.True(@true != @false);
+        Assert.False(@true == @false);
+    }
+
+    [Fact]
     public void CreateFile()
     {
         var path = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());

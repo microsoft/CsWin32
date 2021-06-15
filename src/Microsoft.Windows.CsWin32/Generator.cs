@@ -3424,6 +3424,29 @@ namespace Microsoft.Windows.CsWin32
                 }
             }
 
+            // public static bool operator ==(HANDLE left, HANDLE right) => left.Value == right.Value;
+            var leftParameter = IdentifierName("left");
+            var rightParameter = IdentifierName("right");
+            members = members.Add(OperatorDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), Token(SyntaxKind.EqualsEqualsToken))
+                .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword))
+                .AddParameterListParameters(Parameter(leftParameter.Identifier).WithType(name), Parameter(rightParameter.Identifier).WithType(name))
+                .WithExpressionBody(ArrowExpressionClause(
+                    BinaryExpression(
+                        SyntaxKind.EqualsExpression,
+                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, leftParameter, fieldIdentifierName),
+                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, rightParameter, fieldIdentifierName))))
+                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+
+            // public static bool operator !=(HANDLE left, HANDLE right) => !(left == right);
+            members = members.Add(OperatorDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), Token(SyntaxKind.ExclamationEqualsToken))
+                .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword))
+                .AddParameterListParameters(Parameter(leftParameter.Identifier).WithType(name), Parameter(rightParameter.Identifier).WithType(name))
+                .WithExpressionBody(ArrowExpressionClause(
+                    PrefixUnaryExpression(
+                        SyntaxKind.LogicalNotExpression,
+                        ParenthesizedExpression(BinaryExpression(SyntaxKind.EqualsExpression, leftParameter, rightParameter)))))
+                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+
             // public bool Equals(HWND other) => this.Value == other.Value;
             IdentifierNameSyntax other = IdentifierName("other");
             members = members.Add(MethodDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), nameof(IEquatable<int>.Equals))

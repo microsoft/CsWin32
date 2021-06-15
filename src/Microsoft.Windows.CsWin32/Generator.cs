@@ -1483,7 +1483,7 @@ namespace Microsoft.Windows.CsWin32
                             case "LSTATUS":
                                 this.TryGenerateTypeOrThrow("WIN32_ERROR");
                                 ExpressionSyntax errorSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseTypeName(GlobalWin32NamespaceAlias + ".System.Diagnostics.Debug.WIN32_ERROR"), IdentifierName("ERROR_SUCCESS"));
-                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, CastExpression(ParseTypeName(GlobalWin32NamespaceAlias + ".System.SystemServices.LSTATUS"), CastExpression(PredefinedType(Token(SyntaxKind.IntKeyword)), errorSuccess)));
+                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, CastExpression(ParseTypeName(GlobalWin32NamespaceAlias + ".Foundation.LSTATUS"), CastExpression(PredefinedType(Token(SyntaxKind.IntKeyword)), errorSuccess)));
                                 break;
                             case "NTSTATUS":
                                 this.TryGenerateConstantOrThrow("STATUS_SUCCESS");
@@ -1560,7 +1560,7 @@ namespace Microsoft.Windows.CsWin32
 
         internal MemberDeclarationSyntax? RequestSpecialTypeDefStruct(string specialName, out string fullyQualifiedName)
         {
-            string subNamespace = "System.SystemServices";
+            string subNamespace = "Foundation";
             string ns = $"{this.Namespace}.{subNamespace}";
             fullyQualifiedName = $"{ns}.{specialName}";
 

@@ -23,7 +23,7 @@
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
 
-    <MetadataVersion>10.0.19041.202-preview</MetadataVersion>
+    <MetadataVersion>10.2.84-preview</MetadataVersion>
   </PropertyGroup>
 
   <ItemGroup>

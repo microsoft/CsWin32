@@ -159,9 +159,6 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             "MFVideoAlphaBitmap", // field named params
             "DDRAWI_DDVIDEOPORT_INT", // field that is never used
             "MainAVIHeader", // dwReserved field is a fixed length array
-            "POSITIVE_INFINITY", // Special float imaginary number
-            "NEGATIVE_INFINITY", // Special float imaginary number
-            "NaN", // Special float imaginary number
             "HBMMENU_POPUP_RESTORE", // A HBITMAP handle as a constant
             "RpcServerRegisterIfEx", // Optional attribute on delegate type.
             "RpcSsSwapClientAllocFree", // Parameters typed as pointers to in delegates and out delegates
@@ -193,7 +190,6 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             "WIA_CATEGORY_FINISHED_FILE", // GUID constant
             "DEVPKEY_MTPBTH_IsConnected", // PROPERTYKEY constant
             "RT_CURSOR", // PCWSTR constant
-            "TRUE", // BOOL constant
             "IOleUILinkContainerW", // An IUnknown-derived interface with no GUID
             "RTM_ENTITY_EXPORT_METHODS",
             "FILE_TYPE_NOTIFICATION_INPUT",

@@ -4161,7 +4161,7 @@ namespace Microsoft.Windows.CsWin32
                 {
                     // ...
                     //     internal ref TheStruct this[int index] => ref AsSpan()[index];
-                    //     internal Span<TheStruct> AsSpan() => MemoryMarshal.CreateSpan(ref _1, 4);
+                    //     internal Span<TheStruct> AsSpan() => MemoryMarshal.CreateSpan(ref _0, 4);
                     fixedLengthStruct = fixedLengthStruct
                         .AddMembers(
                             IndexerDeclaration(RefType(elementType).WithTrailingTrivia(TriviaList(Space)))
@@ -4190,7 +4190,7 @@ namespace Microsoft.Windows.CsWin32
 
                 ////internal static unsafe ref readonly uint ReadOnlyItemRef(this in MainAVIHeader.__dwReserved_4 @this, int index)
                 ////{
-                ////    fixed (uint* p0 = &@this._1)
+                ////    fixed (uint* p0 = &@this._0)
                 ////        return ref p0[index];
                 ////    - or (for managed elements) -
                 ////    switch (index)
@@ -4231,7 +4231,7 @@ namespace Microsoft.Windows.CsWin32
 
                 ////internal static unsafe ref uint ItemRef(this ref MainAVIHeader.__dwReserved_4 @this, int index)
                 ////{
-                ////    fixed (uint* p0 = &@this._1)
+                ////    fixed (uint* p0 = &@this._0)
                 ////        return ref p0[index];
                 ////}
                 MethodDeclarationSyntax getOrSetAtMethod = MethodDeclaration(RefType(qualifiedElementType.WithTrailingTrivia(TriviaList(Space))), Identifier("ItemRef"))

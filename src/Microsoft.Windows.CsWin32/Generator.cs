@@ -74,7 +74,8 @@ namespace Microsoft.Windows.CsWin32
 
 ";
 
-        private const string PartialPInvokeContentComment = @"/// <content>
+        private const string PartialPInvokeContentComment = @"
+/// <content>
 /// Contains extern methods from ""{0}.dll"".
 /// </content>
 ";
@@ -367,12 +368,12 @@ namespace Microsoft.Windows.CsWin32
             {
                 IEnumerable<MemberDeclarationSyntax> result = this.GroupByModule
                     ? this.ExternMethodsByModuleClassName.Select(kv =>
-                        ClassDeclaration(Identifier(GetClassNameForModule(kv.Key)))
-                        .AddModifiers(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.PartialKeyword))
+                        ClassDeclarationWithTrivia(Identifier(GetClassNameForModule(kv.Key)))
+                        .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword))
                         .AddMembers(kv.ToArray()))
                     : from entry in this.committedCode.MembersByModule
-                      select ClassDeclaration(Identifier(this.SingleClassName))
-                        .AddModifiers(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.PartialKeyword))
+                      select ClassDeclarationWithTrivia(Identifier(this.SingleClassName))
+                        .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword))
                         .AddMembers(entry.ToArray())
                         .WithLeadingTrivia(ParseLeadingTrivia(string.Format(CultureInfo.InvariantCulture, PartialPInvokeContentComment, entry.Key)))
                         .WithAdditionalAnnotations(new SyntaxAnnotation(SimpleFileNameAnnotation, $"{this.SingleClassName}.{entry.Key}"));
@@ -870,7 +871,10 @@ namespace Microsoft.Windows.CsWin32
         /// <returns>All the generated source files, keyed by filename.</returns>
         public IReadOnlyDictionary<string, CompilationUnitSyntax> GetCompilationUnits(CancellationToken cancellationToken)
         {
-            var starterNamespace = NamespaceDeclaration(ParseName(this.Namespace));
+            var starterNamespace = NamespaceDeclaration(ParseName(this.Namespace).WithTrailingTrivia(TriviaList(LineFeed)))
+                .WithNamespaceKeyword(TokenWithSpace(SyntaxKind.NamespaceKeyword))
+                .WithOpenBraceToken(TokenWithLineFeed(SyntaxKind.OpenBraceToken))
+                .WithCloseBraceToken(TokenWithLineFeed(SyntaxKind.CloseBraceToken));
 
             // .g.cs because the resulting files are not user-created.
             const string FilenamePattern = "{0}.g.cs";
@@ -925,18 +929,18 @@ namespace Microsoft.Windows.CsWin32
 
             var usingDirectives = new List<UsingDirectiveSyntax>
             {
-                UsingDirective(AliasQualifiedName(IdentifierName(Token(SyntaxKind.GlobalKeyword)), IdentifierName(nameof(System)))),
-                UsingDirective(AliasQualifiedName(IdentifierName(Token(SyntaxKind.GlobalKeyword)), IdentifierName(nameof(System) + "." + nameof(System.Diagnostics)))),
-                UsingDirective(ParseName(GlobalNamespacePrefix + SystemRuntimeCompilerServices)),
-                UsingDirective(ParseName(GlobalNamespacePrefix + SystemRuntimeInteropServices)),
+                UsingDirectiveWithTrivia(AliasQualifiedName(IdentifierName(Token(SyntaxKind.GlobalKeyword)), IdentifierName(nameof(System)))),
+                UsingDirectiveWithTrivia(AliasQualifiedName(IdentifierName(Token(SyntaxKind.GlobalKeyword)), IdentifierName(nameof(System) + "." + nameof(System.Diagnostics)))),
+                UsingDirectiveWithTrivia(ParseName(GlobalNamespacePrefix + SystemRuntimeCompilerServices)),
+                UsingDirectiveWithTrivia(ParseName(GlobalNamespacePrefix + SystemRuntimeInteropServices)),
             };
 
             if (this.generateSupportedOSPlatformAttributes)
             {
-                usingDirectives.Add(UsingDirective(ParseName(GlobalNamespacePrefix + "System.Runtime.Versioning")));
+                usingDirectives.Add(UsingDirectiveWithTrivia(ParseName(GlobalNamespacePrefix + "System.Runtime.Versioning")));
             }
 
-            usingDirectives.Add(UsingDirective(NameEquals(GlobalWin32NamespaceAlias), ParseName(GlobalNamespacePrefix + this.Namespace)));
+            usingDirectives.Add(UsingDirectiveWithTrivia(ParseName(GlobalNamespacePrefix + this.Namespace), NameEquals(GlobalWin32NamespaceAlias)));
 
             var normalizedResults = new Dictionary<string, CompilationUnitSyntax>(StringComparer.OrdinalIgnoreCase);
             results.AsParallel().WithCancellation(cancellationToken).ForAll(kv =>
@@ -945,7 +949,14 @@ namespace Microsoft.Windows.CsWin32
                     .AddMembers(
                         kv.Value.AddUsings(usingDirectives.ToArray()))
                     .WithLeadingTrivia(ParseLeadingTrivia(AutoGeneratedHeader).Add(
-                        Trivia(PragmaWarningDirectiveTrivia(Token(SyntaxKind.DisableKeyword), true).AddErrorCodes(WarningsToSuppressInGeneratedCode.Select(code => IdentifierName(code)).ToArray()))));
+                        Trivia(PragmaWarningDirectiveTrivia(
+                            hashToken: Token(SyntaxKind.HashToken),
+                            pragmaKeyword: TokenWithSpace(SyntaxKind.PragmaKeyword),
+                            warningKeyword: TokenWithSpace(SyntaxKind.WarningKeyword),
+                            disableOrRestoreKeyword: TokenWithSpace(SyntaxKind.DisableKeyword),
+                            errorCodes: SeparatedList<ExpressionSyntax>(WarningsToSuppressInGeneratedCode.Select(code => IdentifierName(code))),
+                            endOfDirectiveToken: TokenWithLineFeed(SyntaxKind.EndOfDirectiveToken),
+                            isActive: true))));
 
                 lock (normalizedResults)
                 {
@@ -1386,11 +1397,12 @@ namespace Microsoft.Windows.CsWin32
                     .WithBody(releaseBlock);
             members.Add(releaseHandleDeclaration);
 
-            ClassDeclarationSyntax safeHandleDeclaration = ClassDeclaration(safeHandleClassName)
-                .AddModifiers(Token(this.Visibility))
+            ClassDeclarationSyntax safeHandleDeclaration = ClassDeclarationWithTrivia(safeHandleClassName)
+                .AddModifiers(TokenWithSpace(this.Visibility))
                 .AddBaseListTypes(SimpleBaseType(SafeHandleTypeSyntax))
                 .AddMembers(members.ToArray())
-                .WithLeadingTrivia(ParseLeadingTrivia($@"/// <summary>
+                .WithLeadingTrivia(ParseLeadingTrivia($@"
+        /// <summary>
         /// Represents a Win32 handle that can be closed with <see cref=""{(this.GroupByModule ? releaseMethodModule : this.SingleClassName)}.{renamedReleaseMethod ?? releaseMethod}""/>.
         /// </summary>
 "));
@@ -1665,6 +1677,24 @@ namespace Microsoft.Windows.CsWin32
                 MetadataIndex.Return(this.MetadataIndex);
             }
         }
+
+        private static ClassDeclarationSyntax ClassDeclarationWithTrivia(string name) => ClassDeclarationWithTrivia(Identifier(name));
+
+        private static ClassDeclarationSyntax ClassDeclarationWithTrivia(SyntaxToken name) => ClassDeclaration(name)
+            .WithKeyword(TokenWithSpace(SyntaxKind.ClassKeyword))
+            .WithOpenBraceToken(Token(TriviaList(LineFeed), SyntaxKind.OpenBraceToken, TriviaList(LineFeed)))
+            .WithCloseBraceToken(TokenWithLineFeed(SyntaxKind.CloseBraceToken));
+
+        private static UsingDirectiveSyntax UsingDirectiveWithTrivia(NameSyntax name, NameEqualsSyntax? alias = null) => UsingDirective(
+            usingKeyword: Token(TriviaList(ElasticTab), SyntaxKind.UsingKeyword, TriviaList(ElasticSpace)),
+            staticKeyword: default,
+            alias: alias?.WithEqualsToken(Token(TriviaList(ElasticSpace), SyntaxKind.EqualsToken, TriviaList(ElasticSpace))),
+            name: name,
+            semicolonToken: TokenWithLineFeed(SyntaxKind.SemicolonToken));
+
+        private static SyntaxToken TokenWithSpace(SyntaxKind syntaxKind) => Token(TriviaList(), syntaxKind, TriviaList(ElasticSpace));
+
+        private static SyntaxToken TokenWithLineFeed(SyntaxKind syntaxKind) => Token(TriviaList(), syntaxKind, TriviaList(LineFeed));
 
         private static T AddApiDocumentation<T>(string api, T memberDeclaration)
             where T : MemberDeclarationSyntax
@@ -2372,15 +2402,15 @@ namespace Microsoft.Windows.CsWin32
                 MethodDeclarationSyntax methodDeclaration = MethodDeclaration(
                     List<AttributeListSyntax>()
                         .Add(AttributeList().AddAttributes(DllImport(import, moduleName, entrypoint))),
-                    modifiers: TokenList(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.ExternKeyword)),
-                    returnType.Type,
+                    modifiers: TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.ExternKeyword)),
+                    returnType.Type.WithTrailingTrivia(TriviaList(Space)),
                     explicitInterfaceSpecifier: null!,
                     SafeIdentifier(methodName),
                     null!,
                     this.CreateParameterList(methodDefinition, signature, typeSettings),
                     List<TypeParameterConstraintClauseSyntax>(),
                     body: null!,
-                    Token(SyntaxKind.SemicolonToken));
+                    TokenWithLineFeed(SyntaxKind.SemicolonToken));
                 methodDeclaration = returnType.AddReturnMarshalAs(methodDeclaration);
 
                 if (this.generateDefaultDllImportSearchPathsAttribute)
@@ -2582,21 +2612,21 @@ namespace Microsoft.Windows.CsWin32
 
         private ClassDeclarationSyntax DeclareConstantDefiningClass()
         {
-            return ClassDeclaration(ConstantsClassName.Identifier)
+            return ClassDeclarationWithTrivia(ConstantsClassName.Identifier)
                 .AddMembers(this.committedCode.Fields.ToArray())
                 .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.PartialKeyword)));
         }
 
         private ClassDeclarationSyntax DeclareInlineArrayIndexerExtensionsClass()
         {
-            return ClassDeclaration(InlineArrayIndexerExtensionsClassName.Identifier)
+            return ClassDeclarationWithTrivia(InlineArrayIndexerExtensionsClassName.Identifier)
                 .AddMembers(this.committedCode.InlineArrayIndexerExtensions.ToArray())
                 .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.PartialKeyword)));
         }
 
         private ClassDeclarationSyntax DeclareComInterfaceFriendlyExtensionsClass()
         {
-            return ClassDeclaration(ComInterfaceFriendlyExtensionsClassName.Identifier)
+            return ClassDeclarationWithTrivia(ComInterfaceFriendlyExtensionsClassName.Identifier)
                 .AddMembers(this.committedCode.ComInterfaceExtensions.ToArray())
                 .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.PartialKeyword)));
         }

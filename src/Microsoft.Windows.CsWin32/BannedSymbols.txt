@@ -1,0 +1,6 @@
+﻿M:Microsoft.CodeAnalysis.CSharp.SyntaxExtensions.NormalizeWhitespace(Microsoft.CodeAnalysis.SyntaxToken,System.String,System.Boolean); Too slow. Add whitespace trivia manually.
+M:Microsoft.CodeAnalysis.CSharp.SyntaxExtensions.NormalizeWhitespace(Microsoft.CodeAnalysis.SyntaxToken,System.String,System.String,System.Bool); Too slow. Add whitespace trivia manually.
+M:Microsoft.CodeAnalysis.CSharp.SyntaxExtensions.NormalizeWhitespace(Microsoft.CodeAnalysis.SyntaxTriviaList,System.String,System.Bool); Too slow. Add whitespace trivia manually.
+M:Microsoft.CodeAnalysis.CSharp.SyntaxExtensions.NormalizeWhitespace(Microsoft.CodeAnalysis.SyntaxTriviaList,System.String,System.String,System.Bool); Too slow. Add whitespace trivia manually.
+M:Microsoft.CodeAnalysis.SyntaxNodeExtensions.NormalizeWhitespace``1(``0,System.String,System.Boolean); Too slow. Add whitespace trivia manually.
+M:Microsoft.CodeAnalysis.SyntaxNodeExtensions.NormalizeWhitespace``1(``0,System.String,System.String,System.Boolean); Too slow. Add whitespace trivia manually.

@@ -25,8 +25,8 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     private static readonly ConcurrentDictionary<ReferenceAssemblies, Task<ImmutableArray<MetadataReference>>> TestReferencesCache = new();
     private static readonly GeneratorOptions DefaultTestGeneratorOptions = new GeneratorOptions { EmitSingleFile = true };
     private static readonly string FileSeparator = new string('=', 140);
+    private static readonly string MetadataPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "Windows.Win32.winmd");
     private readonly ITestOutputHelper logger;
-    private readonly FileStream metadataStream;
     private readonly Dictionary<string, CSharpCompilation> starterCompilations = new();
     private CSharpCompilation compilation;
     private CSharpParseOptions parseOptions;
@@ -35,7 +35,6 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public GeneratorTests(ITestOutputHelper logger)
     {
         this.logger = logger;
-        this.metadataStream = OpenMetadata();
 
         this.parseOptions = CSharpParseOptions.Default
             .WithDocumentationMode(DocumentationMode.Diagnose)
@@ -69,7 +68,6 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public void Dispose()
     {
         this.generator?.Dispose();
-        this.metadataStream.Dispose();
     }
 
     [Theory]
@@ -78,7 +76,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [InlineData("__zz__not_defined", null)]
     public void TryGetEnumName(string candidate, string? declaringEnum)
     {
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
 
         Assert.Equal(declaringEnum is object, this.generator.TryGetEnumName(candidate, out string? actualDeclaringEnum));
         Assert.Equal(declaringEnum, actualDeclaringEnum);
@@ -89,7 +87,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public void SimplestMethod(string tfm)
     {
         this.compilation = this.starterCompilations[tfm];
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         const string methodName = "GetTickCount";
         Assert.True(this.generator.TryGenerateExternMethod(methodName));
         this.CollectGeneratedCode(this.generator);
@@ -116,7 +114,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     {
         const string methodName = "GetStagedPackagePathByFullName2";
         this.compilation = this.starterCompilations["net5.0"];
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate(methodName, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -128,7 +126,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     {
         this.compilation = this.starterCompilations[net50 ? "net5.0" : "netstandard2.0"];
         const string typeName = "IInkCursors";
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling }, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling });
         Assert.True(this.generator.TryGenerateType(typeName));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -210,7 +208,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             AllowMarshaling = allowMarshaling,
         };
         this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(Platform.X64));
-        this.generator = new Generator(this.metadataStream, options, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator(options);
         Assert.True(this.generator.TryGenerate(api, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -223,7 +221,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [Fact]
     public void GetLastErrorNotIncludedInBulkGeneration()
     {
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate("kernel32.*", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         Assert.True(this.IsMethodGenerated("CreateFile"));
@@ -234,7 +232,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public void FriendlyOverloadOfCOMInterfaceRemovesParameter()
     {
         const string ifaceName = "IEnumDebugPropertyInfo";
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate(ifaceName, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -245,7 +243,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public void IDispatchDerivedInterface()
     {
         const string ifaceName = "IInkRectangle";
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate(ifaceName, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -258,7 +256,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public void IInpectableDerivedInterface()
     {
         const string ifaceName = "IUserConsentVerifierInterop";
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate(ifaceName, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -269,7 +267,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public void ComOutPtrTypedAsOutObject()
     {
         const string methodName = "CoCreateInstance";
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate(methodName, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -279,7 +277,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [Fact]
     public void AmbiguousApiName()
     {
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         var ex = Assert.Throws<ArgumentException>(() => this.generator.TryGenerate("IDENTITY_TYPE", CancellationToken.None));
         this.logger.WriteLine(ex.Message);
     }
@@ -287,7 +285,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [Fact]
     public void ReleaseMethodGeneratedWithHandleStruct()
     {
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate("HANDLE", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -307,7 +305,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [Fact]
     public void NamespaceHandleGetsNoSafeHandle()
     {
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate("CreatePrivateNamespace", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -317,7 +315,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [Fact]
     public void CreateFileUsesSafeHandles()
     {
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate("CreateFile", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -331,7 +329,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [Fact]
     public void BOOL_ReturnTypeBecomes_Boolean()
     {
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate("WinUsb_FlushPipe", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -344,7 +342,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public void NativeArray_SizeParamIndex_ProducesSimplerFriendlyOverload(bool allowMarshaling)
     {
         var options = DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling };
-        this.generator = new Generator(this.metadataStream, options, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator(options);
         Assert.True(this.generator.TryGenerate("EvtNext", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -356,7 +354,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public void NonCOMInterfaceReferences(bool allowMarshaling)
     {
         var options = DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling };
-        this.generator = new Generator(this.metadataStream, options, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator(options);
         const string methodName = "D3DCompile"; // A method whose signature references non-COM interface ID3DInclude
         Assert.True(this.generator.TryGenerate(methodName, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
@@ -371,7 +369,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public void BOOL_ReturnType_InCOMInterface(bool allowMarshaling)
     {
         var options = DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling };
-        this.generator = new Generator(this.metadataStream, options, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator(options);
         Assert.True(this.generator.TryGenerate("ISpellCheckerFactory", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -388,7 +386,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [Theory, PairwiseData]
     public void GenerateByNamespace(bool correctCase)
     {
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         string ns = "Windows.Win32.Foundation";
         if (!correctCase)
         {
@@ -408,7 +406,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [Fact]
     public void BOOL_FieldRemainsBOOL()
     {
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate("ICONINFO", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -421,7 +419,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public void BSTR_FieldsDoNotBecomeSafeHandles(bool allowMarshaling)
     {
         var options = DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling };
-        this.generator = new Generator(this.metadataStream, options, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator(options);
         Assert.True(this.generator.TryGenerate("DebugPropertyInfo", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -433,7 +431,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [Fact]
     public void TypeNameCollisionsDoNotCauseTooMuchCodeGen()
     {
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate("TYPEDESC", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -447,7 +445,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [Fact]
     public void MSIHANDLE_BecomesSafeHandle()
     {
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate("MsiGetLastErrorRecord", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -467,7 +465,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [Fact]
     public void OutHandleParameterBecomesSafeHandle()
     {
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         const string methodName = "TcAddFilter";
         Assert.True(this.generator.TryGenerate(methodName, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
@@ -485,7 +483,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [Fact]
     public void Const_PWSTR_Becomes_PCWSTR_and_String()
     {
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate("StrCmpLogical", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -511,7 +509,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         bool allowMarshaling)
     {
         this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(platform));
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling }, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling });
         if (platform == Platform.AnyCpu)
         {
             // AnyCPU targets should throw an exception with a helpful error message when asked for arch-specific APIs
@@ -533,7 +531,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public void MultipleEntrypointsToOmittedArchSpecificApis()
     {
         this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(Platform.AnyCpu));
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
 
         // Request a struct that depends on arch-specific IP6_ADDRESS.
         Assert.ThrowsAny<GenerationFailedException>(() => this.generator.TryGenerate("DNS_SERVICE_INSTANCE", CancellationToken.None));
@@ -551,7 +549,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         [CombinatorialValues(Platform.X64, Platform.X86)] Platform platform)
     {
         this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(platform));
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
 
         // Request a struct directly, and indirectly through another that references it.
         // This verifies that even if the metadata references a particular arch of the structure,
@@ -585,7 +583,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public void StructsArePartial(string structName)
     {
         this.compilation = this.starterCompilations["net5.0-x64"]; // MEMORY_BASIC_INFORMATION is arch-specific
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate(structName, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -600,7 +598,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.compilation = this.compilation.AddSyntaxTrees(
             CSharpSyntaxTree.ParseText("namespace Microsoft.Windows.Sdk { partial struct HRESULT { void Foo() { } } }", this.parseOptions, "myHRESULT.cs"));
 
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate(structName, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -620,14 +618,14 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [Fact]
     public void GetLastErrorGenerationThrowsWhenExplicitlyCalled()
     {
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.Throws<NotSupportedException>(() => this.generator.TryGenerate("GetLastError", CancellationToken.None));
     }
 
     [Fact(Skip = "https://github.com/microsoft/win32metadata/issues/129")]
     public void DeleteObject_TakesTypeDefStruct()
     {
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate("DeleteObject", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -653,7 +651,7 @@ namespace Microsoft.Windows.Sdk
 }
 ";
         this.compilation = this.compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(test, path: "test.cs"));
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate("CreateFile", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -773,7 +771,7 @@ namespace Microsoft.Windows.Sdk
     {
         var generatorOptions = new GeneratorOptions { AllowMarshaling = allowMarshaling };
         this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(platform));
-        this.generator = new Generator(this.metadataStream, generatorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator(generatorOptions);
         this.generator.GenerateAll(CancellationToken.None);
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics(logGeneratedCode: false);
@@ -790,7 +788,7 @@ namespace Microsoft.Windows.Sdk
                 CSharpSyntaxTree.ParseText($@"[assembly: System.Runtime.CompilerServices.InternalsVisibleToAttribute(""{this.compilation.AssemblyName}"")]", this.parseOptions));
         }
 
-        using var referencedGenerator = new Generator(OpenMetadata(), new GeneratorOptions { ClassName = "P1" }, referencedProject, this.parseOptions);
+        using var referencedGenerator = this.CreateGenerator(new GeneratorOptions { ClassName = "P1" }, referencedProject);
         Assert.True(referencedGenerator.TryGenerate("LockWorkStation", CancellationToken.None));
         Assert.True(referencedGenerator.TryGenerate("CreateFile", CancellationToken.None));
         referencedProject = this.AddGeneratedCode(referencedProject, referencedGenerator);
@@ -798,18 +796,13 @@ namespace Microsoft.Windows.Sdk
 
         // Now produce more code in a referencing project that includes at least one of the same types as generated in the referenced project.
         this.compilation = this.compilation.AddReferences(referencedProject.ToMetadataReference());
-        this.generator = new Generator(this.metadataStream, new GeneratorOptions { ClassName = "P2" }, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator(new GeneratorOptions { ClassName = "P2" });
         Assert.True(this.generator.TryGenerate("HidD_GetAttributes", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
     }
 
     private static ImmutableArray<Diagnostic> FilterDiagnostics(ImmutableArray<Diagnostic> diagnostics) => diagnostics.Where(d => d.Severity > DiagnosticSeverity.Hidden).ToImmutableArray();
-
-    private static FileStream OpenMetadata()
-    {
-        return File.OpenRead(Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "Windows.Win32.winmd"));
-    }
 
     private static bool IsAttributePresent(AttributeListSyntax al, string attributeName) => al.Attributes.Any(a => a.Name.ToString() == attributeName);
 
@@ -918,7 +911,7 @@ namespace Microsoft.Windows.Sdk
 
     private void AssertGeneratedType(string apiName, string expectedSyntax, string? expectedExtensions = null)
     {
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate(apiName, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -941,7 +934,7 @@ namespace Microsoft.Windows.Sdk
 
     private void AssertGeneratedMember(string apiName, string memberName, string expectedSyntax)
     {
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate(apiName, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -971,4 +964,6 @@ namespace Microsoft.Windows.Sdk
 
         return compilation;
     }
+
+    private Generator CreateGenerator(GeneratorOptions? options = null, CSharpCompilation? compilation = null) => new Generator(MetadataPath, options ?? DefaultTestGeneratorOptions, compilation ?? this.compilation, this.parseOptions);
 }

@@ -103,8 +103,8 @@ namespace Microsoft.Windows.CsWin32
                 return;
             }
 
-            if (!context.AnalyzerConfigOptions.GlobalOptions.TryGetValue("build_property.MicrosoftWindowsSdkWin32MetadataBasePath", out string? metadataPath) ||
-                string.IsNullOrWhiteSpace(metadataPath))
+            if (!context.AnalyzerConfigOptions.GlobalOptions.TryGetValue("build_property.MicrosoftWindowsSdkWin32MetadataBasePath", out string? metadataBasePath) ||
+                string.IsNullOrWhiteSpace(metadataBasePath))
             {
                 return;
             }
@@ -130,7 +130,7 @@ namespace Microsoft.Windows.CsWin32
                 return;
             }
 
-            using var metadataStream = File.OpenRead(Path.Combine(metadataPath, "Windows.Win32.winmd"));
+            string metadataPath = Path.Combine(metadataBasePath, "Windows.Win32.winmd");
             var compilation = (CSharpCompilation)context.Compilation;
             var parseOptions = (CSharpParseOptions)context.ParseOptions;
 
@@ -139,7 +139,7 @@ namespace Microsoft.Windows.CsWin32
                 context.ReportDiagnostic(Diagnostic.Create(UnsafeCodeRequired, location: null));
             }
 
-            using var generator = new Generator(metadataStream, options, compilation, parseOptions);
+            using var generator = new Generator(metadataPath, options, compilation, parseOptions);
 
             SourceText? nativeMethodsTxt = nativeMethodsTxtFile.GetText(context.CancellationToken);
             if (nativeMethodsTxt is null)

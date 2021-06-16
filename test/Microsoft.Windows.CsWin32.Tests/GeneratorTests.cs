@@ -2,13 +2,13 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Runtime.Versioning;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
@@ -22,6 +22,7 @@ using Xunit.Abstractions;
 
 public class GeneratorTests : IDisposable, IAsyncLifetime
 {
+    private static readonly ConcurrentDictionary<ReferenceAssemblies, Task<ImmutableArray<MetadataReference>>> TestReferencesCache = new();
     private static readonly GeneratorOptions DefaultTestGeneratorOptions = new GeneratorOptions { EmitSingleFile = true };
     private static readonly string FileSeparator = new string('=', 140);
     private readonly ITestOutputHelper logger;
@@ -812,6 +813,21 @@ namespace Microsoft.Windows.Sdk
 
     private static bool IsAttributePresent(AttributeListSyntax al, string attributeName) => al.Attributes.Any(a => a.Name.ToString() == attributeName);
 
+    private static Task<ImmutableArray<MetadataReference>> GetMetadataReferences(ReferenceAssemblies references)
+    {
+        return TestReferencesCache.GetOrAdd(references, async references =>
+        {
+            ImmutableArray<MetadataReference> metadataReferences = await references
+                .AddPackages(ImmutableArray.Create(new PackageIdentity("Microsoft.Windows.SDK.Contracts", "10.0.19041.1")))
+                .ResolveAsync(LanguageNames.CSharp, default);
+
+            // Workaround for https://github.com/dotnet/roslyn-sdk/issues/699
+            metadataReferences = metadataReferences.AddRange(
+                Directory.GetFiles(Path.Combine(Path.GetTempPath(), "test-packages", "Microsoft.Windows.SDK.Contracts.10.0.19041.1", "ref", "netstandard2.0"), "*.winmd").Select(p => MetadataReference.CreateFromFile(p)));
+            return metadataReferences;
+        });
+    }
+
     private CSharpCompilation AddGeneratedCode(CSharpCompilation compilation, Generator generator)
     {
         var compilationUnits = generator.GetCompilationUnits(CancellationToken.None);
@@ -940,13 +956,7 @@ namespace Microsoft.Windows.Sdk
 
     private async Task<CSharpCompilation> CreateCompilationAsync(ReferenceAssemblies references, Platform platform = Platform.AnyCpu)
     {
-        ImmutableArray<MetadataReference> metadataReferences = await references
-            .AddPackages(ImmutableArray.Create(new PackageIdentity("Microsoft.Windows.SDK.Contracts", "10.0.19041.1")))
-            .ResolveAsync(LanguageNames.CSharp, default);
-
-        // Workaround for https://github.com/dotnet/roslyn-sdk/issues/699
-        metadataReferences = metadataReferences.AddRange(
-            Directory.GetFiles(Path.Combine(Path.GetTempPath(), "test-packages", "Microsoft.Windows.SDK.Contracts.10.0.19041.1", "ref", "netstandard2.0"), "*.winmd").Select(p => MetadataReference.CreateFromFile(p)));
+        ImmutableArray<MetadataReference> metadataReferences = await GetMetadataReferences(references);
 
         // CONSIDER: How can I pass in the source generator itself, with AdditionalFiles, so I'm exercising that code too?
         var compilation = CSharpCompilation.Create(

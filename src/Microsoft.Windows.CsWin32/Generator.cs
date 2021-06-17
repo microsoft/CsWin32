@@ -50,7 +50,7 @@ namespace Microsoft.Windows.CsWin32
 
         internal static readonly Dictionary<string, TypeSyntax> AdditionalBclInteropStructsMarshaled = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)
         {
-            { "BOOL", PredefinedType(Token(SyntaxKind.BoolKeyword)) },
+            { "BOOL", PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)) },
         };
 
         internal static readonly Dictionary<string, TypeSyntax> BclInteropSafeHandles = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)
@@ -100,6 +100,7 @@ namespace Microsoft.Windows.CsWin32
         private static readonly XmlTextSyntax DocCommentStart = XmlText(" ").WithLeadingTrivia(DocumentationCommentExterior("///"));
         private static readonly XmlTextSyntax DocCommentEnd = XmlText(XmlTextNewLine("\r\n", continueXmlDocumentationComment: false));
 
+        private static readonly SyntaxToken SemicolonWithLineFeed = TokenWithLineFeed(SyntaxKind.SemicolonToken);
         private static readonly IdentifierNameSyntax ConstantsClassName = IdentifierName("Constants");
         private static readonly IdentifierNameSyntax InlineArrayIndexerExtensionsClassName = IdentifierName("InlineArrayIndexerExtensions");
         private static readonly IdentifierNameSyntax ComInterfaceFriendlyExtensionsClassName = IdentifierName("FriendlyOverloadExtensions");
@@ -871,10 +872,7 @@ namespace Microsoft.Windows.CsWin32
         /// <returns>All the generated source files, keyed by filename.</returns>
         public IReadOnlyDictionary<string, CompilationUnitSyntax> GetCompilationUnits(CancellationToken cancellationToken)
         {
-            var starterNamespace = NamespaceDeclaration(ParseName(this.Namespace).WithTrailingTrivia(TriviaList(LineFeed)))
-                .WithNamespaceKeyword(TokenWithSpace(SyntaxKind.NamespaceKeyword))
-                .WithOpenBraceToken(TokenWithLineFeed(SyntaxKind.OpenBraceToken))
-                .WithCloseBraceToken(TokenWithLineFeed(SyntaxKind.CloseBraceToken));
+            var starterNamespace = NamespaceDeclarationWithTrivia(ParseName(this.Namespace));
 
             // .g.cs because the resulting files are not user-created.
             const string FilenamePattern = "{0}.g.cs";
@@ -886,7 +884,7 @@ namespace Microsoft.Windows.CsWin32
                     member.HasAnnotations(NamespaceContainerAnnotation) ? member.GetAnnotations(NamespaceContainerAnnotation).Single().Data : null)
                     .SelectMany(nsContents =>
                         nsContents.Key is object
-                            ? new MemberDeclarationSyntax[] { NamespaceDeclaration(ParseName(nsContents.Key)).AddMembers(nsContents.ToArray()) }
+                            ? new MemberDeclarationSyntax[] { NamespaceDeclarationWithTrivia(ParseName(nsContents.Key)).AddMembers(nsContents.ToArray()) }
                             : nsContents.ToArray());
             }
 
@@ -1272,17 +1270,17 @@ namespace Microsoft.Windows.CsWin32
 
             MemberAccessExpressionSyntax thisHandle = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("handle"));
             ExpressionSyntax intptrZero = DefaultExpression(IntPtrTypeSyntax);
-            ExpressionSyntax intptrMinusOne = ObjectCreationExpression(IntPtrTypeSyntax).AddArgumentListArguments(Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(-1))));
+            ExpressionSyntax intptrMinusOne = ObjectCreationExpressionWithTrivia(IntPtrTypeSyntax).AddArgumentListArguments(Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(-1))));
 
             // private static readonly IntPtr INVALID_HANDLE_VALUE = new IntPtr(-1);
             const string invalidValueFieldName = "INVALID_HANDLE_VALUE";
-            members.Add(FieldDeclaration(VariableDeclaration(IntPtrTypeSyntax).AddVariables(
+            members.Add(FieldDeclarationWithTrivia(VariableDeclarationWithTrivia(IntPtrTypeSyntax).AddVariables(
                 VariableDeclarator(invalidValueFieldName).WithInitializer(EqualsValueClause(intptrMinusOne))))
-                .AddModifiers(Token(SyntaxKind.PrivateKeyword), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.ReadOnlyKeyword)));
+                .AddModifiers(TokenWithSpace(SyntaxKind.PrivateKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword)));
 
             // public SafeHandle() : base(INVALID_HANDLE_VALUE, true)
             members.Add(ConstructorDeclaration(safeHandleClassName)
-                .AddModifiers(Token(this.Visibility))
+                .AddModifiers(TokenWithSpace(this.Visibility))
                 .WithInitializer(ConstructorInitializer(SyntaxKind.BaseConstructorInitializer, ArgumentList().AddArguments(
                     Argument(IdentifierName(invalidValueFieldName)),
                     Argument(LiteralExpression(SyntaxKind.TrueLiteralExpression)))))
@@ -1292,10 +1290,10 @@ namespace Microsoft.Windows.CsWin32
             const string preexistingHandleName = "preexistingHandle";
             const string ownsHandleName = "ownsHandle";
             members.Add(ConstructorDeclaration(safeHandleClassName)
-                .AddModifiers(Token(this.Visibility))
+                .AddModifiers(TokenWithSpace(this.Visibility))
                 .AddParameterListParameters(
-                    Parameter(Identifier(preexistingHandleName)).WithType(IntPtrTypeSyntax),
-                    Parameter(Identifier(ownsHandleName)).WithType(PredefinedType(Token(SyntaxKind.BoolKeyword)))
+                    Parameter(Identifier(preexistingHandleName)).WithType(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))),
+                    Parameter(Identifier(ownsHandleName)).WithType(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)))
                         .WithDefault(EqualsValueClause(LiteralExpression(SyntaxKind.TrueLiteralExpression))))
                 .WithInitializer(ConstructorInitializer(SyntaxKind.BaseConstructorInitializer, ArgumentList().AddArguments(
                     Argument(IdentifierName(invalidValueFieldName)),
@@ -1308,14 +1306,14 @@ namespace Microsoft.Windows.CsWin32
                         Argument(IdentifierName(preexistingHandleName)))))));
 
             // public override bool IsInvalid => this.handle == default || this.Handle == INVALID_HANDLE_VALUE;
-            members.Add(PropertyDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), nameof(SafeHandle.IsInvalid))
-                .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.OverrideKeyword))
+            members.Add(PropertyDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), nameof(SafeHandle.IsInvalid))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
                 .WithExpressionBody(ArrowExpressionClause(
                     BinaryExpression(
                         SyntaxKind.LogicalOrExpression,
                         BinaryExpression(SyntaxKind.EqualsExpression, thisHandle, intptrZero),
                         BinaryExpression(SyntaxKind.EqualsExpression, thisHandle, IdentifierName(invalidValueFieldName)))))
-                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+                .WithSemicolonToken(SemicolonWithLineFeed));
 
             // protected override bool ReleaseHandle() => ReleaseMethod((struct)this.handle);
             // Special case release functions based on their return type as follows: (https://github.com/microsoft/win32metadata/issues/25)
@@ -1353,7 +1351,7 @@ namespace Microsoft.Windows.CsWin32
                         {
                             releaseBlock = Block(
                                 ExpressionStatement(releaseInvocation),
-                                ReturnStatement(LiteralExpression(SyntaxKind.TrueLiteralExpression)));
+                                ReturnStatementWithTrivia(LiteralExpression(SyntaxKind.TrueLiteralExpression)));
                         }
                         else
                         {
@@ -1367,7 +1365,7 @@ namespace Microsoft.Windows.CsWin32
                             case "LSTATUS":
                                 this.TryGenerateTypeOrThrow("WIN32_ERROR");
                                 ExpressionSyntax errorSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseTypeName(GlobalWin32NamespaceAlias + ".System.Diagnostics.Debug.WIN32_ERROR"), IdentifierName("ERROR_SUCCESS"));
-                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, CastExpression(ParseTypeName(GlobalWin32NamespaceAlias + ".Foundation.LSTATUS"), CastExpression(PredefinedType(Token(SyntaxKind.IntKeyword)), errorSuccess)));
+                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, CastExpression(ParseTypeName(GlobalWin32NamespaceAlias + ".Foundation.LSTATUS"), CastExpression(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), errorSuccess)));
                                 break;
                             case "NTSTATUS":
                                 this.TryGenerateConstantOrThrow("STATUS_SUCCESS");
@@ -1387,17 +1385,17 @@ namespace Microsoft.Windows.CsWin32
                 }
             }
 
-            MethodDeclarationSyntax releaseHandleDeclaration = MethodDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), "ReleaseHandle")
-                .AddModifiers(Token(SyntaxKind.ProtectedKeyword), Token(SyntaxKind.OverrideKeyword));
+            MethodDeclarationSyntax releaseHandleDeclaration = MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), "ReleaseHandle")
+                .AddModifiers(TokenWithSpace(SyntaxKind.ProtectedKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword));
             releaseHandleDeclaration = releaseBlock is null
                 ? releaseHandleDeclaration
                      .WithExpressionBody(ArrowExpressionClause(releaseInvocation))
-                     .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
+                     .WithSemicolonToken(SemicolonWithLineFeed)
                 : releaseHandleDeclaration
                     .WithBody(releaseBlock);
             members.Add(releaseHandleDeclaration);
 
-            ClassDeclarationSyntax safeHandleDeclaration = ClassDeclarationWithTrivia(safeHandleClassName)
+            ClassDeclarationSyntax safeHandleDeclaration = ClassDeclarationWithTrivia(Identifier(safeHandleClassName))
                 .AddModifiers(TokenWithSpace(this.Visibility))
                 .AddBaseListTypes(SimpleBaseType(SafeHandleTypeSyntax))
                 .AddMembers(members.ToArray())
@@ -1678,23 +1676,59 @@ namespace Microsoft.Windows.CsWin32
             }
         }
 
-        private static ClassDeclarationSyntax ClassDeclarationWithTrivia(string name) => ClassDeclarationWithTrivia(Identifier(name));
+        private static NamespaceDeclarationSyntax NamespaceDeclarationWithTrivia(NameSyntax name) => NamespaceDeclaration(name.WithTrailingTrivia(TriviaList(LineFeed)))
+            .WithNamespaceKeyword(TokenWithSpace(SyntaxKind.NamespaceKeyword))
+            .WithOpenBraceToken(TokenWithLineFeed(SyntaxKind.OpenBraceToken))
+            .WithCloseBraceToken(TokenWithLineFeed(SyntaxKind.CloseBraceToken));
 
         private static ClassDeclarationSyntax ClassDeclarationWithTrivia(SyntaxToken name) => ClassDeclaration(name)
             .WithKeyword(TokenWithSpace(SyntaxKind.ClassKeyword))
             .WithOpenBraceToken(Token(TriviaList(LineFeed), SyntaxKind.OpenBraceToken, TriviaList(LineFeed)))
             .WithCloseBraceToken(TokenWithLineFeed(SyntaxKind.CloseBraceToken));
 
+        private static StructDeclarationSyntax StructDeclarationWithTrivia(SyntaxToken name) => StructDeclaration(name)
+            .WithKeyword(TokenWithSpace(SyntaxKind.StructKeyword))
+            .WithOpenBraceToken(Token(TriviaList(LineFeed), SyntaxKind.OpenBraceToken, TriviaList(LineFeed)))
+            .WithCloseBraceToken(TokenWithLineFeed(SyntaxKind.CloseBraceToken));
+
+        private static EnumDeclarationSyntax EnumDeclarationWithTrivia(SyntaxToken name) => EnumDeclaration(name)
+            .WithEnumKeyword(TokenWithSpace(SyntaxKind.EnumKeyword))
+            .WithOpenBraceToken(Token(TriviaList(LineFeed), SyntaxKind.OpenBraceToken, TriviaList(LineFeed)))
+            .WithCloseBraceToken(TokenWithLineFeed(SyntaxKind.CloseBraceToken));
+
+        private static ReturnStatementSyntax ReturnStatementWithTrivia(ExpressionSyntax? expression) => ReturnStatement(expression)
+            .WithReturnKeyword(TokenWithSpace(SyntaxKind.ReturnKeyword))
+            .WithSemicolonToken(SemicolonWithLineFeed);
+
+        private static DelegateDeclarationSyntax DelegateDeclarationWithTrivia(TypeSyntax returnType, SyntaxToken identifier) => DelegateDeclaration(returnType.WithTrailingTrivia(TriviaList(Space)), identifier)
+            .WithDelegateKeyword(TokenWithSpace(SyntaxKind.DelegateKeyword));
+
+        private static VariableDeclarationSyntax VariableDeclarationWithTrivia(TypeSyntax type) => VariableDeclaration(type.WithTrailingTrivia(TriviaList(Space)));
+
+        private static FieldDeclarationSyntax FieldDeclarationWithTrivia(VariableDeclarationSyntax variableDeclaration) => FieldDeclaration(variableDeclaration)
+            .WithSemicolonToken(SemicolonWithLineFeed);
+
         private static UsingDirectiveSyntax UsingDirectiveWithTrivia(NameSyntax name, NameEqualsSyntax? alias = null) => UsingDirective(
-            usingKeyword: Token(TriviaList(ElasticTab), SyntaxKind.UsingKeyword, TriviaList(ElasticSpace)),
+            usingKeyword: Token(TriviaList(Tab), SyntaxKind.UsingKeyword, TriviaList(Space)),
             staticKeyword: default,
-            alias: alias?.WithEqualsToken(Token(TriviaList(ElasticSpace), SyntaxKind.EqualsToken, TriviaList(ElasticSpace))),
+            alias: alias?.WithEqualsToken(Token(TriviaList(Space), SyntaxKind.EqualsToken, TriviaList(Space))),
             name: name,
             semicolonToken: TokenWithLineFeed(SyntaxKind.SemicolonToken));
 
-        private static SyntaxToken TokenWithSpace(SyntaxKind syntaxKind) => Token(TriviaList(), syntaxKind, TriviaList(ElasticSpace));
+        private static CaseSwitchLabelSyntax CaseSwitchLabelWithTrivia(ExpressionSyntax expression) => CaseSwitchLabel(TokenWithSpace(SyntaxKind.CaseKeyword), expression, TokenWithSpace(SyntaxKind.ColonToken));
+
+        private static ConversionOperatorDeclarationSyntax ConversionOperatorDeclarationWithTrivia(SyntaxKind implicitOrExplicitKeyword, TypeSyntax type) => ConversionOperatorDeclaration(TokenWithSpace(implicitOrExplicitKeyword), type)
+            .WithOperatorKeyword(TokenWithSpace(SyntaxKind.OperatorKeyword));
+
+        private static SyntaxToken TokenWithSpace(SyntaxKind syntaxKind) => Token(TriviaList(), syntaxKind, TriviaList(Space));
+
+        private static SyntaxToken TokenWithSpaces(SyntaxKind syntaxKind) => Token(TriviaList(Space), syntaxKind, TriviaList(Space));
 
         private static SyntaxToken TokenWithLineFeed(SyntaxKind syntaxKind) => Token(TriviaList(), syntaxKind, TriviaList(LineFeed));
+
+        private static ObjectCreationExpressionSyntax ObjectCreationExpressionWithTrivia(TypeSyntax name) => ObjectCreationExpression(TokenWithSpace(SyntaxKind.NewKeyword), name, null, null);
+
+        private static ThrowStatementSyntax ThrowStatementWithTrivia(ExpressionSyntax expression) => ThrowStatement(TokenWithSpace(SyntaxKind.ThrowKeyword), expression, TokenWithLineFeed(SyntaxKind.SemicolonToken));
 
         private static T AddApiDocumentation<T>(string api, T memberDeclaration)
             where T : MemberDeclarationSyntax
@@ -2029,9 +2063,9 @@ namespace Microsoft.Windows.CsWin32
 
         private static CrefParameterSyntax ToCref(ParameterSyntax parameter)
             => CrefParameter(
-                parameter.Modifiers.Any(SyntaxKind.InKeyword) ? Token(SyntaxKind.InKeyword) :
-                parameter.Modifiers.Any(SyntaxKind.RefKeyword) ? Token(SyntaxKind.RefKeyword) :
-                parameter.Modifiers.Any(SyntaxKind.OutKeyword) ? Token(SyntaxKind.OutKeyword) :
+                parameter.Modifiers.Any(SyntaxKind.InKeyword) ? TokenWithSpace(SyntaxKind.InKeyword) :
+                parameter.Modifiers.Any(SyntaxKind.RefKeyword) ? TokenWithSpace(SyntaxKind.RefKeyword) :
+                parameter.Modifiers.Any(SyntaxKind.OutKeyword) ? TokenWithSpace(SyntaxKind.OutKeyword) :
                 default,
                 parameter.Type!);
 
@@ -2096,7 +2130,7 @@ namespace Microsoft.Windows.CsWin32
             var j = (byte)args.FixedArguments[9].Value!;
             var k = (byte)args.FixedArguments[10].Value!;
 
-            return ObjectCreationExpression(IdentifierName(nameof(Guid))).AddArgumentListArguments(
+            return ObjectCreationExpressionWithTrivia(IdentifierName(nameof(Guid))).AddArgumentListArguments(
                 Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(a), a))),
                 Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(b), b))),
                 Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(c), c))),
@@ -2126,7 +2160,7 @@ namespace Microsoft.Windows.CsWin32
             var k = (byte)args.FixedArguments[10].Value!;
             var pid = (uint)args.FixedArguments[11].Value!;
 
-            return ObjectCreationExpression(IdentifierName("win32.System.PropertiesSystem.PROPERTYKEY")).WithInitializer(
+            return ObjectCreationExpressionWithTrivia(IdentifierName("win32.System.PropertiesSystem.PROPERTYKEY")).WithInitializer(
                 InitializerExpression(SyntaxKind.ObjectInitializerExpression).AddExpressions(
                     AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, IdentifierName("fmtid"), GuidValue(propertyKeyAttribute)),
                     AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, IdentifierName("pid"), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(pid)))));
@@ -2401,7 +2435,9 @@ namespace Microsoft.Windows.CsWin32
 
                 MethodDeclarationSyntax methodDeclaration = MethodDeclaration(
                     List<AttributeListSyntax>()
-                        .Add(AttributeList().AddAttributes(DllImport(import, moduleName, entrypoint))),
+                        .Add(AttributeList()
+                            .WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken))
+                            .AddAttributes(DllImport(import, moduleName, entrypoint))),
                     modifiers: TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.ExternKeyword)),
                     returnType.Type.WithTrailingTrivia(TriviaList(Space)),
                     explicitInterfaceSpecifier: null!,
@@ -2428,7 +2464,7 @@ namespace Microsoft.Windows.CsWin32
 
                 if (RequiresUnsafe(methodDeclaration.ReturnType) || methodDeclaration.ParameterList.Parameters.Any(p => RequiresUnsafe(p.Type)))
                 {
-                    methodDeclaration = methodDeclaration.AddModifiers(Token(SyntaxKind.UnsafeKeyword));
+                    methodDeclaration = methodDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));
                 }
 
                 NameSyntax declaringTypeName = ParseName(this.GroupByModule ? GetClassNameForModule(moduleName) : this.SingleClassName);
@@ -2580,22 +2616,22 @@ namespace Microsoft.Windows.CsWin32
                     }
                 }
 
-                var modifiers = TokenList(Token(this.Visibility));
+                var modifiers = TokenList(TokenWithSpace(this.Visibility));
                 if (this.IsTypeDefStruct(fieldTypeInfo) || value is ObjectCreationExpressionSyntax)
                 {
-                    modifiers = modifiers.Add(Token(SyntaxKind.StaticKeyword)).Add(Token(SyntaxKind.ReadOnlyKeyword));
+                    modifiers = modifiers.Add(TokenWithSpace(SyntaxKind.StaticKeyword)).Add(TokenWithSpace(SyntaxKind.ReadOnlyKeyword));
                 }
                 else
                 {
-                    modifiers = modifiers.Add(Token(SyntaxKind.ConstKeyword));
+                    modifiers = modifiers.Add(TokenWithSpace(SyntaxKind.ConstKeyword));
                 }
 
                 if (requiresUnsafe)
                 {
-                    modifiers = modifiers.Add(Token(SyntaxKind.UnsafeKeyword));
+                    modifiers = modifiers.Add(TokenWithSpace(SyntaxKind.UnsafeKeyword));
                 }
 
-                var result = FieldDeclaration(VariableDeclaration(fieldType.Type).AddVariables(
+                var result = FieldDeclarationWithTrivia(VariableDeclarationWithTrivia(fieldType.Type).AddVariables(
                     VariableDeclarator(name).WithInitializer(EqualsValueClause(value))))
                     .WithModifiers(modifiers);
                 result = fieldType.AddMarshalAs(result);
@@ -2614,21 +2650,21 @@ namespace Microsoft.Windows.CsWin32
         {
             return ClassDeclarationWithTrivia(ConstantsClassName.Identifier)
                 .AddMembers(this.committedCode.Fields.ToArray())
-                .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.PartialKeyword)));
+                .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)));
         }
 
         private ClassDeclarationSyntax DeclareInlineArrayIndexerExtensionsClass()
         {
             return ClassDeclarationWithTrivia(InlineArrayIndexerExtensionsClassName.Identifier)
                 .AddMembers(this.committedCode.InlineArrayIndexerExtensions.ToArray())
-                .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.PartialKeyword)));
+                .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)));
         }
 
         private ClassDeclarationSyntax DeclareComInterfaceFriendlyExtensionsClass()
         {
             return ClassDeclarationWithTrivia(ComInterfaceFriendlyExtensionsClassName.Identifier)
                 .AddMembers(this.committedCode.ComInterfaceExtensions.ToArray())
-                .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.PartialKeyword)));
+                .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)));
         }
 
         /// <summary>
@@ -2697,14 +2733,14 @@ namespace Microsoft.Windows.CsWin32
                     .AddParameters(parameterList.Parameters.Select(p => FunctionPointerParameter(p.Type!).WithModifiers(p.Modifiers)).ToArray())
                     .AddParameters(FunctionPointerParameter(returnType.Type));
 
-                FieldDeclarationSyntax vtblFunctionPtr = FieldDeclaration(
-                    VariableDeclaration(
-                        FunctionPointerType().WithCallingConvention(FunctionPointerCallingConvention(Token(SyntaxKind.UnmanagedKeyword))
+                FieldDeclarationSyntax vtblFunctionPtr = FieldDeclarationWithTrivia(
+                    VariableDeclarationWithTrivia(
+                        FunctionPointerType().WithCallingConvention(FunctionPointerCallingConvention(TokenWithSpace(SyntaxKind.UnmanagedKeyword))
                             .WithUnmanagedCallingConventionList(FunctionPointerUnmanagedCallingConventionList(
                                 SingletonSeparatedList(FunctionPointerUnmanagedCallingConvention(Identifier("Stdcall"))))))
                         .WithParameterList(funcPtrParameters))
                     .WithVariables(SingletonSeparatedList(VariableDeclarator(innerMethodName.Identifier))))
-                    .WithModifiers(TokenList(Token(SyntaxKind.InternalKeyword)));
+                    .WithModifiers(TokenList(TokenWithSpace(SyntaxKind.InternalKeyword)));
                 vtblMembers.Add(vtblFunctionPtr);
 
                 IdentifierNameSyntax pThisLocal = IdentifierName("pThis");
@@ -2713,17 +2749,17 @@ namespace Microsoft.Windows.CsWin32
                     .AddArgumentListArguments(parameterList.Parameters.Select(p => Argument(IdentifierName(p.Identifier.ValueText)).WithRefKindKeyword(p.Modifiers.Count > 0 ? p.Modifiers[0] : default)).ToArray());
                 StatementSyntax vtblInvocationStatement = IsVoid(returnType.Type)
                     ? ExpressionStatement(vtblInvocation)
-                    : ReturnStatement(vtblInvocation);
+                    : ReturnStatementWithTrivia(vtblInvocation);
                 var body = Block().AddStatements(
                     FixedStatement(
-                        VariableDeclaration(PointerType(ifaceName)).AddVariables(
+                        VariableDeclarationWithTrivia(PointerType(ifaceName)).AddVariables(
                             VariableDeclarator(pThisLocal.Identifier).WithInitializer(EqualsValueClause(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, ThisExpression())))),
                         vtblInvocationStatement));
 
                 MethodDeclarationSyntax methodDeclaration = MethodDeclaration(
                     List<AttributeListSyntax>(),
-                    modifiers: TokenList(Token(this.Visibility)),
-                    returnType.Type,
+                    modifiers: TokenList(TokenWithSpace(this.Visibility)),
+                    returnType.Type.WithTrailingTrivia(TriviaList(Space)),
                     explicitInterfaceSpecifier: null!,
                     SafeIdentifier(methodName),
                     null!,
@@ -2735,12 +2771,12 @@ namespace Microsoft.Windows.CsWin32
 
                 if (methodName == nameof(object.GetType) && parameterList.Parameters.Count == 0)
                 {
-                    methodDeclaration = methodDeclaration.AddModifiers(Token(SyntaxKind.NewKeyword));
+                    methodDeclaration = methodDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.NewKeyword));
                 }
 
                 if (methodDeclaration.ReturnType is PointerTypeSyntax || methodDeclaration.ParameterList.Parameters.Any(p => p.Type is PointerTypeSyntax))
                 {
-                    methodDeclaration = methodDeclaration.AddModifiers(Token(SyntaxKind.UnsafeKeyword));
+                    methodDeclaration = methodDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));
                 }
 
                 // Add documentation if we can find it.
@@ -2750,16 +2786,16 @@ namespace Microsoft.Windows.CsWin32
                 members.Add(methodDeclaration);
             }
 
-            var vtblStruct = StructDeclaration("Vtbl")
+            var vtblStruct = StructDeclarationWithTrivia(Identifier("Vtbl"))
                 .AddMembers(vtblMembers.ToArray())
-                .AddModifiers(Token(SyntaxKind.PrivateKeyword));
+                .AddModifiers(TokenWithSpace(SyntaxKind.PrivateKeyword));
             members.Add(vtblStruct);
 
             // private Vtbl* lpVtbl;
-            members.Add(FieldDeclaration(VariableDeclaration(PointerType(IdentifierName(vtblStruct.Identifier))).AddVariables(VariableDeclarator(vtblFieldName.Identifier))).AddModifiers(Token(SyntaxKind.PrivateKeyword)));
+            members.Add(FieldDeclarationWithTrivia(VariableDeclarationWithTrivia(PointerType(IdentifierName(vtblStruct.Identifier))).AddVariables(VariableDeclarator(vtblFieldName.Identifier))).AddModifiers(TokenWithSpace(SyntaxKind.PrivateKeyword)));
 
-            StructDeclarationSyntax iface = StructDeclaration(ifaceName.Identifier)
-                .AddModifiers(Token(this.Visibility), Token(SyntaxKind.UnsafeKeyword))
+            StructDeclarationSyntax iface = StructDeclarationWithTrivia(ifaceName.Identifier)
+                .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword))
                 .AddMembers(members.ToArray());
 
             if (this.FindGuidFromAttribute(typeDef) is Guid guid)
@@ -2872,9 +2908,9 @@ namespace Microsoft.Windows.CsWin32
                         }
                     }
 
-                    MethodDeclarationSyntax methodDeclaration = MethodDeclaration(returnType, SafeIdentifier(methodName))
+                    MethodDeclarationSyntax methodDeclaration = MethodDeclaration(returnType.WithTrailingTrivia(TriviaList(Space)), SafeIdentifier(methodName))
                         .WithParameterList(parameterList)
-                        .WithSemicolonToken(Token(SyntaxKind.SemicolonToken));
+                        .WithSemicolonToken(SemicolonWithLineFeed);
                     if (returnsAttribute is object)
                     {
                         methodDeclaration = methodDeclaration.AddAttributeLists(
@@ -2888,12 +2924,12 @@ namespace Microsoft.Windows.CsWin32
 
                     if (inheritedMethods-- > 0)
                     {
-                        methodDeclaration = methodDeclaration.AddModifiers(Token(SyntaxKind.NewKeyword));
+                        methodDeclaration = methodDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.NewKeyword));
                     }
 
                     if (methodDeclaration.ReturnType is PointerTypeSyntax || methodDeclaration.ParameterList.Parameters.Any(p => p.Type is PointerTypeSyntax))
                     {
-                        methodDeclaration = methodDeclaration.AddModifiers(Token(SyntaxKind.UnsafeKeyword));
+                        methodDeclaration = methodDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));
                     }
 
                     // Add documentation if we can find it.
@@ -2911,7 +2947,8 @@ namespace Microsoft.Windows.CsWin32
             }
 
             InterfaceDeclarationSyntax ifaceDeclaration = InterfaceDeclaration(ifaceName.Identifier)
-                .AddModifiers(Token(this.Visibility))
+                .WithKeyword(TokenWithSpace(SyntaxKind.InterfaceKeyword))
+                .AddModifiers(TokenWithSpace(this.Visibility))
                 .AddMembers(members.ToArray());
 
             if (this.FindGuidFromAttribute(typeDef) is Guid guid)
@@ -2986,9 +3023,9 @@ namespace Microsoft.Windows.CsWin32
             this.GetSignatureForDelegate(typeDef, out MethodDefinition invokeMethodDef, out MethodSignature<TypeHandleInfo> signature, out CustomAttributeHandleCollection? returnTypeAttributes);
             var returnValue = signature.ReturnType.ToTypeSyntax(typeSettings, returnTypeAttributes);
 
-            DelegateDeclarationSyntax result = DelegateDeclaration(returnValue.Type, name)
+            DelegateDeclarationSyntax result = DelegateDeclarationWithTrivia(returnValue.Type, Identifier(name))
                 .WithParameterList(this.CreateParameterList(invokeMethodDef, signature, typeSettings))
-                .AddModifiers(Token(this.Visibility), Token(SyntaxKind.UnsafeKeyword));
+                .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword));
             result = returnValue.AddReturnMarshalAs(result);
 
             if (callingConvention.HasValue)
@@ -3038,12 +3075,12 @@ namespace Microsoft.Windows.CsWin32
                         CustomAttributeValue<TypeSyntax> attributeArgs = fixedBufferAttribute.Value.DecodeValue(CustomAttributeTypeProvider.Instance);
                         TypeSyntax fieldType = (TypeSyntax)attributeArgs.FixedArguments[0].Value!;
                         ExpressionSyntax size = LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal((int)attributeArgs.FixedArguments[1].Value!));
-                        field = FieldDeclaration(
-                            VariableDeclaration(fieldType))
+                        field = FieldDeclarationWithTrivia(
+                            VariableDeclarationWithTrivia(fieldType))
                             .AddDeclarationVariables(
                                 fieldDeclarator
                                     .WithArgumentList(BracketedArgumentList(SingletonSeparatedList(Argument(size)))))
-                            .AddModifiers(Token(this.Visibility), Token(SyntaxKind.UnsafeKeyword), Token(SyntaxKind.FixedKeyword));
+                            .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword), Token(SyntaxKind.FixedKeyword));
                     }
                     else
                     {
@@ -3053,17 +3090,17 @@ namespace Microsoft.Windows.CsWin32
                         var fieldInfo = this.ReinterpretFieldType(fieldDef, fieldTypeSyntax.Type, fieldAttributes);
                         additionalMembers = additionalMembers.AddRange(fieldInfo.AdditionalMembers);
 
-                        field = FieldDeclaration(VariableDeclaration(fieldInfo.FieldType).AddVariables(fieldDeclarator))
-                            .AddModifiers(Token(this.Visibility));
+                        field = FieldDeclarationWithTrivia(VariableDeclarationWithTrivia(fieldInfo.FieldType).AddVariables(fieldDeclarator))
+                            .AddModifiers(TokenWithSpace(this.Visibility));
 
                         if (fieldInfo.FieldType is PointerTypeSyntax || fieldInfo.FieldType is FunctionPointerTypeSyntax)
                         {
-                            field = field.AddModifiers(Token(SyntaxKind.UnsafeKeyword));
+                            field = field.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));
                         }
 
                         if (ObjectMembers.Contains(fieldName))
                         {
-                            field = field.AddModifiers(Token(SyntaxKind.NewKeyword));
+                            field = field.AddModifiers(TokenWithSpace(SyntaxKind.NewKeyword));
                         }
                     }
 
@@ -3084,9 +3121,9 @@ namespace Microsoft.Windows.CsWin32
             // Add the additional members, taking care to not introduce redundant declarations.
             members.AddRange(additionalMembers.Where(c => c is not StructDeclarationSyntax cs || !members.OfType<StructDeclarationSyntax>().Any(m => m.Identifier.ValueText == cs.Identifier.ValueText)));
 
-            StructDeclarationSyntax result = StructDeclaration(name.Identifier)
+            StructDeclarationSyntax result = StructDeclarationWithTrivia(name.Identifier)
                 .AddMembers(members.ToArray())
-                .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.PartialKeyword)));
+                .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.PartialKeyword)));
 
             TypeLayout layout = typeDef.GetLayout();
             if (!layout.IsDefault || (typeDef.Attributes & TypeAttributes.ExplicitLayout) == TypeAttributes.ExplicitLayout)
@@ -3147,45 +3184,45 @@ namespace Microsoft.Windows.CsWin32
                 this.ReinterpretFieldType(fieldDef, fieldType.Type, fieldAttributes);
             SyntaxList<MemberDeclarationSyntax> members = List<MemberDeclarationSyntax>();
 
-            FieldDeclarationSyntax fieldSyntax = FieldDeclaration(
-                VariableDeclaration(fieldInfo.FieldType).AddVariables(fieldDeclarator))
-                .AddModifiers(Token(this.Visibility), Token(SyntaxKind.ReadOnlyKeyword));
+            FieldDeclarationSyntax fieldSyntax = FieldDeclarationWithTrivia(
+                VariableDeclarationWithTrivia(fieldInfo.FieldType).AddVariables(fieldDeclarator))
+                .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.ReadOnlyKeyword));
             members = members.Add(fieldSyntax);
 
             // Add constructor
             IdentifierNameSyntax valueParameter = IdentifierName("value");
             MemberAccessExpressionSyntax fieldAccessExpression = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), fieldIdentifierName);
             members = members.Add(ConstructorDeclaration(name.Identifier)
-                .AddModifiers(Token(this.Visibility))
-                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(fieldInfo.FieldType))
+                .AddModifiers(TokenWithSpace(this.Visibility))
+                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(fieldInfo.FieldType.WithTrailingTrivia(TriviaList(Space))))
                 .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, valueParameter)))
-                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+                .WithSemicolonToken(SemicolonWithLineFeed));
 
             // If this typedef struct represents a pointer, add an IsNull property.
             if (fieldInfo.FieldType is IdentifierNameSyntax { Identifier: { Value: nameof(IntPtr) or nameof(UIntPtr) } })
             {
                 // internal static bool IsNull => value == default;
-                members = members.Add(PropertyDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), "IsNull")
-                    .AddModifiers(Token(this.Visibility))
+                members = members.Add(PropertyDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), "IsNull")
+                    .AddModifiers(TokenWithSpace(this.Visibility))
                     .WithExpressionBody(ArrowExpressionClause(BinaryExpression(SyntaxKind.EqualsExpression, fieldIdentifierName, LiteralExpression(SyntaxKind.DefaultLiteralExpression))))
-                    .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+                    .WithSemicolonToken(SemicolonWithLineFeed));
             }
 
             // public static implicit operator int(HWND value) => value.Value;
-            members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), fieldInfo.FieldType)
-                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(name))
+            members = members.Add(ConversionOperatorDeclarationWithTrivia(SyntaxKind.ImplicitKeyword, fieldInfo.FieldType)
+                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))))
                 .WithExpressionBody(ArrowExpressionClause(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, fieldIdentifierName)))
-                .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
-                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
+                .WithSemicolonToken(SemicolonWithLineFeed));
 
             // public static explicit operator HWND(int value) => new HWND(value);
             // Except make converting char* or byte* to typedefs representing strings, and LPARAM/WPARAM to nint/nuint, implicit.
-            SyntaxToken explicitOrImplicitModifier = Token(ImplicitConversionTypeDefs.Contains(name.Identifier.ValueText) ? SyntaxKind.ImplicitKeyword : SyntaxKind.ExplicitKeyword);
-            members = members.Add(ConversionOperatorDeclaration(explicitOrImplicitModifier, name)
-                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(fieldInfo.FieldType))
-                .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(Argument(valueParameter))))
-                .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
-                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+            SyntaxKind explicitOrImplicitModifier = ImplicitConversionTypeDefs.Contains(name.Identifier.ValueText) ? SyntaxKind.ImplicitKeyword : SyntaxKind.ExplicitKeyword;
+            members = members.Add(ConversionOperatorDeclarationWithTrivia(explicitOrImplicitModifier, name)
+                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(fieldInfo.FieldType.WithTrailingTrivia(TriviaList(Space))))
+                .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpressionWithTrivia(name).AddArgumentListArguments(Argument(valueParameter))))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
+                .WithSemicolonToken(SemicolonWithLineFeed));
 
             if (isHandle && fieldInfo.FieldType is not IdentifierNameSyntax { Identifier: { ValueText: nameof(IntPtr) } })
             {
@@ -3194,108 +3231,112 @@ namespace Microsoft.Windows.CsWin32
                 ExpressionSyntax valueValueArg = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, fieldIdentifierName);
                 if (fieldInfo.FieldType is IdentifierNameSyntax { Identifier: { ValueText: nameof(UIntPtr) } })
                 {
-                    valueValueArg = CastExpression(PredefinedType(Token(SyntaxKind.LongKeyword)), valueValueArg);
+                    valueValueArg = CastExpression(PredefinedType(TokenWithSpace(SyntaxKind.LongKeyword)), valueValueArg);
                 }
 
                 // public static implicit operator IntPtr(MSIHANDLE value) => new IntPtr(value.Value);
-                members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), IntPtrTypeSyntax)
-                    .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(name))
+                members = members.Add(ConversionOperatorDeclarationWithTrivia(SyntaxKind.ImplicitKeyword, IntPtrTypeSyntax)
+                    .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))))
                     .WithExpressionBody(ArrowExpressionClause(
-                        ObjectCreationExpression(IntPtrTypeSyntax).AddArgumentListArguments(Argument(valueValueArg))))
-                    .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
-                    .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+                        ObjectCreationExpressionWithTrivia(IntPtrTypeSyntax).AddArgumentListArguments(Argument(valueValueArg))))
+                    .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
+                    .WithSemicolonToken(SemicolonWithLineFeed));
 
                 if (fieldInfo.FieldType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.UIntKeyword } })
                 {
                     // public static explicit operator MSIHANDLE(IntPtr value) => new MSIHANDLE((uint)value.ToInt32());
-                    members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
-                        .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IntPtrTypeSyntax))
-                        .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(
+                    members = members.Add(ConversionOperatorDeclarationWithTrivia(SyntaxKind.ExplicitKeyword, name)
+                        .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))))
+                        .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpressionWithTrivia(name).AddArgumentListArguments(
                             Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToInt32)))))))))
-                        .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
-                        .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+                        .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
+                        .WithSemicolonToken(SemicolonWithLineFeed));
                 }
                 else if (fieldInfo.FieldType is PointerTypeSyntax)
                 {
                     // public static explicit operator MSIHANDLE(IntPtr value) => new MSIHANDLE(value.ToPointer());
-                    members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
-                        .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IntPtrTypeSyntax))
-                        .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(
+                    members = members.Add(ConversionOperatorDeclarationWithTrivia(SyntaxKind.ExplicitKeyword, name)
+                        .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))))
+                        .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpressionWithTrivia(name).AddArgumentListArguments(
                             Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToPointer)))))))))
-                        .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
-                        .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+                        .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
+                        .WithSemicolonToken(SemicolonWithLineFeed));
                 }
                 else if (fieldInfo.FieldType is IdentifierNameSyntax { Identifier: { ValueText: nameof(UIntPtr) } })
                 {
                     // public static explicit operator SOCKET(IntPtr value) => new SOCKET((UIntPtr)value.ToInt64());
-                    members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
-                        .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IntPtrTypeSyntax))
-                        .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(
+                    members = members.Add(ConversionOperatorDeclarationWithTrivia(SyntaxKind.ExplicitKeyword, name)
+                        .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))))
+                        .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpressionWithTrivia(name).AddArgumentListArguments(
                             Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToInt64)))))))))
-                        .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
-                        .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+                        .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
+                        .WithSemicolonToken(SemicolonWithLineFeed));
                 }
             }
 
             // public static bool operator ==(HANDLE left, HANDLE right) => left.Value == right.Value;
             var leftParameter = IdentifierName("left");
             var rightParameter = IdentifierName("right");
-            members = members.Add(OperatorDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), Token(SyntaxKind.EqualsEqualsToken))
-                .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword))
-                .AddParameterListParameters(Parameter(leftParameter.Identifier).WithType(name), Parameter(rightParameter.Identifier).WithType(name))
+            members = members.Add(OperatorDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Token(SyntaxKind.EqualsEqualsToken))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))
+                .AddParameterListParameters(
+                    Parameter(leftParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))),
+                    Parameter(rightParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))))
                 .WithExpressionBody(ArrowExpressionClause(
                     BinaryExpression(
                         SyntaxKind.EqualsExpression,
                         MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, leftParameter, fieldIdentifierName),
                         MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, rightParameter, fieldIdentifierName))))
-                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+                .WithSemicolonToken(SemicolonWithLineFeed));
 
             // public static bool operator !=(HANDLE left, HANDLE right) => !(left == right);
-            members = members.Add(OperatorDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), Token(SyntaxKind.ExclamationEqualsToken))
-                .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword))
-                .AddParameterListParameters(Parameter(leftParameter.Identifier).WithType(name), Parameter(rightParameter.Identifier).WithType(name))
+            members = members.Add(OperatorDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Token(SyntaxKind.ExclamationEqualsToken))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))
+                .AddParameterListParameters(
+                    Parameter(leftParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))),
+                    Parameter(rightParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))))
                 .WithExpressionBody(ArrowExpressionClause(
                     PrefixUnaryExpression(
                         SyntaxKind.LogicalNotExpression,
                         ParenthesizedExpression(BinaryExpression(SyntaxKind.EqualsExpression, leftParameter, rightParameter)))))
-                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+                .WithSemicolonToken(SemicolonWithLineFeed));
 
             // public bool Equals(HWND other) => this.Value == other.Value;
             IdentifierNameSyntax other = IdentifierName("other");
-            members = members.Add(MethodDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), nameof(IEquatable<int>.Equals))
-                .AddModifiers(Token(SyntaxKind.PublicKeyword))
-                .AddParameterListParameters(Parameter(other.Identifier).WithType(name))
+            members = members.Add(MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), nameof(IEquatable<int>.Equals))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword))
+                .AddParameterListParameters(Parameter(other.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))))
                 .WithExpressionBody(ArrowExpressionClause(
                     BinaryExpression(
                         SyntaxKind.EqualsExpression,
                         fieldAccessExpression,
                         MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, other, fieldIdentifierName))))
-                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+                .WithSemicolonToken(SemicolonWithLineFeed));
 
             // public override bool Equals(object obj) => obj is HWND other && this.Equals(other);
             IdentifierNameSyntax objParam = IdentifierName("obj");
-            members = members.Add(MethodDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), nameof(IEquatable<int>.Equals))
-                .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.OverrideKeyword))
-                .AddParameterListParameters(Parameter(objParam.Identifier).WithType(PredefinedType(Token(SyntaxKind.ObjectKeyword))))
+            members = members.Add(MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), nameof(IEquatable<int>.Equals))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
+                .AddParameterListParameters(Parameter(objParam.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.ObjectKeyword))))
                 .WithExpressionBody(ArrowExpressionClause(
                     BinaryExpression(
                         SyntaxKind.LogicalAndExpression,
-                        IsPatternExpression(objParam, DeclarationPattern(name, SingleVariableDesignation(Identifier("other")))),
+                        IsPatternExpression(objParam.WithTrailingTrivia(TriviaList(Space)), TokenWithSpace(SyntaxKind.IsKeyword), DeclarationPattern(name.WithTrailingTrivia(TriviaList(Space)), SingleVariableDesignation(Identifier(TriviaList(), "other", TriviaList(Space))))),
                         InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName(nameof(Equals)))).AddArgumentListArguments(Argument(IdentifierName("other"))))))
-                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+                .WithSemicolonToken(SemicolonWithLineFeed));
 
             // public override int GetHashCode() => unchecked((int)this.Value); // if Value is a pointer
             // public override int GetHashCode() => this.Value.GetHashCode(); // if Value is not a pointer
             ExpressionSyntax hashExpr = fieldInfo.FieldType is PointerTypeSyntax ?
-                CheckedExpression(SyntaxKind.UncheckedExpression, CastExpression(PredefinedType(Token(SyntaxKind.IntKeyword)), fieldAccessExpression)) :
+                CheckedExpression(SyntaxKind.UncheckedExpression, CastExpression(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), fieldAccessExpression)) :
                 InvocationExpression(
                     MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, fieldAccessExpression, IdentifierName(nameof(object.GetHashCode))),
                     ArgumentList());
 
-            members = members.Add(MethodDeclaration(PredefinedType(Token(SyntaxKind.IntKeyword)), nameof(object.GetHashCode))
-                .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.OverrideKeyword))
+            members = members.Add(MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), nameof(object.GetHashCode))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
                 .WithExpressionBody(ArrowExpressionClause(hashExpr))
-                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+                .WithSemicolonToken(SemicolonWithLineFeed));
 
             switch (name.Identifier.ValueText)
             {
@@ -3313,14 +3354,14 @@ namespace Microsoft.Windows.CsWin32
                     break;
             }
 
-            var structModifiers = TokenList(Token(this.Visibility));
+            var structModifiers = TokenList(TokenWithSpace(this.Visibility));
             if (RequiresUnsafe(fieldInfo.FieldType))
             {
-                structModifiers = structModifiers.Add(Token(SyntaxKind.UnsafeKeyword));
+                structModifiers = structModifiers.Add(TokenWithSpace(SyntaxKind.UnsafeKeyword));
             }
 
-            structModifiers = structModifiers.Add(Token(SyntaxKind.ReadOnlyKeyword)).Add(Token(SyntaxKind.PartialKeyword));
-            StructDeclarationSyntax result = StructDeclaration(name.Identifier)
+            structModifiers = structModifiers.Add(TokenWithSpace(SyntaxKind.ReadOnlyKeyword)).Add(TokenWithSpace(SyntaxKind.PartialKeyword));
+            StructDeclarationSyntax result = StructDeclarationWithTrivia(name.Identifier)
                 .AddBaseListTypes(SimpleBaseType(GenericName(nameof(IEquatable<int>)).AddTypeArgumentListArguments(name)))
                 .WithMembers(members)
                 .WithModifiers(structModifiers)
@@ -3345,7 +3386,7 @@ namespace Microsoft.Windows.CsWin32
                 int indexOfInternal = member.Modifiers.IndexOf(SyntaxKind.InternalKeyword);
                 if (indexOfInternal >= 0)
                 {
-                    MemberDeclarationSyntax publicMember = member.WithModifiers(member.Modifiers.Replace(member.Modifiers[indexOfInternal], Token(this.Visibility)));
+                    MemberDeclarationSyntax publicMember = member.WithModifiers(member.Modifiers.Replace(member.Modifiers[indexOfInternal], TokenWithSpace(this.Visibility)));
 
                     // Apply change recursively.
                     if (publicMember is TypeDeclarationSyntax memberContainer)
@@ -3365,16 +3406,16 @@ namespace Microsoft.Windows.CsWin32
             ExpressionSyntax thisValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Value"));
 
             // public override string ToString() => Marshal.PtrToStringBSTR(new IntPtr(this.Value));
-            yield return MethodDeclaration(PredefinedType(Token(SyntaxKind.StringKeyword)), nameof(this.ToString))
-                .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.OverrideKeyword))
+            yield return MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword)), nameof(this.ToString))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
                 .WithExpressionBody(ArrowExpressionClause(
                     InvocationExpression(
                         MemberAccessExpression(
                             SyntaxKind.SimpleMemberAccessExpression,
                             IdentifierName(nameof(Marshal)),
                             IdentifierName(nameof(Marshal.PtrToStringBSTR))))
-                .AddArgumentListArguments(Argument(ObjectCreationExpression(IntPtrTypeSyntax).AddArgumentListArguments(Argument(thisValue))))))
-                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken));
+                .AddArgumentListArguments(Argument(ObjectCreationExpressionWithTrivia(IntPtrTypeSyntax).AddArgumentListArguments(Argument(thisValue))))))
+                .WithSemicolonToken(SemicolonWithLineFeed);
 
             // public static implicit operator ReadOnlySpan<char>(BSTR bstr) => bstr.Value != null ? new ReadOnlySpan<char>(bstr.Value, *((int*)bstr.Value - 1) / 2) : default;
             TypeSyntax rosChar = MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword)));
@@ -3387,78 +3428,78 @@ namespace Microsoft.Windows.CsWin32
                     ParenthesizedExpression(
                         BinaryExpression(
                             SyntaxKind.SubtractExpression,
-                            CastExpression(PointerType(PredefinedType(Token(SyntaxKind.IntKeyword))), bstrValue),
+                            CastExpression(PointerType(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))), bstrValue),
                             LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(1))))),
                 LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(2)));
-            ExpressionSyntax rosCreation = ObjectCreationExpression(rosChar).AddArgumentListArguments(Argument(bstrValue), Argument(length));
+            ExpressionSyntax rosCreation = ObjectCreationExpressionWithTrivia(rosChar).AddArgumentListArguments(Argument(bstrValue), Argument(length));
             ExpressionSyntax bstrNotNull = BinaryExpression(SyntaxKind.NotEqualsExpression, bstrValue, LiteralExpression(SyntaxKind.NullLiteralExpression));
             ExpressionSyntax conditional = ConditionalExpression(bstrNotNull, rosCreation, DefaultExpression(rosChar));
-            yield return ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), rosChar)
-                .AddParameterListParameters(Parameter(bstrParam.Identifier).WithType(IdentifierName("BSTR")))
+            yield return ConversionOperatorDeclarationWithTrivia(SyntaxKind.ImplicitKeyword, rosChar)
+                .AddParameterListParameters(Parameter(bstrParam.Identifier).WithType(IdentifierName("BSTR").WithTrailingTrivia(TriviaList(Space))))
                 .WithExpressionBody(ArrowExpressionClause(conditional))
-                .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.UnsafeKeyword)) // operators MUST be public
-                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken));
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword)) // operators MUST be public
+                .WithSemicolonToken(SemicolonWithLineFeed);
 
             // internal ReadOnlySpan<char> AsSpan() => this;
-            yield return MethodDeclaration(rosChar, "AsSpan")
-                .AddModifiers(Token(this.Visibility))
+            yield return MethodDeclaration(rosChar.WithTrailingTrivia(TriviaList(Space)), "AsSpan")
+                .AddModifiers(TokenWithSpace(this.Visibility))
                 .WithExpressionBody(ArrowExpressionClause(ThisExpression()))
-                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken));
+                .WithSemicolonToken(SemicolonWithLineFeed);
         }
 
         private IEnumerable<MemberDeclarationSyntax> CreateAdditionalTypeDefPWSTRMembers()
         {
 #pragma warning disable SA1114 // Parameter list should follow declaration
             ExpressionSyntax thisValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Value"));
-            ExpressionSyntax thisValueIsNull = IsPatternExpression(thisValue, ConstantPattern(LiteralExpression(SyntaxKind.NullLiteralExpression)));
+            ExpressionSyntax thisValueIsNull = IsPatternExpression(thisValue, TokenWithSpaces(SyntaxKind.IsKeyword), ConstantPattern(LiteralExpression(SyntaxKind.NullLiteralExpression)));
 
             // internal int Length { get; }
             IdentifierNameSyntax localPointer = IdentifierName("p");
-            yield return PropertyDeclaration(PredefinedType(Token(SyntaxKind.IntKeyword)), "Length")
-                .AddModifiers(Token(this.Visibility))
+            yield return PropertyDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), "Length")
+                .AddModifiers(TokenWithSpace(this.Visibility))
                 .AddAccessorListAccessors(AccessorDeclaration(
                     SyntaxKind.GetAccessorDeclaration,
                     Block().AddStatements(
                         //// char* p = this.Value;
                         LocalDeclarationStatement(
-                            VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword))))
+                            VariableDeclarationWithTrivia(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword))))
                                 .AddVariables(VariableDeclarator(localPointer.Identifier).WithInitializer(EqualsValueClause(thisValue)))),
                         //// if (p is null) return 0;
                         IfStatement(
-                            IsPatternExpression(localPointer, ConstantPattern(LiteralExpression(SyntaxKind.NullLiteralExpression))),
-                            ReturnStatement(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)))),
+                            IsPatternExpression(localPointer, TokenWithSpaces(SyntaxKind.IsKeyword), ConstantPattern(LiteralExpression(SyntaxKind.NullLiteralExpression))),
+                            ReturnStatementWithTrivia(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)))),
                         //// while (*p != '\0') p++;
                         WhileStatement(
                             BinaryExpression(SyntaxKind.NotEqualsExpression, PrefixUnaryExpression(SyntaxKind.PointerIndirectionExpression, localPointer), LiteralExpression(SyntaxKind.CharacterLiteralExpression, Literal('\0'))),
                             ExpressionStatement(PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, localPointer))),
                         //// return checked((int)(p - this.Value));
-                        ReturnStatement(
+                        ReturnStatementWithTrivia(
                             CheckedExpression(
                                 SyntaxKind.CheckedExpression,
                                 CastExpression(
-                                    PredefinedType(Token(SyntaxKind.IntKeyword)),
+                                    PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)),
                                     ParenthesizedExpression(BinaryExpression(SyntaxKind.SubtractExpression, localPointer, thisValue))))))));
 
             // public override string? ToString() => this.Value is null ? null : new string(this.Value);
-            yield return MethodDeclaration(PredefinedType(Token(SyntaxKind.StringKeyword)), nameof(this.ToString))
-                .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.OverrideKeyword))
+            yield return MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword)), nameof(this.ToString))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
                 .WithExpressionBody(ArrowExpressionClause(
                     ConditionalExpression(
                         thisValueIsNull,
                         LiteralExpression(SyntaxKind.NullLiteralExpression),
-                        ObjectCreationExpression(PredefinedType(Token(SyntaxKind.StringKeyword)))
+                        ObjectCreationExpressionWithTrivia(PredefinedType(Token(SyntaxKind.StringKeyword)))
                             .AddArgumentListArguments(Argument(thisValue)))))
-                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken));
+                .WithSemicolonToken(SemicolonWithLineFeed);
 
             // internal Span<char> AsSpan() => this.Value is null ? default : new Span<char>(this.Value, this.Length);
             TypeSyntax spanChar = MakeSpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword)));
             ExpressionSyntax thisLength = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Length"));
-            ExpressionSyntax spanCreation = ObjectCreationExpression(spanChar).AddArgumentListArguments(Argument(thisValue), Argument(thisLength));
+            ExpressionSyntax spanCreation = ObjectCreationExpressionWithTrivia(spanChar).AddArgumentListArguments(Argument(thisValue), Argument(thisLength));
             ExpressionSyntax conditional = ConditionalExpression(thisValueIsNull, DefaultExpression(spanChar), spanCreation);
             yield return MethodDeclaration(spanChar, "AsSpan")
-                .AddModifiers(Token(this.Visibility))
+                .AddModifiers(TokenWithSpace(this.Visibility))
                 .WithExpressionBody(ArrowExpressionClause(conditional))
-                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken));
+                .WithSemicolonToken(SemicolonWithLineFeed);
 #pragma warning restore SA1114 // Parameter list should follow declaration
         }
 
@@ -3474,57 +3515,57 @@ namespace Microsoft.Windows.CsWin32
                 this.ReinterpretFieldType(fieldDef, fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null).ToTypeSyntax(this.fieldTypeSettings, fieldAttributes).Type, fieldAttributes);
             SyntaxList<MemberDeclarationSyntax> members = List<MemberDeclarationSyntax>();
 
-            FieldDeclarationSyntax fieldSyntax = FieldDeclaration(
-                VariableDeclaration(fieldInfo.FieldType).AddVariables(fieldDeclarator))
-                .AddModifiers(Token(SyntaxKind.PrivateKeyword), Token(SyntaxKind.ReadOnlyKeyword));
+            FieldDeclarationSyntax fieldSyntax = FieldDeclarationWithTrivia(
+                VariableDeclarationWithTrivia(fieldInfo.FieldType).AddVariables(fieldDeclarator))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PrivateKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword));
             members = members.Add(fieldSyntax);
             MemberAccessExpressionSyntax fieldAccessExpression = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("value"));
 
             // Add property accessor
-            members = members.Add(PropertyDeclaration(PredefinedType(Token(SyntaxKind.IntKeyword)), "Value")
-                .WithExpressionBody(ArrowExpressionClause(fieldAccessExpression)).WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
-                .AddModifiers(Token(this.Visibility)));
+            members = members.Add(PropertyDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), "Value")
+                .WithExpressionBody(ArrowExpressionClause(fieldAccessExpression)).WithSemicolonToken(SemicolonWithLineFeed)
+                .AddModifiers(TokenWithSpace(this.Visibility)));
 
             // BOOL(bool value) => this.value = value ? 1 : 0;
             IdentifierNameSyntax valueParameter = IdentifierName("value");
             ExpressionSyntax boolToInt = ConditionalExpression(valueParameter, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(1)), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)));
             members = members.Add(ConstructorDeclaration(name.Identifier)
-                .AddModifiers(Token(this.Visibility))
-                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(PredefinedType(Token(SyntaxKind.BoolKeyword))))
+                .AddModifiers(TokenWithSpace(this.Visibility))
+                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword))))
                 .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, boolToInt)))
-                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+                .WithSemicolonToken(SemicolonWithLineFeed));
 
             // BOOL(int value) => this.value = value;
             members = members.Add(ConstructorDeclaration(name.Identifier)
-                .AddModifiers(Token(this.Visibility))
-                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(PredefinedType(Token(SyntaxKind.IntKeyword))))
+                .AddModifiers(TokenWithSpace(this.Visibility))
+                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))))
                 .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, valueParameter)))
-                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+                .WithSemicolonToken(SemicolonWithLineFeed));
 
             // public static implicit operator bool(BOOL value) => value.value != 0 ? true : false;
-            members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), PredefinedType(Token(SyntaxKind.BoolKeyword)))
-                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(name))
+            members = members.Add(ConversionOperatorDeclarationWithTrivia(SyntaxKind.ImplicitKeyword, PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)))
+                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))))
                 .WithExpressionBody(ArrowExpressionClause(BinaryExpression(SyntaxKind.NotEqualsExpression, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(fieldName)), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)))))
-                .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
-                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
+                .WithSemicolonToken(SemicolonWithLineFeed));
 
             // public static implicit operator BOOL(bool value) => new BOOL(value);
-            members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), name)
-                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(PredefinedType(Token(SyntaxKind.BoolKeyword))))
-                .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(Argument(valueParameter))))
-                .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
-                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+            members = members.Add(ConversionOperatorDeclarationWithTrivia(SyntaxKind.ImplicitKeyword, name)
+                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword))))
+                .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpressionWithTrivia(name).AddArgumentListArguments(Argument(valueParameter))))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
+                .WithSemicolonToken(SemicolonWithLineFeed));
 
             // public static explicit operator BOOL(int value) => new BOOL(value);
-            members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
-                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(PredefinedType(Token(SyntaxKind.IntKeyword))))
-                .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(Argument(valueParameter))))
-                .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword)) // operators MUST be public
-                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+            members = members.Add(ConversionOperatorDeclarationWithTrivia(SyntaxKind.ExplicitKeyword, name)
+                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))))
+                .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpressionWithTrivia(name).AddArgumentListArguments(Argument(valueParameter))))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
+                .WithSemicolonToken(SemicolonWithLineFeed));
 
-            StructDeclarationSyntax result = StructDeclaration(name.Identifier)
+            StructDeclarationSyntax result = StructDeclarationWithTrivia(name.Identifier)
                 .WithMembers(members)
-                .WithModifiers(TokenList(Token(this.Visibility), Token(SyntaxKind.ReadOnlyKeyword), Token(SyntaxKind.PartialKeyword)));
+                .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.ReadOnlyKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)));
 
             result = AddApiDocumentation(name.Identifier.ValueText, result);
             return result;
@@ -3570,9 +3611,9 @@ namespace Microsoft.Windows.CsWin32
             }
 
             var name = this.Reader.GetString(typeDef.Name);
-            EnumDeclarationSyntax result = EnumDeclaration(name)
+            EnumDeclarationSyntax result = EnumDeclarationWithTrivia(Identifier(name))
                 .WithMembers(SeparatedList<EnumMemberDeclarationSyntax>(enumValues.ToArray()))
-                .WithModifiers(TokenList(Token(this.Visibility)));
+                .WithModifiers(TokenList(TokenWithSpace(this.Visibility)));
 
             if (!(enumBaseType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.IntKeyword } }))
             {
@@ -3650,7 +3691,7 @@ namespace Microsoft.Windows.CsWin32
                 if (this.IsManagedType(parameterTypeInfo) && (externParam.Modifiers.Any(SyntaxKind.OutKeyword) || externParam.Modifiers.Any(SyntaxKind.RefKeyword)))
                 {
                     bool hasOut = externParam.Modifiers.Any(SyntaxKind.OutKeyword);
-                    arguments[param.SequenceNumber - 1] = arguments[param.SequenceNumber - 1].WithRefKindKeyword(Token(hasOut ? SyntaxKind.OutKeyword : SyntaxKind.RefKeyword));
+                    arguments[param.SequenceNumber - 1] = arguments[param.SequenceNumber - 1].WithRefKindKeyword(TokenWithSpace(hasOut ? SyntaxKind.OutKeyword : SyntaxKind.RefKeyword));
                 }
                 else if (isOut && !isIn && !isReleaseMethod && parameterTypeInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo pointedElementInfo } && this.TryGetHandleReleaseMethod(pointedElementInfo.Handle, out string? outReleaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, outReleaseMethod))
                 {
@@ -3663,11 +3704,11 @@ namespace Microsoft.Windows.CsWin32
 
                         // out SafeHandle
                         parameters[param.SequenceNumber - 1] = externParam
-                            .WithType(safeHandleType)
-                            .WithModifiers(TokenList(Token(SyntaxKind.OutKeyword)));
+                            .WithType(safeHandleType.WithTrailingTrivia(TriviaList(Space)))
+                            .WithModifiers(TokenList(TokenWithSpace(SyntaxKind.OutKeyword)));
 
                         // HANDLE SomeLocal;
-                        leadingStatements.Add(LocalDeclarationStatement(VariableDeclaration(pointedElementInfo.ToTypeSyntax(this.externSignatureTypeSettings, null).Type).AddVariables(
+                        leadingStatements.Add(LocalDeclarationStatement(VariableDeclarationWithTrivia(pointedElementInfo.ToTypeSyntax(this.externSignatureTypeSettings, null).Type).AddVariables(
                             VariableDeclarator(typeDefHandleName.Identifier))));
 
                         // Argument: &SomeLocal
@@ -3677,7 +3718,7 @@ namespace Microsoft.Windows.CsWin32
                         trailingStatements.Add(ExpressionStatement(AssignmentExpression(
                             SyntaxKind.SimpleAssignmentExpression,
                             origName,
-                            ObjectCreationExpression(safeHandleType).AddArgumentListArguments(
+                            ObjectCreationExpressionWithTrivia(safeHandleType).AddArgumentListArguments(
                                 Argument(typeDefHandleName),
                                 Argument(LiteralExpression(SyntaxKind.TrueLiteralExpression)).WithNameColon(NameColon("ownsHandle"))))));
                     }
@@ -3692,20 +3733,20 @@ namespace Microsoft.Windows.CsWin32
 
                     // bool hParamNameAddRef = false;
                     leadingOutsideTryStatements.Add(LocalDeclarationStatement(
-                        VariableDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword))).AddVariables(
+                        VariableDeclarationWithTrivia(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword))).AddVariables(
                             VariableDeclarator(refAddedName.Identifier).WithInitializer(EqualsValueClause(LiteralExpression(SyntaxKind.FalseLiteralExpression))))));
 
                     // HANDLE hTemplateFileLocal;
-                    leadingStatements.Add(LocalDeclarationStatement(VariableDeclaration(externParam.Type).AddVariables(
+                    leadingStatements.Add(LocalDeclarationStatement(VariableDeclarationWithTrivia(externParam.Type).AddVariables(
                         VariableDeclarator(typeDefHandleName.Identifier))));
 
                     // if (hTemplateFile is object)
                     leadingStatements.Add(IfStatement(
-                        BinaryExpression(SyntaxKind.IsExpression, origName, PredefinedType(Token(SyntaxKind.ObjectKeyword))),
+                        BinaryExpression(SyntaxKind.IsExpression, origName, TokenWithSpaces(SyntaxKind.IsKeyword), PredefinedType(Token(SyntaxKind.ObjectKeyword))),
                         Block().AddStatements(
                         //// hTemplateFile.DangerousAddRef(ref hTemplateFileAddRef);
                         ExpressionStatement(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName(nameof(SafeHandle.DangerousAddRef))))
-                            .AddArgumentListArguments(Argument(refAddedName).WithRefKindKeyword(Token(SyntaxKind.RefKeyword)))),
+                            .AddArgumentListArguments(Argument(refAddedName).WithRefKindKeyword(TokenWithSpace(SyntaxKind.RefKeyword)))),
                         //// hTemplateFileLocal = (HANDLE)hTemplateFile.DangerousGetHandle();
                         ExpressionStatement(AssignmentExpression(
                             SyntaxKind.SimpleAssignmentExpression,
@@ -3714,7 +3755,7 @@ namespace Microsoft.Windows.CsWin32
                                 externParam.Type,
                                 InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName(nameof(SafeHandle.DangerousGetHandle))), ArgumentList()))))),
                         //// else hTemplateFileLocal = default;
-                        ElseClause(ExpressionStatement(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, typeDefHandleName, DefaultExpression(externParam.Type))))));
+                        ElseClause(TokenWithSpace(SyntaxKind.ElseKeyword), ExpressionStatement(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, typeDefHandleName, DefaultExpression(externParam.Type))))));
 
                     // if (hTemplateFileAddRef) hTemplateFile.DangerousRelease();
                     finallyStatements.Add(IfStatement(
@@ -3723,7 +3764,7 @@ namespace Microsoft.Windows.CsWin32
 
                     // Accept the SafeHandle instead.
                     parameters[param.SequenceNumber - 1] = externParam
-                        .WithType(IdentifierName(nameof(SafeHandle)));
+                        .WithType(IdentifierName(nameof(SafeHandle)).WithTrailingTrivia(TriviaList(Space)));
 
                     // hParamNameLocal;
                     arguments[param.SequenceNumber - 1] = Argument(typeDefHandleName);
@@ -3795,7 +3836,7 @@ namespace Microsoft.Windows.CsWin32
                                         SyntaxKind.NotEqualsExpression,
                                         GetSpanLength(otherUserName),
                                         GetSpanLength(origName)),
-                                    ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentException))).WithArgumentList(ArgumentList()))));
+                                    ThrowStatementWithTrivia(ObjectCreationExpressionWithTrivia(IdentifierName(nameof(ArgumentException))).WithArgumentList(ArgumentList()))));
                             }
                             else
                             {
@@ -3805,8 +3846,8 @@ namespace Microsoft.Windows.CsWin32
                             if (externParam.Type is PointerTypeSyntax)
                             {
                                 parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
-                                    .WithType(isIn && isConst ? MakeReadOnlySpanOfT(elementType) : MakeSpanOfT(elementType));
-                                fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
+                                    .WithType((isIn && isConst ? MakeReadOnlySpanOfT(elementType) : MakeSpanOfT(elementType)).WithTrailingTrivia(TriviaList(Space)));
+                                fixedBlocks.Add(VariableDeclarationWithTrivia(externParam.Type).AddVariables(
                                     VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
                                 arguments[param.SequenceNumber - 1] = Argument(localName);
                             }
@@ -3826,8 +3867,8 @@ namespace Microsoft.Windows.CsWin32
 
                             // Accept a span instead of a pointer.
                             parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
-                                .WithType(isIn && isConst ? MakeReadOnlySpanOfT(elementType) : MakeSpanOfT(elementType));
-                            fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
+                                .WithType((isIn && isConst ? MakeReadOnlySpanOfT(elementType) : MakeSpanOfT(elementType)).WithTrailingTrivia(TriviaList(Space)));
+                            fixedBlocks.Add(VariableDeclarationWithTrivia(externParam.Type).AddVariables(
                                 VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
                             arguments[param.SequenceNumber - 1] = Argument(localName);
 
@@ -3837,15 +3878,15 @@ namespace Microsoft.Windows.CsWin32
                                     SyntaxKind.LessThanExpression,
                                     GetSpanLength(origName),
                                     LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(sizeConst.Value))),
-                                ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentException))).WithArgumentList(ArgumentList()))));
+                                ThrowStatementWithTrivia(ObjectCreationExpressionWithTrivia(IdentifierName(nameof(ArgumentException))).WithArgumentList(ArgumentList()))));
                         }
                         else if (isNullTerminated && isConst && parameters[param.SequenceNumber - 1].Type is PointerTypeSyntax { ElementType: PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.CharKeyword } } })
                         {
                             // replace char* with string
                             signatureChanged = true;
                             parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
-                                .WithType(PredefinedType(Token(SyntaxKind.StringKeyword)));
-                            fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
+                                .WithType(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword)));
+                            fixedBlocks.Add(VariableDeclarationWithTrivia(externParam.Type).AddVariables(
                                 VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
                             arguments[param.SequenceNumber - 1] = Argument(localName);
                         }
@@ -3854,9 +3895,9 @@ namespace Microsoft.Windows.CsWin32
                     {
                         signatureChanged = true;
                         parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
-                            .WithType(NullableType(elementType));
+                            .WithType(NullableType(elementType).WithTrailingTrivia(TriviaList(Space)));
                         leadingStatements.Add(
-                            LocalDeclarationStatement(VariableDeclaration(elementType)
+                            LocalDeclarationStatement(VariableDeclarationWithTrivia(elementType)
                                 .AddVariables(VariableDeclarator(localName.Identifier).WithInitializer(
                                     EqualsValueClause(ConditionalExpression(
                                         MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName("HasValue")),
@@ -3871,9 +3912,9 @@ namespace Microsoft.Windows.CsWin32
                     {
                         signatureChanged = true;
                         parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
-                            .WithType(elementType)
-                            .WithModifiers(TokenList(Token(SyntaxKind.RefKeyword)));
-                        fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
+                            .WithType(elementType.WithTrailingTrivia(TriviaList(Space)))
+                            .WithModifiers(TokenList(TokenWithSpace(SyntaxKind.RefKeyword)));
+                        fixedBlocks.Add(VariableDeclarationWithTrivia(externParam.Type).AddVariables(
                             VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(
                                 PrefixUnaryExpression(SyntaxKind.AddressOfExpression, origName)))));
                         arguments[param.SequenceNumber - 1] = Argument(localName);
@@ -3882,9 +3923,9 @@ namespace Microsoft.Windows.CsWin32
                     {
                         signatureChanged = true;
                         parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
-                            .WithType(elementType)
-                            .WithModifiers(TokenList(Token(SyntaxKind.OutKeyword)));
-                        fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
+                            .WithType(elementType.WithTrailingTrivia(TriviaList(Space)))
+                            .WithModifiers(TokenList(TokenWithSpace(SyntaxKind.OutKeyword)));
+                        fixedBlocks.Add(VariableDeclarationWithTrivia(externParam.Type).AddVariables(
                             VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(
                                 PrefixUnaryExpression(SyntaxKind.AddressOfExpression, origName)))));
                         arguments[param.SequenceNumber - 1] = Argument(localName);
@@ -3894,9 +3935,9 @@ namespace Microsoft.Windows.CsWin32
                         // Use the "in" modifier to avoid copying the struct.
                         signatureChanged = true;
                         parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
-                            .WithType(elementType)
-                            .WithModifiers(TokenList(Token(SyntaxKind.InKeyword)));
-                        fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
+                            .WithType(elementType.WithTrailingTrivia(TriviaList(Space)))
+                            .WithModifiers(TokenList(TokenWithSpace(SyntaxKind.InKeyword)));
+                        fixedBlocks.Add(VariableDeclarationWithTrivia(externParam.Type).AddVariables(
                             VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(
                                 PrefixUnaryExpression(SyntaxKind.AddressOfExpression, origName)))));
                         arguments[param.SequenceNumber - 1] = Argument(localName);
@@ -3908,8 +3949,8 @@ namespace Microsoft.Windows.CsWin32
                     IdentifierNameSyntax localName = IdentifierName(origName + "Local");
                     signatureChanged = true;
                     parameters[param.SequenceNumber - 1] = externParam
-                        .WithType(PredefinedType(Token(SyntaxKind.StringKeyword)));
-                    fixedBlocks.Add(VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword)))).AddVariables(
+                        .WithType(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword)));
+                    fixedBlocks.Add(VariableDeclarationWithTrivia(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword)))).AddVariables(
                         VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
                     arguments[param.SequenceNumber - 1] = Argument(localName);
                 }
@@ -3964,13 +4005,13 @@ namespace Microsoft.Windows.CsWin32
                 if (returnSafeHandleType is object)
                 {
                     //// HANDLE result = invocation();
-                    body = body.AddStatements(LocalDeclarationStatement(VariableDeclaration(externMethodReturnType)
+                    body = body.AddStatements(LocalDeclarationStatement(VariableDeclarationWithTrivia(externMethodReturnType)
                         .AddVariables(VariableDeclarator(resultLocal.Identifier).WithInitializer(EqualsValueClause(externInvocation)))));
 
                     body = body.AddStatements(trailingStatements.ToArray());
 
                     //// return new SafeHandle(result, ownsHandle: true);
-                    body = body.AddStatements(ReturnStatement(ObjectCreationExpression(returnSafeHandleType).AddArgumentListArguments(
+                    body = body.AddStatements(ReturnStatementWithTrivia(ObjectCreationExpressionWithTrivia(returnSafeHandleType).AddArgumentListArguments(
                         Argument(resultLocal),
                         Argument(LiteralExpression(SyntaxKind.TrueLiteralExpression)).WithNameColon(NameColon("ownsHandle")))));
                 }
@@ -3982,13 +4023,13 @@ namespace Microsoft.Windows.CsWin32
                 else
                 {
                     // var result = externInvocation();
-                    body = body.AddStatements(LocalDeclarationStatement(VariableDeclaration(externMethodReturnType)
+                    body = body.AddStatements(LocalDeclarationStatement(VariableDeclarationWithTrivia(externMethodReturnType)
                         .AddVariables(VariableDeclarator(resultLocal.Identifier).WithInitializer(EqualsValueClause(externInvocation)))));
 
                     body = body.AddStatements(trailingStatements.ToArray());
 
                     // return result;
-                    body = body.AddStatements(ReturnStatement(resultLocal));
+                    body = body.AddStatements(ReturnStatementWithTrivia(resultLocal));
                 }
 
                 foreach (var fixedExpression in fixedBlocks)
@@ -4007,19 +4048,23 @@ namespace Microsoft.Windows.CsWin32
                     body = body.WithStatements(body.Statements.InsertRange(0, leadingOutsideTryStatements));
                 }
 
-                var modifiers = TokenList(Token(this.Visibility), Token(SyntaxKind.UnsafeKeyword));
+                var modifiers = TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword));
                 if (overloadOf != FriendlyOverloadOf.StructMethod)
                 {
-                    modifiers = modifiers.Insert(1, Token(SyntaxKind.StaticKeyword));
+                    modifiers = modifiers.Insert(1, TokenWithSpace(SyntaxKind.StaticKeyword));
                 }
 
                 if (overloadOf == FriendlyOverloadOf.InterfaceMethod)
                 {
-                    parameters.Insert(0, Parameter(Identifier("@this")).WithType(declaringTypeName).AddModifiers(Token(SyntaxKind.ThisKeyword)));
+                    parameters.Insert(0, Parameter(Identifier("@this")).WithType(declaringTypeName.WithTrailingTrivia(TriviaList(Space))).AddModifiers(TokenWithSpace(SyntaxKind.ThisKeyword)));
                 }
 
+                body = body
+                    .WithOpenBraceToken(Token(TriviaList(LineFeed), SyntaxKind.OpenBraceToken, TriviaList(LineFeed)))
+                    .WithCloseBraceToken(TokenWithLineFeed(SyntaxKind.CloseBraceToken));
+
                 MethodDeclarationSyntax friendlyDeclaration = externMethodDeclaration
-                    .WithReturnType(externMethodReturnType)
+                    .WithReturnType(externMethodReturnType.WithTrailingTrivia(TriviaList(Space)))
                     .WithIdentifier(friendlyMethodName)
                     .WithModifiers(modifiers)
                     .WithAttributeLists(List<AttributeListSyntax>())
@@ -4029,7 +4074,7 @@ namespace Microsoft.Windows.CsWin32
 
                 if (returnSafeHandleType is object)
                 {
-                    friendlyDeclaration = friendlyDeclaration.WithReturnType(returnSafeHandleType);
+                    friendlyDeclaration = friendlyDeclaration.WithReturnType(returnSafeHandleType.WithTrailingTrivia(TriviaList(Space)));
                 }
 
                 if (this.GetSupportedOSPlatformAttribute(methodDefinition.GetCustomAttributes()) is AttributeSyntax supportedOSPlatformAttribute)
@@ -4083,13 +4128,13 @@ namespace Microsoft.Windows.CsWin32
                 var modifiers = TokenList();
                 if (parameterTypeSyntax.ParameterModifier.HasValue)
                 {
-                    modifiers = modifiers.Add(parameterTypeSyntax.ParameterModifier.Value);
+                    modifiers = modifiers.Add(parameterTypeSyntax.ParameterModifier.Value.WithTrailingTrivia(TriviaList(Space)));
                 }
 
                 ParameterSyntax parameterSyntax = Parameter(
                     attributes.Attributes.Count > 0 ? List<AttributeListSyntax>().Add(attributes) : List<AttributeListSyntax>(),
                     modifiers,
-                    parameterTypeSyntax.Type,
+                    parameterTypeSyntax.Type.WithTrailingTrivia(TriviaList(Space)),
                     SafeIdentifier(name),
                     @default: null);
                 parameterSyntax = parameterTypeSyntax.AddMarshalAs(parameterSyntax);
@@ -4133,22 +4178,22 @@ namespace Microsoft.Windows.CsWin32
                 //     internal int Length => 8;
                 // ...
                 IdentifierNameSyntax fixedLengthStructName = IdentifierName($"__{elementType.ToString().Replace('.', '_').Replace(':', '_').Replace('*', '_').Replace('<', '_').Replace('>', '_').Replace('[', '_').Replace(']', '_').Replace(',', '_')}_{length}");
-                SyntaxTokenList fieldModifiers = TokenList(Token(this.Visibility));
+                SyntaxTokenList fieldModifiers = TokenList(TokenWithSpace(this.Visibility));
                 if (RequiresUnsafe(elementType))
                 {
-                    fieldModifiers = fieldModifiers.Add(Token(SyntaxKind.UnsafeKeyword));
+                    fieldModifiers = fieldModifiers.Add(TokenWithSpace(SyntaxKind.UnsafeKeyword));
                 }
 
-                var fixedLengthStruct = StructDeclaration(fixedLengthStructName.Identifier)
-                    .AddModifiers(Token(this.Visibility))
+                var fixedLengthStruct = StructDeclarationWithTrivia(fixedLengthStructName.Identifier)
+                    .AddModifiers(TokenWithSpace(this.Visibility))
                     .AddMembers(
-                        FieldDeclaration(VariableDeclaration(elementType)
+                        FieldDeclarationWithTrivia(VariableDeclarationWithTrivia(elementType)
                             .AddVariables(Enumerable.Range(0, length).Select(n => VariableDeclarator($"_{n}")).ToArray()))
                             .WithModifiers(fieldModifiers),
-                        PropertyDeclaration(PredefinedType(Token(SyntaxKind.IntKeyword)), "Length")
-                            .AddModifiers(Token(this.Visibility))
+                        PropertyDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), "Length")
+                            .AddModifiers(TokenWithSpace(this.Visibility))
                             .WithExpressionBody(ArrowExpressionClause(lengthLiteralSyntax))
-                            .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
+                            .WithSemicolonToken(SemicolonWithLineFeed)
                             .WithLeadingTrivia(Trivia(DocumentationCommentTrivia(SyntaxKind.SingleLineDocumentationCommentTrivia).AddContent(
                                 DocCommentStart,
                                 XmlElement("summary", List(new XmlNodeSyntax[]
@@ -4168,22 +4213,23 @@ namespace Microsoft.Windows.CsWin32
                     //     internal Span<TheStruct> AsSpan() => MemoryMarshal.CreateSpan(ref _1, 4);
                     fixedLengthStruct = fixedLengthStruct
                         .AddMembers(
-                            IndexerDeclaration(RefType(elementType))
-                                .AddModifiers(Token(this.Visibility))
-                                .AddParameterListParameters(Parameter(Identifier("index")).WithType(PredefinedType(Token(SyntaxKind.IntKeyword))))
+                            IndexerDeclaration(RefType(TokenWithSpace(SyntaxKind.RefKeyword), elementType).WithTrailingTrivia(TriviaList(Space)))
+                                .AddModifiers(TokenWithSpace(this.Visibility))
+                                .AddParameterListParameters(Parameter(Identifier("index")).WithType(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))))
                                 .WithExpressionBody(ArrowExpressionClause(RefExpression(
+                                    TokenWithSpace(SyntaxKind.RefKeyword),
                                     ElementAccessExpression(InvocationExpression(IdentifierName("AsSpan")))
                                         .AddArgumentListArguments(Argument(IdentifierName("index"))))))
-                                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
+                                .WithSemicolonToken(SemicolonWithLineFeed)
                                 .WithLeadingTrivia(InlineArrayUnsafeIndexerComment),
-                            MethodDeclaration(MakeSpanOfT(elementType), "AsSpan")
-                                .AddModifiers(Token(this.Visibility))
+                            MethodDeclaration(MakeSpanOfT(elementType).WithTrailingTrivia(TriviaList(Space)), "AsSpan")
+                                .AddModifiers(TokenWithSpace(this.Visibility))
                                 .WithExpressionBody(ArrowExpressionClause(
                                     InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("MemoryMarshal"), IdentifierName("CreateSpan")))
                                         .AddArgumentListArguments(
-                                            Argument(nameColon: null, Token(SyntaxKind.RefKeyword), firstElementFieldName),
+                                            Argument(nameColon: null, TokenWithSpace(SyntaxKind.RefKeyword), firstElementFieldName),
                                             Argument(lengthLiteralSyntax))))
-                                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
+                                .WithSemicolonToken(SemicolonWithLineFeed)
                                 .WithLeadingTrivia(InlineArrayUnsafeAsSpanComment));
                 }
 
@@ -4208,23 +4254,25 @@ namespace Microsoft.Windows.CsWin32
                     fieldTypeHandleInfo is ArrayTypeHandleInfo { ElementType: { } arrayElement } && this.IsManagedType(arrayElement)
                      ? SwitchStatement(indexParamName)
                         .AddSections(Enumerable.Range(0, length).Select(n => SwitchSection()
-                            .AddLabels(CaseSwitchLabel(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(n))))
-                            .AddStatements(ReturnStatement(RefExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, atThis, GetElementFieldName(n)))))).ToArray())
-                        .AddSections(SwitchSection().AddLabels(DefaultSwitchLabel()).AddStatements(ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentOutOfRangeException))).AddArgumentListArguments(Argument(InvocationExpression(IdentifierName("nameof")).AddArgumentListArguments(Argument(indexParamName)))))))
+                            .AddLabels(CaseSwitchLabelWithTrivia(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(n))))
+                            .AddStatements(ReturnStatementWithTrivia(RefExpression(TokenWithSpace(SyntaxKind.RefKeyword), MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, atThis, GetElementFieldName(n)))))).ToArray())
+                        .AddSections(SwitchSection().AddLabels(DefaultSwitchLabel()).AddStatements(ThrowStatementWithTrivia(ObjectCreationExpressionWithTrivia(IdentifierName(nameof(ArgumentOutOfRangeException))).AddArgumentListArguments(Argument(InvocationExpression(IdentifierName("nameof")).AddArgumentListArguments(Argument(indexParamName)))))))
                      : FixedStatement(
-                        VariableDeclaration(PointerType(qualifiedElementType)).AddVariables(
+                        VariableDeclarationWithTrivia(PointerType(qualifiedElementType)).AddVariables(
                             VariableDeclarator(p0.Identifier).WithInitializer(EqualsValueClause(
                                 PrefixUnaryExpression(
                                     SyntaxKind.AddressOfExpression,
                                     MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, atThis, firstElementFieldName))))),
-                        ReturnStatement(RefExpression(ElementAccessExpression(p0).AddArgumentListArguments(Argument(indexParamName)))));
+                        ReturnStatementWithTrivia(RefExpression(TokenWithSpace(SyntaxKind.RefKeyword), ElementAccessExpression(p0).AddArgumentListArguments(Argument(indexParamName)))));
                 BlockSyntax body = Block().AddStatements(statement);
-                ParameterSyntax thisParameter = Parameter(atThis.Identifier).WithType(QualifiedName((NameSyntax)new HandleTypeHandleInfo(this.Reader, fieldDef.GetDeclaringType()).ToTypeSyntax(this.extensionMethodSignatureTypeSettings, customAttributes).Type, fixedLengthStructName)).AddModifiers(Token(SyntaxKind.ThisKeyword));
-                ParameterSyntax indexParameter = Parameter(indexParamName.Identifier).WithType(PredefinedType(Token(SyntaxKind.IntKeyword)));
-                SyntaxTokenList methodModifiers = TokenList(Token(this.Visibility), Token(SyntaxKind.StaticKeyword), Token(SyntaxKind.UnsafeKeyword));
-                MethodDeclarationSyntax getAtMethod = MethodDeclaration(RefType(qualifiedElementType).WithReadOnlyKeyword(Token(SyntaxKind.ReadOnlyKeyword)), "ReadOnlyItemRef")
+                ParameterSyntax thisParameter = Parameter(atThis.Identifier)
+                    .WithType(QualifiedName((NameSyntax)new HandleTypeHandleInfo(this.Reader, fieldDef.GetDeclaringType()).ToTypeSyntax(this.extensionMethodSignatureTypeSettings, customAttributes).Type, fixedLengthStructName).WithTrailingTrivia(TriviaList(Space)))
+                    .AddModifiers(TokenWithSpace(SyntaxKind.ThisKeyword));
+                ParameterSyntax indexParameter = Parameter(indexParamName.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)));
+                SyntaxTokenList methodModifiers = TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword));
+                MethodDeclarationSyntax getAtMethod = MethodDeclaration(RefType(TokenWithSpace(SyntaxKind.RefKeyword), qualifiedElementType.WithTrailingTrivia(TriviaList(Space))).WithReadOnlyKeyword(TokenWithSpace(SyntaxKind.ReadOnlyKeyword)), "ReadOnlyItemRef")
                     .WithModifiers(methodModifiers)
-                    .AddParameterListParameters(thisParameter.AddModifiers(Token(SyntaxKind.InKeyword)), indexParameter)
+                    .AddParameterListParameters(thisParameter.AddModifiers(TokenWithSpace(SyntaxKind.InKeyword)), indexParameter)
                     .WithBody(body);
                 this.volatileCode.AddInlineArrayIndexerExtension(getAtMethod);
 
@@ -4233,9 +4281,9 @@ namespace Microsoft.Windows.CsWin32
                 ////    fixed (uint* p0 = &@this._1)
                 ////        return ref p0[index];
                 ////}
-                MethodDeclarationSyntax getOrSetAtMethod = MethodDeclaration(RefType(qualifiedElementType), "ItemRef")
+                MethodDeclarationSyntax getOrSetAtMethod = MethodDeclaration(RefType(TokenWithSpace(SyntaxKind.RefKeyword), qualifiedElementType.WithTrailingTrivia(TriviaList(Space))), "ItemRef")
                     .WithModifiers(methodModifiers)
-                    .AddParameterListParameters(thisParameter.AddModifiers(Token(SyntaxKind.RefKeyword)), indexParameter)
+                    .AddParameterListParameters(thisParameter.AddModifiers(TokenWithSpace(SyntaxKind.RefKeyword)), indexParameter)
                     .WithBody(body);
                 this.volatileCode.AddInlineArrayIndexerExtension(getOrSetAtMethod);
 

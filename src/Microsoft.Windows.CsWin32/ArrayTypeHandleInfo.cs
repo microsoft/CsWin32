@@ -9,7 +9,7 @@ namespace Microsoft.Windows.CsWin32
     using System.Runtime.InteropServices;
     using Microsoft.CodeAnalysis.CSharp;
     using Microsoft.CodeAnalysis.CSharp.Syntax;
-    using static Microsoft.CodeAnalysis.CSharp.SyntaxFactory;
+    using static FastSyntaxFactory;
 
     internal record ArrayTypeHandleInfo(TypeHandleInfo ElementType, ArrayShape Shape) : TypeHandleInfo, ITypeHandleContainer
     {

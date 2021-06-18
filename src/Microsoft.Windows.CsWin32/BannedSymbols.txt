@@ -4,3 +4,35 @@ M:Microsoft.CodeAnalysis.CSharp.SyntaxExtensions.NormalizeWhitespace(Microsoft.C
 M:Microsoft.CodeAnalysis.CSharp.SyntaxExtensions.NormalizeWhitespace(Microsoft.CodeAnalysis.SyntaxTriviaList,System.String,System.String,System.Bool); Too slow. Add whitespace trivia manually.
 M:Microsoft.CodeAnalysis.SyntaxNodeExtensions.NormalizeWhitespace``1(``0,System.String,System.Boolean); Too slow. Add whitespace trivia manually.
 M:Microsoft.CodeAnalysis.SyntaxNodeExtensions.NormalizeWhitespace``1(``0,System.String,System.String,System.Boolean); Too slow. Add whitespace trivia manually.
+
+M:Microsoft.CodeAnalysis.CSharp.SyntaxFactory.Block(Microsoft.CodeAnalysis.SyntaxList{Microsoft.CodeAnalysis.CSharp.Syntax.StatementSyntax}); Avoid APIs with implied trivia
+M:Microsoft.CodeAnalysis.CSharp.SyntaxFactory.Token(Microsoft.CodeAnalysis.CSharp.SyntaxKind); Avoid APIs with implied trivia
+M:Microsoft.CodeAnalysis.CSharp.SyntaxFactory.Literal(System.UInt64); Avoid implicit elastic trivia
+M:Microsoft.CodeAnalysis.CSharp.SyntaxFactory.Literal(System.Int64); Avoid implicit elastic trivia
+M:Microsoft.CodeAnalysis.CSharp.SyntaxFactory.Literal(System.UInt32); Avoid implicit elastic trivia
+M:Microsoft.CodeAnalysis.CSharp.SyntaxFactory.Literal(System.Int32); Avoid implicit elastic trivia
+M:Microsoft.CodeAnalysis.CSharp.SyntaxFactory.Literal(System.UInt16); Avoid implicit elastic trivia
+M:Microsoft.CodeAnalysis.CSharp.SyntaxFactory.Literal(System.Int16); Avoid implicit elastic trivia
+M:Microsoft.CodeAnalysis.CSharp.SyntaxFactory.Literal(System.Byte); Avoid implicit elastic trivia
+M:Microsoft.CodeAnalysis.CSharp.SyntaxFactory.Literal(System.SByte); Avoid implicit elastic trivia
+M:Microsoft.CodeAnalysis.CSharp.SyntaxFactory.Literal(System.Double); Avoid implicit elastic trivia
+M:Microsoft.CodeAnalysis.CSharp.SyntaxFactory.Literal(System.Single); Avoid implicit elastic trivia
+M:Microsoft.CodeAnalysis.CSharp.SyntaxFactory.Literal(System.String); Avoid implicit elastic trivia
+M:Microsoft.CodeAnalysis.CSharp.SyntaxFactory.Literal(System.Char); Avoid implicit elastic trivia
+M:Microsoft.CodeAnalysis.CSharp.SyntaxFactory.Literal(System.String,System.UInt64); Avoid implicit elastic trivia
+M:Microsoft.CodeAnalysis.CSharp.SyntaxFactory.Literal(System.String,System.Int64); Avoid implicit elastic trivia
+M:Microsoft.CodeAnalysis.CSharp.SyntaxFactory.Literal(System.String,System.UInt32); Avoid implicit elastic trivia
+M:Microsoft.CodeAnalysis.CSharp.SyntaxFactory.Literal(System.String,System.Int32); Avoid implicit elastic trivia
+M:Microsoft.CodeAnalysis.CSharp.SyntaxFactory.Literal(System.String,System.UInt16); Avoid implicit elastic trivia
+M:Microsoft.CodeAnalysis.CSharp.SyntaxFactory.Literal(System.String,System.Int16); Avoid implicit elastic trivia
+M:Microsoft.CodeAnalysis.CSharp.SyntaxFactory.Literal(System.String,System.Byte); Avoid implicit elastic trivia
+M:Microsoft.CodeAnalysis.CSharp.SyntaxFactory.Literal(System.String,System.SByte); Avoid implicit elastic trivia
+M:Microsoft.CodeAnalysis.CSharp.SyntaxFactory.Literal(System.String,System.Double); Avoid implicit elastic trivia
+M:Microsoft.CodeAnalysis.CSharp.SyntaxFactory.Literal(System.String,System.Single); Avoid implicit elastic trivia
+M:Microsoft.CodeAnalysis.CSharp.SyntaxFactory.Literal(System.String,System.String); Avoid implicit elastic trivia
+M:Microsoft.CodeAnalysis.CSharp.SyntaxFactory.Literal(System.String,System.Char); Avoid implicit elastic trivia
+M:Microsoft.CodeAnalysis.CSharp.Syntax.ClassDeclarationSyntax.AddBaseListTypes(Microsoft.CodeAnalysis.CSharp.Syntax.BaseTypeSyntax[]); Avoid implicit elastic trivia
+M:Microsoft.CodeAnalysis.CSharp.Syntax.InterfaceDeclarationSyntax.AddBaseListTypes(Microsoft.CodeAnalysis.CSharp.Syntax.BaseTypeSyntax[]); Avoid implicit elastic trivia
+M:Microsoft.CodeAnalysis.CSharp.Syntax.StructDeclarationSyntax.AddBaseListTypes(Microsoft.CodeAnalysis.CSharp.Syntax.BaseTypeSyntax[]); Avoid implicit elastic trivia
+M:Microsoft.CodeAnalysis.CSharp.Syntax.EnumDeclarationSyntax.AddBaseListTypes(Microsoft.CodeAnalysis.CSharp.Syntax.BaseTypeSyntax[]); Avoid implicit elastic trivia
+M:Microsoft.CodeAnalysis.CSharp.Syntax.PropertyDeclarationSyntax.AddAccessorListAccessors(Microsoft.CodeAnalysis.CSharp.Syntax.AccessorDeclarationSyntax[]); Avoid implicit elastic trivia

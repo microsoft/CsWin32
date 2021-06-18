@@ -187,6 +187,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             "DISPPARAMS",
             "CoCreateInstance", // a hand-written friendly overload
             "JsVariantToValue",
+            "D2D1_DEFAULT_FLATTENING_TOLERANCE", // a float constant
             "WIA_CATEGORY_FINISHED_FILE", // GUID constant
             "DEVPKEY_MTPBTH_IsConnected", // PROPERTYKEY constant
             "RT_CURSOR", // PCWSTR constant

@@ -174,7 +174,7 @@ namespace Microsoft.Windows.CsWin32
         internal static XmlCrefAttributeSyntax XmlCrefAttribute(CrefSyntax cref, SyntaxKind quoteKind)
         {
             cref = cref.ReplaceTokens(cref.DescendantTokens(), XmlReplaceBracketTokens);
-            return SyntaxFactory.XmlCrefAttribute(XmlName("cref"), Token(quoteKind), cref, Token(quoteKind)).WithLeadingTrivia(TriviaList(Space));
+            return SyntaxFactory.XmlCrefAttribute(XmlName("cref"), Token(SyntaxKind.EqualsToken), Token(quoteKind), cref, Token(quoteKind)).WithLeadingTrivia(TriviaList(Space));
         }
 
         internal static CrefParameterSyntax CrefParameter(TypeSyntax type) => SyntaxFactory.CrefParameter(default, type);
@@ -191,7 +191,7 @@ namespace Microsoft.Windows.CsWin32
 
         internal static XmlTextSyntax XmlText(string text) => SyntaxFactory.XmlText(text);
 
-        internal static XmlEmptyElementSyntax XmlEmptyElement(string name) => SyntaxFactory.XmlEmptyElement(XmlName(name));
+        internal static XmlEmptyElementSyntax XmlEmptyElement(string name) => SyntaxFactory.XmlEmptyElement(Token(SyntaxKind.LessThanToken), XmlName(name), default, Token(SyntaxKind.SlashGreaterThanToken));
 
         internal static XmlTextSyntax XmlText(params SyntaxToken[] textTokens) => SyntaxFactory.XmlText(textTokens);
 
@@ -213,6 +213,10 @@ namespace Microsoft.Windows.CsWin32
 
         internal static SeparatedSyntaxList<TNode> SeparatedList<TNode>(IEnumerable<SyntaxNodeOrToken> nodesOrTokens)
             where TNode : SyntaxNode => SyntaxFactory.SeparatedList<TNode>(nodesOrTokens);
+
+        internal static ParameterListSyntax FixTrivia(ParameterListSyntax parameterList) => parameterList.WithParameters(FixTrivia(parameterList.Parameters));
+
+        internal static ArgumentListSyntax FixTrivia(ArgumentListSyntax argumentList) => argumentList.WithArguments(FixTrivia(argumentList.Arguments));
 
         internal static SeparatedSyntaxList<TNode> FixTrivia<TNode>(SeparatedSyntaxList<TNode> list)
             where TNode : SyntaxNode
@@ -272,7 +276,7 @@ namespace Microsoft.Windows.CsWin32
 
         internal static ParameterListSyntax ParameterList() => SyntaxFactory.ParameterList(Token(SyntaxKind.OpenParenToken), SeparatedList<ParameterSyntax>(), Token(SyntaxKind.CloseParenToken));
 
-        internal static ArgumentListSyntax ArgumentList() => SyntaxFactory.ArgumentList(Token(SyntaxKind.OpenParenToken), SeparatedList<ArgumentSyntax>(), Token(SyntaxKind.CloseParenToken));
+        internal static ArgumentListSyntax ArgumentList(SeparatedSyntaxList<ArgumentSyntax> arguments = default) => SyntaxFactory.ArgumentList(Token(SyntaxKind.OpenParenToken), arguments, Token(SyntaxKind.CloseParenToken));
 
         internal static AssignmentExpressionSyntax AssignmentExpression(SyntaxKind kind, ExpressionSyntax left, ExpressionSyntax right) => SyntaxFactory.AssignmentExpression(kind, left, Token(GetAssignmentExpressionOperatorTokenKind(kind)), right);
 

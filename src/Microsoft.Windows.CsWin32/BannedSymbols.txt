@@ -36,3 +36,4 @@ M:Microsoft.CodeAnalysis.CSharp.Syntax.InterfaceDeclarationSyntax.AddBaseListTyp
 M:Microsoft.CodeAnalysis.CSharp.Syntax.StructDeclarationSyntax.AddBaseListTypes(Microsoft.CodeAnalysis.CSharp.Syntax.BaseTypeSyntax[]); Avoid implicit elastic trivia
 M:Microsoft.CodeAnalysis.CSharp.Syntax.EnumDeclarationSyntax.AddBaseListTypes(Microsoft.CodeAnalysis.CSharp.Syntax.BaseTypeSyntax[]); Avoid implicit elastic trivia
 M:Microsoft.CodeAnalysis.CSharp.Syntax.PropertyDeclarationSyntax.AddAccessorListAccessors(Microsoft.CodeAnalysis.CSharp.Syntax.AccessorDeclarationSyntax[]); Avoid implicit elastic trivia
+M:Microsoft.CodeAnalysis.CSharp.Syntax.InvocationExpressionSyntax.AddArgumentListArguments(Microsoft.CodeAnalysis.CSharp.Syntax.ArgumentSyntax[]); Avoid implicit elastic trivia

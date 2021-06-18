@@ -22,6 +22,7 @@ using Xunit.Abstractions;
 
 public class GeneratorTests : IDisposable, IAsyncLifetime
 {
+    private static readonly ReferenceAssemblies NetStandard20 = ReferenceAssemblies.NetStandard.NetStandard20.AddPackages(ImmutableArray.Create(new PackageIdentity("System.Memory", "4.5.4")));
     private static readonly ConcurrentDictionary<ReferenceAssemblies, Task<ImmutableArray<MetadataReference>>> TestReferencesCache = new();
     private static readonly GeneratorOptions DefaultTestGeneratorOptions = new GeneratorOptions { EmitSingleFile = true };
     private static readonly string FileSeparator = new string('=', 140);
@@ -55,7 +56,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public async Task InitializeAsync()
     {
         this.starterCompilations.Add("net40", await this.CreateCompilationAsync(ReferenceAssemblies.NetFramework.Net40.Default));
-        this.starterCompilations.Add("netstandard2.0", await this.CreateCompilationAsync(ReferenceAssemblies.NetStandard.NetStandard20.AddPackages(ImmutableArray.Create(new PackageIdentity("System.Memory", "4.5.4")))));
+        this.starterCompilations.Add("netstandard2.0", await this.CreateCompilationAsync(NetStandard20));
         this.starterCompilations.Add("net5.0", await this.CreateCompilationAsync(ReferenceAssemblies.Net.Net50));
         this.starterCompilations.Add("net5.0-x86", await this.CreateCompilationAsync(ReferenceAssemblies.Net.Net50, Platform.X86));
         this.starterCompilations.Add("net5.0-x64", await this.CreateCompilationAsync(ReferenceAssemblies.Net.Net50, Platform.X64));

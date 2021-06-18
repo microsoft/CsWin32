@@ -681,7 +681,7 @@ namespace Microsoft.Windows.Sdk
 
 			internal struct __uint_4
 			{
-				internal uint _0, _1, _2, _3;
+				internal uint _0,_1,_2,_3;
 
 				/// <summary>Always <c>4</c>.</summary>
 				internal int Length => 4;
@@ -731,7 +731,7 @@ namespace Microsoft.Windows.Sdk
 
 			internal struct __uint_4
 			{
-				internal uint _0, _1, _2, _3;
+				internal uint _0,_1,_2,_3;
 
 				/// <summary>Always <c>4</c>.</summary>
 				internal int Length => 4;

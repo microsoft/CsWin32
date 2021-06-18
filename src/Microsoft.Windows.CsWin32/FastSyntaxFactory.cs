@@ -218,6 +218,8 @@ namespace Microsoft.Windows.CsWin32
 
         internal static ArgumentListSyntax FixTrivia(ArgumentListSyntax argumentList) => argumentList.WithArguments(FixTrivia(argumentList.Arguments));
 
+        internal static AttributeArgumentListSyntax FixTrivia(AttributeArgumentListSyntax argumentList) => argumentList.WithArguments(FixTrivia(argumentList.Arguments));
+
         internal static SeparatedSyntaxList<TNode> FixTrivia<TNode>(SeparatedSyntaxList<TNode> list)
             where TNode : SyntaxNode
         {
@@ -264,7 +266,7 @@ namespace Microsoft.Windows.CsWin32
 
         internal static AttributeSyntax Attribute(NameSyntax name) => SyntaxFactory.Attribute(name, AttributeArgumentList());
 
-        internal static AttributeArgumentListSyntax AttributeArgumentList() => SyntaxFactory.AttributeArgumentList(Token(SyntaxKind.OpenParenToken), default, Token(SyntaxKind.CloseParenToken));
+        internal static AttributeArgumentListSyntax AttributeArgumentList(SeparatedSyntaxList<AttributeArgumentSyntax> arguments = default) => SyntaxFactory.AttributeArgumentList(Token(SyntaxKind.OpenParenToken), arguments, Token(SyntaxKind.CloseParenToken));
 
         internal static AttributeListSyntax AttributeList() => SyntaxFactory.AttributeList(Token(SyntaxKind.OpenBracketToken), null, SeparatedList<AttributeSyntax>(), Token(SyntaxKind.CloseBracketToken));
 
@@ -317,7 +319,7 @@ namespace Microsoft.Windows.CsWin32
 
         internal static TypeSyntax ParseTypeName(string text) => SyntaxFactory.ParseTypeName(text);
 
-        internal static EqualsValueClauseSyntax EqualsValueClause(ExpressionSyntax expression) => SyntaxFactory.EqualsValueClause(TokenWithSpace(SyntaxKind.EqualsToken), expression);
+        internal static EqualsValueClauseSyntax EqualsValueClause(ExpressionSyntax expression) => SyntaxFactory.EqualsValueClause(TokenWithSpaces(SyntaxKind.EqualsToken), expression);
 
         internal static NameEqualsSyntax NameEquals(string name) => NameEquals(IdentifierName(name));
 

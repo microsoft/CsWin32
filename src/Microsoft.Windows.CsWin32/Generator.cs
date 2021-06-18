@@ -1942,9 +1942,10 @@ namespace Microsoft.Windows.CsWin32
 
         private static AttributeSyntax DllImport(MethodImport import, string moduleName, string? entrypoint)
         {
-            var dllImportAttribute = Attribute(IdentifierName("DllImport")).AddArgumentListArguments(
-                AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(moduleName))),
-                AttributeArgument(LiteralExpression(SyntaxKind.TrueLiteralExpression)).WithNameEquals(NameEquals(nameof(DllImportAttribute.ExactSpelling))));
+            var dllImportAttribute = Attribute(IdentifierName("DllImport"))
+                .WithArgumentList(FixTrivia(AttributeArgumentList().AddArguments(
+                    AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(moduleName))),
+                    AttributeArgument(LiteralExpression(SyntaxKind.TrueLiteralExpression)).WithNameEquals(NameEquals(nameof(DllImportAttribute.ExactSpelling))))));
 
             if (entrypoint is object)
             {
@@ -5026,20 +5027,9 @@ namespace Microsoft.Windows.CsWin32
                 return base.VisitBlock(node);
             }
 
-            public override SyntaxToken VisitListSeparator(SyntaxToken separator) => separator.WithTrailingTrivia(TriviaList(Space));
+            public override SyntaxNode? VisitMethodDeclaration(MethodDeclarationSyntax node) => base.VisitMethodDeclaration(this.WithIndentingTrivia(node));
 
-            public override SyntaxNode? VisitMethodDeclaration(MethodDeclarationSyntax node) => base.VisitMethodDeclaration(this.WithIndentingTrivia(node)
-                .WithReturnType(node.ReturnType.WithTrailingTrivia(TriviaList(Space))));
-
-            public override SyntaxNode? VisitDelegateDeclaration(DelegateDeclarationSyntax node) => base.VisitDelegateDeclaration(this.WithIndentingTrivia(node).WithReturnType(node.ReturnType.WithTrailingTrivia(TriviaList(Space))));
-
-            public override SyntaxNode? VisitParameter(ParameterSyntax node) => base.VisitParameter(node.WithType(node.Type?.WithTrailingTrivia(TriviaList(Space))));
-
-            public override SyntaxNode? VisitArrowExpressionClause(ArrowExpressionClauseSyntax node) => base.VisitArrowExpressionClause(node.WithArrowToken(TokenWithSpaces(SyntaxKind.EqualsGreaterThanToken)));
-
-            public override SyntaxNode? VisitVariableDeclaration(VariableDeclarationSyntax node) => base.VisitVariableDeclaration(node.WithType(node.Type.WithTrailingTrivia(TriviaList(Space))));
-
-            public override SyntaxNode? VisitVariableDeclarator(VariableDeclaratorSyntax node) => base.VisitVariableDeclarator(node.Initializer is object ? node.WithIdentifier(node.Identifier.WithTrailingTrivia(TriviaList(Space))) : node);
+            public override SyntaxNode? VisitDelegateDeclaration(DelegateDeclarationSyntax node) => base.VisitDelegateDeclaration(this.WithIndentingTrivia(node));
 
             public override SyntaxNode? VisitFieldDeclaration(FieldDeclarationSyntax node) => base.VisitFieldDeclaration(this.WithIndentingTrivia(node));
 
@@ -5049,6 +5039,7 @@ namespace Microsoft.Windows.CsWin32
 
             public override SyntaxNode? VisitFixedStatement(FixedStatementSyntax node)
             {
+                node = this.WithIndentingTrivia(node);
                 using var indent = new Indent(this);
                 return base.VisitFixedStatement(node);
             }
@@ -5057,10 +5048,12 @@ namespace Microsoft.Windows.CsWin32
 
             public override SyntaxTriviaList VisitList(SyntaxTriviaList list)
             {
+#if DEBUG && false // Nodes that contain any annotations at all cause a lot of lock contention that slows us down. Consider removing it all and enforcing (part of it) with this code
                 if (list.Any() && list[0].IsEquivalentTo(SyntaxFactory.ElasticMarker))
                 {
                     throw new GenerationFailedException("Elastic trivia got by us.");
                 }
+#endif
 
                 for (int i = list.Count - 1; i >= 0; i--)
                 {

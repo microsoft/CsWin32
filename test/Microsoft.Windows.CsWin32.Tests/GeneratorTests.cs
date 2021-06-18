@@ -2,7 +2,6 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
@@ -22,8 +21,6 @@ using Xunit.Abstractions;
 
 public class GeneratorTests : IDisposable, IAsyncLifetime
 {
-    private static readonly ReferenceAssemblies NetStandard20 = ReferenceAssemblies.NetStandard.NetStandard20.AddPackages(ImmutableArray.Create(new PackageIdentity("System.Memory", "4.5.4")));
-    private static readonly ConcurrentDictionary<ReferenceAssemblies, Task<ImmutableArray<MetadataReference>>> TestReferencesCache = new();
     private static readonly GeneratorOptions DefaultTestGeneratorOptions = new GeneratorOptions { EmitSingleFile = true };
     private static readonly string FileSeparator = new string('=', 140);
     private static readonly string MetadataPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "Windows.Win32.winmd");
@@ -55,11 +52,11 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        this.starterCompilations.Add("net40", await this.CreateCompilationAsync(ReferenceAssemblies.NetFramework.Net40.Default));
-        this.starterCompilations.Add("netstandard2.0", await this.CreateCompilationAsync(NetStandard20));
-        this.starterCompilations.Add("net5.0", await this.CreateCompilationAsync(ReferenceAssemblies.Net.Net50));
-        this.starterCompilations.Add("net5.0-x86", await this.CreateCompilationAsync(ReferenceAssemblies.Net.Net50, Platform.X86));
-        this.starterCompilations.Add("net5.0-x64", await this.CreateCompilationAsync(ReferenceAssemblies.Net.Net50, Platform.X64));
+        this.starterCompilations.Add("net40", await this.CreateCompilationAsync(MyReferenceAssemblies.NetFramework.Net40));
+        this.starterCompilations.Add("netstandard2.0", await this.CreateCompilationAsync(MyReferenceAssemblies.NetStandard20));
+        this.starterCompilations.Add("net5.0", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net50));
+        this.starterCompilations.Add("net5.0-x86", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net50, Platform.X86));
+        this.starterCompilations.Add("net5.0-x64", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net50, Platform.X64));
 
         this.compilation = this.starterCompilations["netstandard2.0"];
     }
@@ -807,21 +804,6 @@ namespace Microsoft.Windows.Sdk
 
     private static bool IsAttributePresent(AttributeListSyntax al, string attributeName) => al.Attributes.Any(a => a.Name.ToString() == attributeName);
 
-    private static Task<ImmutableArray<MetadataReference>> GetMetadataReferences(ReferenceAssemblies references)
-    {
-        return TestReferencesCache.GetOrAdd(references, async references =>
-        {
-            ImmutableArray<MetadataReference> metadataReferences = await references
-                .AddPackages(ImmutableArray.Create(new PackageIdentity("Microsoft.Windows.SDK.Contracts", "10.0.19041.1")))
-                .ResolveAsync(LanguageNames.CSharp, default);
-
-            // Workaround for https://github.com/dotnet/roslyn-sdk/issues/699
-            metadataReferences = metadataReferences.AddRange(
-                Directory.GetFiles(Path.Combine(Path.GetTempPath(), "test-packages", "Microsoft.Windows.SDK.Contracts.10.0.19041.1", "ref", "netstandard2.0"), "*.winmd").Select(p => MetadataReference.CreateFromFile(p)));
-            return metadataReferences;
-        });
-    }
-
     private CSharpCompilation AddGeneratedCode(CSharpCompilation compilation, Generator generator)
     {
         var compilationUnits = generator.GetCompilationUnits(CancellationToken.None);
@@ -950,7 +932,11 @@ namespace Microsoft.Windows.Sdk
 
     private async Task<CSharpCompilation> CreateCompilationAsync(ReferenceAssemblies references, Platform platform = Platform.AnyCpu)
     {
-        ImmutableArray<MetadataReference> metadataReferences = await GetMetadataReferences(references);
+        ImmutableArray<MetadataReference> metadataReferences = await references.ResolveAsync(LanguageNames.CSharp, default);
+
+        // Workaround for https://github.com/dotnet/roslyn-sdk/issues/699
+        metadataReferences = metadataReferences.AddRange(
+            Directory.GetFiles(Path.Combine(Path.GetTempPath(), "test-packages", "Microsoft.Windows.SDK.Contracts.10.0.19041.1", "ref", "netstandard2.0"), "*.winmd").Select(p => MetadataReference.CreateFromFile(p)));
 
         // CONSIDER: How can I pass in the source generator itself, with AdditionalFiles, so I'm exercising that code too?
         var compilation = CSharpCompilation.Create(
@@ -967,4 +953,23 @@ namespace Microsoft.Windows.Sdk
     }
 
     private Generator CreateGenerator(GeneratorOptions? options = null, CSharpCompilation? compilation = null) => new Generator(MetadataPath, options ?? DefaultTestGeneratorOptions, compilation ?? this.compilation, this.parseOptions);
+
+    private static class MyReferenceAssemblies
+    {
+#pragma warning disable SA1202 // Elements should be ordered by access
+        private static readonly ImmutableArray<PackageIdentity> AdditionalPackages = ImmutableArray.Create(new PackageIdentity("Microsoft.Windows.SDK.Contracts", "10.0.19041.1"));
+
+        internal static readonly ReferenceAssemblies NetStandard20 = ReferenceAssemblies.NetStandard.NetStandard20.AddPackages(AdditionalPackages.Add(new PackageIdentity("System.Memory", "4.5.4")));
+
+        internal static class NetFramework
+        {
+            internal static readonly ReferenceAssemblies Net40 = ReferenceAssemblies.NetFramework.Net40.Default.AddPackages(AdditionalPackages);
+        }
+
+        internal static class Net
+        {
+            internal static readonly ReferenceAssemblies Net50 = ReferenceAssemblies.Net.Net50.AddPackages(AdditionalPackages);
+        }
+#pragma warning restore SA1202 // Elements should be ordered by access
+    }
 }

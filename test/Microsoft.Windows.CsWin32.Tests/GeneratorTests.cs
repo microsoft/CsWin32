@@ -22,6 +22,7 @@ using Xunit.Abstractions;
 
 public class GeneratorTests : IDisposable, IAsyncLifetime
 {
+    private static readonly ReferenceAssemblies NetStandard20 = ReferenceAssemblies.NetStandard.NetStandard20.AddPackages(ImmutableArray.Create(new PackageIdentity("System.Memory", "4.5.4")));
     private static readonly ConcurrentDictionary<ReferenceAssemblies, Task<ImmutableArray<MetadataReference>>> TestReferencesCache = new();
     private static readonly GeneratorOptions DefaultTestGeneratorOptions = new GeneratorOptions { EmitSingleFile = true };
     private static readonly string FileSeparator = new string('=', 140);
@@ -55,7 +56,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public async Task InitializeAsync()
     {
         this.starterCompilations.Add("net40", await this.CreateCompilationAsync(ReferenceAssemblies.NetFramework.Net40.Default));
-        this.starterCompilations.Add("netstandard2.0", await this.CreateCompilationAsync(ReferenceAssemblies.NetStandard.NetStandard20.AddPackages(ImmutableArray.Create(new PackageIdentity("System.Memory", "4.5.4")))));
+        this.starterCompilations.Add("netstandard2.0", await this.CreateCompilationAsync(NetStandard20));
         this.starterCompilations.Add("net5.0", await this.CreateCompilationAsync(ReferenceAssemblies.Net.Net50));
         this.starterCompilations.Add("net5.0-x86", await this.CreateCompilationAsync(ReferenceAssemblies.Net.Net50, Platform.X86));
         this.starterCompilations.Add("net5.0-x64", await this.CreateCompilationAsync(ReferenceAssemblies.Net.Net50, Platform.X64));
@@ -186,6 +187,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             "DISPPARAMS",
             "CoCreateInstance", // a hand-written friendly overload
             "JsVariantToValue",
+            "D2D1_DEFAULT_FLATTENING_TOLERANCE", // a float constant
             "WIA_CATEGORY_FINISHED_FILE", // GUID constant
             "DEVPKEY_MTPBTH_IsConnected", // PROPERTYKEY constant
             "RT_CURSOR", // PCWSTR constant
@@ -663,43 +665,45 @@ namespace Microsoft.Windows.Sdk
     [Fact]
     public void FixedLengthInlineArraysOfferExtensionIndexerWhereNoSpanPossible()
     {
-        const string expected = @"        internal partial struct MainAVIHeader
-        {
-            internal uint dwMicroSecPerFrame;
-            internal uint dwMaxBytesPerSec;
-            internal uint dwPaddingGranularity;
-            internal uint dwFlags;
-            internal uint dwTotalFrames;
-            internal uint dwInitialFrames;
-            internal uint dwStreams;
-            internal uint dwSuggestedBufferSize;
-            internal uint dwWidth;
-            internal uint dwHeight;
-            internal __uint_4 dwReserved;
-            internal struct __uint_4
-            {
-                internal uint _0, _1, _2, _3;
-                /// <summary>Always <c>4</c>.</summary>
-                internal int Length => 4;
-            }
-        }
+        const string expected = @"		internal partial struct MainAVIHeader
+		{
+			internal uint dwMicroSecPerFrame;
+			internal uint dwMaxBytesPerSec;
+			internal uint dwPaddingGranularity;
+			internal uint dwFlags;
+			internal uint dwTotalFrames;
+			internal uint dwInitialFrames;
+			internal uint dwStreams;
+			internal uint dwSuggestedBufferSize;
+			internal uint dwWidth;
+			internal uint dwHeight;
+			internal __uint_4 dwReserved;
+
+			internal struct __uint_4
+			{
+				internal uint _0,_1,_2,_3;
+
+				/// <summary>Always <c>4</c>.</summary>
+				internal int Length => 4;
+			}
+		}
 ";
 
         const string expectedIndexer = @"
-    internal static partial class InlineArrayIndexerExtensions
-    {
-        internal static unsafe ref readonly uint ReadOnlyItemRef(this in win32.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
-        {
-            fixed (uint *p0 = &@this._0)
-                return ref p0[index];
-        }
+	internal static partial class InlineArrayIndexerExtensions
+	{
+		internal static unsafe ref readonly uint ReadOnlyItemRef(this in win32.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
+		{
+			fixed (uint* p0 = &@this._0)
+				return ref p0[index];
+		}
 
-        internal static unsafe ref uint ItemRef(this ref win32.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
-        {
-            fixed (uint *p0 = &@this._0)
-                return ref p0[index];
-        }
-    }
+		internal static unsafe ref uint ItemRef(this ref win32.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
+		{
+			fixed (uint* p0 = &@this._0)
+				return ref p0[index];
+		}
+	}
 ";
 
         this.AssertGeneratedType("MainAVIHeader", expected, expectedIndexer);
@@ -711,55 +715,59 @@ namespace Microsoft.Windows.Sdk
     [Fact]
     public void FixedLengthInlineArraysGetSpanWherePossible()
     {
-        const string expected = @"        internal partial struct MainAVIHeader
-        {
-            internal uint dwMicroSecPerFrame;
-            internal uint dwMaxBytesPerSec;
-            internal uint dwPaddingGranularity;
-            internal uint dwFlags;
-            internal uint dwTotalFrames;
-            internal uint dwInitialFrames;
-            internal uint dwStreams;
-            internal uint dwSuggestedBufferSize;
-            internal uint dwWidth;
-            internal uint dwHeight;
-            internal __uint_4 dwReserved;
-            internal struct __uint_4
-            {
-                internal uint _0, _1, _2, _3;
-                /// <summary>Always <c>4</c>.</summary>
-                internal int Length => 4;
-                /// <summary>
-                /// Gets a ref to an individual element of the inline array.
-                /// ⚠ Important ⚠: When this struct is on the stack, do not let the returned reference outlive the stack frame that defines it.
-                /// </summary>
-                internal ref uint this[int index] => ref AsSpan()[index];
-                /// <summary>
-                /// Gets this inline array as a span.
-                /// </summary>
-                /// <remarks>
-                /// ⚠ Important ⚠: When this struct is on the stack, do not let the returned span outlive the stack frame that defines it.
-                /// </remarks>
-                internal Span<uint> AsSpan() => MemoryMarshal.CreateSpan(ref _0, 4);
-            }
-        }
+        const string expected = @"		internal partial struct MainAVIHeader
+		{
+			internal uint dwMicroSecPerFrame;
+			internal uint dwMaxBytesPerSec;
+			internal uint dwPaddingGranularity;
+			internal uint dwFlags;
+			internal uint dwTotalFrames;
+			internal uint dwInitialFrames;
+			internal uint dwStreams;
+			internal uint dwSuggestedBufferSize;
+			internal uint dwWidth;
+			internal uint dwHeight;
+			internal __uint_4 dwReserved;
+
+			internal struct __uint_4
+			{
+				internal uint _0,_1,_2,_3;
+
+				/// <summary>Always <c>4</c>.</summary>
+				internal int Length => 4;
+
+				/// <summary>
+				/// Gets a ref to an individual element of the inline array.
+				/// ⚠ Important ⚠: When this struct is on the stack, do not let the returned reference outlive the stack frame that defines it.
+				/// </summary>
+				internal ref uint this[int index] => ref AsSpan()[index];
+
+				/// <summary>
+				/// Gets this inline array as a span.
+				/// </summary>
+				/// <remarks>
+				/// ⚠ Important ⚠: When this struct is on the stack, do not let the returned span outlive the stack frame that defines it.
+				/// </remarks>
+				internal Span<uint> AsSpan() => MemoryMarshal.CreateSpan(ref _0, 4);
+			}
+		}
 ";
 
         const string expectedIndexer = @"
-    internal static partial class InlineArrayIndexerExtensions
-    {
-        internal static unsafe ref readonly uint ReadOnlyItemRef(this in win32.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
-        {
-            fixed (uint *p0 = &@this._0)
-                return ref p0[index];
-        }
+	internal static partial class InlineArrayIndexerExtensions
+	{
+		internal static unsafe ref readonly uint ReadOnlyItemRef(this in win32.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
+		{
+			fixed (uint* p0 = &@this._0)
+				return ref p0[index];
+		}
 
-        internal static unsafe ref uint ItemRef(this ref win32.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
-        {
-            fixed (uint *p0 = &@this._0)
-                return ref p0[index];
-        }
-    }
+		internal static unsafe ref uint ItemRef(this ref win32.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
+		{
+			fixed (uint* p0 = &@this._0)
+				return ref p0[index];
+		}
+	}
 ";
 
         this.compilation = this.starterCompilations["net5.0"];

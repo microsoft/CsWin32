@@ -8,7 +8,7 @@ namespace Microsoft.Windows.CsWin32
     using System.Reflection.Metadata;
     using Microsoft.CodeAnalysis.CSharp;
     using Microsoft.CodeAnalysis.CSharp.Syntax;
-    using static Microsoft.CodeAnalysis.CSharp.SyntaxFactory;
+    using static FastSyntaxFactory;
 
     internal record PrimitiveTypeHandleInfo(PrimitiveTypeCode PrimitiveTypeCode) : TypeHandleInfo
     {

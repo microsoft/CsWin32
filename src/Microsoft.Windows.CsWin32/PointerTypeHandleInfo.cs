@@ -9,7 +9,7 @@ namespace Microsoft.Windows.CsWin32
     using System.Reflection.Metadata;
     using System.Runtime.InteropServices;
     using Microsoft.CodeAnalysis.CSharp;
-    using static Microsoft.CodeAnalysis.CSharp.SyntaxFactory;
+    using static FastSyntaxFactory;
 
     internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleInfo, ITypeHandleContainer
     {

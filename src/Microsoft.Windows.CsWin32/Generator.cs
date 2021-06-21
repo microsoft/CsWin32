@@ -97,6 +97,19 @@ namespace Microsoft.Windows.CsWin32
 /// </summary>
 ");
 
+        private static readonly SyntaxTriviaList InlineCharArrayToStringComment = ParseLeadingTrivia(@"/// <summary>
+/// Copies the fixed array to a new string, stopping before the first null terminator character or at the end of the fixed array (whichever is shorter).
+/// </summary>
+");
+
+        private static readonly SyntaxTriviaList InlineCharArrayToStringWithLengthComment = ParseLeadingTrivia(@"/// <summary>
+/// Copies the fixed array to a new string up to the specified length regardless of whether there are null terminating characters.
+/// </summary>
+/// <exception cref=""ArgumentOutOfRangeException"">
+/// Thrown when <paramref name=""length""/> is less than <c>0</c> or greater than <see cref=""Length""/>.
+/// </exception>
+");
+
         private static readonly XmlTextSyntax DocCommentStart = XmlText(" ").WithLeadingTrivia(DocumentationCommentExterior("///"));
         private static readonly XmlTextSyntax DocCommentEnd = XmlText(XmlTextNewLine("\r\n", continueXmlDocumentationComment: false));
 
@@ -4161,7 +4174,7 @@ namespace Microsoft.Windows.CsWin32
                 {
                     // ...
                     //     internal ref TheStruct this[int index] => ref AsSpan()[index];
-                    //     internal Span<TheStruct> AsSpan() => MemoryMarshal.CreateSpan(ref _1, 4);
+                    //     internal Span<TheStruct> AsSpan() => MemoryMarshal.CreateSpan(ref _0, 4);
                     fixedLengthStruct = fixedLengthStruct
                         .AddMembers(
                             IndexerDeclaration(RefType(elementType).WithTrailingTrivia(TriviaList(Space)))
@@ -4183,6 +4196,78 @@ namespace Microsoft.Windows.CsWin32
                                 .WithLeadingTrivia(InlineArrayUnsafeAsSpanComment));
                 }
 
+                if (elementType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.CharKeyword } })
+                {
+                    // ...
+                    //     internal unsafe string ToString(int length)
+                    //     {
+                    //         if (length < 0 || length > Length)
+                    //             throw new ArgumentOutOfRangeException(nameof(length), length, "Length must be between 0 and the fixed array length.");
+                    //         fixed (char* p0 = &_0)
+                    //             return new string(p0, 0, length);
+                    //     }
+                    fixedLengthStruct = fixedLengthStruct.AddMembers(
+                        MethodDeclaration(PredefinedType(Token(SyntaxKind.StringKeyword)), Identifier(nameof(this.ToString)))
+                            .AddModifiers(Token(this.Visibility), Token(SyntaxKind.UnsafeKeyword))
+                            .AddParameterListParameters(
+                                Parameter(Identifier("length")).WithType(PredefinedType(Token(SyntaxKind.IntKeyword)).WithTrailingTrivia(Space)))
+                            .WithBody(Block(
+                                IfStatement(
+                                    BinaryExpression(
+                                        SyntaxKind.LogicalOrExpression,
+                                        BinaryExpression(SyntaxKind.LessThanExpression, IdentifierName("length"), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))),
+                                        BinaryExpression(SyntaxKind.GreaterThanExpression, IdentifierName("length"), IdentifierName("Length"))),
+                                    ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentOutOfRangeException))).AddArgumentListArguments(
+                                        Argument(InvocationExpression(IdentifierName("nameof")).AddArgumentListArguments(
+                                            Argument(IdentifierName("length")))),
+                                        Argument(IdentifierName("length")),
+                                        Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal("Length must be between 0 and the fixed array length.")))))),
+                                FixedStatement(
+                                    VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword)))).AddVariables(
+                                        VariableDeclarator(Identifier("p0")).WithInitializer(EqualsValueClause(
+                                            PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName("_0"))))),
+                                    ReturnStatement(
+                                        ObjectCreationExpression(PredefinedType(Token(SyntaxKind.StringKeyword))).AddArgumentListArguments(
+                                            Argument(IdentifierName("p0")),
+                                            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))),
+                                            Argument(IdentifierName("length")))))))
+                            .WithLeadingTrivia(InlineCharArrayToStringWithLengthComment));
+
+                    if (this.canCallCreateSpan)
+                    {
+                        // ...
+                        //     public override string ToString()
+                        //     {
+                        //         var terminatorIndex = AsSpan().IndexOf('\0');
+                        //         return ToString(terminatorIndex != -1 ? terminatorIndex : Length);
+                        //     }
+                        fixedLengthStruct = fixedLengthStruct.AddMembers(
+                            MethodDeclaration(PredefinedType(Token(SyntaxKind.StringKeyword)), Identifier(nameof(this.ToString)))
+                                .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.OverrideKeyword))
+                                .WithBody(Block(
+                                    LocalDeclarationStatement(VariableDeclaration(IdentifierName("var")).AddVariables(
+                                        VariableDeclarator(Identifier("terminatorIndex")).WithInitializer(EqualsValueClause(
+                                            InvocationExpression(MemberAccessExpression(
+                                                    SyntaxKind.SimpleMemberAccessExpression,
+                                                    InvocationExpression(IdentifierName("AsSpan")),
+                                                    IdentifierName(nameof(MemoryExtensions.IndexOf))))
+                                                .AddArgumentListArguments(Argument(LiteralExpression(
+                                                    SyntaxKind.CharacterLiteralExpression,
+                                                    Literal('\0')))))))),
+                                    ReturnStatement(InvocationExpression(IdentifierName("ToString")).AddArgumentListArguments(
+                                        Argument(ConditionalExpression(
+                                            BinaryExpression(
+                                                SyntaxKind.NotEqualsExpression,
+                                                IdentifierName("terminatorIndex"),
+                                                PrefixUnaryExpression(
+                                                    SyntaxKind.UnaryMinusExpression,
+                                                    LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(1)))),
+                                            IdentifierName("terminatorIndex"),
+                                            IdentifierName("Length")))))))
+                                .WithLeadingTrivia(InlineCharArrayToStringComment));
+                    }
+                }
+
                 IdentifierNameSyntax indexParamName = IdentifierName("index");
                 IdentifierNameSyntax p0 = IdentifierName("p0");
                 IdentifierNameSyntax atThis = IdentifierName("@this");
@@ -4190,7 +4275,7 @@ namespace Microsoft.Windows.CsWin32
 
                 ////internal static unsafe ref readonly uint ReadOnlyItemRef(this in MainAVIHeader.__dwReserved_4 @this, int index)
                 ////{
-                ////    fixed (uint* p0 = &@this._1)
+                ////    fixed (uint* p0 = &@this._0)
                 ////        return ref p0[index];
                 ////    - or (for managed elements) -
                 ////    switch (index)
@@ -4231,7 +4316,7 @@ namespace Microsoft.Windows.CsWin32
 
                 ////internal static unsafe ref uint ItemRef(this ref MainAVIHeader.__dwReserved_4 @this, int index)
                 ////{
-                ////    fixed (uint* p0 = &@this._1)
+                ////    fixed (uint* p0 = &@this._0)
                 ////        return ref p0[index];
                 ////}
                 MethodDeclarationSyntax getOrSetAtMethod = MethodDeclaration(RefType(qualifiedElementType.WithTrailingTrivia(TriviaList(Space))), Identifier("ItemRef"))

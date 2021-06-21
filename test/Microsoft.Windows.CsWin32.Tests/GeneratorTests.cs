@@ -771,6 +771,47 @@ namespace Microsoft.Windows.Sdk
         this.AssertGeneratedType("MainAVIHeader", expected, expectedIndexer);
     }
 
+    [Theory, MemberData(nameof(TFMData))]
+    public void FixedLengthInlineCharArraysHaveToStringWithLength(string targetFramework)
+    {
+        this.compilation = this.starterCompilations[targetFramework];
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate("RM_PROCESS_INFO", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        var method = Assert.Single(this.FindGeneratedMethod("ToString").Where(m => m is
+        {
+            Parent: StructDeclarationSyntax { Identifier: { Value: "__char_64" } },
+            ParameterList: { Parameters: { Count: 1 } },
+        }));
+
+        Assert.Equal(SyntaxKind.StringKeyword, Assert.IsType<PredefinedTypeSyntax>(method.ReturnType).Keyword.Kind());
+
+        var parameter = method.ParameterList.Parameters.Single();
+        Assert.Equal("length", parameter.Identifier.Value);
+        Assert.Equal(SyntaxKind.IntKeyword, Assert.IsType<PredefinedTypeSyntax>(parameter.Type).Keyword.Kind());
+    }
+
+    [Fact]
+    public void FixedLengthInlineCharArraysHaveToStringOverride()
+    {
+        this.compilation = this.starterCompilations["net5.0"];
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate("RM_PROCESS_INFO", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        var method = Assert.Single(this.FindGeneratedMethod("ToString").Where(m => m is
+        {
+            Parent: StructDeclarationSyntax { Identifier: { Value: "__char_64" } },
+            ParameterList: { Parameters: { Count: 0 } },
+        }));
+
+        Assert.Equal(SyntaxKind.StringKeyword, Assert.IsType<PredefinedTypeSyntax>(method.ReturnType).Keyword.Kind());
+        Assert.True(method.Modifiers.Any(SyntaxKind.OverrideKeyword));
+    }
+
     [Theory, PairwiseData]
     public void FullGeneration(bool allowMarshaling, [CombinatorialValues(Platform.AnyCpu, Platform.X86, Platform.X64, Platform.Arm64)] Platform platform)
     {

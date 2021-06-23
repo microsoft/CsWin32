@@ -16,6 +16,8 @@ namespace ScrapeDocs
     using System.Text.Json;
     using System.Text.RegularExpressions;
     using System.Threading;
+    using MessagePack;
+    using YamlDotNet;
     using YamlDotNet.RepresentationModel;
 
     /// <summary>
@@ -82,10 +84,7 @@ namespace ScrapeDocs
             }
         }
 
-        // Skip the NULL constant due to https://github.com/aaubry/YamlDotNet/issues/591.
-        private static bool IsYamlProblematicKey(string key) => string.Equals(key, "null", StringComparison.OrdinalIgnoreCase);
-
-        private int AnalyzeEnums(ConcurrentDictionary<YamlNode, YamlNode> results, ConcurrentDictionary<(string MethodName, string ParameterName, string HelpLink), DocEnum> parameterEnums, ConcurrentDictionary<(string MethodName, string ParameterName, string HelpLink), DocEnum> fieldEnums)
+        private int AnalyzeEnums(ConcurrentDictionary<string, ApiDetails> results, ConcurrentDictionary<(string MethodName, string ParameterName, string HelpLink), DocEnum> parameterEnums, ConcurrentDictionary<(string MethodName, string ParameterName, string HelpLink), DocEnum> fieldEnums)
         {
             var uniqueEnums = new Dictionary<DocEnum, List<(string MethodOrStructName, string ParameterOrFieldName, string HelpLink, bool IsMethod)>>();
             var constantsDocs = new Dictionary<string, List<(string MethodOrStructName, string HelpLink, string Doc)>>();
@@ -121,36 +120,31 @@ namespace ScrapeDocs
 
             foreach (var item in constantsDocs)
             {
-                string doc = item.Value[0].Doc;
+                var docNode = new ApiDetails();
+                docNode.Description = item.Value[0].Doc;
 
                 // If the documentation varies across methods, just link to each document.
                 bool differenceDetected = false;
                 for (int i = 1; i < item.Value.Count; i++)
                 {
-                    if (item.Value[i].Doc != doc)
+                    if (item.Value[i].Doc != docNode.Description)
                     {
                         differenceDetected = true;
                         break;
                     }
                 }
 
-                var docNode = new YamlMappingNode();
                 if (differenceDetected)
                 {
-                    doc = "Documentation varies per use. Refer to each: " + string.Join(", ", item.Value.Select(v => @$"<see href=""{v.HelpLink}"">{v.MethodOrStructName}</see>")) + ".";
+                    docNode.Description = "Documentation varies per use. Refer to each: " + string.Join(", ", item.Value.Select(v => @$"<see href=""{v.HelpLink}"">{v.MethodOrStructName}</see>")) + ".";
                 }
                 else
                 {
                     // Just point to any arbitrary method that documents it.
-                    docNode.Add("HelpLink", item.Value[0].HelpLink);
+                    docNode.HelpLink = new Uri(item.Value[0].HelpLink);
                 }
 
-                docNode.Add("Description", doc);
-
-                if (!IsYamlProblematicKey(item.Key))
-                {
-                    results.TryAdd(new YamlScalarNode(item.Key), docNode);
-                }
+                results.TryAdd(item.Key, docNode);
             }
 
             if (this.EmitEnums)
@@ -223,7 +217,7 @@ namespace ScrapeDocs
         {
             Console.WriteLine("Enumerating documents to be parsed...");
             string[] paths = Directory.GetFiles(this.contentBasePath, "??-*-*.md", SearchOption.AllDirectories)
-                ////.Where(p => p.Contains(@"DNS_RECORDA", StringComparison.OrdinalIgnoreCase)).ToArray()
+                ////.Where(p => p.Contains(@"ns-winsock2-blob", StringComparison.OrdinalIgnoreCase)).ToArray()
                 ;
 
             Console.WriteLine("Parsing documents...");
@@ -231,8 +225,8 @@ namespace ScrapeDocs
             var parsedNodes = from path in paths.AsParallel()
                               let result = this.ParseDocFile(path)
                               where result is not null
-                              select (Path: path, result.Value.ApiName, result.Value.YamlNode, result.Value.EnumsByParameter, result.Value.EnumsByField);
-            var results = new ConcurrentDictionary<YamlNode, YamlNode>();
+                              select (Path: path, result.Value.ApiName, result.Value.Docs, result.Value.EnumsByParameter, result.Value.EnumsByField);
+            var results = new ConcurrentDictionary<string, ApiDetails>();
             var parameterEnums = new ConcurrentDictionary<(string MethodName, string ParameterName, string HelpLink), DocEnum>();
             var fieldEnums = new ConcurrentDictionary<(string StructName, string FieldName, string HelpLink), DocEnum>();
             if (Debugger.IsAttached)
@@ -241,20 +235,24 @@ namespace ScrapeDocs
             }
 
             parsedNodes
-                .WithCancellation<(string Path, string ApiName, YamlNode YamlNode, IReadOnlyDictionary<string, DocEnum> EnumsByParameter, IReadOnlyDictionary<string, DocEnum> EnumsByField)>(cancellationToken)
+                .WithCancellation<(string Path, string ApiName, ApiDetails Docs, IReadOnlyDictionary<string, DocEnum> EnumsByParameter, IReadOnlyDictionary<string, DocEnum> EnumsByField)>(cancellationToken)
                 .ForAll(result =>
                 {
-                    results.TryAdd(new YamlScalarNode(result.ApiName), result.YamlNode);
+                    results.TryAdd(result.ApiName, result.Docs);
                     foreach (var e in result.EnumsByParameter)
                     {
-                        string helpLink = ((YamlScalarNode)result.YamlNode["HelpLink"]).Value!;
-                        parameterEnums.TryAdd((result.ApiName, e.Key, helpLink), e.Value);
+                        if (result.Docs.HelpLink is object)
+                        {
+                            parameterEnums.TryAdd((result.ApiName, e.Key, result.Docs.HelpLink.AbsoluteUri), e.Value);
+                        }
                     }
 
                     foreach (var e in result.EnumsByField)
                     {
-                        string helpLink = ((YamlScalarNode)result.YamlNode["HelpLink"]).Value!;
-                        fieldEnums.TryAdd((result.ApiName, e.Key, helpLink), e.Value);
+                        if (result.Docs.HelpLink is object)
+                        {
+                            fieldEnums.TryAdd((result.ApiName, e.Key, result.Docs.HelpLink.AbsoluteUri), e.Value);
+                        }
                     }
                 });
             if (paths.Length == 0)
@@ -272,15 +270,12 @@ namespace ScrapeDocs
             Console.WriteLine($"Found docs for {constantsCount} constants.");
 
             Console.WriteLine("Writing results to \"{0}\"", this.outputPath);
-            var yamlDocument = new YamlDocument(new YamlMappingNode(results));
-            var yamlStream = new YamlStream(yamlDocument);
             Directory.CreateDirectory(Path.GetDirectoryName(this.outputPath)!);
-            using var yamlWriter = File.CreateText(this.outputPath);
-            yamlWriter.WriteLine($"# This file was generated by the {Assembly.GetExecutingAssembly().GetName().Name} tool in this repo.");
-            yamlStream.Save(yamlWriter);
+            using var outputFileStream = File.OpenWrite(this.outputPath);
+            MessagePackSerializer.Serialize(outputFileStream, results.ToDictionary(kv => kv.Key, kv => kv.Value), MessagePackSerializerOptions.Standard);
         }
 
-        private (string ApiName, YamlNode YamlNode, IReadOnlyDictionary<string, DocEnum> EnumsByParameter, IReadOnlyDictionary<string, DocEnum> EnumsByField)? ParseDocFile(string filePath)
+        private (string ApiName, ApiDetails Docs, IReadOnlyDictionary<string, DocEnum> EnumsByParameter, IReadOnlyDictionary<string, DocEnum> EnumsByField)? ParseDocFile(string filePath)
         {
             try
             {
@@ -290,6 +285,7 @@ namespace ScrapeDocs
                 using StreamReader mdFileReader = File.OpenText(filePath);
                 using var markdownToYamlReader = new YamlSectionReader(mdFileReader);
                 var yamlBuilder = new StringBuilder();
+                ApiDetails docs = new();
                 string? line;
                 while ((line = markdownToYamlReader.ReadLine()) is object)
                 {
@@ -345,20 +341,15 @@ namespace ScrapeDocs
                     return null;
                 }
 
-                var methodNode = new YamlMappingNode();
                 Uri helpLink = new Uri("https://docs.microsoft.com/windows/win32/api/" + filePath.Substring(this.contentBasePath.Length, filePath.Length - 3 - this.contentBasePath.Length).Replace('\\', '/'));
-                methodNode.Add("HelpLink", helpLink.AbsoluteUri);
+                docs.HelpLink = helpLink;
 
                 var description = ((YamlMappingNode)yaml.Documents[0].RootNode).Children.FirstOrDefault(n => n.Key is YamlScalarNode { Value: "description" }).Value as YamlScalarNode;
-                if (description is object)
-                {
-                    methodNode.Add("Description", description);
-                }
+                docs.Description = description?.Value;
 
                 // Search for parameter/field docs
                 var parametersMap = new YamlMappingNode();
                 var fieldsMap = new YamlMappingNode();
-                YamlScalarNode? remarksNode = null;
                 StringBuilder docBuilder = new StringBuilder();
                 line = mdFileReader.ReadLine();
 
@@ -369,7 +360,7 @@ namespace ScrapeDocs
                     return line;
                 }
 
-                void ParseTextSection(out YamlScalarNode node)
+                void ParseTextSection(out string text)
                 {
                     while ((line = mdFileReader.ReadLine()) is object)
                     {
@@ -382,7 +373,7 @@ namespace ScrapeDocs
                         docBuilder.AppendLine(line);
                     }
 
-                    node = new YamlScalarNode(docBuilder.ToString());
+                    text = docBuilder.ToString();
 
                     docBuilder.Clear();
                 }
@@ -488,7 +479,7 @@ namespace ScrapeDocs
                     return enums;
                 }
 
-                void ParseSection(Match match, YamlMappingNode receivingMap, bool lookForParameterEnums = false, bool lookForFieldEnums = false)
+                void ParseSection(Match match, IDictionary<string, string> receivingMap, bool lookForParameterEnums = false, bool lookForFieldEnums = false)
                 {
                     string sectionName = match.Groups[1].Value;
                     bool foundEnum = false;
@@ -537,17 +528,7 @@ namespace ScrapeDocs
                         }
                     }
 
-                    try
-                    {
-                        if (!IsYamlProblematicKey(sectionName))
-                        {
-                            receivingMap.Add(sectionName, docBuilder.ToString().Trim());
-                        }
-                    }
-                    catch (ArgumentException)
-                    {
-                    }
-
+                    receivingMap.TryAdd(sectionName, docBuilder.ToString().Trim());
                     docBuilder.Clear();
                 }
 
@@ -555,18 +536,21 @@ namespace ScrapeDocs
                 {
                     if (ParameterHeaderPattern.Match(line) is Match { Success: true } parameterMatch)
                     {
-                        ParseSection(parameterMatch, parametersMap, lookForParameterEnums: true);
+                        ParseSection(parameterMatch, docs.Parameters, lookForParameterEnums: true);
                     }
                     else if (FieldHeaderPattern.Match(line) is Match { Success: true } fieldMatch)
                     {
-                        ParseSection(fieldMatch, fieldsMap, lookForFieldEnums: true);
+                        ParseSection(fieldMatch, docs.Fields, lookForFieldEnums: true);
                     }
                     else if (RemarksHeaderPattern.Match(line) is Match { Success: true } remarksMatch)
                     {
-                        ParseTextSection(out remarksNode);
+                        string remarks;
+                        ParseTextSection(out remarks);
+                        docs.Remarks = remarks;
                     }
                     else
                     {
+                        // TODO: don't break out of this loop so soon... remarks sometimes follows return value docs.
                         if (line is object && ReturnHeaderPattern.IsMatch(line))
                         {
                             break;
@@ -574,21 +558,6 @@ namespace ScrapeDocs
 
                         line = mdFileReader.ReadLine();
                     }
-                }
-
-                if (parametersMap.Any())
-                {
-                    methodNode.Add("Parameters", parametersMap);
-                }
-
-                if (fieldsMap.Any())
-                {
-                    methodNode.Add("Fields", fieldsMap);
-                }
-
-                if (remarksNode is object)
-                {
-                    methodNode.Add("Remarks", remarksNode);
                 }
 
                 // Search for return value documentation
@@ -607,7 +576,7 @@ namespace ScrapeDocs
                             docBuilder.AppendLine(line);
                         }
 
-                        methodNode.Add("ReturnValue", docBuilder.ToString().Trim());
+                        docs.ReturnValue = docBuilder.ToString().Trim();
                         docBuilder.Clear();
                         break;
                     }
@@ -617,7 +586,7 @@ namespace ScrapeDocs
                     }
                 }
 
-                return (properName, methodNode, enumsByParameter, enumsByField);
+                return (properName, docs, enumsByParameter, enumsByField);
             }
             catch (Exception ex)
             {

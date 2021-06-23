@@ -8,6 +8,8 @@ namespace Microsoft.Windows.CsWin32
     using System.Diagnostics.CodeAnalysis;
     using System.IO;
     using System.Reflection;
+    using MessagePack;
+    using ScrapeDocs;
 
     internal class Docs
     {
@@ -24,35 +26,15 @@ namespace Microsoft.Windows.CsWin32
 
         private static Docs Create()
         {
-            using Stream? docsYamlStream = Assembly.GetExecutingAssembly().GetManifestResourceStream(ThisAssembly.RootNamespace + ".apidocs.yml");
-            if (docsYamlStream is null)
+            using Stream? docsStream = Assembly.GetExecutingAssembly().GetManifestResourceStream(ThisAssembly.RootNamespace + ".apidocs.msgpack");
+            if (docsStream is null)
             {
                 ////return new Docs(new Dictionary<string, ApiDetails>());
-                throw new Exception("YAML documentation not found.");
+                throw new Exception("Documentation not found.");
             }
 
-            using var yamlTextReader = new StreamReader(docsYamlStream);
-            var deserializer = new YamlDotNet.Serialization.Deserializer();
-            var data = deserializer.Deserialize<Dictionary<string, ApiDetails>>(yamlTextReader);
-
+            var data = MessagePackSerializer.Deserialize<Dictionary<string, ApiDetails>>(docsStream);
             return new Docs(data);
-        }
-
-#pragma warning disable CA1812 // uninstantiated class is deserialized into
-        internal class ApiDetails
-#pragma warning restore CA1812 // uninstantiated class is deserialized into
-        {
-            public Uri? HelpLink { get; set; }
-
-            public string? Description { get; set; }
-
-            public string? Remarks { get; set; }
-
-            public Dictionary<string, string>? Parameters { get; set; }
-
-            public Dictionary<string, string>? Fields { get; set; }
-
-            public string? ReturnValue { get; set; }
         }
     }
 }

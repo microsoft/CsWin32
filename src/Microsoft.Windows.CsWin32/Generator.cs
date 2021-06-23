@@ -3199,7 +3199,7 @@ namespace Microsoft.Windows.CsWin32
             TypeSyntaxSettings typeSettings = this.fieldTypeSettings;
 
             var members = new List<MemberDeclarationSyntax>();
-            SyntaxList<MemberDeclarationSyntax> additionalMembers;
+            SyntaxList<MemberDeclarationSyntax> additionalMembers = default;
             foreach (FieldDefinitionHandle fieldDefHandle in typeDef.GetFields())
             {
                 FieldDefinition fieldDef = this.mr.GetFieldDefinition(fieldDefHandle);

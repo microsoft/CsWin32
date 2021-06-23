@@ -22,6 +22,7 @@ namespace Microsoft.Windows.CsWin32
     using Microsoft.CodeAnalysis;
     using Microsoft.CodeAnalysis.CSharp;
     using Microsoft.CodeAnalysis.CSharp.Syntax;
+    using ScrapeDocs;
     using static FastSyntaxFactory;
 
     /// <summary>
@@ -1791,7 +1792,7 @@ namespace Microsoft.Windows.CsWin32
                 stringBuilder.Append(yamlDocSrc.Trim());
             }
 
-            static void EmitDoc(string yamlDocSrc, StringBuilder docCommentsBuilder, Docs.ApiDetails? docs, string docsAnchor)
+            static void EmitDoc(string yamlDocSrc, StringBuilder docCommentsBuilder, ApiDetails? docs, string docsAnchor)
             {
                 if (yamlDocSrc.Contains('\n'))
                 {

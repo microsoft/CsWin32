@@ -32,6 +32,7 @@
   <ItemGroup>
     <AdditionalFiles Include="AnalyzerReleases.Shipped.md" />
     <AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
+    <AdditionalFiles Include="BannedSymbols.txt" />
   </ItemGroup>
 
   <ItemGroup>
@@ -47,6 +48,7 @@
 
   <ItemGroup>
     <PackageReference Include="MessagePack" Version="2.2.85" />
+    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="3.3.2" PrivateAssets="all" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="3.8.0" />
     <PackageReference Include="Microsoft.Windows.SDK.Win32Metadata" Version="$(MetadataVersion)" GeneratePathProperty="true" PrivateAssets="none" />
     <PackageReference Include="Nullable" Version="1.3.0" />

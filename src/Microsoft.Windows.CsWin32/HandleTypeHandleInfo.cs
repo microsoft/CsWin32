@@ -12,7 +12,7 @@ namespace Microsoft.Windows.CsWin32
     using Microsoft.CodeAnalysis;
     using Microsoft.CodeAnalysis.CSharp;
     using Microsoft.CodeAnalysis.CSharp.Syntax;
-    using static Microsoft.CodeAnalysis.CSharp.SyntaxFactory;
+    using static FastSyntaxFactory;
 
     internal record HandleTypeHandleInfo : TypeHandleInfo
     {
@@ -71,7 +71,7 @@ namespace Microsoft.Windows.CsWin32
                 return new TypeSyntaxAndMarshaling(bclType);
             }
 
-            if (simpleName is "PWSTR" or "PSTR" && (this.IsConstantField || customAttributes?.Any(ah => Generator.IsAttribute(this.reader, this.reader.GetCustomAttribute(ah), Generator.InteropDecorationNamespace, "ConstAttribute")) is true))
+            if (simpleName is "PWSTR" or "PSTR" && (this.IsConstantField || customAttributes?.Any(ah => MetadataUtilities.IsAttribute(this.reader, this.reader.GetCustomAttribute(ah), Generator.InteropDecorationNamespace, "ConstAttribute")) is true))
             {
                 string specialName = "PC" + simpleName.Substring(1);
                 if (inputs.Generator is object)

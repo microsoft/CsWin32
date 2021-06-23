@@ -8,7 +8,6 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Runtime.Versioning;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
@@ -24,8 +23,8 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
 {
     private static readonly GeneratorOptions DefaultTestGeneratorOptions = new GeneratorOptions { EmitSingleFile = true };
     private static readonly string FileSeparator = new string('=', 140);
+    private static readonly string MetadataPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "Windows.Win32.winmd");
     private readonly ITestOutputHelper logger;
-    private readonly FileStream metadataStream;
     private readonly Dictionary<string, CSharpCompilation> starterCompilations = new();
     private CSharpCompilation compilation;
     private CSharpParseOptions parseOptions;
@@ -34,7 +33,6 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public GeneratorTests(ITestOutputHelper logger)
     {
         this.logger = logger;
-        this.metadataStream = OpenMetadata();
 
         this.parseOptions = CSharpParseOptions.Default
             .WithDocumentationMode(DocumentationMode.Diagnose)
@@ -54,11 +52,11 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        this.starterCompilations.Add("net40", await this.CreateCompilationAsync(ReferenceAssemblies.NetFramework.Net40.Default));
-        this.starterCompilations.Add("netstandard2.0", await this.CreateCompilationAsync(ReferenceAssemblies.NetStandard.NetStandard20.AddPackages(ImmutableArray.Create(new PackageIdentity("System.Memory", "4.5.4")))));
-        this.starterCompilations.Add("net5.0", await this.CreateCompilationAsync(ReferenceAssemblies.Net.Net50));
-        this.starterCompilations.Add("net5.0-x86", await this.CreateCompilationAsync(ReferenceAssemblies.Net.Net50, Platform.X86));
-        this.starterCompilations.Add("net5.0-x64", await this.CreateCompilationAsync(ReferenceAssemblies.Net.Net50, Platform.X64));
+        this.starterCompilations.Add("net40", await this.CreateCompilationAsync(MyReferenceAssemblies.NetFramework.Net40));
+        this.starterCompilations.Add("netstandard2.0", await this.CreateCompilationAsync(MyReferenceAssemblies.NetStandard20));
+        this.starterCompilations.Add("net5.0", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net50));
+        this.starterCompilations.Add("net5.0-x86", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net50, Platform.X86));
+        this.starterCompilations.Add("net5.0-x64", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net50, Platform.X64));
 
         this.compilation = this.starterCompilations["netstandard2.0"];
     }
@@ -68,7 +66,6 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public void Dispose()
     {
         this.generator?.Dispose();
-        this.metadataStream.Dispose();
     }
 
     [Theory]
@@ -77,7 +74,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [InlineData("__zz__not_defined", null)]
     public void TryGetEnumName(string candidate, string? declaringEnum)
     {
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
 
         Assert.Equal(declaringEnum is object, this.generator.TryGetEnumName(candidate, out string? actualDeclaringEnum));
         Assert.Equal(declaringEnum, actualDeclaringEnum);
@@ -88,7 +85,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public void SimplestMethod(string tfm)
     {
         this.compilation = this.starterCompilations[tfm];
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         const string methodName = "GetTickCount";
         Assert.True(this.generator.TryGenerateExternMethod(methodName));
         this.CollectGeneratedCode(this.generator);
@@ -115,7 +112,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     {
         const string methodName = "GetStagedPackagePathByFullName2";
         this.compilation = this.starterCompilations["net5.0"];
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate(methodName, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -127,7 +124,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     {
         this.compilation = this.starterCompilations[net50 ? "net5.0" : "netstandard2.0"];
         const string typeName = "IInkCursors";
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling }, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling });
         Assert.True(this.generator.TryGenerateType(typeName));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -187,6 +184,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             "DISPPARAMS",
             "CoCreateInstance", // a hand-written friendly overload
             "JsVariantToValue",
+            "D2D1_DEFAULT_FLATTENING_TOLERANCE", // a float constant
             "WIA_CATEGORY_FINISHED_FILE", // GUID constant
             "DEVPKEY_MTPBTH_IsConnected", // PROPERTYKEY constant
             "RT_CURSOR", // PCWSTR constant
@@ -209,7 +207,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             AllowMarshaling = allowMarshaling,
         };
         this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(Platform.X64));
-        this.generator = new Generator(this.metadataStream, options, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator(options);
         Assert.True(this.generator.TryGenerate(api, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -222,7 +220,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [Fact]
     public void GetLastErrorNotIncludedInBulkGeneration()
     {
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate("kernel32.*", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         Assert.True(this.IsMethodGenerated("CreateFile"));
@@ -233,7 +231,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public void FriendlyOverloadOfCOMInterfaceRemovesParameter()
     {
         const string ifaceName = "IEnumDebugPropertyInfo";
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate(ifaceName, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -244,7 +242,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public void IDispatchDerivedInterface()
     {
         const string ifaceName = "IInkRectangle";
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate(ifaceName, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -257,7 +255,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public void IInpectableDerivedInterface()
     {
         const string ifaceName = "IUserConsentVerifierInterop";
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate(ifaceName, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -268,7 +266,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public void ComOutPtrTypedAsOutObject()
     {
         const string methodName = "CoCreateInstance";
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate(methodName, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -278,7 +276,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [Fact]
     public void AmbiguousApiName()
     {
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         var ex = Assert.Throws<ArgumentException>(() => this.generator.TryGenerate("IDENTITY_TYPE", CancellationToken.None));
         this.logger.WriteLine(ex.Message);
     }
@@ -286,7 +284,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [Fact]
     public void ReleaseMethodGeneratedWithHandleStruct()
     {
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate("HANDLE", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -306,7 +304,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [Fact]
     public void NamespaceHandleGetsNoSafeHandle()
     {
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate("CreatePrivateNamespace", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -316,7 +314,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [Fact]
     public void CreateFileUsesSafeHandles()
     {
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate("CreateFile", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -330,7 +328,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [Fact]
     public void BOOL_ReturnTypeBecomes_Boolean()
     {
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate("WinUsb_FlushPipe", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -343,7 +341,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public void NativeArray_SizeParamIndex_ProducesSimplerFriendlyOverload(bool allowMarshaling)
     {
         var options = DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling };
-        this.generator = new Generator(this.metadataStream, options, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator(options);
         Assert.True(this.generator.TryGenerate("EvtNext", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -355,7 +353,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public void NonCOMInterfaceReferences(bool allowMarshaling)
     {
         var options = DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling };
-        this.generator = new Generator(this.metadataStream, options, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator(options);
         const string methodName = "D3DCompile"; // A method whose signature references non-COM interface ID3DInclude
         Assert.True(this.generator.TryGenerate(methodName, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
@@ -370,7 +368,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public void BOOL_ReturnType_InCOMInterface(bool allowMarshaling)
     {
         var options = DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling };
-        this.generator = new Generator(this.metadataStream, options, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator(options);
         Assert.True(this.generator.TryGenerate("ISpellCheckerFactory", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -387,7 +385,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [Theory, PairwiseData]
     public void GenerateByNamespace(bool correctCase)
     {
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         string ns = "Windows.Win32.Foundation";
         if (!correctCase)
         {
@@ -407,7 +405,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [Fact]
     public void BOOL_FieldRemainsBOOL()
     {
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate("ICONINFO", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -420,7 +418,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public void BSTR_FieldsDoNotBecomeSafeHandles(bool allowMarshaling)
     {
         var options = DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling };
-        this.generator = new Generator(this.metadataStream, options, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator(options);
         Assert.True(this.generator.TryGenerate("DebugPropertyInfo", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -432,7 +430,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [Fact]
     public void TypeNameCollisionsDoNotCauseTooMuchCodeGen()
     {
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate("TYPEDESC", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -446,7 +444,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [Fact]
     public void MSIHANDLE_BecomesSafeHandle()
     {
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate("MsiGetLastErrorRecord", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -466,7 +464,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [Fact]
     public void OutHandleParameterBecomesSafeHandle()
     {
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         const string methodName = "TcAddFilter";
         Assert.True(this.generator.TryGenerate(methodName, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
@@ -484,7 +482,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [Fact]
     public void Const_PWSTR_Becomes_PCWSTR_and_String()
     {
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate("StrCmpLogical", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -510,7 +508,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         bool allowMarshaling)
     {
         this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(platform));
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling }, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling });
         if (platform == Platform.AnyCpu)
         {
             // AnyCPU targets should throw an exception with a helpful error message when asked for arch-specific APIs
@@ -532,7 +530,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public void MultipleEntrypointsToOmittedArchSpecificApis()
     {
         this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(Platform.AnyCpu));
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
 
         // Request a struct that depends on arch-specific IP6_ADDRESS.
         Assert.ThrowsAny<GenerationFailedException>(() => this.generator.TryGenerate("DNS_SERVICE_INSTANCE", CancellationToken.None));
@@ -550,7 +548,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         [CombinatorialValues(Platform.X64, Platform.X86)] Platform platform)
     {
         this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(platform));
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
 
         // Request a struct directly, and indirectly through another that references it.
         // This verifies that even if the metadata references a particular arch of the structure,
@@ -584,7 +582,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public void StructsArePartial(string structName)
     {
         this.compilation = this.starterCompilations["net5.0-x64"]; // MEMORY_BASIC_INFORMATION is arch-specific
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate(structName, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -599,7 +597,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.compilation = this.compilation.AddSyntaxTrees(
             CSharpSyntaxTree.ParseText("namespace Microsoft.Windows.Sdk { partial struct HRESULT { void Foo() { } } }", this.parseOptions, "myHRESULT.cs"));
 
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate(structName, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -619,14 +617,14 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [Fact]
     public void GetLastErrorGenerationThrowsWhenExplicitlyCalled()
     {
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.Throws<NotSupportedException>(() => this.generator.TryGenerate("GetLastError", CancellationToken.None));
     }
 
     [Fact(Skip = "https://github.com/microsoft/win32metadata/issues/129")]
     public void DeleteObject_TakesTypeDefStruct()
     {
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate("DeleteObject", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -652,7 +650,7 @@ namespace Microsoft.Windows.Sdk
 }
 ";
         this.compilation = this.compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(test, path: "test.cs"));
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate("CreateFile", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -664,43 +662,45 @@ namespace Microsoft.Windows.Sdk
     [Fact]
     public void FixedLengthInlineArraysOfferExtensionIndexerWhereNoSpanPossible()
     {
-        const string expected = @"        internal partial struct MainAVIHeader
-        {
-            internal uint dwMicroSecPerFrame;
-            internal uint dwMaxBytesPerSec;
-            internal uint dwPaddingGranularity;
-            internal uint dwFlags;
-            internal uint dwTotalFrames;
-            internal uint dwInitialFrames;
-            internal uint dwStreams;
-            internal uint dwSuggestedBufferSize;
-            internal uint dwWidth;
-            internal uint dwHeight;
-            internal __uint_4 dwReserved;
-            internal struct __uint_4
-            {
-                internal uint _0, _1, _2, _3;
-                /// <summary>Always <c>4</c>.</summary>
-                internal int Length => 4;
-            }
-        }
+        const string expected = @"		internal partial struct MainAVIHeader
+		{
+			internal uint dwMicroSecPerFrame;
+			internal uint dwMaxBytesPerSec;
+			internal uint dwPaddingGranularity;
+			internal uint dwFlags;
+			internal uint dwTotalFrames;
+			internal uint dwInitialFrames;
+			internal uint dwStreams;
+			internal uint dwSuggestedBufferSize;
+			internal uint dwWidth;
+			internal uint dwHeight;
+			internal __uint_4 dwReserved;
+
+			internal struct __uint_4
+			{
+				internal uint _0,_1,_2,_3;
+
+				/// <summary>Always <c>4</c>.</summary>
+				internal int Length => 4;
+			}
+		}
 ";
 
         const string expectedIndexer = @"
-    internal static partial class InlineArrayIndexerExtensions
-    {
-        internal static unsafe ref readonly uint ReadOnlyItemRef(this in win32.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
-        {
-            fixed (uint *p0 = &@this._0)
-                return ref p0[index];
-        }
+	internal static partial class InlineArrayIndexerExtensions
+	{
+		internal static unsafe ref readonly uint ReadOnlyItemRef(this in win32.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
+		{
+			fixed (uint* p0 = &@this._0)
+				return ref p0[index];
+		}
 
-        internal static unsafe ref uint ItemRef(this ref win32.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
-        {
-            fixed (uint *p0 = &@this._0)
-                return ref p0[index];
-        }
-    }
+		internal static unsafe ref uint ItemRef(this ref win32.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
+		{
+			fixed (uint* p0 = &@this._0)
+				return ref p0[index];
+		}
+	}
 ";
 
         this.AssertGeneratedType("MainAVIHeader", expected, expectedIndexer);
@@ -712,55 +712,59 @@ namespace Microsoft.Windows.Sdk
     [Fact]
     public void FixedLengthInlineArraysGetSpanWherePossible()
     {
-        const string expected = @"        internal partial struct MainAVIHeader
-        {
-            internal uint dwMicroSecPerFrame;
-            internal uint dwMaxBytesPerSec;
-            internal uint dwPaddingGranularity;
-            internal uint dwFlags;
-            internal uint dwTotalFrames;
-            internal uint dwInitialFrames;
-            internal uint dwStreams;
-            internal uint dwSuggestedBufferSize;
-            internal uint dwWidth;
-            internal uint dwHeight;
-            internal __uint_4 dwReserved;
-            internal struct __uint_4
-            {
-                internal uint _0, _1, _2, _3;
-                /// <summary>Always <c>4</c>.</summary>
-                internal int Length => 4;
-                /// <summary>
-                /// Gets a ref to an individual element of the inline array.
-                /// ⚠ Important ⚠: When this struct is on the stack, do not let the returned reference outlive the stack frame that defines it.
-                /// </summary>
-                internal ref uint this[int index] => ref AsSpan()[index];
-                /// <summary>
-                /// Gets this inline array as a span.
-                /// </summary>
-                /// <remarks>
-                /// ⚠ Important ⚠: When this struct is on the stack, do not let the returned span outlive the stack frame that defines it.
-                /// </remarks>
-                internal Span<uint> AsSpan() => MemoryMarshal.CreateSpan(ref _0, 4);
-            }
-        }
+        const string expected = @"		internal partial struct MainAVIHeader
+		{
+			internal uint dwMicroSecPerFrame;
+			internal uint dwMaxBytesPerSec;
+			internal uint dwPaddingGranularity;
+			internal uint dwFlags;
+			internal uint dwTotalFrames;
+			internal uint dwInitialFrames;
+			internal uint dwStreams;
+			internal uint dwSuggestedBufferSize;
+			internal uint dwWidth;
+			internal uint dwHeight;
+			internal __uint_4 dwReserved;
+
+			internal struct __uint_4
+			{
+				internal uint _0,_1,_2,_3;
+
+				/// <summary>Always <c>4</c>.</summary>
+				internal int Length => 4;
+
+				/// <summary>
+				/// Gets a ref to an individual element of the inline array.
+				/// ⚠ Important ⚠: When this struct is on the stack, do not let the returned reference outlive the stack frame that defines it.
+				/// </summary>
+				internal ref uint this[int index] => ref AsSpan()[index];
+
+				/// <summary>
+				/// Gets this inline array as a span.
+				/// </summary>
+				/// <remarks>
+				/// ⚠ Important ⚠: When this struct is on the stack, do not let the returned span outlive the stack frame that defines it.
+				/// </remarks>
+				internal Span<uint> AsSpan() => MemoryMarshal.CreateSpan(ref _0, 4);
+			}
+		}
 ";
 
         const string expectedIndexer = @"
-    internal static partial class InlineArrayIndexerExtensions
-    {
-        internal static unsafe ref readonly uint ReadOnlyItemRef(this in win32.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
-        {
-            fixed (uint *p0 = &@this._0)
-                return ref p0[index];
-        }
+	internal static partial class InlineArrayIndexerExtensions
+	{
+		internal static unsafe ref readonly uint ReadOnlyItemRef(this in win32.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
+		{
+			fixed (uint* p0 = &@this._0)
+				return ref p0[index];
+		}
 
-        internal static unsafe ref uint ItemRef(this ref win32.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
-        {
-            fixed (uint *p0 = &@this._0)
-                return ref p0[index];
-        }
-    }
+		internal static unsafe ref uint ItemRef(this ref win32.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
+		{
+			fixed (uint* p0 = &@this._0)
+				return ref p0[index];
+		}
+	}
 ";
 
         this.compilation = this.starterCompilations["net5.0"];
@@ -772,7 +776,7 @@ namespace Microsoft.Windows.Sdk
     {
         var generatorOptions = new GeneratorOptions { AllowMarshaling = allowMarshaling };
         this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(platform));
-        this.generator = new Generator(this.metadataStream, generatorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator(generatorOptions);
         this.generator.GenerateAll(CancellationToken.None);
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics(logGeneratedCode: false);
@@ -789,7 +793,7 @@ namespace Microsoft.Windows.Sdk
                 CSharpSyntaxTree.ParseText($@"[assembly: System.Runtime.CompilerServices.InternalsVisibleToAttribute(""{this.compilation.AssemblyName}"")]", this.parseOptions));
         }
 
-        using var referencedGenerator = new Generator(OpenMetadata(), new GeneratorOptions { ClassName = "P1" }, referencedProject, this.parseOptions);
+        using var referencedGenerator = this.CreateGenerator(new GeneratorOptions { ClassName = "P1" }, referencedProject);
         Assert.True(referencedGenerator.TryGenerate("LockWorkStation", CancellationToken.None));
         Assert.True(referencedGenerator.TryGenerate("CreateFile", CancellationToken.None));
         referencedProject = this.AddGeneratedCode(referencedProject, referencedGenerator);
@@ -797,18 +801,13 @@ namespace Microsoft.Windows.Sdk
 
         // Now produce more code in a referencing project that includes at least one of the same types as generated in the referenced project.
         this.compilation = this.compilation.AddReferences(referencedProject.ToMetadataReference());
-        this.generator = new Generator(this.metadataStream, new GeneratorOptions { ClassName = "P2" }, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator(new GeneratorOptions { ClassName = "P2" });
         Assert.True(this.generator.TryGenerate("HidD_GetAttributes", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
     }
 
     private static ImmutableArray<Diagnostic> FilterDiagnostics(ImmutableArray<Diagnostic> diagnostics) => diagnostics.Where(d => d.Severity > DiagnosticSeverity.Hidden).ToImmutableArray();
-
-    private static FileStream OpenMetadata()
-    {
-        return File.OpenRead(Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "Windows.Win32.winmd"));
-    }
 
     private static bool IsAttributePresent(AttributeListSyntax al, string attributeName) => al.Attributes.Any(a => a.Name.ToString() == attributeName);
 
@@ -902,7 +901,7 @@ namespace Microsoft.Windows.Sdk
 
     private void AssertGeneratedType(string apiName, string expectedSyntax, string? expectedExtensions = null)
     {
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate(apiName, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -925,7 +924,7 @@ namespace Microsoft.Windows.Sdk
 
     private void AssertGeneratedMember(string apiName, string memberName, string expectedSyntax)
     {
-        this.generator = new Generator(this.metadataStream, DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate(apiName, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
@@ -940,9 +939,7 @@ namespace Microsoft.Windows.Sdk
 
     private async Task<CSharpCompilation> CreateCompilationAsync(ReferenceAssemblies references, Platform platform = Platform.AnyCpu)
     {
-        ImmutableArray<MetadataReference> metadataReferences = await references
-            .AddPackages(ImmutableArray.Create(new PackageIdentity("Microsoft.Windows.SDK.Contracts", "10.0.19041.1")))
-            .ResolveAsync(LanguageNames.CSharp, default);
+        ImmutableArray<MetadataReference> metadataReferences = await references.ResolveAsync(LanguageNames.CSharp, default);
 
         // Workaround for https://github.com/dotnet/roslyn-sdk/issues/699
         metadataReferences = metadataReferences.AddRange(
@@ -960,5 +957,26 @@ namespace Microsoft.Windows.Sdk
             CSharpSyntaxTree.ParseText("namespace Windows.Win32.System { }", this.parseOptions, path: "Windows.Win32.System.cs"));
 
         return compilation;
+    }
+
+    private Generator CreateGenerator(GeneratorOptions? options = null, CSharpCompilation? compilation = null) => new Generator(MetadataPath, options ?? DefaultTestGeneratorOptions, compilation ?? this.compilation, this.parseOptions);
+
+    private static class MyReferenceAssemblies
+    {
+#pragma warning disable SA1202 // Elements should be ordered by access
+        private static readonly ImmutableArray<PackageIdentity> AdditionalPackages = ImmutableArray.Create(new PackageIdentity("Microsoft.Windows.SDK.Contracts", "10.0.19041.1"));
+
+        internal static readonly ReferenceAssemblies NetStandard20 = ReferenceAssemblies.NetStandard.NetStandard20.AddPackages(AdditionalPackages.Add(new PackageIdentity("System.Memory", "4.5.4")));
+
+        internal static class NetFramework
+        {
+            internal static readonly ReferenceAssemblies Net40 = ReferenceAssemblies.NetFramework.Net40.Default.AddPackages(AdditionalPackages);
+        }
+
+        internal static class Net
+        {
+            internal static readonly ReferenceAssemblies Net50 = ReferenceAssemblies.Net.Net50.AddPackages(AdditionalPackages);
+        }
+#pragma warning restore SA1202 // Elements should be ordered by access
     }
 }

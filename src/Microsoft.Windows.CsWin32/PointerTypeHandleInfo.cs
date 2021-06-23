@@ -9,7 +9,7 @@ namespace Microsoft.Windows.CsWin32
     using System.Reflection.Metadata;
     using System.Runtime.InteropServices;
     using Microsoft.CodeAnalysis.CSharp;
-    using static Microsoft.CodeAnalysis.CSharp.SyntaxFactory;
+    using static FastSyntaxFactory;
 
     internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleInfo, ITypeHandleContainer
     {
@@ -58,7 +58,7 @@ namespace Microsoft.Windows.CsWin32
                 }
             }
             else if (inputs.AllowMarshaling && inputs.Generator is object
-                && customAttributes?.Any(ah => Generator.IsAttribute(inputs.Generator.Reader, inputs.Generator!.Reader.GetCustomAttribute(ah), Generator.InteropDecorationNamespace, "ComOutPtrAttribute")) is true)
+                && customAttributes?.Any(ah => MetadataUtilities.IsAttribute(inputs.Generator.Reader, inputs.Generator!.Reader.GetCustomAttribute(ah), Generator.InteropDecorationNamespace, "ComOutPtrAttribute")) is true)
             {
                 return new TypeSyntaxAndMarshaling(PredefinedType(Token(SyntaxKind.ObjectKeyword)), new MarshalAsAttribute(UnmanagedType.IUnknown));
             }

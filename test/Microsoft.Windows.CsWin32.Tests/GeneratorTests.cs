@@ -24,6 +24,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     private static readonly GeneratorOptions DefaultTestGeneratorOptions = new GeneratorOptions { EmitSingleFile = true };
     private static readonly string FileSeparator = new string('=', 140);
     private static readonly string MetadataPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "Windows.Win32.winmd");
+    private static readonly string ApiDocsPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "apidocs.msgpack");
     private readonly ITestOutputHelper logger;
     private readonly Dictionary<string, CSharpCompilation> starterCompilations = new();
     private CSharpCompilation compilation;
@@ -959,7 +960,7 @@ namespace Microsoft.Windows.Sdk
         return compilation;
     }
 
-    private Generator CreateGenerator(GeneratorOptions? options = null, CSharpCompilation? compilation = null) => new Generator(MetadataPath, options ?? DefaultTestGeneratorOptions, compilation ?? this.compilation, this.parseOptions);
+    private Generator CreateGenerator(GeneratorOptions? options = null, CSharpCompilation? compilation = null) => new Generator(MetadataPath, ApiDocsPath, options ?? DefaultTestGeneratorOptions, compilation ?? this.compilation, this.parseOptions);
 
     private static class MyReferenceAssemblies
     {

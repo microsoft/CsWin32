@@ -16,6 +16,9 @@
     <None Include="$(MicrosoftWindowsSdkWin32MetadataBasePath)*.winmd">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Include="$(MicrosoftWindowsSdkApiDocsPath)">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

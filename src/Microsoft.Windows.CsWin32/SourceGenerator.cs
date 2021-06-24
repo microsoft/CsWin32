@@ -109,6 +109,8 @@ namespace Microsoft.Windows.CsWin32
                 return;
             }
 
+            context.AnalyzerConfigOptions.GlobalOptions.TryGetValue("build_property.MicrosoftWindowsSdkApiDocsPath", out string? apiDocsPath);
+
             GeneratorOptions? options = null;
             AdditionalText? nativeMethodsJsonFile = context.AdditionalFiles
                 .FirstOrDefault(af => string.Equals(Path.GetFileName(af.Path), NativeMethodsJsonAdditionalFileName, StringComparison.OrdinalIgnoreCase));
@@ -139,7 +141,7 @@ namespace Microsoft.Windows.CsWin32
                 context.ReportDiagnostic(Diagnostic.Create(UnsafeCodeRequired, location: null));
             }
 
-            using var generator = new Generator(metadataPath, options, compilation, parseOptions);
+            using var generator = new Generator(metadataPath, apiDocsPath, options, compilation, parseOptions);
 
             SourceText? nativeMethodsTxt = nativeMethodsTxtFile.GetText(context.CancellationToken);
             if (nativeMethodsTxt is null)

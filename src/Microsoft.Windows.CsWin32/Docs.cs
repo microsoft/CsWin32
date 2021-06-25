@@ -9,10 +9,12 @@ namespace Microsoft.Windows.CsWin32
     using System.IO;
     using System.Reflection;
     using MessagePack;
-    using ScrapeDocs;
+    using Microsoft.Windows.SDK.Win32Docs;
 
     internal class Docs
     {
+        private static readonly Dictionary<string, Docs> DocsByPath = new Dictionary<string, Docs>(StringComparer.OrdinalIgnoreCase);
+
         private readonly Dictionary<string, ApiDetails> apisAndDocs;
 
         private Docs(Dictionary<string, ApiDetails> apisAndDocs)
@@ -20,21 +22,32 @@ namespace Microsoft.Windows.CsWin32
             this.apisAndDocs = apisAndDocs;
         }
 
-        internal static Docs Instance { get; } = Create();
-
-        internal bool TryGetApiDocs(string apiName, [NotNullWhen(true)] out ApiDetails? docs) => this.apisAndDocs.TryGetValue(apiName, out docs);
-
-        private static Docs Create()
+        internal static Docs Get(string docsPath)
         {
-            using Stream? docsStream = Assembly.GetExecutingAssembly().GetManifestResourceStream(ThisAssembly.RootNamespace + ".apidocs.msgpack");
-            if (docsStream is null)
+            lock (DocsByPath)
             {
-                ////return new Docs(new Dictionary<string, ApiDetails>());
-                throw new Exception("Documentation not found.");
+                if (DocsByPath.TryGetValue(docsPath, out Docs? existing))
+                {
+                    return existing;
+                }
             }
 
+            using FileStream docsStream = File.OpenRead(docsPath);
             var data = MessagePackSerializer.Deserialize<Dictionary<string, ApiDetails>>(docsStream);
-            return new Docs(data);
+            var docs = new Docs(data);
+
+            lock (DocsByPath)
+            {
+                if (DocsByPath.TryGetValue(docsPath, out Docs? existing))
+                {
+                    return existing;
+                }
+
+                DocsByPath.Add(docsPath, docs);
+                return docs;
+            }
         }
+
+        internal bool TryGetApiDocs(string apiName, [NotNullWhen(true)] out ApiDetails? docs) => this.apisAndDocs.TryGetValue(apiName, out docs);
     }
 }

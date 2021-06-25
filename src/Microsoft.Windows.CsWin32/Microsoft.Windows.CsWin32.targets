@@ -3,20 +3,9 @@
     <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);PackBuildOutputs</TargetsForTfmSpecificContentInPackage>
   </PropertyGroup>
 
-  <Target Name="GenerateAndConsumeDocs"
-          DependsOnTargets="ResolveProjectReferences"
-          BeforeTargets="CoreCompile"
-          Inputs="@(ScraperTool)"
-          Outputs="@(DocOutputPath)"
-          Condition=" '$(DesignTimeBuild)' != 'true' ">
-    <Message Importance="high" Text="Regenerating @(DocOutputPath->'%(FullPath)'). This may take a few minutes..." />
-    <Exec Command="dotnet @(ScraperTool) ../../ext/sdk-api/sdk-api-src/content @(DocOutputPath)"
-          StandardOutputImportance="high"/>
-  </Target>
-
   <Target Name="SetNuSpecProperties" BeforeTargets="GenerateNuspec" DependsOnTargets="GetBuildVersion">
     <PropertyGroup>
-      <NuspecProperties>$(NuspecProperties);Version=$(Version);BaseOutputPath=$(OutputPath);MetadataVersion=$(MetadataVersion);PackageReleaseNotes=$(PackageReleaseNotes);commit=$(GitCommitId);</NuspecProperties>
+      <NuspecProperties>$(NuspecProperties);Version=$(Version);BaseOutputPath=$(OutputPath);MetadataVersion=$(MetadataVersion);ApiDocsVersion=$(ApiDocsVersion);PackageReleaseNotes=$(PackageReleaseNotes);commit=$(GitCommitId);</NuspecProperties>
     </PropertyGroup>
   </Target>
 

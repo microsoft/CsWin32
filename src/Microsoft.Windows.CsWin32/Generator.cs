@@ -22,7 +22,7 @@ namespace Microsoft.Windows.CsWin32
     using Microsoft.CodeAnalysis;
     using Microsoft.CodeAnalysis.CSharp;
     using Microsoft.CodeAnalysis.CSharp.Syntax;
-    using ScrapeDocs;
+    using Microsoft.Windows.SDK.Win32Docs;
     using static FastSyntaxFactory;
 
     /// <summary>
@@ -284,12 +284,14 @@ namespace Microsoft.Windows.CsWin32
         /// Initializes a new instance of the <see cref="Generator"/> class.
         /// </summary>
         /// <param name="metadataLibraryPath">The path to the winmd metadata to generate APIs from.</param>
+        /// <param name="apiDocsPath">The path to the API docs file.</param>
         /// <param name="options">Options that influence the result of generation.</param>
         /// <param name="compilation">The compilation that the generated code will be added to.</param>
         /// <param name="parseOptions">The parse options that will be used for the generated code.</param>
-        public Generator(string metadataLibraryPath, GeneratorOptions? options = null, CSharpCompilation? compilation = null, CSharpParseOptions? parseOptions = null)
+        public Generator(string metadataLibraryPath, string? apiDocsPath, GeneratorOptions? options = null, CSharpCompilation? compilation = null, CSharpParseOptions? parseOptions = null)
         {
             this.MetadataIndex = MetadataIndex.Get(metadataLibraryPath, compilation?.Options.Platform);
+            this.ApiDocs = apiDocsPath is object ? Docs.Get(apiDocsPath) : null;
 
             this.options = options ??= new GeneratorOptions();
             this.options.Validate();
@@ -347,6 +349,8 @@ namespace Microsoft.Windows.CsWin32
         };
 
         internal MetadataIndex MetadataIndex { get; }
+
+        internal Docs? ApiDocs { get; }
 
         internal ReadOnlyCollection<TypeDefinition> Apis => this.MetadataIndex.Apis;
 
@@ -1202,7 +1206,7 @@ namespace Microsoft.Windows.CsWin32
             this.volatileCode.GenerateConstant(fieldDefHandle, delegate
             {
                 FieldDeclarationSyntax constantDeclaration = this.DeclareConstant(fieldDefHandle);
-                constantDeclaration = AddApiDocumentation(constantDeclaration.Declaration.Variables[0].Identifier.ValueText, constantDeclaration);
+                constantDeclaration = this.AddApiDocumentation(constantDeclaration.Declaration.Variables[0].Identifier.ValueText, constantDeclaration);
                 this.volatileCode.AddConstant(fieldDefHandle, constantDeclaration);
             });
         }
@@ -1677,222 +1681,6 @@ namespace Microsoft.Windows.CsWin32
 
         private static SyntaxToken TokenWithLineFeed(SyntaxKind syntaxKind) => SyntaxFactory.Token(TriviaList(), syntaxKind, TriviaList(LineFeed));
 
-        private static T AddApiDocumentation<T>(string api, T memberDeclaration)
-            where T : MemberDeclarationSyntax
-        {
-            if (Docs.Instance.TryGetApiDocs(api, out var docs))
-            {
-                var docCommentsBuilder = new StringBuilder();
-                if (docs.Description is object)
-                {
-                    docCommentsBuilder.Append($@"/// <summary>");
-                    EmitDoc(docs.Description, docCommentsBuilder, docs, string.Empty);
-                    docCommentsBuilder.AppendLine("</summary>");
-                }
-
-                if (docs.Parameters is object)
-                {
-                    if (memberDeclaration is BaseMethodDeclarationSyntax methodDecl)
-                    {
-                        foreach (var entry in docs.Parameters)
-                        {
-                            if (!methodDecl.ParameterList.Parameters.Any(p => string.Equals(p.Identifier.ValueText, entry.Key, StringComparison.Ordinal)))
-                            {
-                                // Skip documentation for parameters that do not actually exist on the method.
-                                continue;
-                            }
-
-                            docCommentsBuilder.Append($@"/// <param name=""{entry.Key}"">");
-                            EmitDoc(entry.Value, docCommentsBuilder, docs, "parameters");
-                            docCommentsBuilder.AppendLine("</param>");
-                        }
-                    }
-                }
-
-                if (docs.Fields is object)
-                {
-                    var fieldsDocBuilder = new StringBuilder();
-                    switch (memberDeclaration)
-                    {
-                        case StructDeclarationSyntax structDeclaration:
-                            memberDeclaration = memberDeclaration.ReplaceNodes(
-                                structDeclaration.Members.OfType<FieldDeclarationSyntax>(),
-                                (_, field) =>
-                                {
-                                    var variable = field.Declaration.Variables.Single();
-                                    if (docs.Fields.TryGetValue(variable.Identifier.ValueText, out string? fieldDoc))
-                                    {
-                                        fieldsDocBuilder.Append("/// <summary>");
-                                        EmitDoc(fieldDoc, fieldsDocBuilder, docs, "members");
-                                        fieldsDocBuilder.AppendLine("</summary>");
-                                        if (field.Declaration.Type.HasAnnotations(OriginalDelegateAnnotation))
-                                        {
-                                            fieldsDocBuilder.AppendLine(@$"/// <remarks>See the <see cref=""{field.Declaration.Type.GetAnnotations(OriginalDelegateAnnotation).Single().Data}"" /> delegate for more about this function.</remarks>");
-                                        }
-
-                                        field = field.WithLeadingTrivia(ParseLeadingTrivia(fieldsDocBuilder.ToString()));
-                                        fieldsDocBuilder.Clear();
-                                    }
-
-                                    return field;
-                                });
-                            break;
-                        case EnumDeclarationSyntax enumDeclaration:
-                            memberDeclaration = memberDeclaration.ReplaceNodes(
-                                enumDeclaration.Members,
-                                (_, field) =>
-                                {
-                                    if (docs.Fields.TryGetValue(field.Identifier.ValueText, out string? fieldDoc))
-                                    {
-                                        fieldsDocBuilder.Append($@"/// <summary>");
-                                        EmitDoc(fieldDoc, fieldsDocBuilder, docs, "members");
-                                        fieldsDocBuilder.AppendLine("</summary>");
-                                        field = field.WithLeadingTrivia(ParseLeadingTrivia(fieldsDocBuilder.ToString()));
-                                        fieldsDocBuilder.Clear();
-                                    }
-
-                                    return field;
-                                });
-                            break;
-                    }
-                }
-
-                if (docs.ReturnValue is object)
-                {
-                    docCommentsBuilder.Append("/// <returns>");
-                    EmitDoc(docs.ReturnValue, docCommentsBuilder, docs: null, string.Empty);
-                    docCommentsBuilder.AppendLine("</returns>");
-                }
-
-                if (docs.Remarks is object || docs.HelpLink is object)
-                {
-                    docCommentsBuilder.Append($"/// <remarks>");
-                    if (docs.Remarks is object)
-                    {
-                        EmitDoc(docs.Remarks, docCommentsBuilder, docs, string.Empty);
-                    }
-                    else if (docs.HelpLink is object)
-                    {
-                        docCommentsBuilder.AppendLine();
-                        docCommentsBuilder.AppendLine($@"/// <para><see href=""{docs.HelpLink}"">Learn more about this API from docs.microsoft.com.</see></para>");
-                        docCommentsBuilder.Append("/// ");
-                    }
-
-                    docCommentsBuilder.AppendLine($"</remarks>");
-                }
-
-                memberDeclaration = memberDeclaration.WithLeadingTrivia(
-                    ParseLeadingTrivia(docCommentsBuilder.ToString()));
-            }
-
-            return memberDeclaration;
-
-            static void EmitLine(StringBuilder stringBuilder, string yamlDocSrc)
-            {
-                stringBuilder.Append(yamlDocSrc.Trim());
-            }
-
-            static void EmitDoc(string yamlDocSrc, StringBuilder docCommentsBuilder, ApiDetails? docs, string docsAnchor)
-            {
-                if (yamlDocSrc.Contains('\n'))
-                {
-                    docCommentsBuilder.AppendLine();
-                    var docReader = new StringReader(yamlDocSrc);
-                    string? paramDocLine;
-
-                    bool inParagraph = false;
-                    bool inComment = false;
-                    int blankLineCounter = 0;
-                    while ((paramDocLine = docReader.ReadLine()) is object)
-                    {
-                        if (string.IsNullOrWhiteSpace(paramDocLine))
-                        {
-                            if (++blankLineCounter >= 2 && inParagraph)
-                            {
-                                docCommentsBuilder.AppendLine("</para>");
-                                inParagraph = false;
-                                inComment = false;
-                            }
-
-                            continue;
-                        }
-                        else if (blankLineCounter > 0)
-                        {
-                            blankLineCounter = 0;
-                        }
-                        else
-                        {
-                            docCommentsBuilder.Append(' ');
-                        }
-
-                        if (inParagraph)
-                        {
-                            if (docCommentsBuilder.Length > 0 && docCommentsBuilder[docCommentsBuilder.Length - 1] != ' ')
-                            {
-                                docCommentsBuilder.Append(' ');
-                            }
-                        }
-                        else
-                        {
-                            docCommentsBuilder.Append("/// <para>");
-                            inParagraph = true;
-                            inComment = true;
-                        }
-
-                        if (!inComment)
-                        {
-                            docCommentsBuilder.Append("/// ");
-                        }
-
-                        if (paramDocLine.IndexOf("<table", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                            paramDocLine.IndexOf("<img", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                            paramDocLine.IndexOf("<ul", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                            paramDocLine.IndexOf("<ol", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                            paramDocLine.IndexOf("```", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                            paramDocLine.IndexOf("<<", StringComparison.OrdinalIgnoreCase) >= 0)
-                        {
-                            // We don't try to format tables, so truncate at this point.
-                            if (inParagraph)
-                            {
-                                docCommentsBuilder.AppendLine("</para>");
-                                inParagraph = false;
-                                inComment = false;
-                            }
-
-                            docCommentsBuilder.AppendLine($@"/// <para>This doc was truncated.</para>");
-
-                            break; // is this the right way?
-                        }
-
-                        EmitLine(docCommentsBuilder, paramDocLine);
-                    }
-
-                    if (inParagraph)
-                    {
-                        if (!inComment)
-                        {
-                            docCommentsBuilder.Append("/// ");
-                        }
-
-                        docCommentsBuilder.AppendLine("</para>");
-                        inParagraph = false;
-                        inComment = false;
-                    }
-
-                    if (docs is object)
-                    {
-                        docCommentsBuilder.AppendLine($@"/// <para><see href=""{docs.HelpLink}#{docsAnchor}"">Read more on docs.microsoft.com</see>.</para>");
-                    }
-
-                    docCommentsBuilder.Append("/// ");
-                }
-                else
-                {
-                    EmitLine(docCommentsBuilder, yamlDocSrc);
-                }
-            }
-        }
-
         private static bool RequiresUnsafe(TypeSyntax? typeSyntax) => typeSyntax is PointerTypeSyntax || typeSyntax is FunctionPointerTypeSyntax;
 
         private static string GetClassNameForModule(string moduleName) =>
@@ -2129,6 +1917,222 @@ namespace Microsoft.Windows.CsWin32
             @namespace = nameIdx >= 0 ? possiblyQualifiedName.Substring(0, nameIdx) : null;
             name = nameIdx >= 0 ? possiblyQualifiedName.Substring(nameIdx) : possiblyQualifiedName;
             return @namespace is object;
+        }
+
+        private T AddApiDocumentation<T>(string api, T memberDeclaration)
+            where T : MemberDeclarationSyntax
+        {
+            if (this.ApiDocs is object && this.ApiDocs.TryGetApiDocs(api, out var docs))
+            {
+                var docCommentsBuilder = new StringBuilder();
+                if (docs.Description is object)
+                {
+                    docCommentsBuilder.Append($@"/// <summary>");
+                    EmitDoc(docs.Description, docCommentsBuilder, docs, string.Empty);
+                    docCommentsBuilder.AppendLine("</summary>");
+                }
+
+                if (docs.Parameters is object)
+                {
+                    if (memberDeclaration is BaseMethodDeclarationSyntax methodDecl)
+                    {
+                        foreach (var entry in docs.Parameters)
+                        {
+                            if (!methodDecl.ParameterList.Parameters.Any(p => string.Equals(p.Identifier.ValueText, entry.Key, StringComparison.Ordinal)))
+                            {
+                                // Skip documentation for parameters that do not actually exist on the method.
+                                continue;
+                            }
+
+                            docCommentsBuilder.Append($@"/// <param name=""{entry.Key}"">");
+                            EmitDoc(entry.Value, docCommentsBuilder, docs, "parameters");
+                            docCommentsBuilder.AppendLine("</param>");
+                        }
+                    }
+                }
+
+                if (docs.Fields is object)
+                {
+                    var fieldsDocBuilder = new StringBuilder();
+                    switch (memberDeclaration)
+                    {
+                        case StructDeclarationSyntax structDeclaration:
+                            memberDeclaration = memberDeclaration.ReplaceNodes(
+                                structDeclaration.Members.OfType<FieldDeclarationSyntax>(),
+                                (_, field) =>
+                                {
+                                    var variable = field.Declaration.Variables.Single();
+                                    if (docs.Fields.TryGetValue(variable.Identifier.ValueText, out string? fieldDoc))
+                                    {
+                                        fieldsDocBuilder.Append("/// <summary>");
+                                        EmitDoc(fieldDoc, fieldsDocBuilder, docs, "members");
+                                        fieldsDocBuilder.AppendLine("</summary>");
+                                        if (field.Declaration.Type.HasAnnotations(OriginalDelegateAnnotation))
+                                        {
+                                            fieldsDocBuilder.AppendLine(@$"/// <remarks>See the <see cref=""{field.Declaration.Type.GetAnnotations(OriginalDelegateAnnotation).Single().Data}"" /> delegate for more about this function.</remarks>");
+                                        }
+
+                                        field = field.WithLeadingTrivia(ParseLeadingTrivia(fieldsDocBuilder.ToString()));
+                                        fieldsDocBuilder.Clear();
+                                    }
+
+                                    return field;
+                                });
+                            break;
+                        case EnumDeclarationSyntax enumDeclaration:
+                            memberDeclaration = memberDeclaration.ReplaceNodes(
+                                enumDeclaration.Members,
+                                (_, field) =>
+                                {
+                                    if (docs.Fields.TryGetValue(field.Identifier.ValueText, out string? fieldDoc))
+                                    {
+                                        fieldsDocBuilder.Append($@"/// <summary>");
+                                        EmitDoc(fieldDoc, fieldsDocBuilder, docs, "members");
+                                        fieldsDocBuilder.AppendLine("</summary>");
+                                        field = field.WithLeadingTrivia(ParseLeadingTrivia(fieldsDocBuilder.ToString()));
+                                        fieldsDocBuilder.Clear();
+                                    }
+
+                                    return field;
+                                });
+                            break;
+                    }
+                }
+
+                if (docs.ReturnValue is object)
+                {
+                    docCommentsBuilder.Append("/// <returns>");
+                    EmitDoc(docs.ReturnValue, docCommentsBuilder, docs: null, string.Empty);
+                    docCommentsBuilder.AppendLine("</returns>");
+                }
+
+                if (docs.Remarks is object || docs.HelpLink is object)
+                {
+                    docCommentsBuilder.Append($"/// <remarks>");
+                    if (docs.Remarks is object)
+                    {
+                        EmitDoc(docs.Remarks, docCommentsBuilder, docs, string.Empty);
+                    }
+                    else if (docs.HelpLink is object)
+                    {
+                        docCommentsBuilder.AppendLine();
+                        docCommentsBuilder.AppendLine($@"/// <para><see href=""{docs.HelpLink}"">Learn more about this API from docs.microsoft.com.</see></para>");
+                        docCommentsBuilder.Append("/// ");
+                    }
+
+                    docCommentsBuilder.AppendLine($"</remarks>");
+                }
+
+                memberDeclaration = memberDeclaration.WithLeadingTrivia(
+                    ParseLeadingTrivia(docCommentsBuilder.ToString()));
+            }
+
+            return memberDeclaration;
+
+            static void EmitLine(StringBuilder stringBuilder, string yamlDocSrc)
+            {
+                stringBuilder.Append(yamlDocSrc.Trim());
+            }
+
+            static void EmitDoc(string yamlDocSrc, StringBuilder docCommentsBuilder, ApiDetails? docs, string docsAnchor)
+            {
+                if (yamlDocSrc.Contains('\n'))
+                {
+                    docCommentsBuilder.AppendLine();
+                    var docReader = new StringReader(yamlDocSrc);
+                    string? paramDocLine;
+
+                    bool inParagraph = false;
+                    bool inComment = false;
+                    int blankLineCounter = 0;
+                    while ((paramDocLine = docReader.ReadLine()) is object)
+                    {
+                        if (string.IsNullOrWhiteSpace(paramDocLine))
+                        {
+                            if (++blankLineCounter >= 2 && inParagraph)
+                            {
+                                docCommentsBuilder.AppendLine("</para>");
+                                inParagraph = false;
+                                inComment = false;
+                            }
+
+                            continue;
+                        }
+                        else if (blankLineCounter > 0)
+                        {
+                            blankLineCounter = 0;
+                        }
+                        else
+                        {
+                            docCommentsBuilder.Append(' ');
+                        }
+
+                        if (inParagraph)
+                        {
+                            if (docCommentsBuilder.Length > 0 && docCommentsBuilder[docCommentsBuilder.Length - 1] != ' ')
+                            {
+                                docCommentsBuilder.Append(' ');
+                            }
+                        }
+                        else
+                        {
+                            docCommentsBuilder.Append("/// <para>");
+                            inParagraph = true;
+                            inComment = true;
+                        }
+
+                        if (!inComment)
+                        {
+                            docCommentsBuilder.Append("/// ");
+                        }
+
+                        if (paramDocLine.IndexOf("<table", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            paramDocLine.IndexOf("<img", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            paramDocLine.IndexOf("<ul", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            paramDocLine.IndexOf("<ol", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            paramDocLine.IndexOf("```", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            paramDocLine.IndexOf("<<", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            // We don't try to format tables, so truncate at this point.
+                            if (inParagraph)
+                            {
+                                docCommentsBuilder.AppendLine("</para>");
+                                inParagraph = false;
+                                inComment = false;
+                            }
+
+                            docCommentsBuilder.AppendLine($@"/// <para>This doc was truncated.</para>");
+
+                            break; // is this the right way?
+                        }
+
+                        EmitLine(docCommentsBuilder, paramDocLine);
+                    }
+
+                    if (inParagraph)
+                    {
+                        if (!inComment)
+                        {
+                            docCommentsBuilder.Append("/// ");
+                        }
+
+                        docCommentsBuilder.AppendLine("</para>");
+                        inParagraph = false;
+                        inComment = false;
+                    }
+
+                    if (docs is object)
+                    {
+                        docCommentsBuilder.AppendLine($@"/// <para><see href=""{docs.HelpLink}#{docsAnchor}"">Read more on docs.microsoft.com</see>.</para>");
+                    }
+
+                    docCommentsBuilder.Append("/// ");
+                }
+                else
+                {
+                    EmitLine(docCommentsBuilder, yamlDocSrc);
+                }
+            }
         }
 
         private MemberDeclarationSyntax FetchTemplate(string name)
@@ -2410,7 +2414,7 @@ namespace Microsoft.Windows.CsWin32
                 }
 
                 // Add documentation if we can find it.
-                methodDeclaration = AddApiDocumentation(entrypoint ?? methodName, methodDeclaration);
+                methodDeclaration = this.AddApiDocumentation(entrypoint ?? methodName, methodDeclaration);
 
                 if (RequiresUnsafe(methodDeclaration.ReturnType) || methodDeclaration.ParameterList.Parameters.Any(p => RequiresUnsafe(p.Type)))
                 {
@@ -2731,7 +2735,7 @@ namespace Microsoft.Windows.CsWin32
                 }
 
                 // Add documentation if we can find it.
-                methodDeclaration = AddApiDocumentation($"{ifaceName}.{methodName}", methodDeclaration);
+                methodDeclaration = this.AddApiDocumentation($"{ifaceName}.{methodName}", methodDeclaration);
 
                 members.AddRange(this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, IdentifierName(ifaceName.Identifier.ValueText), FriendlyOverloadOf.StructMethod));
                 members.Add(methodDeclaration);
@@ -2884,7 +2888,7 @@ namespace Microsoft.Windows.CsWin32
                     }
 
                     // Add documentation if we can find it.
-                    methodDeclaration = AddApiDocumentation($"{ifaceName}.{methodName}", methodDeclaration);
+                    methodDeclaration = this.AddApiDocumentation($"{ifaceName}.{methodName}", methodDeclaration);
                     members.Add(methodDeclaration);
 
                     NameSyntax declaringTypeName = HandleTypeHandleInfo.GetNestingQualifiedName(this.Reader, typeDef);
@@ -3087,7 +3091,7 @@ namespace Microsoft.Windows.CsWin32
                 result = result.AddAttributeLists(AttributeList().AddAttributes(GUID(guid)));
             }
 
-            result = AddApiDocumentation(name.Identifier.ValueText, result);
+            result = this.AddApiDocumentation(name.Identifier.ValueText, result);
 
             return result;
         }
@@ -3319,7 +3323,7 @@ namespace Microsoft.Windows.CsWin32
                 .WithModifiers(structModifiers)
                 .AddAttributeLists(AttributeList().AddAttributes(DebuggerDisplay("{" + fieldName + "}")));
 
-            result = AddApiDocumentation(name.Identifier.ValueText, result);
+            result = this.AddApiDocumentation(name.Identifier.ValueText, result);
             return result;
         }
 
@@ -3519,7 +3523,7 @@ namespace Microsoft.Windows.CsWin32
                 .WithMembers(members)
                 .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.ReadOnlyKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)));
 
-            result = AddApiDocumentation(name.Identifier.ValueText, result);
+            result = this.AddApiDocumentation(name.Identifier.ValueText, result);
             return result;
         }
 
@@ -3578,7 +3582,7 @@ namespace Microsoft.Windows.CsWin32
                     AttributeList().AddAttributes(FlagsAttributeSyntax));
             }
 
-            result = AddApiDocumentation(name, result);
+            result = this.AddApiDocumentation(name, result);
 
             return result;
         }

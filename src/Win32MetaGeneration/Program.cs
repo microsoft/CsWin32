@@ -44,8 +44,10 @@ namespace Win32.CodeGen
 
                 var sw = Stopwatch.StartNew();
                 string metadataPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "Windows.Win32.winmd");
+                string apiDocsPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "apidocs.msgpack");
                 using var generator = new Generator(
                     metadataPath,
+                    apiDocsPath,
                     new GeneratorOptions
                     {
                         WideCharOnly = true,

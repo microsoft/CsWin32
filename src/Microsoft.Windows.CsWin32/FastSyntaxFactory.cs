@@ -137,9 +137,9 @@ namespace Microsoft.Windows.CsWin32
 
         internal static ConstructorDeclarationSyntax ConstructorDeclaration(SyntaxToken identifier) => SyntaxFactory.ConstructorDeclaration(default, default, identifier, ParameterList(), null, null, null, default);
 
-        internal static ClassDeclarationSyntax ClassDeclaration(SyntaxToken identifier) => SyntaxFactory.ClassDeclaration(default, default, Token(SyntaxKind.ClassKeyword), identifier.WithTrailingTrivia(TriviaList(LineFeed)), null, null, default, OpenBrace, default, CloseBrace, default);
+        internal static ClassDeclarationSyntax ClassDeclaration(SyntaxToken identifier) => SyntaxFactory.ClassDeclaration(default, default, Token(SyntaxKind.ClassKeyword), identifier, null, null, default, OpenBrace, default, CloseBrace, default);
 
-        internal static StructDeclarationSyntax StructDeclaration(SyntaxToken identifier) => SyntaxFactory.StructDeclaration(default, default, TokenWithSpace(SyntaxKind.StructKeyword), identifier.WithTrailingTrivia(TriviaList(LineFeed)), null, null, default, OpenBrace, default, CloseBrace, default);
+        internal static StructDeclarationSyntax StructDeclaration(SyntaxToken identifier) => SyntaxFactory.StructDeclaration(default, default, TokenWithSpace(SyntaxKind.StructKeyword), identifier, null, null, default, OpenBrace, default, CloseBrace, default);
 
         internal static ConstructorInitializerSyntax ConstructorInitializer(SyntaxKind kind) => SyntaxFactory.ConstructorInitializer(kind, Token(SyntaxKind.ColonToken), Token(GetConstructorInitializerThisOrBaseKeywordKind(kind)), ArgumentList());
 
@@ -159,7 +159,7 @@ namespace Microsoft.Windows.CsWin32
 
         internal static ElementAccessExpressionSyntax ElementAccessExpression(ExpressionSyntax expression) => SyntaxFactory.ElementAccessExpression(expression, BracketedArgumentList());
 
-        internal static EnumDeclarationSyntax EnumDeclaration(SyntaxToken identifier) => SyntaxFactory.EnumDeclaration(default, default, Token(TriviaList(), SyntaxKind.EnumKeyword, TriviaList(Space)), identifier.WithTrailingTrivia(LineFeed), null, Token(TriviaList(), SyntaxKind.OpenBraceToken, TriviaList(LineFeed)), default, Token(TriviaList(), SyntaxKind.CloseBraceToken, TriviaList(LineFeed)), default);
+        internal static EnumDeclarationSyntax EnumDeclaration(SyntaxToken identifier) => SyntaxFactory.EnumDeclaration(default, default, Token(TriviaList(), SyntaxKind.EnumKeyword, TriviaList(Space)), identifier, null, Token(TriviaList(), SyntaxKind.OpenBraceToken, TriviaList(LineFeed)), default, Token(TriviaList(), SyntaxKind.CloseBraceToken, TriviaList(LineFeed)), default);
 
         internal static EnumMemberDeclarationSyntax EnumMemberDeclaration(SyntaxToken identifier) => SyntaxFactory.EnumMemberDeclaration(identifier);
 

@@ -4963,6 +4963,8 @@ namespace Microsoft.Windows.CsWin32
 
             private SyntaxTrivia IndentTrivia => this.indentationLevels[this.indentationLevel];
 
+            private SyntaxTrivia IndentMinus1Trivia => this.indentationLevels[Math.Max(0, this.indentationLevel - 1)];
+
             public override SyntaxNode? VisitNamespaceDeclaration(NamespaceDeclarationSyntax node)
             {
                 node = node
@@ -4981,9 +4983,8 @@ namespace Microsoft.Windows.CsWin32
 
             public override SyntaxNode? VisitStructDeclaration(StructDeclarationSyntax node)
             {
-                node = this.WithIndentingTrivia(node)
-                    .WithOpenBraceToken(node.OpenBraceToken.WithLeadingTrivia(TriviaList(this.IndentTrivia)))
-                    .WithCloseBraceToken(node.CloseBraceToken.WithLeadingTrivia(TriviaList(this.IndentTrivia)));
+                node = this.BaseTypeWhitespaceHelper(node);
+
                 using var indent = new Indent(this);
                 SyntaxNode? result = base.VisitStructDeclaration(node);
                 if (result is StructDeclarationSyntax s)
@@ -4996,9 +4997,8 @@ namespace Microsoft.Windows.CsWin32
 
             public override SyntaxNode? VisitClassDeclaration(ClassDeclarationSyntax node)
             {
-                node = this.WithIndentingTrivia(node)
-                    .WithOpenBraceToken(node.OpenBraceToken.WithLeadingTrivia(TriviaList(this.IndentTrivia)))
-                    .WithCloseBraceToken(node.CloseBraceToken.WithLeadingTrivia(TriviaList(this.IndentTrivia)));
+                node = this.BaseTypeWhitespaceHelper(node);
+
                 using var indent = new Indent(this);
                 SyntaxNode? result = base.VisitClassDeclaration(node);
                 if (result is ClassDeclarationSyntax c)
@@ -5011,12 +5011,14 @@ namespace Microsoft.Windows.CsWin32
 
             public override SyntaxNode? VisitEnumDeclaration(EnumDeclarationSyntax node)
             {
-                node = this.WithIndentingTrivia(node)
-                    .WithOpenBraceToken(node.OpenBraceToken.WithLeadingTrivia(TriviaList(this.IndentTrivia)))
-                    .WithCloseBraceToken(node.CloseBraceToken.WithLeadingTrivia(TriviaList(this.IndentTrivia)));
+                node = this.BaseTypeWhitespaceHelper(node);
+                node = node.ReplaceTokens(node.Members.GetSeparators(), (orig, current) => current.WithTrailingTrivia(LineFeed));
+
                 using var indent = new Indent(this);
                 return base.VisitEnumDeclaration(node);
             }
+
+            public override SyntaxNode? VisitEnumMemberDeclaration(EnumMemberDeclarationSyntax node) => base.VisitEnumMemberDeclaration(this.WithIndentingTrivia(node));
 
             public override SyntaxNode? VisitUsingDirective(UsingDirectiveSyntax node)
             {
@@ -5026,27 +5028,125 @@ namespace Microsoft.Windows.CsWin32
             public override SyntaxNode? VisitBlock(BlockSyntax node)
             {
                 node = node
-                    .WithOpenBraceToken(Token(TriviaList(LineFeed).Add(this.IndentTrivia), SyntaxKind.OpenBraceToken, TriviaList(LineFeed)))
-                    .WithCloseBraceToken(Token(TriviaList(this.IndentTrivia), SyntaxKind.CloseBraceToken, TriviaList(LineFeed)));
-                using var indent = new Indent(this);
+                    .WithOpenBraceToken(Token(TriviaList(this.IndentMinus1Trivia), SyntaxKind.OpenBraceToken, TriviaList(LineFeed)))
+                    .WithCloseBraceToken(Token(TriviaList(this.IndentMinus1Trivia), SyntaxKind.CloseBraceToken, TriviaList(LineFeed)));
                 return base.VisitBlock(node);
             }
 
-            public override SyntaxNode? VisitMethodDeclaration(MethodDeclarationSyntax node) => base.VisitMethodDeclaration(this.WithIndentingTrivia(node));
+            public override SyntaxNode? VisitAttributeList(AttributeListSyntax node)
+            {
+                if (node.Parent is MemberDeclarationSyntax)
+                {
+                    return base.VisitAttributeList(this.WithIndentingTrivia(node, this.IndentMinus1Trivia).WithTrailingTrivia(TriviaList(LineFeed)));
+                }
+                else if (node.Parent is ParameterSyntax)
+                {
+                    return base.VisitAttributeList(node.WithTrailingTrivia(TriviaList(Space)));
+                }
+                else
+                {
+                    return base.VisitAttributeList(node);
+                }
+            }
+
+            public override SyntaxNode? VisitConstructorDeclaration(ConstructorDeclarationSyntax node) => base.VisitConstructorDeclaration(this.WithIndentingTrivia(node));
+
+            public override SyntaxNode? VisitMethodDeclaration(MethodDeclarationSyntax node)
+            {
+                MethodDeclarationSyntax indented = this.WithIndentingTrivia(node);
+                using var indent = new Indent(this);
+                if (indented.Body is object)
+                {
+                    indented = indented.WithParameterList(indented.ParameterList.WithCloseParenToken(Token(TriviaList(), SyntaxKind.CloseParenToken, TriviaList(LineFeed))));
+                }
+
+                return base.VisitMethodDeclaration(indented);
+            }
 
             public override SyntaxNode? VisitDelegateDeclaration(DelegateDeclarationSyntax node) => base.VisitDelegateDeclaration(this.WithIndentingTrivia(node));
 
-            public override SyntaxNode? VisitFieldDeclaration(FieldDeclarationSyntax node) => base.VisitFieldDeclaration(this.WithIndentingTrivia(node));
+            public override SyntaxNode? VisitFieldDeclaration(FieldDeclarationSyntax node)
+            {
+                node = this.WithIndentingTrivia(node);
+
+                // Indent around a field so that doc comments are aligned.
+                using var indent = new Indent(this);
+                return base.VisitFieldDeclaration(node);
+            }
 
             public override SyntaxNode? VisitPropertyDeclaration(PropertyDeclarationSyntax node) => base.VisitPropertyDeclaration(this.WithIndentingTrivia(node));
 
+            public override SyntaxNode? VisitAccessorList(AccessorListSyntax node)
+            {
+                node = node
+                    .WithOpenBraceToken(Token(TriviaList(LineFeed).Add(this.IndentTrivia), SyntaxKind.OpenBraceToken, TriviaList(LineFeed)))
+                    .WithCloseBraceToken(node.CloseBraceToken.WithLeadingTrivia(this.IndentTrivia));
+
+                using var indent = new Indent(this);
+                return base.VisitAccessorList(node);
+            }
+
+            public override SyntaxNode? VisitAccessorDeclaration(AccessorDeclarationSyntax node)
+            {
+                node = node.WithLeadingTrivia(this.IndentTrivia);
+                if (node.Body is object)
+                {
+                    node = node.WithKeyword(node.Keyword.WithTrailingTrivia(LineFeed));
+                }
+
+                using var indent = new Indent(this);
+                return base.VisitAccessorDeclaration(node);
+            }
+
             public override SyntaxNode? VisitIndexerDeclaration(IndexerDeclarationSyntax node) => base.VisitIndexerDeclaration(this.WithIndentingTrivia(node));
+
+            public override SyntaxNode? VisitConversionOperatorDeclaration(ConversionOperatorDeclarationSyntax node) => base.VisitConversionOperatorDeclaration(this.WithIndentingTrivia(node));
+
+            public override SyntaxNode? VisitOperatorDeclaration(OperatorDeclarationSyntax node) => base.VisitOperatorDeclaration(this.WithIndentingTrivia(node));
 
             public override SyntaxNode? VisitFixedStatement(FixedStatementSyntax node)
             {
                 node = this.WithIndentingTrivia(node);
                 using var indent = new Indent(this);
                 return base.VisitFixedStatement(node);
+            }
+
+            public override SyntaxNode? VisitLocalDeclarationStatement(LocalDeclarationStatementSyntax node) => base.VisitLocalDeclarationStatement(node.WithLeadingTrivia(this.IndentTrivia));
+
+            public override SyntaxNode? VisitIfStatement(IfStatementSyntax node)
+            {
+                node = node.WithLeadingTrivia(this.IndentTrivia).WithCloseParenToken(Token(TriviaList(), SyntaxKind.CloseParenToken, TriviaList(LineFeed)));
+                using var indent = new Indent(this);
+                return base.VisitIfStatement(node);
+            }
+
+            public override SyntaxNode? VisitElseClause(ElseClauseSyntax node)
+            {
+                node = node.WithLeadingTrivia(this.IndentMinus1Trivia);
+                using var indent = new Indent(this);
+                return base.VisitElseClause(node);
+            }
+
+            public override SyntaxNode? VisitWhileStatement(WhileStatementSyntax node)
+            {
+                node = node.WithLeadingTrivia(this.IndentTrivia).WithCloseParenToken(Token(TriviaList(), SyntaxKind.CloseParenToken, TriviaList(LineFeed)));
+                using var indent = new Indent(this);
+                return base.VisitWhileStatement(node);
+            }
+
+            public override SyntaxNode? VisitExpressionStatement(ExpressionStatementSyntax node) => base.VisitExpressionStatement(node.WithLeadingTrivia(this.IndentTrivia));
+
+            public override SyntaxNode? VisitTryStatement(TryStatementSyntax node)
+            {
+                node = node.WithLeadingTrivia(this.IndentTrivia);
+                using var indent = new Indent(this);
+                return base.VisitTryStatement(node);
+            }
+
+            public override SyntaxNode? VisitFinallyClause(FinallyClauseSyntax node)
+            {
+                node = node.WithLeadingTrivia(this.IndentMinus1Trivia);
+                return base.VisitFinallyClause(node);
             }
 
             public override SyntaxNode? VisitReturnStatement(ReturnStatementSyntax node) => base.VisitReturnStatement(node.WithLeadingTrivia(this.IndentTrivia));
@@ -5065,7 +5165,7 @@ namespace Microsoft.Windows.CsWin32
                     if (list[i].GetStructure() is DocumentationCommentTriviaSyntax trivia)
                     {
                         var comment = new StringBuilder(trivia.Content.ToFullString());
-                        string indent = this.IndentTrivia.ToString();
+                        string indent = this.IndentMinus1Trivia.ToString();
                         comment.Insert(0, indent);
                         comment.Replace("\n", "\n" + indent);
                         comment.Length -= indent.Length; // Remove the extra indent after the last newline.
@@ -5101,11 +5201,56 @@ namespace Microsoft.Windows.CsWin32
                 return members;
             }
 
-            private TSyntax WithIndentingTrivia<TSyntax>(TSyntax node)
+            private T BaseTypeWhitespaceHelper<T>(T node)
+                where T : BaseTypeDeclarationSyntax
+            {
+                node = (T)this.WithIndentingTrivia(node)
+                    .WithOpenBraceToken(node.OpenBraceToken.WithLeadingTrivia(TriviaList(this.IndentTrivia)))
+                    .WithCloseBraceToken(node.CloseBraceToken.WithLeadingTrivia(TriviaList(this.IndentTrivia)));
+
+                using var indent = new Indent(this);
+                if (node.BaseList is object)
+                {
+                    // Base list, so add new line on the last base type, and put the base list on its own line.
+                    node = (T)node.WithBaseList(node.BaseList
+                        .WithColonToken(TokenWithSpace(SyntaxKind.ColonToken))
+                        .WithLeadingTrivia(LineFeed, this.IndentTrivia)
+                        .WithTrailingTrivia(LineFeed));
+                }
+                else
+                {
+                    // No base list, so add new line on the identifier.
+                    node = (T)node.WithIdentifier(node.Identifier.WithTrailingTrivia(LineFeed));
+                }
+
+                return node;
+            }
+
+            private TSyntax WithIndentingTrivia<TSyntax>(TSyntax node, SyntaxTrivia indentation = default)
                 where TSyntax : SyntaxNode
             {
+                if (indentation == default)
+                {
+                    indentation = this.IndentTrivia;
+                }
+
+                if (node is MemberDeclarationSyntax member)
+                {
+                    if (member.AttributeLists.Any())
+                    {
+                        // Take care to indent the method itself, not its attributes.
+                        if (member.Modifiers.Any())
+                        {
+                            var firstModifier = member.Modifiers.First();
+                            var indentedModifier = firstModifier.WithLeadingTrivia(indentation);
+                            var indentedMemberDeclaration = member.WithModifiers(member.Modifiers.Replace(firstModifier, indentedModifier));
+                            return (TSyntax)(SyntaxNode)indentedMemberDeclaration;
+                        }
+                    }
+                }
+
                 // Take care to preserve xml doc comments, pragmas, etc.
-                return node.WithLeadingTrivia(node.HasLeadingTrivia ? node.GetLeadingTrivia().Add(this.IndentTrivia) : TriviaList(this.IndentTrivia));
+                return node.WithLeadingTrivia(node.HasLeadingTrivia ? node.GetLeadingTrivia().Add(indentation) : TriviaList(indentation));
             }
 
             private struct Indent : IDisposable

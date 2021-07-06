@@ -1976,7 +1976,7 @@ namespace Microsoft.Windows.CsWin32
                                             fieldsDocBuilder.AppendLine(@$"/// <remarks>See the <see cref=""{field.Declaration.Type.GetAnnotations(OriginalDelegateAnnotation).Single().Data}"" /> delegate for more about this function.</remarks>");
                                         }
 
-                                        field = field.WithLeadingTrivia(ParseLeadingTrivia(fieldsDocBuilder.ToString()));
+                                        field = field.WithLeadingTrivia(ParseLeadingTrivia(fieldsDocBuilder.ToString().Replace("\r\n", "\n")));
                                         fieldsDocBuilder.Clear();
                                     }
 
@@ -2159,7 +2159,7 @@ namespace Microsoft.Windows.CsWin32
             }
 
             using StreamReader sr = new(templateStream);
-            string template = sr.ReadToEnd();
+            string template = sr.ReadToEnd().Replace("\r\n", "\n");
             member = ParseMemberDeclaration(template) ?? throw new GenerationFailedException($"Unable to parse a type from a template: {name}");
             member = this.ElevateVisibility(member);
             return true;
@@ -3952,7 +3952,7 @@ namespace Microsoft.Windows.CsWin32
                     DocumentationCommentTrivia(SyntaxKind.SingleLineDocumentationCommentTrivia).AddContent(
                         XmlText("/// "),
                         XmlEmptyElement("inheritdoc").AddAttributes(XmlCrefAttribute(NameMemberCref(docRefExternName, ToCref(externMethodDeclaration.ParameterList)))),
-                        XmlText().AddTextTokens(XmlTextNewLine("\r\n", continueXmlDocumentationComment: false))));
+                        XmlText().AddTextTokens(XmlTextNewLine("\n", continueXmlDocumentationComment: false))));
                 InvocationExpressionSyntax externInvocation = InvocationExpression(
                     overloadOf switch
                     {

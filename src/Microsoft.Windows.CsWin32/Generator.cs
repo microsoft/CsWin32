@@ -3564,7 +3564,7 @@ namespace Microsoft.Windows.CsWin32
                 EnumMemberDeclarationSyntax enumMember = EnumMemberDeclaration(SafeIdentifier(enumValueName))
                     .WithEqualsValue(EqualsValueClause(enumValue));
                 enumValues.Add(enumMember);
-                enumValues.Add(Token(SyntaxKind.CommaToken));
+                enumValues.Add(TokenWithLineFeed(SyntaxKind.CommaToken));
             }
 
             if (enumBaseType is null)

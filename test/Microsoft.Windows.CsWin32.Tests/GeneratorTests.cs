@@ -927,12 +927,18 @@ namespace Windows.Win32
 		internal enum DISPLAYCONFIG_SCANLINE_ORDERING
 		{
 			/// <summary>Indicates that scan-line ordering of the output is unspecified. The caller can only set the <b>scanLineOrdering</b> member of the <a href=""https://docs.microsoft.com/windows/desktop/api/wingdi/ns-wingdi-displayconfig_path_target_info"">DISPLAYCONFIG_PATH_TARGET_INFO</a> structure in a call to the <a href=""https://docs.microsoft.com/windows/desktop/api/winuser/nf-winuser-setdisplayconfig"">SetDisplayConfig</a> function to DISPLAYCONFIG_SCANLINE_ORDERING_UNSPECIFIED if the caller also set the refresh rate denominator and numerator of the <b>refreshRate</b> member both to zero. In this case, <b>SetDisplayConfig</b> uses the best refresh rate it can find.</summary>
-DISPLAYCONFIG_SCANLINE_ORDERING_UNSPECIFIED = 0,			/// <summary>Indicates that the output is a progressive image.</summary>
-DISPLAYCONFIG_SCANLINE_ORDERING_PROGRESSIVE = 1,			/// <summary>Indicates that the output is an interlaced image that is created beginning with the upper field.</summary>
-DISPLAYCONFIG_SCANLINE_ORDERING_INTERLACED = 2,			/// <summary>Indicates that the output is an interlaced image that is created beginning with the upper field.</summary>
-DISPLAYCONFIG_SCANLINE_ORDERING_INTERLACED_UPPERFIELDFIRST = 2,			/// <summary>Indicates that the output is an interlaced image that is created beginning with the lower field.</summary>
-DISPLAYCONFIG_SCANLINE_ORDERING_INTERLACED_LOWERFIELDFIRST = 3,			/// <summary>Forces this enumeration to compile to 32 bits in size. Without this value, some compilers would allow this enumeration to compile to a size other than 32 bits. You should not use this value.</summary>
-DISPLAYCONFIG_SCANLINE_ORDERING_FORCE_UINT32 = -1,		}
+			DISPLAYCONFIG_SCANLINE_ORDERING_UNSPECIFIED = 0,
+			/// <summary>Indicates that the output is a progressive image.</summary>
+			DISPLAYCONFIG_SCANLINE_ORDERING_PROGRESSIVE = 1,
+			/// <summary>Indicates that the output is an interlaced image that is created beginning with the upper field.</summary>
+			DISPLAYCONFIG_SCANLINE_ORDERING_INTERLACED = 2,
+			/// <summary>Indicates that the output is an interlaced image that is created beginning with the upper field.</summary>
+			DISPLAYCONFIG_SCANLINE_ORDERING_INTERLACED_UPPERFIELDFIRST = 2,
+			/// <summary>Indicates that the output is an interlaced image that is created beginning with the lower field.</summary>
+			DISPLAYCONFIG_SCANLINE_ORDERING_INTERLACED_LOWERFIELDFIRST = 3,
+			/// <summary>Forces this enumeration to compile to 32 bits in size. Without this value, some compilers would allow this enumeration to compile to a size other than 32 bits. You should not use this value.</summary>
+			DISPLAYCONFIG_SCANLINE_ORDERING_FORCE_UINT32 = -1,
+		}
 	}
 }
 ".Replace("\r\n", "\n")),
@@ -986,7 +992,13 @@ namespace Windows.Win32
 	{
 		internal enum DISPLAYCONFIG_SCANLINE_ORDERING
 		{
-DISPLAYCONFIG_SCANLINE_ORDERING_UNSPECIFIED = 0,DISPLAYCONFIG_SCANLINE_ORDERING_PROGRESSIVE = 1,DISPLAYCONFIG_SCANLINE_ORDERING_INTERLACED = 2,DISPLAYCONFIG_SCANLINE_ORDERING_INTERLACED_UPPERFIELDFIRST = 2,DISPLAYCONFIG_SCANLINE_ORDERING_INTERLACED_LOWERFIELDFIRST = 3,DISPLAYCONFIG_SCANLINE_ORDERING_FORCE_UINT32 = -1,		}
+			DISPLAYCONFIG_SCANLINE_ORDERING_UNSPECIFIED = 0,
+			DISPLAYCONFIG_SCANLINE_ORDERING_PROGRESSIVE = 1,
+			DISPLAYCONFIG_SCANLINE_ORDERING_INTERLACED = 2,
+			DISPLAYCONFIG_SCANLINE_ORDERING_INTERLACED_UPPERFIELDFIRST = 2,
+			DISPLAYCONFIG_SCANLINE_ORDERING_INTERLACED_LOWERFIELDFIRST = 3,
+			DISPLAYCONFIG_SCANLINE_ORDERING_FORCE_UINT32 = -1,
+		}
 	}
 }
 ".Replace("\r\n", "\n")),

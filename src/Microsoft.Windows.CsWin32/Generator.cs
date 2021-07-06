@@ -2159,7 +2159,7 @@ namespace Microsoft.Windows.CsWin32
             }
 
             using StreamReader sr = new(templateStream);
-            string template = sr.ReadToEnd().Replace("\r\n", "\n");
+            string template = sr.ReadToEnd().Replace("\r\n", "\n").Replace("\t", string.Empty);
             member = ParseMemberDeclaration(template) ?? throw new GenerationFailedException($"Unable to parse a type from a template: {name}");
             member = this.ElevateVisibility(member);
             return true;
@@ -3154,7 +3154,7 @@ namespace Microsoft.Windows.CsWin32
             members = members.Add(ConstructorDeclaration(name.Identifier)
                 .AddModifiers(TokenWithSpace(this.Visibility))
                 .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(fieldInfo.FieldType.WithTrailingTrivia(TriviaList(Space))))
-                .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, valueParameter)))
+                .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, valueParameter).WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken))))
                 .WithSemicolonToken(SemicolonWithLineFeed));
 
             // If this typedef struct represents a pointer, add an IsNull property.
@@ -3494,18 +3494,18 @@ namespace Microsoft.Windows.CsWin32
             members = members.Add(ConstructorDeclaration(name.Identifier)
                 .AddModifiers(TokenWithSpace(this.Visibility))
                 .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword))))
-                .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, boolToInt)))
+                .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, boolToInt).WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken))))
                 .WithSemicolonToken(SemicolonWithLineFeed));
 
             // BOOL(int value) => this.value = value;
             members = members.Add(ConstructorDeclaration(name.Identifier)
                 .AddModifiers(TokenWithSpace(this.Visibility))
                 .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))))
-                .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, valueParameter)))
+                .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, valueParameter).WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken))))
                 .WithSemicolonToken(SemicolonWithLineFeed));
 
             // public static implicit operator bool(BOOL value) => value.value != 0 ? true : false;
-            members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)))
+            members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), PredefinedType(Token(SyntaxKind.BoolKeyword)))
                 .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))))
                 .WithExpressionBody(ArrowExpressionClause(BinaryExpression(SyntaxKind.NotEqualsExpression, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(fieldName)), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)))))
                 .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
@@ -5083,6 +5083,17 @@ namespace Microsoft.Windows.CsWin32
 
             public override SyntaxNode? VisitIndexerDeclaration(IndexerDeclarationSyntax node) => base.VisitIndexerDeclaration(this.WithIndentingTrivia(node));
 
+            public override SyntaxNode? VisitAccessorList(AccessorListSyntax node)
+            {
+                node = node
+                    .WithOpenBraceToken(Token(TriviaList(this.IndentTrivia), SyntaxKind.OpenBraceToken, TriviaList(LineFeed)))
+                    .WithCloseBraceToken(Token(TriviaList(this.IndentTrivia), SyntaxKind.CloseBraceToken, TriviaList(LineFeed)));
+                using var indent = new Indent(this);
+                return base.VisitAccessorList(node);
+            }
+
+            public override SyntaxNode? VisitAccessorDeclaration(AccessorDeclarationSyntax node) => base.VisitAccessorDeclaration(this.WithIndentingTrivia(node));
+
             public override SyntaxNode? VisitFixedStatement(FixedStatementSyntax node)
             {
                 node = this.WithIndentingTrivia(node);
@@ -5116,7 +5127,7 @@ namespace Microsoft.Windows.CsWin32
                 {
                     if (list[i].GetStructure() is DocumentationCommentTriviaSyntax trivia)
                     {
-                        indent ??= list[i].Token.Parent is BaseTypeDeclarationSyntax ? this.OuterIndentTrivia.ToString() : this.IndentTrivia.ToString();
+                        indent ??= list[i].Token.Parent is BaseTypeDeclarationSyntax /*or AttributeListSyntax { Parent: BaseTypeDeclarationSyntax }*/ ? this.OuterIndentTrivia.ToString() : this.IndentTrivia.ToString();
                         var comment = new StringBuilder(trivia.Content.ToFullString());
                         comment.Insert(0, indent);
                         comment.Replace("\n", "\n" + indent);

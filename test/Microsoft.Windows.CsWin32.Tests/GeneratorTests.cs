@@ -861,9 +861,9 @@ namespace Windows.Win32
 			private readonly int value;
 
 			internal int Value => this.value;
-			internal BOOL(bool value) => this.value= value ? 1 : 0;
-			internal BOOL(int value) => this.value= value;
-			public static implicit operator bool (BOOL value) => value.Value != 0;
+			internal BOOL(bool value) => this.value = value ? 1 : 0;
+			internal BOOL(int value) => this.value = value;
+			public static implicit operator bool(BOOL value) => value.Value != 0;
 			public static implicit operator BOOL(bool value) => new BOOL(value);
 			public static explicit operator BOOL(int value) => new BOOL(value);
 		}
@@ -1140,7 +1140,7 @@ namespace Windows.Win32
 			: IEquatable<HDC>
 		{
 			internal readonly IntPtr Value;
-			internal HDC(IntPtr value) => this.Value= value;
+			internal HDC(IntPtr value) => this.Value = value;
 
 			internal bool IsNull => Value == default;
 			public static implicit operator IntPtr(HDC value) => value.Value;
@@ -1182,7 +1182,7 @@ namespace Windows.Win32
 			: IEquatable<HWND>
 		{
 			internal readonly nint Value;
-			internal HWND(nint value) => this.Value= value;
+			internal HWND(nint value) => this.Value = value;
 			public static implicit operator nint(HWND value) => value.Value;
 			public static explicit operator HWND(nint value) => new HWND(value);
 			public static bool operator ==(HWND left, HWND right) => left.Value == right.Value;
@@ -1291,9 +1291,9 @@ namespace Windows.Win32
 			private readonly int value;
 
 			internal int Value => this.value;
-			internal BOOL(bool value) => this.value= value ? 1 : 0;
-			internal BOOL(int value) => this.value= value;
-			public static implicit operator bool (BOOL value) => value.Value != 0;
+			internal BOOL(bool value) => this.value = value ? 1 : 0;
+			internal BOOL(int value) => this.value = value;
+			public static implicit operator bool(BOOL value) => value.Value != 0;
 			public static implicit operator BOOL(bool value) => new BOOL(value);
 			public static explicit operator BOOL(int value) => new BOOL(value);
 		}
@@ -1509,7 +1509,7 @@ namespace Windows.Win32
 			: IEquatable<HANDLE>
 		{
 			internal readonly IntPtr Value;
-			internal HANDLE(IntPtr value) => this.Value= value;
+			internal HANDLE(IntPtr value) => this.Value = value;
 
 			internal bool IsNull => Value == default;
 			public static implicit operator IntPtr(HANDLE value) => value.Value;
@@ -1551,56 +1551,56 @@ namespace Windows.Win32
 			/// </summary>
 		[DebuggerDisplay(""{"" + nameof(DebuggerDisplay) + ""}"")]
 		internal unsafe readonly partial struct PCWSTR
-				: IEquatable<PCWSTR>
+			: IEquatable<PCWSTR>
 		{
-				/// <summary>
-				/// A pointer to the first character in the string. The content should be considered readonly, as it was typed as constant in the SDK.
-				/// </summary>
-				internal readonly char* Value;
-				internal PCWSTR(char* value) => this.Value = value;
-				public static explicit operator char*(PCWSTR value) => value.Value;
-				public static implicit operator PCWSTR(char* value) => new PCWSTR(value);
-				public static implicit operator PCWSTR(PWSTR value) => new PCWSTR(value.Value);
+			/// <summary>
+			/// A pointer to the first character in the string. The content should be considered readonly, as it was typed as constant in the SDK.
+			/// </summary>
+			internal readonly char* Value;
+			internal PCWSTR(char* value) => this.Value = value;
+			public static explicit operator char*(PCWSTR value) => value.Value;
+			public static implicit operator PCWSTR(char* value) => new PCWSTR(value);
+			public static implicit operator PCWSTR(PWSTR value) => new PCWSTR(value.Value);
 
-				public bool Equals(PCWSTR other) => this.Value == other.Value;
+			public bool Equals(PCWSTR other) => this.Value == other.Value;
 
-				public override bool Equals(object obj) => obj is PCWSTR other && this.Equals(other);
+			public override bool Equals(object obj) => obj is PCWSTR other && this.Equals(other);
 
-				public override int GetHashCode() => unchecked((int)this.Value);
+			public override int GetHashCode() => unchecked((int)this.Value);
 
 
-				/// <summary>
-				/// Gets the number of characters up to the first null character (exclusive).
-				/// </summary>
-				internal int Length
-	{
-		get
-
+			/// <summary>
+			/// Gets the number of characters up to the first null character (exclusive).
+			/// </summary>
+			internal int Length
 			{
-			char* p = this.Value;
-			if (p is null)
-				return 0;
-			while (*p != '\0')
-				p++;
-				return checked((int)(p - this.Value));
+				get
+
+				{
+char* p = this.Value;
+if (p is null)
+					return 0;
+while (*p != '\0')
+p++;
+					return checked((int)(p - this.Value));
+				}
 			}
-	}
 
 
-				/// <summary>
-				/// Returns a <see langword=""string""/> with a copy of this character array.
-				/// </summary>
-				/// <returns>A <see langword=""string""/>, or <see langword=""null""/> if <see cref=""Value""/> is <see langword=""null""/>.</returns>
-				public override string ToString() => this.Value is null ? null : new string(this.Value);
+			/// <summary>
+			/// Returns a <see langword=""string""/> with a copy of this character array.
+			/// </summary>
+			/// <returns>A <see langword=""string""/>, or <see langword=""null""/> if <see cref=""Value""/> is <see langword=""null""/>.</returns>
+			public override string ToString() => this.Value is null ? null : new string(this.Value);
 
 
-				/// <summary>
-				/// Returns a span of the characters in this string.
-				/// </summary>
-				internal ReadOnlySpan<char> AsSpan() => this.Value is null ? default(ReadOnlySpan<char>) : new ReadOnlySpan<char>(this.Value, this.Length);
+			/// <summary>
+			/// Returns a span of the characters in this string.
+			/// </summary>
+			internal ReadOnlySpan<char> AsSpan() => this.Value is null ? default(ReadOnlySpan<char>) : new ReadOnlySpan<char>(this.Value, this.Length);
 
 
-				private string DebuggerDisplay => this.ToString();
+			private string DebuggerDisplay => this.ToString();
 		}
 	}
 }
@@ -1738,7 +1738,7 @@ namespace Windows.Win32
 			: IEquatable<PWSTR>
 		{
 			internal readonly char* Value;
-			internal PWSTR(char* value) => this.Value= value;
+			internal PWSTR(char* value) => this.Value = value;
 			public static implicit operator char*(PWSTR value) => value.Value;
 			public static implicit operator PWSTR(char* value) => new PWSTR(value);
 			public static bool operator ==(PWSTR left, PWSTR right) => left.Value == right.Value;
@@ -1750,16 +1750,16 @@ namespace Windows.Win32
 
 			public override int GetHashCode() => checked((int )this.Value);
 
-			internal int Length{
-get
-			{
+			internal int Length			{
+				get
+				{
 char* p = this.Value;
-if (p is null)				return 0;
+if (p is null)					return 0;
 while (*p != 0)
 p++;
-				return checked((int )(p - this.Value));
+					return checked((int )(p - this.Value));
+				}
 			}
-}
 
 			public override string ToString() => this.Value is null ? null : new string(this.Value);
 

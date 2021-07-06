@@ -6,6 +6,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <AssemblyMetadata Include="MicrosoftWindowsSdkWin32MetadataBasePath" Value="$(MicrosoftWindowsSdkWin32MetadataBasePath)" />
+    <AssemblyMetadata Include="MicrosoftWindowsSdkApiDocsPath" Value="$(MicrosoftWindowsSdkApiDocsPath)" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Include="$(MicrosoftWindowsSdkWin32MetadataBasePath)*.winmd">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
@@ -21,7 +26,7 @@
   <ItemGroup>
     <PackageReference Include="coverlet.msbuild" Version="3.0.3" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="3.10.0" />
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.CodeFix.Testing.XUnit" Version="1.1.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.SourceGenerators.Testing.XUnit" Version="1.1.1-beta1.21351.1" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="16.10.0" />
     <PackageReference Include="System.Collections.Immutable" Version="5.0.0" />
     <PackageReference Include="System.Reflection.Metadata" Version="5.0.0" />

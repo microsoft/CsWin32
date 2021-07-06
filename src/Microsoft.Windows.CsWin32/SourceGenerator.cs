@@ -204,7 +204,9 @@ namespace Microsoft.Windows.CsWin32
                 }
             }
 
-            var compilationUnits = generator.GetCompilationUnits(context.CancellationToken);
+            var compilationUnits = generator.GetCompilationUnits(context.CancellationToken)
+                .OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(pair => pair.Key, StringComparer.Ordinal);
             foreach (var unit in compilationUnits)
             {
                 context.AddSource(unit.Key, unit.Value.ToFullString());

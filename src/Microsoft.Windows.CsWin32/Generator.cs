@@ -111,8 +111,9 @@ namespace Microsoft.Windows.CsWin32
         private static readonly AttributeSyntax ComImportAttribute = Attribute(IdentifierName("ComImport"));
         private static readonly AttributeSyntax PreserveSigAttribute = Attribute(IdentifierName("PreserveSig"));
         private static readonly AttributeSyntax SupportedOSPlatformAttribute = Attribute(IdentifierName("SupportedOSPlatform"));
-        private static readonly AttributeListSyntax DefaultDllImportSearchPathsAttributeList = AttributeList().AddAttributes(
-            Attribute(IdentifierName("DefaultDllImportSearchPaths")).AddArgumentListArguments(AttributeArgument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(DllImportSearchPath)), IdentifierName(nameof(DllImportSearchPath.System32))))));
+        private static readonly AttributeListSyntax DefaultDllImportSearchPathsAttributeList = AttributeList()
+            .WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken))
+            .AddAttributes(Attribute(IdentifierName("DefaultDllImportSearchPaths")).AddArgumentListArguments(AttributeArgument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(DllImportSearchPath)), IdentifierName(nameof(DllImportSearchPath.System32))))));
 
         private static readonly HashSet<string> ImplicitConversionTypeDefs = new HashSet<string>(StringComparer.Ordinal)
         {
@@ -2025,7 +2026,7 @@ namespace Microsoft.Windows.CsWin32
                 }
 
                 memberDeclaration = memberDeclaration.WithLeadingTrivia(
-                    ParseLeadingTrivia(docCommentsBuilder.ToString()));
+                    ParseLeadingTrivia(docCommentsBuilder.ToString().Replace("\r\n", "\n")));
             }
 
             return memberDeclaration;

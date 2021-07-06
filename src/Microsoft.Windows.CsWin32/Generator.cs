@@ -1993,7 +1993,7 @@ namespace Microsoft.Windows.CsWin32
                                         fieldsDocBuilder.Append($@"/// <summary>");
                                         EmitDoc(fieldDoc, fieldsDocBuilder, docs, "members");
                                         fieldsDocBuilder.AppendLine("</summary>");
-                                        field = field.WithLeadingTrivia(ParseLeadingTrivia(fieldsDocBuilder.ToString()));
+                                        field = field.WithLeadingTrivia(ParseLeadingTrivia(fieldsDocBuilder.ToString().Replace("\r\n", "\n")));
                                         fieldsDocBuilder.Clear();
                                     }
 
@@ -5065,6 +5065,8 @@ namespace Microsoft.Windows.CsWin32
             public override SyntaxNode? VisitDelegateDeclaration(DelegateDeclarationSyntax node) => base.VisitDelegateDeclaration(this.WithIndentingTrivia(node));
 
             public override SyntaxNode? VisitFieldDeclaration(FieldDeclarationSyntax node) => base.VisitFieldDeclaration(this.WithIndentingTrivia(node));
+
+            public override SyntaxNode? VisitEnumMemberDeclaration(EnumMemberDeclarationSyntax node) => base.VisitEnumMemberDeclaration(this.WithIndentingTrivia(node));
 
             public override SyntaxNode? VisitPropertyDeclaration(PropertyDeclarationSyntax node) => base.VisitPropertyDeclaration(this.WithIndentingTrivia(node));
 

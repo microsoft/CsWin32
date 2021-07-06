@@ -254,7 +254,7 @@ namespace Microsoft.Windows.CsWin32
             "CS1658", // C# bug: https://github.com/microsoft/CsWin32/issues/24
         };
 
-        private static readonly AttributeSyntax OptionalAttributeSyntax = Attribute(IdentifierName("Optional"));
+        private static readonly AttributeSyntax OptionalAttributeSyntax = Attribute(IdentifierName("Optional")).WithArgumentList(null);
         private static readonly AttributeSyntax FlagsAttributeSyntax = Attribute(IdentifierName("Flags")).WithArgumentList(null);
         private static readonly AttributeSyntax FieldOffsetAttributeSyntax = Attribute(IdentifierName("FieldOffset"));
 
@@ -1807,7 +1807,7 @@ namespace Microsoft.Windows.CsWin32
                 parameter.Modifiers.Any(SyntaxKind.RefKeyword) ? TokenWithSpace(SyntaxKind.RefKeyword) :
                 parameter.Modifiers.Any(SyntaxKind.OutKeyword) ? TokenWithSpace(SyntaxKind.OutKeyword) :
                 default,
-                parameter.Type!);
+                parameter.Type!.WithoutTrailingTrivia());
 
         private static FunctionPointerUnmanagedCallingConventionSyntax ToUnmanagedCallingConventionSyntax(CallingConvention callingConvention)
         {
@@ -2066,14 +2066,14 @@ namespace Microsoft.Windows.CsWin32
                         {
                             blankLineCounter = 0;
                         }
-                        else
+                        else if (docCommentsBuilder.Length > 0 && docCommentsBuilder[docCommentsBuilder.Length - 1] != '\n')
                         {
                             docCommentsBuilder.Append(' ');
                         }
 
                         if (inParagraph)
                         {
-                            if (docCommentsBuilder.Length > 0 && docCommentsBuilder[docCommentsBuilder.Length - 1] != ' ')
+                            if (docCommentsBuilder.Length > 0 && docCommentsBuilder[docCommentsBuilder.Length - 1] is not (' ' or '\n'))
                             {
                                 docCommentsBuilder.Append(' ');
                             }
@@ -3290,7 +3290,7 @@ namespace Microsoft.Windows.CsWin32
             // public override int GetHashCode() => unchecked((int)this.Value); // if Value is a pointer
             // public override int GetHashCode() => this.Value.GetHashCode(); // if Value is not a pointer
             ExpressionSyntax hashExpr = fieldInfo.FieldType is PointerTypeSyntax ?
-                CheckedExpression(SyntaxKind.UncheckedExpression, CastExpression(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), fieldAccessExpression)) :
+                CheckedExpression(SyntaxKind.UncheckedExpression, CastExpression(PredefinedType(TokenWithNoSpace(SyntaxKind.IntKeyword)), fieldAccessExpression)) :
                 InvocationExpression(
                     MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, fieldAccessExpression, IdentifierName(nameof(object.GetHashCode))),
                     ArgumentList());
@@ -3390,7 +3390,7 @@ namespace Microsoft.Windows.CsWin32
                     ParenthesizedExpression(
                         BinaryExpression(
                             SyntaxKind.SubtractExpression,
-                            CastExpression(PointerType(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))), bstrValue),
+                            CastExpression(PointerType(PredefinedType(TokenWithNoSpace(SyntaxKind.IntKeyword))), bstrValue),
                             LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(1))))),
                 LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(2)));
             ExpressionSyntax rosCreation = ObjectCreationExpression(rosChar).AddArgumentListArguments(Argument(bstrValue), Argument(length));
@@ -3417,7 +3417,7 @@ namespace Microsoft.Windows.CsWin32
 
             // internal int Length { get; }
             IdentifierNameSyntax localPointer = IdentifierName("p");
-            yield return PropertyDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), "Length")
+            yield return PropertyDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), Identifier("Length").WithTrailingTrivia(LineFeed))
                 .AddModifiers(TokenWithSpace(this.Visibility))
                 .WithAccessorList(AccessorList().AddAccessors(AccessorDeclaration(
                     SyntaxKind.GetAccessorDeclaration,
@@ -3429,7 +3429,7 @@ namespace Microsoft.Windows.CsWin32
                         //// if (p is null) return 0;
                         IfStatement(
                             IsPatternExpression(localPointer, ConstantPattern(LiteralExpression(SyntaxKind.NullLiteralExpression))),
-                            ReturnStatement(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)))),
+                            ReturnStatement(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)))).WithCloseParenToken(TokenWithLineFeed(SyntaxKind.CloseParenToken)),
                         //// while (*p != '\0') p++;
                         WhileStatement(
                             BinaryExpression(SyntaxKind.NotEqualsExpression, PrefixUnaryExpression(SyntaxKind.PointerIndirectionExpression, localPointer), LiteralExpression(SyntaxKind.CharacterLiteralExpression, Literal('\0'))),
@@ -3439,8 +3439,8 @@ namespace Microsoft.Windows.CsWin32
                             CheckedExpression(
                                 SyntaxKind.CheckedExpression,
                                 CastExpression(
-                                    PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)),
-                                    ParenthesizedExpression(BinaryExpression(SyntaxKind.SubtractExpression, localPointer, thisValue)))))))));
+                                    PredefinedType(TokenWithNoSpace(SyntaxKind.IntKeyword)),
+                                    ParenthesizedExpression(BinaryExpression(SyntaxKind.SubtractExpression, localPointer, thisValue))))))).WithKeyword(TokenWithLineFeed(SyntaxKind.GetKeyword))));
 
             // public override string? ToString() => this.Value is null ? null : new string(this.Value);
             yield return MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword)), Identifier(nameof(this.ToString)))
@@ -3711,19 +3711,24 @@ namespace Microsoft.Windows.CsWin32
                         ExpressionStatement(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName(nameof(SafeHandle.DangerousAddRef))))
                             .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(refAddedName).WithRefKindKeyword(TokenWithSpace(SyntaxKind.RefKeyword)))))),
                         //// hTemplateFileLocal = (HANDLE)hTemplateFile.DangerousGetHandle();
-                        ExpressionStatement(AssignmentExpression(
-                            SyntaxKind.SimpleAssignmentExpression,
-                            typeDefHandleName,
-                            CastExpression(
-                                externParam.Type,
-                                InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName(nameof(SafeHandle.DangerousGetHandle))), ArgumentList()))))),
+                        ExpressionStatement(
+                            AssignmentExpression(
+                                SyntaxKind.SimpleAssignmentExpression,
+                                typeDefHandleName,
+                                CastExpression(
+                                    externParam.Type.WithoutTrailingTrivia(),
+                                    InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName(nameof(SafeHandle.DangerousGetHandle))), ArgumentList())))
+                            .WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken)))),
                         //// else hTemplateFileLocal = default;
-                        ElseClause(ExpressionStatement(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, typeDefHandleName, DefaultExpression(externParam.Type))))));
+                        ElseClause(ExpressionStatement(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, typeDefHandleName, DefaultExpression(externParam.Type.WithoutTrailingTrivia())).WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken))))));
 
-                    // if (hTemplateFileAddRef) hTemplateFile.DangerousRelease();
-                    finallyStatements.Add(IfStatement(
-                        refAddedName,
-                        ExpressionStatement(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName(nameof(SafeHandle.DangerousRelease))), ArgumentList()))));
+                    // if (hTemplateFileAddRef)
+                    //     hTemplateFile.DangerousRelease();
+                    finallyStatements.Add(
+                        IfStatement(
+                            refAddedName,
+                            ExpressionStatement(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName(nameof(SafeHandle.DangerousRelease))), ArgumentList())))
+                        .WithCloseParenToken(TokenWithLineFeed(SyntaxKind.CloseParenToken)));
 
                     // Accept the SafeHandle instead.
                     parameters[param.SequenceNumber - 1] = externParam
@@ -5034,8 +5039,18 @@ namespace Microsoft.Windows.CsWin32
 
             public override SyntaxNode? VisitBlock(BlockSyntax node)
             {
+                SyntaxTriviaList leadingTrivia;
+                if (node.Parent is FixedStatementSyntax or AccessorDeclarationSyntax or TryStatementSyntax or FinallyClauseSyntax)
+                {
+                    leadingTrivia = TriviaList(this.IndentTrivia);
+                }
+                else
+                {
+                    leadingTrivia = TriviaList(LineFeed).Add(this.IndentTrivia);
+                }
+
                 node = node
-                    .WithOpenBraceToken(Token(TriviaList(LineFeed).Add(this.IndentTrivia), SyntaxKind.OpenBraceToken, TriviaList(LineFeed)))
+                    .WithOpenBraceToken(Token(leadingTrivia, SyntaxKind.OpenBraceToken, TriviaList(LineFeed)))
                     .WithCloseBraceToken(Token(TriviaList(this.IndentTrivia), SyntaxKind.CloseBraceToken, TriviaList(LineFeed)));
                 using var indent = new Indent(this);
                 return base.VisitBlock(node);
@@ -5055,7 +5070,11 @@ namespace Microsoft.Windows.CsWin32
 
             public override SyntaxNode? VisitAttributeList(AttributeListSyntax node)
             {
-                if (node.Parent is BaseTypeDeclarationSyntax)
+                if (node.Parent is ParameterSyntax)
+                {
+                    return base.VisitAttributeList(node.WithCloseBracketToken(TokenWithSpace(SyntaxKind.CloseBracketToken)));
+                }
+                else if (node.Parent is BaseTypeDeclarationSyntax)
                 {
                     return base.VisitAttributeList(this.WithOuterIndentingTrivia(node));
                 }
@@ -5094,18 +5113,75 @@ namespace Microsoft.Windows.CsWin32
 
             public override SyntaxNode? VisitAccessorDeclaration(AccessorDeclarationSyntax node) => base.VisitAccessorDeclaration(this.WithIndentingTrivia(node));
 
+            public override SyntaxNode? VisitLocalDeclarationStatement(LocalDeclarationStatementSyntax node) => base.VisitLocalDeclarationStatement(this.WithIndentingTrivia(node));
+
+            public override SyntaxNode? VisitExpressionStatement(ExpressionStatementSyntax node) => base.VisitExpressionStatement(this.WithIndentingTrivia(node));
+
+            public override SyntaxNode? VisitTryStatement(TryStatementSyntax node) => base.VisitTryStatement(this.WithIndentingTrivia(node));
+
+            public override SyntaxNode? VisitFinallyClause(FinallyClauseSyntax node) => base.VisitFinallyClause(this.WithIndentingTrivia(node));
+
+            public override SyntaxNode? VisitIfStatement(IfStatementSyntax node)
+            {
+                node = this.WithIndentingTrivia(node);
+                if (node.Statement is BlockSyntax)
+                {
+                    return base.VisitIfStatement(node);
+                }
+                else
+                {
+                    using var indent = new Indent(this);
+                    return base.VisitIfStatement(node);
+                }
+            }
+
+            public override SyntaxNode? VisitWhileStatement(WhileStatementSyntax node)
+            {
+                node = this.WithIndentingTrivia(node);
+                if (node.Statement is BlockSyntax)
+                {
+                    return base.VisitWhileStatement(node);
+                }
+                else
+                {
+                    using var indent = new Indent(this);
+                    return base.VisitWhileStatement(node);
+                }
+            }
+
+            public override SyntaxNode? VisitElseClause(ElseClauseSyntax node)
+            {
+                node = this.WithIndentingTrivia(node);
+                if (node.Statement is BlockSyntax)
+                {
+                    return base.VisitElseClause(node);
+                }
+                else
+                {
+                    using var indent = new Indent(this);
+                    return base.VisitElseClause(node);
+                }
+            }
+
             public override SyntaxNode? VisitFixedStatement(FixedStatementSyntax node)
             {
                 node = this.WithIndentingTrivia(node);
-                using var indent = new Indent(this);
-                return base.VisitFixedStatement(node);
+                if (node.Statement is BlockSyntax)
+                {
+                    return base.VisitFixedStatement(node);
+                }
+                else
+                {
+                    using var indent = new Indent(this);
+                    return base.VisitFixedStatement(node);
+                }
             }
 
             public override SyntaxNode? VisitReturnStatement(ReturnStatementSyntax node) => base.VisitReturnStatement(node.WithLeadingTrivia(this.IndentTrivia));
 
             public override SyntaxToken VisitToken(SyntaxToken token)
             {
-                if (token.IsKind(SyntaxKind.CommaToken) && token.Parent is ParameterListSyntax)
+                if (token.IsKind(SyntaxKind.CommaToken) && token.Parent is ParameterListSyntax or AttributeArgumentListSyntax or ArgumentListSyntax)
                 {
                     return TokenWithSpace(SyntaxKind.CommaToken);
                 }
@@ -5127,7 +5203,7 @@ namespace Microsoft.Windows.CsWin32
                 {
                     if (list[i].GetStructure() is DocumentationCommentTriviaSyntax trivia)
                     {
-                        indent ??= list[i].Token.Parent is BaseTypeDeclarationSyntax /*or AttributeListSyntax { Parent: BaseTypeDeclarationSyntax }*/ ? this.OuterIndentTrivia.ToString() : this.IndentTrivia.ToString();
+                        indent ??= list[i].Token.Parent is BaseTypeDeclarationSyntax ? this.OuterIndentTrivia.ToString() : this.IndentTrivia.ToString();
                         var comment = new StringBuilder(trivia.Content.ToFullString());
                         comment.Insert(0, indent);
                         comment.Replace("\n", "\n" + indent);

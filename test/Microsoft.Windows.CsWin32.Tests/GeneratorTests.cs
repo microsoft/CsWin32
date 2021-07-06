@@ -1169,7 +1169,8 @@ namespace Windows.Win32
 
 	namespace UI.WindowsAndMessaging
 	{
-		[UnmanagedFunctionPointerAttribute(CallingConvention.Winapi)]		internal unsafe delegate win32.Foundation.BOOL WNDENUMPROC(win32.Foundation.HWND param0, win32.Foundation.LPARAM param1);
+		[UnmanagedFunctionPointerAttribute(CallingConvention.Winapi)]
+		internal unsafe delegate win32.Foundation.BOOL WNDENUMPROC(win32.Foundation.HWND param0, win32.Foundation.LPARAM param1);
 	}
 }
 ".Replace("\r\n", "\n")),

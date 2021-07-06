@@ -2989,7 +2989,7 @@ namespace Microsoft.Windows.CsWin32
 
             if (callingConvention.HasValue)
             {
-                result = result.AddAttributeLists(AttributeList().AddAttributes(UnmanagedFunctionPointer(callingConvention.Value)));
+                result = result.AddAttributeLists(AttributeList().AddAttributes(UnmanagedFunctionPointer(callingConvention.Value)).WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken)));
             }
 
             return result;

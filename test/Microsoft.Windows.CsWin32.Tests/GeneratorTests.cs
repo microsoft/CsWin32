@@ -1052,8 +1052,9 @@ namespace Windows.Win32
 
 	namespace Storage.FileSystem
 	{
-		[Flags()]		internal enum FILE_ACCESS_FLAGS
-			:uint		{
+		[Flags]
+		internal enum FILE_ACCESS_FLAGS : uint
+		{
 			FILE_READ_DATA = 0x00000001,
 			FILE_LIST_DIRECTORY = 0x00000001,
 			FILE_WRITE_DATA = 0x00000002,

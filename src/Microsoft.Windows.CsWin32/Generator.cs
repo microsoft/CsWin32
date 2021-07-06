@@ -255,7 +255,7 @@ namespace Microsoft.Windows.CsWin32
         };
 
         private static readonly AttributeSyntax OptionalAttributeSyntax = Attribute(IdentifierName("Optional"));
-        private static readonly AttributeSyntax FlagsAttributeSyntax = Attribute(IdentifierName("Flags"));
+        private static readonly AttributeSyntax FlagsAttributeSyntax = Attribute(IdentifierName("Flags")).WithArgumentList(null);
         private static readonly AttributeSyntax FieldOffsetAttributeSyntax = Attribute(IdentifierName("FieldOffset"));
 
         private readonly TypeSyntaxSettings generalTypeSettings;
@@ -3579,13 +3579,14 @@ namespace Microsoft.Windows.CsWin32
 
             if (!(enumBaseType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.IntKeyword } }))
             {
-                result = result.WithBaseList(BaseList(SingletonSeparatedList<BaseTypeSyntax>(SimpleBaseType(enumBaseType))));
+                result = result.WithIdentifier(result.Identifier.WithTrailingTrivia(Space))
+                    .WithBaseList(BaseList(SingletonSeparatedList<BaseTypeSyntax>(SimpleBaseType(enumBaseType).WithTrailingTrivia(LineFeed))).WithColonToken(TokenWithSpace(SyntaxKind.ColonToken)));
             }
 
             if (flagsEnum)
             {
                 result = result.AddAttributeLists(
-                    AttributeList().AddAttributes(FlagsAttributeSyntax));
+                    AttributeList().WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken)).AddAttributes(FlagsAttributeSyntax));
             }
 
             result = this.AddApiDocumentation(name, result);
@@ -5040,7 +5041,17 @@ namespace Microsoft.Windows.CsWin32
                 return base.VisitBlock(node);
             }
 
-            public override SyntaxNode? VisitBaseList(BaseListSyntax node) => base.VisitBaseList(this.WithIndentingTrivia(node));
+            public override SyntaxNode? VisitBaseList(BaseListSyntax node)
+            {
+                if (node.Parent is EnumDeclarationSyntax)
+                {
+                    return base.VisitBaseList(node);
+                }
+                else
+                {
+                    return base.VisitBaseList(this.WithIndentingTrivia(node));
+                }
+            }
 
             public override SyntaxNode? VisitAttributeList(AttributeListSyntax node)
             {

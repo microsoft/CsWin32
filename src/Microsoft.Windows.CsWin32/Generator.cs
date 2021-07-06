@@ -5035,6 +5035,12 @@ namespace Microsoft.Windows.CsWin32
 
             public override SyntaxNode? VisitMethodDeclaration(MethodDeclarationSyntax node) => base.VisitMethodDeclaration(this.WithIndentingTrivia(node));
 
+            public override SyntaxNode? VisitConstructorDeclaration(ConstructorDeclarationSyntax node) => base.VisitConstructorDeclaration(this.WithIndentingTrivia(node));
+
+            public override SyntaxNode? VisitOperatorDeclaration(OperatorDeclarationSyntax node) => base.VisitOperatorDeclaration(this.WithIndentingTrivia(node));
+
+            public override SyntaxNode? VisitConversionOperatorDeclaration(ConversionOperatorDeclarationSyntax node) => base.VisitConversionOperatorDeclaration(this.WithIndentingTrivia(node));
+
             public override SyntaxNode? VisitDelegateDeclaration(DelegateDeclarationSyntax node) => base.VisitDelegateDeclaration(this.WithIndentingTrivia(node));
 
             public override SyntaxNode? VisitFieldDeclaration(FieldDeclarationSyntax node) => base.VisitFieldDeclaration(this.WithIndentingTrivia(node));

@@ -14,7 +14,6 @@ namespace Windows.Win32
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using global::System.Runtime.Versioning;
 	using win32 = global::Windows.Win32;
 
 
@@ -33,10 +32,10 @@ namespace Windows.Win32
 		/// </remarks>
 		[DllImport("Kernel32", ExactSpelling = true, SetLastError = true)]
 		[DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-		[SupportedOSPlatform("windows5.0")]		internal static extern win32.Foundation.BOOL CloseHandle(win32.Foundation.HANDLE hObject);
+		internal static extern win32.Foundation.BOOL CloseHandle(win32.Foundation.HANDLE hObject);
 
 		/// <inheritdoc cref="CreateFile(win32.Foundation.PCWSTR, win32.Storage.FileSystem.FILE_ACCESS_FLAGS, win32.Storage.FileSystem.FILE_SHARE_MODE, win32.Security.SECURITY_ATTRIBUTES*, win32.Storage.FileSystem.FILE_CREATION_DISPOSITION, win32.Storage.FileSystem.FILE_FLAGS_AND_ATTRIBUTES, win32.Foundation.HANDLE)"/>
-		[SupportedOSPlatform("windows5.1.2600")]		internal static unsafe Microsoft.Win32.SafeHandles.SafeFileHandle CreateFile(string lpFileName, win32.Storage.FileSystem.FILE_ACCESS_FLAGS dwDesiredAccess, win32.Storage.FileSystem.FILE_SHARE_MODE dwShareMode, win32.Security.SECURITY_ATTRIBUTES? lpSecurityAttributes, win32.Storage.FileSystem.FILE_CREATION_DISPOSITION dwCreationDisposition, win32.Storage.FileSystem.FILE_FLAGS_AND_ATTRIBUTES dwFlagsAndAttributes, SafeHandle hTemplateFile)
+		internal static unsafe Microsoft.Win32.SafeHandles.SafeFileHandle CreateFile(string lpFileName, win32.Storage.FileSystem.FILE_ACCESS_FLAGS dwDesiredAccess, win32.Storage.FileSystem.FILE_SHARE_MODE dwShareMode, win32.Security.SECURITY_ATTRIBUTES? lpSecurityAttributes, win32.Storage.FileSystem.FILE_CREATION_DISPOSITION dwCreationDisposition, win32.Storage.FileSystem.FILE_FLAGS_AND_ATTRIBUTES dwFlagsAndAttributes, SafeHandle hTemplateFile)
 		{
 			bool hTemplateFileAddRef = false;
 			try
@@ -101,6 +100,6 @@ namespace Windows.Win32
 		/// </remarks>
 		[DllImport("Kernel32", ExactSpelling = true, EntryPoint = "CreateFileW", SetLastError = true)]
 		[DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-		[SupportedOSPlatform("windows5.1.2600")]		internal static extern unsafe win32.Foundation.HANDLE CreateFile(win32.Foundation.PCWSTR lpFileName, win32.Storage.FileSystem.FILE_ACCESS_FLAGS dwDesiredAccess, win32.Storage.FileSystem.FILE_SHARE_MODE dwShareMode, [Optional] win32.Security.SECURITY_ATTRIBUTES* lpSecurityAttributes, win32.Storage.FileSystem.FILE_CREATION_DISPOSITION dwCreationDisposition, win32.Storage.FileSystem.FILE_FLAGS_AND_ATTRIBUTES dwFlagsAndAttributes, win32.Foundation.HANDLE hTemplateFile);
+		internal static extern unsafe win32.Foundation.HANDLE CreateFile(win32.Foundation.PCWSTR lpFileName, win32.Storage.FileSystem.FILE_ACCESS_FLAGS dwDesiredAccess, win32.Storage.FileSystem.FILE_SHARE_MODE dwShareMode, [Optional] win32.Security.SECURITY_ATTRIBUTES* lpSecurityAttributes, win32.Storage.FileSystem.FILE_CREATION_DISPOSITION dwCreationDisposition, win32.Storage.FileSystem.FILE_FLAGS_AND_ATTRIBUTES dwFlagsAndAttributes, win32.Foundation.HANDLE hTemplateFile);
 	}
 }

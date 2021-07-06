@@ -14,7 +14,6 @@ namespace Windows.Win32
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using global::System.Runtime.Versioning;
 	using win32 = global::Windows.Win32;
 
 	namespace Foundation

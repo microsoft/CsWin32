@@ -1,1 +1,7 @@
+// Methods (avoid creating more than one per native DLL, as it can cause test churn)
 CreateFile
+ReleaseDC
+
+// Types
+DISPLAYCONFIG_SCANLINE_ORDERING
+WNDENUMPROC

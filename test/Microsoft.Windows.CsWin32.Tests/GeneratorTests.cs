@@ -920,8 +920,10 @@ namespace Windows.Win32
 
 	namespace Graphics.Gdi
 	{
-		[DebuggerDisplay(""{Value}"")]internal readonly partial struct HDC
-:IEquatable<HDC>		{
+		[DebuggerDisplay(""{Value}"")]
+		internal readonly partial struct HDC
+			: IEquatable<HDC>
+		{
 			internal readonly IntPtr Value;
 			internal HDC(IntPtr value) => this.Value= value;
 
@@ -960,8 +962,10 @@ namespace Windows.Win32
 
 	namespace Foundation
 	{
-		[DebuggerDisplay(""{Value}"")]internal readonly partial struct HWND
-:IEquatable<HWND>		{
+		[DebuggerDisplay(""{Value}"")]
+		internal readonly partial struct HWND
+			: IEquatable<HWND>
+		{
 			internal readonly nint Value;
 			internal HWND(nint value) => this.Value= value;
 			public static implicit operator nint(HWND value) => value.Value;
@@ -1012,8 +1016,8 @@ namespace Windows.Win32
 		/// <para><see href=""https://docs.microsoft.com/windows/win32/api//winuser/nf-winuser-releasedc"">Learn more about this API from docs.microsoft.com.</see></para>
 		/// </remarks>
 		[DllImport(""User32"", ExactSpelling = true)]
-[DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-internal static extern int ReleaseDC(win32.Foundation.HWND hWnd, win32.Graphics.Gdi.HDC hDC);
+		[DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+		internal static extern int ReleaseDC(win32.Foundation.HWND hWnd, win32.Graphics.Gdi.HDC hDC);
 	}
 }
 ".Replace("\r\n", "\n")),

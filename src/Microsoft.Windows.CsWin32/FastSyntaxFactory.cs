@@ -343,7 +343,9 @@ namespace Microsoft.Windows.CsWin32
 
         internal static SyntaxToken Identifier(SyntaxTriviaList leading, string text, SyntaxTriviaList trailing) => SyntaxFactory.Identifier(leading, text, trailing);
 
-        internal static GenericNameSyntax GenericName(string text) => SyntaxFactory.GenericName(Identifier(text), TypeArgumentList());
+        internal static GenericNameSyntax GenericName(string text) => GenericName(text, TypeArgumentList());
+
+        internal static GenericNameSyntax GenericName(string text, TypeArgumentListSyntax typeArgumentList) => SyntaxFactory.GenericName(Identifier(text), typeArgumentList);
 
         internal static TypeArgumentListSyntax TypeArgumentList(SeparatedSyntaxList<TypeSyntax> types = default) => SyntaxFactory.TypeArgumentList(Token(SyntaxKind.LessThanToken), types, Token(SyntaxKind.GreaterThanToken));
 

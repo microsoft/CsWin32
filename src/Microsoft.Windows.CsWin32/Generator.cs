@@ -3320,10 +3320,10 @@ namespace Microsoft.Windows.CsWin32
 
             structModifiers = structModifiers.Add(TokenWithSpace(SyntaxKind.ReadOnlyKeyword)).Add(TokenWithSpace(SyntaxKind.PartialKeyword));
             StructDeclarationSyntax result = StructDeclaration(name.Identifier)
-                .WithBaseList(BaseList(SingletonSeparatedList<BaseTypeSyntax>(SimpleBaseType(GenericName(nameof(IEquatable<int>)).AddTypeArgumentListArguments(name)))))
+                .WithBaseList(BaseList(SingletonSeparatedList<BaseTypeSyntax>(SimpleBaseType(GenericName(nameof(IEquatable<int>), TypeArgumentList().WithGreaterThanToken(TokenWithLineFeed(SyntaxKind.GreaterThanToken))).AddTypeArgumentListArguments(name)))).WithColonToken(TokenWithSpace(SyntaxKind.ColonToken)))
                 .WithMembers(members)
                 .WithModifiers(structModifiers)
-                .AddAttributeLists(AttributeList().AddAttributes(DebuggerDisplay("{" + fieldName + "}")));
+                .AddAttributeLists(AttributeList().WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken)).AddAttributes(DebuggerDisplay("{" + fieldName + "}")));
 
             result = this.AddApiDocumentation(name.Identifier.ValueText, result);
             return result;
@@ -4965,6 +4965,8 @@ namespace Microsoft.Windows.CsWin32
 
             private SyntaxTrivia IndentTrivia => this.indentationLevels[this.indentationLevel];
 
+            private SyntaxTrivia OuterIndentTrivia => this.indentationLevels[Math.Max(0, this.indentationLevel - 1)];
+
             public override SyntaxNode? VisitNamespaceDeclaration(NamespaceDeclarationSyntax node)
             {
                 node = node
@@ -5032,6 +5034,20 @@ namespace Microsoft.Windows.CsWin32
                     .WithCloseBraceToken(Token(TriviaList(this.IndentTrivia), SyntaxKind.CloseBraceToken, TriviaList(LineFeed)));
                 using var indent = new Indent(this);
                 return base.VisitBlock(node);
+            }
+
+            public override SyntaxNode? VisitBaseList(BaseListSyntax node) => base.VisitBaseList(this.WithIndentingTrivia(node));
+
+            public override SyntaxNode? VisitAttributeList(AttributeListSyntax node)
+            {
+                if (node.Parent is BaseTypeDeclarationSyntax)
+                {
+                    return base.VisitAttributeList(this.WithOuterIndentingTrivia(node));
+                }
+                else
+                {
+                    return base.VisitAttributeList(this.WithIndentingTrivia(node));
+                }
             }
 
             public override SyntaxNode? VisitMethodDeclaration(MethodDeclarationSyntax node) => base.VisitMethodDeclaration(this.WithIndentingTrivia(node));
@@ -5109,11 +5125,45 @@ namespace Microsoft.Windows.CsWin32
                 return members;
             }
 
+            private static TSyntax WithIndentingTrivia<TSyntax>(TSyntax node, SyntaxTrivia indentTrivia)
+                where TSyntax : SyntaxNode
+            {
+                if (node is MemberDeclarationSyntax memberDeclaration)
+                {
+                    SyntaxToken firstToken = GetFirstToken(memberDeclaration);
+                    return node.ReplaceToken(firstToken, firstToken.WithLeadingTrivia(firstToken.HasLeadingTrivia ? firstToken.LeadingTrivia.Add(indentTrivia) : TriviaList(indentTrivia)));
+                }
+
+                // Take care to preserve xml doc comments, pragmas, etc.
+                return node.WithLeadingTrivia(node.HasLeadingTrivia ? node.GetLeadingTrivia().Add(indentTrivia) : TriviaList(indentTrivia));
+
+                static SyntaxToken GetFirstToken(MemberDeclarationSyntax memberDeclaration)
+                {
+                    if (!memberDeclaration.AttributeLists.Any())
+                    {
+                        return memberDeclaration.GetFirstToken();
+                    }
+                    else if (memberDeclaration.Modifiers.Any())
+                    {
+                        return memberDeclaration.Modifiers[0];
+                    }
+                    else
+                    {
+                        return memberDeclaration.GetFirstToken();
+                    }
+                }
+            }
+
             private TSyntax WithIndentingTrivia<TSyntax>(TSyntax node)
                 where TSyntax : SyntaxNode
             {
-                // Take care to preserve xml doc comments, pragmas, etc.
-                return node.WithLeadingTrivia(node.HasLeadingTrivia ? node.GetLeadingTrivia().Add(this.IndentTrivia) : TriviaList(this.IndentTrivia));
+                return WithIndentingTrivia(node, this.IndentTrivia);
+            }
+
+            private TSyntax WithOuterIndentingTrivia<TSyntax>(TSyntax node)
+                where TSyntax : SyntaxNode
+            {
+                return WithIndentingTrivia(node, this.OuterIndentTrivia);
             }
 
             private struct Indent : IDisposable

@@ -1,13 +1,24 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\..\src\Microsoft.Windows.CsWin32\build\Microsoft.Windows.CsWin32.props" />
 
   <PropertyGroup>
     <TargetFrameworks>net5.0;netcoreapp3.1;net472</TargetFrameworks>
     <RootNamespace />
   </PropertyGroup>
 
+  <PropertyGroup>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <CompilerGeneratedFilesOutputPath>$(MSBuildProjectDirectory)\.generated\$(TargetFramework)</CompilerGeneratedFilesOutputPath>
+  </PropertyGroup>
+
   <ItemGroup>
     <AssemblyMetadata Include="MicrosoftWindowsSdkWin32MetadataBasePath" Value="$(MicrosoftWindowsSdkWin32MetadataBasePath)" />
     <AssemblyMetadata Include="MicrosoftWindowsSdkApiDocsPath" Value="$(MicrosoftWindowsSdkApiDocsPath)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The .generated file is excluded by default, but we want to show the items in Solution Explorer -->
+    <None Include=".generated\**" />
   </ItemGroup>
 
   <ItemGroup>
@@ -20,10 +31,17 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Microsoft.Windows.CsWin32\Microsoft.Windows.CsWin32.csproj" />
+    <ProjectReference Include="..\..\src\Microsoft.Windows.CsWin32\Microsoft.Windows.CsWin32.csproj" OutputItemType="Analyzer" />
+    <Analyzer Include="$(RepoRootPath)\bin\Microsoft.Windows.CsWin32\$(Configuration)\netstandard2.0\System.Text.Json.dll" />
+    <Analyzer Include="$(RepoRootPath)\bin\Microsoft.Windows.CsWin32\$(Configuration)\netstandard2.0\Microsoft.Bcl.AsyncInterfaces.dll" />
+    <Analyzer Include="$(RepoRootPath)\bin\Microsoft.Windows.CsWin32\$(Configuration)\netstandard2.0\System.Text.Encodings.Web.dll" />
+    <Analyzer Include="$(RepoRootPath)\bin\Microsoft.Windows.CsWin32\$(Configuration)\netstandard2.0\Microsoft.Windows.SDK.Win32Docs.dll" />
+    <Analyzer Include="$(RepoRootPath)\bin\Microsoft.Windows.CsWin32\$(Configuration)\netstandard2.0\MessagePack.dll" />
+    <Analyzer Include="$(RepoRootPath)\bin\Microsoft.Windows.CsWin32\$(Configuration)\netstandard2.0\MessagePack.Annotations.dll" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Windows.SDK.Win32Metadata" Version="$(MetadataVersion)" GeneratePathProperty="true" PrivateAssets="none" />
     <PackageReference Include="coverlet.msbuild" Version="3.0.3" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="3.10.0" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.SourceGenerators.Testing.XUnit" Version="1.1.1-beta1.21351.1" />

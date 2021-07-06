@@ -930,8 +930,8 @@ namespace Windows.Win32
 			internal bool IsNull => Value == default;
 			public static implicit operator IntPtr(HDC value) => value.Value;
 			public static explicit operator HDC(IntPtr value) => new HDC(value);
-			public static bool operator== (HDC left,HDC right) => left.Value == right.Value;
-			public static bool operator!=(HDC left,HDC right) => !(left == right);
+			public static bool operator ==(HDC left, HDC right) => left.Value == right.Value;
+			public static bool operator !=(HDC left, HDC right) => !(left == right);
 
 			public bool Equals(HDC other) => this.Value == other.Value;
 
@@ -970,8 +970,8 @@ namespace Windows.Win32
 			internal HWND(nint value) => this.Value= value;
 			public static implicit operator nint(HWND value) => value.Value;
 			public static explicit operator HWND(nint value) => new HWND(value);
-			public static bool operator== (HWND left,HWND right) => left.Value == right.Value;
-			public static bool operator!=(HWND left,HWND right) => !(left == right);
+			public static bool operator ==(HWND left, HWND right) => left.Value == right.Value;
+			public static bool operator !=(HWND left, HWND right) => !(left == right);
 
 			public bool Equals(HWND other) => this.Value == other.Value;
 
@@ -1001,9 +1001,9 @@ namespace Windows.Win32
 	using win32 = global::Windows.Win32;
 
 
-		/// <content>
-		/// Contains extern methods from ""User32.dll"".
-		/// </content>
+	/// <content>
+	/// Contains extern methods from ""User32.dll"".
+	/// </content>
 	internal static partial class PInvoke
 	{
 		/// <summary>The ReleaseDC function releases a device context (DC), freeing it for use by other applications. The effect of the ReleaseDC function depends on the type of DC. It frees only common and window DCs. It has no effect on class or private DCs.</summary>

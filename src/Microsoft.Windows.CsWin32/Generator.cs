@@ -1677,6 +1677,8 @@ namespace Microsoft.Windows.CsWin32
             }
         }
 
+        private static SyntaxToken TokenWithNoSpace(SyntaxKind syntaxKind) => SyntaxFactory.Token(TriviaList(), syntaxKind, TriviaList());
+
         private static SyntaxToken TokenWithSpace(SyntaxKind syntaxKind) => SyntaxFactory.Token(TriviaList(), syntaxKind, TriviaList(Space));
 
         private static SyntaxToken TokenWithSpaces(SyntaxKind syntaxKind) => SyntaxFactory.Token(TriviaList(Space), syntaxKind, TriviaList(Space));
@@ -3234,7 +3236,8 @@ namespace Microsoft.Windows.CsWin32
             // public static bool operator ==(HANDLE left, HANDLE right) => left.Value == right.Value;
             var leftParameter = IdentifierName("left");
             var rightParameter = IdentifierName("right");
-            members = members.Add(OperatorDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Token(SyntaxKind.EqualsEqualsToken))
+            members = members.Add(OperatorDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), TokenWithNoSpace(SyntaxKind.EqualsEqualsToken))
+                .WithOperatorKeyword(TokenWithSpace(SyntaxKind.OperatorKeyword))
                 .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))
                 .AddParameterListParameters(
                     Parameter(leftParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))),
@@ -3248,6 +3251,7 @@ namespace Microsoft.Windows.CsWin32
 
             // public static bool operator !=(HANDLE left, HANDLE right) => !(left == right);
             members = members.Add(OperatorDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Token(SyntaxKind.ExclamationEqualsToken))
+                .WithOperatorKeyword(TokenWithSpace(SyntaxKind.OperatorKeyword))
                 .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))
                 .AddParameterListParameters(
                     Parameter(leftParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))),
@@ -5075,6 +5079,16 @@ namespace Microsoft.Windows.CsWin32
 
             public override SyntaxNode? VisitReturnStatement(ReturnStatementSyntax node) => base.VisitReturnStatement(node.WithLeadingTrivia(this.IndentTrivia));
 
+            public override SyntaxToken VisitToken(SyntaxToken token)
+            {
+                if (token.IsKind(SyntaxKind.CommaToken) && token.Parent is ParameterListSyntax)
+                {
+                    return TokenWithSpace(SyntaxKind.CommaToken);
+                }
+
+                return base.VisitToken(token);
+            }
+
             public override SyntaxTriviaList VisitList(SyntaxTriviaList list)
             {
 #if DEBUG && false // Nodes that contain any annotations at all cause a lot of lock contention that slows us down. Consider removing it all and enforcing (part of it) with this code
@@ -5084,12 +5098,13 @@ namespace Microsoft.Windows.CsWin32
                 }
 #endif
 
+                string? indent = null;
                 for (int i = list.Count - 1; i >= 0; i--)
                 {
                     if (list[i].GetStructure() is DocumentationCommentTriviaSyntax trivia)
                     {
+                        indent ??= list[i].Token.Parent is BaseTypeDeclarationSyntax ? this.OuterIndentTrivia.ToString() : this.IndentTrivia.ToString();
                         var comment = new StringBuilder(trivia.Content.ToFullString());
-                        string indent = this.IndentTrivia.ToString();
                         comment.Insert(0, indent);
                         comment.Replace("\n", "\n" + indent);
                         comment.Length -= indent.Length; // Remove the extra indent after the last newline.

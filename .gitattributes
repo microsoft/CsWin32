@@ -3,6 +3,8 @@
 ###############################################################################
 * text=auto
 
+**/.generated/** text=auto eol=lf
+
 # Ensure shell scripts use LF line endings (linux only accepts LF)
 *.sh eol=lf
 *.ps1 eol=lf

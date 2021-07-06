@@ -303,7 +303,8 @@ namespace Microsoft.Windows.CsWin32
 
             this.canCallCreateSpan = this.compilation?.GetTypeByMetadataName(typeof(MemoryMarshal).FullName)?.GetMembers("CreateSpan").Any() is true;
             this.generateDefaultDllImportSearchPathsAttribute = this.compilation?.GetTypeByMetadataName(typeof(DefaultDllImportSearchPathsAttribute).FullName) is object;
-            if (this.compilation?.GetTypeByMetadataName("System.Runtime.Versioning.SupportedOSPlatformAttribute") is { } attribute)
+            if (this.compilation?.GetTypeByMetadataName("System.Runtime.Versioning.SupportedOSPlatformAttribute") is { } attribute
+                && (attribute.DeclaredAccessibility == Accessibility.Public || attribute.ContainingAssembly.GivesAccessTo(this.compilation.Assembly)))
             {
                 this.generateSupportedOSPlatformAttributes = true;
                 AttributeData usageAttribute = attribute.GetAttributes().Single(att => att.AttributeClass?.Name == nameof(AttributeUsageAttribute));

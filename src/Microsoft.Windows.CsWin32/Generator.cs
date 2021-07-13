@@ -2020,7 +2020,7 @@ namespace Microsoft.Windows.CsWin32
                     else if (docs.HelpLink is object)
                     {
                         docCommentsBuilder.AppendLine();
-                        docCommentsBuilder.AppendLine($@"/// <para><see href=""{docs.HelpLink}"">Learn more about this API from docs.microsoft.com.</see></para>");
+                        docCommentsBuilder.AppendLine($@"/// <para><see href=""{docs.HelpLink}"">Learn more about this API from docs.microsoft.com</see>.</para>");
                         docCommentsBuilder.Append("/// ");
                     }
 

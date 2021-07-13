@@ -922,7 +922,7 @@ namespace Windows.Win32
 	{
 		/// <summary>The DISPLAYCONFIG_SCANLINE_ORDERING enumeration specifies the method that the display uses to create an image on a screen.</summary>
 		/// <remarks>
-		/// <para><see href=""https://docs.microsoft.com/windows/win32/api//wingdi/ne-wingdi-displayconfig_scanline_ordering"">Learn more about this API from docs.microsoft.com.</see></para>
+		/// <para><see href=""https://docs.microsoft.com/windows/win32/api//wingdi/ne-wingdi-displayconfig_scanline_ordering"">Learn more about this API from docs.microsoft.com</see>.</para>
 		/// </remarks>
 		internal enum DISPLAYCONFIG_SCANLINE_ORDERING
 		{
@@ -1397,7 +1397,7 @@ namespace Windows.Win32
 		/// <para>The return value indicates whether the DC was released. If the DC was released, the return value is 1. If the DC was not released, the return value is zero.</para>
 		/// </returns>
 		/// <remarks>
-		/// <para><see href=""https://docs.microsoft.com/windows/win32/api//winuser/nf-winuser-releasedc"">Learn more about this API from docs.microsoft.com.</see></para>
+		/// <para><see href=""https://docs.microsoft.com/windows/win32/api//winuser/nf-winuser-releasedc"">Learn more about this API from docs.microsoft.com</see>.</para>
 		/// </remarks>
 		[DllImport(""User32"", ExactSpelling = true)]
 		[DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
@@ -1803,7 +1803,7 @@ namespace Windows.Win32
 		/// <para>If the function succeeds, the return value is nonzero. If the function fails, the return value is zero. To get extended error information, call <a href=""/windows/desktop/api/errhandlingapi/nf-errhandlingapi-getlasterror"">GetLastError</a>. If the application is running under a debugger,  the function will throw an exception if it receives either a  handle value that is not valid  or a pseudo-handle value. This can happen if you close a handle twice, or if you  call <b>CloseHandle</b> on a handle returned by the <a href=""/windows/desktop/api/fileapi/nf-fileapi-findfirstfilea"">FindFirstFile</a> function instead of calling the <a href=""/windows/desktop/api/fileapi/nf-fileapi-findclose"">FindClose</a> function.</para>
 		/// </returns>
 		/// <remarks>
-		/// <para><see href=""https://docs.microsoft.com/windows/win32/api//handleapi/nf-handleapi-closehandle"">Learn more about this API from docs.microsoft.com.</see></para>
+		/// <para><see href=""https://docs.microsoft.com/windows/win32/api//handleapi/nf-handleapi-closehandle"">Learn more about this API from docs.microsoft.com</see>.</para>
 		/// </remarks>
 		[DllImport(""Kernel32"", ExactSpelling = true, SetLastError = true)]
 		[DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
@@ -1871,7 +1871,7 @@ namespace Windows.Win32
 		/// <para>If the function succeeds, the return value is an open handle to the specified file, device, named pipe, or mail slot. If the function fails, the return value is <b>INVALID_HANDLE_VALUE</b>. To get extended error information, call <a href=""/windows/desktop/api/errhandlingapi/nf-errhandlingapi-getlasterror"">GetLastError</a>.</para>
 		/// </returns>
 		/// <remarks>
-		/// <para><see href=""https://docs.microsoft.com/windows/win32/api//fileapi/nf-fileapi-createfilew"">Learn more about this API from docs.microsoft.com.</see></para>
+		/// <para><see href=""https://docs.microsoft.com/windows/win32/api//fileapi/nf-fileapi-createfilew"">Learn more about this API from docs.microsoft.com</see>.</para>
 		/// </remarks>
 		[DllImport(""Kernel32"", ExactSpelling = true, EntryPoint = ""CreateFileW"", SetLastError = true)]
 		[DefaultDllImportSearchPaths(DllImportSearchPath.System32)]

@@ -1,0 +1,31 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+
+    <!-- Special properties for analyzer packages. -->
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <IncludeSymbols>false</IncludeSymbols>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <NoWarn>$(NoWarn);NU5128;NU5127</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <NuSpecFile>Microsoft.Windows.CsWin32.nuspec</NuSpecFile>
+
+    <PackageId>Microsoft.Windows.CsWin32</PackageId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Microsoft.Windows.CsWin32\Microsoft.Windows.CsWin32.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="readme.txt" Pack="true" PackagePath="" />
+    <None Include="build\**" Pack="true" PackagePath="build\" />
+  </ItemGroup>
+
+  <Import Project="$(MSBuildProjectName).targets" />
+</Project>

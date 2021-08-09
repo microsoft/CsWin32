@@ -1,37 +1,28 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <IsPackable>true</IsPackable>
+    <IsPackable>false</IsPackable>
     <TargetFramework>netstandard2.0</TargetFramework>
     <Nullable>enable</Nullable>
 
     <!-- Special properties for analyzer packages. -->
-    <IncludeBuildOutput>false</IncludeBuildOutput>
-    <IncludeSymbols>false</IncludeSymbols>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
-    <NoWarn>$(NoWarn);NU5128;NU5127</NoWarn>
-    <NuSpecFile>Microsoft.Windows.CsWin32.nuspec</NuSpecFile>
-  </PropertyGroup>
 
-  <ItemDefinitionGroup>
-    <PackageReference>
-      <PrivateAssets>all</PrivateAssets>
-    </PackageReference>
-  </ItemDefinitionGroup>
+    <!-- Avoid ID conflicts with the package project. -->
+    <PackageId>*$(MSBuildProjectFile)*</PackageId>
+  </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="MessagePack" Version="2.2.85" />
     <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="3.3.2" PrivateAssets="all" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="3.8.0" />
-    <PackageReference Include="Microsoft.Windows.SDK.Win32Metadata" Version="$(MetadataVersion)" GeneratePathProperty="true" PrivateAssets="none" />
-    <PackageReference Include="Microsoft.Windows.SDK.Win32Docs" Version="$(ApiDocsVersion)" GeneratePathProperty="true" PrivateAssets="none" />
-    <PackageReference Include="Nullable" Version="1.3.0" />
-    <PackageReference Include="System.Memory" Version="4.5.4" PrivateAssets="none" />
+    <PackageReference Include="Microsoft.Windows.SDK.Win32Metadata" Version="$(MetadataVersion)" GeneratePathProperty="true" />
+    <PackageReference Include="Microsoft.Windows.SDK.Win32Docs" Version="$(ApiDocsVersion)" GeneratePathProperty="true" />
+    <PackageReference Include="Nullable" Version="1.3.0" PrivateAssets="all" />
+    <PackageReference Include="System.Memory" Version="4.5.4" />
     <PackageReference Include="System.Reflection.Metadata" Version="5.0.0" />
     <PackageReference Include="System.Text.Json" Version="4.7.2" />
   </ItemGroup>
 
   <Import Project="..\Microsoft.Windows.CsWin32.Shared\Microsoft.Windows.CsWin32.Shared.projitems" Label="Shared" />
-
-  <Import Project="$(MSBuildProjectName).targets" />
 </Project>

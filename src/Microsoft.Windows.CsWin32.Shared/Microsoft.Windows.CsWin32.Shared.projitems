@@ -44,12 +44,4 @@
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)templates\PCSTR.cs" />
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)templates\PCWSTR.cs" />
   </ItemGroup>
-  <ItemGroup>
-    <None Include="$(MSBuildThisFileDirectory)build\Microsoft.Windows.CsWin32.props" Pack="true" PackagePath="build\" />
-    <None Include="$(MSBuildThisFileDirectory)build\net20\Microsoft.Windows.CsWin32.props" Pack="true" PackagePath="build\net20\" />
-    <None Include="$(MSBuildThisFileDirectory)build\netstandard1.0\Microsoft.Windows.CsWin32.props" Pack="true" PackagePath="build\netstandard1.0\" />
-    <None Include="$(MSBuildThisFileDirectory)readme.txt" Pack="true" PackagePath="" />
-    <None Include="$(MSBuildThisFileDirectory)tools\install.ps1" />
-    <None Include="$(MSBuildThisFileDirectory)tools\uninstall.ps1" />
-  </ItemGroup>
 </Project>

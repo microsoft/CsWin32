@@ -101,11 +101,20 @@ namespace Microsoft.Windows.CsWin32
         /// <inheritdoc/>
         public void Initialize(IncrementalGeneratorInitializationContext context)
         {
+            var configFiles = context.AdditionalTextsProvider.Collect().Select(
+                static (additionalFiles, cancellationToken) =>
+                {
+                    AdditionalText? nativeMethodsJsonFile = GetNativeMethodsJsonFile(additionalFiles);
+                    AdditionalText? nativeMethodsTxtFile = GetNativeMethodsTxtFile(additionalFiles);
+
+                    return (nativeMethodsJsonFile, nativeMethodsTxtFile);
+                });
+
             var languageVersion = context.ParseOptionsProvider.Select((parseOptions, _) => (parseOptions as CSharpParseOptions)?.LanguageVersion);
 
             var inputs = context.CompilationProvider
                 .Combine(languageVersion)
-                .Combine(context.AdditionalTextsProvider.Collect())
+                .Combine(configFiles)
                 .Combine(context.AnalyzerConfigOptionsProvider)
                 .Select((data, cancellationToken) => (compilation: data.Left.Left.Left, languageVersion: data.Left.Left.Right, additionalFiles: data.Left.Right, analyzerConfigOptions: data.Right));
 
@@ -119,7 +128,8 @@ namespace Microsoft.Windows.CsWin32
                         static (context, hintName, source) => context.AddSource(hintName, source),
                         (CSharpCompilation)collectedValues.compilation,
                         collectedValues.languageVersion,
-                        collectedValues.additionalFiles,
+                        collectedValues.additionalFiles.nativeMethodsJsonFile,
+                        collectedValues.additionalFiles.nativeMethodsTxtFile,
                         collectedValues.analyzerConfigOptions,
                         context.CancellationToken);
                 });
@@ -135,20 +145,43 @@ namespace Microsoft.Windows.CsWin32
         /// <inheritdoc/>
         public void Execute(GeneratorExecutionContext context)
         {
+            AdditionalText? nativeMethodsJsonFile = GetNativeMethodsJsonFile(context.AdditionalFiles);
+            AdditionalText? nativeMethodsTxtFile = GetNativeMethodsTxtFile(context.AdditionalFiles);
+
             Execute(
                 context,
                 static (context, diagnostic) => context.ReportDiagnostic(diagnostic),
                 static (context, hintName, source) => context.AddSource(hintName, source),
                 (CSharpCompilation)context.Compilation,
                 (context.ParseOptions as CSharpParseOptions)?.LanguageVersion,
-                context.AdditionalFiles,
+                nativeMethodsJsonFile,
+                nativeMethodsTxtFile,
                 context.AnalyzerConfigOptions,
                 context.CancellationToken);
         }
 
 #endif
 
-        private static void Execute<TContext>(TContext context, Action<TContext, Diagnostic> reportDiagnostic, Action<TContext, string, string> addSource, CSharpCompilation compilation, LanguageVersion? languageVersion, ImmutableArray<AdditionalText> additionalFiles, AnalyzerConfigOptionsProvider analyzerConfigOptions, CancellationToken cancellationToken)
+        private static AdditionalText? GetNativeMethodsJsonFile(ImmutableArray<AdditionalText> additionalFiles)
+        {
+            return additionalFiles.FirstOrDefault(af => string.Equals(Path.GetFileName(af.Path), NativeMethodsJsonAdditionalFileName, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static AdditionalText? GetNativeMethodsTxtFile(ImmutableArray<AdditionalText> additionalFiles)
+        {
+            return additionalFiles.FirstOrDefault(af => string.Equals(Path.GetFileName(af.Path), NativeMethodsTxtAdditionalFileName, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static void Execute<TContext>(
+            TContext context,
+            Action<TContext, Diagnostic> reportDiagnostic,
+            Action<TContext, string, string> addSource,
+            CSharpCompilation compilation,
+            LanguageVersion? languageVersion,
+            AdditionalText? nativeMethodsJsonFile,
+            AdditionalText? nativeMethodsTxtFile,
+            AnalyzerConfigOptionsProvider analyzerConfigOptions,
+            CancellationToken cancellationToken)
         {
             if (!analyzerConfigOptions.GlobalOptions.TryGetValue("build_property.MicrosoftWindowsSdkWin32MetadataBasePath", out string? metadataBasePath) ||
                 string.IsNullOrWhiteSpace(metadataBasePath))
@@ -159,8 +192,6 @@ namespace Microsoft.Windows.CsWin32
             analyzerConfigOptions.GlobalOptions.TryGetValue("build_property.MicrosoftWindowsSdkApiDocsPath", out string? apiDocsPath);
 
             GeneratorOptions? options = null;
-            AdditionalText? nativeMethodsJsonFile = additionalFiles
-                .FirstOrDefault(af => string.Equals(Path.GetFileName(af.Path), NativeMethodsJsonAdditionalFileName, StringComparison.OrdinalIgnoreCase));
             if (nativeMethodsJsonFile is object)
             {
                 string optionsJson = nativeMethodsJsonFile.GetText(cancellationToken)!.ToString();
@@ -172,8 +203,6 @@ namespace Microsoft.Windows.CsWin32
                 });
             }
 
-            AdditionalText? nativeMethodsTxtFile = additionalFiles
-                .FirstOrDefault(af => string.Equals(Path.GetFileName(af.Path), NativeMethodsTxtAdditionalFileName, StringComparison.OrdinalIgnoreCase));
             if (nativeMethodsTxtFile is null)
             {
                 return;

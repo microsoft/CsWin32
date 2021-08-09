@@ -4,22 +4,26 @@
 namespace Microsoft.Windows.CsWin32
 {
     using System;
-    using System.Collections.Generic;
-    using System.Diagnostics;
+    using System.Collections.Immutable;
     using System.IO;
     using System.Linq;
-    using System.Reflection;
     using System.Text;
     using System.Text.Json;
+    using System.Threading;
     using Microsoft.CodeAnalysis;
     using Microsoft.CodeAnalysis.CSharp;
+    using Microsoft.CodeAnalysis.Diagnostics;
     using Microsoft.CodeAnalysis.Text;
 
     /// <summary>
     /// Generates the source code for the p/invoke methods and supporting types into some C# project.
     /// </summary>
     [Generator]
+#if ROSLYN4_0
+    public class SourceGenerator : IIncrementalGenerator
+#else
     public class SourceGenerator : ISourceGenerator
+#endif
     {
         private const string NativeMethodsTxtAdditionalFileName = "NativeMethods.txt";
         private const string NativeMethodsJsonAdditionalFileName = "NativeMethods.json";
@@ -35,7 +39,7 @@ namespace Microsoft.Windows.CsWin32
         private static readonly DiagnosticDescriptor NoMatchingMethodOrType = new DiagnosticDescriptor(
             "PInvoke001",
             "No matching method or type found",
-            "Method or type \"{0}\" not found.",
+            "Method or type \"{0}\" not found",
             "Functionality",
             DiagnosticSeverity.Warning,
             isEnabledByDefault: true);
@@ -43,7 +47,9 @@ namespace Microsoft.Windows.CsWin32
         private static readonly DiagnosticDescriptor NoMatchingMethodOrTypeWithSuggestions = new DiagnosticDescriptor(
             "PInvoke001",
             "No matching method or type found",
+#pragma warning disable RS1032 // Define diagnostic message correctly
             "Method or type \"{0}\" not found. Did you mean {1}?",
+#pragma warning restore RS1032 // Define diagnostic message correctly
             "Functionality",
             DiagnosticSeverity.Warning,
             isEnabledByDefault: true);
@@ -51,7 +57,7 @@ namespace Microsoft.Windows.CsWin32
         private static readonly DiagnosticDescriptor NoMethodsForModule = new DiagnosticDescriptor(
             "PInvoke001",
             "No module found",
-            "No methods found under module \"{0}\".",
+            "No methods found under module \"{0}\"",
             "Functionality",
             DiagnosticSeverity.Warning,
             isEnabledByDefault: true);
@@ -68,7 +74,7 @@ namespace Microsoft.Windows.CsWin32
         private static readonly DiagnosticDescriptor BannedApi = new DiagnosticDescriptor(
             "PInvoke003",
             "BannedAPI",
-            "This API will not be generated. {0}",
+            "This API will not be generated: {0}",
             "Functionality",
             DiagnosticSeverity.Warning,
             isEnabledByDefault: true);
@@ -90,6 +96,35 @@ namespace Microsoft.Windows.CsWin32
             DiagnosticSeverity.Warning,
             isEnabledByDefault: true);
 
+#if ROSLYN4_0
+
+        /// <inheritdoc/>
+        public void Initialize(IncrementalGeneratorInitializationContext context)
+        {
+            var inputs = context.CompilationProvider
+                .Combine(context.ParseOptionsProvider)
+                .Combine(context.AdditionalTextsProvider.Collect())
+                .Combine(context.AnalyzerConfigOptionsProvider)
+                .Select((data, cancellationToken) => (compilation: data.Left.Left.Left, parseOptions: data.Left.Left.Right, additionalFiles: data.Left.Right, analyzerConfigOptions: data.Right));
+
+            context.RegisterSourceOutput(
+                inputs,
+                (context, collectedValues) =>
+                {
+                    Execute(
+                        context,
+                        static (context, diagnostic) => context.ReportDiagnostic(diagnostic),
+                        static (context, hintName, source) => context.AddSource(hintName, source),
+                        (CSharpCompilation)collectedValues.compilation,
+                        (CSharpParseOptions)collectedValues.parseOptions,
+                        collectedValues.additionalFiles,
+                        collectedValues.analyzerConfigOptions,
+                        context.CancellationToken);
+                });
+        }
+
+#else
+
         /// <inheritdoc/>
         public void Initialize(GeneratorInitializationContext context)
         {
@@ -98,25 +133,35 @@ namespace Microsoft.Windows.CsWin32
         /// <inheritdoc/>
         public void Execute(GeneratorExecutionContext context)
         {
-            if (!(context.Compilation is CSharpCompilation))
-            {
-                return;
-            }
+            Execute(
+                context,
+                static (context, diagnostic) => context.ReportDiagnostic(diagnostic),
+                static (context, hintName, source) => context.AddSource(hintName, source),
+                (CSharpCompilation)context.Compilation,
+                (CSharpParseOptions)context.ParseOptions,
+                context.AdditionalFiles,
+                context.AnalyzerConfigOptions,
+                context.CancellationToken);
+        }
 
-            if (!context.AnalyzerConfigOptions.GlobalOptions.TryGetValue("build_property.MicrosoftWindowsSdkWin32MetadataBasePath", out string? metadataBasePath) ||
+#endif
+
+        private static void Execute<TContext>(TContext context, Action<TContext, Diagnostic> reportDiagnostic, Action<TContext, string, string> addSource, CSharpCompilation compilation, CSharpParseOptions parseOptions, ImmutableArray<AdditionalText> additionalFiles, AnalyzerConfigOptionsProvider analyzerConfigOptions, CancellationToken cancellationToken)
+        {
+            if (!analyzerConfigOptions.GlobalOptions.TryGetValue("build_property.MicrosoftWindowsSdkWin32MetadataBasePath", out string? metadataBasePath) ||
                 string.IsNullOrWhiteSpace(metadataBasePath))
             {
                 return;
             }
 
-            context.AnalyzerConfigOptions.GlobalOptions.TryGetValue("build_property.MicrosoftWindowsSdkApiDocsPath", out string? apiDocsPath);
+            analyzerConfigOptions.GlobalOptions.TryGetValue("build_property.MicrosoftWindowsSdkApiDocsPath", out string? apiDocsPath);
 
             GeneratorOptions? options = null;
-            AdditionalText? nativeMethodsJsonFile = context.AdditionalFiles
+            AdditionalText? nativeMethodsJsonFile = additionalFiles
                 .FirstOrDefault(af => string.Equals(Path.GetFileName(af.Path), NativeMethodsJsonAdditionalFileName, StringComparison.OrdinalIgnoreCase));
             if (nativeMethodsJsonFile is object)
             {
-                string optionsJson = nativeMethodsJsonFile.GetText(context.CancellationToken)!.ToString();
+                string optionsJson = nativeMethodsJsonFile.GetText(cancellationToken)!.ToString();
                 options = JsonSerializer.Deserialize<GeneratorOptions>(optionsJson, new JsonSerializerOptions
                 {
                     AllowTrailingCommas = true,
@@ -125,7 +170,7 @@ namespace Microsoft.Windows.CsWin32
                 });
             }
 
-            AdditionalText? nativeMethodsTxtFile = context.AdditionalFiles
+            AdditionalText? nativeMethodsTxtFile = additionalFiles
                 .FirstOrDefault(af => string.Equals(Path.GetFileName(af.Path), NativeMethodsTxtAdditionalFileName, StringComparison.OrdinalIgnoreCase));
             if (nativeMethodsTxtFile is null)
             {
@@ -133,17 +178,15 @@ namespace Microsoft.Windows.CsWin32
             }
 
             string metadataPath = Path.Combine(metadataBasePath, "Windows.Win32.winmd");
-            var compilation = (CSharpCompilation)context.Compilation;
-            var parseOptions = (CSharpParseOptions)context.ParseOptions;
 
             if (!compilation.Options.AllowUnsafe)
             {
-                context.ReportDiagnostic(Diagnostic.Create(UnsafeCodeRequired, location: null));
+                reportDiagnostic(context, Diagnostic.Create(UnsafeCodeRequired, location: null));
             }
 
             using var generator = new Generator(metadataPath, apiDocsPath, options, compilation, parseOptions);
 
-            SourceText? nativeMethodsTxt = nativeMethodsTxtFile.GetText(context.CancellationToken);
+            SourceText? nativeMethodsTxt = nativeMethodsTxtFile.GetText(cancellationToken);
             if (nativeMethodsTxt is null)
             {
                 return;
@@ -151,7 +194,7 @@ namespace Microsoft.Windows.CsWin32
 
             foreach (TextLine line in nativeMethodsTxt.Lines)
             {
-                context.CancellationToken.ThrowIfCancellationRequested();
+                cancellationToken.ThrowIfCancellationRequested();
                 string name = line.ToString();
                 if (string.IsNullOrWhiteSpace(name) || name.StartsWith("//", StringComparison.InvariantCulture))
                 {
@@ -164,22 +207,22 @@ namespace Microsoft.Windows.CsWin32
                 {
                     if (generator.BannedAPIs.TryGetValue(name, out string? reason))
                     {
-                        context.ReportDiagnostic(Diagnostic.Create(BannedApi, location, reason));
+                        reportDiagnostic(context, Diagnostic.Create(BannedApi, location, reason));
                     }
                     else if (name.EndsWith(".*", StringComparison.Ordinal))
                     {
                         var moduleName = name.Substring(0, name.Length - 2);
-                        if (!generator.TryGenerateAllExternMethods(moduleName, context.CancellationToken))
+                        if (!generator.TryGenerateAllExternMethods(moduleName, cancellationToken))
                         {
-                            context.ReportDiagnostic(Diagnostic.Create(NoMethodsForModule, location, moduleName));
+                            reportDiagnostic(context, Diagnostic.Create(NoMethodsForModule, location, moduleName));
                         }
                     }
-                    else if (!generator.TryGenerate(name, context.CancellationToken))
+                    else if (!generator.TryGenerate(name, cancellationToken))
                     {
                         if (generator.TryGetEnumName(name, out string? declaringEnum))
                         {
-                            context.ReportDiagnostic(Diagnostic.Create(UseEnumValueDeclaringType, location, declaringEnum));
-                            if (!generator.TryGenerate(declaringEnum, context.CancellationToken))
+                            reportDiagnostic(context, Diagnostic.Create(UseEnumValueDeclaringType, location, declaringEnum));
+                            if (!generator.TryGenerate(declaringEnum, cancellationToken))
                             {
                                 ReportNoMatch(location, declaringEnum);
                             }
@@ -194,22 +237,22 @@ namespace Microsoft.Windows.CsWin32
                 {
                     if (Generator.IsPlatformCompatibleException(ex))
                     {
-                        context.ReportDiagnostic(Diagnostic.Create(CpuArchitectureIncompatibility, location));
+                        reportDiagnostic(context, Diagnostic.Create(CpuArchitectureIncompatibility, location));
                     }
                     else
                     {
                         // Build up a complete error message.
-                        context.ReportDiagnostic(Diagnostic.Create(InternalError, location, AssembleFullExceptionMessage(ex)));
+                        reportDiagnostic(context, Diagnostic.Create(InternalError, location, AssembleFullExceptionMessage(ex)));
                     }
                 }
             }
 
-            var compilationUnits = generator.GetCompilationUnits(context.CancellationToken)
+            var compilationUnits = generator.GetCompilationUnits(cancellationToken)
                 .OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(pair => pair.Key, StringComparer.Ordinal);
             foreach (var unit in compilationUnits)
             {
-                context.AddSource(unit.Key, unit.Value.ToFullString());
+                addSource(context, unit.Key, unit.Value.ToFullString());
             }
 
             void ReportNoMatch(Location? location, string failedAttempt)
@@ -230,11 +273,11 @@ namespace Microsoft.Windows.CsWin32
                         suggestionBuilder.Append('"');
                     }
 
-                    context.ReportDiagnostic(Diagnostic.Create(NoMatchingMethodOrTypeWithSuggestions, location, failedAttempt, suggestionBuilder));
+                    reportDiagnostic(context, Diagnostic.Create(NoMatchingMethodOrTypeWithSuggestions, location, failedAttempt, suggestionBuilder));
                 }
                 else
                 {
-                    context.ReportDiagnostic(Diagnostic.Create(NoMatchingMethodOrType, location, failedAttempt));
+                    reportDiagnostic(context, Diagnostic.Create(NoMatchingMethodOrType, location, failedAttempt));
                 }
             }
         }

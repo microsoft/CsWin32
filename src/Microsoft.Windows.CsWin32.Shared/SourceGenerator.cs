@@ -110,12 +110,21 @@ namespace Microsoft.Windows.CsWin32
                     return (nativeMethodsJsonFile, nativeMethodsTxtFile);
                 });
 
+            var globalConfig = context.AnalyzerConfigOptionsProvider.Select(
+                static (analyzerConfigOptions, cancellationToken) =>
+                {
+                    string? metadataBasePath = TryGetMetadataBasePath(analyzerConfigOptions);
+                    string? apiDocsPath = TryGetApiDocsPath(analyzerConfigOptions);
+
+                    return (metadataBasePath, apiDocsPath);
+                });
+
             var languageVersion = context.ParseOptionsProvider.Select((parseOptions, _) => (parseOptions as CSharpParseOptions)?.LanguageVersion);
 
             var inputs = context.CompilationProvider
                 .Combine(languageVersion)
                 .Combine(configFiles)
-                .Combine(context.AnalyzerConfigOptionsProvider)
+                .Combine(globalConfig)
                 .Select((data, cancellationToken) => (compilation: data.Left.Left.Left, languageVersion: data.Left.Left.Right, additionalFiles: data.Left.Right, analyzerConfigOptions: data.Right));
 
             context.RegisterSourceOutput(
@@ -130,7 +139,8 @@ namespace Microsoft.Windows.CsWin32
                         collectedValues.languageVersion,
                         collectedValues.additionalFiles.nativeMethodsJsonFile,
                         collectedValues.additionalFiles.nativeMethodsTxtFile,
-                        collectedValues.analyzerConfigOptions,
+                        collectedValues.analyzerConfigOptions.metadataBasePath,
+                        collectedValues.analyzerConfigOptions.apiDocsPath,
                         context.CancellationToken);
                 });
         }
@@ -147,6 +157,8 @@ namespace Microsoft.Windows.CsWin32
         {
             AdditionalText? nativeMethodsJsonFile = GetNativeMethodsJsonFile(context.AdditionalFiles);
             AdditionalText? nativeMethodsTxtFile = GetNativeMethodsTxtFile(context.AdditionalFiles);
+            string? metadataBasePath = TryGetMetadataBasePath(context.AnalyzerConfigOptions);
+            string? apiDocsPath = TryGetApiDocsPath(context.AnalyzerConfigOptions);
 
             Execute(
                 context,
@@ -156,7 +168,8 @@ namespace Microsoft.Windows.CsWin32
                 (context.ParseOptions as CSharpParseOptions)?.LanguageVersion,
                 nativeMethodsJsonFile,
                 nativeMethodsTxtFile,
-                context.AnalyzerConfigOptions,
+                metadataBasePath,
+                apiDocsPath,
                 context.CancellationToken);
         }
 
@@ -172,6 +185,18 @@ namespace Microsoft.Windows.CsWin32
             return additionalFiles.FirstOrDefault(af => string.Equals(Path.GetFileName(af.Path), NativeMethodsTxtAdditionalFileName, StringComparison.OrdinalIgnoreCase));
         }
 
+        private static string? TryGetMetadataBasePath(AnalyzerConfigOptionsProvider analyzerConfigOptions)
+        {
+            analyzerConfigOptions.GlobalOptions.TryGetValue("build_property.MicrosoftWindowsSdkWin32MetadataBasePath", out string? metadataBasePath);
+            return metadataBasePath;
+        }
+
+        private static string? TryGetApiDocsPath(AnalyzerConfigOptionsProvider analyzerConfigOptions)
+        {
+            analyzerConfigOptions.GlobalOptions.TryGetValue("build_property.MicrosoftWindowsSdkApiDocsPath", out string? apiDocsPath);
+            return apiDocsPath;
+        }
+
         private static void Execute<TContext>(
             TContext context,
             Action<TContext, Diagnostic> reportDiagnostic,
@@ -180,16 +205,14 @@ namespace Microsoft.Windows.CsWin32
             LanguageVersion? languageVersion,
             AdditionalText? nativeMethodsJsonFile,
             AdditionalText? nativeMethodsTxtFile,
-            AnalyzerConfigOptionsProvider analyzerConfigOptions,
+            string? metadataBasePath,
+            string? apiDocsPath,
             CancellationToken cancellationToken)
         {
-            if (!analyzerConfigOptions.GlobalOptions.TryGetValue("build_property.MicrosoftWindowsSdkWin32MetadataBasePath", out string? metadataBasePath) ||
-                string.IsNullOrWhiteSpace(metadataBasePath))
+            if (string.IsNullOrWhiteSpace(metadataBasePath))
             {
                 return;
             }
-
-            analyzerConfigOptions.GlobalOptions.TryGetValue("build_property.MicrosoftWindowsSdkApiDocsPath", out string? apiDocsPath);
 
             GeneratorOptions? options = null;
             if (nativeMethodsJsonFile is object)

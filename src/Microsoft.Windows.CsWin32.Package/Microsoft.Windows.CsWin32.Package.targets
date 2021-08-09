@@ -5,7 +5,9 @@
 
   <Target Name="SetNuSpecProperties" BeforeTargets="GenerateNuspec" DependsOnTargets="GetBuildVersion">
     <PropertyGroup>
-      <NuspecProperties>$(NuspecProperties);Version=$(Version);BaseOutputPath=$(OutputPath);MetadataVersion=$(MetadataVersion);ApiDocsVersion=$(ApiDocsVersion);PackageReleaseNotes=$(PackageReleaseNotes);commit=$(GitCommitId);</NuspecProperties>
+      <OutputPath38>$(RepoRootPath)bin\Microsoft.Windows.CsWin32.Roslyn38\$(Configuration)\netstandard2.0\</OutputPath38>
+      <OutputPath40>$(RepoRootPath)bin\Microsoft.Windows.CsWin32.Roslyn40\$(Configuration)\netstandard2.0\</OutputPath40>
+      <NuspecProperties>$(NuspecProperties);Version=$(Version);BaseOutputPath=$(OutputPath);BaseOutputPath38=$(OutputPath38);BaseOutputPath40=$(OutputPath40);MetadataVersion=$(MetadataVersion);ApiDocsVersion=$(ApiDocsVersion);PackageReleaseNotes=$(PackageReleaseNotes);commit=$(GitCommitId);</NuspecProperties>
     </PropertyGroup>
   </Target>
 

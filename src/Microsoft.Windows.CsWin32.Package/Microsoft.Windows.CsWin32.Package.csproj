@@ -8,7 +8,6 @@
     <!-- Special properties for analyzer packages. -->
     <IncludeBuildOutput>false</IncludeBuildOutput>
     <IncludeSymbols>false</IncludeSymbols>
-    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <NoWarn>$(NoWarn);NU5128;NU5127</NoWarn>
   </PropertyGroup>
 
@@ -19,7 +18,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Microsoft.Windows.CsWin32\Roslyn38\Microsoft.Windows.CsWin32.Roslyn38.csproj" />
+    <ProjectReference Include="..\Microsoft.Windows.CsWin32\Roslyn38\Microsoft.Windows.CsWin32.Roslyn38.csproj" Private="true" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\Microsoft.Windows.CsWin32\Roslyn40\Microsoft.Windows.CsWin32.Roslyn40.csproj" Private="true" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>

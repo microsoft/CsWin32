@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 16
-VisualStudioVersion = 16.0.29322.22
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31601.41
 MinimumVisualStudioVersion = 15.0.26124.0
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{1CE9670B-D5FF-46A7-9D00-24E70E6ED48B}"
 	ProjectSection(SolutionItems) = preProject
@@ -39,7 +39,13 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "GenerationSandbox.Tests", "
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SpellChecker", "test\SpellChecker\SpellChecker.csproj", "{744BE74F-8C4A-49E8-9683-52D987224285}"
 EndProject
+Project("{D954291E-2A0B-460D-934E-DC6B0785DB48}") = "Microsoft.Windows.CsWin32.Shared", "src\Microsoft.Windows.CsWin32.Shared\Microsoft.Windows.CsWin32.Shared.shproj", "{D820AF8C-46E2-4AE4-B045-0D70B81BDF7E}"
+EndProject
 Global
+	GlobalSection(SharedMSBuildProjectFiles) = preSolution
+		src\Microsoft.Windows.CsWin32.Shared\Microsoft.Windows.CsWin32.Shared.projitems*{d820af8c-46e2-4ae4-b045-0d70b81bdf7e}*SharedItemsImports = 13
+		src\Microsoft.Windows.CsWin32.Shared\Microsoft.Windows.CsWin32.Shared.projitems*{e3e96466-44b6-41af-bbc8-9d30183ed8a9}*SharedItemsImports = 5
+	EndGlobalSection
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
 		Release|Any CPU = Release|Any CPU
@@ -75,6 +81,7 @@ Global
 		{6638957D-09ED-47C1-86B9-5D2DFD0FE625} = {9E154A29-1796-4B85-BD81-B6A385D8FF71}
 		{7E8A5179-F94C-410F-8BBE-FDAAA95A19C3} = {36CCE840-6FE5-4DB9-A8D5-8CF3CB6D342A}
 		{744BE74F-8C4A-49E8-9683-52D987224285} = {36CCE840-6FE5-4DB9-A8D5-8CF3CB6D342A}
+		{D820AF8C-46E2-4AE4-B045-0D70B81BDF7E} = {9E154A29-1796-4B85-BD81-B6A385D8FF71}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {E3944F6A-384B-4B0F-B93F-3BD513DC57BD}

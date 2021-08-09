@@ -1,5 +1,5 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-  <Import Project="..\..\src\Microsoft.Windows.CsWin32\build\Microsoft.Windows.CsWin32.props" />
+  <Import Project="..\..\src\Microsoft.Windows.CsWin32.Shared\build\Microsoft.Windows.CsWin32.props" />
 
   <PropertyGroup>
     <TargetFrameworks>net5.0-windows7.0;netcoreapp3.1;net472</TargetFrameworks>

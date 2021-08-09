@@ -24,5 +24,5 @@
     <PackageReference Include="System.Text.Json" Version="4.7.2" />
   </ItemGroup>
 
-  <Import Project="..\Microsoft.Windows.CsWin32.Shared\Microsoft.Windows.CsWin32.Shared.projitems" Label="Shared" />
+  <Import Project="..\..\Microsoft.Windows.CsWin32.Shared\Microsoft.Windows.CsWin32.Shared.projitems" Label="Shared" />
 </Project>

@@ -101,11 +101,13 @@ namespace Microsoft.Windows.CsWin32
         /// <inheritdoc/>
         public void Initialize(IncrementalGeneratorInitializationContext context)
         {
+            var languageVersion = context.ParseOptionsProvider.Select((parseOptions, _) => (parseOptions as CSharpParseOptions)?.LanguageVersion);
+
             var inputs = context.CompilationProvider
-                .Combine(context.ParseOptionsProvider)
+                .Combine(languageVersion)
                 .Combine(context.AdditionalTextsProvider.Collect())
                 .Combine(context.AnalyzerConfigOptionsProvider)
-                .Select((data, cancellationToken) => (compilation: data.Left.Left.Left, parseOptions: data.Left.Left.Right, additionalFiles: data.Left.Right, analyzerConfigOptions: data.Right));
+                .Select((data, cancellationToken) => (compilation: data.Left.Left.Left, languageVersion: data.Left.Left.Right, additionalFiles: data.Left.Right, analyzerConfigOptions: data.Right));
 
             context.RegisterSourceOutput(
                 inputs,
@@ -116,7 +118,7 @@ namespace Microsoft.Windows.CsWin32
                         static (context, diagnostic) => context.ReportDiagnostic(diagnostic),
                         static (context, hintName, source) => context.AddSource(hintName, source),
                         (CSharpCompilation)collectedValues.compilation,
-                        (CSharpParseOptions)collectedValues.parseOptions,
+                        collectedValues.languageVersion,
                         collectedValues.additionalFiles,
                         collectedValues.analyzerConfigOptions,
                         context.CancellationToken);
@@ -138,7 +140,7 @@ namespace Microsoft.Windows.CsWin32
                 static (context, diagnostic) => context.ReportDiagnostic(diagnostic),
                 static (context, hintName, source) => context.AddSource(hintName, source),
                 (CSharpCompilation)context.Compilation,
-                (CSharpParseOptions)context.ParseOptions,
+                (context.ParseOptions as CSharpParseOptions)?.LanguageVersion,
                 context.AdditionalFiles,
                 context.AnalyzerConfigOptions,
                 context.CancellationToken);
@@ -146,7 +148,7 @@ namespace Microsoft.Windows.CsWin32
 
 #endif
 
-        private static void Execute<TContext>(TContext context, Action<TContext, Diagnostic> reportDiagnostic, Action<TContext, string, string> addSource, CSharpCompilation compilation, CSharpParseOptions parseOptions, ImmutableArray<AdditionalText> additionalFiles, AnalyzerConfigOptionsProvider analyzerConfigOptions, CancellationToken cancellationToken)
+        private static void Execute<TContext>(TContext context, Action<TContext, Diagnostic> reportDiagnostic, Action<TContext, string, string> addSource, CSharpCompilation compilation, LanguageVersion? languageVersion, ImmutableArray<AdditionalText> additionalFiles, AnalyzerConfigOptionsProvider analyzerConfigOptions, CancellationToken cancellationToken)
         {
             if (!analyzerConfigOptions.GlobalOptions.TryGetValue("build_property.MicrosoftWindowsSdkWin32MetadataBasePath", out string? metadataBasePath) ||
                 string.IsNullOrWhiteSpace(metadataBasePath))
@@ -184,7 +186,7 @@ namespace Microsoft.Windows.CsWin32
                 reportDiagnostic(context, Diagnostic.Create(UnsafeCodeRequired, location: null));
             }
 
-            using var generator = new Generator(metadataPath, apiDocsPath, options, compilation, parseOptions);
+            using var generator = new Generator(metadataPath, apiDocsPath, options, compilation, languageVersion);
 
             SourceText? nativeMethodsTxt = nativeMethodsTxtFile.GetText(cancellationToken);
             if (nativeMethodsTxt is null)

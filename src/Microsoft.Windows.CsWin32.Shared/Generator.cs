@@ -274,7 +274,7 @@ namespace Microsoft.Windows.CsWin32
 
         private readonly GeneratorOptions options;
         private readonly CSharpCompilation? compilation;
-        private readonly CSharpParseOptions? parseOptions;
+        private readonly LanguageVersion? languageVersion;
         private readonly bool canCallCreateSpan;
         private readonly bool generateSupportedOSPlatformAttributes;
         private readonly bool generateSupportedOSPlatformAttributesOnInterfaces; // only supported on net6.0 (https://github.com/dotnet/runtime/pull/48838)
@@ -289,8 +289,8 @@ namespace Microsoft.Windows.CsWin32
         /// <param name="apiDocsPath">The path to the API docs file.</param>
         /// <param name="options">Options that influence the result of generation.</param>
         /// <param name="compilation">The compilation that the generated code will be added to.</param>
-        /// <param name="parseOptions">The parse options that will be used for the generated code.</param>
-        public Generator(string metadataLibraryPath, string? apiDocsPath, GeneratorOptions? options = null, CSharpCompilation? compilation = null, CSharpParseOptions? parseOptions = null)
+        /// <param name="languageVersion">The language version that will be used for the generated code.</param>
+        public Generator(string metadataLibraryPath, string? apiDocsPath, GeneratorOptions? options = null, CSharpCompilation? compilation = null, LanguageVersion? languageVersion = null)
         {
             this.MetadataIndex = MetadataIndex.Get(metadataLibraryPath, compilation?.Options.Platform);
             this.ApiDocs = apiDocsPath is object ? Docs.Get(apiDocsPath) : null;
@@ -298,7 +298,7 @@ namespace Microsoft.Windows.CsWin32
             this.options = options ??= new GeneratorOptions();
             this.options.Validate();
             this.compilation = compilation;
-            this.parseOptions = parseOptions;
+            this.languageVersion = languageVersion;
             this.volatileCode = new(this.committedCode);
 
             this.canCallCreateSpan = this.compilation?.GetTypeByMetadataName(typeof(MemoryMarshal).FullName)?.GetMembers("CreateSpan").Any() is true;
@@ -358,7 +358,7 @@ namespace Microsoft.Windows.CsWin32
 
         internal MetadataReader Reader => this.MetadataIndex.Reader;
 
-        internal LanguageVersion LanguageVersion => this.parseOptions?.LanguageVersion ?? LanguageVersion.CSharp9;
+        internal LanguageVersion LanguageVersion => this.languageVersion ?? LanguageVersion.CSharp9;
 
         private bool WideCharOnly => this.options.WideCharOnly;
 

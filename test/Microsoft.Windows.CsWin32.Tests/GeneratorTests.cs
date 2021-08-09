@@ -2132,7 +2132,7 @@ namespace Windows.Win32
         return compilation;
     }
 
-    private Generator CreateGenerator(GeneratorOptions? options = null, CSharpCompilation? compilation = null) => new Generator(MetadataPath, ApiDocsPath, options ?? DefaultTestGeneratorOptions, compilation ?? this.compilation, this.parseOptions);
+    private Generator CreateGenerator(GeneratorOptions? options = null, CSharpCompilation? compilation = null) => new Generator(MetadataPath, ApiDocsPath, options ?? DefaultTestGeneratorOptions, compilation ?? this.compilation, this.parseOptions.LanguageVersion);
 
     private static class MyReferenceAssemblies
     {

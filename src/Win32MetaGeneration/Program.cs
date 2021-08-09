@@ -53,7 +53,7 @@ namespace Win32.CodeGen
                         WideCharOnly = true,
                         EmitSingleFile = true,
                     },
-                    parseOptions: CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.CSharp9));
+                    languageVersion: LanguageVersion.CSharp9);
                 Console.WriteLine("Generating code... (press Ctrl+C to cancel)");
                 if (args.Length > 0)
                 {

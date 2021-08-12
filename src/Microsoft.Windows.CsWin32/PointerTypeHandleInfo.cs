@@ -29,7 +29,7 @@ namespace Microsoft.Windows.CsWin32
                     // But this pointer represents an array, so type as an array.
                     return new TypeSyntaxAndMarshaling(
                         ArrayType(elementSyntax).AddRankSpecifiers(ArrayRankSpecifier()),
-                        marshalAs is object ? new MarshalAsAttribute(UnmanagedType.LPArray) { ArraySubType = marshalAs.Value } : null);
+                        marshalAs is object ? new MarshalAsAttribute(UnmanagedType.LPArray) { ArraySubType = marshalAs.Value } : new MarshalAsAttribute(UnmanagedType.LPArray));
                 }
                 else if (xIn || xOut)
                 {

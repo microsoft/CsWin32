@@ -584,6 +584,42 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         Assert.Equal("MSIHANDLE", Assert.IsType<QualifiedNameSyntax>(releaseMethod!.ParameterList.Parameters[0].Type).Right.Identifier.ValueText);
     }
 
+    /// <summary>
+    /// Verifies that the special case ReleaseDC method (which takes two parameters) leads to SafeHandle generation.
+    /// </summary>
+    [Fact]
+    public void GetWindowDC_GeneratesSafeHandleAlternative()
+    {
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate("GetWindowDC", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        Assert.Contains(
+            this.FindGeneratedMethod("GetWindowDC"),
+            method => method!.ReturnType is QualifiedNameSyntax { Right: { Identifier: { ValueText: "HDC" } } });
+
+        Assert.Contains(
+            this.FindGeneratedMethod("GetWindowDC_SafeHandle"),
+            method => method!.ReturnType?.ToString() == "ReleaseDCSafeHandle");
+
+        MethodDeclarationSyntax releaseMethod = this.FindGeneratedMethod("ReleaseDC").Single();
+        Assert.Equal("HDC", Assert.IsType<QualifiedNameSyntax>(releaseMethod!.ParameterList.Parameters[0].Type).Right.Identifier.ValueText);
+    }
+
+    [Fact]
+    public void BeginPaint_FriendlyOverloadReturnsSafeHandle()
+    {
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate("BeginPaint", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        Assert.Contains(
+            this.FindGeneratedMethod("BeginPaint"),
+            method => method!.ReturnType is QualifiedNameSyntax { Right: { Identifier: { ValueText: "ReleaseDCSafeHandle" } } });
+    }
+
     [Fact]
     public void OutHandleParameterBecomesSafeHandle()
     {

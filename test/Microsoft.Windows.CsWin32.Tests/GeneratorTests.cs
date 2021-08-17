@@ -329,16 +329,17 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
                 && createFileMethod.ParameterList.Parameters.Last().Type?.ToString() == "SafeHandle");
     }
 
+    /// <summary>
+    /// GetMessage should return BOOL rather than bool because it actually returns any of THREE values.
+    /// </summary>
     [Fact]
-    public void BOOL_ReturnTypeBecomes_Boolean()
+    public void GetMessageW_ReturnsBOOL()
     {
         this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate("WinUsb_FlushPipe", CancellationToken.None));
+        Assert.True(this.generator.TryGenerate("GetMessage", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
-        MethodDeclarationSyntax? createFileMethod = this.FindGeneratedMethod("WinUsb_FlushPipe").FirstOrDefault();
-        Assert.NotNull(createFileMethod);
-        Assert.Equal(SyntaxKind.BoolKeyword, Assert.IsType<PredefinedTypeSyntax>(createFileMethod!.ReturnType).Keyword.Kind());
+        Assert.All(this.FindGeneratedMethod("GetMessage"), method => Assert.True(method.ReturnType is QualifiedNameSyntax { Right: { Identifier: { ValueText: "BOOL" } } }));
     }
 
     [Theory, PairwiseData]

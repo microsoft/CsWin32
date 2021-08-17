@@ -51,7 +51,7 @@ namespace Microsoft.Windows.CsWin32
 
         internal static readonly Dictionary<string, TypeSyntax> AdditionalBclInteropStructsMarshaled = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)
         {
-            { "BOOL", PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)) },
+            ////{ "BOOL", PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)) },
         };
 
         internal static readonly Dictionary<string, TypeSyntax> BclInteropSafeHandles = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)
@@ -1330,7 +1330,7 @@ namespace Microsoft.Windows.CsWin32
                 ArgumentList().AddArguments(Argument(CastExpression(releaseMethodParameterType.Type, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("handle"))))));
             BlockSyntax? releaseBlock = null;
             if (!(releaseMethodReturnType.Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.BoolKeyword } } ||
-                releaseMethodReturnType.Type is IdentifierNameSyntax { Identifier: { ValueText: "BOOL" } }))
+                releaseMethodReturnType.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "BOOL" } } }))
             {
                 switch (releaseMethodReturnType.Type)
                 {

@@ -329,16 +329,17 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
                 && createFileMethod.ParameterList.Parameters.Last().Type?.ToString() == "SafeHandle");
     }
 
+    /// <summary>
+    /// GetMessage should return BOOL rather than bool because it actually returns any of THREE values.
+    /// </summary>
     [Fact]
-    public void BOOL_ReturnTypeBecomes_Boolean()
+    public void GetMessageW_ReturnsBOOL()
     {
         this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate("WinUsb_FlushPipe", CancellationToken.None));
+        Assert.True(this.generator.TryGenerate("GetMessage", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
-        MethodDeclarationSyntax? createFileMethod = this.FindGeneratedMethod("WinUsb_FlushPipe").FirstOrDefault();
-        Assert.NotNull(createFileMethod);
-        Assert.Equal(SyntaxKind.BoolKeyword, Assert.IsType<PredefinedTypeSyntax>(createFileMethod!.ReturnType).Keyword.Kind());
+        Assert.All(this.FindGeneratedMethod("GetMessage"), method => Assert.True(method.ReturnType is QualifiedNameSyntax { Right: { Identifier: { ValueText: "BOOL" } } }));
     }
 
     [Theory, PairwiseData]
@@ -861,9 +862,13 @@ namespace Windows.Win32
 			private readonly int value;
 
 			internal int Value => this.value;
-			internal BOOL(bool value) => this.value = value ? 1 : 0;
+			internal BOOL(bool value) => this.value = Unsafe.As<bool,sbyte>(ref value);
 			internal BOOL(int value) => this.value = value;
-			public static implicit operator bool(BOOL value) => value.Value != 0;
+			public static implicit operator bool(BOOL value)
+			{
+				sbyte v = checked((sbyte)value.value);
+				return Unsafe.As<sbyte,bool>(ref v);
+			}
 			public static implicit operator BOOL(bool value) => new BOOL(value);
 			public static explicit operator BOOL(int value) => new BOOL(value);
 		}
@@ -1140,9 +1145,13 @@ namespace Windows.Win32
 			private readonly int value;
 
 			internal int Value => this.value;
-			internal BOOL(bool value) => this.value = value ? 1 : 0;
+			internal BOOL(bool value) => this.value = Unsafe.As<bool,sbyte>(ref value);
 			internal BOOL(int value) => this.value = value;
-			public static implicit operator bool(BOOL value) => value.Value != 0;
+			public static implicit operator bool(BOOL value)
+			{
+				sbyte v = checked((sbyte)value.value);
+				return Unsafe.As<sbyte,bool>(ref v);
+			}
 			public static implicit operator BOOL(bool value) => new BOOL(value);
 			public static explicit operator BOOL(int value) => new BOOL(value);
 		}
@@ -1460,9 +1469,13 @@ namespace Windows.Win32
 			private readonly int value;
 
 			internal int Value => this.value;
-			internal BOOL(bool value) => this.value = value ? 1 : 0;
+			internal BOOL(bool value) => this.value = Unsafe.As<bool,sbyte>(ref value);
 			internal BOOL(int value) => this.value = value;
-			public static implicit operator bool(BOOL value) => value.Value != 0;
+			public static implicit operator bool(BOOL value)
+			{
+				sbyte v = checked((sbyte)value.value);
+				return Unsafe.As<sbyte,bool>(ref v);
+			}
 			public static implicit operator BOOL(bool value) => new BOOL(value);
 			public static explicit operator BOOL(int value) => new BOOL(value);
 		}

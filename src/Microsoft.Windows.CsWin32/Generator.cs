@@ -51,7 +51,7 @@ namespace Microsoft.Windows.CsWin32
 
         internal static readonly Dictionary<string, TypeSyntax> AdditionalBclInteropStructsMarshaled = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)
         {
-            { "BOOL", PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)) },
+            ////{ "BOOL", PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)) },
         };
 
         internal static readonly Dictionary<string, TypeSyntax> BclInteropSafeHandles = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)
@@ -1330,7 +1330,7 @@ namespace Microsoft.Windows.CsWin32
                 ArgumentList().AddArguments(Argument(CastExpression(releaseMethodParameterType.Type, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("handle"))))));
             BlockSyntax? releaseBlock = null;
             if (!(releaseMethodReturnType.Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.BoolKeyword } } ||
-                releaseMethodReturnType.Type is IdentifierNameSyntax { Identifier: { ValueText: "BOOL" } }))
+                releaseMethodReturnType.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "BOOL" } } }))
             {
                 switch (releaseMethodReturnType.Type)
                 {
@@ -3471,8 +3471,8 @@ namespace Microsoft.Windows.CsWin32
 
             FieldDefinition fieldDef = this.Reader.GetFieldDefinition(typeDef.GetFields().Single());
             var fieldAttributes = fieldDef.GetCustomAttributes();
-            string fieldName = this.Reader.GetString(fieldDef.Name);
-            VariableDeclaratorSyntax fieldDeclarator = VariableDeclarator(Identifier("value"));
+            IdentifierNameSyntax fieldName = IdentifierName("value");
+            VariableDeclaratorSyntax fieldDeclarator = VariableDeclarator(fieldName.Identifier);
             (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers) fieldInfo =
                 this.ReinterpretFieldType(fieldDef, fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null).ToTypeSyntax(this.fieldTypeSettings, fieldAttributes).Type, fieldAttributes);
             SyntaxList<MemberDeclarationSyntax> members = List<MemberDeclarationSyntax>();
@@ -3488,9 +3488,17 @@ namespace Microsoft.Windows.CsWin32
                 .WithExpressionBody(ArrowExpressionClause(fieldAccessExpression)).WithSemicolonToken(SemicolonWithLineFeed)
                 .AddModifiers(TokenWithSpace(this.Visibility)));
 
-            // BOOL(bool value) => this.value = value ? 1 : 0;
+            static InvocationExpressionSyntax UnsafeAs(SyntaxKind fromType, SyntaxKind toType, IdentifierNameSyntax localSource) =>
+                InvocationExpression(
+                MemberAccessExpression(
+                    SyntaxKind.SimpleMemberAccessExpression,
+                    IdentifierName(nameof(Unsafe)),
+                    GenericName(nameof(Unsafe.As), TypeArgumentList().AddArguments(PredefinedType(Token(fromType)), PredefinedType(Token(toType))))),
+                ArgumentList().AddArguments(Argument(localSource).WithRefKindKeyword(Token(SyntaxKind.RefKeyword))));
+
+            // BOOL(bool value) => this.value = Unsafe.As<bool, sbyte>(ref value);
             IdentifierNameSyntax valueParameter = IdentifierName("value");
-            ExpressionSyntax boolToInt = ConditionalExpression(valueParameter, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(1)), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)));
+            ExpressionSyntax boolToInt = UnsafeAs(SyntaxKind.BoolKeyword, SyntaxKind.SByteKeyword, valueParameter);
             members = members.Add(ConstructorDeclaration(name.Identifier)
                 .AddModifiers(TokenWithSpace(this.Visibility))
                 .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword))))
@@ -3504,12 +3512,20 @@ namespace Microsoft.Windows.CsWin32
                 .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, valueParameter).WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken))))
                 .WithSemicolonToken(SemicolonWithLineFeed));
 
-            // public static implicit operator bool(BOOL value) => value.value != 0 ? true : false;
+            // public static implicit operator bool(BOOL value)
+            // {
+            //     sbyte v = checked((sbyte)value.value);
+            //     return Unsafe.As<sbyte, bool>(ref v);
+            // }
+            IdentifierNameSyntax localVarName = IdentifierName("v");
+            var implicitBOOLtoBoolBody = Block().AddStatements(
+                LocalDeclarationStatement(VariableDeclaration(PredefinedType(Token(SyntaxKind.SByteKeyword)))).AddDeclarationVariables(
+                    VariableDeclarator(localVarName.Identifier).WithInitializer(EqualsValueClause(CheckedExpression(SyntaxKind.CheckedExpression, CastExpression(PredefinedType(Token(SyntaxKind.SByteKeyword)), MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, fieldName)))))),
+                ReturnStatement(UnsafeAs(SyntaxKind.SByteKeyword, SyntaxKind.BoolKeyword, localVarName)));
             members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), PredefinedType(Token(SyntaxKind.BoolKeyword)))
                 .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))))
-                .WithExpressionBody(ArrowExpressionClause(BinaryExpression(SyntaxKind.NotEqualsExpression, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(fieldName)), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)))))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
-                .WithSemicolonToken(SemicolonWithLineFeed));
+                .WithBody(implicitBOOLtoBoolBody)
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))); // operators MUST be public
 
             // public static implicit operator BOOL(bool value) => new BOOL(value);
             members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), name)

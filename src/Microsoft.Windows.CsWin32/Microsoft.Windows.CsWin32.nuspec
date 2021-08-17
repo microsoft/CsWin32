@@ -15,17 +15,17 @@
     <repository type="git" url="https://github.com/microsoft/CsWin32.git" commit="$commit$" />
     <dependencies>
       <group targetFramework="net20">
-        <dependency id="Microsoft.Windows.SDK.Win32Metadata" version="$MetadataVersion$" include="All" />
-        <dependency id="Microsoft.Windows.SDK.Win32Docs" version="$ApiDocsVersion$" include="All" />
+        <dependency id="Microsoft.Windows.SDK.Win32Metadata" version="$MetadataVersion$" include="buildTransitive" />
+        <dependency id="Microsoft.Windows.SDK.Win32Docs" version="$ApiDocsVersion$" include="buildTransitive" />
       </group>
       <group targetFramework="net45">
-        <dependency id="Microsoft.Windows.SDK.Win32Metadata" version="$MetadataVersion$" include="All" />
-        <dependency id="Microsoft.Windows.SDK.Win32Docs" version="$ApiDocsVersion$" include="All" />
+        <dependency id="Microsoft.Windows.SDK.Win32Metadata" version="$MetadataVersion$" include="buildTransitive" />
+        <dependency id="Microsoft.Windows.SDK.Win32Docs" version="$ApiDocsVersion$" include="buildTransitive" />
         <dependency id="System.Memory" version="4.5.4" include="All" />
       </group>
       <group targetFramework=".NETStandard1.1">
-        <dependency id="Microsoft.Windows.SDK.Win32Metadata" version="$MetadataVersion$" include="All" />
-        <dependency id="Microsoft.Windows.SDK.Win32Docs" version="$ApiDocsVersion$" include="All" />
+        <dependency id="Microsoft.Windows.SDK.Win32Metadata" version="$MetadataVersion$" include="buildTransitive" />
+        <dependency id="Microsoft.Windows.SDK.Win32Docs" version="$ApiDocsVersion$" include="buildTransitive" />
         <dependency id="System.Memory" version="4.5.4" include="All" />
       </group>
     </dependencies>

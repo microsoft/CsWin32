@@ -343,6 +343,28 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     }
 
     [Theory, PairwiseData]
+    public void NativeArray_OfManagedTypes_MarshaledAsLPArray(bool allowMarshaling)
+    {
+        const string ifaceName = "ID3D11DeviceContext";
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling });
+        Assert.True(this.generator.TryGenerate(ifaceName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        var generatedMethod = this.FindGeneratedMethod("OMSetRenderTargets").Where(m => m.ParameterList.Parameters.Count == 3 && m.ParameterList.Parameters[0].Identifier.ValueText == "NumViews").FirstOrDefault();
+        Assert.NotNull(generatedMethod);
+
+        if (allowMarshaling)
+        {
+            Assert.Contains(generatedMethod!.ParameterList.Parameters[1].AttributeLists, al => IsAttributePresent(al, "MarshalAs"));
+        }
+        else
+        {
+            Assert.DoesNotContain(generatedMethod!.ParameterList.Parameters[1].AttributeLists, al => IsAttributePresent(al, "MarshalAs"));
+        }
+    }
+
+    [Theory, PairwiseData]
     public void NativeArray_SizeParamIndex_ProducesSimplerFriendlyOverload(bool allowMarshaling)
     {
         var options = DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling };

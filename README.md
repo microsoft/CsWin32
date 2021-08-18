@@ -87,6 +87,15 @@ Specifying the `$schema` property adds completions, descriptions and validation 
 }
 ```
 
+Most generated types include the `partial` modifier so you can add your own members to that type within your code.
+
+When you need to *replace* a generated type, simply copy and paste it from generated code into your own source files
+and remove the `partial` modifier.
+Be sure to keep the name and namespace exactly the same.
+CsWin32 will notice that your project already declares the type and skip generating it, but generate everything else.
+Note that if that type is the only thing that references some other generated type, CsWin32 will stop generating that type too.
+To keep CsWin32 generating the referred types you need, add them explicitly to `NativeMethods.txt`.
+
 ### Newer metadata
 
 To update the metadata used as the source for code generation, you may install a newer `Microsoft.Windows.SDK.Win32Metadata` package:

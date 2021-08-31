@@ -849,6 +849,7 @@ build_property.MicrosoftWindowsSdkWin32MetadataBasePath = {basePath}
         {
             TestState =
             {
+                ReferenceAssemblies = MyReferenceAssemblies.NetStandard20,
                 AdditionalFiles =
                 {
                     ("NativeMethods.txt", "BOOL"),
@@ -917,6 +918,7 @@ build_property.MicrosoftWindowsSdkWin32MetadataBasePath = {basePath}
         {
             TestState =
             {
+                ReferenceAssemblies = MyReferenceAssemblies.NetStandard20,
                 AdditionalFiles =
                 {
                     ("NativeMethods.txt", "DISPLAYCONFIG_SCANLINE_ORDERING"),
@@ -987,6 +989,7 @@ build_property.MicrosoftWindowsSdkWin32MetadataBasePath = {basePath}
         {
             TestState =
             {
+                ReferenceAssemblies = MyReferenceAssemblies.NetStandard20,
                 AdditionalFiles =
                 {
                     ("NativeMethods.txt", "DISPLAYCONFIG_SCANLINE_ORDERING"),
@@ -1049,6 +1052,7 @@ build_property.MicrosoftWindowsSdkWin32MetadataBasePath = {basePath}
         {
             TestState =
             {
+                ReferenceAssemblies = MyReferenceAssemblies.NetStandard20,
                 AdditionalFiles =
                 {
                     ("NativeMethods.txt", "FILE_ACCESS_FLAGS"),
@@ -1132,6 +1136,7 @@ build_property.MicrosoftWindowsSdkWin32MetadataBasePath = {basePath}
         {
             TestState =
             {
+                ReferenceAssemblies = MyReferenceAssemblies.NetStandard20,
                 AdditionalFiles =
                 {
                     ("NativeMethods.txt", "WNDENUMPROC"),
@@ -1305,6 +1310,7 @@ build_property.MicrosoftWindowsSdkWin32MetadataBasePath = {basePath}
         {
             TestState =
             {
+                ReferenceAssemblies = MyReferenceAssemblies.NetStandard20,
                 AdditionalFiles =
                 {
                     ("NativeMethods.txt", "ReleaseDC"),
@@ -1456,6 +1462,7 @@ build_property.MicrosoftWindowsSdkWin32MetadataBasePath = {basePath}
         {
             TestState =
             {
+                ReferenceAssemblies = MyReferenceAssemblies.NetStandard20,
                 AdditionalFiles =
                 {
                     ("NativeMethods.txt", "CreateFile"),

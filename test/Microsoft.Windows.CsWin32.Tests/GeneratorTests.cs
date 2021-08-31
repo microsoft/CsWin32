@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
@@ -837,14 +838,6 @@ namespace Microsoft.Windows.Sdk
     [Fact]
     public async Task TestSimpleStructure()
     {
-        var basePath = this.GetType().Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().SingleOrDefault(metadata => metadata.Key == "MicrosoftWindowsSdkWin32MetadataBasePath")?.Value;
-        var docsPath = this.GetType().Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().SingleOrDefault(metadata => metadata.Key == "MicrosoftWindowsSdkApiDocsPath")?.Value;
-
-        var globalconfig = $@"is_global = true
-
-build_property.MicrosoftWindowsSdkApiDocsPath = {docsPath}
-build_property.MicrosoftWindowsSdkWin32MetadataBasePath = {basePath}
-";
         await new VerifyTest
         {
             TestState =
@@ -856,7 +849,7 @@ build_property.MicrosoftWindowsSdkWin32MetadataBasePath = {basePath}
                 },
                 AnalyzerConfigFiles =
                 {
-                    ("/.globalconfig", globalconfig),
+                    ("/.globalconfig", ConstructGlobalConfigString()),
                 },
                 GeneratedSources =
                 {
@@ -906,14 +899,6 @@ namespace Windows.Win32
     [Fact]
     public async Task TestSimpleEnum()
     {
-        var basePath = this.GetType().Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().SingleOrDefault(metadata => metadata.Key == "MicrosoftWindowsSdkWin32MetadataBasePath")?.Value;
-        var docsPath = this.GetType().Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().SingleOrDefault(metadata => metadata.Key == "MicrosoftWindowsSdkApiDocsPath")?.Value;
-
-        var globalconfig = $@"is_global = true
-
-build_property.MicrosoftWindowsSdkApiDocsPath = {docsPath}
-build_property.MicrosoftWindowsSdkWin32MetadataBasePath = {basePath}
-";
         await new VerifyTest
         {
             TestState =
@@ -925,7 +910,7 @@ build_property.MicrosoftWindowsSdkWin32MetadataBasePath = {basePath}
                 },
                 AnalyzerConfigFiles =
                 {
-                    ("/.globalconfig", globalconfig),
+                    ("/.globalconfig", ConstructGlobalConfigString()),
                 },
                 GeneratedSources =
                 {
@@ -979,12 +964,6 @@ namespace Windows.Win32
     [Fact]
     public async Task TestSimpleEnumWithoutDocs()
     {
-        var basePath = this.GetType().Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().SingleOrDefault(metadata => metadata.Key == "MicrosoftWindowsSdkWin32MetadataBasePath")?.Value;
-
-        var globalconfig = $@"is_global = true
-
-build_property.MicrosoftWindowsSdkWin32MetadataBasePath = {basePath}
-";
         await new VerifyTest
         {
             TestState =
@@ -996,7 +975,7 @@ build_property.MicrosoftWindowsSdkWin32MetadataBasePath = {basePath}
                 },
                 AnalyzerConfigFiles =
                 {
-                    ("/.globalconfig", globalconfig),
+                    ("/.globalconfig", ConstructGlobalConfigString(omitDocs: true)),
                 },
                 GeneratedSources =
                 {
@@ -1040,14 +1019,6 @@ namespace Windows.Win32
     [Fact]
     public async Task TestFlagsEnum()
     {
-        var basePath = this.GetType().Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().SingleOrDefault(metadata => metadata.Key == "MicrosoftWindowsSdkWin32MetadataBasePath")?.Value;
-        var docsPath = this.GetType().Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().SingleOrDefault(metadata => metadata.Key == "MicrosoftWindowsSdkApiDocsPath")?.Value;
-
-        var globalconfig = $@"is_global = true
-
-build_property.MicrosoftWindowsSdkApiDocsPath = {docsPath}
-build_property.MicrosoftWindowsSdkWin32MetadataBasePath = {basePath}
-";
         await new VerifyTest
         {
             TestState =
@@ -1059,7 +1030,7 @@ build_property.MicrosoftWindowsSdkWin32MetadataBasePath = {basePath}
                 },
                 AnalyzerConfigFiles =
                 {
-                    ("/.globalconfig", globalconfig),
+                    ("/.globalconfig", ConstructGlobalConfigString()),
                 },
                 GeneratedSources =
                 {
@@ -1124,14 +1095,6 @@ namespace Windows.Win32
     [Fact]
     public async Task TestSimpleDelegate()
     {
-        var basePath = this.GetType().Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().SingleOrDefault(metadata => metadata.Key == "MicrosoftWindowsSdkWin32MetadataBasePath")?.Value;
-        var docsPath = this.GetType().Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().SingleOrDefault(metadata => metadata.Key == "MicrosoftWindowsSdkApiDocsPath")?.Value;
-
-        var globalconfig = $@"is_global = true
-
-build_property.MicrosoftWindowsSdkApiDocsPath = {docsPath}
-build_property.MicrosoftWindowsSdkWin32MetadataBasePath = {basePath}
-";
         await new VerifyTest
         {
             TestState =
@@ -1143,7 +1106,7 @@ build_property.MicrosoftWindowsSdkWin32MetadataBasePath = {basePath}
                 },
                 AnalyzerConfigFiles =
                 {
-                    ("/.globalconfig", globalconfig),
+                    ("/.globalconfig", ConstructGlobalConfigString()),
                 },
                 GeneratedSources =
                 {
@@ -1298,14 +1261,6 @@ namespace Windows.Win32
     [Fact]
     public async Task TestSimpleMethod()
     {
-        var basePath = this.GetType().Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().SingleOrDefault(metadata => metadata.Key == "MicrosoftWindowsSdkWin32MetadataBasePath")?.Value;
-        var docsPath = this.GetType().Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().SingleOrDefault(metadata => metadata.Key == "MicrosoftWindowsSdkApiDocsPath")?.Value;
-
-        var globalconfig = $@"is_global = true
-
-build_property.MicrosoftWindowsSdkApiDocsPath = {docsPath}
-build_property.MicrosoftWindowsSdkWin32MetadataBasePath = {basePath}
-";
         await new VerifyTest
         {
             TestState =
@@ -1317,7 +1272,7 @@ build_property.MicrosoftWindowsSdkWin32MetadataBasePath = {basePath}
                 },
                 AnalyzerConfigFiles =
                 {
-                    ("/.globalconfig", globalconfig),
+                    ("/.globalconfig", ConstructGlobalConfigString()),
                 },
                 GeneratedSources =
                 {
@@ -1450,14 +1405,6 @@ namespace Windows.Win32
     [Fact]
     public async Task TestMethodWithOverloads()
     {
-        var basePath = this.GetType().Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().SingleOrDefault(metadata => metadata.Key == "MicrosoftWindowsSdkWin32MetadataBasePath")?.Value;
-        var docsPath = this.GetType().Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().SingleOrDefault(metadata => metadata.Key == "MicrosoftWindowsSdkApiDocsPath")?.Value;
-
-        var globalconfig = $@"is_global = true
-
-build_property.MicrosoftWindowsSdkApiDocsPath = {docsPath}
-build_property.MicrosoftWindowsSdkWin32MetadataBasePath = {basePath}
-";
         await new VerifyTest
         {
             TestState =
@@ -1469,7 +1416,7 @@ build_property.MicrosoftWindowsSdkWin32MetadataBasePath = {basePath}
                 },
                 AnalyzerConfigFiles =
                 {
-                    ("/.globalconfig", globalconfig),
+                    ("/.globalconfig", ConstructGlobalConfigString()),
                 },
                 GeneratedSources =
                 {
@@ -2022,6 +1969,25 @@ namespace Windows.Win32
         }.RunAsync();
     }
 
+    private static string ConstructGlobalConfigString(bool omitDocs = false)
+    {
+        StringBuilder globalConfigBuilder = new();
+        globalConfigBuilder.AppendLine("is_global = true");
+        globalConfigBuilder.AppendLine();
+        globalConfigBuilder.AppendLine($"build_property.CsWin32InputMetadataPaths = {JoinAssemblyMetadata("ProjectionMetadataWinmd")}");
+        if (!omitDocs)
+        {
+            globalConfigBuilder.AppendLine($"build_property.CsWin32InputDocPaths = {JoinAssemblyMetadata("ProjectionDocs")}");
+        }
+
+        return globalConfigBuilder.ToString();
+
+        static string JoinAssemblyMetadata(string name)
+        {
+            return string.Join(";", typeof(GeneratorTests).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().Where(metadata => metadata.Key == name).Select(metadata => metadata.Value));
+        }
+    }
+
     private static ImmutableArray<Diagnostic> FilterDiagnostics(ImmutableArray<Diagnostic> diagnostics) => diagnostics.Where(d => d.Severity > DiagnosticSeverity.Hidden).ToImmutableArray();
 
     private static bool IsAttributePresent(AttributeListSyntax al, string attributeName) => al.Attributes.Any(a => a.Name.ToString() == attributeName);
@@ -2174,7 +2140,7 @@ namespace Windows.Win32
         return compilation;
     }
 
-    private Generator CreateGenerator(GeneratorOptions? options = null, CSharpCompilation? compilation = null) => new Generator(MetadataPath, ApiDocsPath, options ?? DefaultTestGeneratorOptions, compilation ?? this.compilation, this.parseOptions);
+    private Generator CreateGenerator(GeneratorOptions? options = null, CSharpCompilation? compilation = null) => new Generator(MetadataPath, Docs.Get(ApiDocsPath), options ?? DefaultTestGeneratorOptions, compilation ?? this.compilation, this.parseOptions);
 
     private static class MyReferenceAssemblies
     {

@@ -90,6 +90,14 @@ namespace Microsoft.Windows.CsWin32
             DiagnosticSeverity.Warning,
             isEnabledByDefault: true);
 
+        private static readonly DiagnosticDescriptor DocParsingError = new DiagnosticDescriptor(
+            "PInvoke006",
+            "DocsParseError",
+            "An error occurred while reading docs file: \"{0}\": {1}",
+            "Configuration",
+            DiagnosticSeverity.Warning,
+            isEnabledByDefault: true);
+
         /// <inheritdoc/>
         public void Initialize(GeneratorInitializationContext context)
         {
@@ -98,20 +106,12 @@ namespace Microsoft.Windows.CsWin32
         /// <inheritdoc/>
         public void Execute(GeneratorExecutionContext context)
         {
-            if (!(context.Compilation is CSharpCompilation))
+            if (context.Compilation is not CSharpCompilation compilation)
             {
                 return;
             }
 
-            if (!context.AnalyzerConfigOptions.GlobalOptions.TryGetValue("build_property.MicrosoftWindowsSdkWin32MetadataBasePath", out string? metadataBasePath) ||
-                string.IsNullOrWhiteSpace(metadataBasePath))
-            {
-                return;
-            }
-
-            context.AnalyzerConfigOptions.GlobalOptions.TryGetValue("build_property.MicrosoftWindowsSdkApiDocsPath", out string? apiDocsPath);
-
-            GeneratorOptions? options = null;
+            GeneratorOptions options;
             AdditionalText? nativeMethodsJsonFile = context.AdditionalFiles
                 .FirstOrDefault(af => string.Equals(Path.GetFileName(af.Path), NativeMethodsJsonAdditionalFileName, StringComparison.OrdinalIgnoreCase));
             if (nativeMethodsJsonFile is object)
@@ -124,6 +124,10 @@ namespace Microsoft.Windows.CsWin32
                     PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
                 });
             }
+            else
+            {
+                options = new GeneratorOptions();
+            }
 
             AdditionalText? nativeMethodsTxtFile = context.AdditionalFiles
                 .FirstOrDefault(af => string.Equals(Path.GetFileName(af.Path), NativeMethodsTxtAdditionalFileName, StringComparison.OrdinalIgnoreCase));
@@ -132,8 +136,6 @@ namespace Microsoft.Windows.CsWin32
                 return;
             }
 
-            string metadataPath = Path.Combine(metadataBasePath, "Windows.Win32.winmd");
-            var compilation = (CSharpCompilation)context.Compilation;
             var parseOptions = (CSharpParseOptions)context.ParseOptions;
 
             if (!compilation.Options.AllowUnsafe)
@@ -141,100 +143,142 @@ namespace Microsoft.Windows.CsWin32
                 context.ReportDiagnostic(Diagnostic.Create(UnsafeCodeRequired, location: null));
             }
 
-            using var generator = new Generator(metadataPath, apiDocsPath, options, compilation, parseOptions);
-
-            SourceText? nativeMethodsTxt = nativeMethodsTxtFile.GetText(context.CancellationToken);
-            if (nativeMethodsTxt is null)
+            Docs? docs = ParseDocs(context);
+            IReadOnlyList<Generator> generators = CollectMetadataPaths(context).Select(path => new Generator(path, docs, options, compilation, parseOptions)).ToList();
+            try
             {
-                return;
-            }
-
-            foreach (TextLine line in nativeMethodsTxt.Lines)
-            {
-                context.CancellationToken.ThrowIfCancellationRequested();
-                string name = line.ToString();
-                if (string.IsNullOrWhiteSpace(name) || name.StartsWith("//", StringComparison.InvariantCulture))
+                SourceText? nativeMethodsTxt = nativeMethodsTxtFile.GetText(context.CancellationToken);
+                if (nativeMethodsTxt is null)
                 {
-                    continue;
+                    return;
                 }
 
-                name = name.Trim();
-                var location = Location.Create(nativeMethodsTxtFile.Path, line.Span, nativeMethodsTxt.Lines.GetLinePositionSpan(line.Span));
-                try
+                foreach (TextLine line in nativeMethodsTxt.Lines)
                 {
-                    if (generator.BannedAPIs.TryGetValue(name, out string? reason))
+                    context.CancellationToken.ThrowIfCancellationRequested();
+                    string name = line.ToString();
+                    if (string.IsNullOrWhiteSpace(name) || name.StartsWith("//", StringComparison.InvariantCulture))
                     {
-                        context.ReportDiagnostic(Diagnostic.Create(BannedApi, location, reason));
+                        continue;
                     }
-                    else if (name.EndsWith(".*", StringComparison.Ordinal))
+
+                    name = name.Trim();
+                    var location = Location.Create(nativeMethodsTxtFile.Path, line.Span, nativeMethodsTxt.Lines.GetLinePositionSpan(line.Span));
+                    try
                     {
-                        var moduleName = name.Substring(0, name.Length - 2);
-                        if (!generator.TryGenerateAllExternMethods(moduleName, context.CancellationToken))
+                        if (Generator.GetBannedAPIs(options).TryGetValue(name, out string? reason))
                         {
-                            context.ReportDiagnostic(Diagnostic.Create(NoMethodsForModule, location, moduleName));
+                            context.ReportDiagnostic(Diagnostic.Create(BannedApi, location, reason));
+                            continue;
                         }
-                    }
-                    else if (!generator.TryGenerate(name, context.CancellationToken))
-                    {
-                        if (generator.TryGetEnumName(name, out string? declaringEnum))
+
+                        if (name.EndsWith(".*", StringComparison.Ordinal))
                         {
-                            context.ReportDiagnostic(Diagnostic.Create(UseEnumValueDeclaringType, location, declaringEnum));
-                            if (!generator.TryGenerate(declaringEnum, context.CancellationToken))
+                            var moduleName = name.Substring(0, name.Length - 2);
+                            bool matchModule = false;
+                            foreach (Generator generator in generators)
                             {
-                                ReportNoMatch(location, declaringEnum);
+                                matchModule |= generator.TryGenerateAllExternMethods(moduleName, context.CancellationToken);
+                            }
+
+                            if (!matchModule)
+                            {
+                                context.ReportDiagnostic(Diagnostic.Create(NoMethodsForModule, location, moduleName));
+                            }
+
+                            continue;
+                        }
+
+                        bool matchApi = false;
+                        foreach (Generator generator in generators)
+                        {
+                            if (generator.TryGenerate(name, context.CancellationToken))
+                            {
+                                matchApi = true;
+                                continue;
+                            }
+
+                            if (generator.TryGetEnumName(name, out string? declaringEnum))
+                            {
+                                context.ReportDiagnostic(Diagnostic.Create(UseEnumValueDeclaringType, location, declaringEnum));
+                                if (generator.TryGenerate(declaringEnum, context.CancellationToken))
+                                {
+                                    matchApi = true;
+                                    continue;
+                                }
+                                else
+                                {
+                                    ReportNoMatch(location, declaringEnum);
+                                }
                             }
                         }
-                        else
+
+                        if (!matchApi)
                         {
                             ReportNoMatch(location, name);
                         }
                     }
-                }
-                catch (GenerationFailedException ex)
-                {
-                    if (Generator.IsPlatformCompatibleException(ex))
+                    catch (GenerationFailedException ex)
                     {
-                        context.ReportDiagnostic(Diagnostic.Create(CpuArchitectureIncompatibility, location));
+                        if (Generator.IsPlatformCompatibleException(ex))
+                        {
+                            context.ReportDiagnostic(Diagnostic.Create(CpuArchitectureIncompatibility, location));
+                        }
+                        else
+                        {
+                            // Build up a complete error message.
+                            context.ReportDiagnostic(Diagnostic.Create(InternalError, location, AssembleFullExceptionMessage(ex)));
+                        }
+                    }
+                }
+
+                foreach (Generator generator in generators)
+                {
+                    var compilationUnits = generator.GetCompilationUnits(context.CancellationToken)
+                        .OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+                        .ThenBy(pair => pair.Key, StringComparer.Ordinal);
+                    foreach (var unit in compilationUnits)
+                    {
+                        context.AddSource(unit.Key, unit.Value.ToFullString());
+                    }
+                }
+
+                void ReportNoMatch(Location? location, string failedAttempt)
+                {
+                    List<string> suggestions = new();
+                    foreach (Generator generator in generators)
+                    {
+                        suggestions.AddRange(generator.GetSuggestions(failedAttempt).Take(4));
+                    }
+
+                    if (suggestions.Count > 0)
+                    {
+                        var suggestionBuilder = new StringBuilder();
+                        for (int i = 0; i < suggestions.Count; i++)
+                        {
+                            if (i > 0)
+                            {
+                                suggestionBuilder.Append(i < suggestions.Count - 1 ? ", " : " or ");
+                            }
+
+                            suggestionBuilder.Append('"');
+                            suggestionBuilder.Append(suggestions[i]);
+                            suggestionBuilder.Append('"');
+                        }
+
+                        context.ReportDiagnostic(Diagnostic.Create(NoMatchingMethodOrTypeWithSuggestions, location, failedAttempt, suggestionBuilder));
                     }
                     else
                     {
-                        // Build up a complete error message.
-                        context.ReportDiagnostic(Diagnostic.Create(InternalError, location, AssembleFullExceptionMessage(ex)));
+                        context.ReportDiagnostic(Diagnostic.Create(NoMatchingMethodOrType, location, failedAttempt));
                     }
                 }
             }
-
-            var compilationUnits = generator.GetCompilationUnits(context.CancellationToken)
-                .OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(pair => pair.Key, StringComparer.Ordinal);
-            foreach (var unit in compilationUnits)
+            finally
             {
-                context.AddSource(unit.Key, unit.Value.ToFullString());
-            }
-
-            void ReportNoMatch(Location? location, string failedAttempt)
-            {
-                var suggestions = generator.GetSuggestions(failedAttempt).Take(4).ToList();
-                if (suggestions.Count > 0)
+                foreach (Generator generator in generators)
                 {
-                    var suggestionBuilder = new StringBuilder();
-                    for (int i = 0; i < suggestions.Count; i++)
-                    {
-                        if (i > 0)
-                        {
-                            suggestionBuilder.Append(i < suggestions.Count - 1 ? ", " : " or ");
-                        }
-
-                        suggestionBuilder.Append('"');
-                        suggestionBuilder.Append(suggestions[i]);
-                        suggestionBuilder.Append('"');
-                    }
-
-                    context.ReportDiagnostic(Diagnostic.Create(NoMatchingMethodOrTypeWithSuggestions, location, failedAttempt, suggestionBuilder));
-                }
-                else
-                {
-                    context.ReportDiagnostic(Diagnostic.Create(NoMatchingMethodOrType, location, failedAttempt));
+                    generator.Dispose();
                 }
             }
         }
@@ -257,6 +301,47 @@ namespace Microsoft.Windows.CsWin32
             }
 
             return sb.ToString();
+        }
+
+        private static IReadOnlyList<string> CollectMetadataPaths(GeneratorExecutionContext context)
+        {
+            if (!context.AnalyzerConfigOptions.GlobalOptions.TryGetValue("build_property.CsWin32InputMetadataPaths", out string? delimitedMetadataBasePaths) ||
+                string.IsNullOrWhiteSpace(delimitedMetadataBasePaths))
+            {
+                return Array.Empty<string>();
+            }
+
+            string[] metadataBasePaths = delimitedMetadataBasePaths.Split(';');
+            return metadataBasePaths;
+        }
+
+        private static Docs? ParseDocs(GeneratorExecutionContext context)
+        {
+            Docs? docs = null;
+            if (context.AnalyzerConfigOptions.GlobalOptions.TryGetValue("build_property.CsWin32InputDocPaths", out string? delimitedApiDocsPaths) &&
+                !string.IsNullOrWhiteSpace(delimitedApiDocsPaths))
+            {
+                string[] apiDocsPaths = delimitedApiDocsPaths!.Split(';');
+                if (apiDocsPaths.Length > 0)
+                {
+                    List<Docs> docsList = new(apiDocsPaths.Length);
+                    foreach (string path in apiDocsPaths)
+                    {
+                        try
+                        {
+                            docsList.Add(Docs.Get(path));
+                        }
+                        catch (Exception e)
+                        {
+                            context.ReportDiagnostic(Diagnostic.Create(DocParsingError, null, path, e.Message));
+                        }
+                    }
+
+                    docs = Docs.Merge(docsList);
+                }
+            }
+
+            return docs;
         }
     }
 }

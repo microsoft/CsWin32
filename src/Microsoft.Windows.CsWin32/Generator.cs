@@ -286,16 +286,16 @@ namespace Microsoft.Windows.CsWin32
         /// Initializes a new instance of the <see cref="Generator"/> class.
         /// </summary>
         /// <param name="metadataLibraryPath">The path to the winmd metadata to generate APIs from.</param>
-        /// <param name="apiDocsPath">The path to the API docs file.</param>
+        /// <param name="docs">The API docs to include in the generated code.</param>
         /// <param name="options">Options that influence the result of generation.</param>
         /// <param name="compilation">The compilation that the generated code will be added to.</param>
         /// <param name="parseOptions">The parse options that will be used for the generated code.</param>
-        public Generator(string metadataLibraryPath, string? apiDocsPath, GeneratorOptions? options = null, CSharpCompilation? compilation = null, CSharpParseOptions? parseOptions = null)
+        public Generator(string metadataLibraryPath, Docs? docs, GeneratorOptions options, CSharpCompilation? compilation = null, CSharpParseOptions? parseOptions = null)
         {
             this.MetadataIndex = MetadataIndex.Get(metadataLibraryPath, compilation?.Options.Platform);
-            this.ApiDocs = apiDocsPath is object ? Docs.Get(apiDocsPath) : null;
+            this.ApiDocs = docs;
 
-            this.options = options ??= new GeneratorOptions();
+            this.options = options;
             this.options.Validate();
             this.compilation = compilation;
             this.parseOptions = parseOptions;
@@ -310,11 +310,6 @@ namespace Microsoft.Windows.CsWin32
                 AttributeData usageAttribute = attribute.GetAttributes().Single(att => att.AttributeClass?.Name == nameof(AttributeUsageAttribute));
                 var targets = (AttributeTargets)usageAttribute.ConstructorArguments[0].Value!;
                 this.generateSupportedOSPlatformAttributesOnInterfaces = (targets & AttributeTargets.Interface) == AttributeTargets.Interface;
-            }
-
-            if (options.AllowMarshaling)
-            {
-                this.BannedAPIs.Add("VARIANT", "Use `object` instead of VARIANT when in COM interface mode. VARIANT can only be emitted when emitting COM interfaces as structs.");
             }
 
             bool useComInterfaces = options.AllowMarshaling;
@@ -343,13 +338,16 @@ namespace Microsoft.Windows.CsWin32
             InterfaceMethod,
         }
 
-        internal Dictionary<string, string> BannedAPIs { get; } = new Dictionary<string, string>
-        {
-            { "GetLastError", "Do not generate GetLastError. Call Marshal.GetLastWin32Error() instead. Learn more from https://docs.microsoft.com/dotnet/api/system.runtime.interopservices.marshal.getlastwin32error" },
-            { "OLD_LARGE_INTEGER", "Use the C# long keyword instead." },
-            { "LARGE_INTEGER", "Use the C# long keyword instead." },
-            { "ULARGE_INTEGER", "Use the C# ulong keyword instead." },
-        };
+        internal static ImmutableDictionary<string, string> BannedAPIsWithoutMarshaling { get; } = ImmutableDictionary<string, string>.Empty
+            .Add("GetLastError", "Do not generate GetLastError. Call Marshal.GetLastWin32Error() instead. Learn more from https://docs.microsoft.com/dotnet/api/system.runtime.interopservices.marshal.getlastwin32error")
+            .Add("OLD_LARGE_INTEGER", "Use the C# long keyword instead.")
+            .Add("LARGE_INTEGER", "Use the C# long keyword instead.")
+            .Add("ULARGE_INTEGER", "Use the C# ulong keyword instead.");
+
+        internal static ImmutableDictionary<string, string> BannedAPIsWithMarshaling { get; } = BannedAPIsWithoutMarshaling
+            .Add("VARIANT", "Use `object` instead of VARIANT when in COM interface mode. VARIANT can only be emitted when emitting COM interfaces as structs.");
+
+        internal ImmutableDictionary<string, string> BannedAPIs => GetBannedAPIs(this.options);
 
         internal MetadataIndex MetadataIndex { get; }
 
@@ -969,6 +967,8 @@ namespace Microsoft.Windows.CsWin32
 
             return normalizedResults;
         }
+
+        internal static ImmutableDictionary<string, string> GetBannedAPIs(GeneratorOptions options) => options.AllowMarshaling ? BannedAPIsWithMarshaling : BannedAPIsWithoutMarshaling;
 
         [return: NotNullIfNotNull("marshalAs")]
         internal static AttributeSyntax? MarshalAs(MarshalAsAttribute? marshalAs)

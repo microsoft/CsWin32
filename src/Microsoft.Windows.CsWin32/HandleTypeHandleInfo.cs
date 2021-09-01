@@ -104,6 +104,26 @@ namespace Microsoft.Windows.CsWin32
                 syntax = inputs.AllowMarshaling && !isNonCOMConformingInterface ? syntax.WithAdditionalAnnotations(Generator.IsManagedTypeAnnotation) : PointerType(syntax);
             }
 
+            if (nameSyntax is QualifiedNameSyntax qualifiedName)
+            {
+                var ns = qualifiedName.Left.ToString();
+
+                // Look for WinRT namespaces
+                if (ns.StartsWith("Windows.Foundation") || ns.StartsWith("Windows.UI") || ns.StartsWith("Windows.Graphics") || ns.StartsWith("Windows.System"))
+                {
+                    // We only want to marshal WinRT objects, not interfaces. We don't have a good way of knowing
+                    // whether it's an interface or an object. "isInterface" comes back as false for a WinRT interface,
+                    // so that doesn't help. Looking at the name should be good enough, but if we needed to, the
+                    // Win32 projection could give us an attribute to make sure
+                    var objName = qualifiedName.Right.ToString();
+                    bool isInterfaceName = System.Text.RegularExpressions.Regex.IsMatch(objName, "^I[A-Z][a-z]");
+                    if (!isInterfaceName)
+                    {
+                        return new TypeSyntaxAndMarshaling(syntax, new MarshalAsAttribute(UnmanagedType.CustomMarshaler) { MarshalCookie = nameSyntax.ToString(), MarshalType = Generator.WinRTCustomMarshalerFullName });
+                    }
+                }
+            }
+
             return new TypeSyntaxAndMarshaling(syntax);
         }
 

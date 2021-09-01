@@ -973,7 +973,12 @@ namespace Microsoft.Windows.CsWin32
 
             if (this.needsWinRTCustomMarshaler)
             {
-                string marshalerText = this.FetchTemplateText(WinRTCustomMarshalerClass);
+                string? marshalerText = this.FetchTemplateText(WinRTCustomMarshalerClass);
+                if (marshalerText == null)
+                {
+                    throw new GenerationFailedException($"Failed to get template for \"{WinRTCustomMarshalerClass}\".");
+                }
+
                 var marshalerContents = SyntaxFactory.ParseSyntaxTree(marshalerText);
                 if (marshalerContents == null)
                 {
@@ -1205,11 +1210,8 @@ namespace Microsoft.Windows.CsWin32
                             new SyntaxAnnotation(NamespaceContainerAnnotation, shortNamespace));
                     }
 
-                    if (!this.needsWinRTCustomMarshaler)
-                    {
-                        this.needsWinRTCustomMarshaler =
-                            typeDeclaration.DescendantNodes().OfType<AttributeSyntax>().Any(a => a.Name.ToString() == "MarshalAs" && a.ToString().Contains(WinRTCustomMarshalerFullName));
-                    }
+                    this.needsWinRTCustomMarshaler |= typeDeclaration.DescendantNodes().OfType<AttributeSyntax>()
+                        .Any(a => a.Name.ToString() == "MarshalAs" && a.ToString().Contains(WinRTCustomMarshalerFullName));
 
                     this.volatileCode.AddInteropType(typeDefHandle, typeDeclaration);
                 }
@@ -2194,12 +2196,12 @@ namespace Microsoft.Windows.CsWin32
             return result;
         }
 
-        private string FetchTemplateText(string name)
+        private string? FetchTemplateText(string name)
         {
             using Stream? templateStream = Assembly.GetExecutingAssembly().GetManifestResourceStream($"{ThisAssembly.RootNamespace}.templates.{name.Replace('/', '.')}.cs");
             if (templateStream is null)
             {
-                return string.Empty;
+                return null;
             }
 
             using StreamReader sr = new(templateStream);
@@ -2208,8 +2210,8 @@ namespace Microsoft.Windows.CsWin32
 
         private bool TryFetchTemplate(string name, [NotNullWhen(true)] out MemberDeclarationSyntax? member)
         {
-            string template = this.FetchTemplateText(name);
-            if (string.IsNullOrEmpty(template))
+            string? template = this.FetchTemplateText(name);
+            if (template == null)
             {
                 member = null;
                 return false;

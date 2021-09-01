@@ -18,6 +18,11 @@ namespace Microsoft.Windows.CsWin32
     {
         private readonly MetadataReader reader;
 
+        // We just want to see that the identifier starts with I, followed by another upper case letter,
+        // followed by a lower case letter. All the WinRT interfaces will match this, and none of the WinRT
+        // objects will match it
+        private static readonly System.Text.RegularExpressions.Regex InterfaceNameMatcher = new System.Text.RegularExpressions.Regex("^I[A-Z][a-z]");
+
         internal HandleTypeHandleInfo(MetadataReader reader, EntityHandle handle, byte? rawTypeKind = null)
         {
             this.reader = reader;
@@ -116,7 +121,7 @@ namespace Microsoft.Windows.CsWin32
                     // so that doesn't help. Looking at the name should be good enough, but if we needed to, the
                     // Win32 projection could give us an attribute to make sure
                     var objName = qualifiedName.Right.ToString();
-                    bool isInterfaceName = System.Text.RegularExpressions.Regex.IsMatch(objName, "^I[A-Z][a-z]");
+                    bool isInterfaceName = InterfaceNameMatcher.IsMatch(objName);
                     if (!isInterfaceName)
                     {
                         return new TypeSyntaxAndMarshaling(syntax, new MarshalAsAttribute(UnmanagedType.CustomMarshaler) { MarshalCookie = nameSyntax.ToString(), MarshalType = Generator.WinRTCustomMarshalerFullName });

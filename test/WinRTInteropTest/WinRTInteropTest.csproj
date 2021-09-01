@@ -8,11 +8,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <AdditionalFiles Remove="..\..\..\CsWin32\stylecop.json" />
-    <AdditionalFiles Include="stylecop.json" />
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\..\src\Microsoft.Windows.CsWin32\Microsoft.Windows.CsWin32.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <Analyzer Include="$(RepoRootPath)\bin\Microsoft.Windows.CsWin32\$(Configuration)\netstandard2.0\System.Text.Json.dll" />
     <Analyzer Include="$(RepoRootPath)\bin\Microsoft.Windows.CsWin32\$(Configuration)\netstandard2.0\Microsoft.Bcl.AsyncInterfaces.dll" />

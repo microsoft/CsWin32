@@ -3,6 +3,8 @@
     internal class WinRTCustomMarshaler : global::System.Runtime.InteropServices.ICustomMarshaler
     {
         private string winrtClassName;
+        private bool lookedForFromAbi;
+        private global::System.Reflection.MethodInfo fromAbi;
 
         private WinRTCustomMarshaler(string cookie)
         {
@@ -40,12 +42,18 @@
 
         object global::System.Runtime.InteropServices.ICustomMarshaler.MarshalNativeToManaged(global::System.IntPtr pNativeData)
         {
-            var assembly = typeof(global::Windows.Foundation.IMemoryBuffer).Assembly;
-            var type = global::System.Type.GetType($"{this.winrtClassName}, {assembly.FullName}");
-            var fromAbiMethod = type.GetMethod("FromAbi");
-            if (fromAbiMethod != null)
+            if (!this.lookedForFromAbi)
             {
-                return fromAbiMethod.Invoke(null, new object[] { pNativeData });
+                var assembly = typeof(global::Windows.Foundation.IMemoryBuffer).Assembly;
+                var type = global::System.Type.GetType($"{this.winrtClassName}, {assembly.FullName}");
+
+                this.fromAbi = type.GetMethod("FromAbi");
+                this.lookedForFromAbi = true;
+            }
+
+            if (this.fromAbi != null)
+            {
+                return this.fromAbi.Invoke(null, new object[] { pNativeData });
             }
             else
             {

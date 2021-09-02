@@ -98,6 +98,22 @@ namespace Microsoft.Windows.CsWin32
             DiagnosticSeverity.Warning,
             isEnabledByDefault: true);
 
+        private static readonly DiagnosticDescriptor AmbiguousMatchError = new DiagnosticDescriptor(
+            "PInvoke007",
+            "AmbiguousMatch",
+            "The API \"{0}\" is ambiguous.",
+            "Functionality",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
+        private static readonly DiagnosticDescriptor AmbiguousMatchErrorWithSuggestions = new DiagnosticDescriptor(
+            "PInvoke007",
+            "AmbiguousMatch",
+            "The API \"{0}\" is ambiguous. Please specify one of: {1}",
+            "Functionality",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
         /// <inheritdoc/>
         public void Initialize(GeneratorInitializationContext context)
         {
@@ -175,47 +191,54 @@ namespace Microsoft.Windows.CsWin32
                         if (name.EndsWith(".*", StringComparison.Ordinal))
                         {
                             var moduleName = name.Substring(0, name.Length - 2);
-                            bool matchModule = false;
+                            int matches = 0;
                             foreach (Generator generator in generators)
                             {
-                                matchModule |= generator.TryGenerateAllExternMethods(moduleName, context.CancellationToken);
+                                if (generator.TryGenerateAllExternMethods(moduleName, context.CancellationToken))
+                                {
+                                    matches++;
+                                }
                             }
 
-                            if (!matchModule)
+                            switch (matches)
                             {
-                                context.ReportDiagnostic(Diagnostic.Create(NoMethodsForModule, location, moduleName));
+                                case 0:
+                                    context.ReportDiagnostic(Diagnostic.Create(NoMethodsForModule, location, moduleName));
+                                    break;
+                                case > 1:
+                                    context.ReportDiagnostic(Diagnostic.Create(AmbiguousMatchError, location, moduleName));
+                                    break;
                             }
 
                             continue;
                         }
 
-                        bool matchApi = false;
+                        List<string> matchingApis = new();
                         foreach (Generator generator in generators)
                         {
-                            if (generator.TryGenerate(name, context.CancellationToken))
+                            if (generator.TryGenerate(name, out IReadOnlyList<string> preciseApi, context.CancellationToken))
                             {
-                                matchApi = true;
+                                matchingApis.AddRange(preciseApi);
                                 continue;
                             }
 
+                            matchingApis.AddRange(preciseApi);
                             if (generator.TryGetEnumName(name, out string? declaringEnum))
                             {
                                 context.ReportDiagnostic(Diagnostic.Create(UseEnumValueDeclaringType, location, declaringEnum));
-                                if (generator.TryGenerate(declaringEnum, context.CancellationToken))
-                                {
-                                    matchApi = true;
-                                    continue;
-                                }
-                                else
-                                {
-                                    ReportNoMatch(location, declaringEnum);
-                                }
+                                generator.TryGenerate(declaringEnum, out preciseApi, context.CancellationToken);
+                                matchingApis.AddRange(preciseApi);
                             }
                         }
 
-                        if (!matchApi)
+                        switch (matchingApis.Count)
                         {
-                            ReportNoMatch(location, name);
+                            case 0:
+                                ReportNoMatch(location, name);
+                                break;
+                            case > 1:
+                                context.ReportDiagnostic(Diagnostic.Create(AmbiguousMatchErrorWithSuggestions, location, name, ConcatSuggestions(matchingApis)));
+                                break;
                         }
                     }
                     catch (GenerationFailedException ex)
@@ -243,6 +266,24 @@ namespace Microsoft.Windows.CsWin32
                     }
                 }
 
+                string ConcatSuggestions(IReadOnlyList<string> suggestions)
+                {
+                    var suggestionBuilder = new StringBuilder();
+                    for (int i = 0; i < suggestions.Count; i++)
+                    {
+                        if (i > 0)
+                        {
+                            suggestionBuilder.Append(i < suggestions.Count - 1 ? ", " : " or ");
+                        }
+
+                        suggestionBuilder.Append('"');
+                        suggestionBuilder.Append(suggestions[i]);
+                        suggestionBuilder.Append('"');
+                    }
+
+                    return suggestionBuilder.ToString();
+                }
+
                 void ReportNoMatch(Location? location, string failedAttempt)
                 {
                     List<string> suggestions = new();
@@ -253,20 +294,7 @@ namespace Microsoft.Windows.CsWin32
 
                     if (suggestions.Count > 0)
                     {
-                        var suggestionBuilder = new StringBuilder();
-                        for (int i = 0; i < suggestions.Count; i++)
-                        {
-                            if (i > 0)
-                            {
-                                suggestionBuilder.Append(i < suggestions.Count - 1 ? ", " : " or ");
-                            }
-
-                            suggestionBuilder.Append('"');
-                            suggestionBuilder.Append(suggestions[i]);
-                            suggestionBuilder.Append('"');
-                        }
-
-                        context.ReportDiagnostic(Diagnostic.Create(NoMatchingMethodOrTypeWithSuggestions, location, failedAttempt, suggestionBuilder));
+                        context.ReportDiagnostic(Diagnostic.Create(NoMatchingMethodOrTypeWithSuggestions, location, failedAttempt, ConcatSuggestions(suggestions)));
                     }
                     else
                     {

@@ -436,13 +436,17 @@ namespace Microsoft.Windows.CsWin32
             this.GenerateAllConstants(cancellationToken);
         }
 
+        /// <inheritdoc cref="TryGenerate(string, out IReadOnlyList{string}, CancellationToken)"/>
+        public bool TryGenerate(string apiNameOrModuleWildcard, CancellationToken cancellationToken) => this.TryGenerate(apiNameOrModuleWildcard, out _, cancellationToken);
+
         /// <summary>
         /// Generates code for a given API.
         /// </summary>
         /// <param name="apiNameOrModuleWildcard">The name of the method, struct or constant. Or the name of a module with a ".*" suffix in order to generate all methods and supporting types for the specified module.</param>
+        /// <param name="preciseApi">Receives the canonical API names that <paramref name="apiNameOrModuleWildcard"/> matched on.</param>
         /// <param name="cancellationToken">A cancellation token.</param>
         /// <returns><see langword="true" /> if any matching APIs were found and generated; <see langword="false"/> otherwise.</returns>
-        public bool TryGenerate(string apiNameOrModuleWildcard, CancellationToken cancellationToken)
+        public bool TryGenerate(string apiNameOrModuleWildcard, out IReadOnlyList<string> preciseApi, CancellationToken cancellationToken)
         {
             if (string.IsNullOrWhiteSpace(apiNameOrModuleWildcard))
             {
@@ -451,15 +455,24 @@ namespace Microsoft.Windows.CsWin32
 
             if (apiNameOrModuleWildcard.EndsWith(".*", StringComparison.Ordinal))
             {
-                return this.TryGenerateAllExternMethods(apiNameOrModuleWildcard.Substring(0, apiNameOrModuleWildcard.Length - 2), cancellationToken);
+                if (this.TryGenerateAllExternMethods(apiNameOrModuleWildcard.Substring(0, apiNameOrModuleWildcard.Length - 2), cancellationToken))
+                {
+                    preciseApi = ImmutableList.Create(apiNameOrModuleWildcard);
+                    return true;
+                }
+                else
+                {
+                    preciseApi = ImmutableList<string>.Empty;
+                    return false;
+                }
             }
             else
             {
                 return
-                    this.TryGenerateNamespace(apiNameOrModuleWildcard) ||
-                    this.TryGenerateExternMethod(apiNameOrModuleWildcard) ||
-                    this.TryGenerateType(apiNameOrModuleWildcard) ||
-                    this.TryGenerateConstant(apiNameOrModuleWildcard);
+                    this.TryGenerateNamespace(apiNameOrModuleWildcard, out preciseApi) ||
+                    this.TryGenerateExternMethod(apiNameOrModuleWildcard, out preciseApi) ||
+                    this.TryGenerateType(apiNameOrModuleWildcard, out preciseApi) ||
+                    this.TryGenerateConstant(apiNameOrModuleWildcard, out preciseApi);
             }
         }
 
@@ -467,8 +480,9 @@ namespace Microsoft.Windows.CsWin32
         /// Generates all APIs within a given namespace, and their dependencies.
         /// </summary>
         /// <param name="namespace">The namespace to generate APIs for.</param>
+        /// <param name="preciseApi">Receives the canonical API names that <paramref name="namespace"/> matched on.</param>
         /// <returns><see langword="true"/> if a matching namespace was found; otherwise <see langword="false"/>.</returns>
-        public bool TryGenerateNamespace(string @namespace)
+        public bool TryGenerateNamespace(string @namespace, out IReadOnlyList<string> preciseApi)
         {
             if (@namespace is null)
             {
@@ -485,6 +499,7 @@ namespace Microsoft.Windows.CsWin32
                     {
                         if (string.Equals(item.Key, @namespace, StringComparison.OrdinalIgnoreCase))
                         {
+                            @namespace = item.Key;
                             metadata = item.Value;
                             break;
                         }
@@ -512,9 +527,11 @@ namespace Microsoft.Windows.CsWin32
                     }
                 });
 
+                preciseApi = ImmutableList.Create(@namespace);
                 return true;
             }
 
+            preciseApi = ImmutableList<string>.Empty;
             return false;
         }
 
@@ -701,8 +718,9 @@ namespace Microsoft.Windows.CsWin32
         /// Generate code for the named extern method, if it is recognized.
         /// </summary>
         /// <param name="possiblyQualifiedName">The name of the extern method, optionally qualified with a namespace.</param>
+        /// <param name="preciseApi">Receives the canonical API names that <paramref name="possiblyQualifiedName"/> matched on.</param>
         /// <returns><see langword="true"/> if a match was found and the extern method generated; otherwise <see langword="false"/>.</returns>
-        public bool TryGenerateExternMethod(string possiblyQualifiedName)
+        public bool TryGenerateExternMethod(string possiblyQualifiedName, out IReadOnlyList<string> preciseApi)
         {
             if (possiblyQualifiedName is null)
             {
@@ -723,18 +741,25 @@ namespace Microsoft.Windows.CsWin32
                     this.RequestExternMethod(methodDefHandle);
                 });
 
+                string methodNamespace = this.Reader.GetString(this.Reader.GetTypeDefinition(methodDef.GetDeclaringType()).Namespace);
+                preciseApi = ImmutableList.Create($"{methodNamespace}.{methodName}");
                 return true;
             }
 
+            preciseApi = ImmutableList<string>.Empty;
             return false;
         }
+
+        /// <inheritdoc cref="TryGenerateType(string, out IReadOnlyList{string})"/>
+        public bool TryGenerateType(string possiblyQualifiedName) => this.TryGenerateType(possiblyQualifiedName, out _);
 
         /// <summary>
         /// Generate code for the named type, if it is recognized.
         /// </summary>
         /// <param name="possiblyQualifiedName">The name of the interop type, optionally qualified with a namespace.</param>
+        /// <param name="preciseApi">Receives the canonical API names that <paramref name="possiblyQualifiedName"/> matched on.</param>
         /// <returns><see langword="true"/> if a match was found and the type generated; otherwise <see langword="false"/>.</returns>
-        public bool TryGenerateType(string possiblyQualifiedName)
+        public bool TryGenerateType(string possiblyQualifiedName, out IReadOnlyList<string> preciseApi)
         {
             if (possiblyQualifiedName is null)
             {
@@ -765,18 +790,19 @@ namespace Microsoft.Windows.CsWin32
                     this.RequestInteropType(matchingTypeHandles[0]);
                 });
 
+                TypeDefinition td = this.Reader.GetTypeDefinition(matchingTypeHandles[0]);
+                preciseApi = ImmutableList.Create($"{this.Reader.GetString(td.Namespace)}.{this.Reader.GetString(td.Name)}");
                 return true;
             }
             else if (matchingTypeHandles.Count > 1)
             {
-                string matches = string.Join(
-                    ", ",
+                preciseApi = ImmutableList.CreateRange(
                     matchingTypeHandles.Select(h =>
                     {
                         TypeDefinition td = this.Reader.GetTypeDefinition(h);
                         return $"{this.Reader.GetString(td.Namespace)}.{this.Reader.GetString(td.Name)}";
                     }));
-                throw new ArgumentException("The type name is ambiguous. Use the fully-qualified name instead. Possible matches: " + matches);
+                return false;
             }
 
             if (foundApiWithMismatchedPlatform)
@@ -784,6 +810,7 @@ namespace Microsoft.Windows.CsWin32
                 throw new PlatformIncompatibleException($"The requested API ({possiblyQualifiedName}) was found but is not available given the target platform ({this.compilation?.Options.Platform}).");
             }
 
+            preciseApi = ImmutableList<string>.Empty;
             return false;
         }
 
@@ -791,8 +818,9 @@ namespace Microsoft.Windows.CsWin32
         /// Generate code for the named constant, if it is recognized.
         /// </summary>
         /// <param name="possiblyQualifiedName">The name of the constant, optionally qualified with a namespace.</param>
+        /// <param name="preciseApi">Receives the canonical API names that <paramref name="possiblyQualifiedName"/> matched on.</param>
         /// <returns><see langword="true"/> if a match was found and the constant generated; otherwise <see langword="false"/>.</returns>
-        public bool TryGenerateConstant(string possiblyQualifiedName)
+        public bool TryGenerateConstant(string possiblyQualifiedName, out IReadOnlyList<string> preciseApi)
         {
             if (possiblyQualifiedName is null)
             {
@@ -818,21 +846,24 @@ namespace Microsoft.Windows.CsWin32
                     this.RequestConstant(matchingFieldHandles[0]);
                 });
 
+                FieldDefinition fd = this.Reader.GetFieldDefinition(matchingFieldHandles[0]);
+                TypeDefinition td = this.Reader.GetTypeDefinition(fd.GetDeclaringType());
+                preciseApi = ImmutableList.Create($"{this.Reader.GetString(td.Namespace)}.{this.Reader.GetString(fd.Name)}");
                 return true;
             }
             else if (matchingFieldHandles.Count > 1)
             {
-                string matches = string.Join(
-                    ", ",
+                preciseApi = ImmutableList.CreateRange(
                     matchingFieldHandles.Select(h =>
                     {
                         FieldDefinition fd = this.Reader.GetFieldDefinition(h);
                         TypeDefinition td = this.Reader.GetTypeDefinition(fd.GetDeclaringType());
                         return $"{this.Reader.GetString(td.Namespace)}.{this.Reader.GetString(fd.Name)}";
                     }));
-                throw new ArgumentException("The type name is ambiguous. Use the fully-qualified name instead. Possible matches: " + matches);
+                return false;
             }
 
+            preciseApi = ImmutableList<string>.Empty;
             return false;
         }
 
@@ -2535,7 +2566,7 @@ namespace Microsoft.Windows.CsWin32
 
         private void TryGenerateConstantOrThrow(string possiblyQualifiedName)
         {
-            if (!this.TryGenerateConstant(possiblyQualifiedName))
+            if (!this.TryGenerateConstant(possiblyQualifiedName, out _))
             {
                 throw new GenerationFailedException("Unable to find expected constant: " + possiblyQualifiedName);
             }
@@ -3124,7 +3155,7 @@ namespace Microsoft.Windows.CsWin32
                     if (args.FixedArguments[0].Value is string freeMethodName)
                     {
                         ////this.GenerateSafeHandle(freeMethodName);
-                        this.TryGenerateExternMethod(freeMethodName);
+                        this.TryGenerateExternMethod(freeMethodName, out _);
                         isHandle = true;
                     }
 

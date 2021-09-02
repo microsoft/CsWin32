@@ -92,7 +92,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.compilation = this.starterCompilations[tfm];
         this.generator = this.CreateGenerator();
         const string methodName = "GetTickCount";
-        Assert.True(this.generator.TryGenerateExternMethod(methodName));
+        Assert.True(this.generator.TryGenerateExternMethod(methodName, out _));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
 

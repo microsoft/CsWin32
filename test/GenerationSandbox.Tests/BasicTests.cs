@@ -44,7 +44,9 @@ public class BasicTests
     [Fact]
     public void E_PDB_LIMIT()
     {
-        Assert.Equal(-2140340211, global::Microsoft.Dia.Constants.E_PDB_LIMIT.Value);
+        // We are very particular about the namespace the generated type comes from to ensure it is as expected.
+        HRESULT hr = global::Microsoft.Dia.Constants.E_PDB_LIMIT;
+        Assert.Equal(-2140340211, hr.Value);
     }
 
     [Fact]

@@ -34,16 +34,16 @@ namespace Microsoft.Windows.CsWin32
 
         private static readonly DiagnosticDescriptor NoMatchingMethodOrType = new DiagnosticDescriptor(
             "PInvoke001",
-            "No matching method or type found",
-            "Method or type \"{0}\" not found.",
+            "No matching method, type or constant found",
+            "Method, type or constant \"{0}\" not found.",
             "Functionality",
             DiagnosticSeverity.Warning,
             isEnabledByDefault: true);
 
         private static readonly DiagnosticDescriptor NoMatchingMethodOrTypeWithSuggestions = new DiagnosticDescriptor(
             "PInvoke001",
-            "No matching method or type found",
-            "Method or type \"{0}\" not found. Did you mean {1}?",
+            "No matching method, type or constant found",
+            "Method, type or constant \"{0}\" not found. Did you mean {1}?",
             "Functionality",
             DiagnosticSeverity.Warning,
             isEnabledByDefault: true);
@@ -163,6 +163,7 @@ namespace Microsoft.Windows.CsWin32
             IReadOnlyList<Generator> generators = CollectMetadataPaths(context).Select(path => new Generator(path, docs, options, compilation, parseOptions)).ToList();
             try
             {
+                SuperGenerator.Combine(generators);
                 SourceText? nativeMethodsTxt = nativeMethodsTxtFile.GetText(context.CancellationToken);
                 if (nativeMethodsTxt is null)
                 {

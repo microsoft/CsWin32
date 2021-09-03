@@ -28,6 +28,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     private static readonly GeneratorOptions DefaultTestGeneratorOptions = new GeneratorOptions { EmitSingleFile = true };
     private static readonly string FileSeparator = new string('=', 140);
     private static readonly string MetadataPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "Windows.Win32.winmd");
+    private static readonly string DiaMetadataPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "Microsoft.Dia.winmd");
     private static readonly string ApiDocsPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "apidocs.msgpack");
     private readonly ITestOutputHelper logger;
     private readonly Dictionary<string, CSharpCompilation> starterCompilations = new();
@@ -282,8 +283,10 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public void AmbiguousApiName()
     {
         this.generator = this.CreateGenerator();
-        var ex = Assert.Throws<ArgumentException>(() => this.generator.TryGenerate("IDENTITY_TYPE", CancellationToken.None));
-        this.logger.WriteLine(ex.Message);
+        Assert.False(this.generator.TryGenerate("IDENTITY_TYPE", out IReadOnlyList<string> preciseApi, CancellationToken.None));
+        Assert.Equal(2, preciseApi.Count);
+        Assert.Contains("Windows.Win32.NetworkManagement.NetworkPolicyServer.IDENTITY_TYPE", preciseApi);
+        Assert.Contains("Windows.Win32.Security.Authentication.Identity.Provider.IDENTITY_TYPE", preciseApi);
     }
 
     [Fact]
@@ -527,6 +530,21 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         Assert.True(foundPCWSTROverload, "PCWSTR overload is missing.");
         Assert.True(foundStringOverload, "string overload is missing.");
         Assert.Equal(2, overloads.Count());
+    }
+
+    [Fact]
+    public void CrossWinmdTypeReference()
+    {
+        this.generator = this.CreateGenerator();
+        using Generator diaGenerator = this.CreateGenerator(DiaMetadataPath);
+        var super = SuperGenerator.Combine(this.generator, diaGenerator);
+        Assert.True(diaGenerator.TryGenerate("E_PDB_NOT_FOUND", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.CollectGeneratedCode(diaGenerator);
+        this.AssertNoDiagnostics();
+
+        Assert.Single(this.FindGeneratedType("HRESULT"));
+        Assert.Single(this.FindGeneratedConstant("E_PDB_NOT_FOUND"));
     }
 
     [Theory, CombinatorialData]
@@ -2010,7 +2028,9 @@ namespace Windows.Win32
 
     private IEnumerable<MethodDeclarationSyntax> FindGeneratedMethod(string name) => this.compilation.SyntaxTrees.SelectMany(st => st.GetRoot().DescendantNodes().OfType<MethodDeclarationSyntax>()).Where(md => md.Identifier.ValueText == name);
 
-    private IEnumerable<BaseTypeDeclarationSyntax> FindGeneratedType(string name) => this.compilation.SyntaxTrees.SelectMany(st => st.GetRoot().DescendantNodes().OfType<BaseTypeDeclarationSyntax>()).Where(md => md.Identifier.ValueText == name);
+    private IEnumerable<BaseTypeDeclarationSyntax> FindGeneratedType(string name) => this.compilation.SyntaxTrees.SelectMany(st => st.GetRoot().DescendantNodes().OfType<BaseTypeDeclarationSyntax>()).Where(btd => btd.Identifier.ValueText == name);
+
+    private IEnumerable<FieldDeclarationSyntax> FindGeneratedConstant(string name) => this.compilation.SyntaxTrees.SelectMany(st => st.GetRoot().DescendantNodes().OfType<FieldDeclarationSyntax>()).Where(fd => (fd.Modifiers.Any(SyntaxKind.StaticKeyword) || fd.Modifiers.Any(SyntaxKind.ConstKeyword)) && fd.Declaration.Variables.Any(vd => vd.Identifier.ValueText == name));
 
     private bool IsMethodGenerated(string name) => this.FindGeneratedMethod(name).Any();
 
@@ -2140,7 +2160,9 @@ namespace Windows.Win32
         return compilation;
     }
 
-    private Generator CreateGenerator(GeneratorOptions? options = null, CSharpCompilation? compilation = null) => new Generator(MetadataPath, Docs.Get(ApiDocsPath), options ?? DefaultTestGeneratorOptions, compilation ?? this.compilation, this.parseOptions);
+    private Generator CreateGenerator(GeneratorOptions? options = null, CSharpCompilation? compilation = null) => this.CreateGenerator(MetadataPath, options, compilation);
+
+    private Generator CreateGenerator(string path, GeneratorOptions? options = null, CSharpCompilation? compilation = null) => new Generator(path, Docs.Get(ApiDocsPath), options ?? DefaultTestGeneratorOptions, compilation ?? this.compilation, this.parseOptions);
 
     private static class MyReferenceAssemblies
     {

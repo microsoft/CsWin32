@@ -292,6 +292,7 @@ namespace Microsoft.Windows.CsWin32
         /// <param name="parseOptions">The parse options that will be used for the generated code.</param>
         public Generator(string metadataLibraryPath, Docs? docs, GeneratorOptions options, CSharpCompilation? compilation = null, CSharpParseOptions? parseOptions = null)
         {
+            this.InputAssemblyName = Path.GetFileNameWithoutExtension(metadataLibraryPath);
             this.MetadataIndex = MetadataIndex.Get(metadataLibraryPath, compilation?.Options.Platform);
             this.ApiDocs = docs;
 
@@ -348,6 +349,10 @@ namespace Microsoft.Windows.CsWin32
             .Add("VARIANT", "Use `object` instead of VARIANT when in COM interface mode. VARIANT can only be emitted when emitting COM interfaces as structs.");
 
         internal ImmutableDictionary<string, string> BannedAPIs => GetBannedAPIs(this.options);
+
+        internal SuperGenerator? SuperGenerator { get; set; }
+
+        internal string InputAssemblyName { get; }
 
         internal MetadataIndex MetadataIndex { get; }
 
@@ -468,11 +473,31 @@ namespace Microsoft.Windows.CsWin32
             }
             else
             {
-                return
-                    this.TryGenerateNamespace(apiNameOrModuleWildcard, out preciseApi) ||
-                    this.TryGenerateExternMethod(apiNameOrModuleWildcard, out preciseApi) ||
-                    this.TryGenerateType(apiNameOrModuleWildcard, out preciseApi) ||
-                    this.TryGenerateConstant(apiNameOrModuleWildcard, out preciseApi);
+                bool result = this.TryGenerateNamespace(apiNameOrModuleWildcard, out preciseApi);
+                if (result || preciseApi.Count > 1)
+                {
+                    return result;
+                }
+
+                result = this.TryGenerateExternMethod(apiNameOrModuleWildcard, out preciseApi);
+                if (result || preciseApi.Count > 1)
+                {
+                    return result;
+                }
+
+                result = this.TryGenerateType(apiNameOrModuleWildcard, out preciseApi);
+                if (result || preciseApi.Count > 1)
+                {
+                    return result;
+                }
+
+                result = this.TryGenerateConstant(apiNameOrModuleWildcard, out preciseApi);
+                if (result || preciseApi.Count > 1)
+                {
+                    return result;
+                }
+
+                return false;
             }
         }
 
@@ -1176,6 +1201,26 @@ namespace Microsoft.Windows.CsWin32
             return false;
         }
 
+        internal void RequestInteropType(string @namespace, string name)
+        {
+            // PERF: Skip this search if this namespace/name has already been generated (committed, or still in volatileCode).
+            foreach (TypeDefinitionHandle tdh in this.Reader.TypeDefinitions)
+            {
+                TypeDefinition td = this.Reader.GetTypeDefinition(tdh);
+                if (this.Reader.StringComparer.Equals(td.Name, name) && this.Reader.StringComparer.Equals(td.Namespace, @namespace))
+                {
+                    this.volatileCode.GenerationTransaction(delegate
+                    {
+                        this.RequestInteropType(tdh);
+                    });
+
+                    return;
+                }
+            }
+
+            throw new GenerationFailedException($"Referenced type \"{@namespace}.{name}\" not found in \"{this.InputAssemblyName}\".");
+        }
+
         internal void RequestInteropType(TypeDefinitionHandle typeDefHandle)
         {
             TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefHandle);
@@ -1220,18 +1265,19 @@ namespace Microsoft.Windows.CsWin32
             });
         }
 
-        internal TypeDefinitionHandle? RequestInteropType(TypeReferenceHandle typeRefHandle)
+        internal void RequestInteropType(TypeReferenceHandle typeRefHandle)
         {
             if (this.TryGetTypeDefHandle(typeRefHandle, out TypeDefinitionHandle typeDefHandle))
             {
                 this.RequestInteropType(typeDefHandle);
-                return typeDefHandle;
             }
             else
             {
-                // System.Guid reaches here, but doesn't need to be generated.
-                ////throw new NotSupportedException($"Could not find a type def for: {this.mr.GetString(typeRef.Namespace)}.{name}");
-                return null;
+                TypeReference typeRef = this.Reader.GetTypeReference(typeRefHandle);
+                if (typeRef.ResolutionScope.Kind == HandleKind.AssemblyReference)
+                {
+                    this.SuperGenerator?.RequestInteropType(this, typeRef);
+                }
             }
         }
 
@@ -1588,6 +1634,23 @@ namespace Microsoft.Windows.CsWin32
 
             this.refToDefCache.Add(typeRefHandle, typeDefHandle);
             return !typeDefHandle.IsNil;
+        }
+
+        internal bool TryGetTypeDefHandle(string @namespace, string name, out TypeDefinitionHandle typeDefinitionHandle)
+        {
+            // PERF: Use an index
+            foreach (TypeDefinitionHandle tdh in this.Reader.TypeDefinitions)
+            {
+                TypeDefinition td = this.Reader.GetTypeDefinition(tdh);
+                if (this.Reader.StringComparer.Equals(td.Name, name) && this.Reader.StringComparer.Equals(td.Namespace, @namespace))
+                {
+                    typeDefinitionHandle = tdh;
+                    return true;
+                }
+            }
+
+            typeDefinitionHandle = default;
+            return false;
         }
 
         internal bool IsNonCOMInterface(TypeDefinition interfaceTypeDef)
@@ -2578,7 +2641,6 @@ namespace Microsoft.Windows.CsWin32
             string name = this.Reader.GetString(fieldDef.Name);
             try
             {
-                bool isConst = (fieldDef.Attributes & FieldAttributes.HasDefault) == FieldAttributes.HasDefault;
                 TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null) with { IsConstantField = true };
                 var customAttributes = fieldDef.GetCustomAttributes();
                 var fieldType = fieldTypeInfo.ToTypeSyntax(this.fieldTypeSettings, customAttributes);
@@ -4336,10 +4398,25 @@ namespace Microsoft.Windows.CsWin32
                     TypeDefinition typeDef = this.Reader.GetTypeDefinition((TypeDefinitionHandle)handleInfo.Handle);
                     return this.IsTypeDefStruct(typeDef);
                 }
-                else if (handleInfo.Handle.Kind == HandleKind.TypeReference && this.TryGetTypeDefHandle((TypeReferenceHandle)handleInfo.Handle, out TypeDefinitionHandle tdh))
+                else if (handleInfo.Handle.Kind == HandleKind.TypeReference)
                 {
-                    TypeDefinition typeDef = this.Reader.GetTypeDefinition(tdh);
-                    return this.IsTypeDefStruct(typeDef);
+                    if (this.TryGetTypeDefHandle((TypeReferenceHandle)handleInfo.Handle, out TypeDefinitionHandle tdh))
+                    {
+                        TypeDefinition typeDef = this.Reader.GetTypeDefinition(tdh);
+                        return this.IsTypeDefStruct(typeDef);
+                    }
+                    else if (this.SuperGenerator is object)
+                    {
+                        TypeReference typeReference = this.Reader.GetTypeReference((TypeReferenceHandle)handleInfo.Handle);
+                        if (this.SuperGenerator.TryGetTargetGenerator(this, typeReference, out Generator? targetGenerator))
+                        {
+                            if (targetGenerator.TryGetTypeDefHandle(this.Reader.GetString(typeReference.Namespace), this.Reader.GetString(typeReference.Name), out TypeDefinitionHandle foreignTypeDefHandle))
+                            {
+                                TypeDefinition foreignTypeDef = targetGenerator.Reader.GetTypeDefinition(foreignTypeDefHandle);
+                                return targetGenerator.IsTypeDefStruct(foreignTypeDef);
+                            }
+                        }
+                    }
                 }
             }
             else if (SpecialTypeDefNames.Contains(null!/*TODO*/))

@@ -42,6 +42,12 @@ public class BasicTests
     }
 
     [Fact]
+    public void E_PDB_LIMIT()
+    {
+        Assert.Equal(-2140340211, global::Microsoft.Dia.Constants.E_PDB_LIMIT.Value);
+    }
+
+    [Fact]
     public void Bool()
     {
         BOOL b = true;

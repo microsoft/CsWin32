@@ -368,7 +368,7 @@ namespace Microsoft.Windows.CsWin32
 
         private bool GroupByModule => string.IsNullOrEmpty(this.options.ClassName);
 
-        private string Namespace => this.options.Namespace;
+        private string Namespace => this.InputAssemblyName;
 
         private string SingleClassName => this.options.ClassName ?? throw new InvalidOperationException("Not in one-class mode.");
 
@@ -1000,7 +1000,7 @@ namespace Microsoft.Windows.CsWin32
                 usingDirectives.Add(UsingDirective(ParseName(GlobalNamespacePrefix + "System.Runtime.Versioning")));
             }
 
-            usingDirectives.Add(UsingDirective(NameEquals(GlobalWin32NamespaceAlias), ParseName(GlobalNamespacePrefix + this.Namespace)));
+            usingDirectives.Add(UsingDirective(NameEquals(GlobalWin32NamespaceAlias), ParseName(GlobalNamespacePrefix + CommonNamespace)));
 
             var normalizedResults = new Dictionary<string, CompilationUnitSyntax>(StringComparer.OrdinalIgnoreCase);
             results.AsParallel().WithCancellation(cancellationToken).ForAll(kv =>

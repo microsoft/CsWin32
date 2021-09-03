@@ -24,12 +24,6 @@ namespace Microsoft.Windows.CsWin32
         public string? ClassName { get; init; } = "PInvoke";
 
         /// <summary>
-        /// Gets the namespace for generated code.
-        /// </summary>
-        /// <value>The default value is "Windows.Win32". Must be non-empty.</value>
-        public string Namespace { get; init; } = "Windows.Win32";
-
-        /// <summary>
         /// Gets a value indicating whether to emit a single source file as opposed to types spread across many files.
         /// </summary>
         /// <value>The default value is <see langword="false" />.</value>
@@ -57,10 +51,6 @@ namespace Microsoft.Windows.CsWin32
         /// <exception cref="InvalidOperationException">Thrown when some setting is invalid.</exception>
         public void Validate()
         {
-            if (string.IsNullOrWhiteSpace(this.Namespace))
-            {
-                throw new InvalidOperationException("The namespace must be set.");
-            }
         }
 
         /// <summary>

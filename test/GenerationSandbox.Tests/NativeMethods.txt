@@ -10,3 +10,4 @@ EnumWindows
 GetWindowTextLength
 GetWindowText
 WPARAM
+E_PDB_LIMIT

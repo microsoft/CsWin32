@@ -263,7 +263,7 @@ namespace Microsoft.Windows.CsWin32
                         .ThenBy(pair => pair.Key, StringComparer.Ordinal);
                     foreach (var unit in compilationUnits)
                     {
-                        context.AddSource(unit.Key, unit.Value.ToFullString());
+                        context.AddSource($"{generator.InputAssemblyName}.{unit.Key}", unit.Value.ToFullString());
                     }
                 }
 

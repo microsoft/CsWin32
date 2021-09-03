@@ -17,8 +17,8 @@
   <Target Name="AssembleCsWin32InputPaths" BeforeTargets="GenerateMSBuildEditorConfigFileCore">
     <!-- Roslyn only allows source generators to see msbuild properties, to lift msbuild items into semicolon-delimited properties. -->
     <PropertyGroup>
-      <CsWin32InputMetadataPaths>@(ProjectionMetadataWinmd)</CsWin32InputMetadataPaths>
-      <CsWin32InputDocPaths>@(ProjectionDocs)</CsWin32InputDocPaths>
+      <CsWin32InputMetadataPaths>@(ProjectionMetadataWinmd,'|')</CsWin32InputMetadataPaths>
+      <CsWin32InputDocPaths>@(ProjectionDocs,'|')</CsWin32InputDocPaths>
     </PropertyGroup>
   </Target>
 </Project>

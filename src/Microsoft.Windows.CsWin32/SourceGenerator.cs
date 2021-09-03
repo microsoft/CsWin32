@@ -340,7 +340,7 @@ namespace Microsoft.Windows.CsWin32
                 return Array.Empty<string>();
             }
 
-            string[] metadataBasePaths = delimitedMetadataBasePaths.Split(';');
+            string[] metadataBasePaths = delimitedMetadataBasePaths.Split('|');
             return metadataBasePaths;
         }
 
@@ -350,7 +350,7 @@ namespace Microsoft.Windows.CsWin32
             if (context.AnalyzerConfigOptions.GlobalOptions.TryGetValue("build_property.CsWin32InputDocPaths", out string? delimitedApiDocsPaths) &&
                 !string.IsNullOrWhiteSpace(delimitedApiDocsPaths))
             {
-                string[] apiDocsPaths = delimitedApiDocsPaths!.Split(';');
+                string[] apiDocsPaths = delimitedApiDocsPaths!.Split('|');
                 if (apiDocsPaths.Length > 0)
                 {
                     List<Docs> docsList = new(apiDocsPaths.Length);

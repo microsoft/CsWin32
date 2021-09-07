@@ -12,10 +12,4 @@ public class GeneratorOptionsTests
     {
         new GeneratorOptions().Validate();
     }
-
-    [Fact]
-    public void Validate_EmptyNamespace()
-    {
-        Assert.Throws<InvalidOperationException>(() => new GeneratorOptions { Namespace = string.Empty }.Validate());
-    }
 }

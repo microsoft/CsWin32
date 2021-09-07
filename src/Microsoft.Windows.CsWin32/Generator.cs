@@ -290,16 +290,17 @@ namespace Microsoft.Windows.CsWin32
         /// Initializes a new instance of the <see cref="Generator"/> class.
         /// </summary>
         /// <param name="metadataLibraryPath">The path to the winmd metadata to generate APIs from.</param>
-        /// <param name="apiDocsPath">The path to the API docs file.</param>
+        /// <param name="docs">The API docs to include in the generated code.</param>
         /// <param name="options">Options that influence the result of generation.</param>
         /// <param name="compilation">The compilation that the generated code will be added to.</param>
         /// <param name="parseOptions">The parse options that will be used for the generated code.</param>
-        public Generator(string metadataLibraryPath, string? apiDocsPath, GeneratorOptions? options = null, CSharpCompilation? compilation = null, CSharpParseOptions? parseOptions = null)
+        public Generator(string metadataLibraryPath, Docs? docs, GeneratorOptions options, CSharpCompilation? compilation = null, CSharpParseOptions? parseOptions = null)
         {
+            this.InputAssemblyName = Path.GetFileNameWithoutExtension(metadataLibraryPath);
             this.MetadataIndex = MetadataIndex.Get(metadataLibraryPath, compilation?.Options.Platform);
-            this.ApiDocs = apiDocsPath is object ? Docs.Get(apiDocsPath) : null;
+            this.ApiDocs = docs;
 
-            this.options = options ??= new GeneratorOptions();
+            this.options = options;
             this.options.Validate();
             this.compilation = compilation;
             this.parseOptions = parseOptions;
@@ -314,11 +315,6 @@ namespace Microsoft.Windows.CsWin32
                 AttributeData usageAttribute = attribute.GetAttributes().Single(att => att.AttributeClass?.Name == nameof(AttributeUsageAttribute));
                 var targets = (AttributeTargets)usageAttribute.ConstructorArguments[0].Value!;
                 this.generateSupportedOSPlatformAttributesOnInterfaces = (targets & AttributeTargets.Interface) == AttributeTargets.Interface;
-            }
-
-            if (options.AllowMarshaling)
-            {
-                this.BannedAPIs.Add("VARIANT", "Use `object` instead of VARIANT when in COM interface mode. VARIANT can only be emitted when emitting COM interfaces as structs.");
             }
 
             bool useComInterfaces = options.AllowMarshaling;
@@ -347,13 +343,20 @@ namespace Microsoft.Windows.CsWin32
             InterfaceMethod,
         }
 
-        internal Dictionary<string, string> BannedAPIs { get; } = new Dictionary<string, string>
-        {
-            { "GetLastError", "Do not generate GetLastError. Call Marshal.GetLastWin32Error() instead. Learn more from https://docs.microsoft.com/dotnet/api/system.runtime.interopservices.marshal.getlastwin32error" },
-            { "OLD_LARGE_INTEGER", "Use the C# long keyword instead." },
-            { "LARGE_INTEGER", "Use the C# long keyword instead." },
-            { "ULARGE_INTEGER", "Use the C# ulong keyword instead." },
-        };
+        internal static ImmutableDictionary<string, string> BannedAPIsWithoutMarshaling { get; } = ImmutableDictionary<string, string>.Empty
+            .Add("GetLastError", "Do not generate GetLastError. Call Marshal.GetLastWin32Error() instead. Learn more from https://docs.microsoft.com/dotnet/api/system.runtime.interopservices.marshal.getlastwin32error")
+            .Add("OLD_LARGE_INTEGER", "Use the C# long keyword instead.")
+            .Add("LARGE_INTEGER", "Use the C# long keyword instead.")
+            .Add("ULARGE_INTEGER", "Use the C# ulong keyword instead.");
+
+        internal static ImmutableDictionary<string, string> BannedAPIsWithMarshaling { get; } = BannedAPIsWithoutMarshaling
+            .Add("VARIANT", "Use `object` instead of VARIANT when in COM interface mode. VARIANT can only be emitted when emitting COM interfaces as structs.");
+
+        internal ImmutableDictionary<string, string> BannedAPIs => GetBannedAPIs(this.options);
+
+        internal SuperGenerator? SuperGenerator { get; set; }
+
+        internal string InputAssemblyName { get; }
 
         internal MetadataIndex MetadataIndex { get; }
 
@@ -369,7 +372,7 @@ namespace Microsoft.Windows.CsWin32
 
         private bool GroupByModule => string.IsNullOrEmpty(this.options.ClassName);
 
-        private string Namespace => this.options.Namespace;
+        private string Namespace => this.InputAssemblyName;
 
         private string SingleClassName => this.options.ClassName ?? throw new InvalidOperationException("Not in one-class mode.");
 
@@ -442,13 +445,17 @@ namespace Microsoft.Windows.CsWin32
             this.GenerateAllConstants(cancellationToken);
         }
 
+        /// <inheritdoc cref="TryGenerate(string, out IReadOnlyList{string}, CancellationToken)"/>
+        public bool TryGenerate(string apiNameOrModuleWildcard, CancellationToken cancellationToken) => this.TryGenerate(apiNameOrModuleWildcard, out _, cancellationToken);
+
         /// <summary>
         /// Generates code for a given API.
         /// </summary>
         /// <param name="apiNameOrModuleWildcard">The name of the method, struct or constant. Or the name of a module with a ".*" suffix in order to generate all methods and supporting types for the specified module.</param>
+        /// <param name="preciseApi">Receives the canonical API names that <paramref name="apiNameOrModuleWildcard"/> matched on.</param>
         /// <param name="cancellationToken">A cancellation token.</param>
         /// <returns><see langword="true" /> if any matching APIs were found and generated; <see langword="false"/> otherwise.</returns>
-        public bool TryGenerate(string apiNameOrModuleWildcard, CancellationToken cancellationToken)
+        public bool TryGenerate(string apiNameOrModuleWildcard, out IReadOnlyList<string> preciseApi, CancellationToken cancellationToken)
         {
             if (string.IsNullOrWhiteSpace(apiNameOrModuleWildcard))
             {
@@ -457,15 +464,44 @@ namespace Microsoft.Windows.CsWin32
 
             if (apiNameOrModuleWildcard.EndsWith(".*", StringComparison.Ordinal))
             {
-                return this.TryGenerateAllExternMethods(apiNameOrModuleWildcard.Substring(0, apiNameOrModuleWildcard.Length - 2), cancellationToken);
+                if (this.TryGenerateAllExternMethods(apiNameOrModuleWildcard.Substring(0, apiNameOrModuleWildcard.Length - 2), cancellationToken))
+                {
+                    preciseApi = ImmutableList.Create(apiNameOrModuleWildcard);
+                    return true;
+                }
+                else
+                {
+                    preciseApi = ImmutableList<string>.Empty;
+                    return false;
+                }
             }
             else
             {
-                return
-                    this.TryGenerateNamespace(apiNameOrModuleWildcard) ||
-                    this.TryGenerateExternMethod(apiNameOrModuleWildcard) ||
-                    this.TryGenerateType(apiNameOrModuleWildcard) ||
-                    this.TryGenerateConstant(apiNameOrModuleWildcard);
+                bool result = this.TryGenerateNamespace(apiNameOrModuleWildcard, out preciseApi);
+                if (result || preciseApi.Count > 1)
+                {
+                    return result;
+                }
+
+                result = this.TryGenerateExternMethod(apiNameOrModuleWildcard, out preciseApi);
+                if (result || preciseApi.Count > 1)
+                {
+                    return result;
+                }
+
+                result = this.TryGenerateType(apiNameOrModuleWildcard, out preciseApi);
+                if (result || preciseApi.Count > 1)
+                {
+                    return result;
+                }
+
+                result = this.TryGenerateConstant(apiNameOrModuleWildcard, out preciseApi);
+                if (result || preciseApi.Count > 1)
+                {
+                    return result;
+                }
+
+                return false;
             }
         }
 
@@ -473,8 +509,9 @@ namespace Microsoft.Windows.CsWin32
         /// Generates all APIs within a given namespace, and their dependencies.
         /// </summary>
         /// <param name="namespace">The namespace to generate APIs for.</param>
+        /// <param name="preciseApi">Receives the canonical API names that <paramref name="namespace"/> matched on.</param>
         /// <returns><see langword="true"/> if a matching namespace was found; otherwise <see langword="false"/>.</returns>
-        public bool TryGenerateNamespace(string @namespace)
+        public bool TryGenerateNamespace(string @namespace, out IReadOnlyList<string> preciseApi)
         {
             if (@namespace is null)
             {
@@ -491,6 +528,7 @@ namespace Microsoft.Windows.CsWin32
                     {
                         if (string.Equals(item.Key, @namespace, StringComparison.OrdinalIgnoreCase))
                         {
+                            @namespace = item.Key;
                             metadata = item.Value;
                             break;
                         }
@@ -518,9 +556,11 @@ namespace Microsoft.Windows.CsWin32
                     }
                 });
 
+                preciseApi = ImmutableList.Create(@namespace);
                 return true;
             }
 
+            preciseApi = ImmutableList<string>.Empty;
             return false;
         }
 
@@ -707,8 +747,9 @@ namespace Microsoft.Windows.CsWin32
         /// Generate code for the named extern method, if it is recognized.
         /// </summary>
         /// <param name="possiblyQualifiedName">The name of the extern method, optionally qualified with a namespace.</param>
+        /// <param name="preciseApi">Receives the canonical API names that <paramref name="possiblyQualifiedName"/> matched on.</param>
         /// <returns><see langword="true"/> if a match was found and the extern method generated; otherwise <see langword="false"/>.</returns>
-        public bool TryGenerateExternMethod(string possiblyQualifiedName)
+        public bool TryGenerateExternMethod(string possiblyQualifiedName, out IReadOnlyList<string> preciseApi)
         {
             if (possiblyQualifiedName is null)
             {
@@ -729,18 +770,25 @@ namespace Microsoft.Windows.CsWin32
                     this.RequestExternMethod(methodDefHandle);
                 });
 
+                string methodNamespace = this.Reader.GetString(this.Reader.GetTypeDefinition(methodDef.GetDeclaringType()).Namespace);
+                preciseApi = ImmutableList.Create($"{methodNamespace}.{methodName}");
                 return true;
             }
 
+            preciseApi = ImmutableList<string>.Empty;
             return false;
         }
+
+        /// <inheritdoc cref="TryGenerateType(string, out IReadOnlyList{string})"/>
+        public bool TryGenerateType(string possiblyQualifiedName) => this.TryGenerateType(possiblyQualifiedName, out _);
 
         /// <summary>
         /// Generate code for the named type, if it is recognized.
         /// </summary>
         /// <param name="possiblyQualifiedName">The name of the interop type, optionally qualified with a namespace.</param>
+        /// <param name="preciseApi">Receives the canonical API names that <paramref name="possiblyQualifiedName"/> matched on.</param>
         /// <returns><see langword="true"/> if a match was found and the type generated; otherwise <see langword="false"/>.</returns>
-        public bool TryGenerateType(string possiblyQualifiedName)
+        public bool TryGenerateType(string possiblyQualifiedName, out IReadOnlyList<string> preciseApi)
         {
             if (possiblyQualifiedName is null)
             {
@@ -771,18 +819,19 @@ namespace Microsoft.Windows.CsWin32
                     this.RequestInteropType(matchingTypeHandles[0]);
                 });
 
+                TypeDefinition td = this.Reader.GetTypeDefinition(matchingTypeHandles[0]);
+                preciseApi = ImmutableList.Create($"{this.Reader.GetString(td.Namespace)}.{this.Reader.GetString(td.Name)}");
                 return true;
             }
             else if (matchingTypeHandles.Count > 1)
             {
-                string matches = string.Join(
-                    ", ",
+                preciseApi = ImmutableList.CreateRange(
                     matchingTypeHandles.Select(h =>
                     {
                         TypeDefinition td = this.Reader.GetTypeDefinition(h);
                         return $"{this.Reader.GetString(td.Namespace)}.{this.Reader.GetString(td.Name)}";
                     }));
-                throw new ArgumentException("The type name is ambiguous. Use the fully-qualified name instead. Possible matches: " + matches);
+                return false;
             }
 
             if (foundApiWithMismatchedPlatform)
@@ -790,6 +839,7 @@ namespace Microsoft.Windows.CsWin32
                 throw new PlatformIncompatibleException($"The requested API ({possiblyQualifiedName}) was found but is not available given the target platform ({this.compilation?.Options.Platform}).");
             }
 
+            preciseApi = ImmutableList<string>.Empty;
             return false;
         }
 
@@ -797,8 +847,9 @@ namespace Microsoft.Windows.CsWin32
         /// Generate code for the named constant, if it is recognized.
         /// </summary>
         /// <param name="possiblyQualifiedName">The name of the constant, optionally qualified with a namespace.</param>
+        /// <param name="preciseApi">Receives the canonical API names that <paramref name="possiblyQualifiedName"/> matched on.</param>
         /// <returns><see langword="true"/> if a match was found and the constant generated; otherwise <see langword="false"/>.</returns>
-        public bool TryGenerateConstant(string possiblyQualifiedName)
+        public bool TryGenerateConstant(string possiblyQualifiedName, out IReadOnlyList<string> preciseApi)
         {
             if (possiblyQualifiedName is null)
             {
@@ -824,21 +875,24 @@ namespace Microsoft.Windows.CsWin32
                     this.RequestConstant(matchingFieldHandles[0]);
                 });
 
+                FieldDefinition fd = this.Reader.GetFieldDefinition(matchingFieldHandles[0]);
+                TypeDefinition td = this.Reader.GetTypeDefinition(fd.GetDeclaringType());
+                preciseApi = ImmutableList.Create($"{this.Reader.GetString(td.Namespace)}.{this.Reader.GetString(fd.Name)}");
                 return true;
             }
             else if (matchingFieldHandles.Count > 1)
             {
-                string matches = string.Join(
-                    ", ",
+                preciseApi = ImmutableList.CreateRange(
                     matchingFieldHandles.Select(h =>
                     {
                         FieldDefinition fd = this.Reader.GetFieldDefinition(h);
                         TypeDefinition td = this.Reader.GetTypeDefinition(fd.GetDeclaringType());
                         return $"{this.Reader.GetString(td.Namespace)}.{this.Reader.GetString(fd.Name)}";
                     }));
-                throw new ArgumentException("The type name is ambiguous. Use the fully-qualified name instead. Possible matches: " + matches);
+                return false;
             }
 
+            preciseApi = ImmutableList<string>.Empty;
             return false;
         }
 
@@ -950,7 +1004,7 @@ namespace Microsoft.Windows.CsWin32
                 usingDirectives.Add(UsingDirective(ParseName(GlobalNamespacePrefix + "System.Runtime.Versioning")));
             }
 
-            usingDirectives.Add(UsingDirective(NameEquals(GlobalWin32NamespaceAlias), ParseName(GlobalNamespacePrefix + this.Namespace)));
+            usingDirectives.Add(UsingDirective(NameEquals(GlobalWin32NamespaceAlias), ParseName(GlobalNamespacePrefix + CommonNamespace)));
 
             var normalizedResults = new Dictionary<string, CompilationUnitSyntax>(StringComparer.OrdinalIgnoreCase);
             results.AsParallel().WithCancellation(cancellationToken).ForAll(kv =>
@@ -995,6 +1049,8 @@ namespace Microsoft.Windows.CsWin32
 
             return normalizedResults;
         }
+
+        internal static ImmutableDictionary<string, string> GetBannedAPIs(GeneratorOptions options) => options.AllowMarshaling ? BannedAPIsWithMarshaling : BannedAPIsWithoutMarshaling;
 
         [return: NotNullIfNotNull("marshalAs")]
         internal static AttributeSyntax? MarshalAs(MarshalAsAttribute? marshalAs)
@@ -1171,6 +1227,26 @@ namespace Microsoft.Windows.CsWin32
             return false;
         }
 
+        internal void RequestInteropType(string @namespace, string name)
+        {
+            // PERF: Skip this search if this namespace/name has already been generated (committed, or still in volatileCode).
+            foreach (TypeDefinitionHandle tdh in this.Reader.TypeDefinitions)
+            {
+                TypeDefinition td = this.Reader.GetTypeDefinition(tdh);
+                if (this.Reader.StringComparer.Equals(td.Name, name) && this.Reader.StringComparer.Equals(td.Namespace, @namespace))
+                {
+                    this.volatileCode.GenerationTransaction(delegate
+                    {
+                        this.RequestInteropType(tdh);
+                    });
+
+                    return;
+                }
+            }
+
+            throw new GenerationFailedException($"Referenced type \"{@namespace}.{name}\" not found in \"{this.InputAssemblyName}\".");
+        }
+
         internal void RequestInteropType(TypeDefinitionHandle typeDefHandle)
         {
             TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefHandle);
@@ -1218,18 +1294,30 @@ namespace Microsoft.Windows.CsWin32
             });
         }
 
-        internal TypeDefinitionHandle? RequestInteropType(TypeReferenceHandle typeRefHandle)
+        internal void RequestInteropType(TypeReferenceHandle typeRefHandle)
         {
             if (this.TryGetTypeDefHandle(typeRefHandle, out TypeDefinitionHandle typeDefHandle))
             {
                 this.RequestInteropType(typeDefHandle);
-                return typeDefHandle;
             }
             else
             {
-                // System.Guid reaches here, but doesn't need to be generated.
-                ////throw new NotSupportedException($"Could not find a type def for: {this.mr.GetString(typeRef.Namespace)}.{name}");
-                return null;
+                TypeReference typeRef = this.Reader.GetTypeReference(typeRefHandle);
+                if (typeRef.ResolutionScope.Kind == HandleKind.AssemblyReference)
+                {
+                    if (this.SuperGenerator?.TryRequestInteropType(this, typeRef) is not true)
+                    {
+                        // We can't find the interop among our metadata inputs.
+                        // Before we give up and report an error, search for the required type among the compilation's referenced assemblies.
+                        string metadataName = $"{this.Reader.GetString(typeRef.Namespace)}.{this.Reader.GetString(typeRef.Name)}";
+                        if (this.compilation?.GetTypeByMetadataName(metadataName) is null)
+                        {
+                            AssemblyReference assemblyRef = this.Reader.GetAssemblyReference((AssemblyReferenceHandle)typeRef.ResolutionScope);
+                            string scope = this.Reader.GetString(assemblyRef.Name);
+                            throw new GenerationFailedException($"Input metadata file \"{scope}\" has not been provided.");
+                        }
+                    }
+                }
             }
         }
 
@@ -1586,6 +1674,23 @@ namespace Microsoft.Windows.CsWin32
 
             this.refToDefCache.Add(typeRefHandle, typeDefHandle);
             return !typeDefHandle.IsNil;
+        }
+
+        internal bool TryGetTypeDefHandle(string @namespace, string name, out TypeDefinitionHandle typeDefinitionHandle)
+        {
+            // PERF: Use an index
+            foreach (TypeDefinitionHandle tdh in this.Reader.TypeDefinitions)
+            {
+                TypeDefinition td = this.Reader.GetTypeDefinition(tdh);
+                if (this.Reader.StringComparer.Equals(td.Name, name) && this.Reader.StringComparer.Equals(td.Namespace, @namespace))
+                {
+                    typeDefinitionHandle = tdh;
+                    return true;
+                }
+            }
+
+            typeDefinitionHandle = default;
+            return false;
         }
 
         internal bool IsNonCOMInterface(TypeDefinition interfaceTypeDef)
@@ -2591,7 +2696,7 @@ namespace Microsoft.Windows.CsWin32
 
         private void TryGenerateConstantOrThrow(string possiblyQualifiedName)
         {
-            if (!this.TryGenerateConstant(possiblyQualifiedName))
+            if (!this.TryGenerateConstant(possiblyQualifiedName, out _))
             {
                 throw new GenerationFailedException("Unable to find expected constant: " + possiblyQualifiedName);
             }
@@ -2603,7 +2708,6 @@ namespace Microsoft.Windows.CsWin32
             string name = this.Reader.GetString(fieldDef.Name);
             try
             {
-                bool isConst = (fieldDef.Attributes & FieldAttributes.HasDefault) == FieldAttributes.HasDefault;
                 TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null) with { IsConstantField = true };
                 var customAttributes = fieldDef.GetCustomAttributes();
                 var fieldType = fieldTypeInfo.ToTypeSyntax(this.fieldTypeSettings, customAttributes);
@@ -3180,7 +3284,7 @@ namespace Microsoft.Windows.CsWin32
                     if (args.FixedArguments[0].Value is string freeMethodName)
                     {
                         ////this.GenerateSafeHandle(freeMethodName);
-                        this.TryGenerateExternMethod(freeMethodName);
+                        this.TryGenerateExternMethod(freeMethodName, out _);
                         isHandle = true;
                     }
 
@@ -4361,10 +4465,25 @@ namespace Microsoft.Windows.CsWin32
                     TypeDefinition typeDef = this.Reader.GetTypeDefinition((TypeDefinitionHandle)handleInfo.Handle);
                     return this.IsTypeDefStruct(typeDef);
                 }
-                else if (handleInfo.Handle.Kind == HandleKind.TypeReference && this.TryGetTypeDefHandle((TypeReferenceHandle)handleInfo.Handle, out TypeDefinitionHandle tdh))
+                else if (handleInfo.Handle.Kind == HandleKind.TypeReference)
                 {
-                    TypeDefinition typeDef = this.Reader.GetTypeDefinition(tdh);
-                    return this.IsTypeDefStruct(typeDef);
+                    if (this.TryGetTypeDefHandle((TypeReferenceHandle)handleInfo.Handle, out TypeDefinitionHandle tdh))
+                    {
+                        TypeDefinition typeDef = this.Reader.GetTypeDefinition(tdh);
+                        return this.IsTypeDefStruct(typeDef);
+                    }
+                    else if (this.SuperGenerator is object)
+                    {
+                        TypeReference typeReference = this.Reader.GetTypeReference((TypeReferenceHandle)handleInfo.Handle);
+                        if (this.SuperGenerator.TryGetTargetGenerator(this, typeReference, out Generator? targetGenerator))
+                        {
+                            if (targetGenerator.TryGetTypeDefHandle(this.Reader.GetString(typeReference.Namespace), this.Reader.GetString(typeReference.Name), out TypeDefinitionHandle foreignTypeDefHandle))
+                            {
+                                TypeDefinition foreignTypeDef = targetGenerator.Reader.GetTypeDefinition(foreignTypeDefHandle);
+                                return targetGenerator.IsTypeDefStruct(foreignTypeDef);
+                            }
+                        }
+                    }
                 }
             }
             else if (SpecialTypeDefNames.Contains(null!/*TODO*/))

@@ -57,7 +57,7 @@ namespace Microsoft.Windows.CsWin32
         /// <param name="typeRef">The type reference from the requesting generator.</param>
         /// <param name="targetGenerator">Receives the generator that owns the referenced type.</param>
         /// <returns><see langword="true"/> if a matching generator was found; otherwise <see langword="false"/>.</returns>
-        public bool TryGetTargetGenerator(Generator requestingGenerator, TypeReference typeRef, [NotNullWhen(true)] out Generator? targetGenerator)
+        internal bool TryGetTargetGenerator(Generator requestingGenerator, TypeReference typeRef, [NotNullWhen(true)] out Generator? targetGenerator)
         {
             if (typeRef.ResolutionScope.Kind != HandleKind.AssemblyReference)
             {
@@ -82,7 +82,8 @@ namespace Microsoft.Windows.CsWin32
         /// </summary>
         /// <param name="requestingGenerator">The generator making the request.</param>
         /// <param name="typeRef">The referenced type.</param>
-        public void RequestInteropType(Generator requestingGenerator, TypeReference typeRef)
+        /// <returns><see langword="true" /> if a matching generator was found; <see langword="false" /> otherwise.</returns>
+        internal bool TryRequestInteropType(Generator requestingGenerator, TypeReference typeRef)
         {
             if (typeRef.ResolutionScope.Kind != HandleKind.AssemblyReference)
             {
@@ -94,13 +95,10 @@ namespace Microsoft.Windows.CsWin32
                 string ns = requestingGenerator.Reader.GetString(typeRef.Namespace);
                 string name = requestingGenerator.Reader.GetString(typeRef.Name);
                 generator.RequestInteropType(ns, name);
+                return true;
             }
-            else
-            {
-                AssemblyReference assemblyRef = requestingGenerator.Reader.GetAssemblyReference((AssemblyReferenceHandle)typeRef.ResolutionScope);
-                string scope = requestingGenerator.Reader.GetString(assemblyRef.Name);
-                throw new GenerationFailedException($"Input metadata file \"{scope}\" has not been provided.");
-            }
+
+            return false;
         }
     }
 }

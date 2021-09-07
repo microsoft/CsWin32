@@ -1305,7 +1305,18 @@ namespace Microsoft.Windows.CsWin32
                 TypeReference typeRef = this.Reader.GetTypeReference(typeRefHandle);
                 if (typeRef.ResolutionScope.Kind == HandleKind.AssemblyReference)
                 {
-                    this.SuperGenerator?.RequestInteropType(this, typeRef);
+                    if (this.SuperGenerator?.TryRequestInteropType(this, typeRef) is not true)
+                    {
+                        // We can't find the interop among our metadata inputs.
+                        // Before we give up and report an error, search for the required type among the compilation's referenced assemblies.
+                        string metadataName = $"{this.Reader.GetString(typeRef.Namespace)}.{this.Reader.GetString(typeRef.Name)}";
+                        if (this.compilation?.GetTypeByMetadataName(metadataName) is null)
+                        {
+                            AssemblyReference assemblyRef = this.Reader.GetAssemblyReference((AssemblyReferenceHandle)typeRef.ResolutionScope);
+                            string scope = this.Reader.GetString(assemblyRef.Name);
+                            throw new GenerationFailedException($"Input metadata file \"{scope}\" has not been provided.");
+                        }
+                    }
                 }
             }
         }

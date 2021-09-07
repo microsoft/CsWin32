@@ -41,13 +41,13 @@ public class BasicTests
         // TODO: write code that sets/gets memory on the inner struct (e.g. videoStandard).
     }
 
-    [Fact]
-    public void E_PDB_LIMIT()
-    {
-        // We are very particular about the namespace the generated type comes from to ensure it is as expected.
-        HRESULT hr = global::Microsoft.Dia.Constants.E_PDB_LIMIT;
-        Assert.Equal(-2140340211, hr.Value);
-    }
+    ////[Fact]
+    ////public void E_PDB_LIMIT()
+    ////{
+    ////    // We are very particular about the namespace the generated type comes from to ensure it is as expected.
+    ////    HRESULT hr = global::Microsoft.Dia.Constants.E_PDB_LIMIT;
+    ////    Assert.Equal(-2140340211, hr.Value);
+    ////}
 
     [Fact]
     public void Bool()

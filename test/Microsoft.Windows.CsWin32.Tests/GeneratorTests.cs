@@ -28,7 +28,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     private static readonly GeneratorOptions DefaultTestGeneratorOptions = new GeneratorOptions { EmitSingleFile = true };
     private static readonly string FileSeparator = new string('=', 140);
     private static readonly string MetadataPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "Windows.Win32.winmd");
-    private static readonly string DiaMetadataPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "Microsoft.Dia.winmd");
+    ////private static readonly string DiaMetadataPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "Microsoft.Dia.winmd");
     private static readonly string ApiDocsPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "apidocs.msgpack");
     private readonly ITestOutputHelper logger;
     private readonly Dictionary<string, CSharpCompilation> starterCompilations = new();
@@ -532,20 +532,20 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         Assert.Equal(2, overloads.Count());
     }
 
-    [Fact]
-    public void CrossWinmdTypeReference()
-    {
-        this.generator = this.CreateGenerator();
-        using Generator diaGenerator = this.CreateGenerator(DiaMetadataPath);
-        var super = SuperGenerator.Combine(this.generator, diaGenerator);
-        Assert.True(diaGenerator.TryGenerate("E_PDB_NOT_FOUND", CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.CollectGeneratedCode(diaGenerator);
-        this.AssertNoDiagnostics();
+    ////[Fact]
+    ////public void CrossWinmdTypeReference()
+    ////{
+    ////    this.generator = this.CreateGenerator();
+    ////    using Generator diaGenerator = this.CreateGenerator(DiaMetadataPath);
+    ////    var super = SuperGenerator.Combine(this.generator, diaGenerator);
+    ////    Assert.True(diaGenerator.TryGenerate("E_PDB_NOT_FOUND", CancellationToken.None));
+    ////    this.CollectGeneratedCode(this.generator);
+    ////    this.CollectGeneratedCode(diaGenerator);
+    ////    this.AssertNoDiagnostics();
 
-        Assert.Single(this.FindGeneratedType("HRESULT"));
-        Assert.Single(this.FindGeneratedConstant("E_PDB_NOT_FOUND"));
-    }
+    ////    Assert.Single(this.FindGeneratedType("HRESULT"));
+    ////    Assert.Single(this.FindGeneratedConstant("E_PDB_NOT_FOUND"));
+    ////}
 
     [Theory, CombinatorialData]
     public void ArchitectureSpecificAPIsTreatment(

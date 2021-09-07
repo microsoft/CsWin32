@@ -25,6 +25,10 @@ using VerifyTest = Microsoft.CodeAnalysis.CSharp.Testing.CSharpSourceGeneratorTe
 
 public class GeneratorTests : IDisposable, IAsyncLifetime
 {
+    private const string WinRTCustomMarshalerClass = "WinRTCustomMarshaler";
+    private const string WinRTCustomMarshalerNamespace = "Windows.Win32.CsWin32.InteropServices";
+    private const string WinRTCustomMarshalerFullName = WinRTCustomMarshalerNamespace + "." + WinRTCustomMarshalerClass;
+
     private static readonly GeneratorOptions DefaultTestGeneratorOptions = new GeneratorOptions { EmitSingleFile = true };
     private static readonly string FileSeparator = new string('=', 140);
     private static readonly string MetadataPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "Windows.Win32.winmd");
@@ -266,6 +270,51 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
         Assert.Contains(this.FindGeneratedType(ifaceName), t => t.BaseList is null && ((InterfaceDeclarationSyntax)t).Members.Count == 1 && t.AttributeLists.Any(al => al.Attributes.Any(a => a.Name is IdentifierNameSyntax { Identifier: { ValueText: "InterfaceType" } } && a.ArgumentList?.Arguments[0].Expression is MemberAccessExpressionSyntax { Name: IdentifierNameSyntax { Identifier: { ValueText: nameof(ComInterfaceType.InterfaceIsIInspectable) } } })));
+
+        // Make sure the WinRT marshaler was not brought in
+        Assert.Empty(this.FindGeneratedType(WinRTCustomMarshalerClass));
+    }
+
+    [Fact]
+    public void WinRTInterfaceDoesntBringInMarshalerIfParamNotObject()
+    {
+        const string WinRTInteropInterfaceName = "IGraphicsEffectD2D1Interop";
+
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate(WinRTInteropInterfaceName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        // Make sure the WinRT marshaler was not brought in
+        Assert.Empty(this.FindGeneratedType(WinRTCustomMarshalerClass));
+    }
+
+    [Fact]
+    public void WinRTInterfaceWithWinRTOutObjectUsesMarshaler()
+    {
+        const string WinRTInteropInterfaceName = "ICompositorDesktopInterop";
+        const string WinRTClassName = "Windows.UI.Composition.Desktop.DesktopWindowTarget";
+
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate(WinRTInteropInterfaceName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        InterfaceDeclarationSyntax interfaceDeclaration = (InterfaceDeclarationSyntax)Assert.Single(this.FindGeneratedType(WinRTInteropInterfaceName));
+        MethodDeclarationSyntax method = (MethodDeclarationSyntax)interfaceDeclaration.Members.First();
+        ParameterSyntax lastParam = method.ParameterList.Parameters.Last();
+
+        Assert.Equal(WinRTClassName, lastParam.Type?.ToString());
+        Assert.True(lastParam.Modifiers.Any(SyntaxKind.OutKeyword));
+
+        AttributeSyntax marshalAsAttr = Assert.Single(FindAttribute(lastParam.AttributeLists, "MarshalAs"));
+
+        Assert.True(marshalAsAttr.ArgumentList?.Arguments[0].ToString() == "UnmanagedType.CustomMarshaler");
+        Assert.Single(marshalAsAttr.ArgumentList?.Arguments.Where(arg => arg.ToString() == $"MarshalCookie = \"{WinRTClassName}\""));
+        Assert.Single(marshalAsAttr.ArgumentList?.Arguments.Where(arg => arg.ToString() == $"MarshalType = \"{WinRTCustomMarshalerFullName}\""));
+
+        // Make sure the WinRT marshaler was brought in
+        Assert.Single(this.FindGeneratedType(WinRTCustomMarshalerClass));
     }
 
     [Fact]
@@ -2009,6 +2058,8 @@ namespace Windows.Win32
     private static ImmutableArray<Diagnostic> FilterDiagnostics(ImmutableArray<Diagnostic> diagnostics) => diagnostics.Where(d => d.Severity > DiagnosticSeverity.Hidden).ToImmutableArray();
 
     private static bool IsAttributePresent(AttributeListSyntax al, string attributeName) => al.Attributes.Any(a => a.Name.ToString() == attributeName);
+
+    private static IEnumerable<AttributeSyntax> FindAttribute(SyntaxList<AttributeListSyntax> attributeLists, string name) => attributeLists.SelectMany(al => al.Attributes).Where(a => a.Name.ToString() == name);
 
     private CSharpCompilation AddGeneratedCode(CSharpCompilation compilation, Generator generator)
     {

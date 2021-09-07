@@ -28,9 +28,9 @@
     <IncludeSymbols Condition=" '$(DebugType)' != 'embedded' ">true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
 
-    <MetadataVersion>10.2.179-preview-g98239ddf1d</MetadataVersion>
     <DiaMetadataVersion>0.2.185-preview-g7e1e6a442c</DiaMetadataVersion>
-    <ApiDocsVersion>0.1.5-alpha-g83f1525e8f</ApiDocsVersion>
+    <MetadataVersion>10.2.185-preview</MetadataVersion>
+    <ApiDocsVersion>0.1.6-alpha</ApiDocsVersion>
   </PropertyGroup>
 
   <ItemGroup>

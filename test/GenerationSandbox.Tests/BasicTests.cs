@@ -293,20 +293,28 @@ public class BasicTests
     public void FixedCharArrayToString_Length()
     {
         Windows.Win32.System.RestartManager.RM_PROCESS_INFO info = default;
-        info.strAppName._0 = 'H';
-        info.strAppName._1 = 'i';
-        Assert.Equal("Hi", info.strAppName.ToString(2));
-        Assert.Equal("Hi\0\0", info.strAppName.ToString(4));
+        info.strServiceShortName._0 = 'H';
+        info.strServiceShortName._1 = 'i';
+        Assert.Equal("Hi", info.strServiceShortName.ToString(2));
+        Assert.Equal("Hi\0\0", info.strServiceShortName.ToString(4));
     }
 
-#if NETCOREAPP2_1_OR_GREATER
     [Fact]
-    public void FixedCharArrayToString()
+    public unsafe void FixedCharArrayToString()
     {
-        Windows.Win32.System.RestartManager.RM_PROCESS_INFO info = default;
-        info.strAppName._0 = 'H';
-        info.strAppName._1 = 'i';
-        Assert.Equal("Hi", info.strAppName.ToString());
+        Windows.Win32.System.RestartManager.RM_PROCESS_INFO.__char_64 fixedCharArray = default;
+        Assert.Equal(string.Empty, fixedCharArray.ToString());
+        fixedCharArray._0 = 'H';
+        Assert.Equal("H", fixedCharArray.ToString());
+        fixedCharArray._1 = 'i';
+        Assert.Equal("Hi", fixedCharArray.ToString());
+
+        char* p = &fixedCharArray._0;
+        for (int i = 0; i < fixedCharArray.Length; i++)
+        {
+            *(p + i) = 'x';
+        }
+
+        Assert.Equal(new string('x', fixedCharArray.Length), fixedCharArray.ToString());
     }
-#endif
 }

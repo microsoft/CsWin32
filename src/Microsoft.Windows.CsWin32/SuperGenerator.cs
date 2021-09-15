@@ -7,9 +7,7 @@ namespace Microsoft.Windows.CsWin32
     using System.Collections.Generic;
     using System.Collections.Immutable;
     using System.Diagnostics.CodeAnalysis;
-    using System.Linq;
     using System.Reflection.Metadata;
-    using System.Text;
 
     /// <summary>
     /// A coordinator of many <see cref="Generator"/> objects, allowing code to be generated that requires types from across many input winmd's.

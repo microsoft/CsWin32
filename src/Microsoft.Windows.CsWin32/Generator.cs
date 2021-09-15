@@ -14,7 +14,6 @@ namespace Microsoft.Windows.CsWin32
     using System.Linq;
     using System.Reflection;
     using System.Reflection.Metadata;
-    using System.Reflection.PortableExecutable;
     using System.Runtime.CompilerServices;
     using System.Runtime.InteropServices;
     using System.Text;
@@ -4412,8 +4411,7 @@ namespace Microsoft.Windows.CsWin32
                                         BinaryExpression(SyntaxKind.LessThanExpression, IdentifierName("length"), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))),
                                         BinaryExpression(SyntaxKind.GreaterThanExpression, IdentifierName("length"), IdentifierName("Length"))),
                                     ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentOutOfRangeException))).AddArgumentListArguments(
-                                        Argument(InvocationExpression(IdentifierName("nameof")).AddArgumentListArguments(
-                                            Argument(IdentifierName("length")))),
+                                        Argument(InvocationExpression(IdentifierName("nameof"), ArgumentList().AddArguments(Argument(IdentifierName("length"))))),
                                         Argument(IdentifierName("length")),
                                         Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal("Length must be between 0 and the fixed array length.")))))),
                                 FixedStatement(
@@ -4441,23 +4439,25 @@ namespace Microsoft.Windows.CsWin32
                                 .WithBody(Block(
                                     LocalDeclarationStatement(VariableDeclaration(IdentifierName("var")).AddVariables(
                                         VariableDeclarator(Identifier("terminatorIndex")).WithInitializer(EqualsValueClause(
-                                            InvocationExpression(MemberAccessExpression(
+                                            InvocationExpression(
+                                                MemberAccessExpression(
                                                     SyntaxKind.SimpleMemberAccessExpression,
                                                     InvocationExpression(IdentifierName("AsSpan")),
-                                                    IdentifierName(nameof(MemoryExtensions.IndexOf))))
-                                                .AddArgumentListArguments(Argument(LiteralExpression(
-                                                    SyntaxKind.CharacterLiteralExpression,
-                                                    Literal('\0')))))))),
-                                    ReturnStatement(InvocationExpression(IdentifierName("ToString")).AddArgumentListArguments(
-                                        Argument(ConditionalExpression(
-                                            BinaryExpression(
-                                                SyntaxKind.NotEqualsExpression,
+                                                    IdentifierName(nameof(MemoryExtensions.IndexOf))),
+                                                ArgumentList().AddArguments(
+                                                    Argument(LiteralExpression(SyntaxKind.CharacterLiteralExpression, Literal('\0'))))))))),
+                                    ReturnStatement(InvocationExpression(
+                                        IdentifierName("ToString"),
+                                        ArgumentList().AddArguments(
+                                            Argument(ConditionalExpression(
+                                                BinaryExpression(
+                                                    SyntaxKind.NotEqualsExpression,
+                                                    IdentifierName("terminatorIndex"),
+                                                    PrefixUnaryExpression(
+                                                        SyntaxKind.UnaryMinusExpression,
+                                                        LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(1)))),
                                                 IdentifierName("terminatorIndex"),
-                                                PrefixUnaryExpression(
-                                                    SyntaxKind.UnaryMinusExpression,
-                                                    LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(1)))),
-                                            IdentifierName("terminatorIndex"),
-                                            IdentifierName("Length")))))))
+                                                IdentifierName("Length"))))))))
                                 .WithLeadingTrivia(InlineCharArrayToStringComment));
                     }
                 }

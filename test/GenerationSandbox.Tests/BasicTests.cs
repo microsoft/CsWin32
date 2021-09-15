@@ -4,7 +4,6 @@
 using System;
 using System.ComponentModel;
 using System.IO;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Windows.Win32;
 using Windows.Win32.Foundation;
@@ -289,4 +288,25 @@ public class BasicTests
             },
             (LPARAM)0);
     }
+
+    [Fact]
+    public void FixedCharArrayToString_Length()
+    {
+        Windows.Win32.System.RestartManager.RM_PROCESS_INFO info = default;
+        info.strAppName._0 = 'H';
+        info.strAppName._1 = 'i';
+        Assert.Equal("Hi", info.strAppName.ToString(2));
+        Assert.Equal("Hi\0\0", info.strAppName.ToString(4));
+    }
+
+#if NETCOREAPP2_1_OR_GREATER
+    [Fact]
+    public void FixedCharArrayToString()
+    {
+        Windows.Win32.System.RestartManager.RM_PROCESS_INFO info = default;
+        info.strAppName._0 = 'H';
+        info.strAppName._1 = 'i';
+        Assert.Equal("Hi", info.strAppName.ToString());
+    }
+#endif
 }

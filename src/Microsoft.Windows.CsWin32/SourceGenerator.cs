@@ -4,6 +4,7 @@
 namespace Microsoft.Windows.CsWin32
 {
     using System;
+    using System.Collections.Generic;
     using System.IO;
     using System.Linq;
     using System.Text;

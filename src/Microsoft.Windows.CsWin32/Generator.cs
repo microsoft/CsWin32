@@ -4342,7 +4342,7 @@ namespace Microsoft.Windows.CsWin32
                 }
 
                 var fixedLengthStruct = StructDeclaration(fixedLengthStructName.Identifier)
-                    .AddModifiers(TokenWithSpace(this.Visibility))
+                    .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.PartialKeyword))
                     .AddMembers(
                         FieldDeclaration(VariableDeclaration(elementType)
                             .AddVariables(Enumerable.Range(0, length).Select(n => VariableDeclarator(Identifier($"_{n}"))).ToArray()))

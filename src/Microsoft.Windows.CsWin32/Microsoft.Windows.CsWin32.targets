@@ -3,20 +3,9 @@
     <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);PackBuildOutputs</TargetsForTfmSpecificContentInPackage>
   </PropertyGroup>
 
-  <Target Name="GenerateAndConsumeDocsYaml"
-          DependsOnTargets="ResolveProjectReferences"
-          BeforeTargets="CoreCompile"
-          Inputs="@(ScraperTool)"
-          Outputs="@(YamlDocOutputPath)"
-          Condition=" '$(DesignTimeBuild)' != 'true' ">
-    <Message Importance="high" Text="Regenerating @(YamlDocOutputPath->'%(FullPath)'). This may take a few minutes..." />
-    <Exec Command="dotnet @(ScraperTool) ../../ext/sdk-api/sdk-api-src/content @(YamlDocOutputPath)"
-          StandardOutputImportance="high"/>
-  </Target>
-
   <Target Name="SetNuSpecProperties" BeforeTargets="GenerateNuspec" DependsOnTargets="GetBuildVersion">
     <PropertyGroup>
-      <NuspecProperties>$(NuspecProperties);Version=$(Version);BaseOutputPath=$(OutputPath);MetadataVersion=$(MetadataVersion);PackageReleaseNotes=$(PackageReleaseNotes);commit=$(GitCommitId);</NuspecProperties>
+      <NuspecProperties>$(NuspecProperties);Version=$(Version);BaseOutputPath=$(OutputPath);MetadataVersion=$(MetadataVersion);ApiDocsVersion=$(ApiDocsVersion);PackageReleaseNotes=$(PackageReleaseNotes);commit=$(GitCommitId);</NuspecProperties>
     </PropertyGroup>
   </Target>
 
@@ -24,7 +13,8 @@
     <ItemGroup>
       <!-- Analysis of C# projects -->
       <TfmSpecificPackageFile Include="$(TargetPath)" PackagePath="analyzers\cs\" />
-      <TfmSpecificPackageFile Include="@(ReferencePath)" PackagePath="analyzers\cs\" Condition=" '%(FileName)%(Extension)' == 'YamlDotNet.dll' " />
+      <TfmSpecificPackageFile Include="@(ReferencePath)" PackagePath="analyzers\cs\" Condition=" '%(FileName)%(Extension)' == 'MessagePack.dll' " />
+      <TfmSpecificPackageFile Include="@(ReferencePath)" PackagePath="analyzers\cs\" Condition=" '%(FileName)%(Extension)' == 'MessagePack.Annotations.dll' " />
       <TfmSpecificPackageFile Include="@(ReferencePath)" PackagePath="analyzers\cs\" Condition=" '%(FileName)%(Extension)' == 'Microsoft.Bcl.AsyncInterfaces.dll' " />
       <TfmSpecificPackageFile Include="@(ReferencePath)" PackagePath="analyzers\cs\" Condition=" '%(FileName)%(Extension)' == 'System.Text.Json.dll' " />
       <TfmSpecificPackageFile Include="@(ReferencePath)" PackagePath="analyzers\cs\" Condition=" '%(FileName)%(Extension)' == 'System.Text.Encodings.Web.dll' " />

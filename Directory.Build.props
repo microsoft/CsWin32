@@ -8,9 +8,13 @@
     <LangVersion>9.0</LangVersion>
     <Nullable>enable</Nullable>
     <AnalysisLevel>latest</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+
+    <!-- Local builds should embed PDBs so we never lose them when a subsequent build occurs. -->
+    <DebugType Condition=" '$(CI)' != 'true' and '$(TF_BUILD)' != 'true' ">embedded</DebugType>
 
     <SignAssembly>true</SignAssembly>
     <AssemblyOriginatorKeyFile>$(MSBuildThisFileDirectory)\strongname.snk</AssemblyOriginatorKeyFile>
@@ -22,19 +26,22 @@
     <PackageProjectUrl>https://github.com/Microsoft/CsWin32</PackageProjectUrl>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
-    <IncludeSymbols>true</IncludeSymbols>
+    <IncludeSymbols Condition=" '$(DebugType)' != 'embedded' ">true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
 
-    <MetadataVersion>10.2.84-preview</MetadataVersion>
+    <MetadataVersion>10.2.185-preview</MetadataVersion>
+    <!-- <DiaMetadataVersion>0.2.185-preview-g7e1e6a442c</DiaMetadataVersion> -->
+    <ApiDocsVersion>0.1.6-alpha</ApiDocsVersion>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="5.0.3" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.Net.Compilers.Toolset" Version="3.11.0" PrivateAssets="all" />
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.2" PrivateAssets="all" />
     <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.0.0" PrivateAssets="all" />
-    <PackageReference Include="Nerdbank.GitVersioning" Version="3.4.216" PrivateAssets="all" />
+    <PackageReference Include="Nerdbank.GitVersioning" Version="3.4.231" PrivateAssets="all" />
     <PackageReference Include="Nullable" Version="1.3.0" PrivateAssets="all" />
-    <PackageReference Include="StyleCop.Analyzers" Version="1.2.0-beta.321" PrivateAssets="all" />
+    <PackageReference Include="StyleCop.Analyzers" Version="1.2.0-beta.333" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>

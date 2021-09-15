@@ -14,10 +14,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <YamlDocOutputPath Include="../../obj/$(Configuration)/apidocs.yml" Visible="false" />
-  </ItemGroup>
-
-  <ItemGroup>
     <Compile Remove="templates\**\*.cs" />
   </ItemGroup>
 
@@ -37,7 +33,6 @@
 
   <ItemGroup>
     <EmbeddedResource Include="templates\**\*.cs" />
-    <EmbeddedResource Include="@(YamlDocOutputPath)" />
   </ItemGroup>
 
   <ItemDefinitionGroup>
@@ -47,18 +42,15 @@
   </ItemDefinitionGroup>
 
   <ItemGroup>
+    <PackageReference Include="MessagePack" Version="2.2.85" />
     <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="3.3.2" PrivateAssets="all" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="3.8.0" />
-    <PackageReference Include="Nullable" Version="1.3.0" />
-    <PackageReference Include="System.Reflection.Metadata" Version="5.0.0" />
     <PackageReference Include="Microsoft.Windows.SDK.Win32Metadata" Version="$(MetadataVersion)" GeneratePathProperty="true" PrivateAssets="none" />
-    <PackageReference Include="System.Text.Json" Version="4.7.2" />
-    <PackageReference Include="YamlDotNet" Version="11.1.1" />
+    <PackageReference Include="Microsoft.Windows.SDK.Win32Docs" Version="$(ApiDocsVersion)" GeneratePathProperty="true" PrivateAssets="none" />
+    <PackageReference Include="Nullable" Version="1.3.0" />
     <PackageReference Include="System.Memory" Version="4.5.4" PrivateAssets="none" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\ScrapeDocs\ScrapeDocs.csproj" ReferenceOutputAssembly="false" OutputItemType="ScraperTool" SetTargetFramework="TargetFramework=net5.0" />
+    <PackageReference Include="System.Reflection.Metadata" Version="5.0.0" />
+    <PackageReference Include="System.Text.Json" Version="4.7.2" />
   </ItemGroup>
 
   <Import Project="$(MSBuildProjectName).targets" />

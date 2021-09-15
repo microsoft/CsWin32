@@ -174,7 +174,7 @@ namespace Microsoft.Windows.CsWin32
         internal static XmlCrefAttributeSyntax XmlCrefAttribute(CrefSyntax cref, SyntaxKind quoteKind)
         {
             cref = cref.ReplaceTokens(cref.DescendantTokens(), XmlReplaceBracketTokens);
-            return SyntaxFactory.XmlCrefAttribute(XmlName("cref"), Token(SyntaxKind.EqualsToken), Token(quoteKind), cref, Token(quoteKind)).WithLeadingTrivia(TriviaList(Space));
+            return SyntaxFactory.XmlCrefAttribute(XmlName("cref"), TokenWithNoSpace(SyntaxKind.EqualsToken), Token(quoteKind), cref, Token(quoteKind)).WithLeadingTrivia(TriviaList(Space));
         }
 
         internal static CrefParameterSyntax CrefParameter(TypeSyntax type) => SyntaxFactory.CrefParameter(default, type);
@@ -343,7 +343,9 @@ namespace Microsoft.Windows.CsWin32
 
         internal static SyntaxToken Identifier(SyntaxTriviaList leading, string text, SyntaxTriviaList trailing) => SyntaxFactory.Identifier(leading, text, trailing);
 
-        internal static GenericNameSyntax GenericName(string text) => SyntaxFactory.GenericName(Identifier(text), TypeArgumentList());
+        internal static GenericNameSyntax GenericName(string text) => GenericName(text, TypeArgumentList());
+
+        internal static GenericNameSyntax GenericName(string text, TypeArgumentListSyntax typeArgumentList) => SyntaxFactory.GenericName(Identifier(text), typeArgumentList);
 
         internal static TypeArgumentListSyntax TypeArgumentList(SeparatedSyntaxList<TypeSyntax> types = default) => SyntaxFactory.TypeArgumentList(Token(SyntaxKind.LessThanToken), types, Token(SyntaxKind.GreaterThanToken));
 
@@ -422,6 +424,8 @@ namespace Microsoft.Windows.CsWin32
         internal static IdentifierNameSyntax IdentifierName(string name) => SyntaxFactory.IdentifierName(Identifier(name));
 
         internal static IdentifierNameSyntax IdentifierName(SyntaxToken identifier) => SyntaxFactory.IdentifierName(identifier);
+
+        private static SyntaxToken TokenWithNoSpace(SyntaxKind kind) => Token(TriviaList(), kind, TriviaList());
 
         private static SyntaxToken TokenWithSpace(SyntaxKind kind) => Token(TriviaList(), kind, TriviaList(Space));
 

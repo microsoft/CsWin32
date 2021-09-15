@@ -53,17 +53,18 @@ When generating any type or member, all supporting types will also be generated.
 Generated code is added directly in the compiler.
 An IDE may make this generated code available to view through code navigation commands (e.g. Go to Definition) or a tree view of source files that include generated source files.
 
-Assuming default settings and a `NativeMethods.txt` file with content that includes `CreateFile`, the P/Invoke methods can be found on the `Microsoft.Windows.Sdk.PInvoke` class, like this:
+Assuming default settings and a `NativeMethods.txt` file with content that includes `CreateFile`, the P/Invoke methods can be found on the `Windows.Win32.PInvoke` class, like this:
 
 ```cs
-using Microsoft.Windows.Sdk;
+using Windows.Win32;
 
 PInvoke.CreateFile(/*args*/);
 ```
 
-Constants are defined on the `Microsoft.Windows.Sdk.Constants` class.
+Constants are defined on the `Windows.Win32.Constants` class.
 
-Other supporting types are defined within the `Microsoft.Windows.Sdk` namespace.
+Other supporting types are defined within or under the `Windows.Win32` namespace.
+Discovery of the namespace for a given type can be done with the Go To All feature (Ctrl+T) in Visual Studio with the type name as the search query.
 
 ### Customizing generated code
 
@@ -86,6 +87,15 @@ Specifying the `$schema` property adds completions, descriptions and validation 
 }
 ```
 
+Most generated types include the `partial` modifier so you can add your own members to that type within your code.
+
+When you need to *replace* a generated type, simply copy and paste it from generated code into your own source files
+and remove the `partial` modifier.
+Be sure to keep the name and namespace exactly the same.
+CsWin32 will notice that your project already declares the type and skip generating it, but generate everything else.
+Note that if that type is the only thing that references some other generated type, CsWin32 will stop generating that type too.
+To keep CsWin32 generating the referred types you need, add them explicitly to `NativeMethods.txt`.
+
 ### Newer metadata
 
 To update the metadata used as the source for code generation, you may install a newer `Microsoft.Windows.SDK.Win32Metadata` package:
@@ -104,6 +114,7 @@ Alternatively, you may set the `MicrosoftWindowsSdkWin32MetadataBasePath` proper
 
 - [**WPF projects** issue and workaround](https://github.com/microsoft/CsWin32/issues/7).
 - [**WinUI / Reunion** issue](https://github.com/microsoft/CsWin32/issues/231)
+- [**Jetbrains Rider** issue](https://github.com/microsoft/CsWin32/issues/298)
 
 ## Consuming daily builds
 

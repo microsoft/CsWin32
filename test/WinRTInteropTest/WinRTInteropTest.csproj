@@ -2,8 +2,9 @@
   <Import Project="..\..\src\Microsoft.Windows.CsWin32\build\Microsoft.Windows.CsWin32.props" />
 
   <PropertyGroup>
-    <TargetFrameworks>net5.0-windows7.0;netcoreapp3.1;net472</TargetFrameworks>
-    <RootNamespace />
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net5.0-windows10.0.19041.0</TargetFramework>
+    <Nullable>disable</Nullable>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,18 +17,8 @@
     <Analyzer Include="$(RepoRootPath)\bin\Microsoft.Windows.CsWin32\$(Configuration)\netstandard2.0\MessagePack.Annotations.dll" />
   </ItemGroup>
 
-  <ProjectExtensions>
-    <VisualStudio><UserProperties nativemethods_1json__JsonSchema="..\..\src\Microsoft.Windows.CsWin32\settings.schema.json" /></VisualStudio>
-  </ProjectExtensions>
-
   <ItemGroup>
     <PackageReference Include="Microsoft.Windows.SDK.Win32Metadata" Version="$(MetadataVersion)" GeneratePathProperty="true" PrivateAssets="none" />
-    <!-- <PackageReference Include="Microsoft.Dia.Win32Metadata" Version="$(DiaMetadataVersion)" PrivateAssets="none" /> -->
-    <PackageReference Include="coverlet.msbuild" Version="3.1.0" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="16.11.0" />
-    <PackageReference Include="System.Memory" Version="4.5.4" />
-    <PackageReference Include="xunit" Version="2.4.1" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="2.4.3" />
   </ItemGroup>
 
 </Project>

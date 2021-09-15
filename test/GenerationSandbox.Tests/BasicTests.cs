@@ -4,6 +4,7 @@
 using System;
 using System.ComponentModel;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Windows.Win32;
 using Windows.Win32.Foundation;
@@ -40,6 +41,14 @@ public class BasicTests
         // TODO: write code that sets/gets memory on the inner struct (e.g. videoStandard).
     }
 
+    ////[Fact]
+    ////public void E_PDB_LIMIT()
+    ////{
+    ////    // We are very particular about the namespace the generated type comes from to ensure it is as expected.
+    ////    HRESULT hr = global::Microsoft.Dia.Constants.E_PDB_LIMIT;
+    ////    Assert.Equal(-2140340211, hr.Value);
+    ////}
+
     [Fact]
     public void Bool()
     {
@@ -49,6 +58,37 @@ public class BasicTests
         Assert.True(b2);
 
         Assert.False(default(BOOL));
+    }
+
+    [Theory]
+    [InlineData(3)]
+    [InlineData(-1)]
+    public void NotLossyConversionBetweenBoolAndBOOL(int ordinal)
+    {
+        BOOL nativeBool = new BOOL(ordinal);
+        bool managedBool = nativeBool;
+        BOOL roundtrippedNativeBool = managedBool;
+        Assert.Equal(nativeBool, roundtrippedNativeBool);
+    }
+
+    [Theory]
+    [InlineData(3)]
+    [InlineData(-1)]
+    public void NotLossyConversionBetweenBoolAndBOOL_Ctors(int ordinal)
+    {
+        BOOL nativeBool = new BOOL(ordinal);
+        bool managedBool = nativeBool;
+        BOOL roundtrippedNativeBool = new BOOL(managedBool);
+        Assert.Equal(nativeBool, roundtrippedNativeBool);
+    }
+
+    [Fact]
+    public void BOOLEqualsComparesExactValue()
+    {
+        BOOL b1 = new BOOL(1);
+        BOOL b2 = new BOOL(2);
+        Assert.Equal(b1, b1);
+        Assert.NotEqual(b1, b2);
     }
 
     [Fact]

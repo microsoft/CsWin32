@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
@@ -18,12 +19,21 @@ using Microsoft.Windows.CsWin32;
 using Microsoft.Windows.CsWin32.Tests;
 using Xunit;
 using Xunit.Abstractions;
+using VerifyTest = Microsoft.CodeAnalysis.CSharp.Testing.CSharpSourceGeneratorTest<
+    Microsoft.Windows.CsWin32.SourceGenerator,
+    Microsoft.CodeAnalysis.Testing.Verifiers.XUnitVerifier>;
 
 public class GeneratorTests : IDisposable, IAsyncLifetime
 {
+    private const string WinRTCustomMarshalerClass = "WinRTCustomMarshaler";
+    private const string WinRTCustomMarshalerNamespace = "Windows.Win32.CsWin32.InteropServices";
+    private const string WinRTCustomMarshalerFullName = WinRTCustomMarshalerNamespace + "." + WinRTCustomMarshalerClass;
+
     private static readonly GeneratorOptions DefaultTestGeneratorOptions = new GeneratorOptions { EmitSingleFile = true };
     private static readonly string FileSeparator = new string('=', 140);
     private static readonly string MetadataPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "Windows.Win32.winmd");
+    ////private static readonly string DiaMetadataPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "Microsoft.Dia.winmd");
+    private static readonly string ApiDocsPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "apidocs.msgpack");
     private readonly ITestOutputHelper logger;
     private readonly Dictionary<string, CSharpCompilation> starterCompilations = new();
     private CSharpCompilation compilation;
@@ -87,7 +97,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.compilation = this.starterCompilations[tfm];
         this.generator = this.CreateGenerator();
         const string methodName = "GetTickCount";
-        Assert.True(this.generator.TryGenerateExternMethod(methodName));
+        Assert.True(this.generator.TryGenerateExternMethod(methodName, out _));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
 
@@ -260,6 +270,51 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
         Assert.Contains(this.FindGeneratedType(ifaceName), t => t.BaseList is null && ((InterfaceDeclarationSyntax)t).Members.Count == 1 && t.AttributeLists.Any(al => al.Attributes.Any(a => a.Name is IdentifierNameSyntax { Identifier: { ValueText: "InterfaceType" } } && a.ArgumentList?.Arguments[0].Expression is MemberAccessExpressionSyntax { Name: IdentifierNameSyntax { Identifier: { ValueText: nameof(ComInterfaceType.InterfaceIsIInspectable) } } })));
+
+        // Make sure the WinRT marshaler was not brought in
+        Assert.Empty(this.FindGeneratedType(WinRTCustomMarshalerClass));
+    }
+
+    [Fact]
+    public void WinRTInterfaceDoesntBringInMarshalerIfParamNotObject()
+    {
+        const string WinRTInteropInterfaceName = "IGraphicsEffectD2D1Interop";
+
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate(WinRTInteropInterfaceName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        // Make sure the WinRT marshaler was not brought in
+        Assert.Empty(this.FindGeneratedType(WinRTCustomMarshalerClass));
+    }
+
+    [Fact]
+    public void WinRTInterfaceWithWinRTOutObjectUsesMarshaler()
+    {
+        const string WinRTInteropInterfaceName = "ICompositorDesktopInterop";
+        const string WinRTClassName = "Windows.UI.Composition.Desktop.DesktopWindowTarget";
+
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate(WinRTInteropInterfaceName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        InterfaceDeclarationSyntax interfaceDeclaration = (InterfaceDeclarationSyntax)Assert.Single(this.FindGeneratedType(WinRTInteropInterfaceName));
+        MethodDeclarationSyntax method = (MethodDeclarationSyntax)interfaceDeclaration.Members.First();
+        ParameterSyntax lastParam = method.ParameterList.Parameters.Last();
+
+        Assert.Equal(WinRTClassName, lastParam.Type?.ToString());
+        Assert.True(lastParam.Modifiers.Any(SyntaxKind.OutKeyword));
+
+        AttributeSyntax marshalAsAttr = Assert.Single(FindAttribute(lastParam.AttributeLists, "MarshalAs"));
+
+        Assert.True(marshalAsAttr.ArgumentList?.Arguments[0].ToString() == "UnmanagedType.CustomMarshaler");
+        Assert.Single(marshalAsAttr.ArgumentList?.Arguments.Where(arg => arg.ToString() == $"MarshalCookie = \"{WinRTClassName}\""));
+        Assert.Single(marshalAsAttr.ArgumentList?.Arguments.Where(arg => arg.ToString() == $"MarshalType = \"{WinRTCustomMarshalerFullName}\""));
+
+        // Make sure the WinRT marshaler was brought in
+        Assert.Single(this.FindGeneratedType(WinRTCustomMarshalerClass));
     }
 
     [Fact]
@@ -277,8 +332,10 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public void AmbiguousApiName()
     {
         this.generator = this.CreateGenerator();
-        var ex = Assert.Throws<ArgumentException>(() => this.generator.TryGenerate("IDENTITY_TYPE", CancellationToken.None));
-        this.logger.WriteLine(ex.Message);
+        Assert.False(this.generator.TryGenerate("IDENTITY_TYPE", out IReadOnlyList<string> preciseApi, CancellationToken.None));
+        Assert.Equal(2, preciseApi.Count);
+        Assert.Contains("Windows.Win32.NetworkManagement.NetworkPolicyServer.IDENTITY_TYPE", preciseApi);
+        Assert.Contains("Windows.Win32.Security.Authentication.Identity.Provider.IDENTITY_TYPE", preciseApi);
     }
 
     [Fact]
@@ -325,16 +382,39 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
                 && createFileMethod.ParameterList.Parameters.Last().Type?.ToString() == "SafeHandle");
     }
 
+    /// <summary>
+    /// GetMessage should return BOOL rather than bool because it actually returns any of THREE values.
+    /// </summary>
     [Fact]
-    public void BOOL_ReturnTypeBecomes_Boolean()
+    public void GetMessageW_ReturnsBOOL()
     {
         this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate("WinUsb_FlushPipe", CancellationToken.None));
+        Assert.True(this.generator.TryGenerate("GetMessage", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
-        MethodDeclarationSyntax? createFileMethod = this.FindGeneratedMethod("WinUsb_FlushPipe").FirstOrDefault();
-        Assert.NotNull(createFileMethod);
-        Assert.Equal(SyntaxKind.BoolKeyword, Assert.IsType<PredefinedTypeSyntax>(createFileMethod!.ReturnType).Keyword.Kind());
+        Assert.All(this.FindGeneratedMethod("GetMessage"), method => Assert.True(method.ReturnType is QualifiedNameSyntax { Right: { Identifier: { ValueText: "BOOL" } } }));
+    }
+
+    [Theory, PairwiseData]
+    public void NativeArray_OfManagedTypes_MarshaledAsLPArray(bool allowMarshaling)
+    {
+        const string ifaceName = "ID3D11DeviceContext";
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling });
+        Assert.True(this.generator.TryGenerate(ifaceName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        var generatedMethod = this.FindGeneratedMethod("OMSetRenderTargets").Where(m => m.ParameterList.Parameters.Count == 3 && m.ParameterList.Parameters[0].Identifier.ValueText == "NumViews").FirstOrDefault();
+        Assert.NotNull(generatedMethod);
+
+        if (allowMarshaling)
+        {
+            Assert.Contains(generatedMethod!.ParameterList.Parameters[1].AttributeLists, al => IsAttributePresent(al, "MarshalAs"));
+        }
+        else
+        {
+            Assert.DoesNotContain(generatedMethod!.ParameterList.Parameters[1].AttributeLists, al => IsAttributePresent(al, "MarshalAs"));
+        }
     }
 
     [Theory, PairwiseData]
@@ -500,6 +580,21 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         Assert.True(foundStringOverload, "string overload is missing.");
         Assert.Equal(2, overloads.Count());
     }
+
+    ////[Fact]
+    ////public void CrossWinmdTypeReference()
+    ////{
+    ////    this.generator = this.CreateGenerator();
+    ////    using Generator diaGenerator = this.CreateGenerator(DiaMetadataPath);
+    ////    var super = SuperGenerator.Combine(this.generator, diaGenerator);
+    ////    Assert.True(diaGenerator.TryGenerate("E_PDB_NOT_FOUND", CancellationToken.None));
+    ////    this.CollectGeneratedCode(this.generator);
+    ////    this.CollectGeneratedCode(diaGenerator);
+    ////    this.AssertNoDiagnostics();
+
+    ////    Assert.Single(this.FindGeneratedType("HRESULT"));
+    ////    Assert.Single(this.FindGeneratedConstant("E_PDB_NOT_FOUND"));
+    ////}
 
     [Theory, CombinatorialData]
     public void ArchitectureSpecificAPIsTreatment(
@@ -848,9 +943,1164 @@ namespace Microsoft.Windows.Sdk
         this.AssertNoDiagnostics();
     }
 
+    [Fact]
+    public async Task TestSimpleStructure()
+    {
+        await new VerifyTest
+        {
+            TestState =
+            {
+                ReferenceAssemblies = MyReferenceAssemblies.NetStandard20,
+                AdditionalFiles =
+                {
+                    ("NativeMethods.txt", "BOOL"),
+                },
+                AnalyzerConfigFiles =
+                {
+                    ("/.globalconfig", ConstructGlobalConfigString()),
+                },
+                GeneratedSources =
+                {
+                    (typeof(SourceGenerator), "Windows.Win32.BOOL.g.cs", @"// ------------------------------------------------------------------------------
+// <auto-generated>
+//     This code was generated by a tool.
+//
+//     Changes to this file may cause incorrect behavior and will be lost if
+//     the code is regenerated.
+// </auto-generated>
+// ------------------------------------------------------------------------------
+
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+namespace Windows.Win32
+{
+	using global::System;
+	using global::System.Diagnostics;
+	using global::System.Runtime.CompilerServices;
+	using global::System.Runtime.InteropServices;
+	using win32 = global::Windows.Win32;
+
+	namespace Foundation
+	{
+		internal readonly partial struct BOOL
+		{
+			private readonly int value;
+
+			internal int Value => this.value;
+			internal BOOL(bool value) => this.value = Unsafe.As<bool,sbyte>(ref value);
+			internal BOOL(int value) => this.value = value;
+			public static implicit operator bool(BOOL value)
+			{
+				sbyte v = checked((sbyte)value.value);
+				return Unsafe.As<sbyte,bool>(ref v);
+			}
+			public static implicit operator BOOL(bool value) => new BOOL(value);
+			public static explicit operator BOOL(int value) => new BOOL(value);
+		}
+	}
+}
+".Replace("\r\n", "\n")),
+                },
+            },
+        }.RunAsync();
+    }
+
+    [Fact]
+    public async Task TestSimpleEnum()
+    {
+        await new VerifyTest
+        {
+            TestState =
+            {
+                ReferenceAssemblies = MyReferenceAssemblies.NetStandard20,
+                AdditionalFiles =
+                {
+                    ("NativeMethods.txt", "DISPLAYCONFIG_SCANLINE_ORDERING"),
+                },
+                AnalyzerConfigFiles =
+                {
+                    ("/.globalconfig", ConstructGlobalConfigString()),
+                },
+                GeneratedSources =
+                {
+                    (typeof(SourceGenerator), "Windows.Win32.DISPLAYCONFIG_SCANLINE_ORDERING.g.cs", @"// ------------------------------------------------------------------------------
+// <auto-generated>
+//     This code was generated by a tool.
+//
+//     Changes to this file may cause incorrect behavior and will be lost if
+//     the code is regenerated.
+// </auto-generated>
+// ------------------------------------------------------------------------------
+
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+namespace Windows.Win32
+{
+	using global::System;
+	using global::System.Diagnostics;
+	using global::System.Runtime.CompilerServices;
+	using global::System.Runtime.InteropServices;
+	using win32 = global::Windows.Win32;
+
+	namespace UI.DisplayDevices
+	{
+		/// <summary>The DISPLAYCONFIG_SCANLINE_ORDERING enumeration specifies the method that the display uses to create an image on a screen.</summary>
+		/// <remarks>
+		/// <para><see href=""https://docs.microsoft.com/windows/win32/api//wingdi/ne-wingdi-displayconfig_scanline_ordering"">Learn more about this API from docs.microsoft.com</see>.</para>
+		/// </remarks>
+		internal enum DISPLAYCONFIG_SCANLINE_ORDERING
+		{
+			/// <summary>Indicates that scan-line ordering of the output is unspecified. The caller can only set the <b>scanLineOrdering</b> member of the <a href=""https://docs.microsoft.com/windows/desktop/api/wingdi/ns-wingdi-displayconfig_path_target_info"">DISPLAYCONFIG_PATH_TARGET_INFO</a> structure in a call to the <a href=""https://docs.microsoft.com/windows/desktop/api/winuser/nf-winuser-setdisplayconfig"">SetDisplayConfig</a> function to DISPLAYCONFIG_SCANLINE_ORDERING_UNSPECIFIED if the caller also set the refresh rate denominator and numerator of the <b>refreshRate</b> member both to zero. In this case, <b>SetDisplayConfig</b> uses the best refresh rate it can find.</summary>
+			DISPLAYCONFIG_SCANLINE_ORDERING_UNSPECIFIED = 0,
+			/// <summary>Indicates that the output is a progressive image.</summary>
+			DISPLAYCONFIG_SCANLINE_ORDERING_PROGRESSIVE = 1,
+			/// <summary>Indicates that the output is an interlaced image that is created beginning with the upper field.</summary>
+			DISPLAYCONFIG_SCANLINE_ORDERING_INTERLACED = 2,
+			/// <summary>Indicates that the output is an interlaced image that is created beginning with the upper field.</summary>
+			DISPLAYCONFIG_SCANLINE_ORDERING_INTERLACED_UPPERFIELDFIRST = 2,
+			/// <summary>Indicates that the output is an interlaced image that is created beginning with the lower field.</summary>
+			DISPLAYCONFIG_SCANLINE_ORDERING_INTERLACED_LOWERFIELDFIRST = 3,
+			/// <summary>Forces this enumeration to compile to 32 bits in size. Without this value, some compilers would allow this enumeration to compile to a size other than 32 bits. You should not use this value.</summary>
+			DISPLAYCONFIG_SCANLINE_ORDERING_FORCE_UINT32 = -1,
+		}
+	}
+}
+".Replace("\r\n", "\n")),
+                },
+            },
+        }.RunAsync();
+    }
+
+    [Fact]
+    public async Task TestSimpleEnumWithoutDocs()
+    {
+        await new VerifyTest
+        {
+            TestState =
+            {
+                ReferenceAssemblies = MyReferenceAssemblies.NetStandard20,
+                AdditionalFiles =
+                {
+                    ("NativeMethods.txt", "DISPLAYCONFIG_SCANLINE_ORDERING"),
+                },
+                AnalyzerConfigFiles =
+                {
+                    ("/.globalconfig", ConstructGlobalConfigString(omitDocs: true)),
+                },
+                GeneratedSources =
+                {
+                    (typeof(SourceGenerator), "Windows.Win32.DISPLAYCONFIG_SCANLINE_ORDERING.g.cs", @"// ------------------------------------------------------------------------------
+// <auto-generated>
+//     This code was generated by a tool.
+//
+//     Changes to this file may cause incorrect behavior and will be lost if
+//     the code is regenerated.
+// </auto-generated>
+// ------------------------------------------------------------------------------
+
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+namespace Windows.Win32
+{
+	using global::System;
+	using global::System.Diagnostics;
+	using global::System.Runtime.CompilerServices;
+	using global::System.Runtime.InteropServices;
+	using win32 = global::Windows.Win32;
+
+	namespace UI.DisplayDevices
+	{
+		internal enum DISPLAYCONFIG_SCANLINE_ORDERING
+		{
+			DISPLAYCONFIG_SCANLINE_ORDERING_UNSPECIFIED = 0,
+			DISPLAYCONFIG_SCANLINE_ORDERING_PROGRESSIVE = 1,
+			DISPLAYCONFIG_SCANLINE_ORDERING_INTERLACED = 2,
+			DISPLAYCONFIG_SCANLINE_ORDERING_INTERLACED_UPPERFIELDFIRST = 2,
+			DISPLAYCONFIG_SCANLINE_ORDERING_INTERLACED_LOWERFIELDFIRST = 3,
+			DISPLAYCONFIG_SCANLINE_ORDERING_FORCE_UINT32 = -1,
+		}
+	}
+}
+".Replace("\r\n", "\n")),
+                },
+            },
+        }.RunAsync();
+    }
+
+    [Fact]
+    public async Task TestFlagsEnum()
+    {
+        await new VerifyTest
+        {
+            TestState =
+            {
+                ReferenceAssemblies = MyReferenceAssemblies.NetStandard20,
+                AdditionalFiles =
+                {
+                    ("NativeMethods.txt", "FILE_ACCESS_FLAGS"),
+                },
+                AnalyzerConfigFiles =
+                {
+                    ("/.globalconfig", ConstructGlobalConfigString()),
+                },
+                GeneratedSources =
+                {
+                    (typeof(SourceGenerator), "Windows.Win32.FILE_ACCESS_FLAGS.g.cs", @"// ------------------------------------------------------------------------------
+// <auto-generated>
+//     This code was generated by a tool.
+//
+//     Changes to this file may cause incorrect behavior and will be lost if
+//     the code is regenerated.
+// </auto-generated>
+// ------------------------------------------------------------------------------
+
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+namespace Windows.Win32
+{
+	using global::System;
+	using global::System.Diagnostics;
+	using global::System.Runtime.CompilerServices;
+	using global::System.Runtime.InteropServices;
+	using win32 = global::Windows.Win32;
+
+	namespace Storage.FileSystem
+	{
+		[Flags]
+		internal enum FILE_ACCESS_FLAGS : uint
+		{
+			FILE_READ_DATA = 0x00000001,
+			FILE_LIST_DIRECTORY = 0x00000001,
+			FILE_WRITE_DATA = 0x00000002,
+			FILE_ADD_FILE = 0x00000002,
+			FILE_APPEND_DATA = 0x00000004,
+			FILE_ADD_SUBDIRECTORY = 0x00000004,
+			FILE_CREATE_PIPE_INSTANCE = 0x00000004,
+			FILE_READ_EA = 0x00000008,
+			FILE_WRITE_EA = 0x00000010,
+			FILE_EXECUTE = 0x00000020,
+			FILE_TRAVERSE = 0x00000020,
+			FILE_DELETE_CHILD = 0x00000040,
+			FILE_READ_ATTRIBUTES = 0x00000080,
+			FILE_WRITE_ATTRIBUTES = 0x00000100,
+			READ_CONTROL = 0x00020000,
+			SYNCHRONIZE = 0x00100000,
+			STANDARD_RIGHTS_REQUIRED = 0x000F0000,
+			STANDARD_RIGHTS_READ = 0x00020000,
+			STANDARD_RIGHTS_WRITE = 0x00020000,
+			STANDARD_RIGHTS_EXECUTE = 0x00020000,
+			STANDARD_RIGHTS_ALL = 0x001F0000,
+			SPECIFIC_RIGHTS_ALL = 0x0000FFFF,
+			FILE_ALL_ACCESS = 0x001F01FF,
+			FILE_GENERIC_READ = 0x00120089,
+			FILE_GENERIC_WRITE = 0x00120116,
+			FILE_GENERIC_EXECUTE = 0x001200A0,
+		}
+	}
+}
+".Replace("\r\n", "\n")),
+                },
+            },
+        }.RunAsync();
+    }
+
+    [Fact]
+    public async Task TestSimpleDelegate()
+    {
+        await new VerifyTest
+        {
+            TestState =
+            {
+                ReferenceAssemblies = MyReferenceAssemblies.NetStandard20,
+                AdditionalFiles =
+                {
+                    ("NativeMethods.txt", "WNDENUMPROC"),
+                },
+                AnalyzerConfigFiles =
+                {
+                    ("/.globalconfig", ConstructGlobalConfigString()),
+                },
+                GeneratedSources =
+                {
+                    (typeof(SourceGenerator), "Windows.Win32.BOOL.g.cs", @"// ------------------------------------------------------------------------------
+// <auto-generated>
+//     This code was generated by a tool.
+//
+//     Changes to this file may cause incorrect behavior and will be lost if
+//     the code is regenerated.
+// </auto-generated>
+// ------------------------------------------------------------------------------
+
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+namespace Windows.Win32
+{
+	using global::System;
+	using global::System.Diagnostics;
+	using global::System.Runtime.CompilerServices;
+	using global::System.Runtime.InteropServices;
+	using win32 = global::Windows.Win32;
+
+	namespace Foundation
+	{
+		internal readonly partial struct BOOL
+		{
+			private readonly int value;
+
+			internal int Value => this.value;
+			internal BOOL(bool value) => this.value = Unsafe.As<bool,sbyte>(ref value);
+			internal BOOL(int value) => this.value = value;
+			public static implicit operator bool(BOOL value)
+			{
+				sbyte v = checked((sbyte)value.value);
+				return Unsafe.As<sbyte,bool>(ref v);
+			}
+			public static implicit operator BOOL(bool value) => new BOOL(value);
+			public static explicit operator BOOL(int value) => new BOOL(value);
+		}
+	}
+}
+".Replace("\r\n", "\n")),
+                    (typeof(SourceGenerator), "Windows.Win32.Delegates.g.cs", @"// ------------------------------------------------------------------------------
+// <auto-generated>
+//     This code was generated by a tool.
+//
+//     Changes to this file may cause incorrect behavior and will be lost if
+//     the code is regenerated.
+// </auto-generated>
+// ------------------------------------------------------------------------------
+
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+namespace Windows.Win32
+{
+	using global::System;
+	using global::System.Diagnostics;
+	using global::System.Runtime.CompilerServices;
+	using global::System.Runtime.InteropServices;
+	using win32 = global::Windows.Win32;
+
+	namespace UI.WindowsAndMessaging
+	{
+		[UnmanagedFunctionPointerAttribute(CallingConvention.Winapi)]
+		internal unsafe delegate win32.Foundation.BOOL WNDENUMPROC(win32.Foundation.HWND param0, win32.Foundation.LPARAM param1);
+	}
+}
+".Replace("\r\n", "\n")),
+                    (typeof(SourceGenerator), "Windows.Win32.HWND.g.cs", @"// ------------------------------------------------------------------------------
+// <auto-generated>
+//     This code was generated by a tool.
+//
+//     Changes to this file may cause incorrect behavior and will be lost if
+//     the code is regenerated.
+// </auto-generated>
+// ------------------------------------------------------------------------------
+
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+namespace Windows.Win32
+{
+	using global::System;
+	using global::System.Diagnostics;
+	using global::System.Runtime.CompilerServices;
+	using global::System.Runtime.InteropServices;
+	using win32 = global::Windows.Win32;
+
+	namespace Foundation
+	{
+		[DebuggerDisplay(""{Value}"")]
+		internal readonly partial struct HWND
+			: IEquatable<HWND>
+		{
+			internal readonly nint Value;
+			internal HWND(nint value) => this.Value = value;
+			public static implicit operator nint(HWND value) => value.Value;
+			public static explicit operator HWND(nint value) => new HWND(value);
+			public static bool operator ==(HWND left, HWND right) => left.Value == right.Value;
+			public static bool operator !=(HWND left, HWND right) => !(left == right);
+
+			public bool Equals(HWND other) => this.Value == other.Value;
+
+			public override bool Equals(object obj) => obj is HWND other && this.Equals(other);
+
+			public override int GetHashCode() => this.Value.GetHashCode();
+		}
+	}
+}
+".Replace("\r\n", "\n")),
+                    (typeof(SourceGenerator), "Windows.Win32.LPARAM.g.cs", @"// ------------------------------------------------------------------------------
+// <auto-generated>
+//     This code was generated by a tool.
+//
+//     Changes to this file may cause incorrect behavior and will be lost if
+//     the code is regenerated.
+// </auto-generated>
+// ------------------------------------------------------------------------------
+
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+namespace Windows.Win32
+{
+	using global::System;
+	using global::System.Diagnostics;
+	using global::System.Runtime.CompilerServices;
+	using global::System.Runtime.InteropServices;
+	using win32 = global::Windows.Win32;
+
+	namespace Foundation
+	{
+		[DebuggerDisplay(""{Value}"")]
+		internal readonly partial struct LPARAM
+			: IEquatable<LPARAM>
+		{
+			internal readonly nint Value;
+			internal LPARAM(nint value) => this.Value = value;
+			public static implicit operator nint(LPARAM value) => value.Value;
+			public static implicit operator LPARAM(nint value) => new LPARAM(value);
+			public static bool operator ==(LPARAM left, LPARAM right) => left.Value == right.Value;
+			public static bool operator !=(LPARAM left, LPARAM right) => !(left == right);
+
+			public bool Equals(LPARAM other) => this.Value == other.Value;
+
+			public override bool Equals(object obj) => obj is LPARAM other && this.Equals(other);
+
+			public override int GetHashCode() => this.Value.GetHashCode();
+		}
+	}
+}
+".Replace("\r\n", "\n")),
+                },
+            },
+        }.RunAsync();
+    }
+
+    [Fact]
+    public async Task TestSimpleMethod()
+    {
+        await new VerifyTest
+        {
+            TestState =
+            {
+                ReferenceAssemblies = MyReferenceAssemblies.NetStandard20,
+                AdditionalFiles =
+                {
+                    ("NativeMethods.txt", "ReleaseDC"),
+                },
+                AnalyzerConfigFiles =
+                {
+                    ("/.globalconfig", ConstructGlobalConfigString()),
+                },
+                GeneratedSources =
+                {
+                    (typeof(SourceGenerator), "Windows.Win32.HDC.g.cs", @"// ------------------------------------------------------------------------------
+// <auto-generated>
+//     This code was generated by a tool.
+//
+//     Changes to this file may cause incorrect behavior and will be lost if
+//     the code is regenerated.
+// </auto-generated>
+// ------------------------------------------------------------------------------
+
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+namespace Windows.Win32
+{
+	using global::System;
+	using global::System.Diagnostics;
+	using global::System.Runtime.CompilerServices;
+	using global::System.Runtime.InteropServices;
+	using win32 = global::Windows.Win32;
+
+	namespace Graphics.Gdi
+	{
+		[DebuggerDisplay(""{Value}"")]
+		internal readonly partial struct HDC
+			: IEquatable<HDC>
+		{
+			internal readonly IntPtr Value;
+			internal HDC(IntPtr value) => this.Value = value;
+
+			internal bool IsNull => Value == default;
+			public static implicit operator IntPtr(HDC value) => value.Value;
+			public static explicit operator HDC(IntPtr value) => new HDC(value);
+			public static bool operator ==(HDC left, HDC right) => left.Value == right.Value;
+			public static bool operator !=(HDC left, HDC right) => !(left == right);
+
+			public bool Equals(HDC other) => this.Value == other.Value;
+
+			public override bool Equals(object obj) => obj is HDC other && this.Equals(other);
+
+			public override int GetHashCode() => this.Value.GetHashCode();
+		}
+	}
+}
+".Replace("\r\n", "\n")),
+                    (typeof(SourceGenerator), "Windows.Win32.HWND.g.cs", @"// ------------------------------------------------------------------------------
+// <auto-generated>
+//     This code was generated by a tool.
+//
+//     Changes to this file may cause incorrect behavior and will be lost if
+//     the code is regenerated.
+// </auto-generated>
+// ------------------------------------------------------------------------------
+
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+namespace Windows.Win32
+{
+	using global::System;
+	using global::System.Diagnostics;
+	using global::System.Runtime.CompilerServices;
+	using global::System.Runtime.InteropServices;
+	using win32 = global::Windows.Win32;
+
+	namespace Foundation
+	{
+		[DebuggerDisplay(""{Value}"")]
+		internal readonly partial struct HWND
+			: IEquatable<HWND>
+		{
+			internal readonly nint Value;
+			internal HWND(nint value) => this.Value = value;
+			public static implicit operator nint(HWND value) => value.Value;
+			public static explicit operator HWND(nint value) => new HWND(value);
+			public static bool operator ==(HWND left, HWND right) => left.Value == right.Value;
+			public static bool operator !=(HWND left, HWND right) => !(left == right);
+
+			public bool Equals(HWND other) => this.Value == other.Value;
+
+			public override bool Equals(object obj) => obj is HWND other && this.Equals(other);
+
+			public override int GetHashCode() => this.Value.GetHashCode();
+		}
+	}
+}
+".Replace("\r\n", "\n")),
+                    (typeof(SourceGenerator), "Windows.Win32.PInvoke.User32.g.cs", @"// ------------------------------------------------------------------------------
+// <auto-generated>
+//     This code was generated by a tool.
+//
+//     Changes to this file may cause incorrect behavior and will be lost if
+//     the code is regenerated.
+// </auto-generated>
+// ------------------------------------------------------------------------------
+
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+namespace Windows.Win32
+{
+	using global::System;
+	using global::System.Diagnostics;
+	using global::System.Runtime.CompilerServices;
+	using global::System.Runtime.InteropServices;
+	using win32 = global::Windows.Win32;
+
+
+	/// <content>
+	/// Contains extern methods from ""User32.dll"".
+	/// </content>
+	internal static partial class PInvoke
+	{
+		/// <summary>The ReleaseDC function releases a device context (DC), freeing it for use by other applications. The effect of the ReleaseDC function depends on the type of DC. It frees only common and window DCs. It has no effect on class or private DCs.</summary>
+		/// <param name=""hWnd"">A handle to the window whose DC is to be released.</param>
+		/// <param name=""hDC"">A handle to the DC to be released.</param>
+		/// <returns>
+		/// <para>The return value indicates whether the DC was released. If the DC was released, the return value is 1. If the DC was not released, the return value is zero.</para>
+		/// </returns>
+		/// <remarks>
+		/// <para><see href=""https://docs.microsoft.com/windows/win32/api//winuser/nf-winuser-releasedc"">Learn more about this API from docs.microsoft.com</see>.</para>
+		/// </remarks>
+		[DllImport(""User32"", ExactSpelling = true)]
+		[DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+		internal static extern int ReleaseDC(win32.Foundation.HWND hWnd, win32.Graphics.Gdi.HDC hDC);
+	}
+}
+".Replace("\r\n", "\n")),
+                },
+            },
+        }.RunAsync();
+    }
+
+    [Fact]
+    public async Task TestMethodWithOverloads()
+    {
+        await new VerifyTest
+        {
+            TestState =
+            {
+                ReferenceAssemblies = MyReferenceAssemblies.NetStandard20,
+                AdditionalFiles =
+                {
+                    ("NativeMethods.txt", "CreateFile"),
+                },
+                AnalyzerConfigFiles =
+                {
+                    ("/.globalconfig", ConstructGlobalConfigString()),
+                },
+                GeneratedSources =
+                {
+                    (typeof(SourceGenerator), "Windows.Win32.BOOL.g.cs", @"// ------------------------------------------------------------------------------
+// <auto-generated>
+//     This code was generated by a tool.
+//
+//     Changes to this file may cause incorrect behavior and will be lost if
+//     the code is regenerated.
+// </auto-generated>
+// ------------------------------------------------------------------------------
+
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+namespace Windows.Win32
+{
+	using global::System;
+	using global::System.Diagnostics;
+	using global::System.Runtime.CompilerServices;
+	using global::System.Runtime.InteropServices;
+	using win32 = global::Windows.Win32;
+
+	namespace Foundation
+	{
+		internal readonly partial struct BOOL
+		{
+			private readonly int value;
+
+			internal int Value => this.value;
+			internal BOOL(bool value) => this.value = Unsafe.As<bool,sbyte>(ref value);
+			internal BOOL(int value) => this.value = value;
+			public static implicit operator bool(BOOL value)
+			{
+				sbyte v = checked((sbyte)value.value);
+				return Unsafe.As<sbyte,bool>(ref v);
+			}
+			public static implicit operator BOOL(bool value) => new BOOL(value);
+			public static explicit operator BOOL(int value) => new BOOL(value);
+		}
+	}
+}
+".Replace("\r\n", "\n")),
+                    (typeof(SourceGenerator), "Windows.Win32.FILE_ACCESS_FLAGS.g.cs", @"// ------------------------------------------------------------------------------
+// <auto-generated>
+//     This code was generated by a tool.
+//
+//     Changes to this file may cause incorrect behavior and will be lost if
+//     the code is regenerated.
+// </auto-generated>
+// ------------------------------------------------------------------------------
+
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+namespace Windows.Win32
+{
+	using global::System;
+	using global::System.Diagnostics;
+	using global::System.Runtime.CompilerServices;
+	using global::System.Runtime.InteropServices;
+	using win32 = global::Windows.Win32;
+
+	namespace Storage.FileSystem
+	{
+		[Flags]
+		internal enum FILE_ACCESS_FLAGS : uint
+		{
+			FILE_READ_DATA = 0x00000001,
+			FILE_LIST_DIRECTORY = 0x00000001,
+			FILE_WRITE_DATA = 0x00000002,
+			FILE_ADD_FILE = 0x00000002,
+			FILE_APPEND_DATA = 0x00000004,
+			FILE_ADD_SUBDIRECTORY = 0x00000004,
+			FILE_CREATE_PIPE_INSTANCE = 0x00000004,
+			FILE_READ_EA = 0x00000008,
+			FILE_WRITE_EA = 0x00000010,
+			FILE_EXECUTE = 0x00000020,
+			FILE_TRAVERSE = 0x00000020,
+			FILE_DELETE_CHILD = 0x00000040,
+			FILE_READ_ATTRIBUTES = 0x00000080,
+			FILE_WRITE_ATTRIBUTES = 0x00000100,
+			READ_CONTROL = 0x00020000,
+			SYNCHRONIZE = 0x00100000,
+			STANDARD_RIGHTS_REQUIRED = 0x000F0000,
+			STANDARD_RIGHTS_READ = 0x00020000,
+			STANDARD_RIGHTS_WRITE = 0x00020000,
+			STANDARD_RIGHTS_EXECUTE = 0x00020000,
+			STANDARD_RIGHTS_ALL = 0x001F0000,
+			SPECIFIC_RIGHTS_ALL = 0x0000FFFF,
+			FILE_ALL_ACCESS = 0x001F01FF,
+			FILE_GENERIC_READ = 0x00120089,
+			FILE_GENERIC_WRITE = 0x00120116,
+			FILE_GENERIC_EXECUTE = 0x001200A0,
+		}
+	}
+}
+".Replace("\r\n", "\n")),
+                    (typeof(SourceGenerator), "Windows.Win32.FILE_CREATION_DISPOSITION.g.cs", @"// ------------------------------------------------------------------------------
+// <auto-generated>
+//     This code was generated by a tool.
+//
+//     Changes to this file may cause incorrect behavior and will be lost if
+//     the code is regenerated.
+// </auto-generated>
+// ------------------------------------------------------------------------------
+
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+namespace Windows.Win32
+{
+	using global::System;
+	using global::System.Diagnostics;
+	using global::System.Runtime.CompilerServices;
+	using global::System.Runtime.InteropServices;
+	using win32 = global::Windows.Win32;
+
+	namespace Storage.FileSystem
+	{
+		internal enum FILE_CREATION_DISPOSITION : uint
+		{
+			CREATE_NEW = 1U,
+			CREATE_ALWAYS = 2U,
+			OPEN_EXISTING = 3U,
+			OPEN_ALWAYS = 4U,
+			TRUNCATE_EXISTING = 5U,
+		}
+	}
+}
+".Replace("\r\n", "\n")),
+                    (typeof(SourceGenerator), "Windows.Win32.FILE_FLAGS_AND_ATTRIBUTES.g.cs", @"// ------------------------------------------------------------------------------
+// <auto-generated>
+//     This code was generated by a tool.
+//
+//     Changes to this file may cause incorrect behavior and will be lost if
+//     the code is regenerated.
+// </auto-generated>
+// ------------------------------------------------------------------------------
+
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+namespace Windows.Win32
+{
+	using global::System;
+	using global::System.Diagnostics;
+	using global::System.Runtime.CompilerServices;
+	using global::System.Runtime.InteropServices;
+	using win32 = global::Windows.Win32;
+
+	namespace Storage.FileSystem
+	{
+		[Flags]
+		internal enum FILE_FLAGS_AND_ATTRIBUTES : uint
+		{
+			FILE_ATTRIBUTE_READONLY = 0x00000001,
+			FILE_ATTRIBUTE_HIDDEN = 0x00000002,
+			FILE_ATTRIBUTE_SYSTEM = 0x00000004,
+			FILE_ATTRIBUTE_DIRECTORY = 0x00000010,
+			FILE_ATTRIBUTE_ARCHIVE = 0x00000020,
+			FILE_ATTRIBUTE_DEVICE = 0x00000040,
+			FILE_ATTRIBUTE_NORMAL = 0x00000080,
+			FILE_ATTRIBUTE_TEMPORARY = 0x00000100,
+			FILE_ATTRIBUTE_SPARSE_FILE = 0x00000200,
+			FILE_ATTRIBUTE_REPARSE_POINT = 0x00000400,
+			FILE_ATTRIBUTE_COMPRESSED = 0x00000800,
+			FILE_ATTRIBUTE_OFFLINE = 0x00001000,
+			FILE_ATTRIBUTE_NOT_CONTENT_INDEXED = 0x00002000,
+			FILE_ATTRIBUTE_ENCRYPTED = 0x00004000,
+			FILE_ATTRIBUTE_INTEGRITY_STREAM = 0x00008000,
+			FILE_ATTRIBUTE_VIRTUAL = 0x00010000,
+			FILE_ATTRIBUTE_NO_SCRUB_DATA = 0x00020000,
+			FILE_ATTRIBUTE_EA = 0x00040000,
+			FILE_ATTRIBUTE_PINNED = 0x00080000,
+			FILE_ATTRIBUTE_UNPINNED = 0x00100000,
+			FILE_ATTRIBUTE_RECALL_ON_OPEN = 0x00040000,
+			FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS = 0x00400000,
+			FILE_FLAG_WRITE_THROUGH = 0x80000000,
+			FILE_FLAG_OVERLAPPED = 0x40000000,
+			FILE_FLAG_NO_BUFFERING = 0x20000000,
+			FILE_FLAG_RANDOM_ACCESS = 0x10000000,
+			FILE_FLAG_SEQUENTIAL_SCAN = 0x08000000,
+			FILE_FLAG_DELETE_ON_CLOSE = 0x04000000,
+			FILE_FLAG_BACKUP_SEMANTICS = 0x02000000,
+			FILE_FLAG_POSIX_SEMANTICS = 0x01000000,
+			FILE_FLAG_SESSION_AWARE = 0x00800000,
+			FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000,
+			FILE_FLAG_OPEN_NO_RECALL = 0x00100000,
+			FILE_FLAG_FIRST_PIPE_INSTANCE = 0x00080000,
+			SECURITY_ANONYMOUS = 0x00000000,
+			SECURITY_IDENTIFICATION = 0x00010000,
+			SECURITY_IMPERSONATION = 0x00020000,
+			SECURITY_DELEGATION = 0x00030000,
+			SECURITY_CONTEXT_TRACKING = 0x00040000,
+			SECURITY_EFFECTIVE_ONLY = 0x00080000,
+			SECURITY_SQOS_PRESENT = 0x00100000,
+			SECURITY_VALID_SQOS_FLAGS = 0x001F0000,
+		}
+	}
+}
+".Replace("\r\n", "\n")),
+                    (typeof(SourceGenerator), "Windows.Win32.FILE_SHARE_MODE.g.cs", @"// ------------------------------------------------------------------------------
+// <auto-generated>
+//     This code was generated by a tool.
+//
+//     Changes to this file may cause incorrect behavior and will be lost if
+//     the code is regenerated.
+// </auto-generated>
+// ------------------------------------------------------------------------------
+
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+namespace Windows.Win32
+{
+	using global::System;
+	using global::System.Diagnostics;
+	using global::System.Runtime.CompilerServices;
+	using global::System.Runtime.InteropServices;
+	using win32 = global::Windows.Win32;
+
+	namespace Storage.FileSystem
+	{
+		[Flags]
+		internal enum FILE_SHARE_MODE : uint
+		{
+			FILE_SHARE_NONE = 0x00000000,
+			FILE_SHARE_DELETE = 0x00000004,
+			FILE_SHARE_READ = 0x00000001,
+			FILE_SHARE_WRITE = 0x00000002,
+		}
+	}
+}
+".Replace("\r\n", "\n")),
+                    (typeof(SourceGenerator), "Windows.Win32.HANDLE.g.cs", @"// ------------------------------------------------------------------------------
+// <auto-generated>
+//     This code was generated by a tool.
+//
+//     Changes to this file may cause incorrect behavior and will be lost if
+//     the code is regenerated.
+// </auto-generated>
+// ------------------------------------------------------------------------------
+
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+namespace Windows.Win32
+{
+	using global::System;
+	using global::System.Diagnostics;
+	using global::System.Runtime.CompilerServices;
+	using global::System.Runtime.InteropServices;
+	using win32 = global::Windows.Win32;
+
+	namespace Foundation
+	{
+		[DebuggerDisplay(""{Value}"")]
+		internal readonly partial struct HANDLE
+			: IEquatable<HANDLE>
+		{
+			internal readonly IntPtr Value;
+			internal HANDLE(IntPtr value) => this.Value = value;
+
+			internal bool IsNull => Value == default;
+			public static implicit operator IntPtr(HANDLE value) => value.Value;
+			public static explicit operator HANDLE(IntPtr value) => new HANDLE(value);
+			public static bool operator ==(HANDLE left, HANDLE right) => left.Value == right.Value;
+			public static bool operator !=(HANDLE left, HANDLE right) => !(left == right);
+
+			public bool Equals(HANDLE other) => this.Value == other.Value;
+
+			public override bool Equals(object obj) => obj is HANDLE other && this.Equals(other);
+
+			public override int GetHashCode() => this.Value.GetHashCode();
+		}
+	}
+}
+".Replace("\r\n", "\n")),
+                    (typeof(SourceGenerator), "Windows.Win32.PCWSTR.g.cs", @"// ------------------------------------------------------------------------------
+// <auto-generated>
+//     This code was generated by a tool.
+//
+//     Changes to this file may cause incorrect behavior and will be lost if
+//     the code is regenerated.
+// </auto-generated>
+// ------------------------------------------------------------------------------
+
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+namespace Windows.Win32
+{
+	using global::System;
+	using global::System.Diagnostics;
+	using global::System.Runtime.CompilerServices;
+	using global::System.Runtime.InteropServices;
+	using win32 = global::Windows.Win32;
+
+	namespace Foundation
+	{
+			/// <summary>
+			/// A pointer to a constant character string.
+			/// </summary>
+		[DebuggerDisplay(""{"" + nameof(DebuggerDisplay) + ""}"")]
+		internal unsafe readonly partial struct PCWSTR
+			: IEquatable<PCWSTR>
+		{
+			/// <summary>
+			/// A pointer to the first character in the string. The content should be considered readonly, as it was typed as constant in the SDK.
+			/// </summary>
+			internal readonly char* Value;
+			internal PCWSTR(char* value) => this.Value = value;
+			public static explicit operator char*(PCWSTR value) => value.Value;
+			public static implicit operator PCWSTR(char* value) => new PCWSTR(value);
+			public static implicit operator PCWSTR(PWSTR value) => new PCWSTR(value.Value);
+
+			public bool Equals(PCWSTR other) => this.Value == other.Value;
+
+			public override bool Equals(object obj) => obj is PCWSTR other && this.Equals(other);
+
+			public override int GetHashCode() => unchecked((int)this.Value);
+
+
+			/// <summary>
+			/// Gets the number of characters up to the first null character (exclusive).
+			/// </summary>
+			internal int Length
+			{
+				get
+				{
+					char* p = this.Value;
+					if (p is null)
+						return 0;
+					while (*p != '\0')
+						p++;
+					return checked((int)(p - this.Value));
+				}
+			}
+
+
+			/// <summary>
+			/// Returns a <see langword=""string""/> with a copy of this character array.
+			/// </summary>
+			/// <returns>A <see langword=""string""/>, or <see langword=""null""/> if <see cref=""Value""/> is <see langword=""null""/>.</returns>
+			public override string ToString() => this.Value is null ? null : new string(this.Value);
+
+
+			/// <summary>
+			/// Returns a span of the characters in this string.
+			/// </summary>
+			internal ReadOnlySpan<char> AsSpan() => this.Value is null ? default(ReadOnlySpan<char>) : new ReadOnlySpan<char>(this.Value, this.Length);
+
+
+			private string DebuggerDisplay => this.ToString();
+		}
+	}
+}
+".Replace("\r\n", "\n")),
+                    (typeof(SourceGenerator), "Windows.Win32.PInvoke.Kernel32.g.cs", @"// ------------------------------------------------------------------------------
+// <auto-generated>
+//     This code was generated by a tool.
+//
+//     Changes to this file may cause incorrect behavior and will be lost if
+//     the code is regenerated.
+// </auto-generated>
+// ------------------------------------------------------------------------------
+
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+namespace Windows.Win32
+{
+	using global::System;
+	using global::System.Diagnostics;
+	using global::System.Runtime.CompilerServices;
+	using global::System.Runtime.InteropServices;
+	using win32 = global::Windows.Win32;
+
+
+	/// <content>
+	/// Contains extern methods from ""Kernel32.dll"".
+	/// </content>
+	internal static partial class PInvoke
+	{
+		/// <summary>Closes an open object handle.</summary>
+		/// <param name=""hObject"">A valid handle to an open object.</param>
+		/// <returns>
+		/// <para>If the function succeeds, the return value is nonzero. If the function fails, the return value is zero. To get extended error information, call <a href=""/windows/desktop/api/errhandlingapi/nf-errhandlingapi-getlasterror"">GetLastError</a>. If the application is running under a debugger,  the function will throw an exception if it receives either a  handle value that is not valid  or a pseudo-handle value. This can happen if you close a handle twice, or if you  call <b>CloseHandle</b> on a handle returned by the <a href=""/windows/desktop/api/fileapi/nf-fileapi-findfirstfilea"">FindFirstFile</a> function instead of calling the <a href=""/windows/desktop/api/fileapi/nf-fileapi-findclose"">FindClose</a> function.</para>
+		/// </returns>
+		/// <remarks>
+		/// <para><see href=""https://docs.microsoft.com/windows/win32/api//handleapi/nf-handleapi-closehandle"">Learn more about this API from docs.microsoft.com</see>.</para>
+		/// </remarks>
+		[DllImport(""Kernel32"", ExactSpelling = true, SetLastError = true)]
+		[DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+		internal static extern win32.Foundation.BOOL CloseHandle(win32.Foundation.HANDLE hObject);
+
+		/// <inheritdoc cref=""CreateFile(win32.Foundation.PCWSTR, win32.Storage.FileSystem.FILE_ACCESS_FLAGS, win32.Storage.FileSystem.FILE_SHARE_MODE, win32.Security.SECURITY_ATTRIBUTES*, win32.Storage.FileSystem.FILE_CREATION_DISPOSITION, win32.Storage.FileSystem.FILE_FLAGS_AND_ATTRIBUTES, win32.Foundation.HANDLE)""/>
+		internal static unsafe Microsoft.Win32.SafeHandles.SafeFileHandle CreateFile(string lpFileName, win32.Storage.FileSystem.FILE_ACCESS_FLAGS dwDesiredAccess, win32.Storage.FileSystem.FILE_SHARE_MODE dwShareMode, win32.Security.SECURITY_ATTRIBUTES? lpSecurityAttributes, win32.Storage.FileSystem.FILE_CREATION_DISPOSITION dwCreationDisposition, win32.Storage.FileSystem.FILE_FLAGS_AND_ATTRIBUTES dwFlagsAndAttributes, SafeHandle hTemplateFile)
+		{
+			bool hTemplateFileAddRef = false;
+			try
+			{
+				fixed (char* lpFileNameLocal = lpFileName)
+				{
+					win32.Security.SECURITY_ATTRIBUTES lpSecurityAttributesLocal = lpSecurityAttributes.HasValue ? lpSecurityAttributes.Value : default(win32.Security.SECURITY_ATTRIBUTES);
+					win32.Foundation.HANDLE hTemplateFileLocal;
+					if (hTemplateFile is object)
+					{
+						hTemplateFile.DangerousAddRef(ref hTemplateFileAddRef);
+						hTemplateFileLocal = (win32.Foundation.HANDLE)hTemplateFile.DangerousGetHandle();
+					}
+					else
+						hTemplateFileLocal = default(win32.Foundation.HANDLE);
+					win32.Foundation.HANDLE __result = PInvoke.CreateFile(lpFileNameLocal, dwDesiredAccess, dwShareMode, lpSecurityAttributes.HasValue ? &lpSecurityAttributesLocal : null, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFileLocal);
+					return new Microsoft.Win32.SafeHandles.SafeFileHandle(__result, ownsHandle: true);
+				}
+			}
+			finally
+			{
+				if (hTemplateFileAddRef)
+					hTemplateFile.DangerousRelease();
+			}
+		}
+
+		/// <summary>Creates or opens a file or I/O device. The most commonly used I/O devices are as follows:\_file, file stream, directory, physical disk, volume, console buffer, tape drive, communications resource, mailslot, and pipe.</summary>
+		/// <param name=""lpFileName"">
+		/// <para>The name of the file or device to be created or opened. You may use either forward slashes (/) or backslashes (\\) in this name. In the ANSI version of this function, the name is limited to <b>MAX_PATH</b> characters. To extend this limit to 32,767 wide characters, use this Unicode version of the function and prepend ""\\\\?\\"" to the path. For more information, see <a href=""https://docs.microsoft.com/windows/desktop/FileIO/naming-a-file"">Naming Files, Paths, and Namespaces</a>. For information on special device names, see <a href=""https://docs.microsoft.com/windows/desktop/FileIO/defining-an-ms-dos-device-name"">Defining an MS-DOS Device Name</a>. To create a file stream, specify the name of the file, a colon, and then the name of the stream. For more information, see <a href=""https://docs.microsoft.com/windows/desktop/FileIO/file-streams"">File Streams</a>. <div class=""alert""><b>Tip</b>  Starting with Windows 10, version 1607, for the unicode version of this function (<b>CreateFileW</b>), you can opt-in to remove the <b>MAX_PATH</b> limitation without prepending ""\\?\"". See the ""Maximum Path Length Limitation"" section of <a href=""https://docs.microsoft.com/windows/desktop/FileIO/naming-a-file"">Naming Files, Paths, and Namespaces</a> for details.</div> <div> </div></para>
+		/// <para><see href=""https://docs.microsoft.com/windows/win32/api//fileapi/nf-fileapi-createfilew#parameters"">Read more on docs.microsoft.com</see>.</para>
+		/// </param>
+		/// <param name=""dwDesiredAccess"">
+		/// <para>The requested access to the file or device, which can be summarized as read, write, both or neither zero). The most commonly used values are <b>GENERIC_READ</b>, <b>GENERIC_WRITE</b>, or both (<c>GENERIC_READ | GENERIC_WRITE</c>). For more information, see <a href=""https://docs.microsoft.com/windows/desktop/SecAuthZ/generic-access-rights"">Generic Access Rights</a>, <a href=""https://docs.microsoft.com/windows/desktop/FileIO/file-security-and-access-rights"">File Security and Access Rights</a>, <a href=""https://docs.microsoft.com/windows/desktop/FileIO/file-access-rights-constants"">File Access Rights Constants</a>, and <a href=""https://docs.microsoft.com/windows/desktop/SecAuthZ/access-mask"">ACCESS_MASK</a>. If this parameter is zero, the application can query certain metadata such as file, directory, or device attributes without accessing that file or device, even if <b>GENERIC_READ</b> access would have been denied. You cannot request an access mode that conflicts with the sharing mode that is specified by the <i>dwShareMode</i> parameter in an open request that already has an open handle. For more information, see the Remarks section of this topic and <a href=""https://docs.microsoft.com/windows/desktop/FileIO/creating-and-opening-files"">Creating and Opening Files</a>.</para>
+		/// <para><see href=""https://docs.microsoft.com/windows/win32/api//fileapi/nf-fileapi-createfilew#parameters"">Read more on docs.microsoft.com</see>.</para>
+		/// </param>
+		/// <param name=""dwShareMode"">
+		/// <para>The requested sharing mode of the file or device, which can be read, write, both, delete, all of these, or none (refer to the following table). Access requests to attributes or extended attributes are not affected by this flag. If this parameter is zero and <b>CreateFile</b> succeeds, the file or device cannot be shared and cannot be opened again until the handle to the file or device is closed. For more information, see the Remarks section. You cannot request a sharing mode that conflicts with the access mode that is specified in an existing request that has an open handle. <b>CreateFile</b> would fail and the <a href=""https://docs.microsoft.com/windows/desktop/api/errhandlingapi/nf-errhandlingapi-getlasterror"">GetLastError</a> function would return <b>ERROR_SHARING_VIOLATION</b>. To enable a process to share a file or device while another process has the file or device open, use a</para>
+		/// <para><see href=""https://docs.microsoft.com/windows/win32/api//fileapi/nf-fileapi-createfilew#parameters"">Read more on docs.microsoft.com</see>.</para>
+		/// </param>
+		/// <param name=""lpSecurityAttributes"">
+		/// <para>A pointer to a <a href=""https://docs.microsoft.com/previous-versions/windows/desktop/legacy/aa379560(v=vs.85)"">SECURITY_ATTRIBUTES</a> structure that contains two separate but related data members: an optional security descriptor, and a Boolean value that determines whether the returned handle can be inherited by child processes. This parameter can be <b>NULL</b>. If this parameter is <b>NULL</b>, the handle returned by <b>CreateFile</b> cannot be inherited by any child processes the application may create and the file or device associated with the returned handle gets a default security descriptor. The <b>lpSecurityDescriptor</b> member of the structure specifies a <a href=""https://docs.microsoft.com/windows/desktop/api/winnt/ns-winnt-security_descriptor"">SECURITY_DESCRIPTOR</a> for a file or device. If this member is <b>NULL</b>, the file or device associated with the returned handle is assigned a default security descriptor. <b>CreateFile</b> ignores the <b>lpSecurityDescriptor</b> member when opening an existing file or device, but continues to use the <b>bInheritHandle</b> member. The <b>bInheritHandle</b>member of the structure specifies whether the returned handle can be inherited. For more information, see the Remarks section.</para>
+		/// <para><see href=""https://docs.microsoft.com/windows/win32/api//fileapi/nf-fileapi-createfilew#parameters"">Read more on docs.microsoft.com</see>.</para>
+		/// </param>
+		/// <param name=""dwCreationDisposition"">
+		/// <para>An action to take on a file or device that exists or does not exist. For devices other than files, this parameter is usually set to <b>OPEN_EXISTING</b>. For more information, see the Remarks section.</para>
+		/// <para><see href=""https://docs.microsoft.com/windows/win32/api//fileapi/nf-fileapi-createfilew#parameters"">Read more on docs.microsoft.com</see>.</para>
+		/// </param>
+		/// <param name=""dwFlagsAndAttributes"">
+		/// <para>The file or device attributes and flags, <b>FILE_ATTRIBUTE_NORMAL</b> being the most common default value for files. This parameter can include any combination of the available file attributes (<b>FILE_ATTRIBUTE_*</b>). All other file attributes override <b>FILE_ATTRIBUTE_NORMAL</b>. This parameter can also contain combinations of flags (<b>FILE_FLAG_*</b>) for control of file or device caching behavior, access modes, and other special-purpose flags. These combine with any <b>FILE_ATTRIBUTE_*</b> values. This parameter can also contain Security Quality of Service (SQOS) information by specifying the <b>SECURITY_SQOS_PRESENT</b> flag. Additional SQOS-related flags information is presented in the table following the attributes and flags tables. <div class=""alert""><b>Note</b>  When <b>CreateFile</b> opens an existing file, it generally combines the file flags with the file attributes of the existing file, and ignores any file attributes supplied as part of <i>dwFlagsAndAttributes</i>. Special cases are detailed in <a href=""https://docs.microsoft.com/windows/desktop/FileIO/creating-and-opening-files"">Creating and Opening Files</a>.</div> <div> </div> Some of the following file attributes and flags may only apply to files and not necessarily all other types of devices that <b>CreateFile</b> can open. For additional information, see the Remarks section of this topic and <a href=""https://docs.microsoft.com/windows/desktop/FileIO/creating-and-opening-files"">Creating and Opening Files</a>. For more advanced access to file attributes, see <a href=""https://docs.microsoft.com/windows/desktop/api/fileapi/nf-fileapi-setfileattributesa"">SetFileAttributes</a>. For a complete list of all file attributes with their values and descriptions, see <a href=""https://docs.microsoft.com/windows/desktop/FileIO/file-attribute-constants"">File Attribute Constants</a>. </para>
+		/// <para>This doc was truncated.</para>
+		/// <para><see href=""https://docs.microsoft.com/windows/win32/api//fileapi/nf-fileapi-createfilew#parameters"">Read more on docs.microsoft.com</see>.</para>
+		/// </param>
+		/// <param name=""hTemplateFile"">
+		/// <para>A valid handle to a template file with the <b>GENERIC_READ</b> access right. The template file supplies file attributes and extended attributes for the file that is being created. This parameter can be <b>NULL</b>. When opening an existing file, <b>CreateFile</b> ignores this parameter. When opening a new encrypted file, the file inherits the discretionary access control list from its parent directory. For additional information, see <a href=""https://docs.microsoft.com/windows/desktop/FileIO/file-encryption"">File Encryption</a>.</para>
+		/// <para><see href=""https://docs.microsoft.com/windows/win32/api//fileapi/nf-fileapi-createfilew#parameters"">Read more on docs.microsoft.com</see>.</para>
+		/// </param>
+		/// <returns>
+		/// <para>If the function succeeds, the return value is an open handle to the specified file, device, named pipe, or mail slot. If the function fails, the return value is <b>INVALID_HANDLE_VALUE</b>. To get extended error information, call <a href=""/windows/desktop/api/errhandlingapi/nf-errhandlingapi-getlasterror"">GetLastError</a>.</para>
+		/// </returns>
+		/// <remarks>
+		/// <para><see href=""https://docs.microsoft.com/windows/win32/api//fileapi/nf-fileapi-createfilew"">Learn more about this API from docs.microsoft.com</see>.</para>
+		/// </remarks>
+		[DllImport(""Kernel32"", ExactSpelling = true, EntryPoint = ""CreateFileW"", SetLastError = true)]
+		[DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+		internal static extern unsafe win32.Foundation.HANDLE CreateFile(win32.Foundation.PCWSTR lpFileName, win32.Storage.FileSystem.FILE_ACCESS_FLAGS dwDesiredAccess, win32.Storage.FileSystem.FILE_SHARE_MODE dwShareMode, [Optional] win32.Security.SECURITY_ATTRIBUTES* lpSecurityAttributes, win32.Storage.FileSystem.FILE_CREATION_DISPOSITION dwCreationDisposition, win32.Storage.FileSystem.FILE_FLAGS_AND_ATTRIBUTES dwFlagsAndAttributes, win32.Foundation.HANDLE hTemplateFile);
+	}
+}
+".Replace("\r\n", "\n")),
+                    (typeof(SourceGenerator), "Windows.Win32.PWSTR.g.cs", @"// ------------------------------------------------------------------------------
+// <auto-generated>
+//     This code was generated by a tool.
+//
+//     Changes to this file may cause incorrect behavior and will be lost if
+//     the code is regenerated.
+// </auto-generated>
+// ------------------------------------------------------------------------------
+
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+namespace Windows.Win32
+{
+	using global::System;
+	using global::System.Diagnostics;
+	using global::System.Runtime.CompilerServices;
+	using global::System.Runtime.InteropServices;
+	using win32 = global::Windows.Win32;
+
+	namespace Foundation
+	{
+		[DebuggerDisplay(""{Value}"")]
+		internal unsafe readonly partial struct PWSTR
+			: IEquatable<PWSTR>
+		{
+			internal readonly char* Value;
+			internal PWSTR(char* value) => this.Value = value;
+			public static implicit operator char*(PWSTR value) => value.Value;
+			public static implicit operator PWSTR(char* value) => new PWSTR(value);
+			public static bool operator ==(PWSTR left, PWSTR right) => left.Value == right.Value;
+			public static bool operator !=(PWSTR left, PWSTR right) => !(left == right);
+
+			public bool Equals(PWSTR other) => this.Value == other.Value;
+
+			public override bool Equals(object obj) => obj is PWSTR other && this.Equals(other);
+
+			public override int GetHashCode() => checked((int)this.Value);
+
+			internal int Length
+			{
+				get
+				{
+					char* p = this.Value;
+					if (p is null)
+						return 0;
+					while (*p != 0)
+						p++;
+					return checked((int)(p - this.Value));
+				}
+			}
+
+			public override string ToString() => this.Value is null ? null : new string(this.Value);
+
+			internal Span<char> AsSpan() => this.Value is null ? default(Span<char>) : new Span<char>(this.Value, this.Length);
+		}
+	}
+}
+".Replace("\r\n", "\n")),
+                    (typeof(SourceGenerator), "Windows.Win32.SECURITY_ATTRIBUTES.g.cs", @"// ------------------------------------------------------------------------------
+// <auto-generated>
+//     This code was generated by a tool.
+//
+//     Changes to this file may cause incorrect behavior and will be lost if
+//     the code is regenerated.
+// </auto-generated>
+// ------------------------------------------------------------------------------
+
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+namespace Windows.Win32
+{
+	using global::System;
+	using global::System.Diagnostics;
+	using global::System.Runtime.CompilerServices;
+	using global::System.Runtime.InteropServices;
+	using win32 = global::Windows.Win32;
+
+	namespace Security
+	{
+		/// <summary>The SECURITY_ATTRIBUTES structure contains the security descriptor for an object and specifies whether the handle retrieved by specifying this structure is inheritable.</summary>
+		/// <remarks>
+		/// <para><see href=""https://docs.microsoft.com/windows/win32/api//wtypesbase/ns-wtypesbase-security_attributes#"">Read more on docs.microsoft.com</see>.</para>
+		/// </remarks>
+		internal partial struct SECURITY_ATTRIBUTES
+		{
+			/// <summary>The size, in bytes, of this structure. Set this value to the size of the **SECURITY\_ATTRIBUTES** structure.</summary>
+			internal uint nLength;
+			/// <summary>
+			/// <para>A pointer to a [**SECURITY\_DESCRIPTOR**](../winnt/ns-winnt-security_descriptor.md) structure that controls access to the object. If the value of this member is **NULL**, the object is assigned the default security descriptor associated with the [*access token*](/windows/win32/secauthz/access-tokens) of the calling process. This is not the same as granting access to everyone by assigning a **NULL** [*discretionary access control list*](/windows/win32/secauthz/dacls-and-aces) (DACL). By default, the default DACL in the access token of a process allows access only to the user represented by the access token. For information about creating a security descriptor, see [Creating a Security Descriptor](/windows/win32/secauthz/creating-a-security-descriptor-for-a-new-object-in-c--).</para>
+			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//wtypesbase/ns-wtypesbase-security_attributes#members"">Read more on docs.microsoft.com</see>.</para>
+			/// </summary>
+			internal unsafe void* lpSecurityDescriptor;
+			/// <summary>A Boolean value that specifies whether the returned handle is inherited when a new process is created. If this member is **TRUE**, the new process inherits the handle.</summary>
+			internal win32.Foundation.BOOL bInheritHandle;
+		}
+	}
+}
+".Replace("\r\n", "\n")),
+                },
+            },
+        }.RunAsync();
+    }
+
+    private static string ConstructGlobalConfigString(bool omitDocs = false)
+    {
+        StringBuilder globalConfigBuilder = new();
+        globalConfigBuilder.AppendLine("is_global = true");
+        globalConfigBuilder.AppendLine();
+        globalConfigBuilder.AppendLine($"build_property.CsWin32InputMetadataPaths = {JoinAssemblyMetadata("ProjectionMetadataWinmd")}");
+        if (!omitDocs)
+        {
+            globalConfigBuilder.AppendLine($"build_property.CsWin32InputDocPaths = {JoinAssemblyMetadata("ProjectionDocs")}");
+        }
+
+        return globalConfigBuilder.ToString();
+
+        static string JoinAssemblyMetadata(string name)
+        {
+            return string.Join(";", typeof(GeneratorTests).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().Where(metadata => metadata.Key == name).Select(metadata => metadata.Value));
+        }
+    }
+
     private static ImmutableArray<Diagnostic> FilterDiagnostics(ImmutableArray<Diagnostic> diagnostics) => diagnostics.Where(d => d.Severity > DiagnosticSeverity.Hidden).ToImmutableArray();
 
     private static bool IsAttributePresent(AttributeListSyntax al, string attributeName) => al.Attributes.Any(a => a.Name.ToString() == attributeName);
+
+    private static IEnumerable<AttributeSyntax> FindAttribute(SyntaxList<AttributeListSyntax> attributeLists, string name) => attributeLists.SelectMany(al => al.Attributes).Where(a => a.Name.ToString() == name);
 
     private CSharpCompilation AddGeneratedCode(CSharpCompilation compilation, Generator generator)
     {
@@ -870,7 +2120,9 @@ namespace Microsoft.Windows.Sdk
 
     private IEnumerable<MethodDeclarationSyntax> FindGeneratedMethod(string name) => this.compilation.SyntaxTrees.SelectMany(st => st.GetRoot().DescendantNodes().OfType<MethodDeclarationSyntax>()).Where(md => md.Identifier.ValueText == name);
 
-    private IEnumerable<BaseTypeDeclarationSyntax> FindGeneratedType(string name) => this.compilation.SyntaxTrees.SelectMany(st => st.GetRoot().DescendantNodes().OfType<BaseTypeDeclarationSyntax>()).Where(md => md.Identifier.ValueText == name);
+    private IEnumerable<BaseTypeDeclarationSyntax> FindGeneratedType(string name) => this.compilation.SyntaxTrees.SelectMany(st => st.GetRoot().DescendantNodes().OfType<BaseTypeDeclarationSyntax>()).Where(btd => btd.Identifier.ValueText == name);
+
+    private IEnumerable<FieldDeclarationSyntax> FindGeneratedConstant(string name) => this.compilation.SyntaxTrees.SelectMany(st => st.GetRoot().DescendantNodes().OfType<FieldDeclarationSyntax>()).Where(fd => (fd.Modifiers.Any(SyntaxKind.StaticKeyword) || fd.Modifiers.Any(SyntaxKind.ConstKeyword)) && fd.Declaration.Variables.Any(vd => vd.Identifier.ValueText == name));
 
     private bool IsMethodGenerated(string name) => this.FindGeneratedMethod(name).Any();
 
@@ -1000,7 +2252,9 @@ namespace Microsoft.Windows.Sdk
         return compilation;
     }
 
-    private Generator CreateGenerator(GeneratorOptions? options = null, CSharpCompilation? compilation = null) => new Generator(MetadataPath, options ?? DefaultTestGeneratorOptions, compilation ?? this.compilation, this.parseOptions);
+    private Generator CreateGenerator(GeneratorOptions? options = null, CSharpCompilation? compilation = null) => this.CreateGenerator(MetadataPath, options, compilation);
+
+    private Generator CreateGenerator(string path, GeneratorOptions? options = null, CSharpCompilation? compilation = null) => new Generator(path, Docs.Get(ApiDocsPath), options ?? DefaultTestGeneratorOptions, compilation ?? this.compilation, this.parseOptions);
 
     private static class MyReferenceAssemblies
     {

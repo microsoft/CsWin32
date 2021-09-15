@@ -7,10 +7,17 @@ namespace Microsoft.Windows.CsWin32
     using System.Collections.Generic;
     using System.Diagnostics.CodeAnalysis;
     using System.IO;
-    using System.Reflection;
+    using System.Linq;
+    using MessagePack;
+    using Microsoft.Windows.SDK.Win32Docs;
 
-    internal class Docs
+    /// <summary>
+    /// An in-memory representation of API documentation.
+    /// </summary>
+    public class Docs
     {
+        private static readonly Dictionary<string, Docs> DocsByPath = new Dictionary<string, Docs>(StringComparer.OrdinalIgnoreCase);
+
         private readonly Dictionary<string, ApiDetails> apisAndDocs;
 
         private Docs(Dictionary<string, ApiDetails> apisAndDocs)
@@ -18,41 +25,66 @@ namespace Microsoft.Windows.CsWin32
             this.apisAndDocs = apisAndDocs;
         }
 
-        internal static Docs Instance { get; } = Create();
-
-        internal bool TryGetApiDocs(string apiName, [NotNullWhen(true)] out ApiDetails? docs) => this.apisAndDocs.TryGetValue(apiName, out docs);
-
-        private static Docs Create()
+        /// <summary>
+        /// Loads docs from a file.
+        /// </summary>
+        /// <param name="docsPath">The messagepack docs file to read from.</param>
+        /// <returns>An instance of <see cref="Docs"/> that accesses the documentation in the file specified by <paramref name="docsPath"/>.</returns>
+        public static Docs Get(string docsPath)
         {
-            using Stream? docsYamlStream = Assembly.GetExecutingAssembly().GetManifestResourceStream(ThisAssembly.RootNamespace + ".apidocs.yml");
-            if (docsYamlStream is null)
+            lock (DocsByPath)
             {
-                ////return new Docs(new Dictionary<string, ApiDetails>());
-                throw new Exception("YAML documentation not found.");
+                if (DocsByPath.TryGetValue(docsPath, out Docs? existing))
+                {
+                    return existing;
+                }
             }
 
-            using var yamlTextReader = new StreamReader(docsYamlStream);
-            var deserializer = new YamlDotNet.Serialization.Deserializer();
-            var data = deserializer.Deserialize<Dictionary<string, ApiDetails>>(yamlTextReader);
+            using FileStream docsStream = File.OpenRead(docsPath);
+            var data = MessagePackSerializer.Deserialize<Dictionary<string, ApiDetails>>(docsStream);
+            var docs = new Docs(data);
 
-            return new Docs(data);
+            lock (DocsByPath)
+            {
+                if (DocsByPath.TryGetValue(docsPath, out Docs? existing))
+                {
+                    return existing;
+                }
+
+                DocsByPath.Add(docsPath, docs);
+                return docs;
+            }
         }
 
-#pragma warning disable CA1812 // uninstantiated class is deserialized into
-        internal class ApiDetails
-#pragma warning restore CA1812 // uninstantiated class is deserialized into
+        /// <summary>
+        /// Returns a <see cref="Docs"/> instance that contains all the merged documentation from a list of docs.
+        /// </summary>
+        /// <param name="docs">The docs to be merged. When API documentation is provided by multiple docs in this list, the first one appearing in this list is taken.</param>
+        /// <returns>An instance that contains all the docs provided. When <paramref name="docs"/> contains exactly one element, that element is returned.</returns>
+        public static Docs Merge(IReadOnlyList<Docs> docs)
         {
-            public Uri? HelpLink { get; set; }
+            if (docs.Count == 1)
+            {
+                // Nothing to merge.
+                return docs[0];
+            }
 
-            public string? Description { get; set; }
+            Dictionary<string, ApiDetails> mergedDocs = new(docs.Sum(d => d.apisAndDocs.Count), StringComparer.OrdinalIgnoreCase);
+            foreach (Docs doc in docs)
+            {
+                foreach (KeyValuePair<string, ApiDetails> api in doc.apisAndDocs)
+                {
+                    // We want a first one wins policy.
+                    if (!mergedDocs.ContainsKey(api.Key))
+                    {
+                        mergedDocs.Add(api.Key, api.Value);
+                    }
+                }
+            }
 
-            public string? Remarks { get; set; }
-
-            public Dictionary<string, string>? Parameters { get; set; }
-
-            public Dictionary<string, string>? Fields { get; set; }
-
-            public string? ReturnValue { get; set; }
+            return new Docs(mergedDocs);
         }
+
+        internal bool TryGetApiDocs(string apiName, [NotNullWhen(true)] out ApiDetails? docs) => this.apisAndDocs.TryGetValue(apiName, out docs);
     }
 }

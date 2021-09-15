@@ -15,21 +15,26 @@
     <repository type="git" url="https://github.com/microsoft/CsWin32.git" commit="$commit$" />
     <dependencies>
       <group targetFramework="net20">
-        <dependency id="Microsoft.Windows.SDK.Win32Metadata" version="$MetadataVersion$" include="All" />
+        <dependency id="Microsoft.Windows.SDK.Win32Metadata" version="$MetadataVersion$" include="buildTransitive" />
+        <dependency id="Microsoft.Windows.SDK.Win32Docs" version="$ApiDocsVersion$" include="buildTransitive" />
       </group>
       <group targetFramework="net45">
-        <dependency id="Microsoft.Windows.SDK.Win32Metadata" version="$MetadataVersion$" include="All" />
+        <dependency id="Microsoft.Windows.SDK.Win32Metadata" version="$MetadataVersion$" include="buildTransitive" />
+        <dependency id="Microsoft.Windows.SDK.Win32Docs" version="$ApiDocsVersion$" include="buildTransitive" />
         <dependency id="System.Memory" version="4.5.4" include="All" />
       </group>
       <group targetFramework=".NETStandard1.1">
-        <dependency id="Microsoft.Windows.SDK.Win32Metadata" version="$MetadataVersion$" include="All" />
+        <dependency id="Microsoft.Windows.SDK.Win32Metadata" version="$MetadataVersion$" include="buildTransitive" />
+        <dependency id="Microsoft.Windows.SDK.Win32Docs" version="$ApiDocsVersion$" include="buildTransitive" />
         <dependency id="System.Memory" version="4.5.4" include="All" />
       </group>
     </dependencies>
   </metadata>
   <files>
+    <file src="$BaseOutputPath$Microsoft.Windows.SDK.Win32Docs.dll" target="analyzers\cs\Microsoft.Windows.SDK.Win32Docs.dll" />
     <file src="$BaseOutputPath$Microsoft.Windows.CsWin32.dll" target="analyzers\cs\Microsoft.Windows.CsWin32.dll" />
-    <file src="$BaseOutputPath$YamlDotNet.dll" target="analyzers\cs\YamlDotNet.dll" />
+    <file src="$BaseOutputPath$MessagePack.dll" target="analyzers\cs\MessagePack.dll" />
+    <file src="$BaseOutputPath$MessagePack.Annotations.dll" target="analyzers\cs\MessagePack.Annotations.dll" />
     <file src="$BaseOutputPath$Microsoft.Bcl.AsyncInterfaces.dll" target="analyzers\cs\Microsoft.Bcl.AsyncInterfaces.dll" />
     <file src="$BaseOutputPath$System.Text.Json.dll" target="analyzers\cs\System.Text.Json.dll" />
     <file src="$BaseOutputPath$System.Text.Encodings.Web.dll" target="analyzers\cs\System.Text.Encodings.Web.dll" />

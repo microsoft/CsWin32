@@ -81,6 +81,10 @@ namespace Microsoft.Windows.CsWin32
 
         internal static BlockSyntax Block(params StatementSyntax[] statements) => SyntaxFactory.Block(OpenBrace, List(statements), CloseBrace);
 
+        internal static ForStatementSyntax ForStatement(VariableDeclarationSyntax? declaration, ExpressionSyntax condition, SeparatedSyntaxList<ExpressionSyntax> incrementors, StatementSyntax statement) => SyntaxFactory.ForStatement(Token(SyntaxKind.ForKeyword), Token(SyntaxKind.OpenParenToken), declaration!, default, Token(SyntaxKind.SemicolonToken), condition, Token(SyntaxKind.SemicolonToken), incrementors, Token(SyntaxKind.CloseParenToken), statement);
+
+        internal static StatementSyntax EmptyStatement() => SyntaxFactory.EmptyStatement(Token(SyntaxKind.SemicolonToken));
+
         internal static NamespaceDeclarationSyntax NamespaceDeclaration(NameSyntax name) => SyntaxFactory.NamespaceDeclaration(Token(TriviaList(), SyntaxKind.NamespaceKeyword, TriviaList(Space)), name.WithTrailingTrivia(LineFeed), OpenBrace, default, default, default, CloseBrace, default);
 
         internal static InterfaceDeclarationSyntax InterfaceDeclaration(SyntaxToken name) => SyntaxFactory.InterfaceDeclaration(default, default, Token(TriviaList(), SyntaxKind.InterfaceKeyword, TriviaList(Space)), name.WithTrailingTrivia(LineFeed), null, null, default, Token(TriviaList(), SyntaxKind.OpenBraceToken, TriviaList(LineFeed)), default, Token(TriviaList(), SyntaxKind.CloseBraceToken, TriviaList(LineFeed)), default);
@@ -417,6 +421,8 @@ namespace Microsoft.Windows.CsWin32
 
         internal static SyntaxToken Literal(string value) => SyntaxFactory.Literal(TriviaList(), SymbolDisplay.FormatLiteral(value, quote: true), value, TriviaList());
 
+        internal static SyntaxToken Literal(char value) => SyntaxFactory.Literal(TriviaList(), SymbolDisplay.FormatLiteral(value, quote: true), value, TriviaList());
+
         internal static SyntaxTriviaList ParseLeadingTrivia(string text) => SyntaxFactory.ParseLeadingTrivia(text);
 
         internal static IdentifierNameSyntax IdentifierName(string name) => SyntaxFactory.IdentifierName(Identifier(name));
@@ -456,7 +462,7 @@ namespace Microsoft.Windows.CsWin32
                 SyntaxKind.IsExpression => SyntaxKind.IsKeyword,
                 SyntaxKind.AsExpression => SyntaxKind.AsKeyword,
                 SyntaxKind.CoalesceExpression => SyntaxKind.QuestionQuestionToken,
-                _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+                _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Not in switch statement."),
             };
         }
 
@@ -486,7 +492,7 @@ namespace Microsoft.Windows.CsWin32
                 SyntaxKind.LeftShiftAssignmentExpression => SyntaxKind.LessThanLessThanEqualsToken,
                 SyntaxKind.RightShiftAssignmentExpression => SyntaxKind.GreaterThanGreaterThanEqualsToken,
                 SyntaxKind.CoalesceAssignmentExpression => SyntaxKind.QuestionQuestionEqualsToken,
-                _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+                _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Not in switch statement"),
             };
         }
 

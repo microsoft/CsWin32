@@ -3,7 +3,6 @@
 
 namespace Microsoft.Windows.CsWin32
 {
-    using System;
     using System.Linq;
     using System.Reflection;
     using System.Reflection.Metadata;

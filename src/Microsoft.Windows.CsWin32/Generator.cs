@@ -14,7 +14,6 @@ namespace Microsoft.Windows.CsWin32
     using System.Linq;
     using System.Reflection;
     using System.Reflection.Metadata;
-    using System.Reflection.PortableExecutable;
     using System.Runtime.CompilerServices;
     using System.Runtime.InteropServices;
     using System.Text;
@@ -100,6 +99,19 @@ namespace Microsoft.Windows.CsWin32
 /// Gets a ref to an individual element of the inline array.
 /// ⚠ Important ⚠: When this struct is on the stack, do not let the returned reference outlive the stack frame that defines it.
 /// </summary>
+");
+
+        private static readonly SyntaxTriviaList InlineCharArrayToStringComment = ParseLeadingTrivia(@"/// <summary>
+/// Copies the fixed array to a new string, stopping before the first null terminator character or at the end of the fixed array (whichever is shorter).
+/// </summary>
+");
+
+        private static readonly SyntaxTriviaList InlineCharArrayToStringWithLengthComment = ParseLeadingTrivia(@"/// <summary>
+/// Copies the fixed array to a new string up to the specified length regardless of whether there are null terminating characters.
+/// </summary>
+/// <exception cref=""ArgumentOutOfRangeException"">
+/// Thrown when <paramref name=""length""/> is less than <c>0</c> or greater than <see cref=""Length""/>.
+/// </exception>
 ");
 
         private static readonly XmlTextSyntax DocCommentStart = XmlText(" ").WithLeadingTrivia(DocumentationCommentExterior("///"));
@@ -4355,7 +4367,7 @@ namespace Microsoft.Windows.CsWin32
                 {
                     // ...
                     //     internal ref TheStruct this[int index] => ref AsSpan()[index];
-                    //     internal Span<TheStruct> AsSpan() => MemoryMarshal.CreateSpan(ref _1, 4);
+                    //     internal Span<TheStruct> AsSpan() => MemoryMarshal.CreateSpan(ref _0, 4);
                     fixedLengthStruct = fixedLengthStruct
                         .AddMembers(
                             IndexerDeclaration(RefType(elementType).WithTrailingTrivia(TriviaList(Space)))
@@ -4377,6 +4389,136 @@ namespace Microsoft.Windows.CsWin32
                                 .WithLeadingTrivia(InlineArrayUnsafeAsSpanComment));
                 }
 
+                if (elementType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.CharKeyword } })
+                {
+                    // ...
+                    //     internal unsafe string ToString(int length)
+                    //     {
+                    //         if (length < 0 || length > Length)
+                    //             throw new ArgumentOutOfRangeException(nameof(length), length, "Length must be between 0 and the fixed array length.");
+                    //         fixed (char* p0 = &_0)
+                    //             return new string(p0, 0, length);
+                    //     }
+                    fixedLengthStruct = fixedLengthStruct.AddMembers(
+                        MethodDeclaration(PredefinedType(Token(SyntaxKind.StringKeyword)), Identifier(nameof(this.ToString)))
+                            .AddModifiers(Token(this.Visibility), Token(SyntaxKind.UnsafeKeyword))
+                            .AddParameterListParameters(
+                                Parameter(Identifier("length")).WithType(PredefinedType(Token(SyntaxKind.IntKeyword)).WithTrailingTrivia(Space)))
+                            .WithBody(Block(
+                                IfStatement(
+                                    BinaryExpression(
+                                        SyntaxKind.LogicalOrExpression,
+                                        BinaryExpression(SyntaxKind.LessThanExpression, IdentifierName("length"), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))),
+                                        BinaryExpression(SyntaxKind.GreaterThanExpression, IdentifierName("length"), IdentifierName("Length"))),
+                                    ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentOutOfRangeException))).AddArgumentListArguments(
+                                        Argument(InvocationExpression(IdentifierName("nameof"), ArgumentList().AddArguments(Argument(IdentifierName("length"))))),
+                                        Argument(IdentifierName("length")),
+                                        Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal("Length must be between 0 and the fixed array length.")))))),
+                                FixedStatement(
+                                    VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword)))).AddVariables(
+                                        VariableDeclarator(Identifier("p0")).WithInitializer(EqualsValueClause(
+                                            PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName("_0"))))),
+                                    ReturnStatement(
+                                        ObjectCreationExpression(PredefinedType(Token(SyntaxKind.StringKeyword))).AddArgumentListArguments(
+                                            Argument(IdentifierName("p0")),
+                                            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))),
+                                            Argument(IdentifierName("length")))))))
+                            .WithLeadingTrivia(InlineCharArrayToStringWithLengthComment));
+
+                    IdentifierNameSyntax lengthLocalVar = IdentifierName("length");
+                    StatementSyntax[] lengthDeclarationStatements;
+                    bool unsafeRequired = false;
+                    if (this.canCallCreateSpan)
+                    {
+                        // int length = AsSpan().IndexOf('\0');
+                        // if (length == -1) length = Length;
+                        lengthDeclarationStatements = new StatementSyntax[]
+                        {
+                            LocalDeclarationStatement(VariableDeclaration(PredefinedType(Token(SyntaxKind.IntKeyword))).AddVariables(
+                                    VariableDeclarator(lengthLocalVar.Identifier).WithInitializer(EqualsValueClause(
+                                        InvocationExpression(
+                                            MemberAccessExpression(
+                                                SyntaxKind.SimpleMemberAccessExpression,
+                                                InvocationExpression(IdentifierName("AsSpan")),
+                                                IdentifierName(nameof(MemoryExtensions.IndexOf))),
+                                            ArgumentList().AddArguments(
+                                                Argument(LiteralExpression(SyntaxKind.CharacterLiteralExpression, Literal('\0'))))))))),
+                            IfStatement(
+                                BinaryExpression(SyntaxKind.EqualsExpression, lengthLocalVar, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(-1))),
+                                ExpressionStatement(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, lengthLocalVar, IdentifierName("Length")))),
+                        };
+                    }
+                    else
+                    {
+                        // int length;
+                        // fixed (char* p = &_0)
+                        // {
+                        //     char* pLastExclusive = p + Length;
+                        //     char* pCh = p;
+                        //     for (; pCh < pLastExclusive && *pCh != '\0'; pCh++);
+                        //     length = checked((int)(pCh - p));
+                        // }
+                        IdentifierNameSyntax p = IdentifierName("p");
+                        IdentifierNameSyntax pLastExclusive = IdentifierName("pLastExclusive");
+                        IdentifierNameSyntax pCh = IdentifierName("pCh");
+                        unsafeRequired = true;
+                        lengthDeclarationStatements = new StatementSyntax[]
+                        {
+                            LocalDeclarationStatement(VariableDeclaration(PredefinedType(Token(SyntaxKind.IntKeyword))).AddVariables(
+                                    VariableDeclarator(lengthLocalVar.Identifier))),
+                            FixedStatement(
+                                VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword)))).AddVariables(
+                                    VariableDeclarator(p.Identifier).WithInitializer(EqualsValueClause(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName("_0"))))),
+                                Block().AddStatements(
+                                    LocalDeclarationStatement(VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword)))).AddVariables(
+                                        VariableDeclarator(pLastExclusive.Identifier).WithInitializer(EqualsValueClause(BinaryExpression(SyntaxKind.AddExpression, p, IdentifierName("Length")))))),
+                                    LocalDeclarationStatement(VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword)))).AddVariables(
+                                        VariableDeclarator(pCh.Identifier).WithInitializer(EqualsValueClause(p)))),
+                                    ForStatement(
+                                        null,
+                                        BinaryExpression(
+                                                SyntaxKind.LogicalAndExpression,
+                                                BinaryExpression(
+                                                    SyntaxKind.LessThanExpression,
+                                                    pCh,
+                                                    pLastExclusive),
+                                                BinaryExpression(
+                                                    SyntaxKind.NotEqualsExpression,
+                                                    PrefixUnaryExpression(SyntaxKind.PointerIndirectionExpression, pCh),
+                                                    LiteralExpression(SyntaxKind.CharacterLiteralExpression, Literal('\0')))),
+                                        SingletonSeparatedList<ExpressionSyntax>(PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, pCh)),
+                                        EmptyStatement()),
+                                    ExpressionStatement(AssignmentExpression(
+                                        SyntaxKind.SimpleAssignmentExpression,
+                                        lengthLocalVar,
+                                        CheckedExpression(SyntaxKind.CheckedExpression, CastExpression(
+                                            PredefinedType(Token(SyntaxKind.IntKeyword)),
+                                            ParenthesizedExpression(BinaryExpression(SyntaxKind.SubtractExpression, pCh, p)))))))),
+                        };
+                    }
+
+                    // ...
+                    //     public override string ToString()
+                    //     {
+                    //         ...
+                    //         return ToString(length);
+                    //     }
+                    MethodDeclarationSyntax toStringOverride =
+                        MethodDeclaration(PredefinedType(Token(SyntaxKind.StringKeyword)), Identifier(nameof(this.ToString)))
+                            .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.OverrideKeyword))
+                            .WithBody(Block(lengthDeclarationStatements).AddStatements(
+                                ReturnStatement(InvocationExpression(
+                                    IdentifierName("ToString"),
+                                    ArgumentList().AddArguments(Argument(lengthLocalVar))))))
+                            .WithLeadingTrivia(InlineCharArrayToStringComment);
+                    if (unsafeRequired)
+                    {
+                        toStringOverride = toStringOverride.AddModifiers(Token(SyntaxKind.UnsafeKeyword));
+                    }
+
+                    fixedLengthStruct = fixedLengthStruct.AddMembers(toStringOverride);
+                }
+
                 IdentifierNameSyntax indexParamName = IdentifierName("index");
                 IdentifierNameSyntax p0 = IdentifierName("p0");
                 IdentifierNameSyntax atThis = IdentifierName("@this");
@@ -4384,7 +4526,7 @@ namespace Microsoft.Windows.CsWin32
 
                 ////internal static unsafe ref readonly uint ReadOnlyItemRef(this in MainAVIHeader.__dwReserved_4 @this, int index)
                 ////{
-                ////    fixed (uint* p0 = &@this._1)
+                ////    fixed (uint* p0 = &@this._0)
                 ////        return ref p0[index];
                 ////    - or (for managed elements) -
                 ////    switch (index)
@@ -4425,7 +4567,7 @@ namespace Microsoft.Windows.CsWin32
 
                 ////internal static unsafe ref uint ItemRef(this ref MainAVIHeader.__dwReserved_4 @this, int index)
                 ////{
-                ////    fixed (uint* p0 = &@this._1)
+                ////    fixed (uint* p0 = &@this._0)
                 ////        return ref p0[index];
                 ////}
                 MethodDeclarationSyntax getOrSetAtMethod = MethodDeclaration(RefType(qualifiedElementType.WithTrailingTrivia(TriviaList(Space))), Identifier("ItemRef"))

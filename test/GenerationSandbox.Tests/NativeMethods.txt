@@ -10,3 +10,4 @@ EnumWindows
 GetWindowTextLength
 GetWindowText
 WPARAM
+RM_PROCESS_INFO

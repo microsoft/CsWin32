@@ -1979,7 +1979,7 @@ namespace Windows.Win32
 					char* p = this.Value;
 					if (p is null)
 						return 0;
-					while (*p != 0)
+					while (*p != '\0')
 						p++;
 					return checked((int)(p - this.Value));
 				}

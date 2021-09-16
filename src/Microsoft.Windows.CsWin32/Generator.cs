@@ -4342,7 +4342,7 @@ namespace Microsoft.Windows.CsWin32
                 }
 
                 var fixedLengthStruct = StructDeclaration(fixedLengthStructName.Identifier)
-                    .AddModifiers(TokenWithSpace(this.Visibility))
+                    .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.PartialKeyword))
                     .AddMembers(
                         FieldDeclaration(VariableDeclaration(elementType)
                             .AddVariables(Enumerable.Range(0, length).Select(n => VariableDeclarator(Identifier($"_{n}"))).ToArray()))
@@ -4517,6 +4517,103 @@ namespace Microsoft.Windows.CsWin32
                     }
 
                     fixedLengthStruct = fixedLengthStruct.AddMembers(toStringOverride);
+
+                    // public static implicit operator __char_64(string? value) => value.AsSpan();
+                    fixedLengthStruct = fixedLengthStruct.AddMembers(
+                        ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), fixedLengthStructName)
+                            .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword))
+                            .AddParameterListParameters(Parameter(Identifier("value")).WithType(PredefinedType(Token(SyntaxKind.StringKeyword)).WithTrailingTrivia(TriviaList(Space))))
+                            .WithExpressionBody(ArrowExpressionClause(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("value"), IdentifierName(nameof(MemoryExtensions.AsSpan))))))
+                            .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+
+                    // public static unsafe implicit operator __char_64(ReadOnlySpan<char> value)
+                    // {
+                    //     __char_64 result = default;
+                    // #if NETCOREAPP2_1_OR_GREATER
+                    //     value.CopyTo(result.AsSpan());
+                    // #else
+                    //     if (value.Length > result.Length)
+                    //     {
+                    //         throw new ArgumentException("Too long");
+                    //     }
+                    //     char* pwzAppName = &result._0;
+                    //     for (int i = 0; i < value.Length; i++)
+                    //     {
+                    //         *pwzAppName++ = value[i];
+                    //     }
+                    // #endif
+                    //     return result;
+                    // }
+                    IdentifierNameSyntax resultLocalVar = IdentifierName("result");
+                    IdentifierNameSyntax valueParam = IdentifierName("value");
+                    StatementSyntax[] middleBlock;
+                    if (this.canCallCreateSpan)
+                    {
+                        unsafeRequired = false;
+                        middleBlock = new StatementSyntax[]
+                        {
+                            // value.CopyTo(result.AsSpan());
+                            ExpressionStatement(InvocationExpression(
+                                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParam, IdentifierName(nameof(ReadOnlySpan<int>.CopyTo))),
+                                ArgumentList().AddArguments(Argument(
+                                    InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, resultLocalVar, IdentifierName("AsSpan")), ArgumentList()))))),
+                        };
+                    }
+                    else
+                    {
+                        unsafeRequired = true;
+                        IdentifierNameSyntax p = IdentifierName("p");
+                        IdentifierNameSyntax i = IdentifierName("i");
+                        middleBlock = new StatementSyntax[]
+                        {
+                            // if (value.Length > result.Length) throw new ArgumentException("Too long");
+                            IfStatement(
+                                BinaryExpression(
+                                    SyntaxKind.GreaterThanExpression,
+                                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParam, IdentifierName(nameof(ReadOnlySpan<int>.Length))),
+                                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, resultLocalVar, IdentifierName("Length"))),
+                                ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentException))).AddArgumentListArguments(Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal("Length exceeds fixed array size.")))))),
+
+                            // char* p = &result._0;
+                            LocalDeclarationStatement(VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword)))).AddVariables(
+                                VariableDeclarator(p.Identifier).WithInitializer(EqualsValueClause(PrefixUnaryExpression(
+                                    SyntaxKind.AddressOfExpression,
+                                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, resultLocalVar, IdentifierName("_0"))))))),
+
+                            // for (int i = 0; i < value.Length; i++)
+                            //     *p++ = value[i];
+                            ForStatement(
+                                VariableDeclaration(PredefinedType(Token(SyntaxKind.IntKeyword))).AddVariables(
+                                    VariableDeclarator(i.Identifier).WithInitializer(EqualsValueClause(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))))),
+                                BinaryExpression(SyntaxKind.LessThanExpression, i, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParam, IdentifierName(nameof(ReadOnlySpan<char>.Length)))),
+                                SingletonSeparatedList<ExpressionSyntax>(PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, i)),
+                                ExpressionStatement(AssignmentExpression(
+                                    SyntaxKind.SimpleAssignmentExpression,
+                                    PrefixUnaryExpression(SyntaxKind.PointerIndirectionExpression, PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, p)),
+                                    ElementAccessExpression(valueParam).AddArgumentListArguments(Argument(i))))),
+                        };
+                    }
+
+                    ConversionOperatorDeclarationSyntax conversionDecl =
+                        ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), fixedLengthStructName)
+                            .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword))
+                            .AddParameterListParameters(Parameter(valueParam.Identifier).WithType(MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword))).WithTrailingTrivia(TriviaList(Space))))
+                            .WithBody(Block()
+
+                                // __char_64 result = default;
+                                .AddStatements(LocalDeclarationStatement(VariableDeclaration(fixedLengthStructName).AddVariables(
+                                    VariableDeclarator(resultLocalVar.Identifier).WithInitializer(EqualsValueClause(DefaultExpression(fixedLengthStructName))))))
+
+                                .AddStatements(middleBlock)
+
+                                // return result;
+                                .AddStatements(ReturnStatement(resultLocalVar)));
+                    if (unsafeRequired)
+                    {
+                        conversionDecl = conversionDecl.AddModifiers(Token(SyntaxKind.UnsafeKeyword));
+                    }
+
+                    fixedLengthStruct = fixedLengthStruct.AddMembers(conversionDecl);
                 }
 
                 IdentifierNameSyntax indexParamName = IdentifierName("index");

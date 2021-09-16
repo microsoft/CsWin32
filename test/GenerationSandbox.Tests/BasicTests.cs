@@ -317,4 +317,25 @@ public class BasicTests
 
         Assert.Equal(new string('x', fixedCharArray.Length), fixedCharArray.ToString());
     }
+
+    [Fact]
+    public void FixedCharArraySetWithString()
+    {
+        Windows.Win32.System.RestartManager.RM_PROCESS_INFO.__char_64 fixedCharArray = default;
+
+        fixedCharArray = null;
+        Assert.Equal(string.Empty, fixedCharArray.ToString());
+
+        fixedCharArray = string.Empty;
+        Assert.Equal(string.Empty, fixedCharArray.ToString());
+
+        fixedCharArray = "hi there";
+        Assert.Equal("hi there", fixedCharArray.ToString());
+
+        string expected = new string('x', fixedCharArray.Length);
+        fixedCharArray = expected;
+        Assert.Equal(expected, fixedCharArray.ToString());
+
+        Assert.Throws<ArgumentException>(() => fixedCharArray = new string('x', fixedCharArray.Length + 1));
+    }
 }

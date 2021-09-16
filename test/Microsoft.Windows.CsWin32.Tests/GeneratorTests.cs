@@ -771,7 +771,7 @@ namespace Microsoft.Windows.Sdk
 			internal uint dwHeight;
 			internal __uint_4 dwReserved;
 
-			internal struct __uint_4
+			internal partial struct __uint_4
 			{
 				internal uint _0,_1,_2,_3;
 
@@ -821,7 +821,7 @@ namespace Microsoft.Windows.Sdk
 			internal uint dwHeight;
 			internal __uint_4 dwReserved;
 
-			internal struct __uint_4
+			internal partial struct __uint_4
 			{
 				internal uint _0,_1,_2,_3;
 

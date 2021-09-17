@@ -4400,123 +4400,144 @@ namespace Microsoft.Windows.CsWin32
             // If the field is a fixed length array, we have to work some code gen magic since C# does not allow those.
             if (originalType is ArrayTypeSyntax arrayType && arrayType.RankSpecifiers.Count > 0 && arrayType.RankSpecifiers[0].Sizes.Count == 1)
             {
-                int length = int.Parse(((LiteralExpressionSyntax)arrayType.RankSpecifiers[0].Sizes[0]).Token.ValueText, CultureInfo.InvariantCulture);
-                TypeSyntax elementType = arrayType.ElementType;
+                return this.DeclareFixedLengthArrayStruct(fieldDef, customAttributes, fieldTypeHandleInfo, arrayType);
+            }
 
-                // C# does not allow Span<T> where T is a pointer type.
-                if (elementType is PointerTypeSyntax ptr)
-                {
-                    elementType = IntPtrTypeSyntax;
-                }
+            // If the field is a delegate type, we have to replace that with a native function pointer to avoid the struct becoming a 'managed type'.
+            if (!this.options.AllowMarshaling && this.IsDelegateReference(fieldTypeHandleInfo, out TypeDefinition typeDef) && !this.IsUntypedDelegate(typeDef))
+            {
+                return (this.FunctionPointer(typeDef), default);
+            }
 
-                var lengthLiteralSyntax = LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(length));
+            // If the field is a pointer to a COM interface (and we're using bona fide interfaces),
+            // then we must type it as an array.
+            if (fieldTypeHandleInfo is PointerTypeHandleInfo ptr3 && this.IsManagedType(ptr3.ElementType))
+            {
+                return (ArrayType(ptr3.ElementType.ToTypeSyntax(typeSettings, null).Type).AddRankSpecifiers(ArrayRankSpecifier()), default);
+            }
 
-                // internal struct __TheStruct_Count
-                // {
-                //     internal TheStruct _0, _1, _2, _3, _4, _5, _6, _7, _8;
-                //     /// <summary>Always <c>8</c>.</summary>
-                //     internal readonly int Length => 8;
+            return (originalType, default);
+        }
+
+        private (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers) DeclareFixedLengthArrayStruct(FieldDefinition fieldDef, CustomAttributeHandleCollection customAttributes, TypeHandleInfo fieldTypeHandleInfo, ArrayTypeSyntax arrayType)
+        {
+            int length = int.Parse(((LiteralExpressionSyntax)arrayType.RankSpecifiers[0].Sizes[0]).Token.ValueText, CultureInfo.InvariantCulture);
+            TypeSyntax elementType = arrayType.ElementType;
+
+            // C# does not allow Span<T> where T is a pointer type.
+            if (elementType is PointerTypeSyntax ptr)
+            {
+                elementType = IntPtrTypeSyntax;
+            }
+
+            var lengthLiteralSyntax = LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(length));
+
+            // internal struct __TheStruct_Count
+            // {
+            //     internal TheStruct _0, _1, _2, _3, _4, _5, _6, _7, _8;
+            //     /// <summary>Always <c>8</c>.</summary>
+            //     internal readonly int Length => 8;
+            // ...
+            IdentifierNameSyntax fixedLengthStructName = IdentifierName($"__{elementType.ToString().Replace(' ', '_').Replace('.', '_').Replace(':', '_').Replace('*', '_').Replace('<', '_').Replace('>', '_').Replace('[', '_').Replace(']', '_').Replace(',', '_')}_{length}");
+            SyntaxTokenList fieldModifiers = TokenList(TokenWithSpace(this.Visibility));
+            if (RequiresUnsafe(elementType))
+            {
+                fieldModifiers = fieldModifiers.Add(TokenWithSpace(SyntaxKind.UnsafeKeyword));
+            }
+
+            var fixedLengthStruct = StructDeclaration(fixedLengthStructName.Identifier)
+                .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.PartialKeyword))
+                .AddMembers(
+                    FieldDeclaration(VariableDeclaration(elementType)
+                        .AddVariables(Enumerable.Range(0, length).Select(n => VariableDeclarator(Identifier($"_{n}"))).ToArray()))
+                        .WithModifiers(fieldModifiers),
+                    PropertyDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), "Length")
+                        .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
+                        .WithExpressionBody(ArrowExpressionClause(lengthLiteralSyntax))
+                        .WithSemicolonToken(SemicolonWithLineFeed)
+                        .WithLeadingTrivia(Trivia(DocumentationCommentTrivia(SyntaxKind.SingleLineDocumentationCommentTrivia).AddContent(
+                            DocCommentStart,
+                            XmlElement("summary", List(new XmlNodeSyntax[]
+                            {
+                                XmlText("Always "),
+                                XmlElement("c", List(new XmlNodeSyntax[] { XmlText(lengthLiteralSyntax.Token.ValueText) })),
+                                XmlText("."),
+                            })),
+                            DocCommentEnd))));
+
+            IdentifierNameSyntax GetElementFieldName(int index) => IdentifierName(FormattableString.Invariant($"_{index}"));
+            var firstElementFieldName = GetElementFieldName(0);
+            if (this.canCallCreateSpan)
+            {
                 // ...
-                IdentifierNameSyntax fixedLengthStructName = IdentifierName($"__{elementType.ToString().Replace(' ', '_').Replace('.', '_').Replace(':', '_').Replace('*', '_').Replace('<', '_').Replace('>', '_').Replace('[', '_').Replace(']', '_').Replace(',', '_')}_{length}");
-                SyntaxTokenList fieldModifiers = TokenList(TokenWithSpace(this.Visibility));
-                if (RequiresUnsafe(elementType))
-                {
-                    fieldModifiers = fieldModifiers.Add(TokenWithSpace(SyntaxKind.UnsafeKeyword));
-                }
-
-                var fixedLengthStruct = StructDeclaration(fixedLengthStructName.Identifier)
-                    .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.PartialKeyword))
+                //     internal ref TheStruct this[int index] => ref AsSpan()[index];
+                //     internal Span<TheStruct> AsSpan() => MemoryMarshal.CreateSpan(ref _0, 4);
+                fixedLengthStruct = fixedLengthStruct
                     .AddMembers(
-                        FieldDeclaration(VariableDeclaration(elementType)
-                            .AddVariables(Enumerable.Range(0, length).Select(n => VariableDeclarator(Identifier($"_{n}"))).ToArray()))
-                            .WithModifiers(fieldModifiers),
-                        PropertyDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), "Length")
-                            .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
-                            .WithExpressionBody(ArrowExpressionClause(lengthLiteralSyntax))
+                        IndexerDeclaration(RefType(elementType).WithTrailingTrivia(TriviaList(Space)))
+                            .AddModifiers(TokenWithSpace(this.Visibility))
+                            .AddParameterListParameters(Parameter(Identifier("index")).WithType(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))))
+                            .WithExpressionBody(ArrowExpressionClause(RefExpression(
+                                ElementAccessExpression(InvocationExpression(IdentifierName("AsSpan")))
+                                    .AddArgumentListArguments(Argument(IdentifierName("index"))))))
                             .WithSemicolonToken(SemicolonWithLineFeed)
-                            .WithLeadingTrivia(Trivia(DocumentationCommentTrivia(SyntaxKind.SingleLineDocumentationCommentTrivia).AddContent(
-                                DocCommentStart,
-                                XmlElement("summary", List(new XmlNodeSyntax[]
-                                {
-                                    XmlText("Always "),
-                                    XmlElement("c", List(new XmlNodeSyntax[] { XmlText(lengthLiteralSyntax.Token.ValueText) })),
-                                    XmlText("."),
-                                })),
-                                DocCommentEnd))));
+                            .WithLeadingTrivia(InlineArrayUnsafeIndexerComment),
+                        MethodDeclaration(MakeSpanOfT(elementType).WithTrailingTrivia(TriviaList(Space)), Identifier("AsSpan"))
+                            .AddModifiers(TokenWithSpace(this.Visibility))
+                            .WithExpressionBody(ArrowExpressionClause(
+                                InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("MemoryMarshal"), IdentifierName("CreateSpan")))
+                                    .WithArgumentList(FixTrivia(ArgumentList().AddArguments(
+                                        Argument(nameColon: null, TokenWithSpace(SyntaxKind.RefKeyword), firstElementFieldName),
+                                        Argument(lengthLiteralSyntax))))))
+                            .WithSemicolonToken(SemicolonWithLineFeed)
+                            .WithLeadingTrivia(InlineArrayUnsafeAsSpanComment));
+            }
 
-                IdentifierNameSyntax GetElementFieldName(int index) => IdentifierName(FormattableString.Invariant($"_{index}"));
-                var firstElementFieldName = GetElementFieldName(0);
+            if (elementType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.CharKeyword } })
+            {
+                // ...
+                //     internal unsafe readonly string ToString(int length)
+                //     {
+                //         if (length < 0 || length > Length)
+                //             throw new ArgumentOutOfRangeException(nameof(length), length, "Length must be between 0 and the fixed array length.");
+                //         fixed (char* p0 = &_0)
+                //             return new string(p0, 0, length);
+                //     }
+                fixedLengthStruct = fixedLengthStruct.AddMembers(
+                    MethodDeclaration(PredefinedType(Token(SyntaxKind.StringKeyword)), Identifier(nameof(this.ToString)))
+                        .AddModifiers(Token(this.Visibility), Token(SyntaxKind.UnsafeKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
+                        .AddParameterListParameters(
+                            Parameter(Identifier("length")).WithType(PredefinedType(Token(SyntaxKind.IntKeyword)).WithTrailingTrivia(Space)))
+                        .WithBody(Block(
+                            IfStatement(
+                                BinaryExpression(
+                                    SyntaxKind.LogicalOrExpression,
+                                    BinaryExpression(SyntaxKind.LessThanExpression, IdentifierName("length"), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))),
+                                    BinaryExpression(SyntaxKind.GreaterThanExpression, IdentifierName("length"), IdentifierName("Length"))),
+                                ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentOutOfRangeException))).AddArgumentListArguments(
+                                    Argument(InvocationExpression(IdentifierName("nameof"), ArgumentList().AddArguments(Argument(IdentifierName("length"))))),
+                                    Argument(IdentifierName("length")),
+                                    Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal("Length must be between 0 and the fixed array length.")))))),
+                            FixedStatement(
+                                VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword)))).AddVariables(
+                                    VariableDeclarator(Identifier("p0")).WithInitializer(EqualsValueClause(
+                                        PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName("_0"))))),
+                                ReturnStatement(
+                                    ObjectCreationExpression(PredefinedType(Token(SyntaxKind.StringKeyword))).AddArgumentListArguments(
+                                        Argument(IdentifierName("p0")),
+                                        Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))),
+                                        Argument(IdentifierName("length")))))))
+                        .WithLeadingTrivia(InlineCharArrayToStringWithLengthComment));
+
+                IdentifierNameSyntax lengthLocalVar = IdentifierName("length");
+                StatementSyntax[] lengthDeclarationStatements;
+                bool unsafeRequired = false;
                 if (this.canCallCreateSpan)
                 {
-                    // ...
-                    //     internal ref TheStruct this[int index] => ref AsSpan()[index];
-                    //     internal Span<TheStruct> AsSpan() => MemoryMarshal.CreateSpan(ref _0, 4);
-                    fixedLengthStruct = fixedLengthStruct
-                        .AddMembers(
-                            IndexerDeclaration(RefType(elementType).WithTrailingTrivia(TriviaList(Space)))
-                                .AddModifiers(TokenWithSpace(this.Visibility))
-                                .AddParameterListParameters(Parameter(Identifier("index")).WithType(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))))
-                                .WithExpressionBody(ArrowExpressionClause(RefExpression(
-                                    ElementAccessExpression(InvocationExpression(IdentifierName("AsSpan")))
-                                        .AddArgumentListArguments(Argument(IdentifierName("index"))))))
-                                .WithSemicolonToken(SemicolonWithLineFeed)
-                                .WithLeadingTrivia(InlineArrayUnsafeIndexerComment),
-                            MethodDeclaration(MakeSpanOfT(elementType).WithTrailingTrivia(TriviaList(Space)), Identifier("AsSpan"))
-                                .AddModifiers(TokenWithSpace(this.Visibility))
-                                .WithExpressionBody(ArrowExpressionClause(
-                                    InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("MemoryMarshal"), IdentifierName("CreateSpan")))
-                                        .WithArgumentList(FixTrivia(ArgumentList().AddArguments(
-                                            Argument(nameColon: null, TokenWithSpace(SyntaxKind.RefKeyword), firstElementFieldName),
-                                            Argument(lengthLiteralSyntax))))))
-                                .WithSemicolonToken(SemicolonWithLineFeed)
-                                .WithLeadingTrivia(InlineArrayUnsafeAsSpanComment));
-                }
-
-                if (elementType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.CharKeyword } })
-                {
-                    // ...
-                    //     internal unsafe readonly string ToString(int length)
-                    //     {
-                    //         if (length < 0 || length > Length)
-                    //             throw new ArgumentOutOfRangeException(nameof(length), length, "Length must be between 0 and the fixed array length.");
-                    //         fixed (char* p0 = &_0)
-                    //             return new string(p0, 0, length);
-                    //     }
-                    fixedLengthStruct = fixedLengthStruct.AddMembers(
-                        MethodDeclaration(PredefinedType(Token(SyntaxKind.StringKeyword)), Identifier(nameof(this.ToString)))
-                            .AddModifiers(Token(this.Visibility), Token(SyntaxKind.UnsafeKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
-                            .AddParameterListParameters(
-                                Parameter(Identifier("length")).WithType(PredefinedType(Token(SyntaxKind.IntKeyword)).WithTrailingTrivia(Space)))
-                            .WithBody(Block(
-                                IfStatement(
-                                    BinaryExpression(
-                                        SyntaxKind.LogicalOrExpression,
-                                        BinaryExpression(SyntaxKind.LessThanExpression, IdentifierName("length"), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))),
-                                        BinaryExpression(SyntaxKind.GreaterThanExpression, IdentifierName("length"), IdentifierName("Length"))),
-                                    ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentOutOfRangeException))).AddArgumentListArguments(
-                                        Argument(InvocationExpression(IdentifierName("nameof"), ArgumentList().AddArguments(Argument(IdentifierName("length"))))),
-                                        Argument(IdentifierName("length")),
-                                        Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal("Length must be between 0 and the fixed array length.")))))),
-                                FixedStatement(
-                                    VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword)))).AddVariables(
-                                        VariableDeclarator(Identifier("p0")).WithInitializer(EqualsValueClause(
-                                            PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName("_0"))))),
-                                    ReturnStatement(
-                                        ObjectCreationExpression(PredefinedType(Token(SyntaxKind.StringKeyword))).AddArgumentListArguments(
-                                            Argument(IdentifierName("p0")),
-                                            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))),
-                                            Argument(IdentifierName("length")))))))
-                            .WithLeadingTrivia(InlineCharArrayToStringWithLengthComment));
-
-                    IdentifierNameSyntax lengthLocalVar = IdentifierName("length");
-                    StatementSyntax[] lengthDeclarationStatements;
-                    bool unsafeRequired = false;
-                    if (this.canCallCreateSpan)
+                    // int length = AsSpan().IndexOf('\0');
+                    // if (length == -1) length = Length;
+                    lengthDeclarationStatements = new StatementSyntax[]
                     {
-                        // int length = AsSpan().IndexOf('\0');
-                        // if (length == -1) length = Length;
-                        lengthDeclarationStatements = new StatementSyntax[]
-                        {
                             LocalDeclarationStatement(VariableDeclaration(PredefinedType(Token(SyntaxKind.IntKeyword))).AddVariables(
                                     VariableDeclarator(lengthLocalVar.Identifier).WithInitializer(EqualsValueClause(
                                         InvocationExpression(
@@ -4529,24 +4550,24 @@ namespace Microsoft.Windows.CsWin32
                             IfStatement(
                                 BinaryExpression(SyntaxKind.EqualsExpression, lengthLocalVar, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(-1))),
                                 ExpressionStatement(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, lengthLocalVar, IdentifierName("Length")))),
-                        };
-                    }
-                    else
+                    };
+                }
+                else
+                {
+                    // int length;
+                    // fixed (char* p = &_0)
+                    // {
+                    //     char* pLastExclusive = p + Length;
+                    //     char* pCh = p;
+                    //     for (; pCh < pLastExclusive && *pCh != '\0'; pCh++);
+                    //     length = checked((int)(pCh - p));
+                    // }
+                    IdentifierNameSyntax p = IdentifierName("p");
+                    IdentifierNameSyntax pLastExclusive = IdentifierName("pLastExclusive");
+                    IdentifierNameSyntax pCh = IdentifierName("pCh");
+                    unsafeRequired = true;
+                    lengthDeclarationStatements = new StatementSyntax[]
                     {
-                        // int length;
-                        // fixed (char* p = &_0)
-                        // {
-                        //     char* pLastExclusive = p + Length;
-                        //     char* pCh = p;
-                        //     for (; pCh < pLastExclusive && *pCh != '\0'; pCh++);
-                        //     length = checked((int)(pCh - p));
-                        // }
-                        IdentifierNameSyntax p = IdentifierName("p");
-                        IdentifierNameSyntax pLastExclusive = IdentifierName("pLastExclusive");
-                        IdentifierNameSyntax pCh = IdentifierName("pCh");
-                        unsafeRequired = true;
-                        lengthDeclarationStatements = new StatementSyntax[]
-                        {
                             LocalDeclarationStatement(VariableDeclaration(PredefinedType(Token(SyntaxKind.IntKeyword))).AddVariables(
                                     VariableDeclarator(lengthLocalVar.Identifier))),
                             FixedStatement(
@@ -4577,78 +4598,78 @@ namespace Microsoft.Windows.CsWin32
                                         CheckedExpression(SyntaxKind.CheckedExpression, CastExpression(
                                             PredefinedType(Token(SyntaxKind.IntKeyword)),
                                             ParenthesizedExpression(BinaryExpression(SyntaxKind.SubtractExpression, pCh, p)))))))),
-                        };
-                    }
+                    };
+                }
 
-                    // ...
-                    //     public override readonly string ToString()
-                    //     {
-                    //         ...
-                    //         return ToString(length);
-                    //     }
-                    MethodDeclarationSyntax toStringOverride =
-                        MethodDeclaration(PredefinedType(Token(SyntaxKind.StringKeyword)), Identifier(nameof(this.ToString)))
-                            .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.OverrideKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
-                            .WithBody(Block(lengthDeclarationStatements).AddStatements(
-                                ReturnStatement(InvocationExpression(
-                                    IdentifierName("ToString"),
-                                    ArgumentList().AddArguments(Argument(lengthLocalVar))))))
-                            .WithLeadingTrivia(InlineCharArrayToStringComment);
-                    if (unsafeRequired)
+                // ...
+                //     public override readonly string ToString()
+                //     {
+                //         ...
+                //         return ToString(length);
+                //     }
+                MethodDeclarationSyntax toStringOverride =
+                    MethodDeclaration(PredefinedType(Token(SyntaxKind.StringKeyword)), Identifier(nameof(this.ToString)))
+                        .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.OverrideKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
+                        .WithBody(Block(lengthDeclarationStatements).AddStatements(
+                            ReturnStatement(InvocationExpression(
+                                IdentifierName("ToString"),
+                                ArgumentList().AddArguments(Argument(lengthLocalVar))))))
+                        .WithLeadingTrivia(InlineCharArrayToStringComment);
+                if (unsafeRequired)
+                {
+                    toStringOverride = toStringOverride.AddModifiers(Token(SyntaxKind.UnsafeKeyword));
+                }
+
+                fixedLengthStruct = fixedLengthStruct.AddMembers(toStringOverride);
+
+                // public static implicit operator __char_64(string? value) => value.AsSpan();
+                fixedLengthStruct = fixedLengthStruct.AddMembers(
+                    ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), fixedLengthStructName)
+                        .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword))
+                        .AddParameterListParameters(Parameter(Identifier("value")).WithType(PredefinedType(Token(SyntaxKind.StringKeyword)).WithTrailingTrivia(TriviaList(Space))))
+                        .WithExpressionBody(ArrowExpressionClause(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("value"), IdentifierName(nameof(MemoryExtensions.AsSpan))))))
+                        .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+
+                // public static unsafe implicit operator __char_64(ReadOnlySpan<char> value)
+                // {
+                //     __char_64 result = default;
+                // #if NETCOREAPP2_1_OR_GREATER
+                //     value.CopyTo(result.AsSpan());
+                // #else
+                //     if (value.Length > result.Length)
+                //     {
+                //         throw new ArgumentException("Too long");
+                //     }
+                //     char* pwzAppName = &result._0;
+                //     for (int i = 0; i < value.Length; i++)
+                //     {
+                //         *pwzAppName++ = value[i];
+                //     }
+                // #endif
+                //     return result;
+                // }
+                IdentifierNameSyntax resultLocalVar = IdentifierName("result");
+                IdentifierNameSyntax valueParam = IdentifierName("value");
+                StatementSyntax[] middleBlock;
+                if (this.canCallCreateSpan)
+                {
+                    unsafeRequired = false;
+                    middleBlock = new StatementSyntax[]
                     {
-                        toStringOverride = toStringOverride.AddModifiers(Token(SyntaxKind.UnsafeKeyword));
-                    }
-
-                    fixedLengthStruct = fixedLengthStruct.AddMembers(toStringOverride);
-
-                    // public static implicit operator __char_64(string? value) => value.AsSpan();
-                    fixedLengthStruct = fixedLengthStruct.AddMembers(
-                        ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), fixedLengthStructName)
-                            .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword))
-                            .AddParameterListParameters(Parameter(Identifier("value")).WithType(PredefinedType(Token(SyntaxKind.StringKeyword)).WithTrailingTrivia(TriviaList(Space))))
-                            .WithExpressionBody(ArrowExpressionClause(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("value"), IdentifierName(nameof(MemoryExtensions.AsSpan))))))
-                            .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
-
-                    // public static unsafe implicit operator __char_64(ReadOnlySpan<char> value)
-                    // {
-                    //     __char_64 result = default;
-                    // #if NETCOREAPP2_1_OR_GREATER
-                    //     value.CopyTo(result.AsSpan());
-                    // #else
-                    //     if (value.Length > result.Length)
-                    //     {
-                    //         throw new ArgumentException("Too long");
-                    //     }
-                    //     char* pwzAppName = &result._0;
-                    //     for (int i = 0; i < value.Length; i++)
-                    //     {
-                    //         *pwzAppName++ = value[i];
-                    //     }
-                    // #endif
-                    //     return result;
-                    // }
-                    IdentifierNameSyntax resultLocalVar = IdentifierName("result");
-                    IdentifierNameSyntax valueParam = IdentifierName("value");
-                    StatementSyntax[] middleBlock;
-                    if (this.canCallCreateSpan)
-                    {
-                        unsafeRequired = false;
-                        middleBlock = new StatementSyntax[]
-                        {
                             // value.CopyTo(result.AsSpan());
                             ExpressionStatement(InvocationExpression(
                                 MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParam, IdentifierName(nameof(ReadOnlySpan<int>.CopyTo))),
                                 ArgumentList().AddArguments(Argument(
                                     InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, resultLocalVar, IdentifierName("AsSpan")), ArgumentList()))))),
-                        };
-                    }
-                    else
+                    };
+                }
+                else
+                {
+                    unsafeRequired = true;
+                    IdentifierNameSyntax p = IdentifierName("p");
+                    IdentifierNameSyntax i = IdentifierName("i");
+                    middleBlock = new StatementSyntax[]
                     {
-                        unsafeRequired = true;
-                        IdentifierNameSyntax p = IdentifierName("p");
-                        IdentifierNameSyntax i = IdentifierName("i");
-                        middleBlock = new StatementSyntax[]
-                        {
                             // if (value.Length > result.Length) throw new ArgumentException("Too long");
                             IfStatement(
                                 BinaryExpression(
@@ -4674,105 +4695,89 @@ namespace Microsoft.Windows.CsWin32
                                     SyntaxKind.SimpleAssignmentExpression,
                                     PrefixUnaryExpression(SyntaxKind.PointerIndirectionExpression, PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, p)),
                                     ElementAccessExpression(valueParam).AddArgumentListArguments(Argument(i))))),
-                        };
-                    }
-
-                    ConversionOperatorDeclarationSyntax conversionDecl =
-                        ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), fixedLengthStructName)
-                            .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword))
-                            .AddParameterListParameters(Parameter(valueParam.Identifier).WithType(MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword))).WithTrailingTrivia(TriviaList(Space))))
-                            .WithBody(Block()
-
-                                // __char_64 result = default;
-                                .AddStatements(LocalDeclarationStatement(VariableDeclaration(fixedLengthStructName).AddVariables(
-                                    VariableDeclarator(resultLocalVar.Identifier).WithInitializer(EqualsValueClause(DefaultExpression(fixedLengthStructName))))))
-
-                                .AddStatements(middleBlock)
-
-                                // return result;
-                                .AddStatements(ReturnStatement(resultLocalVar)));
-                    if (unsafeRequired)
-                    {
-                        conversionDecl = conversionDecl.AddModifiers(Token(SyntaxKind.UnsafeKeyword));
-                    }
-
-                    fixedLengthStruct = fixedLengthStruct.AddMembers(conversionDecl);
+                    };
                 }
 
-                IdentifierNameSyntax indexParamName = IdentifierName("index");
-                IdentifierNameSyntax p0 = IdentifierName("p0");
-                IdentifierNameSyntax atThis = IdentifierName("@this");
-                TypeSyntax qualifiedElementType = elementType == IntPtrTypeSyntax ? elementType : ((ArrayTypeSyntax)fieldTypeHandleInfo.ToTypeSyntax(this.extensionMethodSignatureTypeSettings, customAttributes).Type).ElementType;
+                ConversionOperatorDeclarationSyntax conversionDecl =
+                    ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), fixedLengthStructName)
+                        .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword))
+                        .AddParameterListParameters(Parameter(valueParam.Identifier).WithType(MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword))).WithTrailingTrivia(TriviaList(Space))))
+                        .WithBody(Block()
 
-                ////internal static unsafe ref readonly uint ReadOnlyItemRef(this in MainAVIHeader.__dwReserved_4 @this, int index)
-                ////{
-                ////    fixed (uint* p0 = &@this._0)
-                ////        return ref p0[index];
-                ////    - or (for managed elements) -
-                ////    switch (index)
-                ////    {
-                ////      case 0: ref return @this._0;
-                ////      case 1: ref return @this._1;
-                ////      default: throw new ArgumentOutOfRangeException();
-                ////    }
-                ////}
-                StatementSyntax? statement =
-                    fieldTypeHandleInfo is ArrayTypeHandleInfo { ElementType: { } arrayElement } && this.IsManagedType(arrayElement)
-                     ? SwitchStatement(indexParamName)
-                        .AddSections(Enumerable.Range(0, length).Select(n => SwitchSection()
-                            .AddLabels(CaseSwitchLabel(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(n))))
-                            .AddStatements(ReturnStatement(RefExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, atThis, GetElementFieldName(n)))))).ToArray())
-                        .AddSections(SwitchSection().AddLabels(DefaultSwitchLabel()).AddStatements(ThrowStatement(
-                            ObjectCreationExpression(IdentifierName(nameof(ArgumentOutOfRangeException)))
-                                .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(InvocationExpression(IdentifierName("nameof")).WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(indexParamName)))))))))))
-                     : FixedStatement(
-                        VariableDeclaration(PointerType(qualifiedElementType)).AddVariables(
-                            VariableDeclarator(p0.Identifier).WithInitializer(EqualsValueClause(
-                                PrefixUnaryExpression(
-                                    SyntaxKind.AddressOfExpression,
-                                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, atThis, firstElementFieldName))))),
-                        ReturnStatement(RefExpression(ElementAccessExpression(p0).AddArgumentListArguments(Argument(indexParamName)))))
-                        .WithFixedKeyword(TokenWithSpace(SyntaxKind.FixedKeyword));
-                BlockSyntax body = Block().AddStatements(statement);
-                ParameterSyntax thisParameter = Parameter(atThis.Identifier)
-                    .WithType(QualifiedName((NameSyntax)new HandleTypeHandleInfo(this.Reader, fieldDef.GetDeclaringType()).ToTypeSyntax(this.extensionMethodSignatureTypeSettings, customAttributes).Type, fixedLengthStructName).WithTrailingTrivia(TriviaList(Space)))
-                    .AddModifiers(TokenWithSpace(SyntaxKind.ThisKeyword));
-                ParameterSyntax indexParameter = Parameter(indexParamName.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)));
-                SyntaxTokenList methodModifiers = TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword));
-                MethodDeclarationSyntax getAtMethod = MethodDeclaration(RefType(qualifiedElementType.WithTrailingTrivia(TriviaList(Space))).WithReadOnlyKeyword(TokenWithSpace(SyntaxKind.ReadOnlyKeyword)), Identifier("ReadOnlyItemRef"))
-                    .WithModifiers(methodModifiers)
-                    .WithParameterList(FixTrivia(ParameterList().AddParameters(thisParameter.AddModifiers(TokenWithSpace(SyntaxKind.InKeyword)), indexParameter)))
-                    .WithBody(body);
-                this.volatileCode.AddInlineArrayIndexerExtension(getAtMethod);
+                            // __char_64 result = default;
+                            .AddStatements(LocalDeclarationStatement(VariableDeclaration(fixedLengthStructName).AddVariables(
+                                VariableDeclarator(resultLocalVar.Identifier).WithInitializer(EqualsValueClause(DefaultExpression(fixedLengthStructName))))))
 
-                ////internal static unsafe ref uint ItemRef(this ref MainAVIHeader.__dwReserved_4 @this, int index)
-                ////{
-                ////    fixed (uint* p0 = &@this._0)
-                ////        return ref p0[index];
-                ////}
-                MethodDeclarationSyntax getOrSetAtMethod = MethodDeclaration(RefType(qualifiedElementType.WithTrailingTrivia(TriviaList(Space))), Identifier("ItemRef"))
-                    .WithModifiers(methodModifiers)
-                    .WithParameterList(FixTrivia(ParameterList().AddParameters(thisParameter.AddModifiers(TokenWithSpace(SyntaxKind.RefKeyword)), indexParameter)))
-                    .WithBody(body);
-                this.volatileCode.AddInlineArrayIndexerExtension(getOrSetAtMethod);
+                            .AddStatements(middleBlock)
 
-                return (fixedLengthStructName, List<MemberDeclarationSyntax>().Add(fixedLengthStruct));
+                            // return result;
+                            .AddStatements(ReturnStatement(resultLocalVar)));
+                if (unsafeRequired)
+                {
+                    conversionDecl = conversionDecl.AddModifiers(Token(SyntaxKind.UnsafeKeyword));
+                }
+
+                fixedLengthStruct = fixedLengthStruct.AddMembers(conversionDecl);
             }
 
-            // If the field is a delegate type, we have to replace that with a native function pointer to avoid the struct becoming a 'managed type'.
-            if (!this.options.AllowMarshaling && this.IsDelegateReference(fieldTypeHandleInfo, out TypeDefinition typeDef) && !this.IsUntypedDelegate(typeDef))
-            {
-                return (this.FunctionPointer(typeDef), default);
-            }
+            IdentifierNameSyntax indexParamName = IdentifierName("index");
+            IdentifierNameSyntax p0 = IdentifierName("p0");
+            IdentifierNameSyntax atThis = IdentifierName("@this");
+            TypeSyntax qualifiedElementType = elementType == IntPtrTypeSyntax ? elementType : ((ArrayTypeSyntax)fieldTypeHandleInfo.ToTypeSyntax(this.extensionMethodSignatureTypeSettings, customAttributes).Type).ElementType;
 
-            // If the field is a pointer to a COM interface (and we're using bona fide interfaces),
-            // then we must type it as an array.
-            if (fieldTypeHandleInfo is PointerTypeHandleInfo ptr3 && this.IsManagedType(ptr3.ElementType))
-            {
-                return (ArrayType(ptr3.ElementType.ToTypeSyntax(typeSettings, null).Type).AddRankSpecifiers(ArrayRankSpecifier()), default);
-            }
+            ////internal static unsafe ref readonly uint ReadOnlyItemRef(this in MainAVIHeader.__dwReserved_4 @this, int index)
+            ////{
+            ////    fixed (uint* p0 = &@this._0)
+            ////        return ref p0[index];
+            ////    - or (for managed elements) -
+            ////    switch (index)
+            ////    {
+            ////      case 0: ref return @this._0;
+            ////      case 1: ref return @this._1;
+            ////      default: throw new ArgumentOutOfRangeException();
+            ////    }
+            ////}
+            StatementSyntax? statement =
+                fieldTypeHandleInfo is ArrayTypeHandleInfo { ElementType: { } arrayElement } && this.IsManagedType(arrayElement)
+                 ? SwitchStatement(indexParamName)
+                    .AddSections(Enumerable.Range(0, length).Select(n => SwitchSection()
+                        .AddLabels(CaseSwitchLabel(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(n))))
+                        .AddStatements(ReturnStatement(RefExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, atThis, GetElementFieldName(n)))))).ToArray())
+                    .AddSections(SwitchSection().AddLabels(DefaultSwitchLabel()).AddStatements(ThrowStatement(
+                        ObjectCreationExpression(IdentifierName(nameof(ArgumentOutOfRangeException)))
+                            .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(InvocationExpression(IdentifierName("nameof")).WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(indexParamName)))))))))))
+                 : FixedStatement(
+                    VariableDeclaration(PointerType(qualifiedElementType)).AddVariables(
+                        VariableDeclarator(p0.Identifier).WithInitializer(EqualsValueClause(
+                            PrefixUnaryExpression(
+                                SyntaxKind.AddressOfExpression,
+                                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, atThis, firstElementFieldName))))),
+                    ReturnStatement(RefExpression(ElementAccessExpression(p0).AddArgumentListArguments(Argument(indexParamName)))))
+                    .WithFixedKeyword(TokenWithSpace(SyntaxKind.FixedKeyword));
+            BlockSyntax body = Block().AddStatements(statement);
+            ParameterSyntax thisParameter = Parameter(atThis.Identifier)
+                .WithType(QualifiedName((NameSyntax)new HandleTypeHandleInfo(this.Reader, fieldDef.GetDeclaringType()).ToTypeSyntax(this.extensionMethodSignatureTypeSettings, customAttributes).Type, fixedLengthStructName).WithTrailingTrivia(TriviaList(Space)))
+                .AddModifiers(TokenWithSpace(SyntaxKind.ThisKeyword));
+            ParameterSyntax indexParameter = Parameter(indexParamName.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)));
+            SyntaxTokenList methodModifiers = TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword));
+            MethodDeclarationSyntax getAtMethod = MethodDeclaration(RefType(qualifiedElementType.WithTrailingTrivia(TriviaList(Space))).WithReadOnlyKeyword(TokenWithSpace(SyntaxKind.ReadOnlyKeyword)), Identifier("ReadOnlyItemRef"))
+                .WithModifiers(methodModifiers)
+                .WithParameterList(FixTrivia(ParameterList().AddParameters(thisParameter.AddModifiers(TokenWithSpace(SyntaxKind.InKeyword)), indexParameter)))
+                .WithBody(body);
+            this.volatileCode.AddInlineArrayIndexerExtension(getAtMethod);
 
-            return (originalType, default);
+            ////internal static unsafe ref uint ItemRef(this ref MainAVIHeader.__dwReserved_4 @this, int index)
+            ////{
+            ////    fixed (uint* p0 = &@this._0)
+            ////        return ref p0[index];
+            ////}
+            MethodDeclarationSyntax getOrSetAtMethod = MethodDeclaration(RefType(qualifiedElementType.WithTrailingTrivia(TriviaList(Space))), Identifier("ItemRef"))
+                .WithModifiers(methodModifiers)
+                .WithParameterList(FixTrivia(ParameterList().AddParameters(thisParameter.AddModifiers(TokenWithSpace(SyntaxKind.RefKeyword)), indexParameter)))
+                .WithBody(body);
+            this.volatileCode.AddInlineArrayIndexerExtension(getOrSetAtMethod);
+
+            return (fixedLengthStructName, List<MemberDeclarationSyntax>().Add(fixedLengthStruct));
         }
 
         private bool IsTypeDefStruct(TypeHandleInfo? typeHandleInfo)

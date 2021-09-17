@@ -5,7 +5,6 @@ using System;
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
-using System.Text;
 using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.Graphics.DirectShow;
@@ -346,19 +345,13 @@ public class BasicTests
     public unsafe void GetProcAddress_String()
     {
         using FreeLibrarySafeHandle moduleHandle = PInvoke.LoadLibrary("kernel32");
-        Span<byte> methodNameBytes = stackalloc byte[20];
-        Encoding.UTF8.GetBytes("GetTickCount").CopyTo(methodNameBytes);
-        fixed (byte* pMethodNameBytes = &methodNameBytes[0])
-        {
-            PCSTR methodName = new PCSTR(pMethodNameBytes);
-            FARPROC pGetTickCount = PInvoke.GetProcAddress(moduleHandle, methodName);
-            GetTickCountDelegate getTickCount = pGetTickCount.CreateDelegate<GetTickCountDelegate>();
-            uint ticks = getTickCount();
-            Assert.NotEqual(0u, ticks);
+        FARPROC pGetTickCount = PInvoke.GetProcAddress(moduleHandle, "GetTickCount");
+        GetTickCountDelegate getTickCount = pGetTickCount.CreateDelegate<GetTickCountDelegate>();
+        uint ticks = getTickCount();
+        Assert.NotEqual(0u, ticks);
 
-            var getTickCountPtr = (delegate*<uint>)pGetTickCount.Value;
-            ticks = getTickCountPtr();
-            Assert.NotEqual(0u, ticks);
-        }
+        var getTickCountPtr = (delegate*<uint>)pGetTickCount.Value;
+        ticks = getTickCountPtr();
+        Assert.NotEqual(0u, ticks);
     }
 }

@@ -322,6 +322,21 @@ public class BasicTests
     }
 
     [Fact]
+    public void FixedLengthArray_ToArray()
+    {
+        Windows.Win32.System.RestartManager.RM_PROCESS_INFO.__char_64 fixedCharArray = default;
+        fixedCharArray = "hi";
+        char[] expected = new char[fixedCharArray.Length];
+        expected[0] = fixedCharArray._0;
+        expected[1] = fixedCharArray._1;
+        char[] actual = fixedCharArray.ToArray();
+        Assert.Equal<char>(expected, actual);
+
+        actual = fixedCharArray.ToArray(3);
+        Assert.Equal<char>(expected.Take(3), actual);
+    }
+
+    [Fact]
     public void FixedLengthArray_CopyTo()
     {
         Windows.Win32.System.RestartManager.RM_PROCESS_INFO.__char_64 fixedCharArray = default;

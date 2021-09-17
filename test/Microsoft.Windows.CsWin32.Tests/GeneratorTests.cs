@@ -825,6 +825,17 @@ for(int i = 0;
 i < length;
 i++)						target[i]= p0[i];
 				}
+
+				internal unsafe readonly uint[] ToArray(int length = 4)
+				{
+					if (length > 4)throw new ArgumentOutOfRangeException(""length"");
+					uint[] target = new uint[length];
+					fixed (uint* p0 = &_0)
+for(int i = 0;
+i < length;
+i++)						target[i]= p0[i];
+					return target;
+				}
 			}
 		}
 ";
@@ -897,6 +908,17 @@ i++)						target[i]= p0[i];
 for(int i = 0;
 i < length;
 i++)						target[i]= p0[i];
+				}
+
+				internal unsafe readonly uint[] ToArray(int length = 4)
+				{
+					if (length > 4)throw new ArgumentOutOfRangeException(""length"");
+					uint[] target = new uint[length];
+					fixed (uint* p0 = &_0)
+for(int i = 0;
+i < length;
+i++)						target[i]= p0[i];
+					return target;
 				}
 			}
 		}

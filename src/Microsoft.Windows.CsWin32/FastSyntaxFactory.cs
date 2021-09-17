@@ -173,6 +173,8 @@ namespace Microsoft.Windows.CsWin32
 
         internal static ObjectCreationExpressionSyntax ObjectCreationExpression(TypeSyntax type) => SyntaxFactory.ObjectCreationExpression(Token(TriviaList(), SyntaxKind.NewKeyword, TriviaList(Space)), type, ArgumentList(), null);
 
+        internal static ArrayCreationExpressionSyntax ArrayCreationExpression(ArrayTypeSyntax type, InitializerExpressionSyntax? initializer = null) => SyntaxFactory.ArrayCreationExpression(Token(SyntaxKind.NewKeyword), type, initializer);
+
         internal static XmlCrefAttributeSyntax XmlCrefAttribute(CrefSyntax cref) => XmlCrefAttribute(cref, SyntaxKind.DoubleQuoteToken);
 
         internal static XmlCrefAttributeSyntax XmlCrefAttribute(CrefSyntax cref, SyntaxKind quoteKind)

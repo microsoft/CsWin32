@@ -93,7 +93,7 @@ namespace Microsoft.Windows.CsWin32
             {
                 return new TypeSyntaxAndMarshaling(PredefinedType(Token(SyntaxKind.ObjectKeyword)).WithAdditionalAnnotations(Generator.IsManagedTypeAnnotation), marshalAs);
             }
-            else if (!inputs.AllowMarshaling && this.IsDelegate(inputs, out TypeDefinition delegateDefinition) && inputs.Generator is object)
+            else if (!inputs.AllowMarshaling && this.IsDelegate(inputs, out TypeDefinition delegateDefinition) && inputs.Generator is object && !Generator.IsUntypedDelegate(this.reader, delegateDefinition))
             {
                 return new TypeSyntaxAndMarshaling(inputs.Generator.FunctionPointer(delegateDefinition));
             }

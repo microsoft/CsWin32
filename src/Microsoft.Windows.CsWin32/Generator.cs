@@ -1114,6 +1114,8 @@ namespace Microsoft.Windows.CsWin32
             return ex is PlatformIncompatibleException || IsPlatformCompatibleException(ex?.InnerException);
         }
 
+        internal static bool IsUntypedDelegate(MetadataReader reader, TypeDefinition typeDef) => reader.StringComparer.Equals(typeDef.Name, "PROC") || reader.StringComparer.Equals(typeDef.Name, "FARPROC");
+
         internal bool IsAttribute(CustomAttribute attribute, string ns, string name) => MetadataUtilities.IsAttribute(this.Reader, attribute, ns, name);
 
         internal bool TryGetHandleReleaseMethod(EntityHandle handleStructDefHandle, [NotNullWhen(true)] out string? releaseMethod)
@@ -2510,9 +2512,12 @@ namespace Microsoft.Windows.CsWin32
                     // Consider reusing .NET types like FILE_SHARE_FLAGS -> System.IO.FileShare
                     typeDeclaration = this.DeclareEnum(typeDef);
                 }
-                else if (this.options.AllowMarshaling && this.Reader.StringComparer.Equals(baseTypeName, nameof(MulticastDelegate)) && this.Reader.StringComparer.Equals(baseTypeNamespace, nameof(System)))
+                else if (this.Reader.StringComparer.Equals(baseTypeName, nameof(MulticastDelegate)) && this.Reader.StringComparer.Equals(baseTypeNamespace, nameof(System)))
                 {
-                    typeDeclaration = this.DeclareDelegate(typeDef);
+                    typeDeclaration =
+                        this.IsUntypedDelegate(typeDef) ? this.DeclareUntypedDelegate(typeDef) :
+                        this.options.AllowMarshaling ? this.DeclareDelegate(typeDef) :
+                        null;
                 }
                 else
                 {
@@ -2527,6 +2532,8 @@ namespace Microsoft.Windows.CsWin32
                 throw new GenerationFailedException("Failed to generate " + this.Reader.GetString(typeDef.Name), ex);
             }
         }
+
+        private bool IsUntypedDelegate(TypeDefinition typeDef) => IsUntypedDelegate(this.Reader, typeDef);
 
         private bool IsTypeDefStruct(TypeDefinition typeDef) => typeDef.GetCustomAttributes().Any(att => this.IsAttribute(this.Reader.GetCustomAttribute(att), InteropDecorationNamespace, NativeTypedefAttribute));
 
@@ -3168,6 +3175,33 @@ namespace Microsoft.Windows.CsWin32
             return result;
         }
 
+        private MemberDeclarationSyntax DeclareUntypedDelegate(TypeDefinition typeDef)
+        {
+            IdentifierNameSyntax name = IdentifierName(this.Reader.GetString(typeDef.Name));
+            IdentifierNameSyntax valueFieldName = IdentifierName("Value");
+
+            // internal IntPtr Value;
+            FieldDeclarationSyntax valueField = FieldDeclaration(VariableDeclaration(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space)))
+                .AddVariables(VariableDeclarator(valueFieldName.Identifier))).AddModifiers(TokenWithSpace(this.Visibility));
+
+            // internal T CreateDelegate<T>() => Marshal.GetDelegateForFunctionPointer<T>(this.Value);
+            IdentifierNameSyntax typeParameter = IdentifierName("TDelegate");
+            MethodDeclarationSyntax createDelegateMethod = MethodDeclaration(typeParameter, Identifier("CreateDelegate"))
+                .AddTypeParameterListParameters(TypeParameter(typeParameter.Identifier))
+                .WithExpressionBody(ArrowExpressionClause(InvocationExpression(
+                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Marshal)), GenericName(nameof(Marshal.GetDelegateForFunctionPointer)).AddTypeArgumentListArguments(typeParameter)),
+                    ArgumentList().AddArguments(Argument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), valueFieldName))))))
+                .AddModifiers(TokenWithSpace(this.Visibility))
+                .WithSemicolonToken(SemicolonWithLineFeed);
+
+            StructDeclarationSyntax typedefStruct = StructDeclaration(name.Identifier)
+                .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.PartialKeyword)))
+                .AddMembers(valueField)
+                .AddMembers(this.CreateCommonTypeDefMembers(name, IntPtrTypeSyntax, valueFieldName).ToArray())
+                .AddMembers(createDelegateMethod);
+            return typedefStruct;
+        }
+
         private void GetSignatureForDelegate(TypeDefinition typeDef, out MethodDefinition invokeMethodDef, out MethodSignature<TypeHandleInfo> signature, out CustomAttributeHandleCollection? returnTypeAttributes)
         {
             invokeMethodDef = typeDef.GetMethods().Select(this.Reader.GetMethodDefinition).Single(def => this.Reader.StringComparer.Equals(def.Name, "Invoke"));
@@ -3321,40 +3355,10 @@ namespace Microsoft.Windows.CsWin32
                 .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.ReadOnlyKeyword));
             members = members.Add(fieldSyntax);
 
-            // Add constructor
+            members = members.AddRange(this.CreateCommonTypeDefMembers(name, fieldInfo.FieldType, fieldIdentifierName));
+
             IdentifierNameSyntax valueParameter = IdentifierName("value");
             MemberAccessExpressionSyntax fieldAccessExpression = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), fieldIdentifierName);
-            members = members.Add(ConstructorDeclaration(name.Identifier)
-                .AddModifiers(TokenWithSpace(this.Visibility))
-                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(fieldInfo.FieldType.WithTrailingTrivia(TriviaList(Space))))
-                .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, valueParameter).WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken))))
-                .WithSemicolonToken(SemicolonWithLineFeed));
-
-            // If this typedef struct represents a pointer, add an IsNull property.
-            if (fieldInfo.FieldType is IdentifierNameSyntax { Identifier: { Value: nameof(IntPtr) or nameof(UIntPtr) } })
-            {
-                // internal static bool IsNull => value == default;
-                members = members.Add(PropertyDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), "IsNull")
-                    .AddModifiers(TokenWithSpace(this.Visibility))
-                    .WithExpressionBody(ArrowExpressionClause(BinaryExpression(SyntaxKind.EqualsExpression, fieldIdentifierName, LiteralExpression(SyntaxKind.DefaultLiteralExpression))))
-                    .WithSemicolonToken(SemicolonWithLineFeed));
-            }
-
-            // public static implicit operator int(HWND value) => value.Value;
-            members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), fieldInfo.FieldType)
-                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))))
-                .WithExpressionBody(ArrowExpressionClause(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, fieldIdentifierName)))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
-                .WithSemicolonToken(SemicolonWithLineFeed));
-
-            // public static explicit operator HWND(int value) => new HWND(value);
-            // Except make converting char* or byte* to typedefs representing strings, and LPARAM/WPARAM to nint/nuint, implicit.
-            SyntaxKind explicitOrImplicitModifier = ImplicitConversionTypeDefs.Contains(name.Identifier.ValueText) ? SyntaxKind.ImplicitKeyword : SyntaxKind.ExplicitKeyword;
-            members = members.Add(ConversionOperatorDeclaration(Token(explicitOrImplicitModifier), name)
-                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(fieldInfo.FieldType.WithTrailingTrivia(TriviaList(Space))))
-                .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(Argument(valueParameter))))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
-                .WithSemicolonToken(SemicolonWithLineFeed));
 
             if (isHandle && fieldInfo.FieldType is not IdentifierNameSyntax { Identifier: { ValueText: nameof(IntPtr) } })
             {
@@ -3406,73 +3410,6 @@ namespace Microsoft.Windows.CsWin32
                 }
             }
 
-            // public static bool operator ==(HANDLE left, HANDLE right) => left.Value == right.Value;
-            var leftParameter = IdentifierName("left");
-            var rightParameter = IdentifierName("right");
-            members = members.Add(OperatorDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), TokenWithNoSpace(SyntaxKind.EqualsEqualsToken))
-                .WithOperatorKeyword(TokenWithSpace(SyntaxKind.OperatorKeyword))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))
-                .AddParameterListParameters(
-                    Parameter(leftParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))),
-                    Parameter(rightParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))))
-                .WithExpressionBody(ArrowExpressionClause(
-                    BinaryExpression(
-                        SyntaxKind.EqualsExpression,
-                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, leftParameter, fieldIdentifierName),
-                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, rightParameter, fieldIdentifierName))))
-                .WithSemicolonToken(SemicolonWithLineFeed));
-
-            // public static bool operator !=(HANDLE left, HANDLE right) => !(left == right);
-            members = members.Add(OperatorDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Token(SyntaxKind.ExclamationEqualsToken))
-                .WithOperatorKeyword(TokenWithSpace(SyntaxKind.OperatorKeyword))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))
-                .AddParameterListParameters(
-                    Parameter(leftParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))),
-                    Parameter(rightParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))))
-                .WithExpressionBody(ArrowExpressionClause(
-                    PrefixUnaryExpression(
-                        SyntaxKind.LogicalNotExpression,
-                        ParenthesizedExpression(BinaryExpression(SyntaxKind.EqualsExpression, leftParameter, rightParameter)))))
-                .WithSemicolonToken(SemicolonWithLineFeed));
-
-            // public bool Equals(HWND other) => this.Value == other.Value;
-            IdentifierNameSyntax other = IdentifierName("other");
-            members = members.Add(MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Identifier(nameof(IEquatable<int>.Equals)))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword))
-                .AddParameterListParameters(Parameter(other.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))))
-                .WithExpressionBody(ArrowExpressionClause(
-                    BinaryExpression(
-                        SyntaxKind.EqualsExpression,
-                        fieldAccessExpression,
-                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, other, fieldIdentifierName))))
-                .WithSemicolonToken(SemicolonWithLineFeed));
-
-            // public override bool Equals(object obj) => obj is HWND other && this.Equals(other);
-            IdentifierNameSyntax objParam = IdentifierName("obj");
-            members = members.Add(MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Identifier(nameof(IEquatable<int>.Equals)))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
-                .AddParameterListParameters(Parameter(objParam.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.ObjectKeyword))))
-                .WithExpressionBody(ArrowExpressionClause(
-                    BinaryExpression(
-                        SyntaxKind.LogicalAndExpression,
-                        IsPatternExpression(objParam, DeclarationPattern(name, SingleVariableDesignation(Identifier("other")))),
-                        InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName(nameof(Equals))))
-                            .WithArgumentList(ArgumentList().AddArguments(Argument(IdentifierName("other")))))))
-                .WithSemicolonToken(SemicolonWithLineFeed));
-
-            // public override int GetHashCode() => unchecked((int)this.Value); // if Value is a pointer
-            // public override int GetHashCode() => this.Value.GetHashCode(); // if Value is not a pointer
-            ExpressionSyntax hashExpr = fieldInfo.FieldType is PointerTypeSyntax ?
-                CheckedExpression(SyntaxKind.UncheckedExpression, CastExpression(PredefinedType(TokenWithNoSpace(SyntaxKind.IntKeyword)), fieldAccessExpression)) :
-                InvocationExpression(
-                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, fieldAccessExpression, IdentifierName(nameof(object.GetHashCode))),
-                    ArgumentList());
-
-            members = members.Add(MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), Identifier(nameof(object.GetHashCode)))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
-                .WithExpressionBody(ArrowExpressionClause(hashExpr))
-                .WithSemicolonToken(SemicolonWithLineFeed));
-
             switch (name.Identifier.ValueText)
             {
                 case "BSTR":
@@ -3504,6 +3441,110 @@ namespace Microsoft.Windows.CsWin32
 
             result = this.AddApiDocumentation(name.Identifier.ValueText, result);
             return result;
+        }
+
+        private IEnumerable<MemberDeclarationSyntax> CreateCommonTypeDefMembers(IdentifierNameSyntax structName, TypeSyntax fieldType, IdentifierNameSyntax fieldName)
+        {
+            // Add constructor
+            IdentifierNameSyntax valueParameter = IdentifierName("value");
+            MemberAccessExpressionSyntax fieldAccessExpression = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), fieldName);
+            yield return ConstructorDeclaration(structName.Identifier)
+                .AddModifiers(TokenWithSpace(this.Visibility))
+                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(fieldType.WithTrailingTrivia(TriviaList(Space))))
+                .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, valueParameter).WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken))))
+                .WithSemicolonToken(SemicolonWithLineFeed);
+
+            // If this typedef struct represents a pointer, add an IsNull property.
+            if (fieldType is IdentifierNameSyntax { Identifier: { Value: nameof(IntPtr) or nameof(UIntPtr) } })
+            {
+                // internal static bool IsNull => value == default;
+                yield return PropertyDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), "IsNull")
+                    .AddModifiers(TokenWithSpace(this.Visibility))
+                    .WithExpressionBody(ArrowExpressionClause(BinaryExpression(SyntaxKind.EqualsExpression, fieldName, LiteralExpression(SyntaxKind.DefaultLiteralExpression))))
+                    .WithSemicolonToken(SemicolonWithLineFeed);
+            }
+
+            // public static implicit operator int(HWND value) => value.Value;
+            yield return ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), fieldType)
+                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(structName.WithTrailingTrivia(TriviaList(Space))))
+                .WithExpressionBody(ArrowExpressionClause(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, fieldName)))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
+                .WithSemicolonToken(SemicolonWithLineFeed);
+
+            // public static explicit operator HWND(int value) => new HWND(value);
+            // Except make converting char* or byte* to typedefs representing strings, and LPARAM/WPARAM to nint/nuint, implicit.
+            SyntaxKind explicitOrImplicitModifier = ImplicitConversionTypeDefs.Contains(structName.Identifier.ValueText) ? SyntaxKind.ImplicitKeyword : SyntaxKind.ExplicitKeyword;
+            yield return ConversionOperatorDeclaration(Token(explicitOrImplicitModifier), structName)
+                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(fieldType.WithTrailingTrivia(TriviaList(Space))))
+                .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(structName).AddArgumentListArguments(Argument(valueParameter))))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
+                .WithSemicolonToken(SemicolonWithLineFeed);
+
+            // public static bool operator ==(HANDLE left, HANDLE right) => left.Value == right.Value;
+            var leftParameter = IdentifierName("left");
+            var rightParameter = IdentifierName("right");
+            yield return OperatorDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), TokenWithNoSpace(SyntaxKind.EqualsEqualsToken))
+                .WithOperatorKeyword(TokenWithSpace(SyntaxKind.OperatorKeyword))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))
+                .AddParameterListParameters(
+                    Parameter(leftParameter.Identifier).WithType(structName.WithTrailingTrivia(TriviaList(Space))),
+                    Parameter(rightParameter.Identifier).WithType(structName.WithTrailingTrivia(TriviaList(Space))))
+                .WithExpressionBody(ArrowExpressionClause(
+                    BinaryExpression(
+                        SyntaxKind.EqualsExpression,
+                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, leftParameter, fieldName),
+                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, rightParameter, fieldName))))
+                .WithSemicolonToken(SemicolonWithLineFeed);
+
+            // public static bool operator !=(HANDLE left, HANDLE right) => !(left == right);
+            yield return OperatorDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Token(SyntaxKind.ExclamationEqualsToken))
+                .WithOperatorKeyword(TokenWithSpace(SyntaxKind.OperatorKeyword))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))
+                .AddParameterListParameters(
+                    Parameter(leftParameter.Identifier).WithType(structName.WithTrailingTrivia(TriviaList(Space))),
+                    Parameter(rightParameter.Identifier).WithType(structName.WithTrailingTrivia(TriviaList(Space))))
+                .WithExpressionBody(ArrowExpressionClause(
+                    PrefixUnaryExpression(
+                        SyntaxKind.LogicalNotExpression,
+                        ParenthesizedExpression(BinaryExpression(SyntaxKind.EqualsExpression, leftParameter, rightParameter)))))
+                .WithSemicolonToken(SemicolonWithLineFeed);
+
+            // public bool Equals(HWND other) => this.Value == other.Value;
+            IdentifierNameSyntax other = IdentifierName("other");
+            yield return MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Identifier(nameof(IEquatable<int>.Equals)))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword))
+                .AddParameterListParameters(Parameter(other.Identifier).WithType(structName.WithTrailingTrivia(TriviaList(Space))))
+                .WithExpressionBody(ArrowExpressionClause(
+                    BinaryExpression(
+                        SyntaxKind.EqualsExpression,
+                        fieldAccessExpression,
+                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, other, fieldName))))
+                .WithSemicolonToken(SemicolonWithLineFeed);
+
+            // public override bool Equals(object obj) => obj is HWND other && this.Equals(other);
+            IdentifierNameSyntax objParam = IdentifierName("obj");
+            yield return MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Identifier(nameof(IEquatable<int>.Equals)))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
+                .AddParameterListParameters(Parameter(objParam.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.ObjectKeyword))))
+                .WithExpressionBody(ArrowExpressionClause(
+                    BinaryExpression(
+                        SyntaxKind.LogicalAndExpression,
+                        IsPatternExpression(objParam, DeclarationPattern(structName, SingleVariableDesignation(Identifier("other")))),
+                        InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName(nameof(Equals))))
+                            .WithArgumentList(ArgumentList().AddArguments(Argument(IdentifierName("other")))))))
+                .WithSemicolonToken(SemicolonWithLineFeed);
+
+            // public override int GetHashCode() => unchecked((int)this.Value); // if Value is a pointer
+            // public override int GetHashCode() => this.Value.GetHashCode(); // if Value is not a pointer
+            ExpressionSyntax hashExpr = fieldType is PointerTypeSyntax ?
+                CheckedExpression(SyntaxKind.UncheckedExpression, CastExpression(PredefinedType(TokenWithNoSpace(SyntaxKind.IntKeyword)), fieldAccessExpression)) :
+                InvocationExpression(
+                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, fieldAccessExpression, IdentifierName(nameof(object.GetHashCode))),
+                    ArgumentList());
+            yield return MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), Identifier(nameof(object.GetHashCode)))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
+                .WithExpressionBody(ArrowExpressionClause(hashExpr))
+                .WithSemicolonToken(SemicolonWithLineFeed);
         }
 
         private IEnumerable<MemberDeclarationSyntax> ExtractMembersFromTemplate(string name) => ((TypeDeclarationSyntax)this.FetchTemplate($"{name}")).Members;
@@ -4676,13 +4717,10 @@ namespace Microsoft.Windows.CsWin32
                 return (fixedLengthStructName, List<MemberDeclarationSyntax>().Add(fixedLengthStruct));
             }
 
-            if (!this.options.AllowMarshaling)
+            // If the field is a delegate type, we have to replace that with a native function pointer to avoid the struct becoming a 'managed type'.
+            if (!this.options.AllowMarshaling && this.IsDelegateReference(fieldTypeHandleInfo, out TypeDefinition typeDef) && !this.IsUntypedDelegate(typeDef))
             {
-                // If the field is a delegate type, we have to replace that with a native function pointer to avoid the struct becoming a 'managed type'.
-                if (this.IsDelegateReference(fieldTypeHandleInfo, out TypeDefinition typeDef))
-                {
-                    return (this.FunctionPointer(typeDef), default);
-                }
+                return (this.FunctionPointer(typeDef), default);
             }
 
             // If the field is a pointer to a COM interface (and we're using bona fide interfaces),
@@ -4755,6 +4793,16 @@ namespace Microsoft.Windows.CsWin32
                 var tdh = (TypeDefinitionHandle)typeHandleInfo.Handle;
                 delegateTypeDef = this.Reader.GetTypeDefinition(tdh);
                 return this.IsDelegate(delegateTypeDef);
+            }
+
+            if (typeHandleInfo.Handle.Kind == HandleKind.TypeReference)
+            {
+                var trh = (TypeReferenceHandle)typeHandleInfo.Handle;
+                if (this.TryGetTypeDefHandle(trh, out TypeDefinitionHandle tdh))
+                {
+                    delegateTypeDef = this.Reader.GetTypeDefinition(tdh);
+                    return this.IsDelegate(delegateTypeDef);
+                }
             }
 
             delegateTypeDef = default;

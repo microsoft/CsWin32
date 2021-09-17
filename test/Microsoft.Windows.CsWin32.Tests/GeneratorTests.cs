@@ -710,6 +710,43 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
+    public void PROC_GeneratedAsStruct()
+    {
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate("PROC", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        BaseTypeDeclarationSyntax type = Assert.Single(this.FindGeneratedType("PROC"));
+        Assert.IsType<StructDeclarationSyntax>(type);
+    }
+
+    [Fact]
+    public void FARPROC_GeneratedAsStruct()
+    {
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate("FARPROC", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        BaseTypeDeclarationSyntax type = Assert.Single(this.FindGeneratedType("FARPROC"));
+        Assert.IsType<StructDeclarationSyntax>(type);
+    }
+
+    [Theory, PairwiseData]
+    public void FARPROC_AsFieldType(bool allowMarshaling)
+    {
+        this.generator = this.CreateGenerator(new GeneratorOptions { AllowMarshaling = allowMarshaling });
+        Assert.True(this.generator.TryGenerate("EXTPUSH", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        StructDeclarationSyntax type = Assert.IsType<StructDeclarationSyntax>(Assert.Single(this.FindGeneratedType("_Anonymous1_e__Union")));
+        var callback = (FieldDeclarationSyntax)type.Members[1];
+        Assert.True(callback.Declaration.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "FARPROC" } } }, "Field type was " + callback.Declaration.Type);
+    }
+
+    [Fact]
     public void GetLastErrorGenerationThrowsWhenExplicitlyCalled()
     {
         this.generator = this.CreateGenerator();

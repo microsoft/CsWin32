@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+using System.Runtime.InteropServices;
 using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.System.Diagnostics.Debug;
@@ -27,5 +28,16 @@ internal static unsafe class GeneratedForm
     private static void WPARAM_From_NInt()
     {
         WPARAM p = 1;
+    }
+
+    private static void FARPROC_InSignatureChangedToIntPtr()
+    {
+        FARPROC p = PInvoke.GetProcAddress(default(HINSTANCE), default(PCSTR));
+        p = PInvoke.GetProcAddress(default(SafeHandle), default(PCSTR));
+    }
+
+    private static void PROC_InSignatureChangedToIntPtr()
+    {
+        PROC p = PInvoke.wglGetProcAddress(default(PCSTR));
     }
 }

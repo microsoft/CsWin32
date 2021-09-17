@@ -294,6 +294,12 @@ namespace Microsoft.Windows.CsWin32
 
         internal static ParameterSyntax Parameter(SyntaxList<AttributeListSyntax> attributeLists, SyntaxTokenList modifiers, TypeSyntax? type, SyntaxToken identifier, EqualsValueClauseSyntax? @default) => SyntaxFactory.Parameter(attributeLists, modifiers, type, identifier, @default);
 
+        internal static TypeParameterSyntax TypeParameter(SyntaxToken identifier) => SyntaxFactory.TypeParameter(identifier);
+
+        internal static TypeConstraintSyntax TypeConstraint(TypeSyntax type) => SyntaxFactory.TypeConstraint(type);
+
+        internal static TypeParameterConstraintClauseSyntax TypeParameterConstraintClause(IdentifierNameSyntax name, SeparatedSyntaxList<TypeParameterConstraintSyntax> constraints) => SyntaxFactory.TypeParameterConstraintClause(TokenWithSpace(SyntaxKind.WhereKeyword), name, TokenWithSpaces(SyntaxKind.ColonToken), constraints);
+
         internal static FieldDeclarationSyntax FieldDeclaration(VariableDeclarationSyntax declaration) => SyntaxFactory.FieldDeclaration(default, default, declaration, Semicolon);
 
         internal static FunctionPointerTypeSyntax FunctionPointerType() => SyntaxFactory.FunctionPointerType(Token(SyntaxKind.DelegateKeyword), Token(SyntaxKind.AsteriskToken), null, FunctionPointerParameterList());

@@ -435,6 +435,8 @@ namespace Microsoft.Windows.CsWin32
 
         internal static IdentifierNameSyntax IdentifierName(SyntaxToken identifier) => SyntaxFactory.IdentifierName(identifier);
 
+        internal static ExpressionSyntax TypeOfExpression(TypeSyntax type) => SyntaxFactory.TypeOfExpression(Token(SyntaxKind.TypeOfKeyword), Token(SyntaxKind.OpenParenToken), type, Token(SyntaxKind.CloseParenToken));
+
         private static SyntaxToken TokenWithNoSpace(SyntaxKind kind) => Token(TriviaList(), kind, TriviaList());
 
         private static SyntaxToken TokenWithSpace(SyntaxKind kind) => Token(TriviaList(), kind, TriviaList(Space));

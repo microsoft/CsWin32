@@ -721,9 +721,11 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         Assert.IsType<StructDeclarationSyntax>(type);
     }
 
-    [Fact]
-    public void FARPROC_GeneratedAsStruct()
+    [Theory]
+    [MemberData(nameof(TFMData))]
+    public void FARPROC_GeneratedAsStruct(string tfm)
     {
+        this.compilation = this.starterCompilations[tfm];
         this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate("FARPROC", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);

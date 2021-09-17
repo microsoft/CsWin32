@@ -4152,6 +4152,32 @@ namespace Microsoft.Windows.CsWin32
                         VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
                     arguments[param.SequenceNumber - 1] = Argument(localName);
                 }
+                else if (isIn && !isOut && isConst && externParam.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "PCSTR" } } })
+                {
+                    IdentifierNameSyntax origName = IdentifierName(externParam.Identifier.ValueText);
+                    IdentifierNameSyntax localName = IdentifierName(origName + "Local");
+                    signatureChanged = true;
+                    parameters[param.SequenceNumber - 1] = externParam
+                        .WithType(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword)));
+
+                    // fixed (byte* someLocal = some is object ? System.Text.Encoding.UTF8.GetBytes(some) : null)
+                    fixedBlocks.Add(VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.ByteKeyword)))).AddVariables(
+                        VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(
+                            ConditionalExpression(
+                                BinaryExpression(SyntaxKind.IsExpression, origName, PredefinedType(Token(SyntaxKind.ObjectKeyword))),
+                                InvocationExpression(
+                                    MemberAccessExpression(
+                                        SyntaxKind.SimpleMemberAccessExpression,
+                                        ParseTypeName("global::System.Text.Encoding.UTF8"),
+                                        IdentifierName(nameof(Encoding.GetBytes))))
+                                .WithArgumentList(
+                                    ArgumentList(
+                                        SingletonSeparatedList(Argument(origName)))),
+                                LiteralExpression(SyntaxKind.NullLiteralExpression))))));
+
+                    // new PCSTR(someLocal)
+                    arguments[param.SequenceNumber - 1] = Argument(ObjectCreationExpression(externParam.Type).AddArgumentListArguments(Argument(localName)));
+                }
             }
 
             TypeSyntax? returnSafeHandleType = originalSignature.ReturnType is HandleTypeHandleInfo returnTypeHandleInfo

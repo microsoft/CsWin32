@@ -291,6 +291,7 @@ namespace Microsoft.Windows.CsWin32
         private readonly CSharpCompilation? compilation;
         private readonly CSharpParseOptions? parseOptions;
         private readonly bool canCallCreateSpan;
+        private readonly bool getDelegateForFunctionPointerGenericExists;
         private readonly bool generateSupportedOSPlatformAttributes;
         private readonly bool generateSupportedOSPlatformAttributesOnInterfaces; // only supported on net6.0 (https://github.com/dotnet/runtime/pull/48838)
         private readonly bool generateDefaultDllImportSearchPathsAttribute;
@@ -319,6 +320,7 @@ namespace Microsoft.Windows.CsWin32
             this.volatileCode = new(this.committedCode);
 
             this.canCallCreateSpan = this.compilation?.GetTypeByMetadataName(typeof(MemoryMarshal).FullName)?.GetMembers("CreateSpan").Any() is true;
+            this.getDelegateForFunctionPointerGenericExists = this.compilation?.GetTypeByMetadataName(typeof(Marshal).FullName)?.GetMembers(nameof(Marshal.GetDelegateForFunctionPointer)).Any(m => m is IMethodSymbol { IsGenericMethod: true }) is true;
             this.generateDefaultDllImportSearchPathsAttribute = this.compilation?.GetTypeByMetadataName(typeof(DefaultDllImportSearchPathsAttribute).FullName) is object;
             if (this.compilation?.GetTypeByMetadataName("System.Runtime.Versioning.SupportedOSPlatformAttribute") is { } attribute
                 && (attribute.DeclaredAccessibility == Accessibility.Public || attribute.ContainingAssembly.GivesAccessTo(this.compilation.Assembly)))
@@ -3186,11 +3188,25 @@ namespace Microsoft.Windows.CsWin32
 
             // internal T CreateDelegate<T>() => Marshal.GetDelegateForFunctionPointer<T>(this.Value);
             IdentifierNameSyntax typeParameter = IdentifierName("TDelegate");
+            MemberAccessExpressionSyntax methodToCall = this.getDelegateForFunctionPointerGenericExists
+                ? MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Marshal)), GenericName(nameof(Marshal.GetDelegateForFunctionPointer)).AddTypeArgumentListArguments(typeParameter))
+                : MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Marshal)), IdentifierName(nameof(Marshal.GetDelegateForFunctionPointer)));
+            ArgumentListSyntax arguments = ArgumentList().AddArguments(Argument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), valueFieldName)));
+            if (!this.getDelegateForFunctionPointerGenericExists)
+            {
+                arguments = arguments.AddArguments(Argument(TypeOfExpression(typeParameter)));
+            }
+
+            ExpressionSyntax bodyExpression = InvocationExpression(methodToCall, arguments);
+            if (!this.getDelegateForFunctionPointerGenericExists)
+            {
+                bodyExpression = CastExpression(typeParameter, bodyExpression);
+            }
+
             MethodDeclarationSyntax createDelegateMethod = MethodDeclaration(typeParameter, Identifier("CreateDelegate"))
                 .AddTypeParameterListParameters(TypeParameter(typeParameter.Identifier))
-                .WithExpressionBody(ArrowExpressionClause(InvocationExpression(
-                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Marshal)), GenericName(nameof(Marshal.GetDelegateForFunctionPointer)).AddTypeArgumentListArguments(typeParameter)),
-                    ArgumentList().AddArguments(Argument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), valueFieldName))))))
+                .AddConstraintClauses(TypeParameterConstraintClause(typeParameter, SingletonSeparatedList<TypeParameterConstraintSyntax>(TypeConstraint(IdentifierName("Delegate")))))
+                .WithExpressionBody(ArrowExpressionClause(bodyExpression))
                 .AddModifiers(TokenWithSpace(this.Visibility))
                 .WithSemicolonToken(SemicolonWithLineFeed);
 

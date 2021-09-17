@@ -815,7 +815,7 @@ namespace Microsoft.Windows.Sdk
 				internal uint _0,_1,_2,_3;
 
 				/// <summary>Always <c>4</c>.</summary>
-				internal int Length => 4;
+				internal readonly int Length => 4;
 			}
 		}
 ";
@@ -865,7 +865,7 @@ namespace Microsoft.Windows.Sdk
 				internal uint _0,_1,_2,_3;
 
 				/// <summary>Always <c>4</c>.</summary>
-				internal int Length => 4;
+				internal readonly int Length => 4;
 
 				/// <summary>
 				/// Gets a ref to an individual element of the inline array.

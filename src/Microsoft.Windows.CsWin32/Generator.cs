@@ -4415,7 +4415,7 @@ namespace Microsoft.Windows.CsWin32
                 // {
                 //     internal TheStruct _0, _1, _2, _3, _4, _5, _6, _7, _8;
                 //     /// <summary>Always <c>8</c>.</summary>
-                //     internal int Length => 8;
+                //     internal readonly int Length => 8;
                 // ...
                 IdentifierNameSyntax fixedLengthStructName = IdentifierName($"__{elementType.ToString().Replace(' ', '_').Replace('.', '_').Replace(':', '_').Replace('*', '_').Replace('<', '_').Replace('>', '_').Replace('[', '_').Replace(']', '_').Replace(',', '_')}_{length}");
                 SyntaxTokenList fieldModifiers = TokenList(TokenWithSpace(this.Visibility));
@@ -4431,7 +4431,7 @@ namespace Microsoft.Windows.CsWin32
                             .AddVariables(Enumerable.Range(0, length).Select(n => VariableDeclarator(Identifier($"_{n}"))).ToArray()))
                             .WithModifiers(fieldModifiers),
                         PropertyDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), "Length")
-                            .AddModifiers(TokenWithSpace(this.Visibility))
+                            .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
                             .WithExpressionBody(ArrowExpressionClause(lengthLiteralSyntax))
                             .WithSemicolonToken(SemicolonWithLineFeed)
                             .WithLeadingTrivia(Trivia(DocumentationCommentTrivia(SyntaxKind.SingleLineDocumentationCommentTrivia).AddContent(
@@ -4475,7 +4475,7 @@ namespace Microsoft.Windows.CsWin32
                 if (elementType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.CharKeyword } })
                 {
                     // ...
-                    //     internal unsafe string ToString(int length)
+                    //     internal unsafe readonly string ToString(int length)
                     //     {
                     //         if (length < 0 || length > Length)
                     //             throw new ArgumentOutOfRangeException(nameof(length), length, "Length must be between 0 and the fixed array length.");
@@ -4484,7 +4484,7 @@ namespace Microsoft.Windows.CsWin32
                     //     }
                     fixedLengthStruct = fixedLengthStruct.AddMembers(
                         MethodDeclaration(PredefinedType(Token(SyntaxKind.StringKeyword)), Identifier(nameof(this.ToString)))
-                            .AddModifiers(Token(this.Visibility), Token(SyntaxKind.UnsafeKeyword))
+                            .AddModifiers(Token(this.Visibility), Token(SyntaxKind.UnsafeKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
                             .AddParameterListParameters(
                                 Parameter(Identifier("length")).WithType(PredefinedType(Token(SyntaxKind.IntKeyword)).WithTrailingTrivia(Space)))
                             .WithBody(Block(
@@ -4581,14 +4581,14 @@ namespace Microsoft.Windows.CsWin32
                     }
 
                     // ...
-                    //     public override string ToString()
+                    //     public override readonly string ToString()
                     //     {
                     //         ...
                     //         return ToString(length);
                     //     }
                     MethodDeclarationSyntax toStringOverride =
                         MethodDeclaration(PredefinedType(Token(SyntaxKind.StringKeyword)), Identifier(nameof(this.ToString)))
-                            .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.OverrideKeyword))
+                            .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.OverrideKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
                             .WithBody(Block(lengthDeclarationStatements).AddStatements(
                                 ReturnStatement(InvocationExpression(
                                     IdentifierName("ToString"),

@@ -4493,6 +4493,42 @@ namespace Microsoft.Windows.CsWin32
                             .WithLeadingTrivia(InlineArrayUnsafeAsSpanComment));
             }
 
+#pragma warning disable SA1515 // Single-line comment should be preceded by blank line
+#pragma warning disable SA1114 // Parameter list should follow declaration
+
+            // internal unsafe readonly void CopyTo(Span<T> target, int length = 4)
+            IdentifierNameSyntax targetParameterName = IdentifierName("target");
+            IdentifierNameSyntax lengthParameterName = IdentifierName("length");
+            fixedLengthStruct = fixedLengthStruct.AddMembers(
+                MethodDeclaration(PredefinedType(Token(SyntaxKind.VoidKeyword)), Identifier("CopyTo"))
+                    .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
+                    .AddParameterListParameters(
+                        Parameter(targetParameterName.Identifier).WithType(MakeSpanOfT(elementType).WithTrailingTrivia(Space)),
+                        Parameter(lengthParameterName.Identifier).WithType(PredefinedType(Token(SyntaxKind.IntKeyword)).WithTrailingTrivia(Space)).WithDefault(EqualsValueClause(lengthLiteralSyntax)))
+                    .WithBody(Block().AddStatements(
+                        // if (length > 4) throw new ArgumentOutOfRangeException(nameof(length));
+                        IfStatement(
+                            BinaryExpression(SyntaxKind.GreaterThanExpression, lengthParameterName, lengthLiteralSyntax),
+                            ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentOutOfRangeException))).AddArgumentListArguments(Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(lengthParameterName.Identifier.ValueText)))))),
+                        // fixed (T* p0 = &_0)
+                        FixedStatement(
+                            VariableDeclaration(PointerType(elementType)).AddVariables(
+                                VariableDeclarator(Identifier("p0")).WithInitializer(EqualsValueClause(
+                                    PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName("_0"))))),
+                            // for (int i = 0; i < length; i++)
+                            ForStatement(
+                                VariableDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))).AddVariables(VariableDeclarator(Identifier("i")).WithInitializer(EqualsValueClause(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))))),
+                                BinaryExpression(SyntaxKind.LessThanExpression, IdentifierName("i"), lengthParameterName),
+                                SingletonSeparatedList<ExpressionSyntax>(PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, IdentifierName("i"))),
+                                // target[i] = p0[i];
+                                ExpressionStatement(AssignmentExpression(
+                                    SyntaxKind.SimpleAssignmentExpression,
+                                    ElementAccessExpression(targetParameterName).AddArgumentListArguments(Argument(IdentifierName("i"))),
+                                    ElementAccessExpression(IdentifierName("p0")).AddArgumentListArguments(Argument(IdentifierName("i"))))))))));
+
+#pragma warning restore SA1114 // Parameter list should follow declaration
+#pragma warning restore SA1515 // Single-line comment should be preceded by blank line
+
             if (elementType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.CharKeyword } })
             {
                 // ...

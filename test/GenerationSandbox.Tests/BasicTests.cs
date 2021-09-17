@@ -4,6 +4,7 @@
 using System;
 using System.ComponentModel;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using Windows.Win32;
 using Windows.Win32.Foundation;
@@ -302,7 +303,7 @@ public class BasicTests
     }
 
     [Fact]
-    public unsafe void FixedCharArrayToString()
+    public unsafe void FixedCharArray_ToString()
     {
         Windows.Win32.System.RestartManager.RM_PROCESS_INFO.__char_64 fixedCharArray = default;
         Assert.Equal(string.Empty, fixedCharArray.ToString());
@@ -318,6 +319,23 @@ public class BasicTests
         }
 
         Assert.Equal(new string('x', fixedCharArray.Length), fixedCharArray.ToString());
+    }
+
+    [Fact]
+    public void FixedLengthArray_CopyTo()
+    {
+        Windows.Win32.System.RestartManager.RM_PROCESS_INFO.__char_64 fixedCharArray = default;
+        fixedCharArray = "hi";
+        Span<char> span = new char[fixedCharArray.Length];
+        fixedCharArray.CopyTo(span);
+        Assert.Equal('h', span[0]);
+        Assert.Equal('i', span[1]);
+        Assert.Equal(0, span[2]);
+
+        span.Clear();
+        fixedCharArray.CopyTo(span, 1);
+        Assert.Equal('h', span[0]);
+        Assert.Equal(0, span[1]);
     }
 
     [Fact]

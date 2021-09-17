@@ -816,6 +816,15 @@ namespace Microsoft.Windows.Sdk
 
 				/// <summary>Always <c>4</c>.</summary>
 				internal readonly int Length => 4;
+
+				internal unsafe readonly void CopyTo(Span<uint> target, int length = 4)
+				{
+					if (length > 4)throw new ArgumentOutOfRangeException(""length"");
+					fixed (uint* p0 = &_0)
+for(int i = 0;
+i < length;
+i++)						target[i]= p0[i];
+				}
 			}
 		}
 ";
@@ -880,6 +889,15 @@ namespace Microsoft.Windows.Sdk
 				/// ⚠ Important ⚠: When this struct is on the stack, do not let the returned span outlive the stack frame that defines it.
 				/// </remarks>
 				internal Span<uint> AsSpan() => MemoryMarshal.CreateSpan(ref _0, 4);
+
+				internal unsafe readonly void CopyTo(Span<uint> target, int length = 4)
+				{
+					if (length > 4)throw new ArgumentOutOfRangeException(""length"");
+					fixed (uint* p0 = &_0)
+for(int i = 0;
+i < length;
+i++)						target[i]= p0[i];
+				}
 			}
 		}
 ";

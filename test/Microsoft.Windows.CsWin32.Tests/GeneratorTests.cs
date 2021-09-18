@@ -836,6 +836,21 @@ i < length;
 i++)						target[i]= p0[i];
 					return target;
 				}
+
+				internal unsafe readonly bool Equals(ReadOnlySpan<uint> value)
+				{
+					fixed (uint* p0 = &_0)
+					{
+ 						int commonLength = Math.Min(value.Length, 4);
+for(int i = 0;
+i < commonLength;
+i++)						if (p0[i] != value[i])							return false;
+for(int i = commonLength;
+i < 4;
+i++)						if (p0[i] != default(uint))							return false;
+					}
+					return true;
+				}
 			}
 		}
 ";
@@ -919,6 +934,21 @@ for(int i = 0;
 i < length;
 i++)						target[i]= p0[i];
 					return target;
+				}
+
+				internal unsafe readonly bool Equals(ReadOnlySpan<uint> value)
+				{
+					fixed (uint* p0 = &_0)
+					{
+ 						int commonLength = Math.Min(value.Length, 4);
+for(int i = 0;
+i < commonLength;
+i++)						if (p0[i] != value[i])							return false;
+for(int i = commonLength;
+i < 4;
+i++)						if (p0[i] != default(uint))							return false;
+					}
+					return true;
 				}
 			}
 		}

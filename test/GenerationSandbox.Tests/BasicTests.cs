@@ -354,6 +354,27 @@ public class BasicTests
     }
 
     [Fact]
+    public void FixedLengthArray_Equals()
+    {
+        Windows.Win32.System.RestartManager.RM_PROCESS_INFO.__char_64 fixedCharArray = default;
+        fixedCharArray = "hi";
+
+        char[] buffer = new char[fixedCharArray.Length];
+        Assert.False(fixedCharArray.Equals(buffer));
+        Assert.False(fixedCharArray.Equals(buffer.AsSpan(0, 2)));
+
+        buffer[0] = 'h';
+        buffer[1] = 'i';
+        Assert.True(fixedCharArray.Equals(buffer));
+        Assert.True(fixedCharArray.Equals(buffer.AsSpan(0, 2)));
+        Assert.True(fixedCharArray.Equals(buffer.AsSpan(0, 3)));
+
+        // This should be false because the remainder of the fixed length array is non-default.
+        Assert.False(fixedCharArray.Equals(buffer.AsSpan(0, 1)));
+        Assert.False(fixedCharArray.Equals(buffer.AsSpan(0, 0)));
+    }
+
+    [Fact]
     public void FixedCharArraySetWithString()
     {
         Windows.Win32.System.RestartManager.RM_PROCESS_INFO.__char_64 fixedCharArray = default;

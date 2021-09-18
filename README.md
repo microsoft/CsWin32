@@ -110,12 +110,6 @@ Alternatively, you may set the `MicrosoftWindowsSdkWin32MetadataBasePath` proper
 <MicrosoftWindowsSdkWin32MetadataBasePath>c:\path\to\dir</MicrosoftWindowsSdkWin32MetadataBasePath>
 ```
 
-## Known issues
-
-- [**WPF projects** issue and workaround](https://github.com/microsoft/CsWin32/issues/7).
-- [**WinUI / Reunion** issue](https://github.com/microsoft/CsWin32/issues/231)
-- [**Jetbrains Rider** issue](https://github.com/microsoft/CsWin32/issues/298)
-
 ## Consuming daily builds
 
 Can't wait for the next release to try out a bug fix? Follow these steps to consume directly from our daily build.

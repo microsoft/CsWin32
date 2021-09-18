@@ -815,7 +815,42 @@ namespace Microsoft.Windows.Sdk
 				internal uint _0,_1,_2,_3;
 
 				/// <summary>Always <c>4</c>.</summary>
-				internal int Length => 4;
+				internal readonly int Length => 4;
+
+				internal unsafe readonly void CopyTo(Span<uint> target, int length = 4)
+				{
+					if (length > 4)throw new ArgumentOutOfRangeException(""length"");
+					fixed (uint* p0 = &_0)
+for(int i = 0;
+i < length;
+i++)						target[i]= p0[i];
+				}
+
+				internal unsafe readonly uint[] ToArray(int length = 4)
+				{
+					if (length > 4)throw new ArgumentOutOfRangeException(""length"");
+					uint[] target = new uint[length];
+					fixed (uint* p0 = &_0)
+for(int i = 0;
+i < length;
+i++)						target[i]= p0[i];
+					return target;
+				}
+
+				internal unsafe readonly bool Equals(ReadOnlySpan<uint> value)
+				{
+					fixed (uint* p0 = &_0)
+					{
+ 						int commonLength = Math.Min(value.Length, 4);
+for(int i = 0;
+i < commonLength;
+i++)						if (p0[i] != value[i])							return false;
+for(int i = commonLength;
+i < 4;
+i++)						if (p0[i] != default(uint))							return false;
+					}
+					return true;
+				}
 			}
 		}
 ";
@@ -865,7 +900,7 @@ namespace Microsoft.Windows.Sdk
 				internal uint _0,_1,_2,_3;
 
 				/// <summary>Always <c>4</c>.</summary>
-				internal int Length => 4;
+				internal readonly int Length => 4;
 
 				/// <summary>
 				/// Gets a ref to an individual element of the inline array.
@@ -880,6 +915,41 @@ namespace Microsoft.Windows.Sdk
 				/// ⚠ Important ⚠: When this struct is on the stack, do not let the returned span outlive the stack frame that defines it.
 				/// </remarks>
 				internal Span<uint> AsSpan() => MemoryMarshal.CreateSpan(ref _0, 4);
+
+				internal unsafe readonly void CopyTo(Span<uint> target, int length = 4)
+				{
+					if (length > 4)throw new ArgumentOutOfRangeException(""length"");
+					fixed (uint* p0 = &_0)
+for(int i = 0;
+i < length;
+i++)						target[i]= p0[i];
+				}
+
+				internal unsafe readonly uint[] ToArray(int length = 4)
+				{
+					if (length > 4)throw new ArgumentOutOfRangeException(""length"");
+					uint[] target = new uint[length];
+					fixed (uint* p0 = &_0)
+for(int i = 0;
+i < length;
+i++)						target[i]= p0[i];
+					return target;
+				}
+
+				internal unsafe readonly bool Equals(ReadOnlySpan<uint> value)
+				{
+					fixed (uint* p0 = &_0)
+					{
+ 						int commonLength = Math.Min(value.Length, 4);
+for(int i = 0;
+i < commonLength;
+i++)						if (p0[i] != value[i])							return false;
+for(int i = commonLength;
+i < 4;
+i++)						if (p0[i] != default(uint))							return false;
+					}
+					return true;
+				}
 			}
 		}
 ";

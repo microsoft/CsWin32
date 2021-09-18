@@ -267,6 +267,7 @@ namespace Microsoft.Windows.CsWin32
             "CS1570", // XML comment has badly formed XML
             "CS1584", // C# bug: https://github.com/microsoft/CsWin32/issues/24
             "CS1658", // C# bug: https://github.com/microsoft/CsWin32/issues/24
+            "CS0436", // conflicts with the imported type (InternalsVisibleTo between two projects that both use CsWin32)
         };
 
         private static readonly AttributeSyntax OptionalAttributeSyntax = Attribute(IdentifierName("Optional")).WithArgumentList(null);

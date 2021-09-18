@@ -4616,6 +4616,19 @@ namespace Microsoft.Windows.CsWin32
 
             if (elementType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.CharKeyword } })
             {
+                // internal readonly bool Equals(string value) => Equals(value.AsSpan());
+                fixedLengthStruct = fixedLengthStruct.AddMembers(
+                    MethodDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), Identifier("Equals"))
+                        .AddModifiers(Token(this.Visibility), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
+                        .AddParameterListParameters(Parameter(Identifier("value")).WithType(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword))))
+                        .WithExpressionBody(ArrowExpressionClause(InvocationExpression(
+                            IdentifierName("Equals"),
+                            ArgumentList().AddArguments(Argument(
+                                InvocationExpression(
+                                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("value"), IdentifierName("AsSpan")),
+                                    ArgumentList()))))))
+                        .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+
                 // ...
                 //     internal unsafe readonly string ToString(int length)
                 //     {

@@ -359,6 +359,11 @@ public class BasicTests
         Windows.Win32.System.RestartManager.RM_PROCESS_INFO.__char_64 fixedCharArray = default;
         fixedCharArray = "hi";
 
+        Assert.True(fixedCharArray.Equals("hi"));
+        Assert.False(fixedCharArray.Equals("h"));
+        Assert.False(fixedCharArray.Equals("d"));
+        Assert.False(fixedCharArray.Equals("hid"));
+
         char[] buffer = new char[fixedCharArray.Length];
         Assert.False(fixedCharArray.Equals(buffer));
         Assert.False(fixedCharArray.Equals(buffer.AsSpan(0, 2)));

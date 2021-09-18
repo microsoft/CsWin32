@@ -274,7 +274,7 @@ namespace Microsoft.Windows.CsWin32
 
         internal static AttributeArgumentListSyntax AttributeArgumentList(SeparatedSyntaxList<AttributeArgumentSyntax> arguments = default) => SyntaxFactory.AttributeArgumentList(Token(SyntaxKind.OpenParenToken), arguments, Token(SyntaxKind.CloseParenToken));
 
-        internal static AttributeListSyntax AttributeList() => SyntaxFactory.AttributeList(Token(SyntaxKind.OpenBracketToken), null, SeparatedList<AttributeSyntax>(), Token(SyntaxKind.CloseBracketToken));
+        internal static AttributeListSyntax AttributeList() => SyntaxFactory.AttributeList(Token(SyntaxKind.OpenBracketToken), null, SeparatedList<AttributeSyntax>(), TokenWithLineFeed(SyntaxKind.CloseBracketToken));
 
         internal static SyntaxList<TNode> List<TNode>()
             where TNode : SyntaxNode => SyntaxFactory.List<TNode>();

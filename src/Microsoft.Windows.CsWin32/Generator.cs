@@ -1844,7 +1844,7 @@ namespace Microsoft.Windows.CsWin32
 
         private static AttributeSyntax FieldOffset(int offset) => FieldOffsetAttributeSyntax.AddArgumentListArguments(AttributeArgument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(offset))));
 
-        private static AttributeSyntax StructLayout(TypeAttributes typeAttributes, TypeLayout layout)
+        private static AttributeSyntax StructLayout(TypeAttributes typeAttributes, TypeLayout layout = default, CharSet charSet = CharSet.Ansi)
         {
             LayoutKind layoutKind = (typeAttributes & TypeAttributes.ExplicitLayout) == TypeAttributes.ExplicitLayout ? LayoutKind.Explicit : LayoutKind.Sequential;
             var structLayoutAttribute = Attribute(IdentifierName("StructLayout")).AddArgumentListArguments(
@@ -1865,6 +1865,13 @@ namespace Microsoft.Windows.CsWin32
                 structLayoutAttribute = structLayoutAttribute.AddArgumentListArguments(
                     AttributeArgument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(layout.Size)))
                         .WithNameEquals(NameEquals(nameof(StructLayoutAttribute.Size))));
+            }
+
+            if (charSet != CharSet.Ansi)
+            {
+                structLayoutAttribute = structLayoutAttribute.AddArgumentListArguments(
+                    AttributeArgument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(CharSet)), IdentifierName(Enum.GetName(typeof(CharSet), charSet)!)))
+                    .WithNameEquals(NameEquals(IdentifierName(nameof(StructLayoutAttribute.CharSet)))));
             }
 
             return structLayoutAttribute;
@@ -3231,6 +3238,7 @@ namespace Microsoft.Windows.CsWin32
             IdentifierNameSyntax name = IdentifierName(this.Reader.GetString(typeDef.Name));
             TypeSyntaxSettings typeSettings = this.fieldTypeSettings;
 
+            bool hasUtf16CharField = false;
             var members = new List<MemberDeclarationSyntax>();
             SyntaxList<MemberDeclarationSyntax> additionalMembers = default;
             foreach (FieldDefinitionHandle fieldDefHandle in typeDef.GetFields())
@@ -3269,6 +3277,7 @@ namespace Microsoft.Windows.CsWin32
                     {
                         CustomAttributeHandleCollection fieldAttributes = fieldDef.GetCustomAttributes();
                         TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null);
+                        hasUtf16CharField |= fieldTypeInfo is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.Char };
                         TypeSyntaxAndMarshaling fieldTypeSyntax = fieldTypeInfo.ToTypeSyntax(typeSettings, fieldAttributes);
                         var fieldInfo = this.ReinterpretFieldType(fieldDef, fieldTypeSyntax.Type, fieldAttributes);
                         additionalMembers = additionalMembers.AddRange(fieldInfo.AdditionalMembers);
@@ -3309,9 +3318,10 @@ namespace Microsoft.Windows.CsWin32
                 .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.PartialKeyword)));
 
             TypeLayout layout = typeDef.GetLayout();
-            if (!layout.IsDefault || (typeDef.Attributes & TypeAttributes.ExplicitLayout) == TypeAttributes.ExplicitLayout)
+            CharSet charSet = hasUtf16CharField ? CharSet.Unicode : CharSet.Ansi;
+            if (!layout.IsDefault || (typeDef.Attributes & TypeAttributes.ExplicitLayout) == TypeAttributes.ExplicitLayout || charSet != CharSet.Ansi)
             {
-                result = result.AddAttributeLists(AttributeList().AddAttributes(StructLayout(typeDef.Attributes, layout)));
+                result = result.AddAttributeLists(AttributeList().AddAttributes(StructLayout(typeDef.Attributes, layout, charSet)));
             }
 
             if (this.FindGuidFromAttribute(typeDef) is Guid guid)
@@ -4830,6 +4840,10 @@ namespace Microsoft.Windows.CsWin32
                 }
 
                 fixedLengthStruct = fixedLengthStruct.AddMembers(conversionDecl);
+
+                // Make sure .NET marshals these `char` arrays as UTF-16.
+                fixedLengthStruct = fixedLengthStruct
+                    .AddAttributeLists(AttributeList().AddAttributes(StructLayout(TypeAttributes.SequentialLayout, charSet: CharSet.Unicode)));
             }
 
             IdentifierNameSyntax indexParamName = IdentifierName("index");

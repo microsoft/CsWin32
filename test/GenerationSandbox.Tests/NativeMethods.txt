@@ -1,4 +1,5 @@
 ﻿BOOL
+CHAR
 CreateFile
 DISPLAYCONFIG_VIDEO_SIGNAL_INFO
 EnumWindows
@@ -8,9 +9,11 @@ GetWindowText
 GetWindowTextLength
 HDC_UserSize
 IEnumDebugPropertyInfo
+KEY_EVENT_RECORD
 LoadLibrary
 MainAVIHeader
 NTSTATUS
 RM_PROCESS_INFO
+WER_REPORT_INFORMATION
 wglGetProcAddress
 WPARAM

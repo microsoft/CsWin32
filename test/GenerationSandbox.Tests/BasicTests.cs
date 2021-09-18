@@ -10,6 +10,9 @@ using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.Graphics.DirectShow;
 using Windows.Win32.Storage.FileSystem;
+using Windows.Win32.System.Console;
+using Windows.Win32.System.ErrorReporting;
+using Windows.Win32.System.SystemServices;
 using Windows.Win32.UI.DisplayDevices;
 using Xunit;
 using Xunit.Abstractions;
@@ -412,5 +415,18 @@ public class BasicTests
         var getTickCountPtr = (delegate*<uint>)pGetTickCount.Value;
         ticks = getTickCountPtr();
         Assert.NotEqual(0u, ticks);
+    }
+
+    [Fact]
+    public void StructCharFieldsMarshaledAsUtf16()
+    {
+        Assert.Equal(128 * sizeof(char), Marshal.SizeOf<WER_REPORT_INFORMATION.__char_128>());
+        Assert.Equal(sizeof(char), Marshal.SizeOf<KEY_EVENT_RECORD._uChar_e__Union>());
+    }
+
+    [Fact]
+    public void CHAR_MarshaledAsUtf8()
+    {
+        Assert.Equal(1, Marshal.SizeOf<CHAR>());
     }
 }

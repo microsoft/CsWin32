@@ -115,7 +115,7 @@ namespace Microsoft.Windows.CsWin32
 ");
 
         private static readonly XmlTextSyntax DocCommentStart = XmlText(" ").WithLeadingTrivia(DocumentationCommentExterior("///"));
-        private static readonly XmlTextSyntax DocCommentEnd = XmlText(XmlTextNewLine("\r\n", continueXmlDocumentationComment: false));
+        private static readonly XmlTextSyntax DocCommentEnd = XmlText(XmlTextNewLine("\n", continueXmlDocumentationComment: false));
 
         private static readonly SyntaxToken SemicolonWithLineFeed = TokenWithLineFeed(SyntaxKind.SemicolonToken);
         private static readonly IdentifierNameSyntax ConstantsClassName = IdentifierName("Constants");

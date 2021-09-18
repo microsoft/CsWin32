@@ -431,7 +431,7 @@ namespace Microsoft.Windows.CsWin32
 
         internal static SyntaxToken Literal(char value) => SyntaxFactory.Literal(TriviaList(), SymbolDisplay.FormatLiteral(value, quote: true), value, TriviaList());
 
-        internal static SyntaxTriviaList ParseLeadingTrivia(string text) => SyntaxFactory.ParseLeadingTrivia(text);
+        internal static SyntaxTriviaList ParseLeadingTrivia(string text) => SyntaxFactory.ParseLeadingTrivia(text.Replace("\r\n", "\n"));
 
         internal static IdentifierNameSyntax IdentifierName(string name) => SyntaxFactory.IdentifierName(Identifier(name));
 

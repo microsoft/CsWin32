@@ -15,6 +15,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Testing;
+using Microsoft.CodeAnalysis.Text;
 using Microsoft.Windows.CsWin32;
 using Microsoft.Windows.CsWin32.Tests;
 using Xunit;
@@ -2170,6 +2171,38 @@ namespace Windows.Win32
 
     private static IEnumerable<AttributeSyntax> FindAttribute(SyntaxList<AttributeListSyntax> attributeLists, string name) => attributeLists.SelectMany(al => al.Attributes).Where(a => a.Name.ToString() == name);
 
+    private static void AssertConsistentLineEndings(Compilation compilation)
+    {
+        foreach (SyntaxTree doc in compilation.SyntaxTrees)
+        {
+            AssertConsistentLineEndings(doc);
+        }
+    }
+
+    private static void AssertConsistentLineEndings(SyntaxTree syntaxTree)
+    {
+        SourceText sourceText = syntaxTree.GetText();
+        int firstLineBreakLength = default;
+        int lineCount = 1;
+        foreach (TextLine line in sourceText.Lines)
+        {
+            int thisLineBreakLength = line.EndIncludingLineBreak - line.End;
+            if (lineCount == 1)
+            {
+                firstLineBreakLength = thisLineBreakLength;
+            }
+            else
+            {
+                if (firstLineBreakLength != thisLineBreakLength && thisLineBreakLength > 0)
+                {
+                    Assert.False(true, $"{syntaxTree.FilePath} Line {lineCount} had a {thisLineBreakLength}-byte line ending but line 1's line ending was {firstLineBreakLength} bytes long.");
+                }
+            }
+
+            lineCount++;
+        }
+    }
+
     private CSharpCompilation AddGeneratedCode(CSharpCompilation compilation, Generator generator)
     {
         var compilationUnits = generator.GetCompilationUnits(CancellationToken.None);
@@ -2232,6 +2265,8 @@ namespace Windows.Win32
             Assert.Empty(emitDiagnostics);
             Assert.True(emitSuccessful);
         }
+
+        AssertConsistentLineEndings(compilation);
     }
 
     private void LogDiagnostics(ImmutableArray<Diagnostic> diagnostics)

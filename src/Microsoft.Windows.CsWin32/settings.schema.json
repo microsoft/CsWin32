@@ -2,19 +2,18 @@
   "definitions": {},
   "$schema": "http://json-schema.org/draft-04/schema",
   "$id": "https://example.com/object1606572004.json",
-  "title": "Root",
   "type": "object",
   "additionalProperties": false,
   "properties": {
     "$schema": {
-      "title": "The URL for the schema used by this document.",
+      "description": "The URL for the schema used by this document.",
       "type": "string",
       "examples": [
         "https://aka.ms/CsWin32.schema.json"
       ]
     },
     "namespace": {
-      "title": "Namespace for generated code.",
+      "description": "Namespace for generated code.",
       "type": "string",
       "default": "Microsoft.Windows.Sdk",
       "examples": [
@@ -23,11 +22,11 @@
       "pattern": "^\\w+(?:\\.\\w+)*$"
     },
     "comInterop": {
-      "title": "Details around code generation for COM interop",
+      "description": "Details around code generation for COM interop",
       "type": "object",
       "properties": {
         "preserveSigMethods": {
-          "title": "Identifies methods or interfaces that should be generated as [PreserveSig].",
+          "description": "Identifies methods or interfaces that should be generated as [PreserveSig].",
           "type": "array",
           "items": {
             "type": "string",
@@ -38,34 +37,34 @@
       }
     },
     "allowMarshaling": {
-      "title": "Emit COM interfaces instead of structs, and allow generation of non-blittable structs for the sake of an easier to use API.",
+      "description": "Emit COM interfaces instead of structs, and allow generation of non-blittable structs for the sake of an easier to use API.",
       "type": "boolean",
       "default": true
     },
     "wideCharOnly": {
-      "title": "Omit ANSI functions and remove `W` suffix from UTF-16 functions.",
+      "description": "Omit ANSI functions and remove `W` suffix from UTF-16 functions.",
       "type": "boolean",
       "default": true
     },
     "emitSingleFile": {
-      "title": "A value indicating whether to emit a single source file as opposed to types spread across many files.",
+      "description": "A value indicating whether to emit a single source file as opposed to types spread across many files.",
       "type": "boolean",
       "default": false
     },
     "methodsClassName": {
-      "title": "The name of a single class under which all p/invoke methods are generated, regardless of imported module. Use null for one class per imported module.",
+      "description": "The name of a single class under which all p/invoke methods are generated, regardless of imported module. Use null for one class per imported module.",
       "type": [ "string", "null" ],
       "default": "PInvoke",
       "pattern": "^\\w+$"
     },
     "constantsClassName": {
-      "title": "The name of the single class under which all constants are generated.",
+      "description": "The name of the single class under which all constants are generated.",
       "type": "string",
       "default": "Constants",
       "pattern": "^\\w+$"
     },
     "public": {
-      "title": "A value indicating whether to expose the generated APIs publicly (as opposed to internally).",
+      "description": "A value indicating whether to expose the generated APIs publicly (as opposed to internally).",
       "type": "boolean",
       "default": false
     }

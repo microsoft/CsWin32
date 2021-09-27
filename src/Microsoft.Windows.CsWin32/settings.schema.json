@@ -52,10 +52,16 @@
       "type": "boolean",
       "default": false
     },
-    "className": {
-      "title": "The name of a single class under which all p/invoke methods should be added, regardless of imported module. Use null for one class per imported module.",
+    "methodsClassName": {
+      "title": "The name of a single class under which all p/invoke methods are generated, regardless of imported module. Use null for one class per imported module.",
       "type": [ "string", "null" ],
       "default": "PInvoke",
+      "pattern": "^\\w+$"
+    },
+    "constantsClassName": {
+      "title": "The name of the single class under which all constants are generated.",
+      "type": "string",
+      "default": "Constants",
       "pattern": "^\\w+$"
     },
     "public": {

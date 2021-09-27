@@ -2146,6 +2146,35 @@ namespace Windows.Win32
         }.RunAsync();
     }
 
+    [Fact]
+    public async Task UnparseableNativeMethodsJson()
+    {
+        await new VerifyTest
+        {
+            TestState =
+            {
+                ReferenceAssemblies = MyReferenceAssemblies.NetStandard20,
+                AdditionalFiles =
+                {
+                    ("NativeMethods.txt", "CreateFile"),
+                    ("NativeMethods.json", @"{ ""allowMarshaling"": f }"), // the point where the user is typing "false"
+                },
+                AnalyzerConfigFiles =
+                {
+                    ("/.globalconfig", ConstructGlobalConfigString()),
+                },
+                GeneratedSources =
+                {
+                    // Nothing generated, but no exceptions thrown that would lead Roslyn to disable the source generator in the IDE either.
+                },
+                ExpectedDiagnostics =
+                {
+                    new DiagnosticResult(SourceGenerator.OptionsParsingError.Id, DiagnosticSeverity.Error),
+                },
+            },
+        }.RunAsync();
+    }
+
     private static string ConstructGlobalConfigString(bool omitDocs = false)
     {
         StringBuilder globalConfigBuilder = new();

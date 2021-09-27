@@ -18,6 +18,8 @@ namespace Microsoft.Windows.CsWin32
 
         public string Name { get; }
 
+        public bool IsEmpty => this.Fields.Count == 0 && this.Methods.Count == 0 && this.Types.Count == 0;
+
         internal Dictionary<string, FieldDefinitionHandle> Fields { get; } = new(StringComparer.Ordinal);
 
         internal Dictionary<string, MethodDefinitionHandle> Methods { get; } = new(StringComparer.Ordinal);

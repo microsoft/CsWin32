@@ -61,8 +61,6 @@ namespace Microsoft.Windows.CsWin32
             { "CloseHandle", ParseTypeName("Microsoft.Win32.SafeHandles.SafeFileHandle").WithAdditionalAnnotations(IsManagedTypeAnnotation, IsSafeHandleTypeAnnotation) },
         };
 
-        private const string CommonNamespaceDot = "Windows.Win32.";
-        private const string CommonNamespace = "Windows.Win32";
         private const string SystemRuntimeCompilerServices = "System.Runtime.CompilerServices";
         private const string SystemRuntimeInteropServices = "System.Runtime.InteropServices";
         private const string NativeTypedefAttribute = "NativeTypedefAttribute";
@@ -537,7 +535,7 @@ namespace Microsoft.Windows.CsWin32
             if (!this.MetadataIndex.MetadataByNamespace.TryGetValue(@namespace, out metadata))
             {
                 // Fallback to case insensitive search if it looks promising to do so.
-                if (@namespace.StartsWith(CommonNamespace, StringComparison.OrdinalIgnoreCase))
+                if (@namespace.StartsWith(this.MetadataIndex.CommonNamespace, StringComparison.OrdinalIgnoreCase))
                 {
                     foreach (var item in this.MetadataIndex.MetadataByNamespace)
                     {
@@ -1019,7 +1017,7 @@ namespace Microsoft.Windows.CsWin32
                 usingDirectives.Add(UsingDirective(ParseName(GlobalNamespacePrefix + "System.Runtime.Versioning")));
             }
 
-            usingDirectives.Add(UsingDirective(NameEquals(GlobalWin32NamespaceAlias), ParseName(GlobalNamespacePrefix + CommonNamespace)));
+            usingDirectives.Add(UsingDirective(NameEquals(GlobalWin32NamespaceAlias), ParseName(GlobalNamespacePrefix + this.MetadataIndex.CommonNamespace)));
 
             var normalizedResults = new Dictionary<string, CompilationUnitSyntax>(StringComparer.OrdinalIgnoreCase);
             results.AsParallel().WithCancellation(cancellationToken).ForAll(kv =>
@@ -1083,25 +1081,6 @@ namespace Microsoft.Windows.CsWin32
 
         internal static TypeSyntax MakeReadOnlySpanOfT(TypeSyntax typeArgument) => GenericName("ReadOnlySpan").AddTypeArgumentListArguments(typeArgument);
 
-        internal static string ReplaceCommonNamespaceWithAlias(string fullNamespace) => TryStripCommonNamespace(fullNamespace, out string? stripped) ? $"{GlobalWin32NamespaceAlias}.{stripped}" : fullNamespace;
-
-        internal static bool TryStripCommonNamespace(string fullNamespace, [NotNullWhen(true)] out string? strippedNamespace)
-        {
-            if (fullNamespace.StartsWith(CommonNamespaceDot, StringComparison.Ordinal))
-            {
-                strippedNamespace = fullNamespace.Substring(CommonNamespaceDot.Length);
-                return true;
-            }
-            else if (fullNamespace == CommonNamespace)
-            {
-                strippedNamespace = string.Empty;
-                return true;
-            }
-
-            strippedNamespace = null;
-            return false;
-        }
-
         /// <summary>
         /// Checks whether an exception was originally thrown because of a target platform incompatibility.
         /// </summary>
@@ -1118,6 +1097,28 @@ namespace Microsoft.Windows.CsWin32
         }
 
         internal static bool IsUntypedDelegate(MetadataReader reader, TypeDefinition typeDef) => reader.StringComparer.Equals(typeDef.Name, "PROC") || reader.StringComparer.Equals(typeDef.Name, "FARPROC");
+
+        internal static string ReplaceCommonNamespaceWithAlias(Generator? generator, string fullNamespace)
+        {
+            return generator is object && generator.TryStripCommonNamespace(fullNamespace, out string? stripped) ? $"{GlobalWin32NamespaceAlias}.{stripped}" : fullNamespace;
+        }
+
+        internal bool TryStripCommonNamespace(string fullNamespace, [NotNullWhen(true)] out string? strippedNamespace)
+        {
+            if (fullNamespace.StartsWith(this.MetadataIndex.CommonNamespaceDot, StringComparison.Ordinal))
+            {
+                strippedNamespace = fullNamespace.Substring(this.MetadataIndex.CommonNamespaceDot.Length);
+                return true;
+            }
+            else if (fullNamespace == this.MetadataIndex.CommonNamespace)
+            {
+                strippedNamespace = string.Empty;
+                return true;
+            }
+
+            strippedNamespace = null;
+            return false;
+        }
 
         internal bool IsAttribute(CustomAttribute attribute, string ns, string name) => MetadataUtilities.IsAttribute(this.Reader, attribute, ns, name);
 
@@ -1292,7 +1293,7 @@ namespace Microsoft.Windows.CsWin32
             {
                 if (this.RequestInteropType(typeDefHandle, null) is MemberDeclarationSyntax typeDeclaration)
                 {
-                    if (!TryStripCommonNamespace(ns, out string? shortNamespace))
+                    if (!this.TryStripCommonNamespace(ns, out string? shortNamespace))
                     {
                         throw new GenerationFailedException("Unexpected namespace: " + ns);
                     }
@@ -3085,7 +3086,7 @@ namespace Microsoft.Windows.CsWin32
                     methodDeclaration = this.AddApiDocumentation($"{ifaceName}.{methodName}", methodDeclaration);
                     members.Add(methodDeclaration);
 
-                    NameSyntax declaringTypeName = HandleTypeHandleInfo.GetNestingQualifiedName(this.Reader, typeDef);
+                    NameSyntax declaringTypeName = HandleTypeHandleInfo.GetNestingQualifiedName(this, this.Reader, typeDef);
                     friendlyOverloads.AddRange(
                         this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, declaringTypeName, FriendlyOverloadOf.InterfaceMethod));
                 }

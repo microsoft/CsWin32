@@ -24,6 +24,11 @@ namespace Microsoft.Windows.CsWin32
         public string? ClassName { get; init; } = "PInvoke";
 
         /// <summary>
+        /// Gets the name of the single class under which all constants are generated.
+        /// </summary>
+        public string ConstantsClassName { get; init; } = "Constants";
+
+        /// <summary>
         /// Gets a value indicating whether to emit a single source file as opposed to types spread across many files.
         /// </summary>
         /// <value>The default value is <see langword="false" />.</value>

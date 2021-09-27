@@ -116,7 +116,6 @@ namespace Microsoft.Windows.CsWin32
         private static readonly XmlTextSyntax DocCommentEnd = XmlText(XmlTextNewLine("\n", continueXmlDocumentationComment: false));
 
         private static readonly SyntaxToken SemicolonWithLineFeed = TokenWithLineFeed(SyntaxKind.SemicolonToken);
-        private static readonly IdentifierNameSyntax ConstantsClassName = IdentifierName("Constants");
         private static readonly IdentifierNameSyntax InlineArrayIndexerExtensionsClassName = IdentifierName("InlineArrayIndexerExtensions");
         private static readonly IdentifierNameSyntax ComInterfaceFriendlyExtensionsClassName = IdentifierName("FriendlyOverloadExtensions");
         private static readonly TypeSyntax SafeHandleTypeSyntax = IdentifierName("SafeHandle");
@@ -296,6 +295,7 @@ namespace Microsoft.Windows.CsWin32
         private readonly bool generateDefaultDllImportSearchPathsAttribute;
         private readonly GeneratedCode committedCode = new();
         private readonly GeneratedCode volatileCode;
+        private readonly IdentifierNameSyntax constantsClassName;
         private bool needsWinRTCustomMarshaler;
 
         /// <summary>
@@ -347,6 +347,8 @@ namespace Microsoft.Windows.CsWin32
             this.extensionMethodSignatureTypeSettings = this.generalTypeSettings with { QualifyNames = true };
             this.functionPointerTypeSettings = this.generalTypeSettings with { QualifyNames = true };
             this.errorMessageTypeSettings = this.generalTypeSettings with { QualifyNames = true };
+
+            this.constantsClassName = IdentifierName(options.ConstantsClassName);
         }
 
         private enum FriendlyOverloadOf
@@ -1506,12 +1508,12 @@ namespace Microsoft.Windows.CsWin32
                                 break;
                             case "NTSTATUS":
                                 this.TryGenerateConstantOrThrow("STATUS_SUCCESS");
-                                ExpressionSyntax statusSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ConstantsClassName, IdentifierName("STATUS_SUCCESS"));
+                                ExpressionSyntax statusSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, this.constantsClassName, IdentifierName("STATUS_SUCCESS"));
                                 releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, statusSuccess);
                                 break;
                             case "HRESULT":
                                 this.TryGenerateConstantOrThrow("S_OK");
-                                ExpressionSyntax ok = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ConstantsClassName, IdentifierName("S_OK"));
+                                ExpressionSyntax ok = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, this.constantsClassName, IdentifierName("S_OK"));
                                 releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, ok);
                                 break;
                             default:
@@ -2797,7 +2799,7 @@ namespace Microsoft.Windows.CsWin32
 
         private ClassDeclarationSyntax DeclareConstantDefiningClass()
         {
-            return ClassDeclaration(ConstantsClassName.Identifier)
+            return ClassDeclaration(this.constantsClassName.Identifier)
                 .AddMembers(this.committedCode.Fields.ToArray())
                 .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)));
         }

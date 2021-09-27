@@ -976,6 +976,17 @@ i++)						if (p0[i] != default(uint))							return false;
         this.AssertGeneratedType("MainAVIHeader", expected, expectedIndexer);
     }
 
+    [Fact]
+    public void RenamedConstantsClass()
+    {
+        this.generator = this.CreateGenerator(new GeneratorOptions { ConstantsClassName = "MyConstants" });
+        Assert.True(this.generator.TryGenerate("CDB_REPORT_BITS", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        Assert.Single(this.FindGeneratedType("MyConstants"));
+        Assert.Empty(this.FindGeneratedType("Constants"));
+    }
+
     [Theory, PairwiseData]
     public void FullGeneration(bool allowMarshaling, [CombinatorialValues(Platform.AnyCpu, Platform.X86, Platform.X64, Platform.Arm64)] Platform platform)
     {

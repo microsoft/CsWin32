@@ -58,6 +58,12 @@
       "default": "PInvoke",
       "pattern": "^\\w+$"
     },
+    "constantsClassName": {
+      "title": "The name of the single class under which all constants are generated.",
+      "type": "string",
+      "default": "Constants",
+      "pattern": "^\\w+$"
+    },
     "public": {
       "title": "A value indicating whether to expose the generated APIs publicly (as opposed to internally).",
       "type": "boolean",

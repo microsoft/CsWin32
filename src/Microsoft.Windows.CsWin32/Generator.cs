@@ -385,11 +385,11 @@ namespace Microsoft.Windows.CsWin32
 
         private bool WideCharOnly => this.options.WideCharOnly;
 
-        private bool GroupByModule => string.IsNullOrEmpty(this.options.ClassName);
+        private bool GroupByModule => string.IsNullOrEmpty(this.options.MethodsClassName);
 
         private string Namespace => this.InputAssemblyName;
 
-        private string SingleClassName => this.options.ClassName ?? throw new InvalidOperationException("Not in one-class mode.");
+        private string SingleClassName => this.options.MethodsClassName ?? throw new InvalidOperationException("Not in one-class mode.");
 
         private SyntaxKind Visibility => this.options.Public ? SyntaxKind.PublicKeyword : SyntaxKind.InternalKeyword;
 

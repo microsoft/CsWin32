@@ -8,6 +8,7 @@ namespace Microsoft.Windows.CsWin32
     using System.Collections.ObjectModel;
     using System.Diagnostics;
     using System.IO;
+    using System.Linq;
     using System.Reflection;
     using System.Reflection.Metadata;
     using System.Reflection.PortableExecutable;
@@ -83,7 +84,6 @@ namespace Microsoft.Windows.CsWin32
                     string nsFullName = string.IsNullOrEmpty(parentNamespace) ? nsLeafName : $"{parentNamespace}.{nsLeafName}";
 
                     var nsMetadata = new NamespaceMetadata(nsFullName);
-                    this.MetadataByNamespace.Add(nsFullName, nsMetadata);
 
                     foreach (TypeDefinitionHandle tdh in ns.TypeDefinitions)
                     {
@@ -163,6 +163,11 @@ namespace Microsoft.Windows.CsWin32
                         }
                     }
 
+                    if (!nsMetadata.IsEmpty)
+                    {
+                        this.MetadataByNamespace.Add(nsFullName, nsMetadata);
+                    }
+
                     foreach (NamespaceDefinitionHandle childNsHandle in ns.NamespaceDefinitions)
                     {
                         PopulateNamespace(this.mr.GetNamespaceDefinition(childNsHandle), nsFullName);
@@ -172,6 +177,17 @@ namespace Microsoft.Windows.CsWin32
                 foreach (NamespaceDefinitionHandle childNsHandle in this.mr.GetNamespaceDefinitionRoot().NamespaceDefinitions)
                 {
                     PopulateNamespace(this.mr.GetNamespaceDefinitionRoot(), parentNamespace: null);
+                }
+
+                this.CommonNamespace = CommonPrefix(this.MetadataByNamespace.Keys.ToList());
+                if (this.CommonNamespace[this.CommonNamespace.Length - 1] == '.')
+                {
+                    this.CommonNamespaceDot = this.CommonNamespace;
+                    this.CommonNamespace = this.CommonNamespace.Substring(0, this.CommonNamespace.Length - 1);
+                }
+                else
+                {
+                    this.CommonNamespaceDot = this.CommonNamespace + ".";
                 }
             }
             catch
@@ -199,6 +215,10 @@ namespace Microsoft.Windows.CsWin32
         internal IReadOnlyCollection<string> ReleaseMethods => this.releaseMethods;
 
         internal IReadOnlyDictionary<TypeDefinitionHandle, string> HandleTypeReleaseMethod => this.handleTypeReleaseMethod;
+
+        internal string CommonNamespace { get; }
+
+        internal string CommonNamespaceDot { get; }
 
         private string DebuggerDisplay => $"{this.metadataPath} ({this.platform})";
 
@@ -234,6 +254,36 @@ namespace Microsoft.Windows.CsWin32
 
                 stack.Push(index);
             }
+        }
+
+        private static string CommonPrefix(IReadOnlyList<string> ss)
+        {
+            if (ss.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            if (ss.Count == 1)
+            {
+                return ss[0];
+            }
+
+            int prefixLength = 0;
+
+            foreach (char c in ss[0])
+            {
+                foreach (string s in ss)
+                {
+                    if (s.Length <= prefixLength || s[prefixLength] != c)
+                    {
+                        return ss[0].Substring(0, prefixLength);
+                    }
+                }
+
+                prefixLength++;
+            }
+
+            return ss[0]; // all strings identical up to length of ss[0]
         }
 
         [DebuggerDisplay("{" + nameof(DebuggerDisplay) + ",nq}")]

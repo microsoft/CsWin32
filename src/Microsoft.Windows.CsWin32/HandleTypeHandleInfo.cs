@@ -45,14 +45,14 @@ namespace Microsoft.Windows.CsWin32
             {
                 case HandleKind.TypeDefinition:
                     TypeDefinition td = this.reader.GetTypeDefinition((TypeDefinitionHandle)this.Handle);
-                    nameSyntax = inputs.QualifyNames ? GetNestingQualifiedName(this.reader, td) : IdentifierName(this.reader.GetString(td.Name));
+                    nameSyntax = inputs.QualifyNames ? GetNestingQualifiedName(inputs.Generator, this.reader, td) : IdentifierName(this.reader.GetString(td.Name));
                     isInterface = (td.Attributes & TypeAttributes.Interface) == TypeAttributes.Interface;
                     isNonCOMConformingInterface = isInterface && inputs.Generator?.IsNonCOMInterface(td) is true;
                     break;
                 case HandleKind.TypeReference:
                     var trh = (TypeReferenceHandle)this.Handle;
                     TypeReference tr = this.reader.GetTypeReference(trh);
-                    nameSyntax = inputs.QualifyNames ? GetNestingQualifiedName(this.reader, tr) : IdentifierName(this.reader.GetString(tr.Name));
+                    nameSyntax = inputs.QualifyNames ? GetNestingQualifiedName(inputs.Generator, this.reader, tr) : IdentifierName(this.reader.GetString(tr.Name));
                     isInterface = inputs.Generator?.IsInterface(trh) is true;
                     isNonCOMConformingInterface = isInterface && inputs.Generator?.IsNonCOMInterface(trh) is true;
                     break;
@@ -82,7 +82,7 @@ namespace Microsoft.Windows.CsWin32
                 if (inputs.Generator is object)
                 {
                     inputs.Generator.RequestSpecialTypeDefStruct(specialName, out string fullyQualifiedName);
-                    return new TypeSyntaxAndMarshaling(ParseName(Generator.ReplaceCommonNamespaceWithAlias(fullyQualifiedName)));
+                    return new TypeSyntaxAndMarshaling(ParseName(Generator.ReplaceCommonNamespaceWithAlias(inputs.Generator, fullyQualifiedName)));
                 }
                 else
                 {
@@ -154,24 +154,24 @@ namespace Microsoft.Windows.CsWin32
             return false;
         }
 
-        private static NameSyntax GetNestingQualifiedName(MetadataReader reader, TypeDefinitionHandle handle) => GetNestingQualifiedName(reader, reader.GetTypeDefinition(handle));
+        private static NameSyntax GetNestingQualifiedName(Generator? generator, MetadataReader reader, TypeDefinitionHandle handle) => GetNestingQualifiedName(generator, reader, reader.GetTypeDefinition(handle));
 
-        internal static NameSyntax GetNestingQualifiedName(MetadataReader reader, TypeDefinition td)
+        internal static NameSyntax GetNestingQualifiedName(Generator? generator, MetadataReader reader, TypeDefinition td)
         {
             IdentifierNameSyntax name = IdentifierName(reader.GetString(td.Name));
             return td.GetDeclaringType() is { IsNil: false } nestingType
-                ? QualifiedName(GetNestingQualifiedName(reader, nestingType), name)
-                : QualifiedName(ParseName(Generator.ReplaceCommonNamespaceWithAlias(reader.GetString(td.Namespace))), name);
+                ? QualifiedName(GetNestingQualifiedName(generator, reader, nestingType), name)
+                : QualifiedName(ParseName(Generator.ReplaceCommonNamespaceWithAlias(generator, reader.GetString(td.Namespace))), name);
         }
 
-        private static NameSyntax GetNestingQualifiedName(MetadataReader reader, TypeReferenceHandle handle) => GetNestingQualifiedName(reader, reader.GetTypeReference(handle));
+        private static NameSyntax GetNestingQualifiedName(Generator? generator, MetadataReader reader, TypeReferenceHandle handle) => GetNestingQualifiedName(generator, reader, reader.GetTypeReference(handle));
 
-        private static NameSyntax GetNestingQualifiedName(MetadataReader reader, TypeReference tr)
+        private static NameSyntax GetNestingQualifiedName(Generator? generator, MetadataReader reader, TypeReference tr)
         {
             SimpleNameSyntax typeName = IdentifierName(reader.GetString(tr.Name));
             return tr.ResolutionScope.Kind == HandleKind.TypeReference
-                ? QualifiedName(GetNestingQualifiedName(reader, (TypeReferenceHandle)tr.ResolutionScope), typeName)
-                : QualifiedName(ParseName(Generator.ReplaceCommonNamespaceWithAlias(reader.GetString(tr.Namespace))), typeName);
+                ? QualifiedName(GetNestingQualifiedName(generator, reader, (TypeReferenceHandle)tr.ResolutionScope), typeName)
+                : QualifiedName(ParseName(Generator.ReplaceCommonNamespaceWithAlias(generator, reader.GetString(tr.Namespace))), typeName);
         }
 
         private bool IsDelegate(TypeSyntaxSettings inputs, out TypeDefinition delegateTypeDef)

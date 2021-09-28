@@ -12,15 +12,6 @@
         "https://aka.ms/CsWin32.schema.json"
       ]
     },
-    "namespace": {
-      "description": "Namespace for generated code.",
-      "type": "string",
-      "default": "Microsoft.Windows.Sdk",
-      "examples": [
-        "PInvoke"
-      ],
-      "pattern": "^\\w+(?:\\.\\w+)*$"
-    },
     "comInterop": {
       "description": "Details around code generation for COM interop",
       "type": "object",

@@ -849,6 +849,14 @@ namespace Microsoft.Windows.CsWin32
                 return false;
             }
 
+            if (SpecialTypeDefNames.Contains(typeName))
+            {
+                string? fullyQualifiedName = null;
+                this.volatileCode.GenerationTransaction(() => this.RequestSpecialTypeDefStruct(typeName, out fullyQualifiedName));
+                preciseApi = ImmutableList.Create(fullyQualifiedName!);
+                return true;
+            }
+
             if (foundApiWithMismatchedPlatform)
             {
                 throw new PlatformIncompatibleException($"The requested API ({possiblyQualifiedName}) was found but is not available given the target platform ({this.compilation?.Options.Platform}).");

@@ -791,6 +791,22 @@ namespace Microsoft.Windows.Sdk
         this.AssertNoDiagnostics();
     }
 
+    [Theory]
+    [InlineData("BOOL")]
+    [InlineData("HRESULT")]
+    [InlineData("NTSTATUS")]
+    [InlineData("PCSTR")]
+    [InlineData("PCWSTR")]
+    [InlineData("PWSTR")]
+    public void SynthesizedTypesCanBeDirectlyRequested(string synthesizedTypeName)
+    {
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate(synthesizedTypeName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        Assert.Single(this.FindGeneratedType(synthesizedTypeName));
+    }
+
     /// <summary>
     /// Validates that where MemoryMarshal.CreateSpan isn't available, a substitute indexer is offered.
     /// </summary>
@@ -2432,6 +2448,8 @@ namespace Windows.Win32
 
         internal static class NetFramework
         {
+            internal static readonly ReferenceAssemblies Net35 = ReferenceAssemblies.NetFramework.Net35.Default.AddPackages(AdditionalPackages);
+
             internal static readonly ReferenceAssemblies Net40 = ReferenceAssemblies.NetFramework.Net40.Default.AddPackages(AdditionalPackages);
         }
 

@@ -807,6 +807,24 @@ namespace Microsoft.Windows.Sdk
         Assert.Single(this.FindGeneratedType(synthesizedTypeName));
     }
 
+    [Theory]
+    [InlineData("BOOL")]
+    [InlineData("HRESULT")]
+    [InlineData("NTSTATUS")]
+    [InlineData("PCSTR")]
+    [InlineData("PCWSTR")]
+    [InlineData("PWSTR")]
+    public async Task SynthesizedTypesWorkInNet35(string synthesizedTypeName)
+    {
+        this.compilation = await this.CreateCompilationAsync(MyReferenceAssemblies.NetFramework.Net35);
+        this.generator = this.CreateGenerator();
+
+        Assert.True(this.generator.TryGenerate(synthesizedTypeName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        Assert.Single(this.FindGeneratedType(synthesizedTypeName));
+    }
+
     /// <summary>
     /// Validates that where MemoryMarshal.CreateSpan isn't available, a substitute indexer is offered.
     /// </summary>

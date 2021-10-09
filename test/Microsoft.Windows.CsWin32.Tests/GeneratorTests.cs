@@ -56,14 +56,14 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public static IEnumerable<object[]> TFMData =>
         new object[][]
         {
-            new object[] { "net40" },
+            new object[] { "net35" },
             new object[] { "netstandard2.0" },
             new object[] { "net5.0" },
         };
 
     public async Task InitializeAsync()
     {
-        this.starterCompilations.Add("net40", await this.CreateCompilationAsync(MyReferenceAssemblies.NetFramework.Net40));
+        this.starterCompilations.Add("net35", await this.CreateCompilationAsync(MyReferenceAssemblies.NetFramework.Net35));
         this.starterCompilations.Add("netstandard2.0", await this.CreateCompilationAsync(MyReferenceAssemblies.NetStandard20));
         this.starterCompilations.Add("net5.0", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net50));
         this.starterCompilations.Add("net5.0-x86", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net50, Platform.X86));
@@ -112,7 +112,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             Assert.DoesNotContain(generatedMethod.AttributeLists, al => IsAttributePresent(al, "SupportedOSPlatform"));
         }
 
-        if (tfm != "net40")
+        if (tfm != "net35")
         {
             Assert.Contains(generatedMethod.AttributeLists, al => IsAttributePresent(al, "DefaultDllImportSearchPaths"));
         }
@@ -814,9 +814,9 @@ namespace Microsoft.Windows.Sdk
     [InlineData("PCSTR")]
     [InlineData("PCWSTR")]
     [InlineData("PWSTR")]
-    public async Task SynthesizedTypesWorkInNet35(string synthesizedTypeName)
+    public void SynthesizedTypesWorkInNet35(string synthesizedTypeName)
     {
-        this.compilation = await this.CreateCompilationAsync(MyReferenceAssemblies.NetFramework.Net35);
+        this.compilation = this.starterCompilations["net35"];
         this.generator = this.CreateGenerator();
 
         Assert.True(this.generator.TryGenerate(synthesizedTypeName, CancellationToken.None));
@@ -2463,8 +2463,6 @@ namespace Windows.Win32
         internal static class NetFramework
         {
             internal static readonly ReferenceAssemblies Net35 = ReferenceAssemblies.NetFramework.Net35.Default.AddPackages(AdditionalPackages);
-
-            internal static readonly ReferenceAssemblies Net40 = ReferenceAssemblies.NetFramework.Net40.Default.AddPackages(AdditionalPackages);
         }
 
         internal static class Net

@@ -1121,12 +1121,12 @@ namespace Windows.Win32
 			private readonly int value;
 
 			internal int Value => this.value;
-			internal BOOL(bool value) => this.value = Unsafe.As<bool,sbyte>(ref value);
+			internal unsafe BOOL(bool value) => this.value = *(sbyte*)&value;
 			internal BOOL(int value) => this.value = value;
-			public static implicit operator bool(BOOL value)
+			public static unsafe implicit operator bool(BOOL value)
 			{
 				sbyte v = checked((sbyte)value.value);
-				return Unsafe.As<sbyte,bool>(ref v);
+				return *(bool*)&v;
 			}
 			public static implicit operator BOOL(bool value) => new BOOL(value);
 			public static explicit operator BOOL(int value) => new BOOL(value);
@@ -1378,12 +1378,12 @@ namespace Windows.Win32
 			private readonly int value;
 
 			internal int Value => this.value;
-			internal BOOL(bool value) => this.value = Unsafe.As<bool,sbyte>(ref value);
+			internal unsafe BOOL(bool value) => this.value = *(sbyte*)&value;
 			internal BOOL(int value) => this.value = value;
-			public static implicit operator bool(BOOL value)
+			public static unsafe implicit operator bool(BOOL value)
 			{
 				sbyte v = checked((sbyte)value.value);
-				return Unsafe.As<sbyte,bool>(ref v);
+				return *(bool*)&v;
 			}
 			public static implicit operator BOOL(bool value) => new BOOL(value);
 			public static explicit operator BOOL(int value) => new BOOL(value);
@@ -1688,12 +1688,12 @@ namespace Windows.Win32
 			private readonly int value;
 
 			internal int Value => this.value;
-			internal BOOL(bool value) => this.value = Unsafe.As<bool,sbyte>(ref value);
+			internal unsafe BOOL(bool value) => this.value = *(sbyte*)&value;
 			internal BOOL(int value) => this.value = value;
-			public static implicit operator bool(BOOL value)
+			public static unsafe implicit operator bool(BOOL value)
 			{
 				sbyte v = checked((sbyte)value.value);
-				return Unsafe.As<sbyte,bool>(ref v);
+				return *(bool*)&v;
 			}
 			public static implicit operator BOOL(bool value) => new BOOL(value);
 			public static explicit operator BOOL(int value) => new BOOL(value);

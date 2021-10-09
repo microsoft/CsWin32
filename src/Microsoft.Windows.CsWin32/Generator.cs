@@ -3740,21 +3740,17 @@ namespace Microsoft.Windows.CsWin32
                 .WithExpressionBody(ArrowExpressionClause(fieldAccessExpression)).WithSemicolonToken(SemicolonWithLineFeed)
                 .AddModifiers(TokenWithSpace(this.Visibility)));
 
-            static InvocationExpressionSyntax UnsafeAs(SyntaxKind fromType, SyntaxKind toType, IdentifierNameSyntax localSource) =>
-                InvocationExpression(
-                MemberAccessExpression(
-                    SyntaxKind.SimpleMemberAccessExpression,
-                    IdentifierName(nameof(Unsafe)),
-                    GenericName(nameof(Unsafe.As), TypeArgumentList().AddArguments(PredefinedType(Token(fromType)), PredefinedType(Token(toType))))),
-                ArgumentList().AddArguments(Argument(localSource).WithRefKindKeyword(Token(SyntaxKind.RefKeyword))));
-
-            // BOOL(bool value) => this.value = Unsafe.As<bool, sbyte>(ref value);
+            // unsafe BOOL(bool value) => this.value = *(sbyte*)&value;
             IdentifierNameSyntax valueParameter = IdentifierName("value");
-            ExpressionSyntax boolToInt = UnsafeAs(SyntaxKind.BoolKeyword, SyntaxKind.SByteKeyword, valueParameter);
+            ExpressionSyntax boolToSByte = PrefixUnaryExpression(
+                SyntaxKind.PointerIndirectionExpression,
+                CastExpression(
+                    PointerType(PredefinedType(TokenWithNoSpace(SyntaxKind.SByteKeyword))),
+                    PrefixUnaryExpression(SyntaxKind.AddressOfExpression, valueParameter)));
             members = members.Add(ConstructorDeclaration(name.Identifier)
-                .AddModifiers(TokenWithSpace(this.Visibility))
+                .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword))
                 .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword))))
-                .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, boolToInt).WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken))))
+                .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, boolToSByte).WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken))))
                 .WithSemicolonToken(SemicolonWithLineFeed));
 
             // BOOL(int value) => this.value = value;
@@ -3764,20 +3760,25 @@ namespace Microsoft.Windows.CsWin32
                 .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, valueParameter).WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken))))
                 .WithSemicolonToken(SemicolonWithLineFeed));
 
-            // public static implicit operator bool(BOOL value)
+            // public unsafe static implicit operator bool(BOOL value)
             // {
             //     sbyte v = checked((sbyte)value.value);
-            //     return Unsafe.As<sbyte, bool>(ref v);
+            //     return *(bool*)&v;
             // }
             IdentifierNameSyntax localVarName = IdentifierName("v");
+            ExpressionSyntax sbyteToBool = PrefixUnaryExpression(
+                SyntaxKind.PointerIndirectionExpression,
+                CastExpression(
+                    PointerType(PredefinedType(TokenWithNoSpace(SyntaxKind.BoolKeyword))),
+                    PrefixUnaryExpression(SyntaxKind.AddressOfExpression, localVarName)));
             var implicitBOOLtoBoolBody = Block().AddStatements(
                 LocalDeclarationStatement(VariableDeclaration(PredefinedType(Token(SyntaxKind.SByteKeyword)))).AddDeclarationVariables(
                     VariableDeclarator(localVarName.Identifier).WithInitializer(EqualsValueClause(CheckedExpression(SyntaxKind.CheckedExpression, CastExpression(PredefinedType(Token(SyntaxKind.SByteKeyword)), MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, fieldName)))))),
-                ReturnStatement(UnsafeAs(SyntaxKind.SByteKeyword, SyntaxKind.BoolKeyword, localVarName)));
+                ReturnStatement(sbyteToBool));
             members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), PredefinedType(Token(SyntaxKind.BoolKeyword)))
                 .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))))
                 .WithBody(implicitBOOLtoBoolBody)
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))); // operators MUST be public
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword))); // operators MUST be public
 
             // public static implicit operator BOOL(bool value) => new BOOL(value);
             members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), name)

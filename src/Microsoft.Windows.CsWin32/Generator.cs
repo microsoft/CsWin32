@@ -1613,20 +1613,9 @@ namespace Microsoft.Windows.CsWin32
 
                         if (this.canUseSpan)
                         {
-                            TypeSyntax readOnlySpanOfChar = MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword)));
-                            ExpressionSyntax thisValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Value"));
-                            ExpressionSyntax thisValueIsNull = IsPatternExpression(thisValue, ConstantPattern(LiteralExpression(SyntaxKind.NullLiteralExpression)));
-                            ExpressionSyntax thisLength = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Length"));
-
                             // internal ReadOnlySpan<char> AsSpan() => this.Value is null ? default(ReadOnlySpan<char>) : new ReadOnlySpan<char>(this.Value, this.Length);
                             specialDeclaration = ((TypeDeclarationSyntax)specialDeclaration).AddMembers(
-                                MethodDeclaration(readOnlySpanOfChar, Identifier("AsSpan"))
-                                    .AddModifiers(TokenWithSpace(this.Visibility))
-                                    .WithExpressionBody(ArrowExpressionClause(ConditionalExpression(
-                                        condition: thisValueIsNull,
-                                        whenTrue: DefaultExpression(readOnlySpanOfChar),
-                                        whenFalse: ObjectCreationExpression(readOnlySpanOfChar).AddArgumentListArguments(Argument(thisValue), Argument(thisLength)))))
-                                    .WithSemicolonToken(SemicolonWithLineFeed));
+                                this.CreateAsSpanMethodOverValueAndLength(MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword)))));
                         }
 
                         this.TryGenerateType("PWSTR"); // the template references this type
@@ -1636,20 +1625,9 @@ namespace Microsoft.Windows.CsWin32
 
                         if (this.canUseSpan)
                         {
-                            TypeSyntax readOnlySpanOfByte = MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.ByteKeyword)));
-                            ExpressionSyntax thisValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Value"));
-                            ExpressionSyntax thisValueIsNull = IsPatternExpression(thisValue, ConstantPattern(LiteralExpression(SyntaxKind.NullLiteralExpression)));
-                            ExpressionSyntax thisLength = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Length"));
-
                             // internal ReadOnlySpan<byte> AsSpan() => this.Value is null ? default(ReadOnlySpan<byte>) : new ReadOnlySpan<byte>(this.Value, this.Length);
                             specialDeclaration = ((TypeDeclarationSyntax)specialDeclaration).AddMembers(
-                                MethodDeclaration(readOnlySpanOfByte, Identifier("AsSpan"))
-                                    .AddModifiers(TokenWithSpace(this.Visibility))
-                                    .WithExpressionBody(ArrowExpressionClause(ConditionalExpression(
-                                        condition: thisValueIsNull,
-                                        whenTrue: DefaultExpression(readOnlySpanOfByte),
-                                        whenFalse: ObjectCreationExpression(readOnlySpanOfByte).AddArgumentListArguments(Argument(thisValue), Argument(thisLength)))))
-                                    .WithSemicolonToken(SemicolonWithLineFeed));
+                                this.CreateAsSpanMethodOverValueAndLength(MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.ByteKeyword)))));
                         }
 
                         this.TryGenerateType("PSTR"); // the template references this type
@@ -3748,16 +3726,24 @@ namespace Microsoft.Windows.CsWin32
             if (this.canUseSpan)
             {
                 // internal Span<char> AsSpan() => this.Value is null ? default : new Span<char>(this.Value, this.Length);
-                TypeSyntax spanChar = MakeSpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword)));
-                ExpressionSyntax thisLength = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Length"));
-                ExpressionSyntax spanCreation = ObjectCreationExpression(spanChar).AddArgumentListArguments(Argument(thisValue), Argument(thisLength));
-                ExpressionSyntax conditional = ConditionalExpression(thisValueIsNull, DefaultExpression(spanChar), spanCreation);
-                yield return MethodDeclaration(spanChar, Identifier("AsSpan"))
-                    .AddModifiers(TokenWithSpace(this.Visibility))
-                    .WithExpressionBody(ArrowExpressionClause(conditional))
-                    .WithSemicolonToken(SemicolonWithLineFeed);
+                yield return this.CreateAsSpanMethodOverValueAndLength(MakeSpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword))));
             }
 #pragma warning restore SA1114 // Parameter list should follow declaration
+        }
+
+        private MethodDeclarationSyntax CreateAsSpanMethodOverValueAndLength(TypeSyntax spanType)
+        {
+            ExpressionSyntax thisValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Value"));
+            ExpressionSyntax thisLength = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Length"));
+
+            // internal X AsSpan() => this.Value is null ? default(X) : new X(this.Value, this.Length);
+            return MethodDeclaration(spanType, Identifier("AsSpan"))
+                .AddModifiers(TokenWithSpace(this.Visibility))
+                .WithExpressionBody(ArrowExpressionClause(ConditionalExpression(
+                    condition: IsPatternExpression(thisValue, ConstantPattern(LiteralExpression(SyntaxKind.NullLiteralExpression))),
+                    whenTrue: DefaultExpression(spanType),
+                    whenFalse: ObjectCreationExpression(spanType).AddArgumentListArguments(Argument(thisValue), Argument(thisLength)))))
+                .WithSemicolonToken(SemicolonWithLineFeed);
         }
 
         private StructDeclarationSyntax DeclareTypeDefBOOLStruct(TypeDefinition typeDef)

@@ -1610,10 +1610,48 @@ namespace Microsoft.Windows.CsWin32
                 {
                     case "PCWSTR":
                         specialDeclaration = this.FetchTemplate($"{specialName}");
+
+                        if (this.canUseSpan)
+                        {
+                            TypeSyntax readOnlySpanOfChar = MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword)));
+                            ExpressionSyntax thisValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Value"));
+                            ExpressionSyntax thisValueIsNull = IsPatternExpression(thisValue, ConstantPattern(LiteralExpression(SyntaxKind.NullLiteralExpression)));
+                            ExpressionSyntax thisLength = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Length"));
+
+                            // internal ReadOnlySpan<char> AsSpan() => this.Value is null ? default(ReadOnlySpan<char>) : new ReadOnlySpan<char>(this.Value, this.Length);
+                            specialDeclaration = ((TypeDeclarationSyntax)specialDeclaration).AddMembers(
+                                MethodDeclaration(readOnlySpanOfChar, Identifier("AsSpan"))
+                                    .AddModifiers(TokenWithSpace(this.Visibility))
+                                    .WithExpressionBody(ArrowExpressionClause(ConditionalExpression(
+                                        condition: thisValueIsNull,
+                                        whenTrue: DefaultExpression(readOnlySpanOfChar),
+                                        whenFalse: ObjectCreationExpression(readOnlySpanOfChar).AddArgumentListArguments(Argument(thisValue), Argument(thisLength)))))
+                                    .WithSemicolonToken(SemicolonWithLineFeed));
+                        }
+
                         this.TryGenerateType("PWSTR"); // the template references this type
                         break;
                     case "PCSTR":
                         specialDeclaration = this.FetchTemplate($"{specialName}");
+
+                        if (this.canUseSpan)
+                        {
+                            TypeSyntax readOnlySpanOfByte = MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.ByteKeyword)));
+                            ExpressionSyntax thisValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Value"));
+                            ExpressionSyntax thisValueIsNull = IsPatternExpression(thisValue, ConstantPattern(LiteralExpression(SyntaxKind.NullLiteralExpression)));
+                            ExpressionSyntax thisLength = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Length"));
+
+                            // internal ReadOnlySpan<byte> AsSpan() => this.Value is null ? default(ReadOnlySpan<byte>) : new ReadOnlySpan<byte>(this.Value, this.Length);
+                            specialDeclaration = ((TypeDeclarationSyntax)specialDeclaration).AddMembers(
+                                MethodDeclaration(readOnlySpanOfByte, Identifier("AsSpan"))
+                                    .AddModifiers(TokenWithSpace(this.Visibility))
+                                    .WithExpressionBody(ArrowExpressionClause(ConditionalExpression(
+                                        condition: thisValueIsNull,
+                                        whenTrue: DefaultExpression(readOnlySpanOfByte),
+                                        whenFalse: ObjectCreationExpression(readOnlySpanOfByte).AddArgumentListArguments(Argument(thisValue), Argument(thisLength)))))
+                                    .WithSemicolonToken(SemicolonWithLineFeed));
+                        }
+
                         this.TryGenerateType("PSTR"); // the template references this type
                         break;
                     default:

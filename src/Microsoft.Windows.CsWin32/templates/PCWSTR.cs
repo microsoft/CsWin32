@@ -39,10 +39,5 @@ internal unsafe readonly partial struct PCWSTR
 	/// <returns>A <see langword="string"/>, or <see langword="null"/> if <see cref="Value"/> is <see langword="null"/>.</returns>
 	public override string ToString() => this.Value is null ? null : new string(this.Value);
 
-	/// <summary>
-	/// Returns a span of the characters in this string.
-	/// </summary>
-	internal ReadOnlySpan<char> AsSpan() => this.Value is null ? default(ReadOnlySpan<char>) : new ReadOnlySpan<char>(this.Value, this.Length);
-
 	private string DebuggerDisplay => this.ToString();
 }

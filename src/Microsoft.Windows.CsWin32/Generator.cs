@@ -288,6 +288,7 @@ namespace Microsoft.Windows.CsWin32
         private readonly GeneratorOptions options;
         private readonly CSharpCompilation? compilation;
         private readonly CSharpParseOptions? parseOptions;
+        private readonly bool canUseSpan;
         private readonly bool canCallCreateSpan;
         private readonly bool getDelegateForFunctionPointerGenericExists;
         private readonly bool generateSupportedOSPlatformAttributes;
@@ -318,6 +319,7 @@ namespace Microsoft.Windows.CsWin32
             this.parseOptions = parseOptions;
             this.volatileCode = new(this.committedCode);
 
+            this.canUseSpan = this.compilation?.GetTypeByMetadataName(typeof(Span<>).FullName) is not null;
             this.canCallCreateSpan = this.compilation?.GetTypeByMetadataName(typeof(MemoryMarshal).FullName)?.GetMembers("CreateSpan").Any() is true;
             this.getDelegateForFunctionPointerGenericExists = this.compilation?.GetTypeByMetadataName(typeof(Marshal).FullName)?.GetMembers(nameof(Marshal.GetDelegateForFunctionPointer)).Any(m => m is IMethodSymbol { IsGenericMethod: true }) is true;
             this.generateDefaultDllImportSearchPathsAttribute = this.compilation?.GetTypeByMetadataName(typeof(DefaultDllImportSearchPathsAttribute).FullName) is object;
@@ -3705,15 +3707,18 @@ namespace Microsoft.Windows.CsWin32
                             .AddArgumentListArguments(Argument(thisValue)))))
                 .WithSemicolonToken(SemicolonWithLineFeed);
 
-            // internal Span<char> AsSpan() => this.Value is null ? default : new Span<char>(this.Value, this.Length);
-            TypeSyntax spanChar = MakeSpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword)));
-            ExpressionSyntax thisLength = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Length"));
-            ExpressionSyntax spanCreation = ObjectCreationExpression(spanChar).AddArgumentListArguments(Argument(thisValue), Argument(thisLength));
-            ExpressionSyntax conditional = ConditionalExpression(thisValueIsNull, DefaultExpression(spanChar), spanCreation);
-            yield return MethodDeclaration(spanChar, Identifier("AsSpan"))
-                .AddModifiers(TokenWithSpace(this.Visibility))
-                .WithExpressionBody(ArrowExpressionClause(conditional))
-                .WithSemicolonToken(SemicolonWithLineFeed);
+            if (this.canUseSpan)
+            {
+                // internal Span<char> AsSpan() => this.Value is null ? default : new Span<char>(this.Value, this.Length);
+                TypeSyntax spanChar = MakeSpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword)));
+                ExpressionSyntax thisLength = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Length"));
+                ExpressionSyntax spanCreation = ObjectCreationExpression(spanChar).AddArgumentListArguments(Argument(thisValue), Argument(thisLength));
+                ExpressionSyntax conditional = ConditionalExpression(thisValueIsNull, DefaultExpression(spanChar), spanCreation);
+                yield return MethodDeclaration(spanChar, Identifier("AsSpan"))
+                    .AddModifiers(TokenWithSpace(this.Visibility))
+                    .WithExpressionBody(ArrowExpressionClause(conditional))
+                    .WithSemicolonToken(SemicolonWithLineFeed);
+            }
 #pragma warning restore SA1114 // Parameter list should follow declaration
         }
 

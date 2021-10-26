@@ -42,10 +42,10 @@ but if you explicitly set it to `false` in your project file, generated code may
 Create a `NativeMethods.txt` file in your project directory that lists the APIs to generate code for.
 Each line may consist of *one* of the following:
 
-* Exported method name (e.g. `CreateFile`). This *may* include the `A` or `W` suffix, where applicable.
-* A namespace to generate all APIs within (e.g. `Windows.Win32.Storage.FileSystem`).
+* Exported method name (e.g. `CreateFile`). This *may* include the `A` or `W` suffix, where applicable. This *may* be qualified with a namespace but is only recommended in cases of ambiguity, which CsWin32 will prompt where appropriate.
+* A namespace to generate all APIs from (e.g. `Windows.Win32.Storage.FileSystem` would search the metadata for all APIs within that namespace and generate them).
 * Module name followed by `.*` to generate all methods exported from that module (e.g. `Kernel32.*`).
-* The name of a struct, enum, constant or interface to generate.
+* The name of a struct, enum, constant or interface to generate. This *may* be qualified with a namespace but is only recommended in cases of ambiguity, which CsWin32 will prompt where appropriate.
 * A comment (i.e. any line starting with `//`) or white space line, which will be ignored.
 
 When generating any type or member, all supporting types will also be generated.

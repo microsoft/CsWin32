@@ -207,6 +207,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             "LocalSystemTimeToLocalFileTime", // small step
             "WSAHtons", // A method that references SOCKET (which is typed as UIntPtr) so that a SafeHandle will be generated.
             "IDelayedPropertyStoreFactory", // interface inheritance across namespaces
+            "D3D9ON12_ARGS", // Contains an inline array of IUnknown objects
             "ID3D12Resource", // COM interface with base types
             "ID2D1RectangleGeometry")] // COM interface with base types
         string api,
@@ -827,14 +828,11 @@ i < length;
 i++)						target[i]= p0[i];
 				}
 
-				internal unsafe readonly uint[] ToArray(int length = 4)
+				internal readonly uint[] ToArray(int length = 4)
 				{
 					if (length > 4)throw new ArgumentOutOfRangeException(""length"");
 					uint[] target = new uint[length];
-					fixed (uint* p0 = &_0)
-for(int i = 0;
-i < length;
-i++)						target[i]= p0[i];
+					CopyTo(target, length);
 					return target;
 				}
 
@@ -926,14 +924,11 @@ i < length;
 i++)						target[i]= p0[i];
 				}
 
-				internal unsafe readonly uint[] ToArray(int length = 4)
+				internal readonly uint[] ToArray(int length = 4)
 				{
 					if (length > 4)throw new ArgumentOutOfRangeException(""length"");
 					uint[] target = new uint[length];
-					fixed (uint* p0 = &_0)
-for(int i = 0;
-i < length;
-i++)						target[i]= p0[i];
+					CopyTo(target, length);
 					return target;
 				}
 

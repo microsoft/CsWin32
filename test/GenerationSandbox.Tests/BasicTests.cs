@@ -12,7 +12,6 @@ using Windows.Win32.Graphics.DirectShow;
 using Windows.Win32.Storage.FileSystem;
 using Windows.Win32.System.Console;
 using Windows.Win32.System.ErrorReporting;
-using Windows.Win32.System.SystemServices;
 using Windows.Win32.UI.DisplayDevices;
 using Xunit;
 using Xunit.Abstractions;

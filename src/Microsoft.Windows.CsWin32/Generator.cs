@@ -1503,7 +1503,7 @@ namespace Microsoft.Windows.CsWin32
                         {
                             case "LSTATUS":
                                 this.TryGenerateTypeOrThrow("WIN32_ERROR");
-                                ExpressionSyntax errorSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseTypeName(GlobalWin32NamespaceAlias + ".System.Diagnostics.Debug.WIN32_ERROR"), IdentifierName("ERROR_SUCCESS"));
+                                ExpressionSyntax errorSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseTypeName(GlobalWin32NamespaceAlias + ".Foundation.WIN32_ERROR"), IdentifierName("ERROR_SUCCESS"));
                                 releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, CastExpression(ParseTypeName(GlobalWin32NamespaceAlias + ".Foundation.LSTATUS"), CastExpression(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), errorSuccess)));
                                 break;
                             case "NTSTATUS":

@@ -267,6 +267,8 @@ namespace Microsoft.Windows.CsWin32
             "CS0436", // conflicts with the imported type (InternalsVisibleTo between two projects that both use CsWin32)
         };
 
+        private static readonly AttributeSyntax InAttributeSyntax = Attribute(IdentifierName("In")).WithArgumentList(null);
+        private static readonly AttributeSyntax OutAttributeSyntax = Attribute(IdentifierName("Out")).WithArgumentList(null);
         private static readonly AttributeSyntax OptionalAttributeSyntax = Attribute(IdentifierName("Optional")).WithArgumentList(null);
         private static readonly AttributeSyntax FlagsAttributeSyntax = Attribute(IdentifierName("Flags")).WithArgumentList(null);
         private static readonly AttributeSyntax FieldOffsetAttributeSyntax = Attribute(IdentifierName("FieldOffset"));
@@ -4383,6 +4385,22 @@ namespace Microsoft.Windows.CsWin32
                 if (parameterTypeSyntax.ParameterModifier.HasValue)
                 {
                     modifiers = modifiers.Add(parameterTypeSyntax.ParameterModifier.Value.WithTrailingTrivia(TriviaList(Space)));
+                }
+
+                if (parameterTypeSyntax.MarshalAsAttribute is object)
+                {
+                    if ((parameter.Attributes & ParameterAttributes.Out) == ParameterAttributes.Out)
+                    {
+                        if ((parameter.Attributes & ParameterAttributes.In) == ParameterAttributes.In)
+                        {
+                            attributes = attributes.AddAttributes(InAttributeSyntax);
+                        }
+
+                        if (!modifiers.Any(SyntaxKind.OutKeyword))
+                        {
+                            attributes = attributes.AddAttributes(OutAttributeSyntax);
+                        }
+                    }
                 }
 
                 ParameterSyntax parameterSyntax = Parameter(

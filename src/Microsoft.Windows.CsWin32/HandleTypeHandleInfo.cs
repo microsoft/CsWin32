@@ -91,7 +91,7 @@ namespace Microsoft.Windows.CsWin32
             }
             else if (TryMarshalAsObject(inputs, simpleName, out MarshalAsAttribute? marshalAs))
             {
-                return new TypeSyntaxAndMarshaling(PredefinedType(Token(SyntaxKind.ObjectKeyword)).WithAdditionalAnnotations(Generator.IsManagedTypeAnnotation), marshalAs);
+                return new TypeSyntaxAndMarshaling(PredefinedType(Token(SyntaxKind.ObjectKeyword)), marshalAs);
             }
             else if (!inputs.AllowMarshaling && this.IsDelegate(inputs, out TypeDefinition delegateDefinition) && inputs.Generator is object && !Generator.IsUntypedDelegate(this.reader, delegateDefinition))
             {
@@ -102,12 +102,9 @@ namespace Microsoft.Windows.CsWin32
                 this.RequestTypeGeneration(inputs.Generator);
             }
 
-            TypeSyntax syntax = nameSyntax;
-
-            if (isInterface is true)
-            {
-                syntax = inputs.AllowMarshaling && !isNonCOMConformingInterface ? syntax.WithAdditionalAnnotations(Generator.IsManagedTypeAnnotation) : PointerType(syntax);
-            }
+            TypeSyntax syntax = isInterface && (!inputs.AllowMarshaling || isNonCOMConformingInterface)
+                ? PointerType(nameSyntax)
+                : nameSyntax;
 
             if (nameSyntax is QualifiedNameSyntax qualifiedName)
             {

@@ -38,8 +38,6 @@ namespace Microsoft.Windows.CsWin32
         internal const string WinRTCustomMarshalerNamespace = "Windows.Win32.CsWin32.InteropServices";
         internal const string WinRTCustomMarshalerFullName = WinRTCustomMarshalerNamespace + "." + WinRTCustomMarshalerClass;
 
-        internal static readonly SyntaxAnnotation IsManagedTypeAnnotation = new SyntaxAnnotation("IsManagedType");
-        internal static readonly SyntaxAnnotation IsSafeHandleTypeAnnotation = new SyntaxAnnotation("IsSafeHandleType");
         internal static readonly SyntaxAnnotation IsRetValAnnotation = new SyntaxAnnotation("RetVal");
 
         internal static readonly Dictionary<string, TypeSyntax> BclInteropStructs = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)
@@ -58,7 +56,7 @@ namespace Microsoft.Windows.CsWin32
 
         internal static readonly Dictionary<string, TypeSyntax> BclInteropSafeHandles = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)
         {
-            { "CloseHandle", ParseTypeName("Microsoft.Win32.SafeHandles.SafeFileHandle").WithAdditionalAnnotations(IsManagedTypeAnnotation, IsSafeHandleTypeAnnotation) },
+            { "CloseHandle", ParseTypeName("Microsoft.Win32.SafeHandles.SafeFileHandle") },
         };
 
         private const string SystemRuntimeCompilerServices = "System.Runtime.CompilerServices";
@@ -1378,7 +1376,6 @@ namespace Microsoft.Windows.CsWin32
             safeHandleType = this.GroupByModule
                 ? QualifiedName(IdentifierName(releaseMethodModule), safeHandleTypeIdentifier)
                 : safeHandleTypeIdentifier;
-            safeHandleType = safeHandleType.WithAdditionalAnnotations(IsManagedTypeAnnotation, IsSafeHandleTypeAnnotation);
 
             MethodSignature<TypeHandleInfo> releaseMethodSignature = releaseMethodDef.DecodeSignature(SignatureHandleProvider.Instance, null);
             var releaseMethodParameterType = releaseMethodSignature.ParameterTypes[0].ToTypeSyntax(this.externSignatureTypeSettings, default);

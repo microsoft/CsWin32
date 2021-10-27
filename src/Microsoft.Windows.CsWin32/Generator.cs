@@ -1076,7 +1076,7 @@ namespace Microsoft.Windows.CsWin32
             }
 
             // TODO: fill in more properties to match the original
-            return MarshalAs(marshalAs.Value, marshalAs.MarshalCookie, marshalAs.MarshalType);
+            return MarshalAs(marshalAs.Value, marshalAs.ArraySubType, marshalAs.MarshalCookie, marshalAs.MarshalType, marshalAs.SizeConst > 0 ? LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(marshalAs.SizeConst)) : null);
         }
 
         internal static TypeSyntax MakeSpanOfT(TypeSyntax typeArgument) => GenericName("Span").AddTypeArgumentListArguments(typeArgument);
@@ -1928,7 +1928,7 @@ namespace Microsoft.Windows.CsWin32
                     IdentifierName(Enum.GetName(typeof(CallingConvention), callingConvention)!))));
         }
 
-        private static AttributeSyntax MarshalAs(UnmanagedType unmanagedType, string marshalCookie, string marshalType)
+        private static AttributeSyntax MarshalAs(UnmanagedType unmanagedType, UnmanagedType? arraySubType = null, string? marshalCookie = null, string? marshalType = null, ExpressionSyntax? sizeConst = null)
         {
             var marshalAs =
                 Attribute(IdentifierName("MarshalAs"))
@@ -1938,17 +1938,34 @@ namespace Microsoft.Windows.CsWin32
                             IdentifierName(nameof(UnmanagedType)),
                             IdentifierName(Enum.GetName(typeof(UnmanagedType), unmanagedType)!))));
 
+            if (arraySubType.HasValue && arraySubType.Value != 0 && unmanagedType is UnmanagedType.ByValArray or UnmanagedType.LPArray or UnmanagedType.SafeArray)
+            {
+                marshalAs = marshalAs.AddArgumentListArguments(
+                    AttributeArgument(
+                        MemberAccessExpression(
+                            SyntaxKind.SimpleMemberAccessExpression,
+                            IdentifierName(nameof(UnmanagedType)),
+                            IdentifierName(Enum.GetName(typeof(UnmanagedType), arraySubType.Value)!)))
+                        .WithNameEquals(NameEquals(nameof(MarshalAsAttribute.ArraySubType))));
+            }
+
+            if (sizeConst is object)
+            {
+                marshalAs = marshalAs.AddArgumentListArguments(
+                    AttributeArgument(sizeConst).WithNameEquals(NameEquals(nameof(MarshalAsAttribute.SizeConst))));
+            }
+
             if (!string.IsNullOrEmpty(marshalCookie))
             {
                 marshalAs = marshalAs.AddArgumentListArguments(
-                    AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(marshalCookie)))
+                    AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(marshalCookie!)))
                         .WithNameEquals(NameEquals(nameof(MarshalAsAttribute.MarshalCookie))));
             }
 
             if (!string.IsNullOrEmpty(marshalType))
             {
                 marshalAs = marshalAs.AddArgumentListArguments(
-                    AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(marshalType)))
+                    AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(marshalType!)))
                         .WithNameEquals(NameEquals(nameof(MarshalAsAttribute.MarshalType))));
             }
 
@@ -3288,6 +3305,11 @@ namespace Microsoft.Windows.CsWin32
                         field = FieldDeclaration(VariableDeclaration(fieldInfo.FieldType).AddVariables(fieldDeclarator))
                             .AddModifiers(TokenWithSpace(this.Visibility));
 
+                        if (fieldInfo.MarshalAsAttribute is object)
+                        {
+                            field = field.AddAttributeLists(AttributeList().AddAttributes(fieldInfo.MarshalAsAttribute));
+                        }
+
                         if (fieldInfo.FieldType is PointerTypeSyntax || fieldInfo.FieldType is FunctionPointerTypeSyntax)
                         {
                             field = field.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));
@@ -3376,7 +3398,7 @@ namespace Microsoft.Windows.CsWin32
             VariableDeclaratorSyntax fieldDeclarator = VariableDeclarator(fieldIdentifierName.Identifier);
             var fieldAttributes = fieldDef.GetCustomAttributes();
             var fieldType = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null).ToTypeSyntax(typeSettings, fieldAttributes);
-            (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers) fieldInfo =
+            (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? _) fieldInfo =
                 this.ReinterpretFieldType(fieldDef, fieldType.Type, fieldAttributes);
             SyntaxList<MemberDeclarationSyntax> members = List<MemberDeclarationSyntax>();
 
@@ -3717,7 +3739,7 @@ namespace Microsoft.Windows.CsWin32
             var fieldAttributes = fieldDef.GetCustomAttributes();
             IdentifierNameSyntax fieldName = IdentifierName("value");
             VariableDeclaratorSyntax fieldDeclarator = VariableDeclarator(fieldName.Identifier);
-            (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers) fieldInfo =
+            (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? MarshalAs) fieldInfo =
                 this.ReinterpretFieldType(fieldDef, fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null).ToTypeSyntax(this.fieldTypeSettings, fieldAttributes).Type, fieldAttributes);
             SyntaxList<MemberDeclarationSyntax> members = List<MemberDeclarationSyntax>();
 
@@ -4406,10 +4428,11 @@ namespace Microsoft.Windows.CsWin32
             }
         }
 
-        private (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers) ReinterpretFieldType(FieldDefinition fieldDef, TypeSyntax originalType, CustomAttributeHandleCollection customAttributes)
+        private (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? MarshalAsAttribute) ReinterpretFieldType(FieldDefinition fieldDef, TypeSyntax originalType, CustomAttributeHandleCollection customAttributes)
         {
             TypeSyntaxSettings typeSettings = this.fieldTypeSettings;
             TypeHandleInfo fieldTypeHandleInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null);
+            AttributeSyntax? marshalAs = null;
 
             // If the field is a fixed length array, we have to work some code gen magic since C# does not allow those.
             if (originalType is ArrayTypeSyntax arrayType && arrayType.RankSpecifiers.Count > 0 && arrayType.RankSpecifiers[0].Sizes.Count == 1)
@@ -4420,21 +4443,28 @@ namespace Microsoft.Windows.CsWin32
             // If the field is a delegate type, we have to replace that with a native function pointer to avoid the struct becoming a 'managed type'.
             if (!this.options.AllowMarshaling && this.IsDelegateReference(fieldTypeHandleInfo, out TypeDefinition typeDef) && !this.IsUntypedDelegate(typeDef))
             {
-                return (this.FunctionPointer(typeDef), default);
+                return (this.FunctionPointer(typeDef), default(SyntaxList<MemberDeclarationSyntax>), marshalAs);
             }
 
             // If the field is a pointer to a COM interface (and we're using bona fide interfaces),
             // then we must type it as an array.
             if (fieldTypeHandleInfo is PointerTypeHandleInfo ptr3 && this.IsManagedType(ptr3.ElementType))
             {
-                return (ArrayType(ptr3.ElementType.ToTypeSyntax(typeSettings, null).Type).AddRankSpecifiers(ArrayRankSpecifier()), default);
+                return (ArrayType(ptr3.ElementType.ToTypeSyntax(typeSettings, null).Type).AddRankSpecifiers(ArrayRankSpecifier()), default(SyntaxList<MemberDeclarationSyntax>), marshalAs);
             }
 
-            return (originalType, default);
+            return (originalType, default(SyntaxList<MemberDeclarationSyntax>), marshalAs);
         }
 
-        private (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers) DeclareFixedLengthArrayStruct(FieldDefinition fieldDef, CustomAttributeHandleCollection customAttributes, TypeHandleInfo fieldTypeHandleInfo, ArrayTypeSyntax arrayType)
+        private (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? MarshalAsAttribute) DeclareFixedLengthArrayStruct(FieldDefinition fieldDef, CustomAttributeHandleCollection customAttributes, TypeHandleInfo fieldTypeHandleInfo, ArrayTypeSyntax arrayType)
         {
+            if (this.options.AllowMarshaling && this.IsManagedType(fieldTypeHandleInfo))
+            {
+                ArrayTypeSyntax ranklessArray = arrayType.WithRankSpecifiers(new SyntaxList<ArrayRankSpecifierSyntax>(ArrayRankSpecifier()));
+                AttributeSyntax marshalAs = MarshalAs(UnmanagedType.ByValArray, sizeConst: arrayType.RankSpecifiers[0].Sizes[0]);
+                return (ranklessArray, default(SyntaxList<MemberDeclarationSyntax>), marshalAs);
+            }
+
             int length = int.Parse(((LiteralExpressionSyntax)arrayType.RankSpecifiers[0].Sizes[0]).Token.ValueText, CultureInfo.InvariantCulture);
             TypeSyntax elementType = arrayType.ElementType;
 
@@ -4893,7 +4923,7 @@ namespace Microsoft.Windows.CsWin32
                 .WithBody(body);
             this.volatileCode.AddInlineArrayIndexerExtension(getOrSetAtMethod);
 
-            return (fixedLengthStructName, List<MemberDeclarationSyntax>().Add(fixedLengthStruct));
+            return (fixedLengthStructName, List<MemberDeclarationSyntax>().Add(fixedLengthStruct), null);
         }
 
         private bool IsTypeDefStruct(TypeHandleInfo? typeHandleInfo)

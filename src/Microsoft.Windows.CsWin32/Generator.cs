@@ -4542,10 +4542,10 @@ namespace Microsoft.Windows.CsWin32
                                         ElementAccessExpression(targetParameterName).AddArgumentListArguments(Argument(IdentifierName("i"))),
                                         ElementAccessExpression(IdentifierName("p0")).AddArgumentListArguments(Argument(IdentifierName("i"))))))))));
 
-                // internal unsafe readonly T[] ToArray(int length = 4)
+                // internal readonly T[] ToArray(int length = 4)
                 fixedLengthStruct = fixedLengthStruct.AddMembers(
                     MethodDeclaration(ArrayType(elementType, SingletonList(ArrayRankSpecifier())), Identifier("ToArray"))
-                        .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
+                        .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
                         .AddParameterListParameters(
                             Parameter(lengthParameterName.Identifier).WithType(PredefinedType(Token(SyntaxKind.IntKeyword)).WithTrailingTrivia(Space)).WithDefault(EqualsValueClause(lengthLiteralSyntax)))
                         .WithBody(Block().AddStatements(
@@ -4556,21 +4556,8 @@ namespace Microsoft.Windows.CsWin32
                             // T[] target = new T[length];
                             LocalDeclarationStatement(VariableDeclaration(ArrayType(elementType, SingletonList(ArrayRankSpecifier()))).AddVariables(
                                 VariableDeclarator(targetParameterName.Identifier).WithInitializer(EqualsValueClause(ArrayCreationExpression(ArrayType(elementType).AddRankSpecifiers(ArrayRankSpecifier().AddSizes(lengthParameterName))))))),
-                            // fixed (T* p0 = &_0)
-                            FixedStatement(
-                                VariableDeclaration(PointerType(elementType)).AddVariables(
-                                    VariableDeclarator(Identifier("p0")).WithInitializer(EqualsValueClause(
-                                        PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName("_0"))))),
-                                // for (int i = 0; i < length; i++)
-                                ForStatement(
-                                    VariableDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))).AddVariables(VariableDeclarator(Identifier("i")).WithInitializer(EqualsValueClause(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))))),
-                                    BinaryExpression(SyntaxKind.LessThanExpression, IdentifierName("i"), lengthParameterName),
-                                    SingletonSeparatedList<ExpressionSyntax>(PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, IdentifierName("i"))),
-                                    // target[i] = p0[i];
-                                    ExpressionStatement(AssignmentExpression(
-                                        SyntaxKind.SimpleAssignmentExpression,
-                                        ElementAccessExpression(targetParameterName).AddArgumentListArguments(Argument(IdentifierName("i"))),
-                                        ElementAccessExpression(IdentifierName("p0")).AddArgumentListArguments(Argument(IdentifierName("i"))))))),
+                            // CopyTo(target, length);
+                            ExpressionStatement(InvocationExpression(IdentifierName("CopyTo"), ArgumentList().AddArguments(Argument(targetParameterName), Argument(lengthParameterName)))),
                             ReturnStatement(targetParameterName))));
 
                 // internal unsafe readonly bool Equals(ReadOnlySpan<T> value)

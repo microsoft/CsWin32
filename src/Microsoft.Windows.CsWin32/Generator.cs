@@ -112,6 +112,11 @@ namespace Microsoft.Windows.CsWin32
 /// </exception>
 ");
 
+        private static readonly SyntaxTriviaList StrAsSpanComment = ParseLeadingTrivia(@"/// <summary>
+/// Returns a span of the characters in this string.
+/// </summary>
+");
+
         private static readonly XmlTextSyntax DocCommentStart = XmlText(" ").WithLeadingTrivia(DocumentationCommentExterior("///"));
         private static readonly XmlTextSyntax DocCommentEnd = XmlText(XmlTextNewLine("\n", continueXmlDocumentationComment: false));
 
@@ -3743,7 +3748,8 @@ namespace Microsoft.Windows.CsWin32
                     condition: IsPatternExpression(thisValue, ConstantPattern(LiteralExpression(SyntaxKind.NullLiteralExpression))),
                     whenTrue: DefaultExpression(spanType),
                     whenFalse: ObjectCreationExpression(spanType).AddArgumentListArguments(Argument(thisValue), Argument(thisLength)))))
-                .WithSemicolonToken(SemicolonWithLineFeed);
+                .WithSemicolonToken(SemicolonWithLineFeed)
+                .WithLeadingTrivia(StrAsSpanComment);
         }
 
         private StructDeclarationSyntax DeclareTypeDefBOOLStruct(TypeDefinition typeDef)

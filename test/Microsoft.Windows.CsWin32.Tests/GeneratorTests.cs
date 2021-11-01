@@ -56,14 +56,14 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public static IEnumerable<object[]> TFMData =>
         new object[][]
         {
-            new object[] { "net40" },
+            new object[] { "net35" },
             new object[] { "netstandard2.0" },
             new object[] { "net5.0" },
         };
 
     public async Task InitializeAsync()
     {
-        this.starterCompilations.Add("net40", await this.CreateCompilationAsync(MyReferenceAssemblies.NetFramework.Net40));
+        this.starterCompilations.Add("net35", await this.CreateCompilationAsync(MyReferenceAssemblies.NetFramework.Net35));
         this.starterCompilations.Add("netstandard2.0", await this.CreateCompilationAsync(MyReferenceAssemblies.NetStandard20));
         this.starterCompilations.Add("net5.0", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net50));
         this.starterCompilations.Add("net5.0-x86", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net50, Platform.X86));
@@ -112,7 +112,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             Assert.DoesNotContain(generatedMethod.AttributeLists, al => IsAttributePresent(al, "SupportedOSPlatform"));
         }
 
-        if (tfm != "net40")
+        if (tfm != "net35")
         {
             Assert.Contains(generatedMethod.AttributeLists, al => IsAttributePresent(al, "DefaultDllImportSearchPaths"));
         }
@@ -792,6 +792,40 @@ namespace Microsoft.Windows.Sdk
         this.AssertNoDiagnostics();
     }
 
+    [Theory]
+    [InlineData("BOOL")]
+    [InlineData("HRESULT")]
+    [InlineData("NTSTATUS")]
+    [InlineData("PCSTR")]
+    [InlineData("PCWSTR")]
+    [InlineData("PWSTR")]
+    public void SynthesizedTypesCanBeDirectlyRequested(string synthesizedTypeName)
+    {
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate(synthesizedTypeName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        Assert.Single(this.FindGeneratedType(synthesizedTypeName));
+    }
+
+    [Theory]
+    [InlineData("BOOL")]
+    [InlineData("HRESULT")]
+    [InlineData("NTSTATUS")]
+    [InlineData("PCSTR")]
+    [InlineData("PCWSTR")]
+    [InlineData("PWSTR")]
+    public void SynthesizedTypesWorkInNet35(string synthesizedTypeName)
+    {
+        this.compilation = this.starterCompilations["net35"];
+        this.generator = this.CreateGenerator();
+
+        Assert.True(this.generator.TryGenerate(synthesizedTypeName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        Assert.Single(this.FindGeneratedType(synthesizedTypeName));
+    }
+
     /// <summary>
     /// Validates that where MemoryMarshal.CreateSpan isn't available, a substitute indexer is offered.
     /// </summary>
@@ -1082,12 +1116,12 @@ namespace Windows.Win32
 			private readonly int value;
 
 			internal int Value => this.value;
-			internal BOOL(bool value) => this.value = Unsafe.As<bool,sbyte>(ref value);
+			internal unsafe BOOL(bool value) => this.value = *(sbyte*)&value;
 			internal BOOL(int value) => this.value = value;
-			public static implicit operator bool(BOOL value)
+			public static unsafe implicit operator bool(BOOL value)
 			{
 				sbyte v = checked((sbyte)value.value);
-				return Unsafe.As<sbyte,bool>(ref v);
+				return *(bool*)&v;
 			}
 			public static implicit operator BOOL(bool value) => new BOOL(value);
 			public static explicit operator BOOL(int value) => new BOOL(value);
@@ -1339,12 +1373,12 @@ namespace Windows.Win32
 			private readonly int value;
 
 			internal int Value => this.value;
-			internal BOOL(bool value) => this.value = Unsafe.As<bool,sbyte>(ref value);
+			internal unsafe BOOL(bool value) => this.value = *(sbyte*)&value;
 			internal BOOL(int value) => this.value = value;
-			public static implicit operator bool(BOOL value)
+			public static unsafe implicit operator bool(BOOL value)
 			{
 				sbyte v = checked((sbyte)value.value);
-				return Unsafe.As<sbyte,bool>(ref v);
+				return *(bool*)&v;
 			}
 			public static implicit operator BOOL(bool value) => new BOOL(value);
 			public static explicit operator BOOL(int value) => new BOOL(value);
@@ -1649,12 +1683,12 @@ namespace Windows.Win32
 			private readonly int value;
 
 			internal int Value => this.value;
-			internal BOOL(bool value) => this.value = Unsafe.As<bool,sbyte>(ref value);
+			internal unsafe BOOL(bool value) => this.value = *(sbyte*)&value;
 			internal BOOL(int value) => this.value = value;
-			public static implicit operator bool(BOOL value)
+			public static unsafe implicit operator bool(BOOL value)
 			{
 				sbyte v = checked((sbyte)value.value);
-				return Unsafe.As<sbyte,bool>(ref v);
+				return *(bool*)&v;
 			}
 			public static implicit operator BOOL(bool value) => new BOOL(value);
 			public static explicit operator BOOL(int value) => new BOOL(value);
@@ -1958,13 +1992,12 @@ namespace Windows.Win32
 			public override string ToString() => this.Value is null ? null : new string(this.Value);
 
 
+			private string DebuggerDisplay => this.ToString();
+
 			/// <summary>
 			/// Returns a span of the characters in this string.
 			/// </summary>
 			internal ReadOnlySpan<char> AsSpan() => this.Value is null ? default(ReadOnlySpan<char>) : new ReadOnlySpan<char>(this.Value, this.Length);
-
-
-			private string DebuggerDisplay => this.ToString();
 		}
 	}
 }
@@ -2127,6 +2160,9 @@ namespace Windows.Win32
 
 			public override string ToString() => this.Value is null ? null : new string(this.Value);
 
+			/// <summary>
+			/// Returns a span of the characters in this string.
+			/// </summary>
 			internal Span<char> AsSpan() => this.Value is null ? default(Span<char>) : new Span<char>(this.Value, this.Length);
 		}
 	}
@@ -2427,7 +2463,7 @@ namespace Windows.Win32
 
         internal static class NetFramework
         {
-            internal static readonly ReferenceAssemblies Net40 = ReferenceAssemblies.NetFramework.Net40.Default.AddPackages(AdditionalPackages);
+            internal static readonly ReferenceAssemblies Net35 = ReferenceAssemblies.NetFramework.Net35.Default.AddPackages(AdditionalPackages);
         }
 
         internal static class Net

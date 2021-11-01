@@ -110,6 +110,11 @@ namespace Microsoft.Windows.CsWin32
 /// </exception>
 ");
 
+        private static readonly SyntaxTriviaList StrAsSpanComment = ParseLeadingTrivia(@"/// <summary>
+/// Returns a span of the characters in this string.
+/// </summary>
+");
+
         private static readonly XmlTextSyntax DocCommentStart = XmlText(" ").WithLeadingTrivia(DocumentationCommentExterior("///"));
         private static readonly XmlTextSyntax DocCommentEnd = XmlText(XmlTextNewLine("\n", continueXmlDocumentationComment: false));
 
@@ -288,6 +293,7 @@ namespace Microsoft.Windows.CsWin32
         private readonly GeneratorOptions options;
         private readonly CSharpCompilation? compilation;
         private readonly CSharpParseOptions? parseOptions;
+        private readonly bool canUseSpan;
         private readonly bool canCallCreateSpan;
         private readonly bool getDelegateForFunctionPointerGenericExists;
         private readonly bool generateSupportedOSPlatformAttributes;
@@ -318,6 +324,7 @@ namespace Microsoft.Windows.CsWin32
             this.parseOptions = parseOptions;
             this.volatileCode = new(this.committedCode);
 
+            this.canUseSpan = this.compilation?.GetTypeByMetadataName(typeof(Span<>).FullName) is not null;
             this.canCallCreateSpan = this.compilation?.GetTypeByMetadataName(typeof(MemoryMarshal).FullName)?.GetMembers("CreateSpan").Any() is true;
             this.getDelegateForFunctionPointerGenericExists = this.compilation?.GetTypeByMetadataName(typeof(Marshal).FullName)?.GetMembers(nameof(Marshal.GetDelegateForFunctionPointer)).Any(m => m is IMethodSymbol { IsGenericMethod: true }) is true;
             this.generateDefaultDllImportSearchPathsAttribute = this.compilation?.GetTypeByMetadataName(typeof(DefaultDllImportSearchPathsAttribute).FullName) is object;
@@ -847,6 +854,14 @@ namespace Microsoft.Windows.CsWin32
                         return $"{this.Reader.GetString(td.Namespace)}.{this.Reader.GetString(td.Name)}";
                     }));
                 return false;
+            }
+
+            if (SpecialTypeDefNames.Contains(typeName))
+            {
+                string? fullyQualifiedName = null;
+                this.volatileCode.GenerationTransaction(() => this.RequestSpecialTypeDefStruct(typeName, out fullyQualifiedName));
+                preciseApi = ImmutableList.Create(fullyQualifiedName!);
+                return true;
             }
 
             if (foundApiWithMismatchedPlatform)
@@ -1599,10 +1614,26 @@ namespace Microsoft.Windows.CsWin32
                 {
                     case "PCWSTR":
                         specialDeclaration = this.FetchTemplate($"{specialName}");
+
+                        if (this.canUseSpan)
+                        {
+                            // internal ReadOnlySpan<char> AsSpan() => this.Value is null ? default(ReadOnlySpan<char>) : new ReadOnlySpan<char>(this.Value, this.Length);
+                            specialDeclaration = ((TypeDeclarationSyntax)specialDeclaration).AddMembers(
+                                this.CreateAsSpanMethodOverValueAndLength(MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword)))));
+                        }
+
                         this.TryGenerateType("PWSTR"); // the template references this type
                         break;
                     case "PCSTR":
                         specialDeclaration = this.FetchTemplate($"{specialName}");
+
+                        if (this.canUseSpan)
+                        {
+                            // internal ReadOnlySpan<byte> AsSpan() => this.Value is null ? default(ReadOnlySpan<byte>) : new ReadOnlySpan<byte>(this.Value, this.Length);
+                            specialDeclaration = ((TypeDeclarationSyntax)specialDeclaration).AddMembers(
+                                this.CreateAsSpanMethodOverValueAndLength(MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.ByteKeyword)))));
+                        }
+
                         this.TryGenerateType("PSTR"); // the template references this type
                         break;
                     default:
@@ -3718,16 +3749,28 @@ namespace Microsoft.Windows.CsWin32
                             .AddArgumentListArguments(Argument(thisValue)))))
                 .WithSemicolonToken(SemicolonWithLineFeed);
 
-            // internal Span<char> AsSpan() => this.Value is null ? default : new Span<char>(this.Value, this.Length);
-            TypeSyntax spanChar = MakeSpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword)));
-            ExpressionSyntax thisLength = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Length"));
-            ExpressionSyntax spanCreation = ObjectCreationExpression(spanChar).AddArgumentListArguments(Argument(thisValue), Argument(thisLength));
-            ExpressionSyntax conditional = ConditionalExpression(thisValueIsNull, DefaultExpression(spanChar), spanCreation);
-            yield return MethodDeclaration(spanChar, Identifier("AsSpan"))
-                .AddModifiers(TokenWithSpace(this.Visibility))
-                .WithExpressionBody(ArrowExpressionClause(conditional))
-                .WithSemicolonToken(SemicolonWithLineFeed);
+            if (this.canUseSpan)
+            {
+                // internal Span<char> AsSpan() => this.Value is null ? default : new Span<char>(this.Value, this.Length);
+                yield return this.CreateAsSpanMethodOverValueAndLength(MakeSpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword))));
+            }
 #pragma warning restore SA1114 // Parameter list should follow declaration
+        }
+
+        private MethodDeclarationSyntax CreateAsSpanMethodOverValueAndLength(TypeSyntax spanType)
+        {
+            ExpressionSyntax thisValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Value"));
+            ExpressionSyntax thisLength = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Length"));
+
+            // internal X AsSpan() => this.Value is null ? default(X) : new X(this.Value, this.Length);
+            return MethodDeclaration(spanType, Identifier("AsSpan"))
+                .AddModifiers(TokenWithSpace(this.Visibility))
+                .WithExpressionBody(ArrowExpressionClause(ConditionalExpression(
+                    condition: IsPatternExpression(thisValue, ConstantPattern(LiteralExpression(SyntaxKind.NullLiteralExpression))),
+                    whenTrue: DefaultExpression(spanType),
+                    whenFalse: ObjectCreationExpression(spanType).AddArgumentListArguments(Argument(thisValue), Argument(thisLength)))))
+                .WithSemicolonToken(SemicolonWithLineFeed)
+                .WithLeadingTrivia(StrAsSpanComment);
         }
 
         private StructDeclarationSyntax DeclareTypeDefBOOLStruct(TypeDefinition typeDef)
@@ -3753,21 +3796,17 @@ namespace Microsoft.Windows.CsWin32
                 .WithExpressionBody(ArrowExpressionClause(fieldAccessExpression)).WithSemicolonToken(SemicolonWithLineFeed)
                 .AddModifiers(TokenWithSpace(this.Visibility)));
 
-            static InvocationExpressionSyntax UnsafeAs(SyntaxKind fromType, SyntaxKind toType, IdentifierNameSyntax localSource) =>
-                InvocationExpression(
-                MemberAccessExpression(
-                    SyntaxKind.SimpleMemberAccessExpression,
-                    IdentifierName(nameof(Unsafe)),
-                    GenericName(nameof(Unsafe.As), TypeArgumentList().AddArguments(PredefinedType(Token(fromType)), PredefinedType(Token(toType))))),
-                ArgumentList().AddArguments(Argument(localSource).WithRefKindKeyword(Token(SyntaxKind.RefKeyword))));
-
-            // BOOL(bool value) => this.value = Unsafe.As<bool, sbyte>(ref value);
+            // unsafe BOOL(bool value) => this.value = *(sbyte*)&value;
             IdentifierNameSyntax valueParameter = IdentifierName("value");
-            ExpressionSyntax boolToInt = UnsafeAs(SyntaxKind.BoolKeyword, SyntaxKind.SByteKeyword, valueParameter);
+            ExpressionSyntax boolToSByte = PrefixUnaryExpression(
+                SyntaxKind.PointerIndirectionExpression,
+                CastExpression(
+                    PointerType(PredefinedType(TokenWithNoSpace(SyntaxKind.SByteKeyword))),
+                    PrefixUnaryExpression(SyntaxKind.AddressOfExpression, valueParameter)));
             members = members.Add(ConstructorDeclaration(name.Identifier)
-                .AddModifiers(TokenWithSpace(this.Visibility))
+                .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword))
                 .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword))))
-                .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, boolToInt).WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken))))
+                .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, boolToSByte).WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken))))
                 .WithSemicolonToken(SemicolonWithLineFeed));
 
             // BOOL(int value) => this.value = value;
@@ -3777,20 +3816,25 @@ namespace Microsoft.Windows.CsWin32
                 .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, valueParameter).WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken))))
                 .WithSemicolonToken(SemicolonWithLineFeed));
 
-            // public static implicit operator bool(BOOL value)
+            // public unsafe static implicit operator bool(BOOL value)
             // {
             //     sbyte v = checked((sbyte)value.value);
-            //     return Unsafe.As<sbyte, bool>(ref v);
+            //     return *(bool*)&v;
             // }
             IdentifierNameSyntax localVarName = IdentifierName("v");
+            ExpressionSyntax sbyteToBool = PrefixUnaryExpression(
+                SyntaxKind.PointerIndirectionExpression,
+                CastExpression(
+                    PointerType(PredefinedType(TokenWithNoSpace(SyntaxKind.BoolKeyword))),
+                    PrefixUnaryExpression(SyntaxKind.AddressOfExpression, localVarName)));
             var implicitBOOLtoBoolBody = Block().AddStatements(
                 LocalDeclarationStatement(VariableDeclaration(PredefinedType(Token(SyntaxKind.SByteKeyword)))).AddDeclarationVariables(
                     VariableDeclarator(localVarName.Identifier).WithInitializer(EqualsValueClause(CheckedExpression(SyntaxKind.CheckedExpression, CastExpression(PredefinedType(Token(SyntaxKind.SByteKeyword)), MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, fieldName)))))),
-                ReturnStatement(UnsafeAs(SyntaxKind.SByteKeyword, SyntaxKind.BoolKeyword, localVarName)));
+                ReturnStatement(sbyteToBool));
             members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), PredefinedType(Token(SyntaxKind.BoolKeyword)))
                 .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))))
                 .WithBody(implicitBOOLtoBoolBody)
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))); // operators MUST be public
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword))); // operators MUST be public
 
             // public static implicit operator BOOL(bool value) => new BOOL(value);
             members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), name)

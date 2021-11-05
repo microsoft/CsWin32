@@ -2,6 +2,7 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
 using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.System.Diagnostics.Debug;
@@ -39,5 +40,10 @@ internal static unsafe class GeneratedForm
     private static void PROC_InSignatureChangedToIntPtr()
     {
         PROC p = PInvoke.wglGetProcAddress(default(PCSTR));
+    }
+
+    private static void RegKeyHandle()
+    {
+        LSTATUS status = PInvoke.RegLoadAppKey(string.Empty, out SafeRegistryHandle handle, 0, 0, 0);
     }
 }

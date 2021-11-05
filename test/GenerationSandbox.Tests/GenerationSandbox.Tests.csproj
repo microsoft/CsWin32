@@ -21,6 +21,7 @@
   </ProjectExtensions>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Win32.Registry" Version="5.0.0" />
     <PackageReference Include="Microsoft.Windows.SDK.Win32Metadata" Version="$(MetadataVersion)" GeneratePathProperty="true" PrivateAssets="none" />
     <!-- <PackageReference Include="Microsoft.Dia.Win32Metadata" Version="$(DiaMetadataVersion)" PrivateAssets="none" /> -->
     <PackageReference Include="coverlet.msbuild" Version="3.1.0" />

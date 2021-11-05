@@ -57,6 +57,7 @@ namespace Microsoft.Windows.CsWin32
         internal static readonly Dictionary<string, TypeSyntax> BclInteropSafeHandles = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)
         {
             { "CloseHandle", ParseTypeName("Microsoft.Win32.SafeHandles.SafeFileHandle") },
+            { "RegCloseKey", ParseTypeName("Microsoft.Win32.SafeHandles.SafeRegistryHandle") },
         };
 
         private const string SystemRuntimeCompilerServices = "System.Runtime.CompilerServices";

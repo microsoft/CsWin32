@@ -2457,7 +2457,9 @@ namespace Windows.Win32
     private static class MyReferenceAssemblies
     {
 #pragma warning disable SA1202 // Elements should be ordered by access
-        private static readonly ImmutableArray<PackageIdentity> AdditionalPackages = ImmutableArray.Create(new PackageIdentity("Microsoft.Windows.SDK.Contracts", "10.0.19041.1"));
+        private static readonly ImmutableArray<PackageIdentity> AdditionalPackages = ImmutableArray.Create(
+            new PackageIdentity("Microsoft.Windows.SDK.Contracts", "10.0.19041.1"),
+            new PackageIdentity("Microsoft.Win32.Registry", "5.0.0"));
 
         internal static readonly ReferenceAssemblies NetStandard20 = ReferenceAssemblies.NetStandard.NetStandard20.AddPackages(AdditionalPackages.Add(new PackageIdentity("System.Memory", "4.5.4")));
 

@@ -1008,33 +1008,19 @@ i++)						if (p0[i] != default(uint))							return false;
     [Fact]
     public void NullMethodsClass()
     {
-        this.generator = this.CreateGenerator(new GeneratorOptions { MethodsClassName = null });
-        Assert.True(this.generator.TryGenerate("GetTickCount", CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
-        Assert.Single(this.FindGeneratedType("Kernel32"));
-        Assert.Empty(this.FindGeneratedType("PInvoke"));
+        Assert.Throws<InvalidOperationException>(() => this.CreateGenerator(new GeneratorOptions { ClassName = null! }));
     }
 
     [Fact]
     public void RenamedMethodsClass()
     {
-        this.generator = this.CreateGenerator(new GeneratorOptions { MethodsClassName = "MyPInvoke" });
+        this.generator = this.CreateGenerator(new GeneratorOptions { ClassName = "MyPInvoke" });
         Assert.True(this.generator.TryGenerate("GetTickCount", CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        Assert.Single(this.FindGeneratedType("MyPInvoke"));
-        Assert.Empty(this.FindGeneratedType("PInvoke"));
-    }
-
-    [Fact]
-    public void RenamedConstantsClass()
-    {
-        this.generator = this.CreateGenerator(new GeneratorOptions { ConstantsClassName = "MyConstants" });
         Assert.True(this.generator.TryGenerate("CDB_REPORT_BITS", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
-        Assert.Single(this.FindGeneratedType("MyConstants"));
-        Assert.Empty(this.FindGeneratedType("Constants"));
+        Assert.NotEmpty(this.FindGeneratedType("MyPInvoke"));
+        Assert.Empty(this.FindGeneratedType("PInvoke"));
     }
 
     [Theory, PairwiseData]
@@ -1059,7 +1045,7 @@ i++)						if (p0[i] != default(uint))							return false;
                 CSharpSyntaxTree.ParseText($@"[assembly: System.Runtime.CompilerServices.InternalsVisibleToAttribute(""{this.compilation.AssemblyName}"")]", this.parseOptions));
         }
 
-        using var referencedGenerator = this.CreateGenerator(new GeneratorOptions { MethodsClassName = "P1" }, referencedProject);
+        using var referencedGenerator = this.CreateGenerator(new GeneratorOptions { ClassName = "P1" }, referencedProject);
         Assert.True(referencedGenerator.TryGenerate("LockWorkStation", CancellationToken.None));
         Assert.True(referencedGenerator.TryGenerate("CreateFile", CancellationToken.None));
         referencedProject = this.AddGeneratedCode(referencedProject, referencedGenerator);
@@ -1067,7 +1053,7 @@ i++)						if (p0[i] != default(uint))							return false;
 
         // Now produce more code in a referencing project that includes at least one of the same types as generated in the referenced project.
         this.compilation = this.compilation.AddReferences(referencedProject.ToMetadataReference());
-        this.generator = this.CreateGenerator(new GeneratorOptions { MethodsClassName = "P2" });
+        this.generator = this.CreateGenerator(new GeneratorOptions { ClassName = "P2" });
         Assert.True(this.generator.TryGenerate("HidD_GetAttributes", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();

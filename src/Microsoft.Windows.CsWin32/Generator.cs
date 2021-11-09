@@ -302,7 +302,7 @@ namespace Microsoft.Windows.CsWin32
         private readonly bool generateDefaultDllImportSearchPathsAttribute;
         private readonly GeneratedCode committedCode = new();
         private readonly GeneratedCode volatileCode;
-        private readonly IdentifierNameSyntax constantsClassName;
+        private readonly IdentifierNameSyntax methodsAndConstantsClassName;
         private bool needsWinRTCustomMarshaler;
 
         /// <summary>
@@ -356,7 +356,7 @@ namespace Microsoft.Windows.CsWin32
             this.functionPointerTypeSettings = this.generalTypeSettings with { QualifyNames = true };
             this.errorMessageTypeSettings = this.generalTypeSettings with { QualifyNames = true };
 
-            this.constantsClassName = IdentifierName(options.ConstantsClassName);
+            this.methodsAndConstantsClassName = IdentifierName(options.ClassName);
         }
 
         private enum FriendlyOverloadOf
@@ -393,11 +393,7 @@ namespace Microsoft.Windows.CsWin32
 
         private bool WideCharOnly => this.options.WideCharOnly;
 
-        private bool GroupByModule => string.IsNullOrEmpty(this.options.MethodsClassName);
-
         private string Namespace => this.InputAssemblyName;
-
-        private string SingleClassName => this.options.MethodsClassName ?? throw new InvalidOperationException("Not in one-class mode.");
 
         private SyntaxKind Visibility => this.options.Public ? SyntaxKind.PublicKeyword : SyntaxKind.InternalKeyword;
 
@@ -405,24 +401,14 @@ namespace Microsoft.Windows.CsWin32
         {
             get
             {
-                IEnumerable<MemberDeclarationSyntax> result = this.GroupByModule
-                    ? this.ExternMethodsByModuleClassName.Select(kv =>
-                        ClassDeclaration(Identifier(GetClassNameForModule(kv.Key)))
-                        .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword))
-                        .AddMembers(kv.ToArray()))
-                    : from entry in this.committedCode.MembersByModule
-                      select ClassDeclaration(Identifier(this.SingleClassName))
+                IEnumerable<MemberDeclarationSyntax> result =
+                    from entry in this.committedCode.MembersByModule
+                      select ClassDeclaration(Identifier(this.options.ClassName))
                         .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword))
                         .AddMembers(entry.ToArray())
                         .WithLeadingTrivia(ParseLeadingTrivia(string.Format(CultureInfo.InvariantCulture, PartialPInvokeContentComment, entry.Key)))
-                        .WithAdditionalAnnotations(new SyntaxAnnotation(SimpleFileNameAnnotation, $"{this.SingleClassName}.{entry.Key}"));
+                        .WithAdditionalAnnotations(new SyntaxAnnotation(SimpleFileNameAnnotation, $"{this.options.ClassName}.{entry.Key}"));
                 result = result.Concat(this.committedCode.GeneratedTypes);
-
-                ClassDeclarationSyntax constantClass = this.DeclareConstantDefiningClass();
-                if (constantClass.Members.Count > 0)
-                {
-                    result = result.Concat(new MemberDeclarationSyntax[] { constantClass });
-                }
 
                 ClassDeclarationSyntax inlineArrayIndexerExtensionsClass = this.DeclareInlineArrayIndexerExtensionsClass();
                 if (inlineArrayIndexerExtensionsClass.Members.Count > 0)
@@ -434,6 +420,11 @@ namespace Microsoft.Windows.CsWin32
                 if (comInterfaceFriendlyExtensionsClass.Members.Count > 0)
                 {
                     result = result.Concat(new MemberDeclarationSyntax[] { comInterfaceFriendlyExtensionsClass });
+                }
+
+                if (this.committedCode.Fields.Any())
+                {
+                    result = result.Concat(new MemberDeclarationSyntax[] { this.DeclareConstantDefiningClass() });
                 }
 
                 return result;
@@ -1391,9 +1382,7 @@ namespace Microsoft.Windows.CsWin32
             string releaseMethodModule = this.GetNormalizedModuleName(releaseMethodDef.GetImport());
 
             var safeHandleTypeIdentifier = IdentifierName(safeHandleClassName);
-            safeHandleType = this.GroupByModule
-                ? QualifiedName(IdentifierName(releaseMethodModule), safeHandleTypeIdentifier)
-                : safeHandleTypeIdentifier;
+            safeHandleType = safeHandleTypeIdentifier;
 
             MethodSignature<TypeHandleInfo> releaseMethodSignature = releaseMethodDef.DecodeSignature(SignatureHandleProvider.Instance, null);
             var releaseMethodParameterType = releaseMethodSignature.ParameterTypes[0].ToTypeSyntax(this.externSignatureTypeSettings, default);
@@ -1478,7 +1467,7 @@ namespace Microsoft.Windows.CsWin32
             ExpressionSyntax releaseInvocation = InvocationExpression(
                 MemberAccessExpression(
                     SyntaxKind.SimpleMemberAccessExpression,
-                    IdentifierName(this.GroupByModule ? releaseMethodModule : this.SingleClassName),
+                    IdentifierName(this.options.ClassName),
                     IdentifierName(renamedReleaseMethod ?? releaseMethod)),
                 ArgumentList().AddArguments(Argument(CastExpression(releaseMethodParameterType.Type, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("handle"))))));
             BlockSyntax? releaseBlock = null;
@@ -1523,12 +1512,12 @@ namespace Microsoft.Windows.CsWin32
                                 break;
                             case "NTSTATUS":
                                 this.TryGenerateConstantOrThrow("STATUS_SUCCESS");
-                                ExpressionSyntax statusSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, this.constantsClassName, IdentifierName("STATUS_SUCCESS"));
+                                ExpressionSyntax statusSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, this.methodsAndConstantsClassName, IdentifierName("STATUS_SUCCESS"));
                                 releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, statusSuccess);
                                 break;
                             case "HRESULT":
                                 this.TryGenerateConstantOrThrow("S_OK");
-                                ExpressionSyntax ok = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, this.constantsClassName, IdentifierName("S_OK"));
+                                ExpressionSyntax ok = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, this.methodsAndConstantsClassName, IdentifierName("S_OK"));
                                 releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, ok);
                                 break;
                             default:
@@ -1555,16 +1544,11 @@ namespace Microsoft.Windows.CsWin32
                 .AddMembers(members.ToArray())
                 .WithLeadingTrivia(ParseLeadingTrivia($@"
         /// <summary>
-        /// Represents a Win32 handle that can be closed with <see cref=""{(this.GroupByModule ? releaseMethodModule : this.SingleClassName)}.{renamedReleaseMethod ?? releaseMethod}""/>.
+        /// Represents a Win32 handle that can be closed with <see cref=""{this.options.ClassName}.{renamedReleaseMethod ?? releaseMethod}""/>.
         /// </summary>
 "));
 
             this.volatileCode.AddSafeHandleType(safeHandleDeclaration);
-            if (this.GroupByModule)
-            {
-                this.volatileCode.AddMemberToModule(releaseMethodModule, safeHandleDeclaration);
-            }
-
             return safeHandleType;
         }
 
@@ -2667,8 +2651,7 @@ namespace Microsoft.Windows.CsWin32
                     methodDeclaration = methodDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));
                 }
 
-                NameSyntax declaringTypeName = ParseName(this.GroupByModule ? GetClassNameForModule(moduleName) : this.SingleClassName);
-                this.volatileCode.AddMemberToModule(moduleName, this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, declaringTypeName, FriendlyOverloadOf.ExternMethod));
+                this.volatileCode.AddMemberToModule(moduleName, this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, this.methodsAndConstantsClassName, FriendlyOverloadOf.ExternMethod));
                 this.volatileCode.AddMemberToModule(moduleName, methodDeclaration);
             }
             catch (Exception ex)
@@ -2847,7 +2830,7 @@ namespace Microsoft.Windows.CsWin32
 
         private ClassDeclarationSyntax DeclareConstantDefiningClass()
         {
-            return ClassDeclaration(this.constantsClassName.Identifier)
+            return ClassDeclaration(this.methodsAndConstantsClassName.Identifier)
                 .AddMembers(this.committedCode.Fields.ToArray())
                 .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)));
         }

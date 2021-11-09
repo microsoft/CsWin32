@@ -18,15 +18,10 @@ namespace Microsoft.Windows.CsWin32
         public bool WideCharOnly { get; init; } = true;
 
         /// <summary>
-        /// Gets the name of a single class under which all p/invoke methods are generated, regardless of imported module. Use <see langword="null"/> for one class per imported module.
+        /// Gets the name of a single class under which all p/invoke methods and constants are generated, regardless of imported module.
         /// </summary>
         /// <value>The default value is "PInvoke".</value>
-        public string? MethodsClassName { get; init; } = "PInvoke";
-
-        /// <summary>
-        /// Gets the name of the single class under which all constants are generated.
-        /// </summary>
-        public string ConstantsClassName { get; init; } = "Constants";
+        public string ClassName { get; init; } = "PInvoke";
 
         /// <summary>
         /// Gets a value indicating whether to emit a single source file as opposed to types spread across many files.
@@ -56,6 +51,10 @@ namespace Microsoft.Windows.CsWin32
         /// <exception cref="InvalidOperationException">Thrown when some setting is invalid.</exception>
         public void Validate()
         {
+            if (string.IsNullOrWhiteSpace(this.ClassName))
+            {
+                throw new InvalidOperationException("The ClassName property must not be null or empty.");
+            }
         }
 
         /// <summary>

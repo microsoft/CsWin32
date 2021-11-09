@@ -8,7 +8,6 @@ namespace WinRTInteropTest
     using Windows.Win32.Foundation;
     using Windows.Win32.Graphics.Gdi;
     using Windows.Win32.UI.WindowsAndMessaging;
-    using static Windows.Win32.Constants;
     using static Windows.Win32.PInvoke;
 
     internal class Program

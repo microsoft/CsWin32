@@ -51,47 +51,73 @@ namespace Microsoft.Windows.CsWin32
         /// <summary>
         /// Looks up the <see cref="Generator"/> that owns a referenced type.
         /// </summary>
-        /// <param name="requestingGenerator">The generator asking the question.</param>
-        /// <param name="typeRef">The type reference from the requesting generator.</param>
+        /// <param name="typeRef">The generator and type reference from the requesting generator.</param>
         /// <param name="targetGenerator">Receives the generator that owns the referenced type.</param>
         /// <returns><see langword="true"/> if a matching generator was found; otherwise <see langword="false"/>.</returns>
-        internal bool TryGetTargetGenerator(Generator requestingGenerator, TypeReference typeRef, [NotNullWhen(true)] out Generator? targetGenerator)
+        internal bool TryGetTargetGenerator(QualifiedTypeReference typeRef, [NotNullWhen(true)] out Generator? targetGenerator)
         {
-            if (typeRef.ResolutionScope.Kind != HandleKind.AssemblyReference)
+            if (typeRef.Reference.ResolutionScope.Kind != HandleKind.AssemblyReference)
             {
                 targetGenerator = null;
                 return false;
             }
 
-            AssemblyReference assemblyRef = requestingGenerator.Reader.GetAssemblyReference((AssemblyReferenceHandle)typeRef.ResolutionScope);
-            string scope = requestingGenerator.Reader.GetString(assemblyRef.Name);
+            AssemblyReference assemblyRef = typeRef.Generator.Reader.GetAssemblyReference((AssemblyReferenceHandle)typeRef.Reference.ResolutionScope);
+            string scope = typeRef.Generator.Reader.GetString(assemblyRef.Name);
+            return this.TryGetGenerator(scope, out targetGenerator);
+        }
 
+        internal bool TryGetGenerator(string winmdName, [NotNullWhen(true)] out Generator? targetGenerator)
+        {
             // Workaround the fact that these winmd references may oddly have .winmd included as a suffix.
-            if (scope.EndsWith(".winmd", StringComparison.OrdinalIgnoreCase))
+            if (winmdName.EndsWith(".winmd", StringComparison.OrdinalIgnoreCase))
             {
-                scope = scope.Substring(0, scope.Length - ".winmd".Length);
+                winmdName = winmdName.Substring(0, winmdName.Length - ".winmd".Length);
             }
 
-            return this.Generators.TryGetValue(scope, out targetGenerator);
+            return this.Generators.TryGetValue(winmdName, out targetGenerator);
+        }
+
+        internal bool TryGetTypeDefinitionHandle(QualifiedTypeReferenceHandle typeRefHandle, out QualifiedTypeDefinitionHandle typeDefHandle)
+        {
+            if (typeRefHandle.Generator.TryGetTypeDefHandle(typeRefHandle.ReferenceHandle, out TypeDefinitionHandle localHandle))
+            {
+                typeDefHandle = new QualifiedTypeDefinitionHandle(typeRefHandle.Generator, localHandle);
+                return true;
+            }
+
+            QualifiedTypeReference typeRef = typeRefHandle.Resolve();
+            if (this.TryGetTargetGenerator(typeRef, out Generator? targetGenerator))
+            {
+                var @namespace = typeRef.Generator.Reader.GetString(typeRef.Reference.Namespace);
+                var @name = typeRef.Generator.Reader.GetString(typeRef.Reference.Name);
+                if (targetGenerator.TryGetTypeDefHandle(@namespace, name, out TypeDefinitionHandle targetTypeDefHandle))
+                {
+                    typeDefHandle = new QualifiedTypeDefinitionHandle(targetGenerator, targetTypeDefHandle);
+                    return true;
+                }
+            }
+
+            typeDefHandle = default;
+            return false;
         }
 
         /// <summary>
         /// Requests generation of a type referenced across metadata files.
         /// </summary>
-        /// <param name="requestingGenerator">The generator making the request.</param>
-        /// <param name="typeRef">The referenced type.</param>
+        /// <param name="typeRef">The referenced type, with generator.</param>
         /// <returns><see langword="true" /> if a matching generator was found; <see langword="false" /> otherwise.</returns>
-        internal bool TryRequestInteropType(Generator requestingGenerator, TypeReference typeRef)
+        internal bool TryRequestInteropType(QualifiedTypeReference typeRef)
         {
-            if (typeRef.ResolutionScope.Kind != HandleKind.AssemblyReference)
+            if (typeRef.Reference.ResolutionScope.Kind != HandleKind.AssemblyReference)
             {
                 throw new ArgumentException("Only type references across assemblies should be requested.", nameof(typeRef));
             }
 
-            if (this.TryGetTargetGenerator(requestingGenerator, typeRef, out Generator? generator))
+            if (this.TryGetTargetGenerator(typeRef, out Generator? generator))
             {
-                string ns = requestingGenerator.Reader.GetString(typeRef.Namespace);
-                string name = requestingGenerator.Reader.GetString(typeRef.Name);
+                string ns = typeRef.Generator.Reader.GetString(typeRef.Reference.Namespace);
+                string name = typeRef.Generator.Reader.GetString(typeRef.Reference.Name);
                 generator.RequestInteropType(ns, name);
                 return true;
             }

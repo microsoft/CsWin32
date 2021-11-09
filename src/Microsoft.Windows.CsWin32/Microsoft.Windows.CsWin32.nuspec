@@ -11,6 +11,7 @@
     <projectUrl>https://github.com/Microsoft/CsWin32</projectUrl>
     <description>Microsoft Windows SDK Win32 API Source Generator</description>
     <releaseNotes>$PackageReleaseNotes$</releaseNotes>
+    <readme>README.md</readme>
     <copyright>© Microsoft Corporation. All rights reserved.</copyright>
     <repository type="git" url="https://github.com/microsoft/CsWin32.git" commit="$commit$" />
     <dependencies>
@@ -44,6 +45,7 @@
     <file src="$BaseOutputPath$System.Buffers.dll" target="analyzers\cs\System.Buffers.dll" />
     <file src="$BaseOutputPath$System.Runtime.CompilerServices.Unsafe.dll" target="analyzers\cs\System.Runtime.CompilerServices.Unsafe.dll" />
     <file src="readme.txt" target="readme.txt" />
+    <file src="..\..\README.md" target="README.md" />
     <file src="..\..\NOTICE.txt" target="NOTICE.txt" />
     <file src="build\**" target="build\" />
     <file src="tools\**" target="tools\" />

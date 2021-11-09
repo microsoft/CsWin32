@@ -7,12 +7,12 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using Windows.Win32;
+using Windows.Win32.Devices.Display;
 using Windows.Win32.Foundation;
-using Windows.Win32.Graphics.DirectShow;
+using Windows.Win32.Media.DirectShow;
 using Windows.Win32.Storage.FileSystem;
 using Windows.Win32.System.Console;
 using Windows.Win32.System.ErrorReporting;
-using Windows.Win32.UI.DisplayDevices;
 using Xunit;
 using Xunit.Abstractions;
 

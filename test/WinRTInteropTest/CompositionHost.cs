@@ -10,6 +10,7 @@ namespace WinRTInteropTest
     using Windows.UI.Composition.Desktop;
     using Windows.Win32.Foundation;
     using Windows.Win32.System.WinRT;
+    using Windows.Win32.System.WinRT.Composition;
     using WinRT;
     using static Windows.Win32.PInvoke;
 

@@ -2111,7 +2111,7 @@ namespace Microsoft.Windows.CsWin32
             var k = (byte)args.FixedArguments[10].Value!;
             var pid = (uint)args.FixedArguments[11].Value!;
 
-            return ObjectCreationExpression(IdentifierName("win32.System.PropertiesSystem.PROPERTYKEY")).WithInitializer(
+            return ObjectCreationExpression(IdentifierName("win32.UI.Shell.PropertiesSystem.PROPERTYKEY")).WithInitializer(
                 InitializerExpression(SyntaxKind.ObjectInitializerExpression, SeparatedList<ExpressionSyntax>(new[]
                 {
                     AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, IdentifierName("fmtid"), GuidValue(propertyKeyAttribute)),

@@ -111,7 +111,7 @@ namespace Microsoft.Windows.CsWin32
                 var ns = qualifiedName.Left.ToString();
 
                 // Look for WinRT namespaces
-                if (ns.StartsWith("Windows.Foundation") || ns.StartsWith("Windows.UI") || ns.StartsWith("Windows.Graphics") || ns.StartsWith("Windows.System"))
+                if (ns.StartsWith("global::Windows.Foundation") || ns.StartsWith("global::Windows.UI") || ns.StartsWith("global::Windows.Graphics") || ns.StartsWith("global::Windows.System"))
                 {
                     // We only want to marshal WinRT objects, not interfaces. We don't have a good way of knowing
                     // whether it's an interface or an object. "isInterface" comes back as false for a WinRT interface,
@@ -121,7 +121,13 @@ namespace Microsoft.Windows.CsWin32
                     bool isInterfaceName = InterfaceNameMatcher.IsMatch(objName);
                     if (!isInterfaceName)
                     {
-                        return new TypeSyntaxAndMarshaling(syntax, new MarshalAsAttribute(UnmanagedType.CustomMarshaler) { MarshalCookie = nameSyntax.ToString(), MarshalType = Generator.WinRTCustomMarshalerFullName });
+                        string marshalCookie = nameSyntax.ToString();
+                        if (marshalCookie.StartsWith(Generator.GlobalNamespacePrefix, StringComparison.Ordinal))
+                        {
+                            marshalCookie = marshalCookie.Substring(Generator.GlobalNamespacePrefix.Length);
+                        }
+
+                        return new TypeSyntaxAndMarshaling(syntax, new MarshalAsAttribute(UnmanagedType.CustomMarshaler) { MarshalCookie = marshalCookie, MarshalType = Generator.WinRTCustomMarshalerFullName });
                     }
                 }
             }

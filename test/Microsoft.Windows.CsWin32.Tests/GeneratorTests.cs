@@ -306,7 +306,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         MethodDeclarationSyntax method = (MethodDeclarationSyntax)interfaceDeclaration.Members.First();
         ParameterSyntax lastParam = method.ParameterList.Parameters.Last();
 
-        Assert.Equal(WinRTClassName, lastParam.Type?.ToString());
+        Assert.Equal($"global::{WinRTClassName}", lastParam.Type?.ToString());
         Assert.True(lastParam.Modifiers.Any(SyntaxKind.OutKeyword));
 
         AttributeSyntax marshalAsAttr = Assert.Single(FindAttribute(lastParam.AttributeLists, "MarshalAs"));
@@ -891,13 +891,13 @@ i++)						if (p0[i] != default(uint))							return false;
         const string expectedIndexer = @"
 	internal static partial class InlineArrayIndexerExtensions
 	{
-		internal static unsafe ref readonly uint ReadOnlyItemRef(this in win32.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
+		internal static unsafe ref readonly uint ReadOnlyItemRef(this in winmdroot.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
 		{
 			fixed (uint* p0 = &@this._0)
 				return ref p0[index];
 		}
 
-		internal static unsafe ref uint ItemRef(this ref win32.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
+		internal static unsafe ref uint ItemRef(this ref winmdroot.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
 		{
 			fixed (uint* p0 = &@this._0)
 				return ref p0[index];
@@ -987,13 +987,13 @@ i++)						if (p0[i] != default(uint))							return false;
         const string expectedIndexer = @"
 	internal static partial class InlineArrayIndexerExtensions
 	{
-		internal static unsafe ref readonly uint ReadOnlyItemRef(this in win32.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
+		internal static unsafe ref readonly uint ReadOnlyItemRef(this in winmdroot.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
 		{
 			fixed (uint* p0 = &@this._0)
 				return ref p0[index];
 		}
 
-		internal static unsafe ref uint ItemRef(this ref win32.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
+		internal static unsafe ref uint ItemRef(this ref winmdroot.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
 		{
 			fixed (uint* p0 = &@this._0)
 				return ref p0[index];
@@ -1093,7 +1093,7 @@ namespace Windows.Win32
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 	namespace Foundation
 	{
@@ -1154,7 +1154,7 @@ namespace Windows.Win32
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 	namespace UI.DisplayDevices
 	{
@@ -1219,7 +1219,7 @@ namespace Windows.Win32
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 	namespace UI.DisplayDevices
 	{
@@ -1274,7 +1274,7 @@ namespace Windows.Win32
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 	namespace Storage.FileSystem
 	{
@@ -1350,7 +1350,7 @@ namespace Windows.Win32
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 	namespace Foundation
 	{
@@ -1388,12 +1388,12 @@ namespace Windows.Win32
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 	namespace UI.WindowsAndMessaging
 	{
 		[UnmanagedFunctionPointerAttribute(CallingConvention.Winapi)]
-		internal unsafe delegate win32.Foundation.BOOL WNDENUMPROC(win32.Foundation.HWND param0, win32.Foundation.LPARAM param1);
+		internal unsafe delegate winmdroot.Foundation.BOOL WNDENUMPROC(winmdroot.Foundation.HWND param0, winmdroot.Foundation.LPARAM param1);
 	}
 }
 ".Replace("\r\n", "\n")),
@@ -1413,7 +1413,7 @@ namespace Windows.Win32
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 	namespace Foundation
 	{
@@ -1453,7 +1453,7 @@ namespace Windows.Win32
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 	namespace Foundation
 	{
@@ -1516,7 +1516,7 @@ namespace Windows.Win32
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 	namespace Graphics.Gdi
 	{
@@ -1558,7 +1558,7 @@ namespace Windows.Win32
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 	namespace Foundation
 	{
@@ -1598,7 +1598,7 @@ namespace Windows.Win32
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 
 	/// <content>
@@ -1617,7 +1617,7 @@ namespace Windows.Win32
 		/// </remarks>
 		[DllImport(""User32"", ExactSpelling = true)]
 		[DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-		internal static extern int ReleaseDC(win32.Foundation.HWND hWnd, win32.Graphics.Gdi.HDC hDC);
+		internal static extern int ReleaseDC(winmdroot.Foundation.HWND hWnd, winmdroot.Graphics.Gdi.HDC hDC);
 	}
 }
 ".Replace("\r\n", "\n")),
@@ -1660,7 +1660,7 @@ namespace Windows.Win32
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 	namespace Foundation
 	{
@@ -1698,7 +1698,7 @@ namespace Windows.Win32
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 	namespace Storage.FileSystem
 	{
@@ -1751,7 +1751,7 @@ namespace Windows.Win32
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 	namespace Storage.FileSystem
 	{
@@ -1782,7 +1782,7 @@ namespace Windows.Win32
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 	namespace Storage.FileSystem
 	{
@@ -1854,7 +1854,7 @@ namespace Windows.Win32
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 	namespace Storage.FileSystem
 	{
@@ -1885,7 +1885,7 @@ namespace Windows.Win32
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 	namespace Foundation
 	{
@@ -1927,7 +1927,7 @@ namespace Windows.Win32
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 	namespace Foundation
 	{
@@ -2004,7 +2004,7 @@ namespace Windows.Win32
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 
 	/// <content>
@@ -2022,26 +2022,26 @@ namespace Windows.Win32
 		/// </remarks>
 		[DllImport(""Kernel32"", ExactSpelling = true, SetLastError = true)]
 		[DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-		internal static extern win32.Foundation.BOOL CloseHandle(win32.Foundation.HANDLE hObject);
+		internal static extern winmdroot.Foundation.BOOL CloseHandle(winmdroot.Foundation.HANDLE hObject);
 
-		/// <inheritdoc cref=""CreateFile(win32.Foundation.PCWSTR, win32.Storage.FileSystem.FILE_ACCESS_FLAGS, win32.Storage.FileSystem.FILE_SHARE_MODE, win32.Security.SECURITY_ATTRIBUTES*, win32.Storage.FileSystem.FILE_CREATION_DISPOSITION, win32.Storage.FileSystem.FILE_FLAGS_AND_ATTRIBUTES, win32.Foundation.HANDLE)""/>
-		internal static unsafe Microsoft.Win32.SafeHandles.SafeFileHandle CreateFile(string lpFileName, win32.Storage.FileSystem.FILE_ACCESS_FLAGS dwDesiredAccess, win32.Storage.FileSystem.FILE_SHARE_MODE dwShareMode, win32.Security.SECURITY_ATTRIBUTES? lpSecurityAttributes, win32.Storage.FileSystem.FILE_CREATION_DISPOSITION dwCreationDisposition, win32.Storage.FileSystem.FILE_FLAGS_AND_ATTRIBUTES dwFlagsAndAttributes, SafeHandle hTemplateFile)
+		/// <inheritdoc cref=""CreateFile(winmdroot.Foundation.PCWSTR, winmdroot.Storage.FileSystem.FILE_ACCESS_FLAGS, winmdroot.Storage.FileSystem.FILE_SHARE_MODE, winmdroot.Security.SECURITY_ATTRIBUTES*, winmdroot.Storage.FileSystem.FILE_CREATION_DISPOSITION, winmdroot.Storage.FileSystem.FILE_FLAGS_AND_ATTRIBUTES, winmdroot.Foundation.HANDLE)""/>
+		internal static unsafe Microsoft.Win32.SafeHandles.SafeFileHandle CreateFile(string lpFileName, winmdroot.Storage.FileSystem.FILE_ACCESS_FLAGS dwDesiredAccess, winmdroot.Storage.FileSystem.FILE_SHARE_MODE dwShareMode, winmdroot.Security.SECURITY_ATTRIBUTES? lpSecurityAttributes, winmdroot.Storage.FileSystem.FILE_CREATION_DISPOSITION dwCreationDisposition, winmdroot.Storage.FileSystem.FILE_FLAGS_AND_ATTRIBUTES dwFlagsAndAttributes, SafeHandle hTemplateFile)
 		{
 			bool hTemplateFileAddRef = false;
 			try
 			{
 				fixed (char* lpFileNameLocal = lpFileName)
 				{
-					win32.Security.SECURITY_ATTRIBUTES lpSecurityAttributesLocal = lpSecurityAttributes.HasValue ? lpSecurityAttributes.Value : default(win32.Security.SECURITY_ATTRIBUTES);
-					win32.Foundation.HANDLE hTemplateFileLocal;
+					winmdroot.Security.SECURITY_ATTRIBUTES lpSecurityAttributesLocal = lpSecurityAttributes.HasValue ? lpSecurityAttributes.Value : default(winmdroot.Security.SECURITY_ATTRIBUTES);
+					winmdroot.Foundation.HANDLE hTemplateFileLocal;
 					if (hTemplateFile is object)
 					{
 						hTemplateFile.DangerousAddRef(ref hTemplateFileAddRef);
-						hTemplateFileLocal = (win32.Foundation.HANDLE)hTemplateFile.DangerousGetHandle();
+						hTemplateFileLocal = (winmdroot.Foundation.HANDLE)hTemplateFile.DangerousGetHandle();
 					}
 					else
-						hTemplateFileLocal = default(win32.Foundation.HANDLE);
-					win32.Foundation.HANDLE __result = PInvoke.CreateFile(lpFileNameLocal, dwDesiredAccess, dwShareMode, lpSecurityAttributes.HasValue ? &lpSecurityAttributesLocal : null, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFileLocal);
+						hTemplateFileLocal = default(winmdroot.Foundation.HANDLE);
+					winmdroot.Foundation.HANDLE __result = PInvoke.CreateFile(lpFileNameLocal, dwDesiredAccess, dwShareMode, lpSecurityAttributes.HasValue ? &lpSecurityAttributesLocal : null, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFileLocal);
 					return new Microsoft.Win32.SafeHandles.SafeFileHandle(__result, ownsHandle: true);
 				}
 			}
@@ -2090,7 +2090,7 @@ namespace Windows.Win32
 		/// </remarks>
 		[DllImport(""Kernel32"", ExactSpelling = true, EntryPoint = ""CreateFileW"", SetLastError = true)]
 		[DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-		internal static extern unsafe win32.Foundation.HANDLE CreateFile(win32.Foundation.PCWSTR lpFileName, win32.Storage.FileSystem.FILE_ACCESS_FLAGS dwDesiredAccess, win32.Storage.FileSystem.FILE_SHARE_MODE dwShareMode, [Optional] win32.Security.SECURITY_ATTRIBUTES* lpSecurityAttributes, win32.Storage.FileSystem.FILE_CREATION_DISPOSITION dwCreationDisposition, win32.Storage.FileSystem.FILE_FLAGS_AND_ATTRIBUTES dwFlagsAndAttributes, win32.Foundation.HANDLE hTemplateFile);
+		internal static extern unsafe winmdroot.Foundation.HANDLE CreateFile(winmdroot.Foundation.PCWSTR lpFileName, winmdroot.Storage.FileSystem.FILE_ACCESS_FLAGS dwDesiredAccess, winmdroot.Storage.FileSystem.FILE_SHARE_MODE dwShareMode, [Optional] winmdroot.Security.SECURITY_ATTRIBUTES* lpSecurityAttributes, winmdroot.Storage.FileSystem.FILE_CREATION_DISPOSITION dwCreationDisposition, winmdroot.Storage.FileSystem.FILE_FLAGS_AND_ATTRIBUTES dwFlagsAndAttributes, winmdroot.Foundation.HANDLE hTemplateFile);
 	}
 }
 ".Replace("\r\n", "\n")),
@@ -2110,7 +2110,7 @@ namespace Windows.Win32
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 	namespace Foundation
 	{
@@ -2170,7 +2170,7 @@ namespace Windows.Win32
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 	namespace Security
 	{
@@ -2188,7 +2188,7 @@ namespace Windows.Win32
 			/// </summary>
 			internal unsafe void* lpSecurityDescriptor;
 			/// <summary>A Boolean value that specifies whether the returned handle is inherited when a new process is created. If this member is **TRUE**, the new process inherits the handle.</summary>
-			internal win32.Foundation.BOOL bInheritHandle;
+			internal winmdroot.Foundation.BOOL bInheritHandle;
 		}
 	}
 }

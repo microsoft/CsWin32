@@ -27,13 +27,14 @@ namespace Microsoft.Windows.CsWin32
     /// <summary>
     /// The core of the source generator.
     /// </summary>
+    [DebuggerDisplay("{" + nameof(DebuggerDisplayString) + ",nq}")]
     public class Generator : IDisposable
     {
         internal const string InteropDecorationNamespace = "Windows.Win32.Interop";
         internal const string NativeArrayInfoAttribute = "NativeArrayInfoAttribute";
         internal const string RAIIFreeAttribute = "RAIIFreeAttribute";
         internal const string GlobalNamespacePrefix = "global::";
-        internal const string GlobalWin32NamespaceAlias = "win32";
+        internal const string GlobalWinmdRootNamespaceAlias = "winmdroot";
         internal const string WinRTCustomMarshalerClass = "WinRTCustomMarshaler";
         internal const string WinRTCustomMarshalerNamespace = "Windows.Win32.CsWin32.InteropServices";
         internal const string WinRTCustomMarshalerFullName = WinRTCustomMarshalerNamespace + "." + WinRTCustomMarshalerClass;
@@ -403,7 +404,7 @@ namespace Microsoft.Windows.CsWin32
             {
                 IEnumerable<MemberDeclarationSyntax> result =
                     from entry in this.committedCode.MembersByModule
-                      select ClassDeclaration(Identifier(this.options.ClassName))
+                    select ClassDeclaration(Identifier(this.options.ClassName))
                         .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword))
                         .AddMembers(entry.ToArray())
                         .WithLeadingTrivia(ParseLeadingTrivia(string.Format(CultureInfo.InvariantCulture, PartialPInvokeContentComment, entry.Key)))
@@ -436,6 +437,8 @@ namespace Microsoft.Windows.CsWin32
             from method in entry
             group method by GetClassNameForModule(entry.Key) into x
             select x;
+
+        private string DebuggerDisplayString => $"Generator: {this.InputAssemblyName}";
 
         /// <inheritdoc/>
         public void Dispose()
@@ -1026,7 +1029,7 @@ namespace Microsoft.Windows.CsWin32
                 usingDirectives.Add(UsingDirective(ParseName(GlobalNamespacePrefix + "System.Runtime.Versioning")));
             }
 
-            usingDirectives.Add(UsingDirective(NameEquals(GlobalWin32NamespaceAlias), ParseName(GlobalNamespacePrefix + this.MetadataIndex.CommonNamespace)));
+            usingDirectives.Add(UsingDirective(NameEquals(GlobalWinmdRootNamespaceAlias), ParseName(GlobalNamespacePrefix + this.MetadataIndex.CommonNamespace)));
 
             var normalizedResults = new Dictionary<string, CompilationUnitSyntax>(StringComparer.OrdinalIgnoreCase);
             results.AsParallel().WithCancellation(cancellationToken).ForAll(kv =>
@@ -1109,7 +1112,7 @@ namespace Microsoft.Windows.CsWin32
 
         internal static string ReplaceCommonNamespaceWithAlias(Generator? generator, string fullNamespace)
         {
-            return generator is object && generator.TryStripCommonNamespace(fullNamespace, out string? stripped) ? $"{GlobalWin32NamespaceAlias}.{stripped}" : fullNamespace;
+            return generator is object && generator.TryStripCommonNamespace(fullNamespace, out string? stripped) ? (stripped.Length > 0 ? $"{GlobalWinmdRootNamespaceAlias}.{stripped}" : GlobalWinmdRootNamespaceAlias) : $"global::{fullNamespace}";
         }
 
         internal bool TryStripCommonNamespace(string fullNamespace, [NotNullWhen(true)] out string? strippedNamespace)
@@ -1332,7 +1335,7 @@ namespace Microsoft.Windows.CsWin32
                 TypeReference typeRef = this.Reader.GetTypeReference(typeRefHandle);
                 if (typeRef.ResolutionScope.Kind == HandleKind.AssemblyReference)
                 {
-                    if (this.SuperGenerator?.TryRequestInteropType(this, typeRef) is not true)
+                    if (this.SuperGenerator?.TryRequestInteropType(new(this, typeRef)) is not true)
                     {
                         // We can't find the interop among our metadata inputs.
                         // Before we give up and report an error, search for the required type among the compilation's referenced assemblies.
@@ -1507,8 +1510,8 @@ namespace Microsoft.Windows.CsWin32
                         {
                             case "LSTATUS":
                                 this.TryGenerateTypeOrThrow("WIN32_ERROR");
-                                ExpressionSyntax errorSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseTypeName(GlobalWin32NamespaceAlias + ".Foundation.WIN32_ERROR"), IdentifierName("ERROR_SUCCESS"));
-                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, CastExpression(ParseTypeName(GlobalWin32NamespaceAlias + ".Foundation.LSTATUS"), CastExpression(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), errorSuccess)));
+                                ExpressionSyntax errorSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseTypeName("global::Windows.Win32.Foundation.WIN32_ERROR"), IdentifierName("ERROR_SUCCESS"));
+                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, CastExpression(ParseTypeName("global::Windows.Win32.Foundation.LSTATUS"), CastExpression(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), errorSuccess)));
                                 break;
                             case "NTSTATUS":
                                 this.TryGenerateConstantOrThrow("STATUS_SUCCESS");
@@ -1593,47 +1596,60 @@ namespace Microsoft.Windows.CsWin32
             }
 
             MemberDeclarationSyntax? specialDeclaration = null;
-            this.volatileCode.GenerateSpecialType(specialName, delegate
+            if (this.InputAssemblyName.Equals("Windows.Win32", StringComparison.OrdinalIgnoreCase))
             {
-                switch (specialName)
+                this.volatileCode.GenerateSpecialType(specialName, delegate
                 {
-                    case "PCWSTR":
-                        specialDeclaration = this.FetchTemplate($"{specialName}");
+                    switch (specialName)
+                    {
+                        case "PCWSTR":
+                            specialDeclaration = this.FetchTemplate($"{specialName}");
 
-                        if (this.canUseSpan)
-                        {
-                            // internal ReadOnlySpan<char> AsSpan() => this.Value is null ? default(ReadOnlySpan<char>) : new ReadOnlySpan<char>(this.Value, this.Length);
-                            specialDeclaration = ((TypeDeclarationSyntax)specialDeclaration).AddMembers(
-                                this.CreateAsSpanMethodOverValueAndLength(MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword)))));
-                        }
+                            if (this.canUseSpan)
+                            {
+                                // internal ReadOnlySpan<char> AsSpan() => this.Value is null ? default(ReadOnlySpan<char>) : new ReadOnlySpan<char>(this.Value, this.Length);
+                                specialDeclaration = ((TypeDeclarationSyntax)specialDeclaration).AddMembers(
+                                        this.CreateAsSpanMethodOverValueAndLength(MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword)))));
+                            }
 
-                        this.TryGenerateType("PWSTR"); // the template references this type
-                        break;
-                    case "PCSTR":
-                        specialDeclaration = this.FetchTemplate($"{specialName}");
+                            this.TryGenerateType("Windows.Win32.Foundation.PWSTR"); // the template references this type
+                            break;
+                        case "PCSTR":
+                            specialDeclaration = this.FetchTemplate($"{specialName}");
 
-                        if (this.canUseSpan)
-                        {
-                            // internal ReadOnlySpan<byte> AsSpan() => this.Value is null ? default(ReadOnlySpan<byte>) : new ReadOnlySpan<byte>(this.Value, this.Length);
-                            specialDeclaration = ((TypeDeclarationSyntax)specialDeclaration).AddMembers(
-                                this.CreateAsSpanMethodOverValueAndLength(MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.ByteKeyword)))));
-                        }
+                            if (this.canUseSpan)
+                            {
+                                // internal ReadOnlySpan<byte> AsSpan() => this.Value is null ? default(ReadOnlySpan<byte>) : new ReadOnlySpan<byte>(this.Value, this.Length);
+                                specialDeclaration = ((TypeDeclarationSyntax)specialDeclaration).AddMembers(
+                                        this.CreateAsSpanMethodOverValueAndLength(MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.ByteKeyword)))));
+                            }
 
-                        this.TryGenerateType("PSTR"); // the template references this type
-                        break;
-                    default:
-                        throw new ArgumentException($"This special name is not recognized: \"{specialName}\".", nameof(specialName));
-                }
+                            this.TryGenerateType("Windows.Win32.Foundation.PSTR"); // the template references this type
+                            break;
+                        default:
+                            throw new ArgumentException($"This special name is not recognized: \"{specialName}\".", nameof(specialName));
+                    }
 
-                if (specialDeclaration is null)
+                    if (specialDeclaration is null)
+                    {
+                        throw new GenerationFailedException("Failed to parse template.");
+                    }
+
+                    specialDeclaration = specialDeclaration.WithAdditionalAnnotations(new SyntaxAnnotation(NamespaceContainerAnnotation, subNamespace));
+
+                    this.volatileCode.AddSpecialType(specialName, specialDeclaration);
+                });
+            }
+            else if (this.SuperGenerator?.TryGetGenerator("Windows.Win32", out Generator? win32Generator) is true)
+            {
+                string? fullyQualifiedNameLocal = null!;
+                win32Generator.volatileCode.GenerationTransaction(delegate
                 {
-                    throw new GenerationFailedException("Failed to parse template.");
-                }
+                    specialDeclaration = win32Generator.RequestSpecialTypeDefStruct(specialName, out fullyQualifiedNameLocal);
+                });
+                fullyQualifiedName = fullyQualifiedNameLocal;
+            }
 
-                specialDeclaration = specialDeclaration.WithAdditionalAnnotations(new SyntaxAnnotation(NamespaceContainerAnnotation, subNamespace));
-
-                this.volatileCode.AddSpecialType(specialName, specialDeclaration);
-            });
             return specialDeclaration;
         }
 
@@ -1665,6 +1681,23 @@ namespace Microsoft.Windows.CsWin32
             return null;
         }
 
+        internal bool TryGetTypeDefHandle(TypeReferenceHandle typeRefHandle, out QualifiedTypeDefinitionHandle typeDefHandle)
+        {
+            if (this.SuperGenerator is object)
+            {
+                return this.SuperGenerator.TryGetTypeDefinitionHandle(new QualifiedTypeReferenceHandle(this, typeRefHandle), out typeDefHandle);
+            }
+
+            if (this.TryGetTypeDefHandle(typeRefHandle, out TypeDefinitionHandle localTypeDefHandle))
+            {
+                typeDefHandle = new QualifiedTypeDefinitionHandle(this, localTypeDefHandle);
+                return true;
+            }
+
+            typeDefHandle = default;
+            return false;
+        }
+
         /// <summary>
         /// Attempts to translate a <see cref="TypeReferenceHandle"/> to a <see cref="TypeDefinitionHandle"/>.
         /// </summary>
@@ -1679,36 +1712,56 @@ namespace Microsoft.Windows.CsWin32
             }
 
             var typeRef = this.Reader.GetTypeReference(typeRefHandle);
-
-            // PERF: check that the ResolutionScope is Module before proceeding.
-            foreach (TypeDefinitionHandle tdh in this.Reader.TypeDefinitions)
+            if (typeRef.ResolutionScope.Kind != HandleKind.AssemblyReference)
             {
-                TypeDefinition typeDef = this.Reader.GetTypeDefinition(tdh);
-                if (typeDef.Name == typeRef.Name && typeDef.Namespace == typeRef.Namespace)
+                foreach (TypeDefinitionHandle tdh in this.Reader.TypeDefinitions)
                 {
-                    if (typeRef.ResolutionScope.Kind == HandleKind.TypeReference)
+                    TypeDefinition typeDef = this.Reader.GetTypeDefinition(tdh);
+                    if (typeDef.Name == typeRef.Name && typeDef.Namespace == typeRef.Namespace)
                     {
-                        // The ref is nested. Verify that the type we found is nested in the same type as well.
-                        if (this.TryGetTypeDefHandle((TypeReferenceHandle)typeRef.ResolutionScope, out TypeDefinitionHandle nestingTypeDef) && nestingTypeDef == typeDef.GetDeclaringType())
+                        if (typeRef.ResolutionScope.Kind == HandleKind.TypeReference)
+                        {
+                            // The ref is nested. Verify that the type we found is nested in the same type as well.
+                            if (this.TryGetTypeDefHandle((TypeReferenceHandle)typeRef.ResolutionScope, out TypeDefinitionHandle nestingTypeDef) && nestingTypeDef == typeDef.GetDeclaringType())
+                            {
+                                typeDefHandle = tdh;
+                                break;
+                            }
+                        }
+                        else if (typeRef.ResolutionScope.Kind == HandleKind.ModuleDefinition && typeDef.GetDeclaringType().IsNil)
                         {
                             typeDefHandle = tdh;
                             break;
                         }
-                    }
-                    else if (typeRef.ResolutionScope.Kind == HandleKind.ModuleDefinition && typeDef.GetDeclaringType().IsNil)
-                    {
-                        typeDefHandle = tdh;
-                        break;
-                    }
-                    else
-                    {
-                        throw new NotSupportedException("Unrecognized ResolutionScope: " + typeRef.ResolutionScope);
+                        else
+                        {
+                            throw new NotSupportedException("Unrecognized ResolutionScope: " + typeRef.ResolutionScope);
+                        }
                     }
                 }
             }
 
             this.refToDefCache.Add(typeRefHandle, typeDefHandle);
             return !typeDefHandle.IsNil;
+        }
+
+        internal bool TryGetTypeDefHandle(TypeReference typeRef, out TypeDefinitionHandle typeDefHandle) => this.TryGetTypeDefHandle(typeRef.Namespace, typeRef.Name, out typeDefHandle);
+
+        internal bool TryGetTypeDefHandle(StringHandle @namespace, StringHandle name, out TypeDefinitionHandle typeDefHandle)
+        {
+            // PERF: Use an index
+            foreach (TypeDefinitionHandle tdh in this.Reader.TypeDefinitions)
+            {
+                TypeDefinition td = this.Reader.GetTypeDefinition(tdh);
+                if (td.Name.Equals(name) && td.Namespace.Equals(@namespace))
+                {
+                    typeDefHandle = tdh;
+                    return true;
+                }
+            }
+
+            typeDefHandle = default;
+            return false;
         }
 
         internal bool TryGetTypeDefHandle(string @namespace, string name, out TypeDefinitionHandle typeDefinitionHandle)
@@ -2111,7 +2164,7 @@ namespace Microsoft.Windows.CsWin32
             var k = (byte)args.FixedArguments[10].Value!;
             var pid = (uint)args.FixedArguments[11].Value!;
 
-            return ObjectCreationExpression(IdentifierName("win32.System.PropertiesSystem.PROPERTYKEY")).WithInitializer(
+            return ObjectCreationExpression(IdentifierName("global::Windows.Win32.System.PropertiesSystem.PROPERTYKEY")).WithInitializer(
                 InitializerExpression(SyntaxKind.ObjectInitializerExpression, SeparatedList<ExpressionSyntax>(new[]
                 {
                     AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, IdentifierName("fmtid"), GuidValue(propertyKeyAttribute)),
@@ -2130,7 +2183,7 @@ namespace Microsoft.Windows.CsWin32
         {
             int nameIdx = possiblyQualifiedName.LastIndexOf('.');
             @namespace = nameIdx >= 0 ? possiblyQualifiedName.Substring(0, nameIdx) : null;
-            name = nameIdx >= 0 ? possiblyQualifiedName.Substring(nameIdx) : possiblyQualifiedName;
+            name = nameIdx >= 0 ? possiblyQualifiedName.Substring(nameIdx + 1) : possiblyQualifiedName;
             return @namespace is object;
         }
 
@@ -2860,19 +2913,19 @@ namespace Microsoft.Windows.CsWin32
         /// </remarks>
         private TypeDeclarationSyntax? DeclareInterface(TypeDefinition typeDef)
         {
-            Stack<TypeDefinitionHandle> baseTypes = new Stack<TypeDefinitionHandle>();
-            InterfaceImplementationHandle baseTypeHandle = typeDef.GetInterfaceImplementations().SingleOrDefault();
-            while (!baseTypeHandle.IsNil)
+            Stack<QualifiedTypeDefinitionHandle> baseTypes = new Stack<QualifiedTypeDefinitionHandle>();
+            (Generator Generator, InterfaceImplementationHandle Handle) baseTypeHandle = (this, typeDef.GetInterfaceImplementations().SingleOrDefault());
+            while (!baseTypeHandle.Handle.IsNil)
             {
-                InterfaceImplementation baseTypeImpl = this.Reader.GetInterfaceImplementation(baseTypeHandle);
-                if (!this.TryGetTypeDefHandle((TypeReferenceHandle)baseTypeImpl.Interface, out TypeDefinitionHandle baseTypeDefHandle))
+                InterfaceImplementation baseTypeImpl = baseTypeHandle.Generator.Reader.GetInterfaceImplementation(baseTypeHandle.Handle);
+                if (!baseTypeHandle.Generator.TryGetTypeDefHandle((TypeReferenceHandle)baseTypeImpl.Interface, out QualifiedTypeDefinitionHandle baseTypeDefHandle))
                 {
                     throw new GenerationFailedException("Failed to find base type.");
                 }
 
                 baseTypes.Push(baseTypeDefHandle);
-                TypeDefinition baseType = this.Reader.GetTypeDefinition(baseTypeDefHandle);
-                baseTypeHandle = baseType.GetInterfaceImplementations().SingleOrDefault();
+                TypeDefinition baseType = baseTypeDefHandle.Reader.GetTypeDefinition(baseTypeDefHandle.DefinitionHandle);
+                baseTypeHandle = (baseTypeHandle.Generator, baseType.GetInterfaceImplementations().SingleOrDefault());
             }
 
             return !this.options.AllowMarshaling || this.IsNonCOMInterface(typeDef)
@@ -2880,7 +2933,7 @@ namespace Microsoft.Windows.CsWin32
                 : this.DeclareInterfaceAsInterface(typeDef, baseTypes);
         }
 
-        private TypeDeclarationSyntax DeclareInterfaceAsStruct(TypeDefinition typeDef, Stack<TypeDefinitionHandle> baseTypes)
+        private TypeDeclarationSyntax DeclareInterfaceAsStruct(TypeDefinition typeDef, Stack<QualifiedTypeDefinitionHandle> baseTypes)
         {
             IdentifierNameSyntax ifaceName = IdentifierName(this.Reader.GetString(typeDef.Name));
             IdentifierNameSyntax vtblFieldName = IdentifierName("lpVtbl");
@@ -2889,27 +2942,28 @@ namespace Microsoft.Windows.CsWin32
             TypeSyntaxSettings typeSettings = this.comSignatureTypeSettings;
 
             // It is imperative that we generate methods for all base interfaces as well, ahead of any implemented by *this* interface.
-            var allMethods = new List<MethodDefinitionHandle>();
+            var allMethods = new List<QualifiedMethodDefinitionHandle>();
             while (baseTypes.Count > 0)
             {
-                TypeDefinition baseType = this.Reader.GetTypeDefinition(baseTypes.Pop());
-                allMethods.AddRange(baseType.GetMethods());
+                QualifiedTypeDefinitionHandle qualifiedBaseType = baseTypes.Pop();
+                TypeDefinition baseType = qualifiedBaseType.Generator.Reader.GetTypeDefinition(qualifiedBaseType.DefinitionHandle);
+                allMethods.AddRange(baseType.GetMethods().Select(m => new QualifiedMethodDefinitionHandle(qualifiedBaseType.Generator, m)));
             }
 
-            allMethods.AddRange(typeDef.GetMethods());
+            allMethods.AddRange(typeDef.GetMethods().Select(m => new QualifiedMethodDefinitionHandle(this, m)));
             int methodCounter = 0;
-            foreach (MethodDefinitionHandle methodDefHandle in allMethods)
+            foreach (QualifiedMethodDefinitionHandle methodDefHandle in allMethods)
             {
                 methodCounter++;
-                var methodDefinition = this.Reader.GetMethodDefinition(methodDefHandle);
-                string methodName = this.Reader.GetString(methodDefinition.Name);
+                var methodDefinition = methodDefHandle.Resolve();
+                string methodName = methodDefinition.Reader.GetString(methodDefinition.Method.Name);
                 IdentifierNameSyntax innerMethodName = IdentifierName($"{methodName}_{methodCounter}");
 
-                MethodSignature<TypeHandleInfo> signature = methodDefinition.DecodeSignature(SignatureHandleProvider.Instance, null);
-                CustomAttributeHandleCollection? returnTypeAttributes = this.GetReturnTypeCustomAttributes(methodDefinition);
+                MethodSignature<TypeHandleInfo> signature = methodDefinition.Method.DecodeSignature(SignatureHandleProvider.Instance, null);
+                CustomAttributeHandleCollection? returnTypeAttributes = methodDefinition.Generator.GetReturnTypeCustomAttributes(methodDefinition.Method);
                 var returnType = signature.ReturnType.ToTypeSyntax(typeSettings, returnTypeAttributes);
 
-                ParameterListSyntax parameterList = this.CreateParameterList(methodDefinition, signature, typeSettings);
+                ParameterListSyntax parameterList = methodDefinition.Generator.CreateParameterList(methodDefinition.Method, signature, typeSettings);
                 FunctionPointerParameterListSyntax funcPtrParameters = FunctionPointerParameterList()
                     .AddParameters(FunctionPointerParameter(PointerType(ifaceName)))
                     .AddParameters(parameterList.Parameters.Select(p => FunctionPointerParameter(p.Type!).WithModifiers(p.Modifiers)).ToArray())
@@ -2965,7 +3019,7 @@ namespace Microsoft.Windows.CsWin32
                 // Add documentation if we can find it.
                 methodDeclaration = this.AddApiDocumentation($"{ifaceName}.{methodName}", methodDeclaration);
 
-                members.AddRange(this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, IdentifierName(ifaceName.Identifier.ValueText), FriendlyOverloadOf.StructMethod));
+                members.AddRange(methodDefinition.Generator.DeclareFriendlyOverloads(methodDefinition.Method, methodDeclaration, IdentifierName(ifaceName.Identifier.ValueText), FriendlyOverloadOf.StructMethod));
                 members.Add(methodDeclaration);
             }
 
@@ -2994,7 +3048,7 @@ namespace Microsoft.Windows.CsWin32
             return iface;
         }
 
-        private TypeDeclarationSyntax? DeclareInterfaceAsInterface(TypeDefinition typeDef, Stack<TypeDefinitionHandle> baseTypes)
+        private TypeDeclarationSyntax? DeclareInterfaceAsInterface(TypeDefinition typeDef, Stack<QualifiedTypeDefinitionHandle> baseTypes)
         {
             if (this.Reader.StringComparer.Equals(typeDef.Name, "IUnknown") || this.Reader.StringComparer.Equals(typeDef.Name, "IDispatch"))
             {
@@ -3013,31 +3067,31 @@ namespace Microsoft.Windows.CsWin32
             var baseTypeSyntaxList = new List<BaseTypeSyntax>();
             while (baseTypes.Count > 0)
             {
-                TypeDefinitionHandle baseTypeHandle = baseTypes.Pop();
-                TypeDefinition baseType = this.Reader.GetTypeDefinition(baseTypeHandle);
+                QualifiedTypeDefinitionHandle baseTypeHandle = baseTypes.Pop();
+                TypeDefinition baseType = baseTypeHandle.Reader.GetTypeDefinition(baseTypeHandle.DefinitionHandle);
                 if (!foundIUnknown)
                 {
-                    if (!this.Reader.StringComparer.Equals(baseType.Name, "IUnknown"))
+                    if (!baseTypeHandle.Reader.StringComparer.Equals(baseType.Name, "IUnknown"))
                     {
-                        throw new NotSupportedException("Unsupported base COM interface type: " + this.Reader.GetString(baseType.Name));
+                        throw new NotSupportedException("Unsupported base COM interface type: " + baseTypeHandle.Reader.GetString(baseType.Name));
                     }
 
                     foundIUnknown = true;
                 }
                 else
                 {
-                    if (this.Reader.StringComparer.Equals(baseType.Name, "IDispatch"))
+                    if (baseTypeHandle.Reader.StringComparer.Equals(baseType.Name, "IDispatch"))
                     {
                         foundIDispatch = true;
                     }
-                    else if (this.Reader.StringComparer.Equals(baseType.Name, "IInspectable"))
+                    else if (baseTypeHandle.Reader.StringComparer.Equals(baseType.Name, "IInspectable"))
                     {
                         foundIInspectable = true;
                     }
                     else
                     {
-                        this.RequestInteropType(baseTypeHandle);
-                        baseTypeSyntaxList.Add(SimpleBaseType(new HandleTypeHandleInfo(this.Reader, baseTypeHandle).ToTypeSyntax(this.comSignatureTypeSettings, null).Type));
+                        baseTypeHandle.Generator.RequestInteropType(baseTypeHandle.DefinitionHandle);
+                        baseTypeSyntaxList.Add(SimpleBaseType(new HandleTypeHandleInfo(baseTypeHandle.Reader, baseTypeHandle.DefinitionHandle).ToTypeSyntax(this.comSignatureTypeSettings, null).Type));
                         allMethods.AddRange(baseType.GetMethods());
                     }
                 }
@@ -4988,7 +5042,7 @@ namespace Microsoft.Windows.CsWin32
                     else if (this.SuperGenerator is object)
                     {
                         TypeReference typeReference = this.Reader.GetTypeReference((TypeReferenceHandle)handleInfo.Handle);
-                        if (this.SuperGenerator.TryGetTargetGenerator(this, typeReference, out Generator? targetGenerator))
+                        if (this.SuperGenerator.TryGetTargetGenerator(new QualifiedTypeReference(this, typeReference), out Generator? targetGenerator))
                         {
                             if (targetGenerator.TryGetTypeDefHandle(this.Reader.GetString(typeReference.Namespace), this.Reader.GetString(typeReference.Name), out TypeDefinitionHandle foreignTypeDefHandle))
                             {

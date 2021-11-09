@@ -891,13 +891,13 @@ i++)						if (p0[i] != default(uint))							return false;
         const string expectedIndexer = @"
 	internal static partial class InlineArrayIndexerExtensions
 	{
-		internal static unsafe ref readonly uint ReadOnlyItemRef(this in win32.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
+		internal static unsafe ref readonly uint ReadOnlyItemRef(this in win32.Media.DirectShow.MainAVIHeader.__uint_4 @this, int index)
 		{
 			fixed (uint* p0 = &@this._0)
 				return ref p0[index];
 		}
 
-		internal static unsafe ref uint ItemRef(this ref win32.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
+		internal static unsafe ref uint ItemRef(this ref win32.Media.DirectShow.MainAVIHeader.__uint_4 @this, int index)
 		{
 			fixed (uint* p0 = &@this._0)
 				return ref p0[index];
@@ -987,13 +987,13 @@ i++)						if (p0[i] != default(uint))							return false;
         const string expectedIndexer = @"
 	internal static partial class InlineArrayIndexerExtensions
 	{
-		internal static unsafe ref readonly uint ReadOnlyItemRef(this in win32.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
+		internal static unsafe ref readonly uint ReadOnlyItemRef(this in win32.Media.DirectShow.MainAVIHeader.__uint_4 @this, int index)
 		{
 			fixed (uint* p0 = &@this._0)
 				return ref p0[index];
 		}
 
-		internal static unsafe ref uint ItemRef(this ref win32.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
+		internal static unsafe ref uint ItemRef(this ref win32.Media.DirectShow.MainAVIHeader.__uint_4 @this, int index)
 		{
 			fixed (uint* p0 = &@this._0)
 				return ref p0[index];
@@ -1156,7 +1156,7 @@ namespace Windows.Win32
 	using global::System.Runtime.InteropServices;
 	using win32 = global::Windows.Win32;
 
-	namespace UI.DisplayDevices
+	namespace Devices.Display
 	{
 		/// <summary>The DISPLAYCONFIG_SCANLINE_ORDERING enumeration specifies the method that the display uses to create an image on a screen.</summary>
 		/// <remarks>
@@ -1221,7 +1221,7 @@ namespace Windows.Win32
 	using global::System.Runtime.InteropServices;
 	using win32 = global::Windows.Win32;
 
-	namespace UI.DisplayDevices
+	namespace Devices.Display
 	{
 		internal enum DISPLAYCONFIG_SCANLINE_ORDERING
 		{

@@ -794,6 +794,7 @@ namespace Microsoft.Windows.Sdk
 
     [Theory]
     [InlineData("BOOL")]
+    [InlineData("BSTR")]
     [InlineData("HRESULT")]
     [InlineData("NTSTATUS")]
     [InlineData("PCSTR")]
@@ -810,6 +811,7 @@ namespace Microsoft.Windows.Sdk
 
     [Theory]
     [InlineData("BOOL")]
+    [InlineData("BSTR")]
     [InlineData("HRESULT")]
     [InlineData("NTSTATUS")]
     [InlineData("PCSTR")]

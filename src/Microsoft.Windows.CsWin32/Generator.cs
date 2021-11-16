@@ -3713,34 +3713,37 @@ namespace Microsoft.Windows.CsWin32
                 .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(ObjectCreationExpression(IntPtrTypeSyntax).WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(thisValue))))))))))
                 .WithSemicolonToken(SemicolonWithLineFeed);
 
-            // public static implicit operator ReadOnlySpan<char>(BSTR bstr) => bstr.Value != null ? new ReadOnlySpan<char>(bstr.Value, *((int*)bstr.Value - 1) / 2) : default;
-            TypeSyntax rosChar = MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword)));
-            IdentifierNameSyntax bstrParam = IdentifierName("bstr");
-            ExpressionSyntax bstrValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, bstrParam, IdentifierName("Value"));
-            ExpressionSyntax length = BinaryExpression(
-                SyntaxKind.DivideExpression,
-                PrefixUnaryExpression(
-                    SyntaxKind.PointerIndirectionExpression,
-                    ParenthesizedExpression(
-                        BinaryExpression(
-                            SyntaxKind.SubtractExpression,
-                            CastExpression(PointerType(PredefinedType(TokenWithNoSpace(SyntaxKind.IntKeyword))), bstrValue),
-                            LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(1))))),
-                LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(2)));
-            ExpressionSyntax rosCreation = ObjectCreationExpression(rosChar).AddArgumentListArguments(Argument(bstrValue), Argument(length));
-            ExpressionSyntax bstrNotNull = BinaryExpression(SyntaxKind.NotEqualsExpression, bstrValue, LiteralExpression(SyntaxKind.NullLiteralExpression));
-            ExpressionSyntax conditional = ConditionalExpression(bstrNotNull, rosCreation, DefaultExpression(rosChar));
-            yield return ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), rosChar)
-                .AddParameterListParameters(Parameter(bstrParam.Identifier).WithType(IdentifierName("BSTR").WithTrailingTrivia(TriviaList(Space))))
-                .WithExpressionBody(ArrowExpressionClause(conditional))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword)) // operators MUST be public
-                .WithSemicolonToken(SemicolonWithLineFeed);
+            if (this.canUseSpan)
+            {
+                // public static implicit operator ReadOnlySpan<char>(BSTR bstr) => bstr.Value != null ? new ReadOnlySpan<char>(bstr.Value, *((int*)bstr.Value - 1) / 2) : default;
+                TypeSyntax rosChar = MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword)));
+                IdentifierNameSyntax bstrParam = IdentifierName("bstr");
+                ExpressionSyntax bstrValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, bstrParam, IdentifierName("Value"));
+                ExpressionSyntax length = BinaryExpression(
+                    SyntaxKind.DivideExpression,
+                    PrefixUnaryExpression(
+                        SyntaxKind.PointerIndirectionExpression,
+                        ParenthesizedExpression(
+                            BinaryExpression(
+                                SyntaxKind.SubtractExpression,
+                                CastExpression(PointerType(PredefinedType(TokenWithNoSpace(SyntaxKind.IntKeyword))), bstrValue),
+                                LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(1))))),
+                    LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(2)));
+                ExpressionSyntax rosCreation = ObjectCreationExpression(rosChar).AddArgumentListArguments(Argument(bstrValue), Argument(length));
+                ExpressionSyntax bstrNotNull = BinaryExpression(SyntaxKind.NotEqualsExpression, bstrValue, LiteralExpression(SyntaxKind.NullLiteralExpression));
+                ExpressionSyntax conditional = ConditionalExpression(bstrNotNull, rosCreation, DefaultExpression(rosChar));
+                yield return ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), rosChar)
+                    .AddParameterListParameters(Parameter(bstrParam.Identifier).WithType(IdentifierName("BSTR").WithTrailingTrivia(TriviaList(Space))))
+                    .WithExpressionBody(ArrowExpressionClause(conditional))
+                    .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword)) // operators MUST be public
+                    .WithSemicolonToken(SemicolonWithLineFeed);
 
-            // internal ReadOnlySpan<char> AsSpan() => this;
-            yield return MethodDeclaration(rosChar, Identifier("AsSpan"))
-                .AddModifiers(TokenWithSpace(this.Visibility))
-                .WithExpressionBody(ArrowExpressionClause(ThisExpression()))
-                .WithSemicolonToken(SemicolonWithLineFeed);
+                // internal ReadOnlySpan<char> AsSpan() => this;
+                yield return MethodDeclaration(rosChar, Identifier("AsSpan"))
+                    .AddModifiers(TokenWithSpace(this.Visibility))
+                    .WithExpressionBody(ArrowExpressionClause(ThisExpression()))
+                    .WithSemicolonToken(SemicolonWithLineFeed);
+            }
         }
 
         private IEnumerable<MemberDeclarationSyntax> CreateAdditionalTypeDefPWSTRMembers()

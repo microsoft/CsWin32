@@ -4105,7 +4105,8 @@ namespace Microsoft.Windows.CsWin32
                 }
                 else if ((externParam.Type is PointerTypeSyntax { ElementType: TypeSyntax ptrElementType }
                     && !IsVoid(ptrElementType)
-                    && !this.IsInterface(parameterTypeInfo)) ||
+                    && !this.IsInterface(parameterTypeInfo)
+                    && this.canUseSpan) ||
                     externParam.Type is ArrayTypeSyntax)
                 {
                     TypeSyntax elementType = externParam.Type is PointerTypeSyntax ptr ? ptr.ElementType
@@ -4194,7 +4195,7 @@ namespace Microsoft.Windows.CsWin32
 
                             arguments[sizeParamIndex.Value] = Argument(sizeArgExpression);
                         }
-                        else if (sizeConst.HasValue && !isPointerToPointer)
+                        else if (sizeConst.HasValue && !isPointerToPointer && this.canUseSpan)
                         {
                             // TODO: add support for lists of pointers via a generated pointer-wrapping struct
                             signatureChanged = true;

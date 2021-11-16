@@ -828,6 +828,18 @@ namespace Microsoft.Windows.Sdk
         Assert.Single(this.FindGeneratedType(synthesizedTypeName));
     }
 
+    [Theory, PairwiseData]
+    public void NoFriendlyOverloadsWithSpanInNet35(bool allowMarshaling)
+    {
+        this.compilation = this.starterCompilations["net35"];
+        var options = DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling };
+        this.generator = this.CreateGenerator(options);
+        Assert.True(this.generator.TryGenerate("EvtNext", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        Assert.Single(this.FindGeneratedMethod("EvtNext"));
+    }
+
     [Fact]
     public void FixedLengthInlineCharArraysWorkInNet35()
     {

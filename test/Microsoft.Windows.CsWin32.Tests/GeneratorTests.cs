@@ -826,6 +826,54 @@ namespace Microsoft.Windows.Sdk
         Assert.Single(this.FindGeneratedType(synthesizedTypeName));
     }
 
+    [Fact]
+    public void FixedLengthInlineArraysWorkInNet35()
+    {
+        const string expected = @"		internal partial struct MainAVIHeader
+		{
+			internal uint dwMicroSecPerFrame;
+			internal uint dwMaxBytesPerSec;
+			internal uint dwPaddingGranularity;
+			internal uint dwFlags;
+			internal uint dwTotalFrames;
+			internal uint dwInitialFrames;
+			internal uint dwStreams;
+			internal uint dwSuggestedBufferSize;
+			internal uint dwWidth;
+			internal uint dwHeight;
+			internal __uint_4 dwReserved;
+
+			internal partial struct __uint_4
+			{
+				internal uint _0,_1,_2,_3;
+
+				/// <summary>Always <c>4</c>.</summary>
+				internal readonly int Length => 4;
+			}
+		}
+";
+
+        const string expectedIndexer = @"
+	internal static partial class InlineArrayIndexerExtensions
+	{
+		internal static unsafe ref readonly uint ReadOnlyItemRef(this in winmdroot.Media.DirectShow.MainAVIHeader.__uint_4 @this, int index)
+		{
+			fixed (uint* p0 = &@this._0)
+				return ref p0[index];
+		}
+
+		internal static unsafe ref uint ItemRef(this ref winmdroot.Media.DirectShow.MainAVIHeader.__uint_4 @this, int index)
+		{
+			fixed (uint* p0 = &@this._0)
+				return ref p0[index];
+		}
+	}
+";
+
+        this.compilation = this.starterCompilations["net35"];
+        this.AssertGeneratedType("MainAVIHeader", expected, expectedIndexer);
+    }
+
     /// <summary>
     /// Validates that where MemoryMarshal.CreateSpan isn't available, a substitute indexer is offered.
     /// </summary>

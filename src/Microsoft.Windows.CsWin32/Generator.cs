@@ -4637,7 +4637,7 @@ namespace Microsoft.Windows.CsWin32
 #pragma warning disable SA1515 // Single-line comment should be preceded by blank line
 #pragma warning disable SA1114 // Parameter list should follow declaration
 
-            if (elementType is PredefinedTypeSyntax)
+            if (elementType is PredefinedTypeSyntax && this.canUseSpan)
             {
                 // internal unsafe readonly void CopyTo(Span<T> target, int length = 4)
                 IdentifierNameSyntax targetParameterName = IdentifierName("target");

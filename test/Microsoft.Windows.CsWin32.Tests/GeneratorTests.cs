@@ -2227,6 +2227,17 @@ namespace Windows.Win32
         }.RunAsync();
     }
 
+    [Fact]
+    public void CocreatableStructs()
+    {
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate("ShellLink", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        ClassDeclarationSyntax classDecl = Assert.IsType<ClassDeclarationSyntax>(this.FindGeneratedType("ShellLink").Single());
+        Assert.Contains(classDecl.AttributeLists, al => al.Attributes.Any(a => a.Name.ToString().Contains("ComImport")));
+    }
+
     private static string ConstructGlobalConfigString(bool omitDocs = false)
     {
         StringBuilder globalConfigBuilder = new();

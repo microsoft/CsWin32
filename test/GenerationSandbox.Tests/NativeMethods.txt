@@ -9,12 +9,14 @@ GetWindowText
 GetWindowTextLength
 HDC_UserSize
 IEnumDebugPropertyInfo
+IPersistFile
 KEY_EVENT_RECORD
 LoadLibrary
 MainAVIHeader
 NTSTATUS
+RegLoadAppKey
 RM_PROCESS_INFO
+ShellLink
 WER_REPORT_INFORMATION
 wglGetProcAddress
 WPARAM
-RegLoadAppKey

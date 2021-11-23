@@ -11,8 +11,10 @@ using Windows.Win32.Devices.Display;
 using Windows.Win32.Foundation;
 using Windows.Win32.Media.DirectShow;
 using Windows.Win32.Storage.FileSystem;
+using Windows.Win32.System.Com;
 using Windows.Win32.System.Console;
 using Windows.Win32.System.ErrorReporting;
+using Windows.Win32.UI.Shell;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -427,5 +429,13 @@ public class BasicTests
     public void CHAR_MarshaledAsUtf8()
     {
         Assert.Equal(1, Marshal.SizeOf<CHAR>());
+    }
+
+    [Fact]
+    public void CocreatableClassesWithImplicitInterfaces()
+    {
+        ShellLink shellLink = new ShellLink();
+        IPersistFile persistFile = (IPersistFile)shellLink;
+        Assert.NotNull(persistFile);
     }
 }

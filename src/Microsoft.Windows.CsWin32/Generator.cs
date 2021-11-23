@@ -3741,34 +3741,37 @@ namespace Microsoft.Windows.CsWin32
                 .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(ObjectCreationExpression(IntPtrTypeSyntax).WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(thisValue))))))))))
                 .WithSemicolonToken(SemicolonWithLineFeed);
 
-            // public static implicit operator ReadOnlySpan<char>(BSTR bstr) => bstr.Value != null ? new ReadOnlySpan<char>(bstr.Value, *((int*)bstr.Value - 1) / 2) : default;
-            TypeSyntax rosChar = MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword)));
-            IdentifierNameSyntax bstrParam = IdentifierName("bstr");
-            ExpressionSyntax bstrValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, bstrParam, IdentifierName("Value"));
-            ExpressionSyntax length = BinaryExpression(
-                SyntaxKind.DivideExpression,
-                PrefixUnaryExpression(
-                    SyntaxKind.PointerIndirectionExpression,
-                    ParenthesizedExpression(
-                        BinaryExpression(
-                            SyntaxKind.SubtractExpression,
-                            CastExpression(PointerType(PredefinedType(TokenWithNoSpace(SyntaxKind.IntKeyword))), bstrValue),
-                            LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(1))))),
-                LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(2)));
-            ExpressionSyntax rosCreation = ObjectCreationExpression(rosChar).AddArgumentListArguments(Argument(bstrValue), Argument(length));
-            ExpressionSyntax bstrNotNull = BinaryExpression(SyntaxKind.NotEqualsExpression, bstrValue, LiteralExpression(SyntaxKind.NullLiteralExpression));
-            ExpressionSyntax conditional = ConditionalExpression(bstrNotNull, rosCreation, DefaultExpression(rosChar));
-            yield return ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), rosChar)
-                .AddParameterListParameters(Parameter(bstrParam.Identifier).WithType(IdentifierName("BSTR").WithTrailingTrivia(TriviaList(Space))))
-                .WithExpressionBody(ArrowExpressionClause(conditional))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword)) // operators MUST be public
-                .WithSemicolonToken(SemicolonWithLineFeed);
+            if (this.canUseSpan)
+            {
+                // public static implicit operator ReadOnlySpan<char>(BSTR bstr) => bstr.Value != null ? new ReadOnlySpan<char>(bstr.Value, *((int*)bstr.Value - 1) / 2) : default;
+                TypeSyntax rosChar = MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword)));
+                IdentifierNameSyntax bstrParam = IdentifierName("bstr");
+                ExpressionSyntax bstrValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, bstrParam, IdentifierName("Value"));
+                ExpressionSyntax length = BinaryExpression(
+                    SyntaxKind.DivideExpression,
+                    PrefixUnaryExpression(
+                        SyntaxKind.PointerIndirectionExpression,
+                        ParenthesizedExpression(
+                            BinaryExpression(
+                                SyntaxKind.SubtractExpression,
+                                CastExpression(PointerType(PredefinedType(TokenWithNoSpace(SyntaxKind.IntKeyword))), bstrValue),
+                                LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(1))))),
+                    LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(2)));
+                ExpressionSyntax rosCreation = ObjectCreationExpression(rosChar).AddArgumentListArguments(Argument(bstrValue), Argument(length));
+                ExpressionSyntax bstrNotNull = BinaryExpression(SyntaxKind.NotEqualsExpression, bstrValue, LiteralExpression(SyntaxKind.NullLiteralExpression));
+                ExpressionSyntax conditional = ConditionalExpression(bstrNotNull, rosCreation, DefaultExpression(rosChar));
+                yield return ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), rosChar)
+                    .AddParameterListParameters(Parameter(bstrParam.Identifier).WithType(IdentifierName("BSTR").WithTrailingTrivia(TriviaList(Space))))
+                    .WithExpressionBody(ArrowExpressionClause(conditional))
+                    .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword)) // operators MUST be public
+                    .WithSemicolonToken(SemicolonWithLineFeed);
 
-            // internal ReadOnlySpan<char> AsSpan() => this;
-            yield return MethodDeclaration(rosChar, Identifier("AsSpan"))
-                .AddModifiers(TokenWithSpace(this.Visibility))
-                .WithExpressionBody(ArrowExpressionClause(ThisExpression()))
-                .WithSemicolonToken(SemicolonWithLineFeed);
+                // internal ReadOnlySpan<char> AsSpan() => this;
+                yield return MethodDeclaration(rosChar, Identifier("AsSpan"))
+                    .AddModifiers(TokenWithSpace(this.Visibility))
+                    .WithExpressionBody(ArrowExpressionClause(ThisExpression()))
+                    .WithSemicolonToken(SemicolonWithLineFeed);
+            }
         }
 
         private IEnumerable<MemberDeclarationSyntax> CreateAdditionalTypeDefPWSTRMembers()
@@ -4130,7 +4133,8 @@ namespace Microsoft.Windows.CsWin32
                 }
                 else if ((externParam.Type is PointerTypeSyntax { ElementType: TypeSyntax ptrElementType }
                     && !IsVoid(ptrElementType)
-                    && !this.IsInterface(parameterTypeInfo)) ||
+                    && !this.IsInterface(parameterTypeInfo)
+                    && this.canUseSpan) ||
                     externParam.Type is ArrayTypeSyntax)
                 {
                     TypeSyntax elementType = externParam.Type is PointerTypeSyntax ptr ? ptr.ElementType
@@ -4219,7 +4223,7 @@ namespace Microsoft.Windows.CsWin32
 
                             arguments[sizeParamIndex.Value] = Argument(sizeArgExpression);
                         }
-                        else if (sizeConst.HasValue && !isPointerToPointer)
+                        else if (sizeConst.HasValue && !isPointerToPointer && this.canUseSpan)
                         {
                             // TODO: add support for lists of pointers via a generated pointer-wrapping struct
                             signatureChanged = true;
@@ -4665,7 +4669,7 @@ namespace Microsoft.Windows.CsWin32
 #pragma warning disable SA1515 // Single-line comment should be preceded by blank line
 #pragma warning disable SA1114 // Parameter list should follow declaration
 
-            if (elementType is PredefinedTypeSyntax)
+            if (elementType is PredefinedTypeSyntax && this.canUseSpan)
             {
                 // internal unsafe readonly void CopyTo(Span<T> target, int length = 4)
                 IdentifierNameSyntax targetParameterName = IdentifierName("target");
@@ -4772,18 +4776,21 @@ namespace Microsoft.Windows.CsWin32
 
             if (elementType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.CharKeyword } })
             {
-                // internal readonly bool Equals(string value) => Equals(value.AsSpan());
-                fixedLengthStruct = fixedLengthStruct.AddMembers(
-                    MethodDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), Identifier("Equals"))
-                        .AddModifiers(Token(this.Visibility), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
-                        .AddParameterListParameters(Parameter(Identifier("value")).WithType(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword))))
-                        .WithExpressionBody(ArrowExpressionClause(InvocationExpression(
-                            IdentifierName("Equals"),
-                            ArgumentList().AddArguments(Argument(
-                                InvocationExpression(
-                                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("value"), IdentifierName("AsSpan")),
-                                    ArgumentList()))))))
-                        .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+                if (this.canUseSpan)
+                {
+                    // internal readonly bool Equals(string value) => Equals(value.AsSpan());
+                    fixedLengthStruct = fixedLengthStruct.AddMembers(
+                        MethodDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), Identifier("Equals"))
+                            .AddModifiers(Token(this.Visibility), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
+                            .AddParameterListParameters(Parameter(Identifier("value")).WithType(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword))))
+                            .WithExpressionBody(ArrowExpressionClause(InvocationExpression(
+                                IdentifierName("Equals"),
+                                ArgumentList().AddArguments(Argument(
+                                    InvocationExpression(
+                                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("value"), IdentifierName("AsSpan")),
+                                        ArgumentList()))))))
+                            .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+                }
 
                 // ...
                 //     internal unsafe readonly string ToString(int length)
@@ -4890,13 +4897,16 @@ namespace Microsoft.Windows.CsWin32
 
                 fixedLengthStruct = fixedLengthStruct.AddMembers(toStringOverride);
 
-                // public static implicit operator __char_64(string? value) => value.AsSpan();
-                fixedLengthStruct = fixedLengthStruct.AddMembers(
-                    ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), fixedLengthStructName)
-                        .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword))
-                        .AddParameterListParameters(Parameter(Identifier("value")).WithType(PredefinedType(Token(SyntaxKind.StringKeyword)).WithTrailingTrivia(TriviaList(Space))))
-                        .WithExpressionBody(ArrowExpressionClause(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("value"), IdentifierName(nameof(MemoryExtensions.AsSpan))))))
-                        .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+                if (this.canUseSpan)
+                {
+                    // public static implicit operator __char_64(string? value) => value.AsSpan();
+                    fixedLengthStruct = fixedLengthStruct.AddMembers(
+                        ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), fixedLengthStructName)
+                            .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword))
+                            .AddParameterListParameters(Parameter(Identifier("value")).WithType(PredefinedType(Token(SyntaxKind.StringKeyword)).WithTrailingTrivia(TriviaList(Space))))
+                            .WithExpressionBody(ArrowExpressionClause(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("value"), IdentifierName(nameof(MemoryExtensions.AsSpan))))))
+                            .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+                }
 
                 // public static unsafe implicit operator __char_64(ReadOnlySpan<char> value)
                 // {
@@ -4965,26 +4975,29 @@ namespace Microsoft.Windows.CsWin32
                     };
                 }
 
-                ConversionOperatorDeclarationSyntax conversionDecl =
-                    ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), fixedLengthStructName)
-                        .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword))
-                        .AddParameterListParameters(Parameter(valueParam.Identifier).WithType(MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword))).WithTrailingTrivia(TriviaList(Space))))
-                        .WithBody(Block()
-
-                            // __char_64 result = default;
-                            .AddStatements(LocalDeclarationStatement(VariableDeclaration(fixedLengthStructName).AddVariables(
-                                VariableDeclarator(resultLocalVar.Identifier).WithInitializer(EqualsValueClause(DefaultExpression(fixedLengthStructName))))))
-
-                            .AddStatements(middleBlock)
-
-                            // return result;
-                            .AddStatements(ReturnStatement(resultLocalVar)));
-                if (unsafeRequired)
+                if (this.canUseSpan)
                 {
-                    conversionDecl = conversionDecl.AddModifiers(Token(SyntaxKind.UnsafeKeyword));
-                }
+                    ConversionOperatorDeclarationSyntax conversionDecl =
+                        ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), fixedLengthStructName)
+                            .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword))
+                            .AddParameterListParameters(Parameter(valueParam.Identifier).WithType(MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword))).WithTrailingTrivia(TriviaList(Space))))
+                            .WithBody(Block()
 
-                fixedLengthStruct = fixedLengthStruct.AddMembers(conversionDecl);
+                                // __char_64 result = default;
+                                .AddStatements(LocalDeclarationStatement(VariableDeclaration(fixedLengthStructName).AddVariables(
+                                    VariableDeclarator(resultLocalVar.Identifier).WithInitializer(EqualsValueClause(DefaultExpression(fixedLengthStructName))))))
+
+                                .AddStatements(middleBlock)
+
+                                // return result;
+                                .AddStatements(ReturnStatement(resultLocalVar)));
+                    if (unsafeRequired)
+                    {
+                        conversionDecl = conversionDecl.AddModifiers(Token(SyntaxKind.UnsafeKeyword));
+                    }
+
+                    fixedLengthStruct = fixedLengthStruct.AddMembers(conversionDecl);
+                }
 
                 // Make sure .NET marshals these `char` arrays as UTF-16.
                 fixedLengthStruct = fixedLengthStruct

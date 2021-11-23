@@ -794,6 +794,7 @@ namespace Microsoft.Windows.Sdk
 
     [Theory]
     [InlineData("BOOL")]
+    [InlineData("BSTR")]
     [InlineData("HRESULT")]
     [InlineData("NTSTATUS")]
     [InlineData("PCSTR")]
@@ -810,6 +811,7 @@ namespace Microsoft.Windows.Sdk
 
     [Theory]
     [InlineData("BOOL")]
+    [InlineData("BSTR")]
     [InlineData("HRESULT")]
     [InlineData("NTSTATUS")]
     [InlineData("PCSTR")]
@@ -824,6 +826,154 @@ namespace Microsoft.Windows.Sdk
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
         Assert.Single(this.FindGeneratedType(synthesizedTypeName));
+    }
+
+    [Theory, PairwiseData]
+    public void NoFriendlyOverloadsWithSpanInNet35(bool allowMarshaling)
+    {
+        this.compilation = this.starterCompilations["net35"];
+        var options = DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling };
+        this.generator = this.CreateGenerator(options);
+        Assert.True(this.generator.TryGenerate("EvtNext", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        Assert.Single(this.FindGeneratedMethod("EvtNext"));
+    }
+
+    [Fact]
+    public void FixedLengthInlineCharArraysWorkInNet35()
+    {
+        const string expected = @"		/// <summary>Defines the attributes of a font.</summary>
+		/// <remarks>
+		/// <para>The following situations do not support ClearType antialiasing: </para>
+		/// <para>This doc was truncated.</para>
+		/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#"">Read more on docs.microsoft.com</see>.</para>
+		/// </remarks>
+		internal partial struct LOGFONTW
+		{
+			/// <summary>
+			/// <para>Type: <b>LONG</b> Specifies the height, in logical units, of the font's character cell or character. The character height value (also known as the em height) is the character cell height value minus the internal-leading value. The font mapper interprets the value specified in <b>lfHeight</b> in the following manner. </para>
+			/// <para>This doc was truncated.</para>
+			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>
+			/// </summary>
+			internal int lfHeight;
+			/// <summary>
+			/// <para>Type: <b>LONG</b> Specifies the average width, in logical units, of characters in the font. If <b>lfWidth</b> is not zero, the aspect ratio of the device is matched against the digitization aspect ratio of the available fonts to find the closest match, determined by the absolute value of the difference.</para>
+			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>
+			/// </summary>
+			internal int lfWidth;
+			/// <summary>
+			/// <para>Type: <b>LONG</b> Specifies the angle, in tenths of degrees, between the escapement vector and the x-axis of the device. The escapement vector is parallel to the base line of a row of text. The <b>lfEscapement</b> member specifies both the escapement and orientation. You should set <b>lfEscapement</b> and <b>lfOrientation</b> to the same value.</para>
+			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>
+			/// </summary>
+			internal int lfEscapement;
+			/// <summary>
+			/// <para>Type: <b>LONG</b> Specifies the angle, in tenths of degrees, between each character's base line and the x-axis of the device.</para>
+			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>
+			/// </summary>
+			internal int lfOrientation;
+			/// <summary>
+			/// <para>Type: <b>LONG</b> Specifies the weight of the font in the range 0 through 1000. For example, 400 is normal and 700 is bold. If this value is zero, a default weight is used. The following values are defined in Wingdi.h for convenience. </para>
+			/// <para>This doc was truncated.</para>
+			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>
+			/// </summary>
+			internal int lfWeight;
+			/// <summary>
+			/// <para>Type: <b>BYTE</b> <b>TRUE</b> to specify an italic font.</para>
+			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>
+			/// </summary>
+			internal byte lfItalic;
+			/// <summary>
+			/// <para>Type: <b>BYTE</b> <b>TRUE</b> to specify an underlined font.</para>
+			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>
+			/// </summary>
+			internal byte lfUnderline;
+			/// <summary>
+			/// <para>Type: <b>BYTE</b> <b>TRUE</b> to specify a strikeout font.</para>
+			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>
+			/// </summary>
+			internal byte lfStrikeOut;
+			/// <summary>
+			/// <para>Type: <b>BYTE</b> Specifies the character set. The following values are predefined: </para>
+			/// <para>This doc was truncated.</para>
+			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>
+			/// </summary>
+			internal byte lfCharSet;
+			/// <summary>Type: <b>BYTE</b></summary>
+			internal byte lfOutPrecision;
+			/// <summary>Type: <b>BYTE</b></summary>
+			internal byte lfClipPrecision;
+			/// <summary>Type: <b>BYTE</b></summary>
+			internal byte lfQuality;
+			/// <summary>Type: <b>BYTE</b></summary>
+			internal byte lfPitchAndFamily;
+			/// <summary>
+			/// <para>Type: <b>TCHAR[LF_FACESIZE]</b> Specifies a null-terminated string that specifies the typeface name of the font. The length of this string must not exceed 32 characters, including the terminating null character. The <a href=""https://docs.microsoft.com/windows/desktop/api/wingdi/nf-wingdi-enumfontfamiliesa"">EnumFontFamilies</a> function can be used to enumerate the typeface names of all currently available fonts. If <b>lfFaceName</b> is an empty string, GDI uses the first font that matches the other specified attributes.</para>
+			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>
+			/// </summary>
+			internal __char_32 lfFaceName;
+
+			[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+			internal partial struct __char_32
+			{
+				internal char _0,_1,_2,_3,_4,_5,_6,_7,_8,_9,_10,_11,_12,_13,_14,_15,_16,_17,_18,_19,_20,_21,_22,_23,_24,_25,_26,_27,_28,_29,_30,_31;
+
+				/// <summary>Always <c>32</c>.</summary>
+				internal readonly int Length => 32;
+
+				/// <summary>
+				/// Copies the fixed array to a new string up to the specified length regardless of whether there are null terminating characters.
+				/// </summary>
+				/// <exception cref=""ArgumentOutOfRangeException"">
+				/// Thrown when <paramref name=""length""/> is less than <c>0</c> or greater than <see cref=""Length""/>.
+				/// </exception>
+				internal unsafe readonly string ToString(int length)
+				{
+					if (length < 0 || length > Length)throw new ArgumentOutOfRangeException(nameof(length), length, ""Length must be between 0 and the fixed array length."");
+					fixed (char* p0 = &_0)
+						return new string(p0, 0, length);
+				}
+
+				/// <summary>
+				/// Copies the fixed array to a new string, stopping before the first null terminator character or at the end of the fixed array (whichever is shorter).
+				/// </summary>
+				public override readonly unsafe string ToString()
+				{
+					int length;
+					fixed (char* p = &_0)
+					{
+						char* pLastExclusive = p + Length;
+						char* pCh = p;
+for(;
+pCh < pLastExclusive && *pCh != '\0';
+pCh++);
+						length= checked((int)(pCh - p));
+					}
+					return ToString(length);
+				}
+			}
+		}
+";
+
+        const string expectedIndexer = @"
+	internal static partial class InlineArrayIndexerExtensions
+	{
+		internal static unsafe ref readonly char ReadOnlyItemRef(this in winmdroot.Graphics.Gdi.LOGFONTW.__char_32 @this, int index)
+		{
+			fixed (char* p0 = &@this._0)
+				return ref p0[index];
+		}
+
+		internal static unsafe ref char ItemRef(this ref winmdroot.Graphics.Gdi.LOGFONTW.__char_32 @this, int index)
+		{
+			fixed (char* p0 = &@this._0)
+				return ref p0[index];
+		}
+	}
+";
+
+        this.compilation = this.starterCompilations["net35"];
+        this.AssertGeneratedType("LOGFONTW", expected, expectedIndexer);
     }
 
     /// <summary>

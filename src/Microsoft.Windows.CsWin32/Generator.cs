@@ -2588,6 +2588,10 @@ namespace Microsoft.Windows.CsWin32
                     {
                         typeDeclaration = this.DeclareTypeDefStruct(typeDef);
                     }
+                    else if (this.IsEmptyStructWithGuid(typeDef))
+                    {
+                        typeDeclaration = this.DeclareCocreatableClass(typeDef);
+                    }
                     else
                     {
                         StructDeclarationSyntax structDeclaration = this.DeclareStruct(typeDef);
@@ -2634,6 +2638,12 @@ namespace Microsoft.Windows.CsWin32
         private bool IsUntypedDelegate(TypeDefinition typeDef) => IsUntypedDelegate(this.Reader, typeDef);
 
         private bool IsTypeDefStruct(TypeDefinition typeDef) => typeDef.GetCustomAttributes().Any(att => this.IsAttribute(this.Reader.GetCustomAttribute(att), InteropDecorationNamespace, NativeTypedefAttribute));
+
+        private bool IsEmptyStructWithGuid(TypeDefinition typeDef)
+        {
+            return typeDef.GetCustomAttributes().Any(att => this.IsAttribute(this.Reader.GetCustomAttribute(att), InteropDecorationNamespace, nameof(GuidAttribute)))
+                && typeDef.GetFields().Count == 0;
+        }
 
         private void DeclareExternMethod(MethodDefinitionHandle methodDefinitionHandle)
         {
@@ -3424,6 +3434,24 @@ namespace Microsoft.Windows.CsWin32
 
             result = this.AddApiDocumentation(name.Identifier.ValueText, result);
 
+            return result;
+        }
+
+        /// <summary>
+        /// Creates an empty class that when instantiated, creates a cocreatable Windows object
+        /// that may implement a number of interfaces at runtime, discoverable only by documentation.
+        /// </summary>
+        private ClassDeclarationSyntax DeclareCocreatableClass(TypeDefinition typeDef)
+        {
+            IdentifierNameSyntax name = IdentifierName(this.Reader.GetString(typeDef.Name));
+            Guid guid = this.FindGuidFromAttribute(typeDef) ?? throw new ArgumentException("Type does not have a GuidAttribute.");
+            var classModifiers = TokenList(TokenWithSpace(this.Visibility));
+            classModifiers = classModifiers.Add(TokenWithSpace(SyntaxKind.PartialKeyword));
+            ClassDeclarationSyntax result = ClassDeclaration(name.Identifier)
+                .WithModifiers(classModifiers)
+                .AddAttributeLists(AttributeList().AddAttributes(GUID(guid), ComImportAttribute));
+
+            result = this.AddApiDocumentation(name.Identifier.ValueText, result);
             return result;
         }
 

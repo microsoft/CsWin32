@@ -3707,19 +3707,20 @@ namespace Microsoft.Windows.CsWin32
         {
             if (this.Visibility == SyntaxKind.PublicKeyword)
             {
-                int indexOfInternal = member.Modifiers.IndexOf(SyntaxKind.InternalKeyword);
+                MemberDeclarationSyntax publicMember = member;
+                int indexOfInternal = publicMember.Modifiers.IndexOf(SyntaxKind.InternalKeyword);
                 if (indexOfInternal >= 0)
                 {
-                    MemberDeclarationSyntax publicMember = member.WithModifiers(member.Modifiers.Replace(member.Modifiers[indexOfInternal], TokenWithSpace(this.Visibility)));
-
-                    // Apply change recursively.
-                    if (publicMember is TypeDeclarationSyntax memberContainer)
-                    {
-                        publicMember = memberContainer.WithMembers(List(memberContainer.Members.Select(this.ElevateVisibility)));
-                    }
-
-                    return publicMember;
+                    publicMember = publicMember.WithModifiers(publicMember.Modifiers.Replace(publicMember.Modifiers[indexOfInternal], TokenWithSpace(this.Visibility)));
                 }
+
+                // Apply change recursively.
+                if (publicMember is TypeDeclarationSyntax memberContainer)
+                {
+                    publicMember = memberContainer.WithMembers(List(memberContainer.Members.Select(this.ElevateVisibility)));
+                }
+
+                return publicMember;
             }
 
             return member;

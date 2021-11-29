@@ -118,6 +118,45 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         }
     }
 
+    [Theory]
+    [PairwiseData]
+    public void TemplateProvidedMembersMatchVisibilityWithContainingType_Methods(bool generatePublic)
+    {
+        this.generator = this.CreateGenerator(new GeneratorOptions { Public = generatePublic });
+        Assert.True(this.generator.TryGenerate("HRESULT", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        MethodDeclarationSyntax? generatedMethod = this.FindGeneratedMethod("ThrowOnFailure").Single();
+        SyntaxKind expectedVisibility = generatePublic ? SyntaxKind.PublicKeyword : SyntaxKind.InternalKeyword;
+        Assert.True(generatedMethod.Modifiers.Any(expectedVisibility));
+    }
+
+    [Theory]
+    [PairwiseData]
+    public void TemplateProvidedMembersMatchVisibilityWithContainingType_OtherMemberTypes(bool generatePublic)
+    {
+        this.generator = this.CreateGenerator(new GeneratorOptions { Public = generatePublic });
+        Assert.True(this.generator.TryGenerate("PCSTR", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        StructDeclarationSyntax? pcstrType = (StructDeclarationSyntax?)this.FindGeneratedType("PCSTR").Single();
+        SyntaxKind expectedVisibility = generatePublic ? SyntaxKind.PublicKeyword : SyntaxKind.InternalKeyword;
+
+        // Assert fields
+        Assert.Contains(pcstrType?.Members.OfType<FieldDeclarationSyntax>(), f => f.Declaration.Variables.Any(v => v.Identifier.ValueText == "Value") && f.Modifiers.Any(expectedVisibility));
+
+        // Assert properties
+        Assert.Contains(pcstrType?.Members.OfType<PropertyDeclarationSyntax>(), p => p.Identifier.ValueText == "Length" && p.Modifiers.Any(expectedVisibility));
+
+        // Assert constructors
+        Assert.All(pcstrType?.Members.OfType<ConstructorDeclarationSyntax>(), c => c.Modifiers.Any(expectedVisibility));
+
+        // Assert that private members remain private.
+        Assert.Contains(pcstrType?.Members.OfType<PropertyDeclarationSyntax>(), p => p.Identifier.ValueText == "DebuggerDisplay" && p.Modifiers.Any(SyntaxKind.PrivateKeyword));
+    }
+
     [Fact]
     public void SupportedOSPlatform_AppearsOnFriendlyOverloads()
     {

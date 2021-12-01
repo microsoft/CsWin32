@@ -49,7 +49,7 @@
     <PackageReference Include="Microsoft.Windows.SDK.Win32Docs" Version="$(ApiDocsVersion)" GeneratePathProperty="true" PrivateAssets="none" />
     <PackageReference Include="Nullable" Version="1.3.0" />
     <PackageReference Include="System.Memory" Version="4.5.4" PrivateAssets="none" />
-    <PackageReference Include="System.Reflection.Metadata" Version="5.0.0" />
+    <PackageReference Include="System.Reflection.Metadata" Version="6.0.0" />
     <PackageReference Include="System.Text.Encodings.Web" Version="4.7.2" />
     <PackageReference Include="System.Text.Json" Version="4.7.2" />
   </ItemGroup>

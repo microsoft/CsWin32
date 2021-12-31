@@ -24,6 +24,7 @@ jobs:
     vmImage: Ubuntu 18.04
   variables:
     TestFilter: "&WindowsOnly!=true"
+    Platform: NonWindows
   steps:
   - checkout: self
     clean: true
@@ -37,6 +38,7 @@ jobs:
     vmImage: macOS-10.15
   variables:
     TestFilter: "&WindowsOnly!=true"
+    Platform: NonWindows
   steps:
   - checkout: self
     clean: true

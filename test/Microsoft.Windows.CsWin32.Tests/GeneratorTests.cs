@@ -8,12 +8,14 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Testing;
+using Microsoft.CodeAnalysis.Text;
 using Microsoft.Windows.CsWin32;
 using Microsoft.Windows.CsWin32.Tests;
 using Xunit;
@@ -24,9 +26,14 @@ using VerifyTest = Microsoft.CodeAnalysis.CSharp.Testing.CSharpSourceGeneratorTe
 
 public class GeneratorTests : IDisposable, IAsyncLifetime
 {
+    private const string WinRTCustomMarshalerClass = "WinRTCustomMarshaler";
+    private const string WinRTCustomMarshalerNamespace = "Windows.Win32.CsWin32.InteropServices";
+    private const string WinRTCustomMarshalerFullName = WinRTCustomMarshalerNamespace + "." + WinRTCustomMarshalerClass;
+
     private static readonly GeneratorOptions DefaultTestGeneratorOptions = new GeneratorOptions { EmitSingleFile = true };
     private static readonly string FileSeparator = new string('=', 140);
     private static readonly string MetadataPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "Windows.Win32.winmd");
+    ////private static readonly string DiaMetadataPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "Microsoft.Dia.winmd");
     private static readonly string ApiDocsPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "apidocs.msgpack");
     private readonly ITestOutputHelper logger;
     private readonly Dictionary<string, CSharpCompilation> starterCompilations = new();
@@ -49,14 +56,14 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public static IEnumerable<object[]> TFMData =>
         new object[][]
         {
-            new object[] { "net40" },
+            new object[] { "net35" },
             new object[] { "netstandard2.0" },
             new object[] { "net5.0" },
         };
 
     public async Task InitializeAsync()
     {
-        this.starterCompilations.Add("net40", await this.CreateCompilationAsync(MyReferenceAssemblies.NetFramework.Net40));
+        this.starterCompilations.Add("net35", await this.CreateCompilationAsync(MyReferenceAssemblies.NetFramework.Net35));
         this.starterCompilations.Add("netstandard2.0", await this.CreateCompilationAsync(MyReferenceAssemblies.NetStandard20));
         this.starterCompilations.Add("net5.0", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net50));
         this.starterCompilations.Add("net5.0-x86", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net50, Platform.X86));
@@ -91,7 +98,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.compilation = this.starterCompilations[tfm];
         this.generator = this.CreateGenerator();
         const string methodName = "GetTickCount";
-        Assert.True(this.generator.TryGenerateExternMethod(methodName));
+        Assert.True(this.generator.TryGenerateExternMethod(methodName, out _));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
 
@@ -105,10 +112,49 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             Assert.DoesNotContain(generatedMethod.AttributeLists, al => IsAttributePresent(al, "SupportedOSPlatform"));
         }
 
-        if (tfm != "net40")
+        if (tfm != "net35")
         {
             Assert.Contains(generatedMethod.AttributeLists, al => IsAttributePresent(al, "DefaultDllImportSearchPaths"));
         }
+    }
+
+    [Theory]
+    [PairwiseData]
+    public void TemplateProvidedMembersMatchVisibilityWithContainingType_Methods(bool generatePublic)
+    {
+        this.generator = this.CreateGenerator(new GeneratorOptions { Public = generatePublic });
+        Assert.True(this.generator.TryGenerate("HRESULT", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        MethodDeclarationSyntax? generatedMethod = this.FindGeneratedMethod("ThrowOnFailure").Single();
+        SyntaxKind expectedVisibility = generatePublic ? SyntaxKind.PublicKeyword : SyntaxKind.InternalKeyword;
+        Assert.True(generatedMethod.Modifiers.Any(expectedVisibility));
+    }
+
+    [Theory]
+    [PairwiseData]
+    public void TemplateProvidedMembersMatchVisibilityWithContainingType_OtherMemberTypes(bool generatePublic)
+    {
+        this.generator = this.CreateGenerator(new GeneratorOptions { Public = generatePublic });
+        Assert.True(this.generator.TryGenerate("PCSTR", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        StructDeclarationSyntax? pcstrType = (StructDeclarationSyntax?)this.FindGeneratedType("PCSTR").Single();
+        SyntaxKind expectedVisibility = generatePublic ? SyntaxKind.PublicKeyword : SyntaxKind.InternalKeyword;
+
+        // Assert fields
+        Assert.Contains(pcstrType?.Members.OfType<FieldDeclarationSyntax>(), f => f.Declaration.Variables.Any(v => v.Identifier.ValueText == "Value") && f.Modifiers.Any(expectedVisibility));
+
+        // Assert properties
+        Assert.Contains(pcstrType?.Members.OfType<PropertyDeclarationSyntax>(), p => p.Identifier.ValueText == "Length" && p.Modifiers.Any(expectedVisibility));
+
+        // Assert constructors
+        Assert.All(pcstrType?.Members.OfType<ConstructorDeclarationSyntax>(), c => c.Modifiers.Any(expectedVisibility));
+
+        // Assert that private members remain private.
+        Assert.Contains(pcstrType?.Members.OfType<PropertyDeclarationSyntax>(), p => p.Identifier.ValueText == "DebuggerDisplay" && p.Modifiers.Any(SyntaxKind.PrivateKeyword));
     }
 
     [Fact]
@@ -200,6 +246,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             "LocalSystemTimeToLocalFileTime", // small step
             "WSAHtons", // A method that references SOCKET (which is typed as UIntPtr) so that a SafeHandle will be generated.
             "IDelayedPropertyStoreFactory", // interface inheritance across namespaces
+            "D3D9ON12_ARGS", // Contains an inline array of IUnknown objects
             "ID3D12Resource", // COM interface with base types
             "ID2D1RectangleGeometry")] // COM interface with base types
         string api,
@@ -264,6 +311,51 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
         Assert.Contains(this.FindGeneratedType(ifaceName), t => t.BaseList is null && ((InterfaceDeclarationSyntax)t).Members.Count == 1 && t.AttributeLists.Any(al => al.Attributes.Any(a => a.Name is IdentifierNameSyntax { Identifier: { ValueText: "InterfaceType" } } && a.ArgumentList?.Arguments[0].Expression is MemberAccessExpressionSyntax { Name: IdentifierNameSyntax { Identifier: { ValueText: nameof(ComInterfaceType.InterfaceIsIInspectable) } } })));
+
+        // Make sure the WinRT marshaler was not brought in
+        Assert.Empty(this.FindGeneratedType(WinRTCustomMarshalerClass));
+    }
+
+    [Fact]
+    public void WinRTInterfaceDoesntBringInMarshalerIfParamNotObject()
+    {
+        const string WinRTInteropInterfaceName = "IGraphicsEffectD2D1Interop";
+
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate(WinRTInteropInterfaceName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        // Make sure the WinRT marshaler was not brought in
+        Assert.Empty(this.FindGeneratedType(WinRTCustomMarshalerClass));
+    }
+
+    [Fact]
+    public void WinRTInterfaceWithWinRTOutObjectUsesMarshaler()
+    {
+        const string WinRTInteropInterfaceName = "ICompositorDesktopInterop";
+        const string WinRTClassName = "Windows.UI.Composition.Desktop.DesktopWindowTarget";
+
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate(WinRTInteropInterfaceName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        InterfaceDeclarationSyntax interfaceDeclaration = (InterfaceDeclarationSyntax)Assert.Single(this.FindGeneratedType(WinRTInteropInterfaceName));
+        MethodDeclarationSyntax method = (MethodDeclarationSyntax)interfaceDeclaration.Members.First();
+        ParameterSyntax lastParam = method.ParameterList.Parameters.Last();
+
+        Assert.Equal($"global::{WinRTClassName}", lastParam.Type?.ToString());
+        Assert.True(lastParam.Modifiers.Any(SyntaxKind.OutKeyword));
+
+        AttributeSyntax marshalAsAttr = Assert.Single(FindAttribute(lastParam.AttributeLists, "MarshalAs"));
+
+        Assert.True(marshalAsAttr.ArgumentList?.Arguments[0].ToString() == "UnmanagedType.CustomMarshaler");
+        Assert.Single(marshalAsAttr.ArgumentList?.Arguments.Where(arg => arg.ToString() == $"MarshalCookie = \"{WinRTClassName}\""));
+        Assert.Single(marshalAsAttr.ArgumentList?.Arguments.Where(arg => arg.ToString() == $"MarshalType = \"{WinRTCustomMarshalerFullName}\""));
+
+        // Make sure the WinRT marshaler was brought in
+        Assert.Single(this.FindGeneratedType(WinRTCustomMarshalerClass));
     }
 
     [Fact]
@@ -281,8 +373,10 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public void AmbiguousApiName()
     {
         this.generator = this.CreateGenerator();
-        var ex = Assert.Throws<ArgumentException>(() => this.generator.TryGenerate("IDENTITY_TYPE", CancellationToken.None));
-        this.logger.WriteLine(ex.Message);
+        Assert.False(this.generator.TryGenerate("IDENTITY_TYPE", out IReadOnlyList<string> preciseApi, CancellationToken.None));
+        Assert.Equal(2, preciseApi.Count);
+        Assert.Contains("Windows.Win32.NetworkManagement.NetworkPolicyServer.IDENTITY_TYPE", preciseApi);
+        Assert.Contains("Windows.Win32.Security.Authentication.Identity.Provider.IDENTITY_TYPE", preciseApi);
     }
 
     [Fact]
@@ -329,16 +423,39 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
                 && createFileMethod.ParameterList.Parameters.Last().Type?.ToString() == "SafeHandle");
     }
 
+    /// <summary>
+    /// GetMessage should return BOOL rather than bool because it actually returns any of THREE values.
+    /// </summary>
     [Fact]
-    public void BOOL_ReturnTypeBecomes_Boolean()
+    public void GetMessageW_ReturnsBOOL()
     {
         this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate("WinUsb_FlushPipe", CancellationToken.None));
+        Assert.True(this.generator.TryGenerate("GetMessage", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
-        MethodDeclarationSyntax? createFileMethod = this.FindGeneratedMethod("WinUsb_FlushPipe").FirstOrDefault();
-        Assert.NotNull(createFileMethod);
-        Assert.Equal(SyntaxKind.BoolKeyword, Assert.IsType<PredefinedTypeSyntax>(createFileMethod!.ReturnType).Keyword.Kind());
+        Assert.All(this.FindGeneratedMethod("GetMessage"), method => Assert.True(method.ReturnType is QualifiedNameSyntax { Right: { Identifier: { ValueText: "BOOL" } } }));
+    }
+
+    [Theory, PairwiseData]
+    public void NativeArray_OfManagedTypes_MarshaledAsLPArray(bool allowMarshaling)
+    {
+        const string ifaceName = "ID3D11DeviceContext";
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling });
+        Assert.True(this.generator.TryGenerate(ifaceName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        var generatedMethod = this.FindGeneratedMethod("OMSetRenderTargets").Where(m => m.ParameterList.Parameters.Count == 3 && m.ParameterList.Parameters[0].Identifier.ValueText == "NumViews").FirstOrDefault();
+        Assert.NotNull(generatedMethod);
+
+        if (allowMarshaling)
+        {
+            Assert.Contains(generatedMethod!.ParameterList.Parameters[1].AttributeLists, al => IsAttributePresent(al, "MarshalAs"));
+        }
+        else
+        {
+            Assert.DoesNotContain(generatedMethod!.ParameterList.Parameters[1].AttributeLists, al => IsAttributePresent(al, "MarshalAs"));
+        }
     }
 
     [Theory, PairwiseData]
@@ -505,6 +622,21 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         Assert.Equal(2, overloads.Count());
     }
 
+    ////[Fact]
+    ////public void CrossWinmdTypeReference()
+    ////{
+    ////    this.generator = this.CreateGenerator();
+    ////    using Generator diaGenerator = this.CreateGenerator(DiaMetadataPath);
+    ////    var super = SuperGenerator.Combine(this.generator, diaGenerator);
+    ////    Assert.True(diaGenerator.TryGenerate("E_PDB_NOT_FOUND", CancellationToken.None));
+    ////    this.CollectGeneratedCode(this.generator);
+    ////    this.CollectGeneratedCode(diaGenerator);
+    ////    this.AssertNoDiagnostics();
+
+    ////    Assert.Single(this.FindGeneratedType("HRESULT"));
+    ////    Assert.Single(this.FindGeneratedConstant("E_PDB_NOT_FOUND"));
+    ////}
+
     [Theory, CombinatorialData]
     public void ArchitectureSpecificAPIsTreatment(
         [CombinatorialValues("MEMORY_BASIC_INFORMATION", "SP_PROPCHANGE_PARAMS", "JsCreateContext", "IShellBrowser")] string apiName,
@@ -619,6 +751,45 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
+    public void PROC_GeneratedAsStruct()
+    {
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate("PROC", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        BaseTypeDeclarationSyntax type = Assert.Single(this.FindGeneratedType("PROC"));
+        Assert.IsType<StructDeclarationSyntax>(type);
+    }
+
+    [Theory]
+    [MemberData(nameof(TFMData))]
+    public void FARPROC_GeneratedAsStruct(string tfm)
+    {
+        this.compilation = this.starterCompilations[tfm];
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate("FARPROC", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        BaseTypeDeclarationSyntax type = Assert.Single(this.FindGeneratedType("FARPROC"));
+        Assert.IsType<StructDeclarationSyntax>(type);
+    }
+
+    [Theory, PairwiseData]
+    public void FARPROC_AsFieldType(bool allowMarshaling)
+    {
+        this.generator = this.CreateGenerator(new GeneratorOptions { AllowMarshaling = allowMarshaling });
+        Assert.True(this.generator.TryGenerate("EXTPUSH", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        StructDeclarationSyntax type = Assert.IsType<StructDeclarationSyntax>(Assert.Single(this.FindGeneratedType("_Anonymous1_e__Union")));
+        var callback = (FieldDeclarationSyntax)type.Members[1];
+        Assert.True(callback.Declaration.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "FARPROC" } } }, "Field type was " + callback.Declaration.Type);
+    }
+
+    [Fact]
     public void GetLastErrorGenerationThrowsWhenExplicitlyCalled()
     {
         this.generator = this.CreateGenerator();
@@ -660,6 +831,190 @@ namespace Microsoft.Windows.Sdk
         this.AssertNoDiagnostics();
     }
 
+    [Theory]
+    [InlineData("BOOL")]
+    [InlineData("BSTR")]
+    [InlineData("HRESULT")]
+    [InlineData("NTSTATUS")]
+    [InlineData("PCSTR")]
+    [InlineData("PCWSTR")]
+    [InlineData("PWSTR")]
+    public void SynthesizedTypesCanBeDirectlyRequested(string synthesizedTypeName)
+    {
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate(synthesizedTypeName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        Assert.Single(this.FindGeneratedType(synthesizedTypeName));
+    }
+
+    [Theory]
+    [InlineData("BOOL")]
+    [InlineData("BSTR")]
+    [InlineData("HRESULT")]
+    [InlineData("NTSTATUS")]
+    [InlineData("PCSTR")]
+    [InlineData("PCWSTR")]
+    [InlineData("PWSTR")]
+    public void SynthesizedTypesWorkInNet35(string synthesizedTypeName)
+    {
+        this.compilation = this.starterCompilations["net35"];
+        this.generator = this.CreateGenerator();
+
+        Assert.True(this.generator.TryGenerate(synthesizedTypeName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        Assert.Single(this.FindGeneratedType(synthesizedTypeName));
+    }
+
+    [Theory, PairwiseData]
+    public void NoFriendlyOverloadsWithSpanInNet35(bool allowMarshaling)
+    {
+        this.compilation = this.starterCompilations["net35"];
+        var options = DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling };
+        this.generator = this.CreateGenerator(options);
+        Assert.True(this.generator.TryGenerate("EvtNext", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        Assert.Single(this.FindGeneratedMethod("EvtNext"));
+    }
+
+    [Fact]
+    public void FixedLengthInlineCharArraysWorkInNet35()
+    {
+        const string expected = @"		/// <summary>Defines the attributes of a font.</summary>
+		/// <remarks>
+		/// <para>The following situations do not support ClearType antialiasing: </para>
+		/// <para>This doc was truncated.</para>
+		/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#"">Read more on docs.microsoft.com</see>.</para>
+		/// </remarks>
+		internal partial struct LOGFONTW
+		{
+			/// <summary>
+			/// <para>Type: <b>LONG</b> Specifies the height, in logical units, of the font's character cell or character. The character height value (also known as the em height) is the character cell height value minus the internal-leading value. The font mapper interprets the value specified in <b>lfHeight</b> in the following manner. </para>
+			/// <para>This doc was truncated.</para>
+			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>
+			/// </summary>
+			internal int lfHeight;
+			/// <summary>
+			/// <para>Type: <b>LONG</b> Specifies the average width, in logical units, of characters in the font. If <b>lfWidth</b> is not zero, the aspect ratio of the device is matched against the digitization aspect ratio of the available fonts to find the closest match, determined by the absolute value of the difference.</para>
+			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>
+			/// </summary>
+			internal int lfWidth;
+			/// <summary>
+			/// <para>Type: <b>LONG</b> Specifies the angle, in tenths of degrees, between the escapement vector and the x-axis of the device. The escapement vector is parallel to the base line of a row of text. The <b>lfEscapement</b> member specifies both the escapement and orientation. You should set <b>lfEscapement</b> and <b>lfOrientation</b> to the same value.</para>
+			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>
+			/// </summary>
+			internal int lfEscapement;
+			/// <summary>
+			/// <para>Type: <b>LONG</b> Specifies the angle, in tenths of degrees, between each character's base line and the x-axis of the device.</para>
+			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>
+			/// </summary>
+			internal int lfOrientation;
+			/// <summary>
+			/// <para>Type: <b>LONG</b> Specifies the weight of the font in the range 0 through 1000. For example, 400 is normal and 700 is bold. If this value is zero, a default weight is used. The following values are defined in Wingdi.h for convenience. </para>
+			/// <para>This doc was truncated.</para>
+			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>
+			/// </summary>
+			internal int lfWeight;
+			/// <summary>
+			/// <para>Type: <b>BYTE</b> <b>TRUE</b> to specify an italic font.</para>
+			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>
+			/// </summary>
+			internal byte lfItalic;
+			/// <summary>
+			/// <para>Type: <b>BYTE</b> <b>TRUE</b> to specify an underlined font.</para>
+			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>
+			/// </summary>
+			internal byte lfUnderline;
+			/// <summary>
+			/// <para>Type: <b>BYTE</b> <b>TRUE</b> to specify a strikeout font.</para>
+			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>
+			/// </summary>
+			internal byte lfStrikeOut;
+			/// <summary>
+			/// <para>Type: <b>BYTE</b> Specifies the character set. The following values are predefined: </para>
+			/// <para>This doc was truncated.</para>
+			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>
+			/// </summary>
+			internal byte lfCharSet;
+			/// <summary>Type: <b>BYTE</b></summary>
+			internal byte lfOutPrecision;
+			/// <summary>Type: <b>BYTE</b></summary>
+			internal byte lfClipPrecision;
+			/// <summary>Type: <b>BYTE</b></summary>
+			internal byte lfQuality;
+			/// <summary>Type: <b>BYTE</b></summary>
+			internal byte lfPitchAndFamily;
+			/// <summary>
+			/// <para>Type: <b>TCHAR[LF_FACESIZE]</b> Specifies a null-terminated string that specifies the typeface name of the font. The length of this string must not exceed 32 characters, including the terminating null character. The <a href=""https://docs.microsoft.com/windows/desktop/api/wingdi/nf-wingdi-enumfontfamiliesa"">EnumFontFamilies</a> function can be used to enumerate the typeface names of all currently available fonts. If <b>lfFaceName</b> is an empty string, GDI uses the first font that matches the other specified attributes.</para>
+			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>
+			/// </summary>
+			internal __char_32 lfFaceName;
+
+			[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+			internal partial struct __char_32
+			{
+				internal char _0,_1,_2,_3,_4,_5,_6,_7,_8,_9,_10,_11,_12,_13,_14,_15,_16,_17,_18,_19,_20,_21,_22,_23,_24,_25,_26,_27,_28,_29,_30,_31;
+
+				/// <summary>Always <c>32</c>.</summary>
+				internal readonly int Length => 32;
+
+				/// <summary>
+				/// Copies the fixed array to a new string up to the specified length regardless of whether there are null terminating characters.
+				/// </summary>
+				/// <exception cref=""ArgumentOutOfRangeException"">
+				/// Thrown when <paramref name=""length""/> is less than <c>0</c> or greater than <see cref=""Length""/>.
+				/// </exception>
+				internal unsafe readonly string ToString(int length)
+				{
+					if (length < 0 || length > Length)throw new ArgumentOutOfRangeException(nameof(length), length, ""Length must be between 0 and the fixed array length."");
+					fixed (char* p0 = &_0)
+						return new string(p0, 0, length);
+				}
+
+				/// <summary>
+				/// Copies the fixed array to a new string, stopping before the first null terminator character or at the end of the fixed array (whichever is shorter).
+				/// </summary>
+				public override readonly unsafe string ToString()
+				{
+					int length;
+					fixed (char* p = &_0)
+					{
+						char* pLastExclusive = p + Length;
+						char* pCh = p;
+for(;
+pCh < pLastExclusive && *pCh != '\0';
+pCh++);
+						length= checked((int)(pCh - p));
+					}
+					return ToString(length);
+				}
+			}
+		}
+";
+
+        const string expectedIndexer = @"
+	internal static partial class InlineArrayIndexerExtensions
+	{
+		internal static unsafe ref readonly char ReadOnlyItemRef(this in winmdroot.Graphics.Gdi.LOGFONTW.__char_32 @this, int index)
+		{
+			fixed (char* p0 = &@this._0)
+				return ref p0[index];
+		}
+
+		internal static unsafe ref char ItemRef(this ref winmdroot.Graphics.Gdi.LOGFONTW.__char_32 @this, int index)
+		{
+			fixed (char* p0 = &@this._0)
+				return ref p0[index];
+		}
+	}
+";
+
+        this.compilation = this.starterCompilations["net35"];
+        this.AssertGeneratedType("LOGFONTW", expected, expectedIndexer);
+    }
+
     /// <summary>
     /// Validates that where MemoryMarshal.CreateSpan isn't available, a substitute indexer is offered.
     /// </summary>
@@ -680,12 +1035,44 @@ namespace Microsoft.Windows.Sdk
 			internal uint dwHeight;
 			internal __uint_4 dwReserved;
 
-			internal struct __uint_4
+			internal partial struct __uint_4
 			{
 				internal uint _0,_1,_2,_3;
 
 				/// <summary>Always <c>4</c>.</summary>
-				internal int Length => 4;
+				internal readonly int Length => 4;
+
+				internal unsafe readonly void CopyTo(Span<uint> target, int length = 4)
+				{
+					if (length > 4)throw new ArgumentOutOfRangeException(""length"");
+					fixed (uint* p0 = &_0)
+for(int i = 0;
+i < length;
+i++)						target[i]= p0[i];
+				}
+
+				internal readonly uint[] ToArray(int length = 4)
+				{
+					if (length > 4)throw new ArgumentOutOfRangeException(""length"");
+					uint[] target = new uint[length];
+					CopyTo(target, length);
+					return target;
+				}
+
+				internal unsafe readonly bool Equals(ReadOnlySpan<uint> value)
+				{
+					fixed (uint* p0 = &_0)
+					{
+ 						int commonLength = Math.Min(value.Length, 4);
+for(int i = 0;
+i < commonLength;
+i++)						if (p0[i] != value[i])							return false;
+for(int i = commonLength;
+i < 4;
+i++)						if (p0[i] != default(uint))							return false;
+					}
+					return true;
+				}
 			}
 		}
 ";
@@ -693,13 +1080,13 @@ namespace Microsoft.Windows.Sdk
         const string expectedIndexer = @"
 	internal static partial class InlineArrayIndexerExtensions
 	{
-		internal static unsafe ref readonly uint ReadOnlyItemRef(this in win32.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
+		internal static unsafe ref readonly uint ReadOnlyItemRef(this in winmdroot.Media.DirectShow.MainAVIHeader.__uint_4 @this, int index)
 		{
 			fixed (uint* p0 = &@this._0)
 				return ref p0[index];
 		}
 
-		internal static unsafe ref uint ItemRef(this ref win32.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
+		internal static unsafe ref uint ItemRef(this ref winmdroot.Media.DirectShow.MainAVIHeader.__uint_4 @this, int index)
 		{
 			fixed (uint* p0 = &@this._0)
 				return ref p0[index];
@@ -730,12 +1117,12 @@ namespace Microsoft.Windows.Sdk
 			internal uint dwHeight;
 			internal __uint_4 dwReserved;
 
-			internal struct __uint_4
+			internal partial struct __uint_4
 			{
 				internal uint _0,_1,_2,_3;
 
 				/// <summary>Always <c>4</c>.</summary>
-				internal int Length => 4;
+				internal readonly int Length => 4;
 
 				/// <summary>
 				/// Gets a ref to an individual element of the inline array.
@@ -750,6 +1137,38 @@ namespace Microsoft.Windows.Sdk
 				/// ⚠ Important ⚠: When this struct is on the stack, do not let the returned span outlive the stack frame that defines it.
 				/// </remarks>
 				internal Span<uint> AsSpan() => MemoryMarshal.CreateSpan(ref _0, 4);
+
+				internal unsafe readonly void CopyTo(Span<uint> target, int length = 4)
+				{
+					if (length > 4)throw new ArgumentOutOfRangeException(""length"");
+					fixed (uint* p0 = &_0)
+for(int i = 0;
+i < length;
+i++)						target[i]= p0[i];
+				}
+
+				internal readonly uint[] ToArray(int length = 4)
+				{
+					if (length > 4)throw new ArgumentOutOfRangeException(""length"");
+					uint[] target = new uint[length];
+					CopyTo(target, length);
+					return target;
+				}
+
+				internal unsafe readonly bool Equals(ReadOnlySpan<uint> value)
+				{
+					fixed (uint* p0 = &_0)
+					{
+ 						int commonLength = Math.Min(value.Length, 4);
+for(int i = 0;
+i < commonLength;
+i++)						if (p0[i] != value[i])							return false;
+for(int i = commonLength;
+i < 4;
+i++)						if (p0[i] != default(uint))							return false;
+					}
+					return true;
+				}
 			}
 		}
 ";
@@ -757,13 +1176,13 @@ namespace Microsoft.Windows.Sdk
         const string expectedIndexer = @"
 	internal static partial class InlineArrayIndexerExtensions
 	{
-		internal static unsafe ref readonly uint ReadOnlyItemRef(this in win32.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
+		internal static unsafe ref readonly uint ReadOnlyItemRef(this in winmdroot.Media.DirectShow.MainAVIHeader.__uint_4 @this, int index)
 		{
 			fixed (uint* p0 = &@this._0)
 				return ref p0[index];
 		}
 
-		internal static unsafe ref uint ItemRef(this ref win32.Graphics.DirectShow.MainAVIHeader.__uint_4 @this, int index)
+		internal static unsafe ref uint ItemRef(this ref winmdroot.Media.DirectShow.MainAVIHeader.__uint_4 @this, int index)
 		{
 			fixed (uint* p0 = &@this._0)
 				return ref p0[index];
@@ -773,6 +1192,24 @@ namespace Microsoft.Windows.Sdk
 
         this.compilation = this.starterCompilations["net5.0"];
         this.AssertGeneratedType("MainAVIHeader", expected, expectedIndexer);
+    }
+
+    [Fact]
+    public void NullMethodsClass()
+    {
+        Assert.Throws<InvalidOperationException>(() => this.CreateGenerator(new GeneratorOptions { ClassName = null! }));
+    }
+
+    [Fact]
+    public void RenamedMethodsClass()
+    {
+        this.generator = this.CreateGenerator(new GeneratorOptions { ClassName = "MyPInvoke" });
+        Assert.True(this.generator.TryGenerate("GetTickCount", CancellationToken.None));
+        Assert.True(this.generator.TryGenerate("CDB_REPORT_BITS", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        Assert.NotEmpty(this.FindGeneratedType("MyPInvoke"));
+        Assert.Empty(this.FindGeneratedType("PInvoke"));
     }
 
     [Theory, PairwiseData]
@@ -814,29 +1251,22 @@ namespace Microsoft.Windows.Sdk
     [Fact]
     public async Task TestSimpleStructure()
     {
-        var basePath = this.GetType().Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().SingleOrDefault(metadata => metadata.Key == "MicrosoftWindowsSdkWin32MetadataBasePath")?.Value;
-        var docsPath = this.GetType().Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().SingleOrDefault(metadata => metadata.Key == "MicrosoftWindowsSdkApiDocsPath")?.Value;
-
-        var globalconfig = $@"is_global = true
-
-build_property.MicrosoftWindowsSdkApiDocsPath = {docsPath}
-build_property.MicrosoftWindowsSdkWin32MetadataBasePath = {basePath}
-";
         await new VerifyTest
         {
             TestState =
             {
+                ReferenceAssemblies = MyReferenceAssemblies.NetStandard20,
                 AdditionalFiles =
                 {
                     ("NativeMethods.txt", "BOOL"),
                 },
                 AnalyzerConfigFiles =
                 {
-                    ("/.globalconfig", globalconfig),
+                    ("/.globalconfig", ConstructGlobalConfigString()),
                 },
                 GeneratedSources =
                 {
-                    (typeof(SourceGenerator), "BOOL.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.BOOL.g.cs", @"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -845,14 +1275,14 @@ build_property.MicrosoftWindowsSdkWin32MetadataBasePath = {basePath}
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
 namespace Windows.Win32
 {
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 	namespace Foundation
 	{
@@ -861,9 +1291,13 @@ namespace Windows.Win32
 			private readonly int value;
 
 			internal int Value => this.value;
-			internal BOOL(bool value) => this.value = value ? 1 : 0;
+			internal unsafe BOOL(bool value) => this.value = *(sbyte*)&value;
 			internal BOOL(int value) => this.value = value;
-			public static implicit operator bool(BOOL value) => value.Value != 0;
+			public static unsafe implicit operator bool(BOOL value)
+			{
+				sbyte v = checked((sbyte)value.value);
+				return *(bool*)&v;
+			}
 			public static implicit operator BOOL(bool value) => new BOOL(value);
 			public static explicit operator BOOL(int value) => new BOOL(value);
 		}
@@ -878,29 +1312,22 @@ namespace Windows.Win32
     [Fact]
     public async Task TestSimpleEnum()
     {
-        var basePath = this.GetType().Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().SingleOrDefault(metadata => metadata.Key == "MicrosoftWindowsSdkWin32MetadataBasePath")?.Value;
-        var docsPath = this.GetType().Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().SingleOrDefault(metadata => metadata.Key == "MicrosoftWindowsSdkApiDocsPath")?.Value;
-
-        var globalconfig = $@"is_global = true
-
-build_property.MicrosoftWindowsSdkApiDocsPath = {docsPath}
-build_property.MicrosoftWindowsSdkWin32MetadataBasePath = {basePath}
-";
         await new VerifyTest
         {
             TestState =
             {
+                ReferenceAssemblies = MyReferenceAssemblies.NetStandard20,
                 AdditionalFiles =
                 {
                     ("NativeMethods.txt", "DISPLAYCONFIG_SCANLINE_ORDERING"),
                 },
                 AnalyzerConfigFiles =
                 {
-                    ("/.globalconfig", globalconfig),
+                    ("/.globalconfig", ConstructGlobalConfigString()),
                 },
                 GeneratedSources =
                 {
-                    (typeof(SourceGenerator), "DISPLAYCONFIG_SCANLINE_ORDERING.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.DISPLAYCONFIG_SCANLINE_ORDERING.g.cs", @"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -909,16 +1336,16 @@ build_property.MicrosoftWindowsSdkWin32MetadataBasePath = {basePath}
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
 namespace Windows.Win32
 {
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
-	namespace UI.DisplayDevices
+	namespace Devices.Display
 	{
 		/// <summary>The DISPLAYCONFIG_SCANLINE_ORDERING enumeration specifies the method that the display uses to create an image on a screen.</summary>
 		/// <remarks>
@@ -950,27 +1377,22 @@ namespace Windows.Win32
     [Fact]
     public async Task TestSimpleEnumWithoutDocs()
     {
-        var basePath = this.GetType().Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().SingleOrDefault(metadata => metadata.Key == "MicrosoftWindowsSdkWin32MetadataBasePath")?.Value;
-
-        var globalconfig = $@"is_global = true
-
-build_property.MicrosoftWindowsSdkWin32MetadataBasePath = {basePath}
-";
         await new VerifyTest
         {
             TestState =
             {
+                ReferenceAssemblies = MyReferenceAssemblies.NetStandard20,
                 AdditionalFiles =
                 {
                     ("NativeMethods.txt", "DISPLAYCONFIG_SCANLINE_ORDERING"),
                 },
                 AnalyzerConfigFiles =
                 {
-                    ("/.globalconfig", globalconfig),
+                    ("/.globalconfig", ConstructGlobalConfigString(omitDocs: true)),
                 },
                 GeneratedSources =
                 {
-                    (typeof(SourceGenerator), "DISPLAYCONFIG_SCANLINE_ORDERING.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.DISPLAYCONFIG_SCANLINE_ORDERING.g.cs", @"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -979,16 +1401,16 @@ build_property.MicrosoftWindowsSdkWin32MetadataBasePath = {basePath}
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
 namespace Windows.Win32
 {
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
-	namespace UI.DisplayDevices
+	namespace Devices.Display
 	{
 		internal enum DISPLAYCONFIG_SCANLINE_ORDERING
 		{
@@ -1010,29 +1432,22 @@ namespace Windows.Win32
     [Fact]
     public async Task TestFlagsEnum()
     {
-        var basePath = this.GetType().Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().SingleOrDefault(metadata => metadata.Key == "MicrosoftWindowsSdkWin32MetadataBasePath")?.Value;
-        var docsPath = this.GetType().Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().SingleOrDefault(metadata => metadata.Key == "MicrosoftWindowsSdkApiDocsPath")?.Value;
-
-        var globalconfig = $@"is_global = true
-
-build_property.MicrosoftWindowsSdkApiDocsPath = {docsPath}
-build_property.MicrosoftWindowsSdkWin32MetadataBasePath = {basePath}
-";
         await new VerifyTest
         {
             TestState =
             {
+                ReferenceAssemblies = MyReferenceAssemblies.NetStandard20,
                 AdditionalFiles =
                 {
                     ("NativeMethods.txt", "FILE_ACCESS_FLAGS"),
                 },
                 AnalyzerConfigFiles =
                 {
-                    ("/.globalconfig", globalconfig),
+                    ("/.globalconfig", ConstructGlobalConfigString()),
                 },
                 GeneratedSources =
                 {
-                    (typeof(SourceGenerator), "FILE_ACCESS_FLAGS.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.FILE_ACCESS_FLAGS.g.cs", @"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -1041,14 +1456,14 @@ build_property.MicrosoftWindowsSdkWin32MetadataBasePath = {basePath}
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
 namespace Windows.Win32
 {
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 	namespace Storage.FileSystem
 	{
@@ -1093,29 +1508,22 @@ namespace Windows.Win32
     [Fact]
     public async Task TestSimpleDelegate()
     {
-        var basePath = this.GetType().Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().SingleOrDefault(metadata => metadata.Key == "MicrosoftWindowsSdkWin32MetadataBasePath")?.Value;
-        var docsPath = this.GetType().Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().SingleOrDefault(metadata => metadata.Key == "MicrosoftWindowsSdkApiDocsPath")?.Value;
-
-        var globalconfig = $@"is_global = true
-
-build_property.MicrosoftWindowsSdkApiDocsPath = {docsPath}
-build_property.MicrosoftWindowsSdkWin32MetadataBasePath = {basePath}
-";
         await new VerifyTest
         {
             TestState =
             {
+                ReferenceAssemblies = MyReferenceAssemblies.NetStandard20,
                 AdditionalFiles =
                 {
                     ("NativeMethods.txt", "WNDENUMPROC"),
                 },
                 AnalyzerConfigFiles =
                 {
-                    ("/.globalconfig", globalconfig),
+                    ("/.globalconfig", ConstructGlobalConfigString()),
                 },
                 GeneratedSources =
                 {
-                    (typeof(SourceGenerator), "BOOL.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.BOOL.g.cs", @"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -1124,14 +1532,14 @@ build_property.MicrosoftWindowsSdkWin32MetadataBasePath = {basePath}
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
 namespace Windows.Win32
 {
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 	namespace Foundation
 	{
@@ -1140,16 +1548,20 @@ namespace Windows.Win32
 			private readonly int value;
 
 			internal int Value => this.value;
-			internal BOOL(bool value) => this.value = value ? 1 : 0;
+			internal unsafe BOOL(bool value) => this.value = *(sbyte*)&value;
 			internal BOOL(int value) => this.value = value;
-			public static implicit operator bool(BOOL value) => value.Value != 0;
+			public static unsafe implicit operator bool(BOOL value)
+			{
+				sbyte v = checked((sbyte)value.value);
+				return *(bool*)&v;
+			}
 			public static implicit operator BOOL(bool value) => new BOOL(value);
 			public static explicit operator BOOL(int value) => new BOOL(value);
 		}
 	}
 }
 ".Replace("\r\n", "\n")),
-                    (typeof(SourceGenerator), "Delegates.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.Delegates.g.cs", @"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -1158,23 +1570,23 @@ namespace Windows.Win32
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
 namespace Windows.Win32
 {
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 	namespace UI.WindowsAndMessaging
 	{
 		[UnmanagedFunctionPointerAttribute(CallingConvention.Winapi)]
-		internal unsafe delegate win32.Foundation.BOOL WNDENUMPROC(win32.Foundation.HWND param0, win32.Foundation.LPARAM param1);
+		internal unsafe delegate winmdroot.Foundation.BOOL WNDENUMPROC(winmdroot.Foundation.HWND param0, winmdroot.Foundation.LPARAM param1);
 	}
 }
 ".Replace("\r\n", "\n")),
-                    (typeof(SourceGenerator), "HWND.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.HWND.g.cs", @"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -1183,14 +1595,14 @@ namespace Windows.Win32
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
 namespace Windows.Win32
 {
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 	namespace Foundation
 	{
@@ -1214,7 +1626,7 @@ namespace Windows.Win32
 	}
 }
 ".Replace("\r\n", "\n")),
-                    (typeof(SourceGenerator), "LPARAM.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.LPARAM.g.cs", @"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -1223,14 +1635,14 @@ namespace Windows.Win32
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
 namespace Windows.Win32
 {
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 	namespace Foundation
 	{
@@ -1262,29 +1674,22 @@ namespace Windows.Win32
     [Fact]
     public async Task TestSimpleMethod()
     {
-        var basePath = this.GetType().Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().SingleOrDefault(metadata => metadata.Key == "MicrosoftWindowsSdkWin32MetadataBasePath")?.Value;
-        var docsPath = this.GetType().Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().SingleOrDefault(metadata => metadata.Key == "MicrosoftWindowsSdkApiDocsPath")?.Value;
-
-        var globalconfig = $@"is_global = true
-
-build_property.MicrosoftWindowsSdkApiDocsPath = {docsPath}
-build_property.MicrosoftWindowsSdkWin32MetadataBasePath = {basePath}
-";
         await new VerifyTest
         {
             TestState =
             {
+                ReferenceAssemblies = MyReferenceAssemblies.NetStandard20,
                 AdditionalFiles =
                 {
                     ("NativeMethods.txt", "ReleaseDC"),
                 },
                 AnalyzerConfigFiles =
                 {
-                    ("/.globalconfig", globalconfig),
+                    ("/.globalconfig", ConstructGlobalConfigString()),
                 },
                 GeneratedSources =
                 {
-                    (typeof(SourceGenerator), "HDC.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.HDC.g.cs", @"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -1293,14 +1698,14 @@ build_property.MicrosoftWindowsSdkWin32MetadataBasePath = {basePath}
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
 namespace Windows.Win32
 {
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 	namespace Graphics.Gdi
 	{
@@ -1326,7 +1731,7 @@ namespace Windows.Win32
 	}
 }
 ".Replace("\r\n", "\n")),
-                    (typeof(SourceGenerator), "HWND.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.HWND.g.cs", @"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -1335,14 +1740,14 @@ namespace Windows.Win32
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
 namespace Windows.Win32
 {
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 	namespace Foundation
 	{
@@ -1366,7 +1771,7 @@ namespace Windows.Win32
 	}
 }
 ".Replace("\r\n", "\n")),
-                    (typeof(SourceGenerator), "PInvoke.User32.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.PInvoke.User32.g.cs", @"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -1375,14 +1780,14 @@ namespace Windows.Win32
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
 namespace Windows.Win32
 {
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 
 	/// <content>
@@ -1401,7 +1806,7 @@ namespace Windows.Win32
 		/// </remarks>
 		[DllImport(""User32"", ExactSpelling = true)]
 		[DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-		internal static extern int ReleaseDC(win32.Foundation.HWND hWnd, win32.Graphics.Gdi.HDC hDC);
+		internal static extern int ReleaseDC(winmdroot.Foundation.HWND hWnd, winmdroot.Graphics.Gdi.HDC hDC);
 	}
 }
 ".Replace("\r\n", "\n")),
@@ -1413,29 +1818,22 @@ namespace Windows.Win32
     [Fact]
     public async Task TestMethodWithOverloads()
     {
-        var basePath = this.GetType().Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().SingleOrDefault(metadata => metadata.Key == "MicrosoftWindowsSdkWin32MetadataBasePath")?.Value;
-        var docsPath = this.GetType().Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().SingleOrDefault(metadata => metadata.Key == "MicrosoftWindowsSdkApiDocsPath")?.Value;
-
-        var globalconfig = $@"is_global = true
-
-build_property.MicrosoftWindowsSdkApiDocsPath = {docsPath}
-build_property.MicrosoftWindowsSdkWin32MetadataBasePath = {basePath}
-";
         await new VerifyTest
         {
             TestState =
             {
+                ReferenceAssemblies = MyReferenceAssemblies.NetStandard20,
                 AdditionalFiles =
                 {
                     ("NativeMethods.txt", "CreateFile"),
                 },
                 AnalyzerConfigFiles =
                 {
-                    ("/.globalconfig", globalconfig),
+                    ("/.globalconfig", ConstructGlobalConfigString()),
                 },
                 GeneratedSources =
                 {
-                    (typeof(SourceGenerator), "BOOL.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.BOOL.g.cs", @"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -1444,14 +1842,14 @@ build_property.MicrosoftWindowsSdkWin32MetadataBasePath = {basePath}
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
 namespace Windows.Win32
 {
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 	namespace Foundation
 	{
@@ -1460,16 +1858,20 @@ namespace Windows.Win32
 			private readonly int value;
 
 			internal int Value => this.value;
-			internal BOOL(bool value) => this.value = value ? 1 : 0;
+			internal unsafe BOOL(bool value) => this.value = *(sbyte*)&value;
 			internal BOOL(int value) => this.value = value;
-			public static implicit operator bool(BOOL value) => value.Value != 0;
+			public static unsafe implicit operator bool(BOOL value)
+			{
+				sbyte v = checked((sbyte)value.value);
+				return *(bool*)&v;
+			}
 			public static implicit operator BOOL(bool value) => new BOOL(value);
 			public static explicit operator BOOL(int value) => new BOOL(value);
 		}
 	}
 }
 ".Replace("\r\n", "\n")),
-                    (typeof(SourceGenerator), "FILE_ACCESS_FLAGS.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.FILE_ACCESS_FLAGS.g.cs", @"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -1478,14 +1880,14 @@ namespace Windows.Win32
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
 namespace Windows.Win32
 {
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 	namespace Storage.FileSystem
 	{
@@ -1522,7 +1924,7 @@ namespace Windows.Win32
 	}
 }
 ".Replace("\r\n", "\n")),
-                    (typeof(SourceGenerator), "FILE_CREATION_DISPOSITION.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.FILE_CREATION_DISPOSITION.g.cs", @"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -1531,14 +1933,14 @@ namespace Windows.Win32
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
 namespace Windows.Win32
 {
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 	namespace Storage.FileSystem
 	{
@@ -1553,7 +1955,7 @@ namespace Windows.Win32
 	}
 }
 ".Replace("\r\n", "\n")),
-                    (typeof(SourceGenerator), "FILE_FLAGS_AND_ATTRIBUTES.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.FILE_FLAGS_AND_ATTRIBUTES.g.cs", @"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -1562,14 +1964,14 @@ namespace Windows.Win32
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
 namespace Windows.Win32
 {
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 	namespace Storage.FileSystem
 	{
@@ -1610,6 +2012,9 @@ namespace Windows.Win32
 			FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000,
 			FILE_FLAG_OPEN_NO_RECALL = 0x00100000,
 			FILE_FLAG_FIRST_PIPE_INSTANCE = 0x00080000,
+			PIPE_ACCESS_DUPLEX = 0x00000003,
+			PIPE_ACCESS_INBOUND = 0x00000001,
+			PIPE_ACCESS_OUTBOUND = 0x00000002,
 			SECURITY_ANONYMOUS = 0x00000000,
 			SECURITY_IDENTIFICATION = 0x00010000,
 			SECURITY_IMPERSONATION = 0x00020000,
@@ -1622,7 +2027,7 @@ namespace Windows.Win32
 	}
 }
 ".Replace("\r\n", "\n")),
-                    (typeof(SourceGenerator), "FILE_SHARE_MODE.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.FILE_SHARE_MODE.g.cs", @"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -1631,14 +2036,14 @@ namespace Windows.Win32
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
 namespace Windows.Win32
 {
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 	namespace Storage.FileSystem
 	{
@@ -1653,7 +2058,7 @@ namespace Windows.Win32
 	}
 }
 ".Replace("\r\n", "\n")),
-                    (typeof(SourceGenerator), "HANDLE.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.HANDLE.g.cs", @"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -1662,14 +2067,14 @@ namespace Windows.Win32
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
 namespace Windows.Win32
 {
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 	namespace Foundation
 	{
@@ -1695,7 +2100,7 @@ namespace Windows.Win32
 	}
 }
 ".Replace("\r\n", "\n")),
-                    (typeof(SourceGenerator), "PCWSTR.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.PCWSTR.g.cs", @"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -1704,14 +2109,14 @@ namespace Windows.Win32
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
 namespace Windows.Win32
 {
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 	namespace Foundation
 	{
@@ -1762,18 +2167,17 @@ namespace Windows.Win32
 			public override string ToString() => this.Value is null ? null : new string(this.Value);
 
 
+			private string DebuggerDisplay => this.ToString();
+
 			/// <summary>
 			/// Returns a span of the characters in this string.
 			/// </summary>
 			internal ReadOnlySpan<char> AsSpan() => this.Value is null ? default(ReadOnlySpan<char>) : new ReadOnlySpan<char>(this.Value, this.Length);
-
-
-			private string DebuggerDisplay => this.ToString();
 		}
 	}
 }
 ".Replace("\r\n", "\n")),
-                    (typeof(SourceGenerator), "PInvoke.Kernel32.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.PInvoke.Kernel32.g.cs", @"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -1782,14 +2186,14 @@ namespace Windows.Win32
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
 namespace Windows.Win32
 {
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 
 	/// <content>
@@ -1807,26 +2211,26 @@ namespace Windows.Win32
 		/// </remarks>
 		[DllImport(""Kernel32"", ExactSpelling = true, SetLastError = true)]
 		[DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-		internal static extern win32.Foundation.BOOL CloseHandle(win32.Foundation.HANDLE hObject);
+		internal static extern winmdroot.Foundation.BOOL CloseHandle(winmdroot.Foundation.HANDLE hObject);
 
-		/// <inheritdoc cref=""CreateFile(win32.Foundation.PCWSTR, win32.Storage.FileSystem.FILE_ACCESS_FLAGS, win32.Storage.FileSystem.FILE_SHARE_MODE, win32.Security.SECURITY_ATTRIBUTES*, win32.Storage.FileSystem.FILE_CREATION_DISPOSITION, win32.Storage.FileSystem.FILE_FLAGS_AND_ATTRIBUTES, win32.Foundation.HANDLE)""/>
-		internal static unsafe Microsoft.Win32.SafeHandles.SafeFileHandle CreateFile(string lpFileName, win32.Storage.FileSystem.FILE_ACCESS_FLAGS dwDesiredAccess, win32.Storage.FileSystem.FILE_SHARE_MODE dwShareMode, win32.Security.SECURITY_ATTRIBUTES? lpSecurityAttributes, win32.Storage.FileSystem.FILE_CREATION_DISPOSITION dwCreationDisposition, win32.Storage.FileSystem.FILE_FLAGS_AND_ATTRIBUTES dwFlagsAndAttributes, SafeHandle hTemplateFile)
+		/// <inheritdoc cref=""CreateFile(winmdroot.Foundation.PCWSTR, winmdroot.Storage.FileSystem.FILE_ACCESS_FLAGS, winmdroot.Storage.FileSystem.FILE_SHARE_MODE, winmdroot.Security.SECURITY_ATTRIBUTES*, winmdroot.Storage.FileSystem.FILE_CREATION_DISPOSITION, winmdroot.Storage.FileSystem.FILE_FLAGS_AND_ATTRIBUTES, winmdroot.Foundation.HANDLE)""/>
+		internal static unsafe Microsoft.Win32.SafeHandles.SafeFileHandle CreateFile(string lpFileName, winmdroot.Storage.FileSystem.FILE_ACCESS_FLAGS dwDesiredAccess, winmdroot.Storage.FileSystem.FILE_SHARE_MODE dwShareMode, winmdroot.Security.SECURITY_ATTRIBUTES? lpSecurityAttributes, winmdroot.Storage.FileSystem.FILE_CREATION_DISPOSITION dwCreationDisposition, winmdroot.Storage.FileSystem.FILE_FLAGS_AND_ATTRIBUTES dwFlagsAndAttributes, SafeHandle hTemplateFile)
 		{
 			bool hTemplateFileAddRef = false;
 			try
 			{
 				fixed (char* lpFileNameLocal = lpFileName)
 				{
-					win32.Security.SECURITY_ATTRIBUTES lpSecurityAttributesLocal = lpSecurityAttributes.HasValue ? lpSecurityAttributes.Value : default(win32.Security.SECURITY_ATTRIBUTES);
-					win32.Foundation.HANDLE hTemplateFileLocal;
+					winmdroot.Security.SECURITY_ATTRIBUTES lpSecurityAttributesLocal = lpSecurityAttributes.HasValue ? lpSecurityAttributes.Value : default(winmdroot.Security.SECURITY_ATTRIBUTES);
+					winmdroot.Foundation.HANDLE hTemplateFileLocal;
 					if (hTemplateFile is object)
 					{
 						hTemplateFile.DangerousAddRef(ref hTemplateFileAddRef);
-						hTemplateFileLocal = (win32.Foundation.HANDLE)hTemplateFile.DangerousGetHandle();
+						hTemplateFileLocal = (winmdroot.Foundation.HANDLE)hTemplateFile.DangerousGetHandle();
 					}
 					else
-						hTemplateFileLocal = default(win32.Foundation.HANDLE);
-					win32.Foundation.HANDLE __result = PInvoke.CreateFile(lpFileNameLocal, dwDesiredAccess, dwShareMode, lpSecurityAttributes.HasValue ? &lpSecurityAttributesLocal : null, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFileLocal);
+						hTemplateFileLocal = default(winmdroot.Foundation.HANDLE);
+					winmdroot.Foundation.HANDLE __result = PInvoke.CreateFile(lpFileNameLocal, dwDesiredAccess, dwShareMode, lpSecurityAttributes.HasValue ? &lpSecurityAttributesLocal : null, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFileLocal);
 					return new Microsoft.Win32.SafeHandles.SafeFileHandle(__result, ownsHandle: true);
 				}
 			}
@@ -1875,11 +2279,11 @@ namespace Windows.Win32
 		/// </remarks>
 		[DllImport(""Kernel32"", ExactSpelling = true, EntryPoint = ""CreateFileW"", SetLastError = true)]
 		[DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-		internal static extern unsafe win32.Foundation.HANDLE CreateFile(win32.Foundation.PCWSTR lpFileName, win32.Storage.FileSystem.FILE_ACCESS_FLAGS dwDesiredAccess, win32.Storage.FileSystem.FILE_SHARE_MODE dwShareMode, [Optional] win32.Security.SECURITY_ATTRIBUTES* lpSecurityAttributes, win32.Storage.FileSystem.FILE_CREATION_DISPOSITION dwCreationDisposition, win32.Storage.FileSystem.FILE_FLAGS_AND_ATTRIBUTES dwFlagsAndAttributes, win32.Foundation.HANDLE hTemplateFile);
+		internal static extern unsafe winmdroot.Foundation.HANDLE CreateFile(winmdroot.Foundation.PCWSTR lpFileName, winmdroot.Storage.FileSystem.FILE_ACCESS_FLAGS dwDesiredAccess, winmdroot.Storage.FileSystem.FILE_SHARE_MODE dwShareMode, [Optional] winmdroot.Security.SECURITY_ATTRIBUTES* lpSecurityAttributes, winmdroot.Storage.FileSystem.FILE_CREATION_DISPOSITION dwCreationDisposition, winmdroot.Storage.FileSystem.FILE_FLAGS_AND_ATTRIBUTES dwFlagsAndAttributes, winmdroot.Foundation.HANDLE hTemplateFile);
 	}
 }
 ".Replace("\r\n", "\n")),
-                    (typeof(SourceGenerator), "PWSTR.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.PWSTR.g.cs", @"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -1888,14 +2292,14 @@ namespace Windows.Win32
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
 namespace Windows.Win32
 {
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 	namespace Foundation
 	{
@@ -1923,7 +2327,7 @@ namespace Windows.Win32
 					char* p = this.Value;
 					if (p is null)
 						return 0;
-					while (*p != 0)
+					while (*p != '\0')
 						p++;
 					return checked((int)(p - this.Value));
 				}
@@ -1931,12 +2335,15 @@ namespace Windows.Win32
 
 			public override string ToString() => this.Value is null ? null : new string(this.Value);
 
+			/// <summary>
+			/// Returns a span of the characters in this string.
+			/// </summary>
 			internal Span<char> AsSpan() => this.Value is null ? default(Span<char>) : new Span<char>(this.Value, this.Length);
 		}
 	}
 }
 ".Replace("\r\n", "\n")),
-                    (typeof(SourceGenerator), "SECURITY_ATTRIBUTES.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.SECURITY_ATTRIBUTES.g.cs", @"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -1945,14 +2352,14 @@ namespace Windows.Win32
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
 namespace Windows.Win32
 {
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
 	using global::System.Runtime.InteropServices;
-	using win32 = global::Windows.Win32;
+	using winmdroot = global::Windows.Win32;
 
 	namespace Security
 	{
@@ -1970,7 +2377,7 @@ namespace Windows.Win32
 			/// </summary>
 			internal unsafe void* lpSecurityDescriptor;
 			/// <summary>A Boolean value that specifies whether the returned handle is inherited when a new process is created. If this member is **TRUE**, the new process inherits the handle.</summary>
-			internal win32.Foundation.BOOL bInheritHandle;
+			internal winmdroot.Foundation.BOOL bInheritHandle;
 		}
 	}
 }
@@ -1980,9 +2387,102 @@ namespace Windows.Win32
         }.RunAsync();
     }
 
+    [Fact]
+    public async Task UnparseableNativeMethodsJson()
+    {
+        await new VerifyTest
+        {
+            TestState =
+            {
+                ReferenceAssemblies = MyReferenceAssemblies.NetStandard20,
+                AdditionalFiles =
+                {
+                    ("NativeMethods.txt", "CreateFile"),
+                    ("NativeMethods.json", @"{ ""allowMarshaling"": f }"), // the point where the user is typing "false"
+                },
+                AnalyzerConfigFiles =
+                {
+                    ("/.globalconfig", ConstructGlobalConfigString()),
+                },
+                GeneratedSources =
+                {
+                    // Nothing generated, but no exceptions thrown that would lead Roslyn to disable the source generator in the IDE either.
+                },
+                ExpectedDiagnostics =
+                {
+                    new DiagnosticResult(SourceGenerator.OptionsParsingError.Id, DiagnosticSeverity.Error),
+                },
+            },
+        }.RunAsync();
+    }
+
+    [Fact]
+    public void CocreatableStructs()
+    {
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate("ShellLink", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        ClassDeclarationSyntax classDecl = Assert.IsType<ClassDeclarationSyntax>(this.FindGeneratedType("ShellLink").Single());
+        Assert.Contains(classDecl.AttributeLists, al => al.Attributes.Any(a => a.Name.ToString().Contains("ComImport")));
+    }
+
+    private static string ConstructGlobalConfigString(bool omitDocs = false)
+    {
+        StringBuilder globalConfigBuilder = new();
+        globalConfigBuilder.AppendLine("is_global = true");
+        globalConfigBuilder.AppendLine();
+        globalConfigBuilder.AppendLine($"build_property.CsWin32InputMetadataPaths = {JoinAssemblyMetadata("ProjectionMetadataWinmd")}");
+        if (!omitDocs)
+        {
+            globalConfigBuilder.AppendLine($"build_property.CsWin32InputDocPaths = {JoinAssemblyMetadata("ProjectionDocs")}");
+        }
+
+        return globalConfigBuilder.ToString();
+
+        static string JoinAssemblyMetadata(string name)
+        {
+            return string.Join(";", typeof(GeneratorTests).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().Where(metadata => metadata.Key == name).Select(metadata => metadata.Value));
+        }
+    }
+
     private static ImmutableArray<Diagnostic> FilterDiagnostics(ImmutableArray<Diagnostic> diagnostics) => diagnostics.Where(d => d.Severity > DiagnosticSeverity.Hidden).ToImmutableArray();
 
     private static bool IsAttributePresent(AttributeListSyntax al, string attributeName) => al.Attributes.Any(a => a.Name.ToString() == attributeName);
+
+    private static IEnumerable<AttributeSyntax> FindAttribute(SyntaxList<AttributeListSyntax> attributeLists, string name) => attributeLists.SelectMany(al => al.Attributes).Where(a => a.Name.ToString() == name);
+
+    private static void AssertConsistentLineEndings(Compilation compilation)
+    {
+        foreach (SyntaxTree doc in compilation.SyntaxTrees)
+        {
+            AssertConsistentLineEndings(doc);
+        }
+    }
+
+    private static void AssertConsistentLineEndings(SyntaxTree syntaxTree)
+    {
+        SourceText sourceText = syntaxTree.GetText();
+        int firstLineBreakLength = default;
+        int lineCount = 1;
+        foreach (TextLine line in sourceText.Lines)
+        {
+            int thisLineBreakLength = line.EndIncludingLineBreak - line.End;
+            if (lineCount == 1)
+            {
+                firstLineBreakLength = thisLineBreakLength;
+            }
+            else
+            {
+                if (firstLineBreakLength != thisLineBreakLength && thisLineBreakLength > 0)
+                {
+                    Assert.False(true, $"{syntaxTree.FilePath} Line {lineCount} had a {thisLineBreakLength}-byte line ending but line 1's line ending was {firstLineBreakLength} bytes long.");
+                }
+            }
+
+            lineCount++;
+        }
+    }
 
     private CSharpCompilation AddGeneratedCode(CSharpCompilation compilation, Generator generator)
     {
@@ -2002,7 +2502,9 @@ namespace Windows.Win32
 
     private IEnumerable<MethodDeclarationSyntax> FindGeneratedMethod(string name) => this.compilation.SyntaxTrees.SelectMany(st => st.GetRoot().DescendantNodes().OfType<MethodDeclarationSyntax>()).Where(md => md.Identifier.ValueText == name);
 
-    private IEnumerable<BaseTypeDeclarationSyntax> FindGeneratedType(string name) => this.compilation.SyntaxTrees.SelectMany(st => st.GetRoot().DescendantNodes().OfType<BaseTypeDeclarationSyntax>()).Where(md => md.Identifier.ValueText == name);
+    private IEnumerable<BaseTypeDeclarationSyntax> FindGeneratedType(string name) => this.compilation.SyntaxTrees.SelectMany(st => st.GetRoot().DescendantNodes().OfType<BaseTypeDeclarationSyntax>()).Where(btd => btd.Identifier.ValueText == name);
+
+    private IEnumerable<FieldDeclarationSyntax> FindGeneratedConstant(string name) => this.compilation.SyntaxTrees.SelectMany(st => st.GetRoot().DescendantNodes().OfType<FieldDeclarationSyntax>()).Where(fd => (fd.Modifiers.Any(SyntaxKind.StaticKeyword) || fd.Modifiers.Any(SyntaxKind.ConstKeyword)) && fd.Declaration.Variables.Any(vd => vd.Identifier.ValueText == name));
 
     private bool IsMethodGenerated(string name) => this.FindGeneratedMethod(name).Any();
 
@@ -2044,6 +2546,8 @@ namespace Windows.Win32
             Assert.Empty(emitDiagnostics);
             Assert.True(emitSuccessful);
         }
+
+        AssertConsistentLineEndings(compilation);
     }
 
     private void LogDiagnostics(ImmutableArray<Diagnostic> diagnostics)
@@ -2132,18 +2636,22 @@ namespace Windows.Win32
         return compilation;
     }
 
-    private Generator CreateGenerator(GeneratorOptions? options = null, CSharpCompilation? compilation = null) => new Generator(MetadataPath, ApiDocsPath, options ?? DefaultTestGeneratorOptions, compilation ?? this.compilation, this.parseOptions.LanguageVersion);
+    private Generator CreateGenerator(GeneratorOptions? options = null, CSharpCompilation? compilation = null) => this.CreateGenerator(MetadataPath, options, compilation);
+
+    private Generator CreateGenerator(string path, GeneratorOptions? options = null, CSharpCompilation? compilation = null) => new Generator(path, Docs.Get(ApiDocsPath), options ?? DefaultTestGeneratorOptions, compilation ?? this.compilation, this.parseOptions.LanguageVersion);
 
     private static class MyReferenceAssemblies
     {
 #pragma warning disable SA1202 // Elements should be ordered by access
-        private static readonly ImmutableArray<PackageIdentity> AdditionalPackages = ImmutableArray.Create(new PackageIdentity("Microsoft.Windows.SDK.Contracts", "10.0.19041.1"));
+        private static readonly ImmutableArray<PackageIdentity> AdditionalPackages = ImmutableArray.Create(
+            new PackageIdentity("Microsoft.Windows.SDK.Contracts", "10.0.19041.1"),
+            new PackageIdentity("Microsoft.Win32.Registry", "5.0.0"));
 
         internal static readonly ReferenceAssemblies NetStandard20 = ReferenceAssemblies.NetStandard.NetStandard20.AddPackages(AdditionalPackages.Add(new PackageIdentity("System.Memory", "4.5.4")));
 
         internal static class NetFramework
         {
-            internal static readonly ReferenceAssemblies Net40 = ReferenceAssemblies.NetFramework.Net40.Default.AddPackages(AdditionalPackages);
+            internal static readonly ReferenceAssemblies Net35 = ReferenceAssemblies.NetFramework.Net35.Default.AddPackages(AdditionalPackages);
         }
 
         internal static class Net

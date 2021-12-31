@@ -14,7 +14,6 @@ namespace Microsoft.Windows.CsWin32
     using System.Linq;
     using System.Reflection;
     using System.Reflection.Metadata;
-    using System.Reflection.PortableExecutable;
     using System.Runtime.CompilerServices;
     using System.Runtime.InteropServices;
     using System.Text;
@@ -28,16 +27,18 @@ namespace Microsoft.Windows.CsWin32
     /// <summary>
     /// The core of the source generator.
     /// </summary>
+    [DebuggerDisplay("{" + nameof(DebuggerDisplayString) + ",nq}")]
     public class Generator : IDisposable
     {
         internal const string InteropDecorationNamespace = "Windows.Win32.Interop";
         internal const string NativeArrayInfoAttribute = "NativeArrayInfoAttribute";
         internal const string RAIIFreeAttribute = "RAIIFreeAttribute";
         internal const string GlobalNamespacePrefix = "global::";
-        internal const string GlobalWin32NamespaceAlias = "win32";
+        internal const string GlobalWinmdRootNamespaceAlias = "winmdroot";
+        internal const string WinRTCustomMarshalerClass = "WinRTCustomMarshaler";
+        internal const string WinRTCustomMarshalerNamespace = "Windows.Win32.CsWin32.InteropServices";
+        internal const string WinRTCustomMarshalerFullName = WinRTCustomMarshalerNamespace + "." + WinRTCustomMarshalerClass;
 
-        internal static readonly SyntaxAnnotation IsManagedTypeAnnotation = new SyntaxAnnotation("IsManagedType");
-        internal static readonly SyntaxAnnotation IsSafeHandleTypeAnnotation = new SyntaxAnnotation("IsSafeHandleType");
         internal static readonly SyntaxAnnotation IsRetValAnnotation = new SyntaxAnnotation("RetVal");
 
         internal static readonly Dictionary<string, TypeSyntax> BclInteropStructs = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)
@@ -51,16 +52,15 @@ namespace Microsoft.Windows.CsWin32
 
         internal static readonly Dictionary<string, TypeSyntax> AdditionalBclInteropStructsMarshaled = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)
         {
-            { "BOOL", PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)) },
+            ////{ "BOOL", PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)) },
         };
 
         internal static readonly Dictionary<string, TypeSyntax> BclInteropSafeHandles = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)
         {
-            { "CloseHandle", ParseTypeName("Microsoft.Win32.SafeHandles.SafeFileHandle").WithAdditionalAnnotations(IsManagedTypeAnnotation, IsSafeHandleTypeAnnotation) },
+            { "CloseHandle", ParseTypeName("Microsoft.Win32.SafeHandles.SafeFileHandle") },
+            { "RegCloseKey", ParseTypeName("Microsoft.Win32.SafeHandles.SafeRegistryHandle") },
         };
 
-        private const string CommonNamespaceDot = "Windows.Win32.";
-        private const string CommonNamespace = "Windows.Win32";
         private const string SystemRuntimeCompilerServices = "System.Runtime.CompilerServices";
         private const string SystemRuntimeInteropServices = "System.Runtime.InteropServices";
         private const string NativeTypedefAttribute = "NativeTypedefAttribute";
@@ -99,11 +99,28 @@ namespace Microsoft.Windows.CsWin32
 /// </summary>
 ");
 
+        private static readonly SyntaxTriviaList InlineCharArrayToStringComment = ParseLeadingTrivia(@"/// <summary>
+/// Copies the fixed array to a new string, stopping before the first null terminator character or at the end of the fixed array (whichever is shorter).
+/// </summary>
+");
+
+        private static readonly SyntaxTriviaList InlineCharArrayToStringWithLengthComment = ParseLeadingTrivia(@"/// <summary>
+/// Copies the fixed array to a new string up to the specified length regardless of whether there are null terminating characters.
+/// </summary>
+/// <exception cref=""ArgumentOutOfRangeException"">
+/// Thrown when <paramref name=""length""/> is less than <c>0</c> or greater than <see cref=""Length""/>.
+/// </exception>
+");
+
+        private static readonly SyntaxTriviaList StrAsSpanComment = ParseLeadingTrivia(@"/// <summary>
+/// Returns a span of the characters in this string.
+/// </summary>
+");
+
         private static readonly XmlTextSyntax DocCommentStart = XmlText(" ").WithLeadingTrivia(DocumentationCommentExterior("///"));
-        private static readonly XmlTextSyntax DocCommentEnd = XmlText(XmlTextNewLine("\r\n", continueXmlDocumentationComment: false));
+        private static readonly XmlTextSyntax DocCommentEnd = XmlText(XmlTextNewLine("\n", continueXmlDocumentationComment: false));
 
         private static readonly SyntaxToken SemicolonWithLineFeed = TokenWithLineFeed(SyntaxKind.SemicolonToken);
-        private static readonly IdentifierNameSyntax ConstantsClassName = IdentifierName("Constants");
         private static readonly IdentifierNameSyntax InlineArrayIndexerExtensionsClassName = IdentifierName("InlineArrayIndexerExtensions");
         private static readonly IdentifierNameSyntax ComInterfaceFriendlyExtensionsClassName = IdentifierName("FriendlyOverloadExtensions");
         private static readonly TypeSyntax SafeHandleTypeSyntax = IdentifierName("SafeHandle");
@@ -252,8 +269,11 @@ namespace Microsoft.Windows.CsWin32
             "CS1570", // XML comment has badly formed XML
             "CS1584", // C# bug: https://github.com/microsoft/CsWin32/issues/24
             "CS1658", // C# bug: https://github.com/microsoft/CsWin32/issues/24
+            "CS0436", // conflicts with the imported type (InternalsVisibleTo between two projects that both use CsWin32)
         };
 
+        private static readonly AttributeSyntax InAttributeSyntax = Attribute(IdentifierName("In")).WithArgumentList(null);
+        private static readonly AttributeSyntax OutAttributeSyntax = Attribute(IdentifierName("Out")).WithArgumentList(null);
         private static readonly AttributeSyntax OptionalAttributeSyntax = Attribute(IdentifierName("Optional")).WithArgumentList(null);
         private static readonly AttributeSyntax FlagsAttributeSyntax = Attribute(IdentifierName("Flags")).WithArgumentList(null);
         private static readonly AttributeSyntax FieldOffsetAttributeSyntax = Attribute(IdentifierName("FieldOffset"));
@@ -275,45 +295,48 @@ namespace Microsoft.Windows.CsWin32
         private readonly GeneratorOptions options;
         private readonly CSharpCompilation? compilation;
         private readonly LanguageVersion? languageVersion;
+        private readonly bool canUseSpan;
         private readonly bool canCallCreateSpan;
+        private readonly bool getDelegateForFunctionPointerGenericExists;
         private readonly bool generateSupportedOSPlatformAttributes;
         private readonly bool generateSupportedOSPlatformAttributesOnInterfaces; // only supported on net6.0 (https://github.com/dotnet/runtime/pull/48838)
         private readonly bool generateDefaultDllImportSearchPathsAttribute;
         private readonly GeneratedCode committedCode = new();
         private readonly GeneratedCode volatileCode;
+        private readonly IdentifierNameSyntax methodsAndConstantsClassName;
+        private bool needsWinRTCustomMarshaler;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="Generator"/> class.
         /// </summary>
         /// <param name="metadataLibraryPath">The path to the winmd metadata to generate APIs from.</param>
-        /// <param name="apiDocsPath">The path to the API docs file.</param>
+        /// <param name="docs">The API docs to include in the generated code.</param>
         /// <param name="options">Options that influence the result of generation.</param>
         /// <param name="compilation">The compilation that the generated code will be added to.</param>
         /// <param name="languageVersion">The language version that will be used for the generated code.</param>
-        public Generator(string metadataLibraryPath, string? apiDocsPath, GeneratorOptions? options = null, CSharpCompilation? compilation = null, LanguageVersion? languageVersion = null)
+        public Generator(string metadataLibraryPath, Docs? docs, GeneratorOptions options, CSharpCompilation? compilation = null, LanguageVersion? languageVersion = null)
         {
+            this.InputAssemblyName = Path.GetFileNameWithoutExtension(metadataLibraryPath);
             this.MetadataIndex = MetadataIndex.Get(metadataLibraryPath, compilation?.Options.Platform);
-            this.ApiDocs = apiDocsPath is object ? Docs.Get(apiDocsPath) : null;
+            this.ApiDocs = docs;
 
-            this.options = options ??= new GeneratorOptions();
+            this.options = options;
             this.options.Validate();
             this.compilation = compilation;
             this.languageVersion = languageVersion;
             this.volatileCode = new(this.committedCode);
 
+            this.canUseSpan = this.compilation?.GetTypeByMetadataName(typeof(Span<>).FullName) is not null;
             this.canCallCreateSpan = this.compilation?.GetTypeByMetadataName(typeof(MemoryMarshal).FullName)?.GetMembers("CreateSpan").Any() is true;
+            this.getDelegateForFunctionPointerGenericExists = this.compilation?.GetTypeByMetadataName(typeof(Marshal).FullName)?.GetMembers(nameof(Marshal.GetDelegateForFunctionPointer)).Any(m => m is IMethodSymbol { IsGenericMethod: true }) is true;
             this.generateDefaultDllImportSearchPathsAttribute = this.compilation?.GetTypeByMetadataName(typeof(DefaultDllImportSearchPathsAttribute).FullName) is object;
-            if (this.compilation?.GetTypeByMetadataName("System.Runtime.Versioning.SupportedOSPlatformAttribute") is { } attribute)
+            if (this.compilation?.GetTypeByMetadataName("System.Runtime.Versioning.SupportedOSPlatformAttribute") is { } attribute
+                && (attribute.DeclaredAccessibility == Accessibility.Public || attribute.ContainingAssembly.GivesAccessTo(this.compilation.Assembly)))
             {
                 this.generateSupportedOSPlatformAttributes = true;
                 AttributeData usageAttribute = attribute.GetAttributes().Single(att => att.AttributeClass?.Name == nameof(AttributeUsageAttribute));
                 var targets = (AttributeTargets)usageAttribute.ConstructorArguments[0].Value!;
                 this.generateSupportedOSPlatformAttributesOnInterfaces = (targets & AttributeTargets.Interface) == AttributeTargets.Interface;
-            }
-
-            if (options.AllowMarshaling)
-            {
-                this.BannedAPIs.Add("VARIANT", "Use `object` instead of VARIANT when in COM interface mode. VARIANT can only be emitted when emitting COM interfaces as structs.");
             }
 
             bool useComInterfaces = options.AllowMarshaling;
@@ -333,6 +356,8 @@ namespace Microsoft.Windows.CsWin32
             this.extensionMethodSignatureTypeSettings = this.generalTypeSettings with { QualifyNames = true };
             this.functionPointerTypeSettings = this.generalTypeSettings with { QualifyNames = true };
             this.errorMessageTypeSettings = this.generalTypeSettings with { QualifyNames = true };
+
+            this.methodsAndConstantsClassName = IdentifierName(options.ClassName);
         }
 
         private enum FriendlyOverloadOf
@@ -342,13 +367,20 @@ namespace Microsoft.Windows.CsWin32
             InterfaceMethod,
         }
 
-        internal Dictionary<string, string> BannedAPIs { get; } = new Dictionary<string, string>
-        {
-            { "GetLastError", "Do not generate GetLastError. Call Marshal.GetLastWin32Error() instead. Learn more from https://docs.microsoft.com/dotnet/api/system.runtime.interopservices.marshal.getlastwin32error" },
-            { "OLD_LARGE_INTEGER", "Use the C# long keyword instead." },
-            { "LARGE_INTEGER", "Use the C# long keyword instead." },
-            { "ULARGE_INTEGER", "Use the C# ulong keyword instead." },
-        };
+        internal static ImmutableDictionary<string, string> BannedAPIsWithoutMarshaling { get; } = ImmutableDictionary<string, string>.Empty
+            .Add("GetLastError", "Do not generate GetLastError. Call Marshal.GetLastWin32Error() instead. Learn more from https://docs.microsoft.com/dotnet/api/system.runtime.interopservices.marshal.getlastwin32error")
+            .Add("OLD_LARGE_INTEGER", "Use the C# long keyword instead.")
+            .Add("LARGE_INTEGER", "Use the C# long keyword instead.")
+            .Add("ULARGE_INTEGER", "Use the C# ulong keyword instead.");
+
+        internal static ImmutableDictionary<string, string> BannedAPIsWithMarshaling { get; } = BannedAPIsWithoutMarshaling
+            .Add("VARIANT", "Use `object` instead of VARIANT when in COM interface mode. VARIANT can only be emitted when emitting COM interfaces as structs.");
+
+        internal ImmutableDictionary<string, string> BannedAPIs => GetBannedAPIs(this.options);
+
+        internal SuperGenerator? SuperGenerator { get; set; }
+
+        internal string InputAssemblyName { get; }
 
         internal MetadataIndex MetadataIndex { get; }
 
@@ -362,11 +394,7 @@ namespace Microsoft.Windows.CsWin32
 
         private bool WideCharOnly => this.options.WideCharOnly;
 
-        private bool GroupByModule => string.IsNullOrEmpty(this.options.ClassName);
-
-        private string Namespace => this.options.Namespace;
-
-        private string SingleClassName => this.options.ClassName ?? throw new InvalidOperationException("Not in one-class mode.");
+        private string Namespace => this.InputAssemblyName;
 
         private SyntaxKind Visibility => this.options.Public ? SyntaxKind.PublicKeyword : SyntaxKind.InternalKeyword;
 
@@ -374,24 +402,14 @@ namespace Microsoft.Windows.CsWin32
         {
             get
             {
-                IEnumerable<MemberDeclarationSyntax> result = this.GroupByModule
-                    ? this.ExternMethodsByModuleClassName.Select(kv =>
-                        ClassDeclaration(Identifier(GetClassNameForModule(kv.Key)))
-                        .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword))
-                        .AddMembers(kv.ToArray()))
-                    : from entry in this.committedCode.MembersByModule
-                      select ClassDeclaration(Identifier(this.SingleClassName))
+                IEnumerable<MemberDeclarationSyntax> result =
+                    from entry in this.committedCode.MembersByModule
+                    select ClassDeclaration(Identifier(this.options.ClassName))
                         .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword))
                         .AddMembers(entry.ToArray())
                         .WithLeadingTrivia(ParseLeadingTrivia(string.Format(CultureInfo.InvariantCulture, PartialPInvokeContentComment, entry.Key)))
-                        .WithAdditionalAnnotations(new SyntaxAnnotation(SimpleFileNameAnnotation, $"{this.SingleClassName}.{entry.Key}"));
+                        .WithAdditionalAnnotations(new SyntaxAnnotation(SimpleFileNameAnnotation, $"{this.options.ClassName}.{entry.Key}"));
                 result = result.Concat(this.committedCode.GeneratedTypes);
-
-                ClassDeclarationSyntax constantClass = this.DeclareConstantDefiningClass();
-                if (constantClass.Members.Count > 0)
-                {
-                    result = result.Concat(new MemberDeclarationSyntax[] { constantClass });
-                }
 
                 ClassDeclarationSyntax inlineArrayIndexerExtensionsClass = this.DeclareInlineArrayIndexerExtensionsClass();
                 if (inlineArrayIndexerExtensionsClass.Members.Count > 0)
@@ -405,6 +423,11 @@ namespace Microsoft.Windows.CsWin32
                     result = result.Concat(new MemberDeclarationSyntax[] { comInterfaceFriendlyExtensionsClass });
                 }
 
+                if (this.committedCode.Fields.Any())
+                {
+                    result = result.Concat(new MemberDeclarationSyntax[] { this.DeclareConstantDefiningClass() });
+                }
+
                 return result;
             }
         }
@@ -414,6 +437,8 @@ namespace Microsoft.Windows.CsWin32
             from method in entry
             group method by GetClassNameForModule(entry.Key) into x
             select x;
+
+        private string DebuggerDisplayString => $"Generator: {this.InputAssemblyName}";
 
         /// <inheritdoc/>
         public void Dispose()
@@ -437,13 +462,17 @@ namespace Microsoft.Windows.CsWin32
             this.GenerateAllConstants(cancellationToken);
         }
 
+        /// <inheritdoc cref="TryGenerate(string, out IReadOnlyList{string}, CancellationToken)"/>
+        public bool TryGenerate(string apiNameOrModuleWildcard, CancellationToken cancellationToken) => this.TryGenerate(apiNameOrModuleWildcard, out _, cancellationToken);
+
         /// <summary>
         /// Generates code for a given API.
         /// </summary>
         /// <param name="apiNameOrModuleWildcard">The name of the method, struct or constant. Or the name of a module with a ".*" suffix in order to generate all methods and supporting types for the specified module.</param>
+        /// <param name="preciseApi">Receives the canonical API names that <paramref name="apiNameOrModuleWildcard"/> matched on.</param>
         /// <param name="cancellationToken">A cancellation token.</param>
         /// <returns><see langword="true" /> if any matching APIs were found and generated; <see langword="false"/> otherwise.</returns>
-        public bool TryGenerate(string apiNameOrModuleWildcard, CancellationToken cancellationToken)
+        public bool TryGenerate(string apiNameOrModuleWildcard, out IReadOnlyList<string> preciseApi, CancellationToken cancellationToken)
         {
             if (string.IsNullOrWhiteSpace(apiNameOrModuleWildcard))
             {
@@ -452,15 +481,44 @@ namespace Microsoft.Windows.CsWin32
 
             if (apiNameOrModuleWildcard.EndsWith(".*", StringComparison.Ordinal))
             {
-                return this.TryGenerateAllExternMethods(apiNameOrModuleWildcard.Substring(0, apiNameOrModuleWildcard.Length - 2), cancellationToken);
+                if (this.TryGenerateAllExternMethods(apiNameOrModuleWildcard.Substring(0, apiNameOrModuleWildcard.Length - 2), cancellationToken))
+                {
+                    preciseApi = ImmutableList.Create(apiNameOrModuleWildcard);
+                    return true;
+                }
+                else
+                {
+                    preciseApi = ImmutableList<string>.Empty;
+                    return false;
+                }
             }
             else
             {
-                return
-                    this.TryGenerateNamespace(apiNameOrModuleWildcard) ||
-                    this.TryGenerateExternMethod(apiNameOrModuleWildcard) ||
-                    this.TryGenerateType(apiNameOrModuleWildcard) ||
-                    this.TryGenerateConstant(apiNameOrModuleWildcard);
+                bool result = this.TryGenerateNamespace(apiNameOrModuleWildcard, out preciseApi);
+                if (result || preciseApi.Count > 1)
+                {
+                    return result;
+                }
+
+                result = this.TryGenerateExternMethod(apiNameOrModuleWildcard, out preciseApi);
+                if (result || preciseApi.Count > 1)
+                {
+                    return result;
+                }
+
+                result = this.TryGenerateType(apiNameOrModuleWildcard, out preciseApi);
+                if (result || preciseApi.Count > 1)
+                {
+                    return result;
+                }
+
+                result = this.TryGenerateConstant(apiNameOrModuleWildcard, out preciseApi);
+                if (result || preciseApi.Count > 1)
+                {
+                    return result;
+                }
+
+                return false;
             }
         }
 
@@ -468,8 +526,9 @@ namespace Microsoft.Windows.CsWin32
         /// Generates all APIs within a given namespace, and their dependencies.
         /// </summary>
         /// <param name="namespace">The namespace to generate APIs for.</param>
+        /// <param name="preciseApi">Receives the canonical API names that <paramref name="namespace"/> matched on.</param>
         /// <returns><see langword="true"/> if a matching namespace was found; otherwise <see langword="false"/>.</returns>
-        public bool TryGenerateNamespace(string @namespace)
+        public bool TryGenerateNamespace(string @namespace, out IReadOnlyList<string> preciseApi)
         {
             if (@namespace is null)
             {
@@ -480,12 +539,13 @@ namespace Microsoft.Windows.CsWin32
             if (!this.MetadataIndex.MetadataByNamespace.TryGetValue(@namespace, out metadata))
             {
                 // Fallback to case insensitive search if it looks promising to do so.
-                if (@namespace.StartsWith(CommonNamespace, StringComparison.OrdinalIgnoreCase))
+                if (@namespace.StartsWith(this.MetadataIndex.CommonNamespace, StringComparison.OrdinalIgnoreCase))
                 {
                     foreach (var item in this.MetadataIndex.MetadataByNamespace)
                     {
                         if (string.Equals(item.Key, @namespace, StringComparison.OrdinalIgnoreCase))
                         {
+                            @namespace = item.Key;
                             metadata = item.Value;
                             break;
                         }
@@ -513,9 +573,11 @@ namespace Microsoft.Windows.CsWin32
                     }
                 });
 
+                preciseApi = ImmutableList.Create(@namespace);
                 return true;
             }
 
+            preciseApi = ImmutableList<string>.Empty;
             return false;
         }
 
@@ -702,8 +764,9 @@ namespace Microsoft.Windows.CsWin32
         /// Generate code for the named extern method, if it is recognized.
         /// </summary>
         /// <param name="possiblyQualifiedName">The name of the extern method, optionally qualified with a namespace.</param>
+        /// <param name="preciseApi">Receives the canonical API names that <paramref name="possiblyQualifiedName"/> matched on.</param>
         /// <returns><see langword="true"/> if a match was found and the extern method generated; otherwise <see langword="false"/>.</returns>
-        public bool TryGenerateExternMethod(string possiblyQualifiedName)
+        public bool TryGenerateExternMethod(string possiblyQualifiedName, out IReadOnlyList<string> preciseApi)
         {
             if (possiblyQualifiedName is null)
             {
@@ -724,18 +787,25 @@ namespace Microsoft.Windows.CsWin32
                     this.RequestExternMethod(methodDefHandle);
                 });
 
+                string methodNamespace = this.Reader.GetString(this.Reader.GetTypeDefinition(methodDef.GetDeclaringType()).Namespace);
+                preciseApi = ImmutableList.Create($"{methodNamespace}.{methodName}");
                 return true;
             }
 
+            preciseApi = ImmutableList<string>.Empty;
             return false;
         }
+
+        /// <inheritdoc cref="TryGenerateType(string, out IReadOnlyList{string})"/>
+        public bool TryGenerateType(string possiblyQualifiedName) => this.TryGenerateType(possiblyQualifiedName, out _);
 
         /// <summary>
         /// Generate code for the named type, if it is recognized.
         /// </summary>
         /// <param name="possiblyQualifiedName">The name of the interop type, optionally qualified with a namespace.</param>
+        /// <param name="preciseApi">Receives the canonical API names that <paramref name="possiblyQualifiedName"/> matched on.</param>
         /// <returns><see langword="true"/> if a match was found and the type generated; otherwise <see langword="false"/>.</returns>
-        public bool TryGenerateType(string possiblyQualifiedName)
+        public bool TryGenerateType(string possiblyQualifiedName, out IReadOnlyList<string> preciseApi)
         {
             if (possiblyQualifiedName is null)
             {
@@ -766,18 +836,27 @@ namespace Microsoft.Windows.CsWin32
                     this.RequestInteropType(matchingTypeHandles[0]);
                 });
 
+                TypeDefinition td = this.Reader.GetTypeDefinition(matchingTypeHandles[0]);
+                preciseApi = ImmutableList.Create($"{this.Reader.GetString(td.Namespace)}.{this.Reader.GetString(td.Name)}");
                 return true;
             }
             else if (matchingTypeHandles.Count > 1)
             {
-                string matches = string.Join(
-                    ", ",
+                preciseApi = ImmutableList.CreateRange(
                     matchingTypeHandles.Select(h =>
                     {
                         TypeDefinition td = this.Reader.GetTypeDefinition(h);
                         return $"{this.Reader.GetString(td.Namespace)}.{this.Reader.GetString(td.Name)}";
                     }));
-                throw new ArgumentException("The type name is ambiguous. Use the fully-qualified name instead. Possible matches: " + matches);
+                return false;
+            }
+
+            if (SpecialTypeDefNames.Contains(typeName))
+            {
+                string? fullyQualifiedName = null;
+                this.volatileCode.GenerationTransaction(() => this.RequestSpecialTypeDefStruct(typeName, out fullyQualifiedName));
+                preciseApi = ImmutableList.Create(fullyQualifiedName!);
+                return true;
             }
 
             if (foundApiWithMismatchedPlatform)
@@ -785,6 +864,7 @@ namespace Microsoft.Windows.CsWin32
                 throw new PlatformIncompatibleException($"The requested API ({possiblyQualifiedName}) was found but is not available given the target platform ({this.compilation?.Options.Platform}).");
             }
 
+            preciseApi = ImmutableList<string>.Empty;
             return false;
         }
 
@@ -792,8 +872,9 @@ namespace Microsoft.Windows.CsWin32
         /// Generate code for the named constant, if it is recognized.
         /// </summary>
         /// <param name="possiblyQualifiedName">The name of the constant, optionally qualified with a namespace.</param>
+        /// <param name="preciseApi">Receives the canonical API names that <paramref name="possiblyQualifiedName"/> matched on.</param>
         /// <returns><see langword="true"/> if a match was found and the constant generated; otherwise <see langword="false"/>.</returns>
-        public bool TryGenerateConstant(string possiblyQualifiedName)
+        public bool TryGenerateConstant(string possiblyQualifiedName, out IReadOnlyList<string> preciseApi)
         {
             if (possiblyQualifiedName is null)
             {
@@ -819,21 +900,24 @@ namespace Microsoft.Windows.CsWin32
                     this.RequestConstant(matchingFieldHandles[0]);
                 });
 
+                FieldDefinition fd = this.Reader.GetFieldDefinition(matchingFieldHandles[0]);
+                TypeDefinition td = this.Reader.GetTypeDefinition(fd.GetDeclaringType());
+                preciseApi = ImmutableList.Create($"{this.Reader.GetString(td.Namespace)}.{this.Reader.GetString(fd.Name)}");
                 return true;
             }
             else if (matchingFieldHandles.Count > 1)
             {
-                string matches = string.Join(
-                    ", ",
+                preciseApi = ImmutableList.CreateRange(
                     matchingFieldHandles.Select(h =>
                     {
                         FieldDefinition fd = this.Reader.GetFieldDefinition(h);
                         TypeDefinition td = this.Reader.GetTypeDefinition(fd.GetDeclaringType());
                         return $"{this.Reader.GetString(td.Namespace)}.{this.Reader.GetString(fd.Name)}";
                     }));
-                throw new ArgumentException("The type name is ambiguous. Use the fully-qualified name instead. Possible matches: " + matches);
+                return false;
             }
 
+            preciseApi = ImmutableList<string>.Empty;
             return false;
         }
 
@@ -945,7 +1029,7 @@ namespace Microsoft.Windows.CsWin32
                 usingDirectives.Add(UsingDirective(ParseName(GlobalNamespacePrefix + "System.Runtime.Versioning")));
             }
 
-            usingDirectives.Add(UsingDirective(NameEquals(GlobalWin32NamespaceAlias), ParseName(GlobalNamespacePrefix + this.Namespace)));
+            usingDirectives.Add(UsingDirective(NameEquals(GlobalWinmdRootNamespaceAlias), ParseName(GlobalNamespacePrefix + this.MetadataIndex.CommonNamespace)));
 
             var normalizedResults = new Dictionary<string, CompilationUnitSyntax>(StringComparer.OrdinalIgnoreCase);
             results.AsParallel().WithCancellation(cancellationToken).ForAll(kv =>
@@ -966,8 +1050,32 @@ namespace Microsoft.Windows.CsWin32
                 }
             });
 
+            if (this.needsWinRTCustomMarshaler)
+            {
+                string? marshalerText = this.FetchTemplateText(WinRTCustomMarshalerClass);
+                if (marshalerText == null)
+                {
+                    throw new GenerationFailedException($"Failed to get template for \"{WinRTCustomMarshalerClass}\".");
+                }
+
+                var marshalerContents = SyntaxFactory.ParseSyntaxTree(marshalerText);
+                if (marshalerContents == null)
+                {
+                    throw new GenerationFailedException($"Failed adding \"{WinRTCustomMarshalerClass}\".");
+                }
+
+                var compilationUnit = ((CompilationUnitSyntax)marshalerContents.GetRoot())
+                    .WithLeadingTrivia(ParseLeadingTrivia(AutoGeneratedHeader));
+
+                normalizedResults.Add(
+                    string.Format(CultureInfo.InvariantCulture, FilenamePattern, WinRTCustomMarshalerClass),
+                    compilationUnit);
+            }
+
             return normalizedResults;
         }
+
+        internal static ImmutableDictionary<string, string> GetBannedAPIs(GeneratorOptions options) => options.AllowMarshaling ? BannedAPIsWithMarshaling : BannedAPIsWithoutMarshaling;
 
         [return: NotNullIfNotNull("marshalAs")]
         internal static AttributeSyntax? MarshalAs(MarshalAsAttribute? marshalAs)
@@ -978,31 +1086,12 @@ namespace Microsoft.Windows.CsWin32
             }
 
             // TODO: fill in more properties to match the original
-            return MarshalAs(marshalAs.Value);
+            return MarshalAs(marshalAs.Value, marshalAs.ArraySubType, marshalAs.MarshalCookie, marshalAs.MarshalType, marshalAs.SizeConst > 0 ? LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(marshalAs.SizeConst)) : null);
         }
 
         internal static TypeSyntax MakeSpanOfT(TypeSyntax typeArgument) => GenericName("Span").AddTypeArgumentListArguments(typeArgument);
 
         internal static TypeSyntax MakeReadOnlySpanOfT(TypeSyntax typeArgument) => GenericName("ReadOnlySpan").AddTypeArgumentListArguments(typeArgument);
-
-        internal static string ReplaceCommonNamespaceWithAlias(string fullNamespace) => TryStripCommonNamespace(fullNamespace, out string? stripped) ? $"{GlobalWin32NamespaceAlias}.{stripped}" : fullNamespace;
-
-        internal static bool TryStripCommonNamespace(string fullNamespace, [NotNullWhen(true)] out string? strippedNamespace)
-        {
-            if (fullNamespace.StartsWith(CommonNamespaceDot, StringComparison.Ordinal))
-            {
-                strippedNamespace = fullNamespace.Substring(CommonNamespaceDot.Length);
-                return true;
-            }
-            else if (fullNamespace == CommonNamespace)
-            {
-                strippedNamespace = string.Empty;
-                return true;
-            }
-
-            strippedNamespace = null;
-            return false;
-        }
 
         /// <summary>
         /// Checks whether an exception was originally thrown because of a target platform incompatibility.
@@ -1017,6 +1106,30 @@ namespace Microsoft.Windows.CsWin32
             }
 
             return ex is PlatformIncompatibleException || IsPlatformCompatibleException(ex?.InnerException);
+        }
+
+        internal static bool IsUntypedDelegate(MetadataReader reader, TypeDefinition typeDef) => reader.StringComparer.Equals(typeDef.Name, "PROC") || reader.StringComparer.Equals(typeDef.Name, "FARPROC");
+
+        internal static string ReplaceCommonNamespaceWithAlias(Generator? generator, string fullNamespace)
+        {
+            return generator is object && generator.TryStripCommonNamespace(fullNamespace, out string? stripped) ? (stripped.Length > 0 ? $"{GlobalWinmdRootNamespaceAlias}.{stripped}" : GlobalWinmdRootNamespaceAlias) : $"global::{fullNamespace}";
+        }
+
+        internal bool TryStripCommonNamespace(string fullNamespace, [NotNullWhen(true)] out string? strippedNamespace)
+        {
+            if (fullNamespace.StartsWith(this.MetadataIndex.CommonNamespaceDot, StringComparison.Ordinal))
+            {
+                strippedNamespace = fullNamespace.Substring(this.MetadataIndex.CommonNamespaceDot.Length);
+                return true;
+            }
+            else if (fullNamespace == this.MetadataIndex.CommonNamespace)
+            {
+                strippedNamespace = string.Empty;
+                return true;
+            }
+
+            strippedNamespace = null;
+            return false;
         }
 
         internal bool IsAttribute(CustomAttribute attribute, string ns, string name) => MetadataUtilities.IsAttribute(this.Reader, attribute, ns, name);
@@ -1144,6 +1257,26 @@ namespace Microsoft.Windows.CsWin32
             return false;
         }
 
+        internal void RequestInteropType(string @namespace, string name)
+        {
+            // PERF: Skip this search if this namespace/name has already been generated (committed, or still in volatileCode).
+            foreach (TypeDefinitionHandle tdh in this.Reader.TypeDefinitions)
+            {
+                TypeDefinition td = this.Reader.GetTypeDefinition(tdh);
+                if (this.Reader.StringComparer.Equals(td.Name, name) && this.Reader.StringComparer.Equals(td.Namespace, @namespace))
+                {
+                    this.volatileCode.GenerationTransaction(delegate
+                    {
+                        this.RequestInteropType(tdh);
+                    });
+
+                    return;
+                }
+            }
+
+            throw new GenerationFailedException($"Referenced type \"{@namespace}.{name}\" not found in \"{this.InputAssemblyName}\".");
+        }
+
         internal void RequestInteropType(TypeDefinitionHandle typeDefHandle)
         {
             TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefHandle);
@@ -1172,7 +1305,7 @@ namespace Microsoft.Windows.CsWin32
             {
                 if (this.RequestInteropType(typeDefHandle, null) is MemberDeclarationSyntax typeDeclaration)
                 {
-                    if (!TryStripCommonNamespace(ns, out string? shortNamespace))
+                    if (!this.TryStripCommonNamespace(ns, out string? shortNamespace))
                     {
                         throw new GenerationFailedException("Unexpected namespace: " + ns);
                     }
@@ -1183,23 +1316,38 @@ namespace Microsoft.Windows.CsWin32
                             new SyntaxAnnotation(NamespaceContainerAnnotation, shortNamespace));
                     }
 
+                    this.needsWinRTCustomMarshaler |= typeDeclaration.DescendantNodes().OfType<AttributeSyntax>()
+                        .Any(a => a.Name.ToString() == "MarshalAs" && a.ToString().Contains(WinRTCustomMarshalerFullName));
+
                     this.volatileCode.AddInteropType(typeDefHandle, typeDeclaration);
                 }
             });
         }
 
-        internal TypeDefinitionHandle? RequestInteropType(TypeReferenceHandle typeRefHandle)
+        internal void RequestInteropType(TypeReferenceHandle typeRefHandle)
         {
             if (this.TryGetTypeDefHandle(typeRefHandle, out TypeDefinitionHandle typeDefHandle))
             {
                 this.RequestInteropType(typeDefHandle);
-                return typeDefHandle;
             }
             else
             {
-                // System.Guid reaches here, but doesn't need to be generated.
-                ////throw new NotSupportedException($"Could not find a type def for: {this.mr.GetString(typeRef.Namespace)}.{name}");
-                return null;
+                TypeReference typeRef = this.Reader.GetTypeReference(typeRefHandle);
+                if (typeRef.ResolutionScope.Kind == HandleKind.AssemblyReference)
+                {
+                    if (this.SuperGenerator?.TryRequestInteropType(new(this, typeRef)) is not true)
+                    {
+                        // We can't find the interop among our metadata inputs.
+                        // Before we give up and report an error, search for the required type among the compilation's referenced assemblies.
+                        string metadataName = $"{this.Reader.GetString(typeRef.Namespace)}.{this.Reader.GetString(typeRef.Name)}";
+                        if (this.compilation?.GetTypeByMetadataName(metadataName) is null)
+                        {
+                            AssemblyReference assemblyRef = this.Reader.GetAssemblyReference((AssemblyReferenceHandle)typeRef.ResolutionScope);
+                            string scope = this.Reader.GetString(assemblyRef.Name);
+                            throw new GenerationFailedException($"Input metadata file \"{scope}\" has not been provided.");
+                        }
+                    }
+                }
             }
         }
 
@@ -1237,10 +1385,7 @@ namespace Microsoft.Windows.CsWin32
             string releaseMethodModule = this.GetNormalizedModuleName(releaseMethodDef.GetImport());
 
             var safeHandleTypeIdentifier = IdentifierName(safeHandleClassName);
-            safeHandleType = this.GroupByModule
-                ? QualifiedName(IdentifierName(releaseMethodModule), safeHandleTypeIdentifier)
-                : safeHandleTypeIdentifier;
-            safeHandleType = safeHandleType.WithAdditionalAnnotations(IsManagedTypeAnnotation, IsSafeHandleTypeAnnotation);
+            safeHandleType = safeHandleTypeIdentifier;
 
             MethodSignature<TypeHandleInfo> releaseMethodSignature = releaseMethodDef.DecodeSignature(SignatureHandleProvider.Instance, null);
             var releaseMethodParameterType = releaseMethodSignature.ParameterTypes[0].ToTypeSyntax(this.externSignatureTypeSettings, default);
@@ -1325,12 +1470,12 @@ namespace Microsoft.Windows.CsWin32
             ExpressionSyntax releaseInvocation = InvocationExpression(
                 MemberAccessExpression(
                     SyntaxKind.SimpleMemberAccessExpression,
-                    IdentifierName(this.GroupByModule ? releaseMethodModule : this.SingleClassName),
+                    IdentifierName(this.options.ClassName),
                     IdentifierName(renamedReleaseMethod ?? releaseMethod)),
                 ArgumentList().AddArguments(Argument(CastExpression(releaseMethodParameterType.Type, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("handle"))))));
             BlockSyntax? releaseBlock = null;
             if (!(releaseMethodReturnType.Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.BoolKeyword } } ||
-                releaseMethodReturnType.Type is IdentifierNameSyntax { Identifier: { ValueText: "BOOL" } }))
+                releaseMethodReturnType.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "BOOL" } } }))
             {
                 switch (releaseMethodReturnType.Type)
                 {
@@ -1365,17 +1510,17 @@ namespace Microsoft.Windows.CsWin32
                         {
                             case "LSTATUS":
                                 this.TryGenerateTypeOrThrow("WIN32_ERROR");
-                                ExpressionSyntax errorSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseTypeName(GlobalWin32NamespaceAlias + ".System.Diagnostics.Debug.WIN32_ERROR"), IdentifierName("ERROR_SUCCESS"));
-                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, CastExpression(ParseTypeName(GlobalWin32NamespaceAlias + ".Foundation.LSTATUS"), CastExpression(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), errorSuccess)));
+                                ExpressionSyntax errorSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseTypeName("global::Windows.Win32.Foundation.WIN32_ERROR"), IdentifierName("ERROR_SUCCESS"));
+                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, CastExpression(ParseTypeName("global::Windows.Win32.Foundation.LSTATUS"), CastExpression(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), errorSuccess)));
                                 break;
                             case "NTSTATUS":
                                 this.TryGenerateConstantOrThrow("STATUS_SUCCESS");
-                                ExpressionSyntax statusSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ConstantsClassName, IdentifierName("STATUS_SUCCESS"));
+                                ExpressionSyntax statusSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, this.methodsAndConstantsClassName, IdentifierName("STATUS_SUCCESS"));
                                 releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, statusSuccess);
                                 break;
                             case "HRESULT":
                                 this.TryGenerateConstantOrThrow("S_OK");
-                                ExpressionSyntax ok = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ConstantsClassName, IdentifierName("S_OK"));
+                                ExpressionSyntax ok = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, this.methodsAndConstantsClassName, IdentifierName("S_OK"));
                                 releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, ok);
                                 break;
                             default:
@@ -1402,16 +1547,11 @@ namespace Microsoft.Windows.CsWin32
                 .AddMembers(members.ToArray())
                 .WithLeadingTrivia(ParseLeadingTrivia($@"
         /// <summary>
-        /// Represents a Win32 handle that can be closed with <see cref=""{(this.GroupByModule ? releaseMethodModule : this.SingleClassName)}.{renamedReleaseMethod ?? releaseMethod}""/>.
+        /// Represents a Win32 handle that can be closed with <see cref=""{this.options.ClassName}.{renamedReleaseMethod ?? releaseMethod}""/>.
         /// </summary>
 "));
 
             this.volatileCode.AddSafeHandleType(safeHandleDeclaration);
-            if (this.GroupByModule)
-            {
-                this.volatileCode.AddMemberToModule(releaseMethodModule, safeHandleDeclaration);
-            }
-
             return safeHandleType;
         }
 
@@ -1456,31 +1596,60 @@ namespace Microsoft.Windows.CsWin32
             }
 
             MemberDeclarationSyntax? specialDeclaration = null;
-            this.volatileCode.GenerateSpecialType(specialName, delegate
+            if (this.InputAssemblyName.Equals("Windows.Win32", StringComparison.OrdinalIgnoreCase))
             {
-                switch (specialName)
+                this.volatileCode.GenerateSpecialType(specialName, delegate
                 {
-                    case "PCWSTR":
-                        specialDeclaration = this.FetchTemplate($"{specialName}");
-                        this.TryGenerateType("PWSTR"); // the template references this type
-                        break;
-                    case "PCSTR":
-                        specialDeclaration = this.FetchTemplate($"{specialName}");
-                        this.TryGenerateType("PSTR"); // the template references this type
-                        break;
-                    default:
-                        throw new ArgumentException($"This special name is not recognized: \"{specialName}\".", nameof(specialName));
-                }
+                    switch (specialName)
+                    {
+                        case "PCWSTR":
+                            specialDeclaration = this.FetchTemplate($"{specialName}");
 
-                if (specialDeclaration is null)
+                            if (this.canUseSpan)
+                            {
+                                // internal ReadOnlySpan<char> AsSpan() => this.Value is null ? default(ReadOnlySpan<char>) : new ReadOnlySpan<char>(this.Value, this.Length);
+                                specialDeclaration = ((TypeDeclarationSyntax)specialDeclaration).AddMembers(
+                                        this.CreateAsSpanMethodOverValueAndLength(MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword)))));
+                            }
+
+                            this.TryGenerateType("Windows.Win32.Foundation.PWSTR"); // the template references this type
+                            break;
+                        case "PCSTR":
+                            specialDeclaration = this.FetchTemplate($"{specialName}");
+
+                            if (this.canUseSpan)
+                            {
+                                // internal ReadOnlySpan<byte> AsSpan() => this.Value is null ? default(ReadOnlySpan<byte>) : new ReadOnlySpan<byte>(this.Value, this.Length);
+                                specialDeclaration = ((TypeDeclarationSyntax)specialDeclaration).AddMembers(
+                                        this.CreateAsSpanMethodOverValueAndLength(MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.ByteKeyword)))));
+                            }
+
+                            this.TryGenerateType("Windows.Win32.Foundation.PSTR"); // the template references this type
+                            break;
+                        default:
+                            throw new ArgumentException($"This special name is not recognized: \"{specialName}\".", nameof(specialName));
+                    }
+
+                    if (specialDeclaration is null)
+                    {
+                        throw new GenerationFailedException("Failed to parse template.");
+                    }
+
+                    specialDeclaration = specialDeclaration.WithAdditionalAnnotations(new SyntaxAnnotation(NamespaceContainerAnnotation, subNamespace));
+
+                    this.volatileCode.AddSpecialType(specialName, specialDeclaration);
+                });
+            }
+            else if (this.SuperGenerator?.TryGetGenerator("Windows.Win32", out Generator? win32Generator) is true)
+            {
+                string? fullyQualifiedNameLocal = null!;
+                win32Generator.volatileCode.GenerationTransaction(delegate
                 {
-                    throw new GenerationFailedException("Failed to parse template.");
-                }
+                    specialDeclaration = win32Generator.RequestSpecialTypeDefStruct(specialName, out fullyQualifiedNameLocal);
+                });
+                fullyQualifiedName = fullyQualifiedNameLocal;
+            }
 
-                specialDeclaration = specialDeclaration.WithAdditionalAnnotations(new SyntaxAnnotation(NamespaceContainerAnnotation, subNamespace));
-
-                this.volatileCode.AddSpecialType(specialName, specialDeclaration);
-            });
             return specialDeclaration;
         }
 
@@ -1512,6 +1681,23 @@ namespace Microsoft.Windows.CsWin32
             return null;
         }
 
+        internal bool TryGetTypeDefHandle(TypeReferenceHandle typeRefHandle, out QualifiedTypeDefinitionHandle typeDefHandle)
+        {
+            if (this.SuperGenerator is object)
+            {
+                return this.SuperGenerator.TryGetTypeDefinitionHandle(new QualifiedTypeReferenceHandle(this, typeRefHandle), out typeDefHandle);
+            }
+
+            if (this.TryGetTypeDefHandle(typeRefHandle, out TypeDefinitionHandle localTypeDefHandle))
+            {
+                typeDefHandle = new QualifiedTypeDefinitionHandle(this, localTypeDefHandle);
+                return true;
+            }
+
+            typeDefHandle = default;
+            return false;
+        }
+
         /// <summary>
         /// Attempts to translate a <see cref="TypeReferenceHandle"/> to a <see cref="TypeDefinitionHandle"/>.
         /// </summary>
@@ -1526,36 +1712,73 @@ namespace Microsoft.Windows.CsWin32
             }
 
             var typeRef = this.Reader.GetTypeReference(typeRefHandle);
-
-            // PERF: check that the ResolutionScope is Module before proceeding.
-            foreach (TypeDefinitionHandle tdh in this.Reader.TypeDefinitions)
+            if (typeRef.ResolutionScope.Kind != HandleKind.AssemblyReference)
             {
-                TypeDefinition typeDef = this.Reader.GetTypeDefinition(tdh);
-                if (typeDef.Name == typeRef.Name && typeDef.Namespace == typeRef.Namespace)
+                foreach (TypeDefinitionHandle tdh in this.Reader.TypeDefinitions)
                 {
-                    if (typeRef.ResolutionScope.Kind == HandleKind.TypeReference)
+                    TypeDefinition typeDef = this.Reader.GetTypeDefinition(tdh);
+                    if (typeDef.Name == typeRef.Name && typeDef.Namespace == typeRef.Namespace)
                     {
-                        // The ref is nested. Verify that the type we found is nested in the same type as well.
-                        if (this.TryGetTypeDefHandle((TypeReferenceHandle)typeRef.ResolutionScope, out TypeDefinitionHandle nestingTypeDef) && nestingTypeDef == typeDef.GetDeclaringType())
+                        if (typeRef.ResolutionScope.Kind == HandleKind.TypeReference)
+                        {
+                            // The ref is nested. Verify that the type we found is nested in the same type as well.
+                            if (this.TryGetTypeDefHandle((TypeReferenceHandle)typeRef.ResolutionScope, out TypeDefinitionHandle nestingTypeDef) && nestingTypeDef == typeDef.GetDeclaringType())
+                            {
+                                typeDefHandle = tdh;
+                                break;
+                            }
+                        }
+                        else if (typeRef.ResolutionScope.Kind == HandleKind.ModuleDefinition && typeDef.GetDeclaringType().IsNil)
                         {
                             typeDefHandle = tdh;
                             break;
                         }
-                    }
-                    else if (typeRef.ResolutionScope.Kind == HandleKind.ModuleDefinition && typeDef.GetDeclaringType().IsNil)
-                    {
-                        typeDefHandle = tdh;
-                        break;
-                    }
-                    else
-                    {
-                        throw new NotSupportedException("Unrecognized ResolutionScope: " + typeRef.ResolutionScope);
+                        else
+                        {
+                            throw new NotSupportedException("Unrecognized ResolutionScope: " + typeRef.ResolutionScope);
+                        }
                     }
                 }
             }
 
             this.refToDefCache.Add(typeRefHandle, typeDefHandle);
             return !typeDefHandle.IsNil;
+        }
+
+        internal bool TryGetTypeDefHandle(TypeReference typeRef, out TypeDefinitionHandle typeDefHandle) => this.TryGetTypeDefHandle(typeRef.Namespace, typeRef.Name, out typeDefHandle);
+
+        internal bool TryGetTypeDefHandle(StringHandle @namespace, StringHandle name, out TypeDefinitionHandle typeDefHandle)
+        {
+            // PERF: Use an index
+            foreach (TypeDefinitionHandle tdh in this.Reader.TypeDefinitions)
+            {
+                TypeDefinition td = this.Reader.GetTypeDefinition(tdh);
+                if (td.Name.Equals(name) && td.Namespace.Equals(@namespace))
+                {
+                    typeDefHandle = tdh;
+                    return true;
+                }
+            }
+
+            typeDefHandle = default;
+            return false;
+        }
+
+        internal bool TryGetTypeDefHandle(string @namespace, string name, out TypeDefinitionHandle typeDefinitionHandle)
+        {
+            // PERF: Use an index
+            foreach (TypeDefinitionHandle tdh in this.Reader.TypeDefinitions)
+            {
+                TypeDefinition td = this.Reader.GetTypeDefinition(tdh);
+                if (this.Reader.StringComparer.Equals(td.Name, name) && this.Reader.StringComparer.Equals(td.Namespace, @namespace))
+                {
+                    typeDefinitionHandle = tdh;
+                    return true;
+                }
+            }
+
+            typeDefinitionHandle = default;
+            return false;
         }
 
         internal bool IsNonCOMInterface(TypeDefinition interfaceTypeDef)
@@ -1692,7 +1915,7 @@ namespace Microsoft.Windows.CsWin32
 
         private static AttributeSyntax FieldOffset(int offset) => FieldOffsetAttributeSyntax.AddArgumentListArguments(AttributeArgument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(offset))));
 
-        private static AttributeSyntax StructLayout(TypeAttributes typeAttributes, TypeLayout layout)
+        private static AttributeSyntax StructLayout(TypeAttributes typeAttributes, TypeLayout layout = default, CharSet charSet = CharSet.Ansi)
         {
             LayoutKind layoutKind = (typeAttributes & TypeAttributes.ExplicitLayout) == TypeAttributes.ExplicitLayout ? LayoutKind.Explicit : LayoutKind.Sequential;
             var structLayoutAttribute = Attribute(IdentifierName("StructLayout")).AddArgumentListArguments(
@@ -1713,6 +1936,13 @@ namespace Microsoft.Windows.CsWin32
                 structLayoutAttribute = structLayoutAttribute.AddArgumentListArguments(
                     AttributeArgument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(layout.Size)))
                         .WithNameEquals(NameEquals(nameof(StructLayoutAttribute.Size))));
+            }
+
+            if (charSet != CharSet.Ansi)
+            {
+                structLayoutAttribute = structLayoutAttribute.AddArgumentListArguments(
+                    AttributeArgument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(CharSet)), IdentifierName(Enum.GetName(typeof(CharSet), charSet)!)))
+                    .WithNameEquals(NameEquals(IdentifierName(nameof(StructLayoutAttribute.CharSet)))));
             }
 
             return structLayoutAttribute;
@@ -1766,14 +1996,48 @@ namespace Microsoft.Windows.CsWin32
                     IdentifierName(Enum.GetName(typeof(CallingConvention), callingConvention)!))));
         }
 
-        private static AttributeSyntax MarshalAs(UnmanagedType unmanagedType)
+        private static AttributeSyntax MarshalAs(UnmanagedType unmanagedType, UnmanagedType? arraySubType = null, string? marshalCookie = null, string? marshalType = null, ExpressionSyntax? sizeConst = null)
         {
-            return Attribute(IdentifierName("MarshalAs"))
-                .AddArgumentListArguments(AttributeArgument(
-                    MemberAccessExpression(
-                        SyntaxKind.SimpleMemberAccessExpression,
-                        IdentifierName(nameof(UnmanagedType)),
-                        IdentifierName(Enum.GetName(typeof(UnmanagedType), unmanagedType)!))));
+            var marshalAs =
+                Attribute(IdentifierName("MarshalAs"))
+                    .AddArgumentListArguments(AttributeArgument(
+                        MemberAccessExpression(
+                            SyntaxKind.SimpleMemberAccessExpression,
+                            IdentifierName(nameof(UnmanagedType)),
+                            IdentifierName(Enum.GetName(typeof(UnmanagedType), unmanagedType)!))));
+
+            if (arraySubType.HasValue && arraySubType.Value != 0 && unmanagedType is UnmanagedType.ByValArray or UnmanagedType.LPArray or UnmanagedType.SafeArray)
+            {
+                marshalAs = marshalAs.AddArgumentListArguments(
+                    AttributeArgument(
+                        MemberAccessExpression(
+                            SyntaxKind.SimpleMemberAccessExpression,
+                            IdentifierName(nameof(UnmanagedType)),
+                            IdentifierName(Enum.GetName(typeof(UnmanagedType), arraySubType.Value)!)))
+                        .WithNameEquals(NameEquals(nameof(MarshalAsAttribute.ArraySubType))));
+            }
+
+            if (sizeConst is object)
+            {
+                marshalAs = marshalAs.AddArgumentListArguments(
+                    AttributeArgument(sizeConst).WithNameEquals(NameEquals(nameof(MarshalAsAttribute.SizeConst))));
+            }
+
+            if (!string.IsNullOrEmpty(marshalCookie))
+            {
+                marshalAs = marshalAs.AddArgumentListArguments(
+                    AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(marshalCookie!)))
+                        .WithNameEquals(NameEquals(nameof(MarshalAsAttribute.MarshalCookie))));
+            }
+
+            if (!string.IsNullOrEmpty(marshalType))
+            {
+                marshalAs = marshalAs.AddArgumentListArguments(
+                    AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(marshalType!)))
+                        .WithNameEquals(NameEquals(nameof(MarshalAsAttribute.MarshalType))));
+            }
+
+            return marshalAs;
         }
 
         private static AttributeSyntax DebuggerBrowsable(DebuggerBrowsableState state)
@@ -1900,7 +2164,7 @@ namespace Microsoft.Windows.CsWin32
             var k = (byte)args.FixedArguments[10].Value!;
             var pid = (uint)args.FixedArguments[11].Value!;
 
-            return ObjectCreationExpression(IdentifierName("win32.System.PropertiesSystem.PROPERTYKEY")).WithInitializer(
+            return ObjectCreationExpression(IdentifierName("global::Windows.Win32.UI.Shell.PropertiesSystem.PROPERTYKEY")).WithInitializer(
                 InitializerExpression(SyntaxKind.ObjectInitializerExpression, SeparatedList<ExpressionSyntax>(new[]
                 {
                     AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, IdentifierName("fmtid"), GuidValue(propertyKeyAttribute)),
@@ -1919,7 +2183,7 @@ namespace Microsoft.Windows.CsWin32
         {
             int nameIdx = possiblyQualifiedName.LastIndexOf('.');
             @namespace = nameIdx >= 0 ? possiblyQualifiedName.Substring(0, nameIdx) : null;
-            name = nameIdx >= 0 ? possiblyQualifiedName.Substring(nameIdx) : possiblyQualifiedName;
+            name = nameIdx >= 0 ? possiblyQualifiedName.Substring(nameIdx + 1) : possiblyQualifiedName;
             return @namespace is object;
         }
 
@@ -2149,17 +2413,27 @@ namespace Microsoft.Windows.CsWin32
             return result;
         }
 
-        private bool TryFetchTemplate(string name, [NotNullWhen(true)] out MemberDeclarationSyntax? member)
+        private string? FetchTemplateText(string name)
         {
             using Stream? templateStream = Assembly.GetExecutingAssembly().GetManifestResourceStream($"{ThisAssembly.RootNamespace}.templates.{name.Replace('/', '.')}.cs");
             if (templateStream is null)
+            {
+                return null;
+            }
+
+            using StreamReader sr = new(templateStream);
+            return sr.ReadToEnd().Replace("\r\n", "\n").Replace("\t", string.Empty);
+        }
+
+        private bool TryFetchTemplate(string name, [NotNullWhen(true)] out MemberDeclarationSyntax? member)
+        {
+            string? template = this.FetchTemplateText(name);
+            if (template == null)
             {
                 member = null;
                 return false;
             }
 
-            using StreamReader sr = new(templateStream);
-            string template = sr.ReadToEnd().Replace("\r\n", "\n").Replace("\t", string.Empty);
             member = ParseMemberDeclaration(template) ?? throw new GenerationFailedException($"Unable to parse a type from a template: {name}");
             member = this.ElevateVisibility(member);
             return true;
@@ -2314,6 +2588,10 @@ namespace Microsoft.Windows.CsWin32
                     {
                         typeDeclaration = this.DeclareTypeDefStruct(typeDef);
                     }
+                    else if (this.IsEmptyStructWithGuid(typeDef))
+                    {
+                        typeDeclaration = this.DeclareCocreatableClass(typeDef);
+                    }
                     else
                     {
                         StructDeclarationSyntax structDeclaration = this.DeclareStruct(typeDef);
@@ -2336,9 +2614,12 @@ namespace Microsoft.Windows.CsWin32
                     // Consider reusing .NET types like FILE_SHARE_FLAGS -> System.IO.FileShare
                     typeDeclaration = this.DeclareEnum(typeDef);
                 }
-                else if (this.options.AllowMarshaling && this.Reader.StringComparer.Equals(baseTypeName, nameof(MulticastDelegate)) && this.Reader.StringComparer.Equals(baseTypeNamespace, nameof(System)))
+                else if (this.Reader.StringComparer.Equals(baseTypeName, nameof(MulticastDelegate)) && this.Reader.StringComparer.Equals(baseTypeNamespace, nameof(System)))
                 {
-                    typeDeclaration = this.DeclareDelegate(typeDef);
+                    typeDeclaration =
+                        this.IsUntypedDelegate(typeDef) ? this.DeclareUntypedDelegate(typeDef) :
+                        this.options.AllowMarshaling ? this.DeclareDelegate(typeDef) :
+                        null;
                 }
                 else
                 {
@@ -2354,7 +2635,15 @@ namespace Microsoft.Windows.CsWin32
             }
         }
 
+        private bool IsUntypedDelegate(TypeDefinition typeDef) => IsUntypedDelegate(this.Reader, typeDef);
+
         private bool IsTypeDefStruct(TypeDefinition typeDef) => typeDef.GetCustomAttributes().Any(att => this.IsAttribute(this.Reader.GetCustomAttribute(att), InteropDecorationNamespace, NativeTypedefAttribute));
+
+        private bool IsEmptyStructWithGuid(TypeDefinition typeDef)
+        {
+            return typeDef.GetCustomAttributes().Any(att => this.IsAttribute(this.Reader.GetCustomAttribute(att), InteropDecorationNamespace, nameof(GuidAttribute)))
+                && typeDef.GetFields().Count == 0;
+        }
 
         private void DeclareExternMethod(MethodDefinitionHandle methodDefinitionHandle)
         {
@@ -2425,8 +2714,7 @@ namespace Microsoft.Windows.CsWin32
                     methodDeclaration = methodDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));
                 }
 
-                NameSyntax declaringTypeName = ParseName(this.GroupByModule ? GetClassNameForModule(moduleName) : this.SingleClassName);
-                this.volatileCode.AddMemberToModule(moduleName, this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, declaringTypeName, FriendlyOverloadOf.ExternMethod));
+                this.volatileCode.AddMemberToModule(moduleName, this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, this.methodsAndConstantsClassName, FriendlyOverloadOf.ExternMethod));
                 this.volatileCode.AddMemberToModule(moduleName, methodDeclaration);
             }
             catch (Exception ex)
@@ -2534,7 +2822,7 @@ namespace Microsoft.Windows.CsWin32
 
         private void TryGenerateConstantOrThrow(string possiblyQualifiedName)
         {
-            if (!this.TryGenerateConstant(possiblyQualifiedName))
+            if (!this.TryGenerateConstant(possiblyQualifiedName, out _))
             {
                 throw new GenerationFailedException("Unable to find expected constant: " + possiblyQualifiedName);
             }
@@ -2546,7 +2834,6 @@ namespace Microsoft.Windows.CsWin32
             string name = this.Reader.GetString(fieldDef.Name);
             try
             {
-                bool isConst = (fieldDef.Attributes & FieldAttributes.HasDefault) == FieldAttributes.HasDefault;
                 TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null) with { IsConstantField = true };
                 var customAttributes = fieldDef.GetCustomAttributes();
                 var fieldType = fieldTypeInfo.ToTypeSyntax(this.fieldTypeSettings, customAttributes);
@@ -2606,7 +2893,7 @@ namespace Microsoft.Windows.CsWin32
 
         private ClassDeclarationSyntax DeclareConstantDefiningClass()
         {
-            return ClassDeclaration(ConstantsClassName.Identifier)
+            return ClassDeclaration(this.methodsAndConstantsClassName.Identifier)
                 .AddMembers(this.committedCode.Fields.ToArray())
                 .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)));
         }
@@ -2636,19 +2923,19 @@ namespace Microsoft.Windows.CsWin32
         /// </remarks>
         private TypeDeclarationSyntax? DeclareInterface(TypeDefinition typeDef)
         {
-            Stack<TypeDefinitionHandle> baseTypes = new Stack<TypeDefinitionHandle>();
-            InterfaceImplementationHandle baseTypeHandle = typeDef.GetInterfaceImplementations().SingleOrDefault();
-            while (!baseTypeHandle.IsNil)
+            Stack<QualifiedTypeDefinitionHandle> baseTypes = new Stack<QualifiedTypeDefinitionHandle>();
+            (Generator Generator, InterfaceImplementationHandle Handle) baseTypeHandle = (this, typeDef.GetInterfaceImplementations().SingleOrDefault());
+            while (!baseTypeHandle.Handle.IsNil)
             {
-                InterfaceImplementation baseTypeImpl = this.Reader.GetInterfaceImplementation(baseTypeHandle);
-                if (!this.TryGetTypeDefHandle((TypeReferenceHandle)baseTypeImpl.Interface, out TypeDefinitionHandle baseTypeDefHandle))
+                InterfaceImplementation baseTypeImpl = baseTypeHandle.Generator.Reader.GetInterfaceImplementation(baseTypeHandle.Handle);
+                if (!baseTypeHandle.Generator.TryGetTypeDefHandle((TypeReferenceHandle)baseTypeImpl.Interface, out QualifiedTypeDefinitionHandle baseTypeDefHandle))
                 {
                     throw new GenerationFailedException("Failed to find base type.");
                 }
 
                 baseTypes.Push(baseTypeDefHandle);
-                TypeDefinition baseType = this.Reader.GetTypeDefinition(baseTypeDefHandle);
-                baseTypeHandle = baseType.GetInterfaceImplementations().SingleOrDefault();
+                TypeDefinition baseType = baseTypeDefHandle.Reader.GetTypeDefinition(baseTypeDefHandle.DefinitionHandle);
+                baseTypeHandle = (baseTypeHandle.Generator, baseType.GetInterfaceImplementations().SingleOrDefault());
             }
 
             return !this.options.AllowMarshaling || this.IsNonCOMInterface(typeDef)
@@ -2656,7 +2943,7 @@ namespace Microsoft.Windows.CsWin32
                 : this.DeclareInterfaceAsInterface(typeDef, baseTypes);
         }
 
-        private TypeDeclarationSyntax DeclareInterfaceAsStruct(TypeDefinition typeDef, Stack<TypeDefinitionHandle> baseTypes)
+        private TypeDeclarationSyntax DeclareInterfaceAsStruct(TypeDefinition typeDef, Stack<QualifiedTypeDefinitionHandle> baseTypes)
         {
             IdentifierNameSyntax ifaceName = IdentifierName(this.Reader.GetString(typeDef.Name));
             IdentifierNameSyntax vtblFieldName = IdentifierName("lpVtbl");
@@ -2665,27 +2952,28 @@ namespace Microsoft.Windows.CsWin32
             TypeSyntaxSettings typeSettings = this.comSignatureTypeSettings;
 
             // It is imperative that we generate methods for all base interfaces as well, ahead of any implemented by *this* interface.
-            var allMethods = new List<MethodDefinitionHandle>();
+            var allMethods = new List<QualifiedMethodDefinitionHandle>();
             while (baseTypes.Count > 0)
             {
-                TypeDefinition baseType = this.Reader.GetTypeDefinition(baseTypes.Pop());
-                allMethods.AddRange(baseType.GetMethods());
+                QualifiedTypeDefinitionHandle qualifiedBaseType = baseTypes.Pop();
+                TypeDefinition baseType = qualifiedBaseType.Generator.Reader.GetTypeDefinition(qualifiedBaseType.DefinitionHandle);
+                allMethods.AddRange(baseType.GetMethods().Select(m => new QualifiedMethodDefinitionHandle(qualifiedBaseType.Generator, m)));
             }
 
-            allMethods.AddRange(typeDef.GetMethods());
+            allMethods.AddRange(typeDef.GetMethods().Select(m => new QualifiedMethodDefinitionHandle(this, m)));
             int methodCounter = 0;
-            foreach (MethodDefinitionHandle methodDefHandle in allMethods)
+            foreach (QualifiedMethodDefinitionHandle methodDefHandle in allMethods)
             {
                 methodCounter++;
-                var methodDefinition = this.Reader.GetMethodDefinition(methodDefHandle);
-                string methodName = this.Reader.GetString(methodDefinition.Name);
+                var methodDefinition = methodDefHandle.Resolve();
+                string methodName = methodDefinition.Reader.GetString(methodDefinition.Method.Name);
                 IdentifierNameSyntax innerMethodName = IdentifierName($"{methodName}_{methodCounter}");
 
-                MethodSignature<TypeHandleInfo> signature = methodDefinition.DecodeSignature(SignatureHandleProvider.Instance, null);
-                CustomAttributeHandleCollection? returnTypeAttributes = this.GetReturnTypeCustomAttributes(methodDefinition);
+                MethodSignature<TypeHandleInfo> signature = methodDefinition.Method.DecodeSignature(SignatureHandleProvider.Instance, null);
+                CustomAttributeHandleCollection? returnTypeAttributes = methodDefinition.Generator.GetReturnTypeCustomAttributes(methodDefinition.Method);
                 var returnType = signature.ReturnType.ToTypeSyntax(typeSettings, returnTypeAttributes);
 
-                ParameterListSyntax parameterList = this.CreateParameterList(methodDefinition, signature, typeSettings);
+                ParameterListSyntax parameterList = methodDefinition.Generator.CreateParameterList(methodDefinition.Method, signature, typeSettings);
                 FunctionPointerParameterListSyntax funcPtrParameters = FunctionPointerParameterList()
                     .AddParameters(FunctionPointerParameter(PointerType(ifaceName)))
                     .AddParameters(parameterList.Parameters.Select(p => FunctionPointerParameter(p.Type!).WithModifiers(p.Modifiers)).ToArray())
@@ -2741,7 +3029,7 @@ namespace Microsoft.Windows.CsWin32
                 // Add documentation if we can find it.
                 methodDeclaration = this.AddApiDocumentation($"{ifaceName}.{methodName}", methodDeclaration);
 
-                members.AddRange(this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, IdentifierName(ifaceName.Identifier.ValueText), FriendlyOverloadOf.StructMethod));
+                members.AddRange(methodDefinition.Generator.DeclareFriendlyOverloads(methodDefinition.Method, methodDeclaration, IdentifierName(ifaceName.Identifier.ValueText), FriendlyOverloadOf.StructMethod));
                 members.Add(methodDeclaration);
             }
 
@@ -2770,7 +3058,7 @@ namespace Microsoft.Windows.CsWin32
             return iface;
         }
 
-        private TypeDeclarationSyntax? DeclareInterfaceAsInterface(TypeDefinition typeDef, Stack<TypeDefinitionHandle> baseTypes)
+        private TypeDeclarationSyntax? DeclareInterfaceAsInterface(TypeDefinition typeDef, Stack<QualifiedTypeDefinitionHandle> baseTypes)
         {
             if (this.Reader.StringComparer.Equals(typeDef.Name, "IUnknown") || this.Reader.StringComparer.Equals(typeDef.Name, "IDispatch"))
             {
@@ -2789,31 +3077,31 @@ namespace Microsoft.Windows.CsWin32
             var baseTypeSyntaxList = new List<BaseTypeSyntax>();
             while (baseTypes.Count > 0)
             {
-                TypeDefinitionHandle baseTypeHandle = baseTypes.Pop();
-                TypeDefinition baseType = this.Reader.GetTypeDefinition(baseTypeHandle);
+                QualifiedTypeDefinitionHandle baseTypeHandle = baseTypes.Pop();
+                TypeDefinition baseType = baseTypeHandle.Reader.GetTypeDefinition(baseTypeHandle.DefinitionHandle);
                 if (!foundIUnknown)
                 {
-                    if (!this.Reader.StringComparer.Equals(baseType.Name, "IUnknown"))
+                    if (!baseTypeHandle.Reader.StringComparer.Equals(baseType.Name, "IUnknown"))
                     {
-                        throw new NotSupportedException("Unsupported base COM interface type: " + this.Reader.GetString(baseType.Name));
+                        throw new NotSupportedException("Unsupported base COM interface type: " + baseTypeHandle.Reader.GetString(baseType.Name));
                     }
 
                     foundIUnknown = true;
                 }
                 else
                 {
-                    if (this.Reader.StringComparer.Equals(baseType.Name, "IDispatch"))
+                    if (baseTypeHandle.Reader.StringComparer.Equals(baseType.Name, "IDispatch"))
                     {
                         foundIDispatch = true;
                     }
-                    else if (this.Reader.StringComparer.Equals(baseType.Name, "IInspectable"))
+                    else if (baseTypeHandle.Reader.StringComparer.Equals(baseType.Name, "IInspectable"))
                     {
                         foundIInspectable = true;
                     }
                     else
                     {
-                        this.RequestInteropType(baseTypeHandle);
-                        baseTypeSyntaxList.Add(SimpleBaseType(new HandleTypeHandleInfo(this.Reader, baseTypeHandle).ToTypeSyntax(this.comSignatureTypeSettings, null).Type));
+                        baseTypeHandle.Generator.RequestInteropType(baseTypeHandle.DefinitionHandle);
+                        baseTypeSyntaxList.Add(SimpleBaseType(new HandleTypeHandleInfo(baseTypeHandle.Reader, baseTypeHandle.DefinitionHandle).ToTypeSyntax(this.comSignatureTypeSettings, null).Type));
                         allMethods.AddRange(baseType.GetMethods());
                     }
                 }
@@ -2895,7 +3183,7 @@ namespace Microsoft.Windows.CsWin32
                     methodDeclaration = this.AddApiDocumentation($"{ifaceName}.{methodName}", methodDeclaration);
                     members.Add(methodDeclaration);
 
-                    NameSyntax declaringTypeName = HandleTypeHandleInfo.GetNestingQualifiedName(this.Reader, typeDef);
+                    NameSyntax declaringTypeName = HandleTypeHandleInfo.GetNestingQualifiedName(this, this.Reader, typeDef);
                     friendlyOverloads.AddRange(
                         this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, declaringTypeName, FriendlyOverloadOf.InterfaceMethod));
                 }
@@ -2995,6 +3283,47 @@ namespace Microsoft.Windows.CsWin32
             return result;
         }
 
+        private MemberDeclarationSyntax DeclareUntypedDelegate(TypeDefinition typeDef)
+        {
+            IdentifierNameSyntax name = IdentifierName(this.Reader.GetString(typeDef.Name));
+            IdentifierNameSyntax valueFieldName = IdentifierName("Value");
+
+            // internal IntPtr Value;
+            FieldDeclarationSyntax valueField = FieldDeclaration(VariableDeclaration(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space)))
+                .AddVariables(VariableDeclarator(valueFieldName.Identifier))).AddModifiers(TokenWithSpace(this.Visibility));
+
+            // internal T CreateDelegate<T>() => Marshal.GetDelegateForFunctionPointer<T>(this.Value);
+            IdentifierNameSyntax typeParameter = IdentifierName("TDelegate");
+            MemberAccessExpressionSyntax methodToCall = this.getDelegateForFunctionPointerGenericExists
+                ? MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Marshal)), GenericName(nameof(Marshal.GetDelegateForFunctionPointer)).AddTypeArgumentListArguments(typeParameter))
+                : MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Marshal)), IdentifierName(nameof(Marshal.GetDelegateForFunctionPointer)));
+            ArgumentListSyntax arguments = ArgumentList().AddArguments(Argument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), valueFieldName)));
+            if (!this.getDelegateForFunctionPointerGenericExists)
+            {
+                arguments = arguments.AddArguments(Argument(TypeOfExpression(typeParameter)));
+            }
+
+            ExpressionSyntax bodyExpression = InvocationExpression(methodToCall, arguments);
+            if (!this.getDelegateForFunctionPointerGenericExists)
+            {
+                bodyExpression = CastExpression(typeParameter, bodyExpression);
+            }
+
+            MethodDeclarationSyntax createDelegateMethod = MethodDeclaration(typeParameter, Identifier("CreateDelegate"))
+                .AddTypeParameterListParameters(TypeParameter(typeParameter.Identifier))
+                .AddConstraintClauses(TypeParameterConstraintClause(typeParameter, SingletonSeparatedList<TypeParameterConstraintSyntax>(TypeConstraint(IdentifierName("Delegate")))))
+                .WithExpressionBody(ArrowExpressionClause(bodyExpression))
+                .AddModifiers(TokenWithSpace(this.Visibility))
+                .WithSemicolonToken(SemicolonWithLineFeed);
+
+            StructDeclarationSyntax typedefStruct = StructDeclaration(name.Identifier)
+                .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.PartialKeyword)))
+                .AddMembers(valueField)
+                .AddMembers(this.CreateCommonTypeDefMembers(name, IntPtrTypeSyntax, valueFieldName).ToArray())
+                .AddMembers(createDelegateMethod);
+            return typedefStruct;
+        }
+
         private void GetSignatureForDelegate(TypeDefinition typeDef, out MethodDefinition invokeMethodDef, out MethodSignature<TypeHandleInfo> signature, out CustomAttributeHandleCollection? returnTypeAttributes)
         {
             invokeMethodDef = typeDef.GetMethods().Select(this.Reader.GetMethodDefinition).Single(def => this.Reader.StringComparer.Equals(def.Name, "Invoke"));
@@ -3007,6 +3336,7 @@ namespace Microsoft.Windows.CsWin32
             IdentifierNameSyntax name = IdentifierName(this.Reader.GetString(typeDef.Name));
             TypeSyntaxSettings typeSettings = this.fieldTypeSettings;
 
+            bool hasUtf16CharField = false;
             var members = new List<MemberDeclarationSyntax>();
             SyntaxList<MemberDeclarationSyntax> additionalMembers = default;
             foreach (FieldDefinitionHandle fieldDefHandle in typeDef.GetFields())
@@ -3045,12 +3375,18 @@ namespace Microsoft.Windows.CsWin32
                     {
                         CustomAttributeHandleCollection fieldAttributes = fieldDef.GetCustomAttributes();
                         TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null);
+                        hasUtf16CharField |= fieldTypeInfo is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.Char };
                         TypeSyntaxAndMarshaling fieldTypeSyntax = fieldTypeInfo.ToTypeSyntax(typeSettings, fieldAttributes);
                         var fieldInfo = this.ReinterpretFieldType(fieldDef, fieldTypeSyntax.Type, fieldAttributes);
                         additionalMembers = additionalMembers.AddRange(fieldInfo.AdditionalMembers);
 
                         field = FieldDeclaration(VariableDeclaration(fieldInfo.FieldType).AddVariables(fieldDeclarator))
                             .AddModifiers(TokenWithSpace(this.Visibility));
+
+                        if (fieldInfo.MarshalAsAttribute is object)
+                        {
+                            field = field.AddAttributeLists(AttributeList().AddAttributes(fieldInfo.MarshalAsAttribute));
+                        }
 
                         if (fieldInfo.FieldType is PointerTypeSyntax || fieldInfo.FieldType is FunctionPointerTypeSyntax)
                         {
@@ -3085,9 +3421,10 @@ namespace Microsoft.Windows.CsWin32
                 .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.PartialKeyword)));
 
             TypeLayout layout = typeDef.GetLayout();
-            if (!layout.IsDefault || (typeDef.Attributes & TypeAttributes.ExplicitLayout) == TypeAttributes.ExplicitLayout)
+            CharSet charSet = hasUtf16CharField ? CharSet.Unicode : CharSet.Ansi;
+            if (!layout.IsDefault || (typeDef.Attributes & TypeAttributes.ExplicitLayout) == TypeAttributes.ExplicitLayout || charSet != CharSet.Ansi)
             {
-                result = result.AddAttributeLists(AttributeList().AddAttributes(StructLayout(typeDef.Attributes, layout)));
+                result = result.AddAttributeLists(AttributeList().AddAttributes(StructLayout(typeDef.Attributes, layout, charSet)));
             }
 
             if (this.FindGuidFromAttribute(typeDef) is Guid guid)
@@ -3097,6 +3434,24 @@ namespace Microsoft.Windows.CsWin32
 
             result = this.AddApiDocumentation(name.Identifier.ValueText, result);
 
+            return result;
+        }
+
+        /// <summary>
+        /// Creates an empty class that when instantiated, creates a cocreatable Windows object
+        /// that may implement a number of interfaces at runtime, discoverable only by documentation.
+        /// </summary>
+        private ClassDeclarationSyntax DeclareCocreatableClass(TypeDefinition typeDef)
+        {
+            IdentifierNameSyntax name = IdentifierName(this.Reader.GetString(typeDef.Name));
+            Guid guid = this.FindGuidFromAttribute(typeDef) ?? throw new ArgumentException("Type does not have a GuidAttribute.");
+            var classModifiers = TokenList(TokenWithSpace(this.Visibility));
+            classModifiers = classModifiers.Add(TokenWithSpace(SyntaxKind.PartialKeyword));
+            ClassDeclarationSyntax result = ClassDeclaration(name.Identifier)
+                .WithModifiers(classModifiers)
+                .AddAttributeLists(AttributeList().AddAttributes(GUID(guid), ComImportAttribute));
+
+            result = this.AddApiDocumentation(name.Identifier.ValueText, result);
             return result;
         }
 
@@ -3123,7 +3478,7 @@ namespace Microsoft.Windows.CsWin32
                     if (args.FixedArguments[0].Value is string freeMethodName)
                     {
                         ////this.GenerateSafeHandle(freeMethodName);
-                        this.TryGenerateExternMethod(freeMethodName);
+                        this.TryGenerateExternMethod(freeMethodName, out _);
                         isHandle = true;
                     }
 
@@ -3139,7 +3494,7 @@ namespace Microsoft.Windows.CsWin32
             VariableDeclaratorSyntax fieldDeclarator = VariableDeclarator(fieldIdentifierName.Identifier);
             var fieldAttributes = fieldDef.GetCustomAttributes();
             var fieldType = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null).ToTypeSyntax(typeSettings, fieldAttributes);
-            (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers) fieldInfo =
+            (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? _) fieldInfo =
                 this.ReinterpretFieldType(fieldDef, fieldType.Type, fieldAttributes);
             SyntaxList<MemberDeclarationSyntax> members = List<MemberDeclarationSyntax>();
 
@@ -3148,40 +3503,10 @@ namespace Microsoft.Windows.CsWin32
                 .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.ReadOnlyKeyword));
             members = members.Add(fieldSyntax);
 
-            // Add constructor
+            members = members.AddRange(this.CreateCommonTypeDefMembers(name, fieldInfo.FieldType, fieldIdentifierName));
+
             IdentifierNameSyntax valueParameter = IdentifierName("value");
             MemberAccessExpressionSyntax fieldAccessExpression = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), fieldIdentifierName);
-            members = members.Add(ConstructorDeclaration(name.Identifier)
-                .AddModifiers(TokenWithSpace(this.Visibility))
-                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(fieldInfo.FieldType.WithTrailingTrivia(TriviaList(Space))))
-                .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, valueParameter).WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken))))
-                .WithSemicolonToken(SemicolonWithLineFeed));
-
-            // If this typedef struct represents a pointer, add an IsNull property.
-            if (fieldInfo.FieldType is IdentifierNameSyntax { Identifier: { Value: nameof(IntPtr) or nameof(UIntPtr) } })
-            {
-                // internal static bool IsNull => value == default;
-                members = members.Add(PropertyDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), "IsNull")
-                    .AddModifiers(TokenWithSpace(this.Visibility))
-                    .WithExpressionBody(ArrowExpressionClause(BinaryExpression(SyntaxKind.EqualsExpression, fieldIdentifierName, LiteralExpression(SyntaxKind.DefaultLiteralExpression))))
-                    .WithSemicolonToken(SemicolonWithLineFeed));
-            }
-
-            // public static implicit operator int(HWND value) => value.Value;
-            members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), fieldInfo.FieldType)
-                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))))
-                .WithExpressionBody(ArrowExpressionClause(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, fieldIdentifierName)))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
-                .WithSemicolonToken(SemicolonWithLineFeed));
-
-            // public static explicit operator HWND(int value) => new HWND(value);
-            // Except make converting char* or byte* to typedefs representing strings, and LPARAM/WPARAM to nint/nuint, implicit.
-            SyntaxKind explicitOrImplicitModifier = ImplicitConversionTypeDefs.Contains(name.Identifier.ValueText) ? SyntaxKind.ImplicitKeyword : SyntaxKind.ExplicitKeyword;
-            members = members.Add(ConversionOperatorDeclaration(Token(explicitOrImplicitModifier), name)
-                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(fieldInfo.FieldType.WithTrailingTrivia(TriviaList(Space))))
-                .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(Argument(valueParameter))))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
-                .WithSemicolonToken(SemicolonWithLineFeed));
 
             if (isHandle && fieldInfo.FieldType is not IdentifierNameSyntax { Identifier: { ValueText: nameof(IntPtr) } })
             {
@@ -3233,73 +3558,6 @@ namespace Microsoft.Windows.CsWin32
                 }
             }
 
-            // public static bool operator ==(HANDLE left, HANDLE right) => left.Value == right.Value;
-            var leftParameter = IdentifierName("left");
-            var rightParameter = IdentifierName("right");
-            members = members.Add(OperatorDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), TokenWithNoSpace(SyntaxKind.EqualsEqualsToken))
-                .WithOperatorKeyword(TokenWithSpace(SyntaxKind.OperatorKeyword))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))
-                .AddParameterListParameters(
-                    Parameter(leftParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))),
-                    Parameter(rightParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))))
-                .WithExpressionBody(ArrowExpressionClause(
-                    BinaryExpression(
-                        SyntaxKind.EqualsExpression,
-                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, leftParameter, fieldIdentifierName),
-                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, rightParameter, fieldIdentifierName))))
-                .WithSemicolonToken(SemicolonWithLineFeed));
-
-            // public static bool operator !=(HANDLE left, HANDLE right) => !(left == right);
-            members = members.Add(OperatorDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Token(SyntaxKind.ExclamationEqualsToken))
-                .WithOperatorKeyword(TokenWithSpace(SyntaxKind.OperatorKeyword))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))
-                .AddParameterListParameters(
-                    Parameter(leftParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))),
-                    Parameter(rightParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))))
-                .WithExpressionBody(ArrowExpressionClause(
-                    PrefixUnaryExpression(
-                        SyntaxKind.LogicalNotExpression,
-                        ParenthesizedExpression(BinaryExpression(SyntaxKind.EqualsExpression, leftParameter, rightParameter)))))
-                .WithSemicolonToken(SemicolonWithLineFeed));
-
-            // public bool Equals(HWND other) => this.Value == other.Value;
-            IdentifierNameSyntax other = IdentifierName("other");
-            members = members.Add(MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Identifier(nameof(IEquatable<int>.Equals)))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword))
-                .AddParameterListParameters(Parameter(other.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))))
-                .WithExpressionBody(ArrowExpressionClause(
-                    BinaryExpression(
-                        SyntaxKind.EqualsExpression,
-                        fieldAccessExpression,
-                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, other, fieldIdentifierName))))
-                .WithSemicolonToken(SemicolonWithLineFeed));
-
-            // public override bool Equals(object obj) => obj is HWND other && this.Equals(other);
-            IdentifierNameSyntax objParam = IdentifierName("obj");
-            members = members.Add(MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Identifier(nameof(IEquatable<int>.Equals)))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
-                .AddParameterListParameters(Parameter(objParam.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.ObjectKeyword))))
-                .WithExpressionBody(ArrowExpressionClause(
-                    BinaryExpression(
-                        SyntaxKind.LogicalAndExpression,
-                        IsPatternExpression(objParam, DeclarationPattern(name, SingleVariableDesignation(Identifier("other")))),
-                        InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName(nameof(Equals))))
-                            .WithArgumentList(ArgumentList().AddArguments(Argument(IdentifierName("other")))))))
-                .WithSemicolonToken(SemicolonWithLineFeed));
-
-            // public override int GetHashCode() => unchecked((int)this.Value); // if Value is a pointer
-            // public override int GetHashCode() => this.Value.GetHashCode(); // if Value is not a pointer
-            ExpressionSyntax hashExpr = fieldInfo.FieldType is PointerTypeSyntax ?
-                CheckedExpression(SyntaxKind.UncheckedExpression, CastExpression(PredefinedType(TokenWithNoSpace(SyntaxKind.IntKeyword)), fieldAccessExpression)) :
-                InvocationExpression(
-                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, fieldAccessExpression, IdentifierName(nameof(object.GetHashCode))),
-                    ArgumentList());
-
-            members = members.Add(MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), Identifier(nameof(object.GetHashCode)))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
-                .WithExpressionBody(ArrowExpressionClause(hashExpr))
-                .WithSemicolonToken(SemicolonWithLineFeed));
-
             switch (name.Identifier.ValueText)
             {
                 case "BSTR":
@@ -3333,6 +3591,110 @@ namespace Microsoft.Windows.CsWin32
             return result;
         }
 
+        private IEnumerable<MemberDeclarationSyntax> CreateCommonTypeDefMembers(IdentifierNameSyntax structName, TypeSyntax fieldType, IdentifierNameSyntax fieldName)
+        {
+            // Add constructor
+            IdentifierNameSyntax valueParameter = IdentifierName("value");
+            MemberAccessExpressionSyntax fieldAccessExpression = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), fieldName);
+            yield return ConstructorDeclaration(structName.Identifier)
+                .AddModifiers(TokenWithSpace(this.Visibility))
+                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(fieldType.WithTrailingTrivia(TriviaList(Space))))
+                .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, valueParameter).WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken))))
+                .WithSemicolonToken(SemicolonWithLineFeed);
+
+            // If this typedef struct represents a pointer, add an IsNull property.
+            if (fieldType is IdentifierNameSyntax { Identifier: { Value: nameof(IntPtr) or nameof(UIntPtr) } })
+            {
+                // internal static bool IsNull => value == default;
+                yield return PropertyDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), "IsNull")
+                    .AddModifiers(TokenWithSpace(this.Visibility))
+                    .WithExpressionBody(ArrowExpressionClause(BinaryExpression(SyntaxKind.EqualsExpression, fieldName, LiteralExpression(SyntaxKind.DefaultLiteralExpression))))
+                    .WithSemicolonToken(SemicolonWithLineFeed);
+            }
+
+            // public static implicit operator int(HWND value) => value.Value;
+            yield return ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), fieldType)
+                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(structName.WithTrailingTrivia(TriviaList(Space))))
+                .WithExpressionBody(ArrowExpressionClause(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, fieldName)))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
+                .WithSemicolonToken(SemicolonWithLineFeed);
+
+            // public static explicit operator HWND(int value) => new HWND(value);
+            // Except make converting char* or byte* to typedefs representing strings, and LPARAM/WPARAM to nint/nuint, implicit.
+            SyntaxKind explicitOrImplicitModifier = ImplicitConversionTypeDefs.Contains(structName.Identifier.ValueText) ? SyntaxKind.ImplicitKeyword : SyntaxKind.ExplicitKeyword;
+            yield return ConversionOperatorDeclaration(Token(explicitOrImplicitModifier), structName)
+                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(fieldType.WithTrailingTrivia(TriviaList(Space))))
+                .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(structName).AddArgumentListArguments(Argument(valueParameter))))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
+                .WithSemicolonToken(SemicolonWithLineFeed);
+
+            // public static bool operator ==(HANDLE left, HANDLE right) => left.Value == right.Value;
+            var leftParameter = IdentifierName("left");
+            var rightParameter = IdentifierName("right");
+            yield return OperatorDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), TokenWithNoSpace(SyntaxKind.EqualsEqualsToken))
+                .WithOperatorKeyword(TokenWithSpace(SyntaxKind.OperatorKeyword))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))
+                .AddParameterListParameters(
+                    Parameter(leftParameter.Identifier).WithType(structName.WithTrailingTrivia(TriviaList(Space))),
+                    Parameter(rightParameter.Identifier).WithType(structName.WithTrailingTrivia(TriviaList(Space))))
+                .WithExpressionBody(ArrowExpressionClause(
+                    BinaryExpression(
+                        SyntaxKind.EqualsExpression,
+                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, leftParameter, fieldName),
+                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, rightParameter, fieldName))))
+                .WithSemicolonToken(SemicolonWithLineFeed);
+
+            // public static bool operator !=(HANDLE left, HANDLE right) => !(left == right);
+            yield return OperatorDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Token(SyntaxKind.ExclamationEqualsToken))
+                .WithOperatorKeyword(TokenWithSpace(SyntaxKind.OperatorKeyword))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))
+                .AddParameterListParameters(
+                    Parameter(leftParameter.Identifier).WithType(structName.WithTrailingTrivia(TriviaList(Space))),
+                    Parameter(rightParameter.Identifier).WithType(structName.WithTrailingTrivia(TriviaList(Space))))
+                .WithExpressionBody(ArrowExpressionClause(
+                    PrefixUnaryExpression(
+                        SyntaxKind.LogicalNotExpression,
+                        ParenthesizedExpression(BinaryExpression(SyntaxKind.EqualsExpression, leftParameter, rightParameter)))))
+                .WithSemicolonToken(SemicolonWithLineFeed);
+
+            // public bool Equals(HWND other) => this.Value == other.Value;
+            IdentifierNameSyntax other = IdentifierName("other");
+            yield return MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Identifier(nameof(IEquatable<int>.Equals)))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword))
+                .AddParameterListParameters(Parameter(other.Identifier).WithType(structName.WithTrailingTrivia(TriviaList(Space))))
+                .WithExpressionBody(ArrowExpressionClause(
+                    BinaryExpression(
+                        SyntaxKind.EqualsExpression,
+                        fieldAccessExpression,
+                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, other, fieldName))))
+                .WithSemicolonToken(SemicolonWithLineFeed);
+
+            // public override bool Equals(object obj) => obj is HWND other && this.Equals(other);
+            IdentifierNameSyntax objParam = IdentifierName("obj");
+            yield return MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Identifier(nameof(IEquatable<int>.Equals)))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
+                .AddParameterListParameters(Parameter(objParam.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.ObjectKeyword))))
+                .WithExpressionBody(ArrowExpressionClause(
+                    BinaryExpression(
+                        SyntaxKind.LogicalAndExpression,
+                        IsPatternExpression(objParam, DeclarationPattern(structName, SingleVariableDesignation(Identifier("other")))),
+                        InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName(nameof(Equals))))
+                            .WithArgumentList(ArgumentList().AddArguments(Argument(IdentifierName("other")))))))
+                .WithSemicolonToken(SemicolonWithLineFeed);
+
+            // public override int GetHashCode() => unchecked((int)this.Value); // if Value is a pointer
+            // public override int GetHashCode() => this.Value.GetHashCode(); // if Value is not a pointer
+            ExpressionSyntax hashExpr = fieldType is PointerTypeSyntax ?
+                CheckedExpression(SyntaxKind.UncheckedExpression, CastExpression(PredefinedType(TokenWithNoSpace(SyntaxKind.IntKeyword)), fieldAccessExpression)) :
+                InvocationExpression(
+                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, fieldAccessExpression, IdentifierName(nameof(object.GetHashCode))),
+                    ArgumentList());
+            yield return MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), Identifier(nameof(object.GetHashCode)))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
+                .WithExpressionBody(ArrowExpressionClause(hashExpr))
+                .WithSemicolonToken(SemicolonWithLineFeed);
+        }
+
         private IEnumerable<MemberDeclarationSyntax> ExtractMembersFromTemplate(string name) => ((TypeDeclarationSyntax)this.FetchTemplate($"{name}")).Members;
 
         /// <summary>
@@ -3345,19 +3707,20 @@ namespace Microsoft.Windows.CsWin32
         {
             if (this.Visibility == SyntaxKind.PublicKeyword)
             {
-                int indexOfInternal = member.Modifiers.IndexOf(SyntaxKind.InternalKeyword);
+                MemberDeclarationSyntax publicMember = member;
+                int indexOfInternal = publicMember.Modifiers.IndexOf(SyntaxKind.InternalKeyword);
                 if (indexOfInternal >= 0)
                 {
-                    MemberDeclarationSyntax publicMember = member.WithModifiers(member.Modifiers.Replace(member.Modifiers[indexOfInternal], TokenWithSpace(this.Visibility)));
-
-                    // Apply change recursively.
-                    if (publicMember is TypeDeclarationSyntax memberContainer)
-                    {
-                        publicMember = memberContainer.WithMembers(List(memberContainer.Members.Select(this.ElevateVisibility)));
-                    }
-
-                    return publicMember;
+                    publicMember = publicMember.WithModifiers(publicMember.Modifiers.Replace(publicMember.Modifiers[indexOfInternal], TokenWithSpace(this.Visibility)));
                 }
+
+                // Apply change recursively.
+                if (publicMember is TypeDeclarationSyntax memberContainer)
+                {
+                    publicMember = memberContainer.WithMembers(List(memberContainer.Members.Select(this.ElevateVisibility)));
+                }
+
+                return publicMember;
             }
 
             return member;
@@ -3379,34 +3742,37 @@ namespace Microsoft.Windows.CsWin32
                 .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(ObjectCreationExpression(IntPtrTypeSyntax).WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(thisValue))))))))))
                 .WithSemicolonToken(SemicolonWithLineFeed);
 
-            // public static implicit operator ReadOnlySpan<char>(BSTR bstr) => bstr.Value != null ? new ReadOnlySpan<char>(bstr.Value, *((int*)bstr.Value - 1) / 2) : default;
-            TypeSyntax rosChar = MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword)));
-            IdentifierNameSyntax bstrParam = IdentifierName("bstr");
-            ExpressionSyntax bstrValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, bstrParam, IdentifierName("Value"));
-            ExpressionSyntax length = BinaryExpression(
-                SyntaxKind.DivideExpression,
-                PrefixUnaryExpression(
-                    SyntaxKind.PointerIndirectionExpression,
-                    ParenthesizedExpression(
-                        BinaryExpression(
-                            SyntaxKind.SubtractExpression,
-                            CastExpression(PointerType(PredefinedType(TokenWithNoSpace(SyntaxKind.IntKeyword))), bstrValue),
-                            LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(1))))),
-                LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(2)));
-            ExpressionSyntax rosCreation = ObjectCreationExpression(rosChar).AddArgumentListArguments(Argument(bstrValue), Argument(length));
-            ExpressionSyntax bstrNotNull = BinaryExpression(SyntaxKind.NotEqualsExpression, bstrValue, LiteralExpression(SyntaxKind.NullLiteralExpression));
-            ExpressionSyntax conditional = ConditionalExpression(bstrNotNull, rosCreation, DefaultExpression(rosChar));
-            yield return ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), rosChar)
-                .AddParameterListParameters(Parameter(bstrParam.Identifier).WithType(IdentifierName("BSTR").WithTrailingTrivia(TriviaList(Space))))
-                .WithExpressionBody(ArrowExpressionClause(conditional))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword)) // operators MUST be public
-                .WithSemicolonToken(SemicolonWithLineFeed);
+            if (this.canUseSpan)
+            {
+                // public static implicit operator ReadOnlySpan<char>(BSTR bstr) => bstr.Value != null ? new ReadOnlySpan<char>(bstr.Value, *((int*)bstr.Value - 1) / 2) : default;
+                TypeSyntax rosChar = MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword)));
+                IdentifierNameSyntax bstrParam = IdentifierName("bstr");
+                ExpressionSyntax bstrValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, bstrParam, IdentifierName("Value"));
+                ExpressionSyntax length = BinaryExpression(
+                    SyntaxKind.DivideExpression,
+                    PrefixUnaryExpression(
+                        SyntaxKind.PointerIndirectionExpression,
+                        ParenthesizedExpression(
+                            BinaryExpression(
+                                SyntaxKind.SubtractExpression,
+                                CastExpression(PointerType(PredefinedType(TokenWithNoSpace(SyntaxKind.IntKeyword))), bstrValue),
+                                LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(1))))),
+                    LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(2)));
+                ExpressionSyntax rosCreation = ObjectCreationExpression(rosChar).AddArgumentListArguments(Argument(bstrValue), Argument(length));
+                ExpressionSyntax bstrNotNull = BinaryExpression(SyntaxKind.NotEqualsExpression, bstrValue, LiteralExpression(SyntaxKind.NullLiteralExpression));
+                ExpressionSyntax conditional = ConditionalExpression(bstrNotNull, rosCreation, DefaultExpression(rosChar));
+                yield return ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), rosChar)
+                    .AddParameterListParameters(Parameter(bstrParam.Identifier).WithType(IdentifierName("BSTR").WithTrailingTrivia(TriviaList(Space))))
+                    .WithExpressionBody(ArrowExpressionClause(conditional))
+                    .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword)) // operators MUST be public
+                    .WithSemicolonToken(SemicolonWithLineFeed);
 
-            // internal ReadOnlySpan<char> AsSpan() => this;
-            yield return MethodDeclaration(rosChar, Identifier("AsSpan"))
-                .AddModifiers(TokenWithSpace(this.Visibility))
-                .WithExpressionBody(ArrowExpressionClause(ThisExpression()))
-                .WithSemicolonToken(SemicolonWithLineFeed);
+                // internal ReadOnlySpan<char> AsSpan() => this;
+                yield return MethodDeclaration(rosChar, Identifier("AsSpan"))
+                    .AddModifiers(TokenWithSpace(this.Visibility))
+                    .WithExpressionBody(ArrowExpressionClause(ThisExpression()))
+                    .WithSemicolonToken(SemicolonWithLineFeed);
+            }
         }
 
         private IEnumerable<MemberDeclarationSyntax> CreateAdditionalTypeDefPWSTRMembers()
@@ -3453,16 +3819,28 @@ namespace Microsoft.Windows.CsWin32
                             .AddArgumentListArguments(Argument(thisValue)))))
                 .WithSemicolonToken(SemicolonWithLineFeed);
 
-            // internal Span<char> AsSpan() => this.Value is null ? default : new Span<char>(this.Value, this.Length);
-            TypeSyntax spanChar = MakeSpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword)));
-            ExpressionSyntax thisLength = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Length"));
-            ExpressionSyntax spanCreation = ObjectCreationExpression(spanChar).AddArgumentListArguments(Argument(thisValue), Argument(thisLength));
-            ExpressionSyntax conditional = ConditionalExpression(thisValueIsNull, DefaultExpression(spanChar), spanCreation);
-            yield return MethodDeclaration(spanChar, Identifier("AsSpan"))
-                .AddModifiers(TokenWithSpace(this.Visibility))
-                .WithExpressionBody(ArrowExpressionClause(conditional))
-                .WithSemicolonToken(SemicolonWithLineFeed);
+            if (this.canUseSpan)
+            {
+                // internal Span<char> AsSpan() => this.Value is null ? default : new Span<char>(this.Value, this.Length);
+                yield return this.CreateAsSpanMethodOverValueAndLength(MakeSpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword))));
+            }
 #pragma warning restore SA1114 // Parameter list should follow declaration
+        }
+
+        private MethodDeclarationSyntax CreateAsSpanMethodOverValueAndLength(TypeSyntax spanType)
+        {
+            ExpressionSyntax thisValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Value"));
+            ExpressionSyntax thisLength = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Length"));
+
+            // internal X AsSpan() => this.Value is null ? default(X) : new X(this.Value, this.Length);
+            return MethodDeclaration(spanType, Identifier("AsSpan"))
+                .AddModifiers(TokenWithSpace(this.Visibility))
+                .WithExpressionBody(ArrowExpressionClause(ConditionalExpression(
+                    condition: IsPatternExpression(thisValue, ConstantPattern(LiteralExpression(SyntaxKind.NullLiteralExpression))),
+                    whenTrue: DefaultExpression(spanType),
+                    whenFalse: ObjectCreationExpression(spanType).AddArgumentListArguments(Argument(thisValue), Argument(thisLength)))))
+                .WithSemicolonToken(SemicolonWithLineFeed)
+                .WithLeadingTrivia(StrAsSpanComment);
         }
 
         private StructDeclarationSyntax DeclareTypeDefBOOLStruct(TypeDefinition typeDef)
@@ -3471,9 +3849,9 @@ namespace Microsoft.Windows.CsWin32
 
             FieldDefinition fieldDef = this.Reader.GetFieldDefinition(typeDef.GetFields().Single());
             var fieldAttributes = fieldDef.GetCustomAttributes();
-            string fieldName = this.Reader.GetString(fieldDef.Name);
-            VariableDeclaratorSyntax fieldDeclarator = VariableDeclarator(Identifier("value"));
-            (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers) fieldInfo =
+            IdentifierNameSyntax fieldName = IdentifierName("value");
+            VariableDeclaratorSyntax fieldDeclarator = VariableDeclarator(fieldName.Identifier);
+            (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? MarshalAs) fieldInfo =
                 this.ReinterpretFieldType(fieldDef, fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null).ToTypeSyntax(this.fieldTypeSettings, fieldAttributes).Type, fieldAttributes);
             SyntaxList<MemberDeclarationSyntax> members = List<MemberDeclarationSyntax>();
 
@@ -3488,13 +3866,17 @@ namespace Microsoft.Windows.CsWin32
                 .WithExpressionBody(ArrowExpressionClause(fieldAccessExpression)).WithSemicolonToken(SemicolonWithLineFeed)
                 .AddModifiers(TokenWithSpace(this.Visibility)));
 
-            // BOOL(bool value) => this.value = value ? 1 : 0;
+            // unsafe BOOL(bool value) => this.value = *(sbyte*)&value;
             IdentifierNameSyntax valueParameter = IdentifierName("value");
-            ExpressionSyntax boolToInt = ConditionalExpression(valueParameter, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(1)), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)));
+            ExpressionSyntax boolToSByte = PrefixUnaryExpression(
+                SyntaxKind.PointerIndirectionExpression,
+                CastExpression(
+                    PointerType(PredefinedType(TokenWithNoSpace(SyntaxKind.SByteKeyword))),
+                    PrefixUnaryExpression(SyntaxKind.AddressOfExpression, valueParameter)));
             members = members.Add(ConstructorDeclaration(name.Identifier)
-                .AddModifiers(TokenWithSpace(this.Visibility))
+                .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword))
                 .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword))))
-                .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, boolToInt).WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken))))
+                .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, boolToSByte).WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken))))
                 .WithSemicolonToken(SemicolonWithLineFeed));
 
             // BOOL(int value) => this.value = value;
@@ -3504,12 +3886,25 @@ namespace Microsoft.Windows.CsWin32
                 .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, valueParameter).WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken))))
                 .WithSemicolonToken(SemicolonWithLineFeed));
 
-            // public static implicit operator bool(BOOL value) => value.value != 0 ? true : false;
+            // public unsafe static implicit operator bool(BOOL value)
+            // {
+            //     sbyte v = checked((sbyte)value.value);
+            //     return *(bool*)&v;
+            // }
+            IdentifierNameSyntax localVarName = IdentifierName("v");
+            ExpressionSyntax sbyteToBool = PrefixUnaryExpression(
+                SyntaxKind.PointerIndirectionExpression,
+                CastExpression(
+                    PointerType(PredefinedType(TokenWithNoSpace(SyntaxKind.BoolKeyword))),
+                    PrefixUnaryExpression(SyntaxKind.AddressOfExpression, localVarName)));
+            var implicitBOOLtoBoolBody = Block().AddStatements(
+                LocalDeclarationStatement(VariableDeclaration(PredefinedType(Token(SyntaxKind.SByteKeyword)))).AddDeclarationVariables(
+                    VariableDeclarator(localVarName.Identifier).WithInitializer(EqualsValueClause(CheckedExpression(SyntaxKind.CheckedExpression, CastExpression(PredefinedType(Token(SyntaxKind.SByteKeyword)), MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, fieldName)))))),
+                ReturnStatement(sbyteToBool));
             members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), PredefinedType(Token(SyntaxKind.BoolKeyword)))
                 .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))))
-                .WithExpressionBody(ArrowExpressionClause(BinaryExpression(SyntaxKind.NotEqualsExpression, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(fieldName)), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)))))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
-                .WithSemicolonToken(SemicolonWithLineFeed));
+                .WithBody(implicitBOOLtoBoolBody)
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword))); // operators MUST be public
 
             // public static implicit operator BOOL(bool value) => new BOOL(value);
             members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), name)
@@ -3739,7 +4134,8 @@ namespace Microsoft.Windows.CsWin32
                 }
                 else if ((externParam.Type is PointerTypeSyntax { ElementType: TypeSyntax ptrElementType }
                     && !IsVoid(ptrElementType)
-                    && !this.IsInterface(parameterTypeInfo)) ||
+                    && !this.IsInterface(parameterTypeInfo)
+                    && this.canUseSpan) ||
                     externParam.Type is ArrayTypeSyntax)
                 {
                     TypeSyntax elementType = externParam.Type is PointerTypeSyntax ptr ? ptr.ElementType
@@ -3828,7 +4224,7 @@ namespace Microsoft.Windows.CsWin32
 
                             arguments[sizeParamIndex.Value] = Argument(sizeArgExpression);
                         }
-                        else if (sizeConst.HasValue && !isPointerToPointer)
+                        else if (sizeConst.HasValue && !isPointerToPointer && this.canUseSpan)
                         {
                             // TODO: add support for lists of pointers via a generated pointer-wrapping struct
                             signatureChanged = true;
@@ -3921,6 +4317,32 @@ namespace Microsoft.Windows.CsWin32
                     fixedBlocks.Add(VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword)))).AddVariables(
                         VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
                     arguments[param.SequenceNumber - 1] = Argument(localName);
+                }
+                else if (isIn && !isOut && isConst && externParam.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "PCSTR" } } })
+                {
+                    IdentifierNameSyntax origName = IdentifierName(externParam.Identifier.ValueText);
+                    IdentifierNameSyntax localName = IdentifierName(origName + "Local");
+                    signatureChanged = true;
+                    parameters[param.SequenceNumber - 1] = externParam
+                        .WithType(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword)));
+
+                    // fixed (byte* someLocal = some is object ? System.Text.Encoding.UTF8.GetBytes(some) : null)
+                    fixedBlocks.Add(VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.ByteKeyword)))).AddVariables(
+                        VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(
+                            ConditionalExpression(
+                                BinaryExpression(SyntaxKind.IsExpression, origName, PredefinedType(Token(SyntaxKind.ObjectKeyword))),
+                                InvocationExpression(
+                                    MemberAccessExpression(
+                                        SyntaxKind.SimpleMemberAccessExpression,
+                                        ParseTypeName("global::System.Text.Encoding.UTF8"),
+                                        IdentifierName(nameof(Encoding.GetBytes))))
+                                .WithArgumentList(
+                                    ArgumentList(
+                                        SingletonSeparatedList(Argument(origName)))),
+                                LiteralExpression(SyntaxKind.NullLiteralExpression))))));
+
+                    // new PCSTR(someLocal)
+                    arguments[param.SequenceNumber - 1] = Argument(ObjectCreationExpression(externParam.Type).AddArgumentListArguments(Argument(localName)));
                 }
             }
 
@@ -4099,6 +4521,22 @@ namespace Microsoft.Windows.CsWin32
                     modifiers = modifiers.Add(parameterTypeSyntax.ParameterModifier.Value.WithTrailingTrivia(TriviaList(Space)));
                 }
 
+                if (parameterTypeSyntax.MarshalAsAttribute is object)
+                {
+                    if ((parameter.Attributes & ParameterAttributes.Out) == ParameterAttributes.Out)
+                    {
+                        if ((parameter.Attributes & ParameterAttributes.In) == ParameterAttributes.In)
+                        {
+                            attributes = attributes.AddAttributes(InAttributeSyntax);
+                        }
+
+                        if (!modifiers.Any(SyntaxKind.OutKeyword))
+                        {
+                            attributes = attributes.AddAttributes(OutAttributeSyntax);
+                        }
+                    }
+                }
+
                 ParameterSyntax parameterSyntax = Parameter(
                     attributes.Attributes.Count > 0 ? List<AttributeListSyntax>().Add(attributes) : List<AttributeListSyntax>(),
                     modifiers,
@@ -4120,163 +4558,511 @@ namespace Microsoft.Windows.CsWin32
             }
         }
 
-        private (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers) ReinterpretFieldType(FieldDefinition fieldDef, TypeSyntax originalType, CustomAttributeHandleCollection customAttributes)
+        private (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? MarshalAsAttribute) ReinterpretFieldType(FieldDefinition fieldDef, TypeSyntax originalType, CustomAttributeHandleCollection customAttributes)
         {
             TypeSyntaxSettings typeSettings = this.fieldTypeSettings;
             TypeHandleInfo fieldTypeHandleInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null);
+            AttributeSyntax? marshalAs = null;
 
             // If the field is a fixed length array, we have to work some code gen magic since C# does not allow those.
             if (originalType is ArrayTypeSyntax arrayType && arrayType.RankSpecifiers.Count > 0 && arrayType.RankSpecifiers[0].Sizes.Count == 1)
             {
-                int length = int.Parse(((LiteralExpressionSyntax)arrayType.RankSpecifiers[0].Sizes[0]).Token.ValueText, CultureInfo.InvariantCulture);
-                TypeSyntax elementType = arrayType.ElementType;
-
-                // C# does not allow Span<T> where T is a pointer type.
-                if (elementType is PointerTypeSyntax ptr)
-                {
-                    elementType = IntPtrTypeSyntax;
-                }
-
-                var lengthLiteralSyntax = LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(length));
-
-                // internal struct __TheStruct_Count
-                // {
-                //     internal TheStruct _0, _1, _2, _3, _4, _5, _6, _7, _8;
-                //     /// <summary>Always <c>8</c>.</summary>
-                //     internal int Length => 8;
-                // ...
-                IdentifierNameSyntax fixedLengthStructName = IdentifierName($"__{elementType.ToString().Replace(' ', '_').Replace('.', '_').Replace(':', '_').Replace('*', '_').Replace('<', '_').Replace('>', '_').Replace('[', '_').Replace(']', '_').Replace(',', '_')}_{length}");
-                SyntaxTokenList fieldModifiers = TokenList(TokenWithSpace(this.Visibility));
-                if (RequiresUnsafe(elementType))
-                {
-                    fieldModifiers = fieldModifiers.Add(TokenWithSpace(SyntaxKind.UnsafeKeyword));
-                }
-
-                var fixedLengthStruct = StructDeclaration(fixedLengthStructName.Identifier)
-                    .AddModifiers(TokenWithSpace(this.Visibility))
-                    .AddMembers(
-                        FieldDeclaration(VariableDeclaration(elementType)
-                            .AddVariables(Enumerable.Range(0, length).Select(n => VariableDeclarator(Identifier($"_{n}"))).ToArray()))
-                            .WithModifiers(fieldModifiers),
-                        PropertyDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), "Length")
-                            .AddModifiers(TokenWithSpace(this.Visibility))
-                            .WithExpressionBody(ArrowExpressionClause(lengthLiteralSyntax))
-                            .WithSemicolonToken(SemicolonWithLineFeed)
-                            .WithLeadingTrivia(Trivia(DocumentationCommentTrivia(SyntaxKind.SingleLineDocumentationCommentTrivia).AddContent(
-                                DocCommentStart,
-                                XmlElement("summary", List(new XmlNodeSyntax[]
-                                {
-                                    XmlText("Always "),
-                                    XmlElement("c", List(new XmlNodeSyntax[] { XmlText(lengthLiteralSyntax.Token.ValueText) })),
-                                    XmlText("."),
-                                })),
-                                DocCommentEnd))));
-
-                IdentifierNameSyntax GetElementFieldName(int index) => IdentifierName(FormattableString.Invariant($"_{index}"));
-                var firstElementFieldName = GetElementFieldName(0);
-                if (this.canCallCreateSpan)
-                {
-                    // ...
-                    //     internal ref TheStruct this[int index] => ref AsSpan()[index];
-                    //     internal Span<TheStruct> AsSpan() => MemoryMarshal.CreateSpan(ref _1, 4);
-                    fixedLengthStruct = fixedLengthStruct
-                        .AddMembers(
-                            IndexerDeclaration(RefType(elementType).WithTrailingTrivia(TriviaList(Space)))
-                                .AddModifiers(TokenWithSpace(this.Visibility))
-                                .AddParameterListParameters(Parameter(Identifier("index")).WithType(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))))
-                                .WithExpressionBody(ArrowExpressionClause(RefExpression(
-                                    ElementAccessExpression(InvocationExpression(IdentifierName("AsSpan")))
-                                        .AddArgumentListArguments(Argument(IdentifierName("index"))))))
-                                .WithSemicolonToken(SemicolonWithLineFeed)
-                                .WithLeadingTrivia(InlineArrayUnsafeIndexerComment),
-                            MethodDeclaration(MakeSpanOfT(elementType).WithTrailingTrivia(TriviaList(Space)), Identifier("AsSpan"))
-                                .AddModifiers(TokenWithSpace(this.Visibility))
-                                .WithExpressionBody(ArrowExpressionClause(
-                                    InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("MemoryMarshal"), IdentifierName("CreateSpan")))
-                                        .WithArgumentList(FixTrivia(ArgumentList().AddArguments(
-                                            Argument(nameColon: null, TokenWithSpace(SyntaxKind.RefKeyword), firstElementFieldName),
-                                            Argument(lengthLiteralSyntax))))))
-                                .WithSemicolonToken(SemicolonWithLineFeed)
-                                .WithLeadingTrivia(InlineArrayUnsafeAsSpanComment));
-                }
-
-                IdentifierNameSyntax indexParamName = IdentifierName("index");
-                IdentifierNameSyntax p0 = IdentifierName("p0");
-                IdentifierNameSyntax atThis = IdentifierName("@this");
-                TypeSyntax qualifiedElementType = elementType == IntPtrTypeSyntax ? elementType : ((ArrayTypeSyntax)fieldTypeHandleInfo.ToTypeSyntax(this.extensionMethodSignatureTypeSettings, customAttributes).Type).ElementType;
-
-                ////internal static unsafe ref readonly uint ReadOnlyItemRef(this in MainAVIHeader.__dwReserved_4 @this, int index)
-                ////{
-                ////    fixed (uint* p0 = &@this._1)
-                ////        return ref p0[index];
-                ////    - or (for managed elements) -
-                ////    switch (index)
-                ////    {
-                ////      case 0: ref return @this._0;
-                ////      case 1: ref return @this._1;
-                ////      default: throw new ArgumentOutOfRangeException();
-                ////    }
-                ////}
-                StatementSyntax? statement =
-                    fieldTypeHandleInfo is ArrayTypeHandleInfo { ElementType: { } arrayElement } && this.IsManagedType(arrayElement)
-                     ? SwitchStatement(indexParamName)
-                        .AddSections(Enumerable.Range(0, length).Select(n => SwitchSection()
-                            .AddLabels(CaseSwitchLabel(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(n))))
-                            .AddStatements(ReturnStatement(RefExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, atThis, GetElementFieldName(n)))))).ToArray())
-                        .AddSections(SwitchSection().AddLabels(DefaultSwitchLabel()).AddStatements(ThrowStatement(
-                            ObjectCreationExpression(IdentifierName(nameof(ArgumentOutOfRangeException)))
-                                .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(InvocationExpression(IdentifierName("nameof")).WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(indexParamName)))))))))))
-                     : FixedStatement(
-                        VariableDeclaration(PointerType(qualifiedElementType)).AddVariables(
-                            VariableDeclarator(p0.Identifier).WithInitializer(EqualsValueClause(
-                                PrefixUnaryExpression(
-                                    SyntaxKind.AddressOfExpression,
-                                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, atThis, firstElementFieldName))))),
-                        ReturnStatement(RefExpression(ElementAccessExpression(p0).AddArgumentListArguments(Argument(indexParamName)))))
-                        .WithFixedKeyword(TokenWithSpace(SyntaxKind.FixedKeyword));
-                BlockSyntax body = Block().AddStatements(statement);
-                ParameterSyntax thisParameter = Parameter(atThis.Identifier)
-                    .WithType(QualifiedName((NameSyntax)new HandleTypeHandleInfo(this.Reader, fieldDef.GetDeclaringType()).ToTypeSyntax(this.extensionMethodSignatureTypeSettings, customAttributes).Type, fixedLengthStructName).WithTrailingTrivia(TriviaList(Space)))
-                    .AddModifiers(TokenWithSpace(SyntaxKind.ThisKeyword));
-                ParameterSyntax indexParameter = Parameter(indexParamName.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)));
-                SyntaxTokenList methodModifiers = TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword));
-                MethodDeclarationSyntax getAtMethod = MethodDeclaration(RefType(qualifiedElementType.WithTrailingTrivia(TriviaList(Space))).WithReadOnlyKeyword(TokenWithSpace(SyntaxKind.ReadOnlyKeyword)), Identifier("ReadOnlyItemRef"))
-                    .WithModifiers(methodModifiers)
-                    .WithParameterList(FixTrivia(ParameterList().AddParameters(thisParameter.AddModifiers(TokenWithSpace(SyntaxKind.InKeyword)), indexParameter)))
-                    .WithBody(body);
-                this.volatileCode.AddInlineArrayIndexerExtension(getAtMethod);
-
-                ////internal static unsafe ref uint ItemRef(this ref MainAVIHeader.__dwReserved_4 @this, int index)
-                ////{
-                ////    fixed (uint* p0 = &@this._1)
-                ////        return ref p0[index];
-                ////}
-                MethodDeclarationSyntax getOrSetAtMethod = MethodDeclaration(RefType(qualifiedElementType.WithTrailingTrivia(TriviaList(Space))), Identifier("ItemRef"))
-                    .WithModifiers(methodModifiers)
-                    .WithParameterList(FixTrivia(ParameterList().AddParameters(thisParameter.AddModifiers(TokenWithSpace(SyntaxKind.RefKeyword)), indexParameter)))
-                    .WithBody(body);
-                this.volatileCode.AddInlineArrayIndexerExtension(getOrSetAtMethod);
-
-                return (fixedLengthStructName, List<MemberDeclarationSyntax>().Add(fixedLengthStruct));
+                return this.DeclareFixedLengthArrayStruct(fieldDef, customAttributes, fieldTypeHandleInfo, arrayType);
             }
 
-            if (!this.options.AllowMarshaling)
+            // If the field is a delegate type, we have to replace that with a native function pointer to avoid the struct becoming a 'managed type'.
+            if (!this.options.AllowMarshaling && this.IsDelegateReference(fieldTypeHandleInfo, out TypeDefinition typeDef) && !this.IsUntypedDelegate(typeDef))
             {
-                // If the field is a delegate type, we have to replace that with a native function pointer to avoid the struct becoming a 'managed type'.
-                if (this.IsDelegateReference(fieldTypeHandleInfo, out TypeDefinition typeDef))
-                {
-                    return (this.FunctionPointer(typeDef), default);
-                }
+                return (this.FunctionPointer(typeDef), default(SyntaxList<MemberDeclarationSyntax>), marshalAs);
             }
 
             // If the field is a pointer to a COM interface (and we're using bona fide interfaces),
             // then we must type it as an array.
             if (fieldTypeHandleInfo is PointerTypeHandleInfo ptr3 && this.IsManagedType(ptr3.ElementType))
             {
-                return (ArrayType(ptr3.ElementType.ToTypeSyntax(typeSettings, null).Type).AddRankSpecifiers(ArrayRankSpecifier()), default);
+                return (ArrayType(ptr3.ElementType.ToTypeSyntax(typeSettings, null).Type).AddRankSpecifiers(ArrayRankSpecifier()), default(SyntaxList<MemberDeclarationSyntax>), marshalAs);
             }
 
-            return (originalType, default);
+            return (originalType, default(SyntaxList<MemberDeclarationSyntax>), marshalAs);
+        }
+
+        private (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? MarshalAsAttribute) DeclareFixedLengthArrayStruct(FieldDefinition fieldDef, CustomAttributeHandleCollection customAttributes, TypeHandleInfo fieldTypeHandleInfo, ArrayTypeSyntax arrayType)
+        {
+            if (this.options.AllowMarshaling && this.IsManagedType(fieldTypeHandleInfo))
+            {
+                ArrayTypeSyntax ranklessArray = arrayType.WithRankSpecifiers(new SyntaxList<ArrayRankSpecifierSyntax>(ArrayRankSpecifier()));
+                AttributeSyntax marshalAs = MarshalAs(UnmanagedType.ByValArray, sizeConst: arrayType.RankSpecifiers[0].Sizes[0]);
+                return (ranklessArray, default(SyntaxList<MemberDeclarationSyntax>), marshalAs);
+            }
+
+            int length = int.Parse(((LiteralExpressionSyntax)arrayType.RankSpecifiers[0].Sizes[0]).Token.ValueText, CultureInfo.InvariantCulture);
+            TypeSyntax elementType = arrayType.ElementType;
+
+            // C# does not allow Span<T> where T is a pointer type.
+            if (elementType is PointerTypeSyntax ptr)
+            {
+                elementType = IntPtrTypeSyntax;
+            }
+
+            var lengthLiteralSyntax = LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(length));
+
+            // internal struct __TheStruct_Count
+            // {
+            //     internal TheStruct _0, _1, _2, _3, _4, _5, _6, _7, _8;
+            //     /// <summary>Always <c>8</c>.</summary>
+            //     internal readonly int Length => 8;
+            // ...
+            IdentifierNameSyntax fixedLengthStructName = IdentifierName($"__{elementType.ToString().Replace(' ', '_').Replace('.', '_').Replace(':', '_').Replace('*', '_').Replace('<', '_').Replace('>', '_').Replace('[', '_').Replace(']', '_').Replace(',', '_')}_{length}");
+            SyntaxTokenList fieldModifiers = TokenList(TokenWithSpace(this.Visibility));
+            if (RequiresUnsafe(elementType))
+            {
+                fieldModifiers = fieldModifiers.Add(TokenWithSpace(SyntaxKind.UnsafeKeyword));
+            }
+
+            var fixedLengthStruct = StructDeclaration(fixedLengthStructName.Identifier)
+                .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.PartialKeyword))
+                .AddMembers(
+                    FieldDeclaration(VariableDeclaration(elementType)
+                        .AddVariables(Enumerable.Range(0, length).Select(n => VariableDeclarator(Identifier($"_{n}"))).ToArray()))
+                        .WithModifiers(fieldModifiers),
+                    PropertyDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), "Length")
+                        .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
+                        .WithExpressionBody(ArrowExpressionClause(lengthLiteralSyntax))
+                        .WithSemicolonToken(SemicolonWithLineFeed)
+                        .WithLeadingTrivia(Trivia(DocumentationCommentTrivia(SyntaxKind.SingleLineDocumentationCommentTrivia).AddContent(
+                            DocCommentStart,
+                            XmlElement("summary", List(new XmlNodeSyntax[]
+                            {
+                                XmlText("Always "),
+                                XmlElement("c", List(new XmlNodeSyntax[] { XmlText(lengthLiteralSyntax.Token.ValueText) })),
+                                XmlText("."),
+                            })),
+                            DocCommentEnd))));
+
+            IdentifierNameSyntax GetElementFieldName(int index) => IdentifierName(FormattableString.Invariant($"_{index}"));
+            var firstElementFieldName = GetElementFieldName(0);
+            if (this.canCallCreateSpan)
+            {
+                // ...
+                //     internal ref TheStruct this[int index] => ref AsSpan()[index];
+                //     internal Span<TheStruct> AsSpan() => MemoryMarshal.CreateSpan(ref _0, 4);
+                fixedLengthStruct = fixedLengthStruct
+                    .AddMembers(
+                        IndexerDeclaration(RefType(elementType).WithTrailingTrivia(TriviaList(Space)))
+                            .AddModifiers(TokenWithSpace(this.Visibility))
+                            .AddParameterListParameters(Parameter(Identifier("index")).WithType(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))))
+                            .WithExpressionBody(ArrowExpressionClause(RefExpression(
+                                ElementAccessExpression(InvocationExpression(IdentifierName("AsSpan")))
+                                    .AddArgumentListArguments(Argument(IdentifierName("index"))))))
+                            .WithSemicolonToken(SemicolonWithLineFeed)
+                            .WithLeadingTrivia(InlineArrayUnsafeIndexerComment),
+                        MethodDeclaration(MakeSpanOfT(elementType).WithTrailingTrivia(TriviaList(Space)), Identifier("AsSpan"))
+                            .AddModifiers(TokenWithSpace(this.Visibility))
+                            .WithExpressionBody(ArrowExpressionClause(
+                                InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("MemoryMarshal"), IdentifierName("CreateSpan")))
+                                    .WithArgumentList(FixTrivia(ArgumentList().AddArguments(
+                                        Argument(nameColon: null, TokenWithSpace(SyntaxKind.RefKeyword), firstElementFieldName),
+                                        Argument(lengthLiteralSyntax))))))
+                            .WithSemicolonToken(SemicolonWithLineFeed)
+                            .WithLeadingTrivia(InlineArrayUnsafeAsSpanComment));
+            }
+
+#pragma warning disable SA1515 // Single-line comment should be preceded by blank line
+#pragma warning disable SA1114 // Parameter list should follow declaration
+
+            if (elementType is PredefinedTypeSyntax && this.canUseSpan)
+            {
+                // internal unsafe readonly void CopyTo(Span<T> target, int length = 4)
+                IdentifierNameSyntax targetParameterName = IdentifierName("target");
+                IdentifierNameSyntax lengthParameterName = IdentifierName("length");
+                fixedLengthStruct = fixedLengthStruct.AddMembers(
+                    MethodDeclaration(PredefinedType(Token(SyntaxKind.VoidKeyword)), Identifier("CopyTo"))
+                        .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
+                        .AddParameterListParameters(
+                            Parameter(targetParameterName.Identifier).WithType(MakeSpanOfT(elementType).WithTrailingTrivia(Space)),
+                            Parameter(lengthParameterName.Identifier).WithType(PredefinedType(Token(SyntaxKind.IntKeyword)).WithTrailingTrivia(Space)).WithDefault(EqualsValueClause(lengthLiteralSyntax)))
+                        .WithBody(Block().AddStatements(
+                            // if (length > 4) throw new ArgumentOutOfRangeException(nameof(length));
+                            IfStatement(
+                                BinaryExpression(SyntaxKind.GreaterThanExpression, lengthParameterName, lengthLiteralSyntax),
+                                ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentOutOfRangeException))).AddArgumentListArguments(Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(lengthParameterName.Identifier.ValueText)))))),
+                            // fixed (T* p0 = &_0)
+                            FixedStatement(
+                                VariableDeclaration(PointerType(elementType)).AddVariables(
+                                    VariableDeclarator(Identifier("p0")).WithInitializer(EqualsValueClause(
+                                        PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName("_0"))))),
+                                // for (int i = 0; i < length; i++)
+                                ForStatement(
+                                    VariableDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))).AddVariables(VariableDeclarator(Identifier("i")).WithInitializer(EqualsValueClause(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))))),
+                                    BinaryExpression(SyntaxKind.LessThanExpression, IdentifierName("i"), lengthParameterName),
+                                    SingletonSeparatedList<ExpressionSyntax>(PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, IdentifierName("i"))),
+                                    // target[i] = p0[i];
+                                    ExpressionStatement(AssignmentExpression(
+                                        SyntaxKind.SimpleAssignmentExpression,
+                                        ElementAccessExpression(targetParameterName).AddArgumentListArguments(Argument(IdentifierName("i"))),
+                                        ElementAccessExpression(IdentifierName("p0")).AddArgumentListArguments(Argument(IdentifierName("i"))))))))));
+
+                // internal readonly T[] ToArray(int length = 4)
+                fixedLengthStruct = fixedLengthStruct.AddMembers(
+                    MethodDeclaration(ArrayType(elementType, SingletonList(ArrayRankSpecifier())), Identifier("ToArray"))
+                        .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
+                        .AddParameterListParameters(
+                            Parameter(lengthParameterName.Identifier).WithType(PredefinedType(Token(SyntaxKind.IntKeyword)).WithTrailingTrivia(Space)).WithDefault(EqualsValueClause(lengthLiteralSyntax)))
+                        .WithBody(Block().AddStatements(
+                            // if (length > 4) throw new ArgumentOutOfRangeException(nameof(length));
+                            IfStatement(
+                                BinaryExpression(SyntaxKind.GreaterThanExpression, lengthParameterName, lengthLiteralSyntax),
+                                ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentOutOfRangeException))).AddArgumentListArguments(Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(lengthParameterName.Identifier.ValueText)))))),
+                            // T[] target = new T[length];
+                            LocalDeclarationStatement(VariableDeclaration(ArrayType(elementType, SingletonList(ArrayRankSpecifier()))).AddVariables(
+                                VariableDeclarator(targetParameterName.Identifier).WithInitializer(EqualsValueClause(ArrayCreationExpression(ArrayType(elementType).AddRankSpecifiers(ArrayRankSpecifier().AddSizes(lengthParameterName))))))),
+                            // CopyTo(target, length);
+                            ExpressionStatement(InvocationExpression(IdentifierName("CopyTo"), ArgumentList().AddArguments(Argument(targetParameterName), Argument(lengthParameterName)))),
+                            ReturnStatement(targetParameterName))));
+
+                // internal unsafe readonly bool Equals(ReadOnlySpan<T> value)
+                IdentifierNameSyntax valueParameterName = IdentifierName("value");
+                IdentifierNameSyntax commonLengthLocal = IdentifierName("commonLength");
+                fixedLengthStruct = fixedLengthStruct.AddMembers(
+                    MethodDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), Identifier("Equals"))
+                        .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
+                        .AddParameterListParameters(
+                            Parameter(valueParameterName.Identifier).WithType(MakeReadOnlySpanOfT(elementType).WithTrailingTrivia(Space)))
+                        .WithBody(Block().AddStatements(
+                            // fixed (T* p0 = &_0)
+                            FixedStatement(
+                                VariableDeclaration(PointerType(elementType)).AddVariables(
+                                    VariableDeclarator(Identifier("p0")).WithInitializer(EqualsValueClause(
+                                        PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName("_0"))))),
+                                Block().AddStatements(
+                                    // int commonLength = Math.Min(value.Length, 4);
+                                    LocalDeclarationStatement(VariableDeclaration(PredefinedType(TokenWithSpaces(SyntaxKind.IntKeyword))).AddVariables(
+                                        VariableDeclarator(commonLengthLocal.Identifier).WithInitializer(EqualsValueClause(
+                                            InvocationExpression(
+                                                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Math)), IdentifierName(nameof(Math.Min))),
+                                                ArgumentList().AddArguments(
+                                                    Argument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameterName, IdentifierName(nameof(ReadOnlySpan<int>.Length)))),
+                                                    Argument(lengthLiteralSyntax))))))),
+                                    // for (int i = 0; i < commonLength; i++)
+                                    ForStatement(
+                                        VariableDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))).AddVariables(VariableDeclarator(Identifier("i")).WithInitializer(EqualsValueClause(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))))),
+                                        BinaryExpression(SyntaxKind.LessThanExpression, IdentifierName("i"), commonLengthLocal),
+                                        SingletonSeparatedList<ExpressionSyntax>(PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, IdentifierName("i"))),
+                                        // if (p0[i] != value[i])
+                                        IfStatement(
+                                            BinaryExpression(
+                                                SyntaxKind.NotEqualsExpression,
+                                                ElementAccessExpression(IdentifierName("p0")).AddArgumentListArguments(Argument(IdentifierName("i"))),
+                                                ElementAccessExpression(valueParameterName).AddArgumentListArguments(Argument(IdentifierName("i")))),
+                                            // return false;
+                                            ReturnStatement(LiteralExpression(SyntaxKind.FalseLiteralExpression)))),
+                                    // for (int i = commonLength; i < 4; i++)
+                                    ForStatement(
+                                        VariableDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))).AddVariables(VariableDeclarator(Identifier("i")).WithInitializer(EqualsValueClause(commonLengthLocal))),
+                                        BinaryExpression(SyntaxKind.LessThanExpression, IdentifierName("i"), lengthLiteralSyntax),
+                                        SingletonSeparatedList<ExpressionSyntax>(PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, IdentifierName("i"))),
+                                        // if (p0[i] != default)
+                                        IfStatement(
+                                            BinaryExpression(
+                                                SyntaxKind.NotEqualsExpression,
+                                                ElementAccessExpression(IdentifierName("p0")).AddArgumentListArguments(Argument(IdentifierName("i"))),
+                                                DefaultExpression(elementType)),
+                                            // return false;
+                                            ReturnStatement(LiteralExpression(SyntaxKind.FalseLiteralExpression)))))),
+                            ReturnStatement(LiteralExpression(SyntaxKind.TrueLiteralExpression)))));
+            }
+
+#pragma warning restore SA1114 // Parameter list should follow declaration
+#pragma warning restore SA1515 // Single-line comment should be preceded by blank line
+
+            if (elementType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.CharKeyword } })
+            {
+                if (this.canUseSpan)
+                {
+                    // internal readonly bool Equals(string value) => Equals(value.AsSpan());
+                    fixedLengthStruct = fixedLengthStruct.AddMembers(
+                        MethodDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), Identifier("Equals"))
+                            .AddModifiers(Token(this.Visibility), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
+                            .AddParameterListParameters(Parameter(Identifier("value")).WithType(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword))))
+                            .WithExpressionBody(ArrowExpressionClause(InvocationExpression(
+                                IdentifierName("Equals"),
+                                ArgumentList().AddArguments(Argument(
+                                    InvocationExpression(
+                                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("value"), IdentifierName("AsSpan")),
+                                        ArgumentList()))))))
+                            .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+                }
+
+                // ...
+                //     internal unsafe readonly string ToString(int length)
+                //     {
+                //         if (length < 0 || length > Length)
+                //             throw new ArgumentOutOfRangeException(nameof(length), length, "Length must be between 0 and the fixed array length.");
+                //         fixed (char* p0 = &_0)
+                //             return new string(p0, 0, length);
+                //     }
+                fixedLengthStruct = fixedLengthStruct.AddMembers(
+                    MethodDeclaration(PredefinedType(Token(SyntaxKind.StringKeyword)), Identifier(nameof(this.ToString)))
+                        .AddModifiers(Token(this.Visibility), Token(SyntaxKind.UnsafeKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
+                        .AddParameterListParameters(
+                            Parameter(Identifier("length")).WithType(PredefinedType(Token(SyntaxKind.IntKeyword)).WithTrailingTrivia(Space)))
+                        .WithBody(Block(
+                            IfStatement(
+                                BinaryExpression(
+                                    SyntaxKind.LogicalOrExpression,
+                                    BinaryExpression(SyntaxKind.LessThanExpression, IdentifierName("length"), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))),
+                                    BinaryExpression(SyntaxKind.GreaterThanExpression, IdentifierName("length"), IdentifierName("Length"))),
+                                ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentOutOfRangeException))).AddArgumentListArguments(
+                                    Argument(InvocationExpression(IdentifierName("nameof"), ArgumentList().AddArguments(Argument(IdentifierName("length"))))),
+                                    Argument(IdentifierName("length")),
+                                    Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal("Length must be between 0 and the fixed array length.")))))),
+                            FixedStatement(
+                                VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword)))).AddVariables(
+                                    VariableDeclarator(Identifier("p0")).WithInitializer(EqualsValueClause(
+                                        PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName("_0"))))),
+                                ReturnStatement(
+                                    ObjectCreationExpression(PredefinedType(Token(SyntaxKind.StringKeyword))).AddArgumentListArguments(
+                                        Argument(IdentifierName("p0")),
+                                        Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))),
+                                        Argument(IdentifierName("length")))))))
+                        .WithLeadingTrivia(InlineCharArrayToStringWithLengthComment));
+
+                IdentifierNameSyntax lengthLocalVar = IdentifierName("length");
+                StatementSyntax[] lengthDeclarationStatements;
+                bool unsafeRequired = false;
+
+                // int length;
+                // fixed (char* p = &_0)
+                // {
+                //     char* pLastExclusive = p + Length;
+                //     char* pCh = p;
+                //     for (; pCh < pLastExclusive && *pCh != '\0'; pCh++);
+                //     length = checked((int)(pCh - p));
+                // }
+                IdentifierNameSyntax p = IdentifierName("p");
+                IdentifierNameSyntax pLastExclusive = IdentifierName("pLastExclusive");
+                IdentifierNameSyntax pCh = IdentifierName("pCh");
+                unsafeRequired = true;
+                lengthDeclarationStatements = new StatementSyntax[]
+                {
+                        LocalDeclarationStatement(VariableDeclaration(PredefinedType(Token(SyntaxKind.IntKeyword))).AddVariables(
+                                VariableDeclarator(lengthLocalVar.Identifier))),
+                        FixedStatement(
+                            VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword)))).AddVariables(
+                                VariableDeclarator(p.Identifier).WithInitializer(EqualsValueClause(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName("_0"))))),
+                            Block().AddStatements(
+                                LocalDeclarationStatement(VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword)))).AddVariables(
+                                    VariableDeclarator(pLastExclusive.Identifier).WithInitializer(EqualsValueClause(BinaryExpression(SyntaxKind.AddExpression, p, IdentifierName("Length")))))),
+                                LocalDeclarationStatement(VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword)))).AddVariables(
+                                    VariableDeclarator(pCh.Identifier).WithInitializer(EqualsValueClause(p)))),
+                                ForStatement(
+                                    null,
+                                    BinaryExpression(
+                                            SyntaxKind.LogicalAndExpression,
+                                            BinaryExpression(
+                                                SyntaxKind.LessThanExpression,
+                                                pCh,
+                                                pLastExclusive),
+                                            BinaryExpression(
+                                                SyntaxKind.NotEqualsExpression,
+                                                PrefixUnaryExpression(SyntaxKind.PointerIndirectionExpression, pCh),
+                                                LiteralExpression(SyntaxKind.CharacterLiteralExpression, Literal('\0')))),
+                                    SingletonSeparatedList<ExpressionSyntax>(PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, pCh)),
+                                    EmptyStatement()),
+                                ExpressionStatement(AssignmentExpression(
+                                    SyntaxKind.SimpleAssignmentExpression,
+                                    lengthLocalVar,
+                                    CheckedExpression(SyntaxKind.CheckedExpression, CastExpression(
+                                        PredefinedType(Token(SyntaxKind.IntKeyword)),
+                                        ParenthesizedExpression(BinaryExpression(SyntaxKind.SubtractExpression, pCh, p)))))))),
+                };
+
+                // ...
+                //     public override readonly string ToString()
+                //     {
+                //         ...
+                //         return ToString(length);
+                //     }
+                MethodDeclarationSyntax toStringOverride =
+                    MethodDeclaration(PredefinedType(Token(SyntaxKind.StringKeyword)), Identifier(nameof(this.ToString)))
+                        .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.OverrideKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
+                        .WithBody(Block(lengthDeclarationStatements).AddStatements(
+                            ReturnStatement(InvocationExpression(
+                                IdentifierName("ToString"),
+                                ArgumentList().AddArguments(Argument(lengthLocalVar))))))
+                        .WithLeadingTrivia(InlineCharArrayToStringComment);
+                if (unsafeRequired)
+                {
+                    toStringOverride = toStringOverride.AddModifiers(Token(SyntaxKind.UnsafeKeyword));
+                }
+
+                fixedLengthStruct = fixedLengthStruct.AddMembers(toStringOverride);
+
+                if (this.canUseSpan)
+                {
+                    // public static implicit operator __char_64(string? value) => value.AsSpan();
+                    fixedLengthStruct = fixedLengthStruct.AddMembers(
+                        ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), fixedLengthStructName)
+                            .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword))
+                            .AddParameterListParameters(Parameter(Identifier("value")).WithType(PredefinedType(Token(SyntaxKind.StringKeyword)).WithTrailingTrivia(TriviaList(Space))))
+                            .WithExpressionBody(ArrowExpressionClause(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("value"), IdentifierName(nameof(MemoryExtensions.AsSpan))))))
+                            .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+                }
+
+                // public static unsafe implicit operator __char_64(ReadOnlySpan<char> value)
+                // {
+                //     __char_64 result = default;
+                // #if NETCOREAPP2_1_OR_GREATER
+                //     value.CopyTo(result.AsSpan());
+                // #else
+                //     if (value.Length > result.Length)
+                //     {
+                //         throw new ArgumentException("Too long");
+                //     }
+                //     char* pwzAppName = &result._0;
+                //     for (int i = 0; i < value.Length; i++)
+                //     {
+                //         *pwzAppName++ = value[i];
+                //     }
+                // #endif
+                //     return result;
+                // }
+                IdentifierNameSyntax resultLocalVar = IdentifierName("result");
+                IdentifierNameSyntax valueParam = IdentifierName("value");
+                StatementSyntax[] middleBlock;
+                if (this.canCallCreateSpan)
+                {
+                    unsafeRequired = false;
+                    middleBlock = new StatementSyntax[]
+                    {
+                            // value.CopyTo(result.AsSpan());
+                            ExpressionStatement(InvocationExpression(
+                                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParam, IdentifierName(nameof(ReadOnlySpan<int>.CopyTo))),
+                                ArgumentList().AddArguments(Argument(
+                                    InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, resultLocalVar, IdentifierName("AsSpan")), ArgumentList()))))),
+                    };
+                }
+                else
+                {
+                    unsafeRequired = true;
+                    IdentifierNameSyntax i = IdentifierName("i");
+                    middleBlock = new StatementSyntax[]
+                    {
+                            // if (value.Length > result.Length) throw new ArgumentException("Too long");
+                            IfStatement(
+                                BinaryExpression(
+                                    SyntaxKind.GreaterThanExpression,
+                                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParam, IdentifierName(nameof(ReadOnlySpan<int>.Length))),
+                                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, resultLocalVar, IdentifierName("Length"))),
+                                ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentException))).AddArgumentListArguments(Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal("Length exceeds fixed array size.")))))),
+
+                            // char* p = &result._0;
+                            LocalDeclarationStatement(VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword)))).AddVariables(
+                                VariableDeclarator(p.Identifier).WithInitializer(EqualsValueClause(PrefixUnaryExpression(
+                                    SyntaxKind.AddressOfExpression,
+                                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, resultLocalVar, IdentifierName("_0"))))))),
+
+                            // for (int i = 0; i < value.Length; i++)
+                            //     *p++ = value[i];
+                            ForStatement(
+                                VariableDeclaration(PredefinedType(Token(SyntaxKind.IntKeyword))).AddVariables(
+                                    VariableDeclarator(i.Identifier).WithInitializer(EqualsValueClause(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))))),
+                                BinaryExpression(SyntaxKind.LessThanExpression, i, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParam, IdentifierName(nameof(ReadOnlySpan<char>.Length)))),
+                                SingletonSeparatedList<ExpressionSyntax>(PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, i)),
+                                ExpressionStatement(AssignmentExpression(
+                                    SyntaxKind.SimpleAssignmentExpression,
+                                    PrefixUnaryExpression(SyntaxKind.PointerIndirectionExpression, PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, p)),
+                                    ElementAccessExpression(valueParam).AddArgumentListArguments(Argument(i))))),
+                    };
+                }
+
+                if (this.canUseSpan)
+                {
+                    ConversionOperatorDeclarationSyntax conversionDecl =
+                        ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), fixedLengthStructName)
+                            .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword))
+                            .AddParameterListParameters(Parameter(valueParam.Identifier).WithType(MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword))).WithTrailingTrivia(TriviaList(Space))))
+                            .WithBody(Block()
+
+                                // __char_64 result = default;
+                                .AddStatements(LocalDeclarationStatement(VariableDeclaration(fixedLengthStructName).AddVariables(
+                                    VariableDeclarator(resultLocalVar.Identifier).WithInitializer(EqualsValueClause(DefaultExpression(fixedLengthStructName))))))
+
+                                .AddStatements(middleBlock)
+
+                                // return result;
+                                .AddStatements(ReturnStatement(resultLocalVar)));
+                    if (unsafeRequired)
+                    {
+                        conversionDecl = conversionDecl.AddModifiers(Token(SyntaxKind.UnsafeKeyword));
+                    }
+
+                    fixedLengthStruct = fixedLengthStruct.AddMembers(conversionDecl);
+                }
+
+                // Make sure .NET marshals these `char` arrays as UTF-16.
+                fixedLengthStruct = fixedLengthStruct
+                    .AddAttributeLists(AttributeList().AddAttributes(StructLayout(TypeAttributes.SequentialLayout, charSet: CharSet.Unicode)));
+            }
+
+            IdentifierNameSyntax indexParamName = IdentifierName("index");
+            IdentifierNameSyntax p0 = IdentifierName("p0");
+            IdentifierNameSyntax atThis = IdentifierName("@this");
+            TypeSyntax qualifiedElementType = elementType == IntPtrTypeSyntax ? elementType : ((ArrayTypeSyntax)fieldTypeHandleInfo.ToTypeSyntax(this.extensionMethodSignatureTypeSettings, customAttributes).Type).ElementType;
+
+            ////internal static unsafe ref readonly uint ReadOnlyItemRef(this in MainAVIHeader.__dwReserved_4 @this, int index)
+            ////{
+            ////    fixed (uint* p0 = &@this._0)
+            ////        return ref p0[index];
+            ////    - or (for managed elements) -
+            ////    switch (index)
+            ////    {
+            ////      case 0: ref return @this._0;
+            ////      case 1: ref return @this._1;
+            ////      default: throw new ArgumentOutOfRangeException();
+            ////    }
+            ////}
+            StatementSyntax? statement =
+                fieldTypeHandleInfo is ArrayTypeHandleInfo { ElementType: { } arrayElement } && this.IsManagedType(arrayElement)
+                 ? SwitchStatement(indexParamName)
+                    .AddSections(Enumerable.Range(0, length).Select(n => SwitchSection()
+                        .AddLabels(CaseSwitchLabel(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(n))))
+                        .AddStatements(ReturnStatement(RefExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, atThis, GetElementFieldName(n)))))).ToArray())
+                    .AddSections(SwitchSection().AddLabels(DefaultSwitchLabel()).AddStatements(ThrowStatement(
+                        ObjectCreationExpression(IdentifierName(nameof(ArgumentOutOfRangeException)))
+                            .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(InvocationExpression(IdentifierName("nameof")).WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(indexParamName)))))))))))
+                 : FixedStatement(
+                    VariableDeclaration(PointerType(qualifiedElementType)).AddVariables(
+                        VariableDeclarator(p0.Identifier).WithInitializer(EqualsValueClause(
+                            PrefixUnaryExpression(
+                                SyntaxKind.AddressOfExpression,
+                                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, atThis, firstElementFieldName))))),
+                    ReturnStatement(RefExpression(ElementAccessExpression(p0).AddArgumentListArguments(Argument(indexParamName)))))
+                    .WithFixedKeyword(TokenWithSpace(SyntaxKind.FixedKeyword));
+            BlockSyntax body = Block().AddStatements(statement);
+            ParameterSyntax thisParameter = Parameter(atThis.Identifier)
+                .WithType(QualifiedName((NameSyntax)new HandleTypeHandleInfo(this.Reader, fieldDef.GetDeclaringType()).ToTypeSyntax(this.extensionMethodSignatureTypeSettings, customAttributes).Type, fixedLengthStructName).WithTrailingTrivia(TriviaList(Space)))
+                .AddModifiers(TokenWithSpace(SyntaxKind.ThisKeyword));
+            ParameterSyntax indexParameter = Parameter(indexParamName.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)));
+            SyntaxTokenList methodModifiers = TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword));
+            MethodDeclarationSyntax getAtMethod = MethodDeclaration(RefType(qualifiedElementType.WithTrailingTrivia(TriviaList(Space))).WithReadOnlyKeyword(TokenWithSpace(SyntaxKind.ReadOnlyKeyword)), Identifier("ReadOnlyItemRef"))
+                .WithModifiers(methodModifiers)
+                .WithParameterList(FixTrivia(ParameterList().AddParameters(thisParameter.AddModifiers(TokenWithSpace(SyntaxKind.InKeyword)), indexParameter)))
+                .WithBody(body);
+            this.volatileCode.AddInlineArrayIndexerExtension(getAtMethod);
+
+            ////internal static unsafe ref uint ItemRef(this ref MainAVIHeader.__dwReserved_4 @this, int index)
+            ////{
+            ////    fixed (uint* p0 = &@this._0)
+            ////        return ref p0[index];
+            ////}
+            MethodDeclarationSyntax getOrSetAtMethod = MethodDeclaration(RefType(qualifiedElementType.WithTrailingTrivia(TriviaList(Space))), Identifier("ItemRef"))
+                .WithModifiers(methodModifiers)
+                .WithParameterList(FixTrivia(ParameterList().AddParameters(thisParameter.AddModifiers(TokenWithSpace(SyntaxKind.RefKeyword)), indexParameter)))
+                .WithBody(body);
+            this.volatileCode.AddInlineArrayIndexerExtension(getOrSetAtMethod);
+
+            return (fixedLengthStructName, List<MemberDeclarationSyntax>().Add(fixedLengthStruct), null);
         }
 
         private bool IsTypeDefStruct(TypeHandleInfo? typeHandleInfo)
@@ -4288,10 +5074,25 @@ namespace Microsoft.Windows.CsWin32
                     TypeDefinition typeDef = this.Reader.GetTypeDefinition((TypeDefinitionHandle)handleInfo.Handle);
                     return this.IsTypeDefStruct(typeDef);
                 }
-                else if (handleInfo.Handle.Kind == HandleKind.TypeReference && this.TryGetTypeDefHandle((TypeReferenceHandle)handleInfo.Handle, out TypeDefinitionHandle tdh))
+                else if (handleInfo.Handle.Kind == HandleKind.TypeReference)
                 {
-                    TypeDefinition typeDef = this.Reader.GetTypeDefinition(tdh);
-                    return this.IsTypeDefStruct(typeDef);
+                    if (this.TryGetTypeDefHandle((TypeReferenceHandle)handleInfo.Handle, out TypeDefinitionHandle tdh))
+                    {
+                        TypeDefinition typeDef = this.Reader.GetTypeDefinition(tdh);
+                        return this.IsTypeDefStruct(typeDef);
+                    }
+                    else if (this.SuperGenerator is object)
+                    {
+                        TypeReference typeReference = this.Reader.GetTypeReference((TypeReferenceHandle)handleInfo.Handle);
+                        if (this.SuperGenerator.TryGetTargetGenerator(new QualifiedTypeReference(this, typeReference), out Generator? targetGenerator))
+                        {
+                            if (targetGenerator.TryGetTypeDefHandle(this.Reader.GetString(typeReference.Namespace), this.Reader.GetString(typeReference.Name), out TypeDefinitionHandle foreignTypeDefHandle))
+                            {
+                                TypeDefinition foreignTypeDef = targetGenerator.Reader.GetTypeDefinition(foreignTypeDefHandle);
+                                return targetGenerator.IsTypeDefStruct(foreignTypeDef);
+                            }
+                        }
+                    }
                 }
             }
             else if (SpecialTypeDefNames.Contains(null!/*TODO*/))
@@ -4324,6 +5125,16 @@ namespace Microsoft.Windows.CsWin32
                 var tdh = (TypeDefinitionHandle)typeHandleInfo.Handle;
                 delegateTypeDef = this.Reader.GetTypeDefinition(tdh);
                 return this.IsDelegate(delegateTypeDef);
+            }
+
+            if (typeHandleInfo.Handle.Kind == HandleKind.TypeReference)
+            {
+                var trh = (TypeReferenceHandle)typeHandleInfo.Handle;
+                if (this.TryGetTypeDefHandle(trh, out TypeDefinitionHandle tdh))
+                {
+                    delegateTypeDef = this.Reader.GetTypeDefinition(tdh);
+                    return this.IsDelegate(delegateTypeDef);
+                }
             }
 
             delegateTypeDef = default;

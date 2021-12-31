@@ -7,3 +7,5 @@ updates:
   directory: /
   schedule:
     interval: monthly
+  ignore:
+  - dependency-name: MessagePack # We have to use the MessagePack version used by win32metadata (https://github.com/microsoft/CsWin32/issues/371)

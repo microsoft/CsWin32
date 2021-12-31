@@ -81,6 +81,10 @@ namespace Microsoft.Windows.CsWin32
 
         internal static BlockSyntax Block(params StatementSyntax[] statements) => SyntaxFactory.Block(OpenBrace, List(statements), CloseBrace);
 
+        internal static ForStatementSyntax ForStatement(VariableDeclarationSyntax? declaration, ExpressionSyntax condition, SeparatedSyntaxList<ExpressionSyntax> incrementors, StatementSyntax statement) => SyntaxFactory.ForStatement(Token(SyntaxKind.ForKeyword), Token(SyntaxKind.OpenParenToken), declaration!, default, Token(SyntaxKind.SemicolonToken), condition, Token(SyntaxKind.SemicolonToken), incrementors, Token(SyntaxKind.CloseParenToken), statement);
+
+        internal static StatementSyntax EmptyStatement() => SyntaxFactory.EmptyStatement(Token(SyntaxKind.SemicolonToken));
+
         internal static NamespaceDeclarationSyntax NamespaceDeclaration(NameSyntax name) => SyntaxFactory.NamespaceDeclaration(Token(TriviaList(), SyntaxKind.NamespaceKeyword, TriviaList(Space)), name.WithTrailingTrivia(LineFeed), OpenBrace, default, default, default, CloseBrace, default);
 
         internal static InterfaceDeclarationSyntax InterfaceDeclaration(SyntaxToken name) => SyntaxFactory.InterfaceDeclaration(default, default, Token(TriviaList(), SyntaxKind.InterfaceKeyword, TriviaList(Space)), name.WithTrailingTrivia(LineFeed), null, null, default, Token(TriviaList(), SyntaxKind.OpenBraceToken, TriviaList(LineFeed)), default, Token(TriviaList(), SyntaxKind.CloseBraceToken, TriviaList(LineFeed)), default);
@@ -168,6 +172,8 @@ namespace Microsoft.Windows.CsWin32
         internal static InitializerExpressionSyntax InitializerExpression(SyntaxKind kind, SeparatedSyntaxList<ExpressionSyntax> expressions) => SyntaxFactory.InitializerExpression(kind, OpenBrace, expressions, CloseBrace);
 
         internal static ObjectCreationExpressionSyntax ObjectCreationExpression(TypeSyntax type) => SyntaxFactory.ObjectCreationExpression(Token(TriviaList(), SyntaxKind.NewKeyword, TriviaList(Space)), type, ArgumentList(), null);
+
+        internal static ArrayCreationExpressionSyntax ArrayCreationExpression(ArrayTypeSyntax type, InitializerExpressionSyntax? initializer = null) => SyntaxFactory.ArrayCreationExpression(Token(SyntaxKind.NewKeyword), type, initializer);
 
         internal static XmlCrefAttributeSyntax XmlCrefAttribute(CrefSyntax cref) => XmlCrefAttribute(cref, SyntaxKind.DoubleQuoteToken);
 
@@ -268,7 +274,7 @@ namespace Microsoft.Windows.CsWin32
 
         internal static AttributeArgumentListSyntax AttributeArgumentList(SeparatedSyntaxList<AttributeArgumentSyntax> arguments = default) => SyntaxFactory.AttributeArgumentList(Token(SyntaxKind.OpenParenToken), arguments, Token(SyntaxKind.CloseParenToken));
 
-        internal static AttributeListSyntax AttributeList() => SyntaxFactory.AttributeList(Token(SyntaxKind.OpenBracketToken), null, SeparatedList<AttributeSyntax>(), Token(SyntaxKind.CloseBracketToken));
+        internal static AttributeListSyntax AttributeList() => SyntaxFactory.AttributeList(Token(SyntaxKind.OpenBracketToken), null, SeparatedList<AttributeSyntax>(), TokenWithLineFeed(SyntaxKind.CloseBracketToken));
 
         internal static SyntaxList<TNode> List<TNode>()
             where TNode : SyntaxNode => SyntaxFactory.List<TNode>();
@@ -289,6 +295,12 @@ namespace Microsoft.Windows.CsWin32
         internal static ParameterSyntax Parameter(SyntaxToken identifier) => SyntaxFactory.Parameter(identifier);
 
         internal static ParameterSyntax Parameter(SyntaxList<AttributeListSyntax> attributeLists, SyntaxTokenList modifiers, TypeSyntax? type, SyntaxToken identifier, EqualsValueClauseSyntax? @default) => SyntaxFactory.Parameter(attributeLists, modifiers, type, identifier, @default);
+
+        internal static TypeParameterSyntax TypeParameter(SyntaxToken identifier) => SyntaxFactory.TypeParameter(identifier);
+
+        internal static TypeConstraintSyntax TypeConstraint(TypeSyntax type) => SyntaxFactory.TypeConstraint(type);
+
+        internal static TypeParameterConstraintClauseSyntax TypeParameterConstraintClause(IdentifierNameSyntax name, SeparatedSyntaxList<TypeParameterConstraintSyntax> constraints) => SyntaxFactory.TypeParameterConstraintClause(TokenWithSpace(SyntaxKind.WhereKeyword), name, TokenWithSpaces(SyntaxKind.ColonToken), constraints);
 
         internal static FieldDeclarationSyntax FieldDeclaration(VariableDeclarationSyntax declaration) => SyntaxFactory.FieldDeclaration(default, default, declaration, Semicolon);
 
@@ -417,11 +429,15 @@ namespace Microsoft.Windows.CsWin32
 
         internal static SyntaxToken Literal(string value) => SyntaxFactory.Literal(TriviaList(), SymbolDisplay.FormatLiteral(value, quote: true), value, TriviaList());
 
-        internal static SyntaxTriviaList ParseLeadingTrivia(string text) => SyntaxFactory.ParseLeadingTrivia(text);
+        internal static SyntaxToken Literal(char value) => SyntaxFactory.Literal(TriviaList(), SymbolDisplay.FormatLiteral(value, quote: true), value, TriviaList());
+
+        internal static SyntaxTriviaList ParseLeadingTrivia(string text) => SyntaxFactory.ParseLeadingTrivia(text.Replace("\r\n", "\n"));
 
         internal static IdentifierNameSyntax IdentifierName(string name) => SyntaxFactory.IdentifierName(Identifier(name));
 
         internal static IdentifierNameSyntax IdentifierName(SyntaxToken identifier) => SyntaxFactory.IdentifierName(identifier);
+
+        internal static ExpressionSyntax TypeOfExpression(TypeSyntax type) => SyntaxFactory.TypeOfExpression(Token(SyntaxKind.TypeOfKeyword), Token(SyntaxKind.OpenParenToken), type, Token(SyntaxKind.CloseParenToken));
 
         private static SyntaxToken TokenWithNoSpace(SyntaxKind kind) => Token(TriviaList(), kind, TriviaList());
 
@@ -456,7 +472,7 @@ namespace Microsoft.Windows.CsWin32
                 SyntaxKind.IsExpression => SyntaxKind.IsKeyword,
                 SyntaxKind.AsExpression => SyntaxKind.AsKeyword,
                 SyntaxKind.CoalesceExpression => SyntaxKind.QuestionQuestionToken,
-                _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+                _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Not in switch statement."),
             };
         }
 
@@ -486,7 +502,7 @@ namespace Microsoft.Windows.CsWin32
                 SyntaxKind.LeftShiftAssignmentExpression => SyntaxKind.LessThanLessThanEqualsToken,
                 SyntaxKind.RightShiftAssignmentExpression => SyntaxKind.GreaterThanGreaterThanEqualsToken,
                 SyntaxKind.CoalesceAssignmentExpression => SyntaxKind.QuestionQuestionEqualsToken,
-                _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+                _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Not in switch statement"),
             };
         }
 

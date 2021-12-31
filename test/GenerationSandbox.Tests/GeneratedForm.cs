@@ -1,11 +1,11 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-using System;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
 using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.System.Diagnostics.Debug;
-using Windows.Win32.UI.WindowsAndMessaging;
 
 #pragma warning disable CA1812 // dead code
 
@@ -29,5 +29,21 @@ internal static unsafe class GeneratedForm
     private static void WPARAM_From_NInt()
     {
         WPARAM p = 1;
+    }
+
+    private static void FARPROC_InSignatureChangedToIntPtr()
+    {
+        FARPROC p = PInvoke.GetProcAddress(default(HINSTANCE), default(PCSTR));
+        p = PInvoke.GetProcAddress(default(SafeHandle), null);
+    }
+
+    private static void PROC_InSignatureChangedToIntPtr()
+    {
+        PROC p = PInvoke.wglGetProcAddress(default(PCSTR));
+    }
+
+    private static void RegKeyHandle()
+    {
+        LSTATUS status = PInvoke.RegLoadAppKey(string.Empty, out SafeRegistryHandle handle, 0, 0, 0);
     }
 }

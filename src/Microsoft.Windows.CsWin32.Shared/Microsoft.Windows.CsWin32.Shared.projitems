@@ -15,6 +15,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="$(MSBuildThisFileDirectory)ArrayTypeHandleInfo.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)BindingRedirects.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)CustomAttributeTypeProvider.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Docs.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)FastSyntaxFactory.cs" />
@@ -25,13 +26,16 @@
     <Compile Include="$(MSBuildThisFileDirectory)IsExternalInit.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)ITypeHandleContainer.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)MetadataIndex.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)MetadataQualifiedTokens.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)MetadataUtilities.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)ModuleInitializerAttribute.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)NamespaceMetadata.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)PlatformIncompatibleException.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)PointerTypeHandleInfo.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)PrimitiveTypeHandleInfo.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)SignatureHandleProvider.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)SourceGenerator.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)SuperGenerator.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)TypeHandleInfo.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)TypeSyntaxAndMarshaling.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)TypeSyntaxSettings.cs" />
@@ -43,5 +47,9 @@
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)templates\NTSTATUS.cs" />
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)templates\PCSTR.cs" />
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)templates\PCWSTR.cs" />
+    <EmbeddedResource Include="$(MSBuildThisFileDirectory)templates\WinRTCustomMarshaler.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)templates\.editorconfig" />
   </ItemGroup>
 </Project>

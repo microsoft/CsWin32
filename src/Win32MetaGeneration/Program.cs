@@ -47,7 +47,7 @@ namespace Win32.CodeGen
                 string apiDocsPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "apidocs.msgpack");
                 using var generator = new Generator(
                     metadataPath,
-                    apiDocsPath,
+                    Docs.Get(apiDocsPath),
                     new GeneratorOptions
                     {
                         WideCharOnly = true,

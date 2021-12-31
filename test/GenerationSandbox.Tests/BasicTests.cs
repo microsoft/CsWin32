@@ -4,12 +4,17 @@
 using System;
 using System.ComponentModel;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using Windows.Win32;
+using Windows.Win32.Devices.Display;
 using Windows.Win32.Foundation;
-using Windows.Win32.Graphics.DirectShow;
+using Windows.Win32.Media.DirectShow;
 using Windows.Win32.Storage.FileSystem;
-using Windows.Win32.UI.DisplayDevices;
+using Windows.Win32.System.Com;
+using Windows.Win32.System.Console;
+using Windows.Win32.System.ErrorReporting;
+using Windows.Win32.UI.Shell;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -23,6 +28,8 @@ public class BasicTests
     {
         this.logger = logger;
     }
+
+    internal delegate uint GetTickCountDelegate();
 
     [Fact]
     public void GetTickCount_Nonzero()
@@ -40,6 +47,14 @@ public class BasicTests
         // TODO: write code that sets/gets memory on the inner struct (e.g. videoStandard).
     }
 
+    ////[Fact]
+    ////public void E_PDB_LIMIT()
+    ////{
+    ////    // We are very particular about the namespace the generated type comes from to ensure it is as expected.
+    ////    HRESULT hr = global::Microsoft.Dia.Constants.E_PDB_LIMIT;
+    ////    Assert.Equal(-2140340211, hr.Value);
+    ////}
+
     [Fact]
     public void Bool()
     {
@@ -49,6 +64,37 @@ public class BasicTests
         Assert.True(b2);
 
         Assert.False(default(BOOL));
+    }
+
+    [Theory]
+    [InlineData(3)]
+    [InlineData(-1)]
+    public void NotLossyConversionBetweenBoolAndBOOL(int ordinal)
+    {
+        BOOL nativeBool = new BOOL(ordinal);
+        bool managedBool = nativeBool;
+        BOOL roundtrippedNativeBool = managedBool;
+        Assert.Equal(nativeBool, roundtrippedNativeBool);
+    }
+
+    [Theory]
+    [InlineData(3)]
+    [InlineData(-1)]
+    public void NotLossyConversionBetweenBoolAndBOOL_Ctors(int ordinal)
+    {
+        BOOL nativeBool = new BOOL(ordinal);
+        bool managedBool = nativeBool;
+        BOOL roundtrippedNativeBool = new BOOL(managedBool);
+        Assert.Equal(nativeBool, roundtrippedNativeBool);
+    }
+
+    [Fact]
+    public void BOOLEqualsComparesExactValue()
+    {
+        BOOL b1 = new BOOL(1);
+        BOOL b2 = new BOOL(2);
+        Assert.Equal(b1, b1);
+        Assert.NotEqual(b1, b2);
     }
 
     [Fact]
@@ -248,5 +294,148 @@ public class BasicTests
                 }
             },
             (LPARAM)0);
+    }
+
+    [Fact]
+    public void FixedCharArrayToString_Length()
+    {
+        Windows.Win32.System.RestartManager.RM_PROCESS_INFO info = default;
+        info.strServiceShortName._0 = 'H';
+        info.strServiceShortName._1 = 'i';
+        Assert.Equal("Hi", info.strServiceShortName.ToString(2));
+        Assert.Equal("Hi\0\0", info.strServiceShortName.ToString(4));
+    }
+
+    [Fact]
+    public unsafe void FixedCharArray_ToString()
+    {
+        Windows.Win32.System.RestartManager.RM_PROCESS_INFO.__char_64 fixedCharArray = default;
+        Assert.Equal(string.Empty, fixedCharArray.ToString());
+        fixedCharArray._0 = 'H';
+        Assert.Equal("H", fixedCharArray.ToString());
+        fixedCharArray._1 = 'i';
+        Assert.Equal("Hi", fixedCharArray.ToString());
+
+        char* p = &fixedCharArray._0;
+        for (int i = 0; i < fixedCharArray.Length; i++)
+        {
+            *(p + i) = 'x';
+        }
+
+        Assert.Equal(new string('x', fixedCharArray.Length), fixedCharArray.ToString());
+    }
+
+    [Fact]
+    public void FixedLengthArray_ToArray()
+    {
+        Windows.Win32.System.RestartManager.RM_PROCESS_INFO.__char_64 fixedCharArray = default;
+        fixedCharArray = "hi";
+        char[] expected = new char[fixedCharArray.Length];
+        expected[0] = fixedCharArray._0;
+        expected[1] = fixedCharArray._1;
+        char[] actual = fixedCharArray.ToArray();
+        Assert.Equal<char>(expected, actual);
+
+        actual = fixedCharArray.ToArray(3);
+        Assert.Equal<char>(expected.Take(3), actual);
+    }
+
+    [Fact]
+    public void FixedLengthArray_CopyTo()
+    {
+        Windows.Win32.System.RestartManager.RM_PROCESS_INFO.__char_64 fixedCharArray = default;
+        fixedCharArray = "hi";
+        Span<char> span = new char[fixedCharArray.Length];
+        fixedCharArray.CopyTo(span);
+        Assert.Equal('h', span[0]);
+        Assert.Equal('i', span[1]);
+        Assert.Equal(0, span[2]);
+
+        span.Clear();
+        fixedCharArray.CopyTo(span, 1);
+        Assert.Equal('h', span[0]);
+        Assert.Equal(0, span[1]);
+    }
+
+    [Fact]
+    public void FixedLengthArray_Equals()
+    {
+        Windows.Win32.System.RestartManager.RM_PROCESS_INFO.__char_64 fixedCharArray = default;
+        fixedCharArray = "hi";
+
+        Assert.True(fixedCharArray.Equals("hi"));
+        Assert.False(fixedCharArray.Equals("h"));
+        Assert.False(fixedCharArray.Equals("d"));
+        Assert.False(fixedCharArray.Equals("hid"));
+
+        char[] buffer = new char[fixedCharArray.Length];
+        Assert.False(fixedCharArray.Equals(buffer));
+        Assert.False(fixedCharArray.Equals(buffer.AsSpan(0, 2)));
+
+        buffer[0] = 'h';
+        buffer[1] = 'i';
+        Assert.True(fixedCharArray.Equals(buffer));
+        Assert.True(fixedCharArray.Equals(buffer.AsSpan(0, 2)));
+        Assert.True(fixedCharArray.Equals(buffer.AsSpan(0, 3)));
+
+        // This should be false because the remainder of the fixed length array is non-default.
+        Assert.False(fixedCharArray.Equals(buffer.AsSpan(0, 1)));
+        Assert.False(fixedCharArray.Equals(buffer.AsSpan(0, 0)));
+    }
+
+    [Fact]
+    public void FixedCharArraySetWithString()
+    {
+        Windows.Win32.System.RestartManager.RM_PROCESS_INFO.__char_64 fixedCharArray = default;
+
+        fixedCharArray = null;
+        Assert.Equal(string.Empty, fixedCharArray.ToString());
+
+        fixedCharArray = string.Empty;
+        Assert.Equal(string.Empty, fixedCharArray.ToString());
+
+        fixedCharArray = "hi there";
+        Assert.Equal("hi there", fixedCharArray.ToString());
+
+        string expected = new string('x', fixedCharArray.Length);
+        fixedCharArray = expected;
+        Assert.Equal(expected, fixedCharArray.ToString());
+
+        Assert.Throws<ArgumentException>(() => fixedCharArray = new string('x', fixedCharArray.Length + 1));
+    }
+
+    [Fact]
+    public unsafe void GetProcAddress_String()
+    {
+        using FreeLibrarySafeHandle moduleHandle = PInvoke.LoadLibrary("kernel32");
+        FARPROC pGetTickCount = PInvoke.GetProcAddress(moduleHandle, "GetTickCount");
+        GetTickCountDelegate getTickCount = pGetTickCount.CreateDelegate<GetTickCountDelegate>();
+        uint ticks = getTickCount();
+        Assert.NotEqual(0u, ticks);
+
+        var getTickCountPtr = (delegate*<uint>)pGetTickCount.Value;
+        ticks = getTickCountPtr();
+        Assert.NotEqual(0u, ticks);
+    }
+
+    [Fact]
+    public void StructCharFieldsMarshaledAsUtf16()
+    {
+        Assert.Equal(128 * sizeof(char), Marshal.SizeOf<WER_REPORT_INFORMATION.__char_128>());
+        Assert.Equal(sizeof(char), Marshal.SizeOf<KEY_EVENT_RECORD._uChar_e__Union>());
+    }
+
+    [Fact]
+    public void CHAR_MarshaledAsUtf8()
+    {
+        Assert.Equal(1, Marshal.SizeOf<CHAR>());
+    }
+
+    [Fact]
+    public void CocreatableClassesWithImplicitInterfaces()
+    {
+        ShellLink shellLink = new ShellLink();
+        IPersistFile persistFile = (IPersistFile)shellLink;
+        Assert.NotNull(persistFile);
     }
 }

@@ -18,16 +18,10 @@ namespace Microsoft.Windows.CsWin32
         public bool WideCharOnly { get; init; } = true;
 
         /// <summary>
-        /// Gets the name of a single class under which all p/invoke methods should be added, regardless of imported module. Use null for one class per imported module.
+        /// Gets the name of a single class under which all p/invoke methods and constants are generated, regardless of imported module.
         /// </summary>
         /// <value>The default value is "PInvoke".</value>
-        public string? ClassName { get; init; } = "PInvoke";
-
-        /// <summary>
-        /// Gets the namespace for generated code.
-        /// </summary>
-        /// <value>The default value is "Windows.Win32". Must be non-empty.</value>
-        public string Namespace { get; init; } = "Windows.Win32";
+        public string ClassName { get; init; } = "PInvoke";
 
         /// <summary>
         /// Gets a value indicating whether to emit a single source file as opposed to types spread across many files.
@@ -57,9 +51,9 @@ namespace Microsoft.Windows.CsWin32
         /// <exception cref="InvalidOperationException">Thrown when some setting is invalid.</exception>
         public void Validate()
         {
-            if (string.IsNullOrWhiteSpace(this.Namespace))
+            if (string.IsNullOrWhiteSpace(this.ClassName))
             {
-                throw new InvalidOperationException("The namespace must be set.");
+                throw new InvalidOperationException("The ClassName property must not be null or empty.");
             }
         }
 

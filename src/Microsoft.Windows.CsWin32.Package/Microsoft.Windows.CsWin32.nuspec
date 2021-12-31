@@ -33,32 +33,32 @@
   </metadata>
   <files>
     <!-- Roslyn 3.8 -->
-    <file src="$BaseOutputPath38$Microsoft.Windows.SDK.Win32Docs.dll" target="analyzers\cs\roslyn38\Microsoft.Windows.SDK.Win32Docs.dll" />
-    <file src="$BaseOutputPath38$Microsoft.Windows.CsWin32.Roslyn38.dll" target="analyzers\cs\roslyn38\Microsoft.Windows.CsWin32.dll" />
-    <file src="$BaseOutputPath38$MessagePack.dll" target="analyzers\cs\roslyn38\MessagePack.dll" />
-    <file src="$BaseOutputPath38$MessagePack.Annotations.dll" target="analyzers\cs\roslyn38\MessagePack.Annotations.dll" />
-    <file src="$BaseOutputPath38$Microsoft.Bcl.AsyncInterfaces.dll" target="analyzers\cs\roslyn38\Microsoft.Bcl.AsyncInterfaces.dll" />
-    <file src="$BaseOutputPath38$System.Text.Json.dll" target="analyzers\cs\roslyn38\System.Text.Json.dll" />
-    <file src="$BaseOutputPath38$System.Text.Encodings.Web.dll" target="analyzers\cs\roslyn38\System.Text.Encodings.Web.dll" />
-    <file src="$BaseOutputPath38$System.Numerics.Vectors.dll" target="analyzers\cs\roslyn38\System.Numerics.Vectors.dll" />
-    <file src="$BaseOutputPath38$System.Threading.Tasks.Extensions.dll" target="analyzers\cs\roslyn38\System.Threading.Tasks.Extensions.dll" />
-    <file src="$BaseOutputPath38$System.Memory.dll" target="analyzers\cs\roslyn38\System.Memory.dll" />
-    <file src="$BaseOutputPath38$System.Buffers.dll" target="analyzers\cs\roslyn38\System.Buffers.dll" />
-    <file src="$BaseOutputPath38$System.Runtime.CompilerServices.Unsafe.dll" target="analyzers\cs\roslyn38\System.Runtime.CompilerServices.Unsafe.dll" />
+    <file src="$BaseOutputPath38$Microsoft.Windows.SDK.Win32Docs.dll" target="build\analyzers\dotnet\roslyn3.8\cs\Microsoft.Windows.SDK.Win32Docs.dll" />
+    <file src="$BaseOutputPath38$Microsoft.Windows.CsWin32.Roslyn38.dll" target="build\analyzers\dotnet\roslyn3.8\cs\Microsoft.Windows.CsWin32.dll" />
+    <file src="$BaseOutputPath38$MessagePack.dll" target="build\analyzers\dotnet\roslyn3.8\cs\MessagePack.dll" />
+    <file src="$BaseOutputPath38$MessagePack.Annotations.dll" target="build\analyzers\dotnet\roslyn3.8\cs\MessagePack.Annotations.dll" />
+    <file src="$BaseOutputPath38$Microsoft.Bcl.AsyncInterfaces.dll" target="build\analyzers\dotnet\roslyn3.8\cs\Microsoft.Bcl.AsyncInterfaces.dll" />
+    <file src="$BaseOutputPath38$System.Text.Json.dll" target="build\analyzers\dotnet\roslyn3.8\cs\System.Text.Json.dll" />
+    <file src="$BaseOutputPath38$System.Text.Encodings.Web.dll" target="build\analyzers\dotnet\roslyn3.8\cs\System.Text.Encodings.Web.dll" />
+    <file src="$BaseOutputPath38$System.Numerics.Vectors.dll" target="build\analyzers\dotnet\roslyn3.8\cs\System.Numerics.Vectors.dll" />
+    <file src="$BaseOutputPath38$System.Threading.Tasks.Extensions.dll" target="build\analyzers\dotnet\roslyn3.8\cs\System.Threading.Tasks.Extensions.dll" />
+    <file src="$BaseOutputPath38$System.Memory.dll" target="build\analyzers\dotnet\roslyn3.8\cs\System.Memory.dll" />
+    <file src="$BaseOutputPath38$System.Buffers.dll" target="build\analyzers\dotnet\roslyn3.8\cs\System.Buffers.dll" />
+    <file src="$BaseOutputPath38$System.Runtime.CompilerServices.Unsafe.dll" target="build\analyzers\dotnet\roslyn3.8\cs\System.Runtime.CompilerServices.Unsafe.dll" />
 
     <!-- Roslyn 4.0 -->
-    <file src="$BaseOutputPath40$Microsoft.Windows.SDK.Win32Docs.dll" target="analyzers\cs\roslyn40\Microsoft.Windows.SDK.Win32Docs.dll" />
-    <file src="$BaseOutputPath40$Microsoft.Windows.CsWin32.Roslyn40.dll" target="analyzers\cs\roslyn40\Microsoft.Windows.CsWin32.dll" />
-    <file src="$BaseOutputPath40$MessagePack.dll" target="analyzers\cs\roslyn40\MessagePack.dll" />
-    <file src="$BaseOutputPath40$MessagePack.Annotations.dll" target="analyzers\cs\roslyn40\MessagePack.Annotations.dll" />
-    <file src="$BaseOutputPath40$Microsoft.Bcl.AsyncInterfaces.dll" target="analyzers\cs\roslyn40\Microsoft.Bcl.AsyncInterfaces.dll" />
-    <file src="$BaseOutputPath40$System.Text.Json.dll" target="analyzers\cs\roslyn40\System.Text.Json.dll" />
-    <file src="$BaseOutputPath40$System.Text.Encodings.Web.dll" target="analyzers\cs\roslyn40\System.Text.Encodings.Web.dll" />
-    <file src="$BaseOutputPath40$System.Numerics.Vectors.dll" target="analyzers\cs\roslyn40\System.Numerics.Vectors.dll" />
-    <file src="$BaseOutputPath40$System.Threading.Tasks.Extensions.dll" target="analyzers\cs\roslyn40\System.Threading.Tasks.Extensions.dll" />
-    <file src="$BaseOutputPath40$System.Memory.dll" target="analyzers\cs\roslyn40\System.Memory.dll" />
-    <file src="$BaseOutputPath40$System.Buffers.dll" target="analyzers\cs\roslyn40\System.Buffers.dll" />
-    <file src="$BaseOutputPath40$System.Runtime.CompilerServices.Unsafe.dll" target="analyzers\cs\roslyn40\System.Runtime.CompilerServices.Unsafe.dll" />
+    <file src="$BaseOutputPath40$Microsoft.Windows.SDK.Win32Docs.dll" target="build\analyzers\dotnet\roslyn4.0\cs\Microsoft.Windows.SDK.Win32Docs.dll" />
+    <file src="$BaseOutputPath40$Microsoft.Windows.CsWin32.Roslyn40.dll" target="build\analyzers\dotnet\roslyn4.0\cs\Microsoft.Windows.CsWin32.dll" />
+    <file src="$BaseOutputPath40$MessagePack.dll" target="build\analyzers\dotnet\roslyn4.0\cs\MessagePack.dll" />
+    <file src="$BaseOutputPath40$MessagePack.Annotations.dll" target="build\analyzers\dotnet\roslyn4.0\cs\MessagePack.Annotations.dll" />
+    <file src="$BaseOutputPath40$Microsoft.Bcl.AsyncInterfaces.dll" target="build\analyzers\dotnet\roslyn4.0\cs\Microsoft.Bcl.AsyncInterfaces.dll" />
+    <file src="$BaseOutputPath40$System.Text.Json.dll" target="build\analyzers\dotnet\roslyn4.0\cs\System.Text.Json.dll" />
+    <file src="$BaseOutputPath40$System.Text.Encodings.Web.dll" target="build\analyzers\dotnet\roslyn4.0\cs\System.Text.Encodings.Web.dll" />
+    <file src="$BaseOutputPath40$System.Numerics.Vectors.dll" target="build\analyzers\dotnet\roslyn4.0\cs\System.Numerics.Vectors.dll" />
+    <file src="$BaseOutputPath40$System.Threading.Tasks.Extensions.dll" target="build\analyzers\dotnet\roslyn4.0\cs\System.Threading.Tasks.Extensions.dll" />
+    <file src="$BaseOutputPath40$System.Memory.dll" target="build\analyzers\dotnet\roslyn4.0\cs\System.Memory.dll" />
+    <file src="$BaseOutputPath40$System.Buffers.dll" target="build\analyzers\dotnet\roslyn4.0\cs\System.Buffers.dll" />
+    <file src="$BaseOutputPath40$System.Runtime.CompilerServices.Unsafe.dll" target="build\analyzers\dotnet\roslyn4.0\cs\System.Runtime.CompilerServices.Unsafe.dll" />
 
     <!-- Common files -->
     <file src="readme.txt" target="readme.txt" />

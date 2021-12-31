@@ -14,19 +14,6 @@
     <CompilerVisibleProperty Include="CsWin32InputDocPaths" />
   </ItemGroup>
 
-  <Choose>
-    <When Condition="'$(VisualStudioVersion)' == '17.0' AND '$(DesignTimeBuild)' == 'True'">
-      <ItemGroup>
-        <Analyzer Include="$(MSBuildThisFileDirectory)../../analyzers/cs/roslyn40/*.dll" />
-      </ItemGroup>
-    </When>
-    <Otherwise>
-      <ItemGroup>
-        <Analyzer Include="$(MSBuildThisFileDirectory)../../analyzers/cs/roslyn38/*.dll" />
-      </ItemGroup>
-    </Otherwise>
-  </Choose>
-
   <Target Name="AssembleCsWin32InputPaths" BeforeTargets="GenerateMSBuildEditorConfigFileCore">
     <!-- Roslyn only allows source generators to see msbuild properties, to lift msbuild items into semicolon-delimited properties. -->
     <PropertyGroup>

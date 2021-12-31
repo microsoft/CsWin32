@@ -1,0 +1,21 @@
+﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <Target Name="_CsWin32GatherAnalyzers">
+    <ItemGroup>
+      <_CsWin32Analyzer Include="@(Analyzer)" Condition="'%(Analyzer.NuGetPackageId)' == 'Microsoft.Windows.CsWin32'" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="_CsWin32AnalyzerMultiTargeting"
+          Condition="'$(SupportsRoslynComponentVersioning)' != 'true'"
+          AfterTargets="ResolvePackageDependenciesForBuild;ResolveNuGetPackageAssets"
+          DependsOnTargets="_CsWin32GatherAnalyzers">
+
+    <ItemGroup>
+      <!-- Remove our analyzers targeting roslyn 4+ -->
+      <Analyzer Remove="@(_CsWin32Analyzer)"
+                Condition="$([System.String]::Copy('%(_CsWin32Analyzer.Identity)').IndexOf('roslyn3')) &lt; 0"/>
+    </ItemGroup>
+  </Target>
+
+</Project>

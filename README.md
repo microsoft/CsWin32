@@ -61,7 +61,7 @@ using Windows.Win32;
 PInvoke.CreateFile(/*args*/);
 ```
 
-Constants are defined on the `Windows.Win32.Constants` class.
+Constants are defined on the same class as the p/invoke methods (by default, the `Windows.Win32.PInvoke` class).
 
 Other supporting types are defined within or under the `Windows.Win32` namespace.
 Discovery of the namespace for a given type can be done with the Go To All feature (Ctrl+T) in Visual Studio with the type name as the search query.

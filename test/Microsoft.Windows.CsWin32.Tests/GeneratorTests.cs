@@ -247,6 +247,8 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             "WSAHtons", // A method that references SOCKET (which is typed as UIntPtr) so that a SafeHandle will be generated.
             "IDelayedPropertyStoreFactory", // interface inheritance across namespaces
             "D3D9ON12_ARGS", // Contains an inline array of IUnknown objects
+            "NCryptOpenKey", // Generates a SafeHandle based on a UIntPtr
+            "X509_CERT", // A constant defined as PCSTR
             "ID3D12Resource", // COM interface with base types
             "ID2D1RectangleGeometry")] // COM interface with base types
         string api,

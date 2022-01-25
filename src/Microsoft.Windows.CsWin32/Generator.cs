@@ -1388,7 +1388,8 @@ namespace Microsoft.Windows.CsWin32
             safeHandleType = safeHandleTypeIdentifier;
 
             MethodSignature<TypeHandleInfo> releaseMethodSignature = releaseMethodDef.DecodeSignature(SignatureHandleProvider.Instance, null);
-            var releaseMethodParameterType = releaseMethodSignature.ParameterTypes[0].ToTypeSyntax(this.externSignatureTypeSettings, default);
+            TypeHandleInfo releaseMethodParameterTypeHandleInfo = releaseMethodSignature.ParameterTypes[0];
+            var releaseMethodParameterType = releaseMethodParameterTypeHandleInfo.ToTypeSyntax(this.externSignatureTypeSettings, default);
 
             // If the release method takes more than one parameter, we can't generate a SafeHandle for it.
             if (releaseMethodSignature.RequiredParameterCount != 1)
@@ -1461,6 +1462,12 @@ namespace Microsoft.Windows.CsWin32
                         BinaryExpression(SyntaxKind.EqualsExpression, thisHandle, invalidValueFieldName))))
                 .WithSemicolonToken(SemicolonWithLineFeed));
 
+            // (struct)this.handle or (struct)(nuint)(nint)this.handle, as appropriate.
+            bool isUIntPtr = this.TryGetTypeDefFieldType(releaseMethodParameterTypeHandleInfo, out TypeHandleInfo? typeDefStructFieldType) && typeDefStructFieldType is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.UIntPtr };
+            ArgumentSyntax releaseHandleArgument = Argument(CastExpression(
+                releaseMethodParameterType.Type,
+                isUIntPtr ? CastExpression(IdentifierName("nuint"), CastExpression(IdentifierName("nint"), thisHandle)) : thisHandle));
+
             // protected override bool ReleaseHandle() => ReleaseMethod((struct)this.handle);
             // Special case release functions based on their return type as follows: (https://github.com/microsoft/win32metadata/issues/25)
             //  * bool => true is success
@@ -1472,7 +1479,7 @@ namespace Microsoft.Windows.CsWin32
                     SyntaxKind.SimpleMemberAccessExpression,
                     IdentifierName(this.options.ClassName),
                     IdentifierName(renamedReleaseMethod ?? releaseMethod)),
-                ArgumentList().AddArguments(Argument(CastExpression(releaseMethodParameterType.Type, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("handle"))))));
+                ArgumentList().AddArguments(releaseHandleArgument));
             BlockSyntax? releaseBlock = null;
             if (!(releaseMethodReturnType.Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.BoolKeyword } } ||
                 releaseMethodReturnType.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "BOOL" } } }))
@@ -1508,11 +1515,6 @@ namespace Microsoft.Windows.CsWin32
                     case QualifiedNameSyntax { Right: IdentifierNameSyntax identifierName }:
                         switch (identifierName.Identifier.ValueText)
                         {
-                            case "LSTATUS":
-                                this.TryGenerateTypeOrThrow("WIN32_ERROR");
-                                ExpressionSyntax errorSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseTypeName("global::Windows.Win32.Foundation.WIN32_ERROR"), IdentifierName("ERROR_SUCCESS"));
-                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, CastExpression(ParseTypeName("global::Windows.Win32.Foundation.LSTATUS"), CastExpression(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), errorSuccess)));
-                                break;
                             case "NTSTATUS":
                                 this.TryGenerateConstantOrThrow("STATUS_SUCCESS");
                                 ExpressionSyntax statusSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, this.methodsAndConstantsClassName, IdentifierName("STATUS_SUCCESS"));
@@ -1553,6 +1555,42 @@ namespace Microsoft.Windows.CsWin32
 
             this.volatileCode.AddSafeHandleType(safeHandleDeclaration);
             return safeHandleType;
+        }
+
+        internal bool TryGetTypeDefFieldType(TypeHandleInfo typeDef, [NotNullWhen(true)] out TypeHandleInfo? fieldType)
+        {
+            if (typeDef is HandleTypeHandleInfo handle)
+            {
+                switch (handle.Handle.Kind)
+                {
+                    case HandleKind.TypeReference:
+                        if (this.TryGetTypeDefHandle((TypeReferenceHandle)handle.Handle, out TypeDefinitionHandle tdh))
+                        {
+                            return Resolve(tdh, out fieldType);
+                        }
+
+                        break;
+                    case HandleKind.TypeDefinition:
+                        return Resolve((TypeDefinitionHandle)handle.Handle, out fieldType);
+                }
+            }
+
+            bool Resolve(TypeDefinitionHandle tdh, [NotNullWhen(true)] out TypeHandleInfo? fieldType)
+            {
+                TypeDefinition td = this.Reader.GetTypeDefinition(tdh);
+                foreach (FieldDefinitionHandle fdh in td.GetFields())
+                {
+                    FieldDefinition fd = this.Reader.GetFieldDefinition(fdh);
+                    fieldType = fd.DecodeSignature(SignatureHandleProvider.Instance, null);
+                    return true;
+                }
+
+                fieldType = null;
+                return false;
+            }
+
+            fieldType = default;
+            return false;
         }
 
         internal void GetBaseTypeInfo(TypeDefinition typeDef, out StringHandle baseTypeName, out StringHandle baseTypeNamespace)
@@ -2849,6 +2887,11 @@ namespace Microsoft.Windows.CsWin32
                     {
                         // Cast to IntPtr first, then the actual handle struct.
                         value = CastExpression(fieldType.Type, CastExpression(IntPtrTypeSyntax, ParenthesizedExpression(value)));
+                    }
+                    else if (fieldType.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "PCSTR" } } })
+                    {
+                        value = CastExpression(fieldType.Type, CastExpression(PointerType(PredefinedType(Token(SyntaxKind.ByteKeyword))), ParenthesizedExpression(value)));
+                        requiresUnsafe = true;
                     }
                     else if (fieldType.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "PCWSTR" } } })
                     {

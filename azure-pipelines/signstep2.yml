@@ -3,7 +3,7 @@ steps:
 - task: EsrpCodeSigning@1
   displayName: ✒ NuGet sign
   inputs:
-    ConnectedServiceName: Undocked RegFree Signing Connection
+    ConnectedServiceName: Xlang Code Signing
     FolderPath: $(System.DefaultWorkingDirectory)\bin\Packages\$(BuildConfiguration)\NuGet
     Pattern: Microsoft.Windows.CsWin32.*.nupkg
     signConfigType: inlineSignParams

@@ -61,6 +61,23 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             new object[] { "net5.0" },
         };
 
+    public static Platform[] SpecificCpuArchitectures =>
+        new Platform[]
+        {
+            Platform.X86,
+            Platform.X64,
+            Platform.Arm64,
+        };
+
+    public static Platform[] AnyCpuArchitectures =>
+        new Platform[]
+        {
+            Platform.AnyCpu,
+            Platform.X86,
+            Platform.X64,
+            Platform.Arm64,
+        };
+
     public async Task InitializeAsync()
     {
         this.starterCompilations.Add("net35", await this.CreateCompilationAsync(MyReferenceAssemblies.NetFramework.Net35));
@@ -1216,7 +1233,17 @@ i++)						if (p0[i] != default(uint))							return false;
     }
 
     [Theory, PairwiseData]
-    public void FullGeneration(bool allowMarshaling, [CombinatorialValues(Platform.AnyCpu, Platform.X86, Platform.X64, Platform.Arm64)] Platform platform)
+    public void TBButton([CombinatorialMemberData(nameof(SpecificCpuArchitectures))] Platform platform)
+    {
+        this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(platform));
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate("TBBUTTON", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+    }
+
+    [Theory, PairwiseData]
+    public void FullGeneration(bool allowMarshaling, [CombinatorialMemberData(nameof(AnyCpuArchitectures))] Platform platform)
     {
         var generatorOptions = new GeneratorOptions { AllowMarshaling = allowMarshaling };
         this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(platform));

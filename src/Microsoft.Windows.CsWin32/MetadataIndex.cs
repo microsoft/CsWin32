@@ -8,6 +8,7 @@ namespace Microsoft.Windows.CsWin32
     using System.Collections.ObjectModel;
     using System.Diagnostics;
     using System.IO;
+    using System.IO.MemoryMappedFiles;
     using System.Linq;
     using System.Reflection;
     using System.Reflection.Metadata;
@@ -24,7 +25,7 @@ namespace Microsoft.Windows.CsWin32
         /// A cache of metadata files read.
         /// All access to this should be within a <see cref="Cache"/> lock.
         /// </summary>
-        private static readonly Dictionary<string, byte[]> MetadataFileContent = new(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, MemoryMappedFile> MetadataFiles = new(StringComparer.OrdinalIgnoreCase);
 
         private readonly string metadataPath;
 
@@ -51,14 +52,14 @@ namespace Microsoft.Windows.CsWin32
         /// </summary>
         private readonly Dictionary<TypeDefinitionHandle, string> handleTypeReleaseMethod = new();
 
-        private MetadataIndex(string metadataPath, byte[] metadataBytes, Platform? platform)
+        private MetadataIndex(string metadataPath, Stream metadataStream, Platform? platform)
         {
             this.metadataPath = metadataPath;
             this.platform = platform;
 
             try
             {
-                this.metadataStream = new MemoryStream(metadataBytes, writable: false);
+                this.metadataStream = metadataStream;
                 this.peReader = new PEReader(this.metadataStream);
                 this.mr = this.peReader.GetMetadataReader();
 
@@ -238,7 +239,7 @@ namespace Microsoft.Windows.CsWin32
         {
             metadataPath = Path.GetFullPath(metadataPath);
             CacheKey key = new CacheKey(metadataPath, platform);
-            byte[]? metadataBytes;
+            MemoryMappedViewStream metadataBytes;
             lock (Cache)
             {
                 if (Cache.TryGetValue(key, out Stack<MetadataIndex> stack) && stack.Count > 0)
@@ -247,11 +248,13 @@ namespace Microsoft.Windows.CsWin32
                 }
 
                 // Read the entire metadata file exactly once so that many MemoryStreams can share the memory.
-                if (!MetadataFileContent.TryGetValue(metadataPath, out metadataBytes))
+                if (!MetadataFiles.TryGetValue(metadataPath, out MemoryMappedFile? file))
                 {
-                    metadataBytes = File.ReadAllBytes(metadataPath);
-                    MetadataFileContent.Add(metadataPath, metadataBytes);
+                    file = MemoryMappedFile.CreateFromFile(metadataPath);
+                    MetadataFiles.Add(metadataPath, file);
                 }
+
+                metadataBytes = file.CreateViewStream();
             }
 
             return new MetadataIndex(metadataPath, metadataBytes, platform);

@@ -2429,6 +2429,14 @@ namespace Windows.Win32
         Assert.Contains(classDecl.AttributeLists, al => al.Attributes.Any(a => a.Name.ToString().Contains("ComImport")));
     }
 
+    [Fact]
+    public void OpensMetadataForSharedReading()
+    {
+        using FileStream competingReader = File.OpenRead(MetadataPath);
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate("CreateFile", CancellationToken.None));
+    }
+
     private static string ConstructGlobalConfigString(bool omitDocs = false)
     {
         StringBuilder globalConfigBuilder = new();

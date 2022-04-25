@@ -250,11 +250,12 @@ namespace Microsoft.Windows.CsWin32
                 // Read the entire metadata file exactly once so that many MemoryStreams can share the memory.
                 if (!MetadataFiles.TryGetValue(metadataPath, out MemoryMappedFile? file))
                 {
-                    file = MemoryMappedFile.CreateFromFile(metadataPath);
+                    FileStream metadataStream = new FileStream(metadataPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                    file = MemoryMappedFile.CreateFromFile(metadataStream, mapName: null, capacity: 0, MemoryMappedFileAccess.Read, HandleInheritability.None, leaveOpen: false);
                     MetadataFiles.Add(metadataPath, file);
                 }
 
-                metadataBytes = file.CreateViewStream();
+                metadataBytes = file.CreateViewStream(offset: 0, size: 0, MemoryMappedFileAccess.Read);
             }
 
             return new MetadataIndex(metadataPath, metadataBytes, platform);

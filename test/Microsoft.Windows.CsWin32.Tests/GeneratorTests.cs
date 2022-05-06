@@ -236,7 +236,8 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             "JsVariantToValue",
             "D2D1_DEFAULT_FLATTENING_TOLERANCE", // a float constant
             "WIA_CATEGORY_FINISHED_FILE", // GUID constant
-            "DEVPKEY_MTPBTH_IsConnected", // PROPERTYKEY constant
+            "DEVPKEY_MTPBTH_IsConnected", // DEVPROPKEY constant
+            "PKEY_AudioEndpoint_FormFactor", // PROPERTYKEY constant
             "RT_CURSOR", // PCWSTR constant
             "IOleUILinkContainerW", // An IUnknown-derived interface with no GUID
             "RTM_ENTITY_EXPORT_METHODS",

@@ -12,9 +12,9 @@ $ArtifactStagingFolder = & "$PSScriptRoot/Get-ArtifactsStagingDirectory.ps1"
 dotnet test $RepoRoot `
     --no-build `
     -c $Configuration `
-    --filter "TestCategory!=FailsInCloudTest" `
+    --filter "TestCategory!=FailsInCloudTest$env:TestFilter" `
     -p:CollectCoverage=true `
-    --blame-hang-timeout 60s `
+    --blame-hang-timeout 600s `
     --blame-crash `
     -bl:"$ArtifactStagingFolder/build_logs/test.binlog" `
     --diag "$ArtifactStagingFolder/test_logs/diag.log;TraceLevel=info" `

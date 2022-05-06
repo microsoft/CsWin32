@@ -11,31 +11,8 @@ steps:
 - ${{ if eq(variables['system.collectionId'], 'cb55739e-4afe-46a3-970f-1b49d8ee7564') }}:
   - template: ./signstep2.yml
 
-- task: DotNetCoreCLI@2
-  displayName: 🧪 dotnet test -f net472
-  inputs:
-    command: test
-    arguments: --no-build -c $(BuildConfiguration) -f net472 --filter "TestCategory!=FailsInCloudTest$(TestFilter)" -v n /p:CollectCoverage=true --settings "$(Build.Repository.LocalPath)/azure-pipelines/$(Agent.OS).runsettings" /bl:"$(Build.ArtifactStagingDirectory)/build_logs/test_net472.binlog"
-    testRunTitle: net472-$(Agent.JobName)
-  condition: succeededOrFailed()
-  enabled: false # https://github.com/dotnet/sdk/issues/14578
-
-- task: DotNetCoreCLI@2
-  displayName: 🧪 dotnet test -f net5.0
-  inputs:
-    command: test
-    arguments: --no-build -c $(BuildConfiguration) -f net5.0 --filter "TestCategory!=FailsInCloudTest$(TestFilter)" -v n /p:CollectCoverage=true --settings "$(Build.Repository.LocalPath)/azure-pipelines/$(Agent.OS).runsettings" /bl:"$(Build.ArtifactStagingDirectory)/build_logs/test_net5.0.binlog"
-    testRunTitle: net5.0-$(Agent.JobName)
-  condition: succeededOrFailed()
-
-- task: DotNetCoreCLI@2
-  displayName: 🧪 dotnet test -f netcoreapp3.1
-  inputs:
-    command: test
-    arguments: --no-build -c $(BuildConfiguration) -f netcoreapp3.1 --filter "TestCategory!=FailsInCloudTest$(TestFilter)" -v n /p:CollectCoverage=true --settings "$(Build.Repository.LocalPath)/azure-pipelines/$(Agent.OS).runsettings" /bl:"$(Build.ArtifactStagingDirectory)/build_logs/test_netcoreapp3.1.binlog"
-    testRunTitle: netcoreapp3.1-$(Agent.JobName)
-  condition: succeededOrFailed()
-  enabled: false # https://github.com/dotnet/sdk/issues/14578
+- powershell: azure-pipelines/dotnet-test-cloud.ps1 -Configuration $(BuildConfiguration) -Agent $(Agent.JobName) -PublishResults
+  displayName: 🧪 dotnet test
 
 - powershell: azure-pipelines/variables/_pipelines.ps1
   failOnStderr: true
@@ -46,24 +23,6 @@ steps:
   failOnStderr: true
   displayName: 📢 Publish artifacts
   condition: succeededOrFailed()
-
-- task: PublishSymbols@2
-  inputs:
-    SymbolsFolder: $(Build.ArtifactStagingDirectory)/symbols-$(Agent.JobName)
-    SearchPattern: '**/*.pdb'
-    IndexSources: false
-    SymbolServerType: TeamServices
-  displayName: 📢 Publish symbols to symbol server
-  condition: eq(variables['Agent.OS'], 'Windows_NT') # Execute on failed test runs too. Windows-only till https://github.com/microsoft/azure-pipelines-tasks/issues/13821 is fixed.
-
-- task: PublishSymbols@2
-  inputs:
-    SymbolsFolder: $(Build.ArtifactStagingDirectory)/test_symbols-$(Agent.JobName)
-    SearchPattern: '**/*.pdb'
-    IndexSources: false
-    SymbolServerType: TeamServices
-  displayName: 📢 Publish test symbols to symbol server
-  condition: and(failed(), eq(variables['Agent.OS'], 'Windows_NT')) # Execute on failed test runs only.
 
 - bash: bash <(curl -s https://codecov.io/bash)
   displayName: 📢 Publish code coverage results to codecov.io

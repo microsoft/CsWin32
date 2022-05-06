@@ -2186,7 +2186,7 @@ namespace Microsoft.Windows.CsWin32
                 Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(k), k))));
         }
 
-        private static ObjectCreationExpressionSyntax PropertyKeyValue(CustomAttribute propertyKeyAttribute)
+        private static ObjectCreationExpressionSyntax PropertyKeyValue(CustomAttribute propertyKeyAttribute, TypeSyntax type)
         {
             CustomAttributeValue<TypeSyntax> args = propertyKeyAttribute.DecodeValue(CustomAttributeTypeProvider.Instance);
             var a = (uint)args.FixedArguments[0].Value!;
@@ -2202,7 +2202,7 @@ namespace Microsoft.Windows.CsWin32
             var k = (byte)args.FixedArguments[10].Value!;
             var pid = (uint)args.FixedArguments[11].Value!;
 
-            return ObjectCreationExpression(IdentifierName("global::Windows.Win32.UI.Shell.PropertiesSystem.PROPERTYKEY")).WithInitializer(
+            return ObjectCreationExpression(type).WithInitializer(
                 InitializerExpression(SyntaxKind.ObjectInitializerExpression, SeparatedList<ExpressionSyntax>(new[]
                 {
                     AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, IdentifierName("fmtid"), GuidValue(propertyKeyAttribute)),
@@ -2878,7 +2878,7 @@ namespace Microsoft.Windows.CsWin32
                 ExpressionSyntax value =
                     fieldDef.GetDefaultValue() is { IsNil: false } constantHandle ? this.ToExpressionSyntax(this.Reader.GetConstant(constantHandle)) :
                     this.FindInteropDecorativeAttribute(customAttributes, nameof(GuidAttribute)) is CustomAttribute guidAttribute ? GuidValue(guidAttribute) :
-                    this.FindInteropDecorativeAttribute(customAttributes, "PropertyKeyAttribute") is CustomAttribute propertyKeyAttribute ? PropertyKeyValue(propertyKeyAttribute) :
+                    this.FindInteropDecorativeAttribute(customAttributes, "PropertyKeyAttribute") is CustomAttribute propertyKeyAttribute ? PropertyKeyValue(propertyKeyAttribute, fieldType.Type) :
                     throw new NotSupportedException("Unsupported constant: " + name);
                 bool requiresUnsafe = false;
                 if (fieldType.Type is not PredefinedTypeSyntax && value is not ObjectCreationExpressionSyntax)

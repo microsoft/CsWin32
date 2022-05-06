@@ -1,10 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-namespace Microsoft.Windows.CsWin32
+namespace Microsoft.Windows.CsWin32;
+
+internal interface ITypeHandleContainer
 {
-    internal interface ITypeHandleContainer
-    {
-        TypeHandleInfo ElementType { get; }
-    }
+    TypeHandleInfo ElementType { get; }
 }

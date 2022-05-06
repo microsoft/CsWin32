@@ -70,7 +70,7 @@ stages:
             displayName: NuGet push
             inputs:
               command: push
-              packagesToPush: $(Pipeline.Workspace)/deployables-Windows/NuGet/*.nupkg
+              packagesToPush: $(Pipeline.Workspace)/deployables-Windows/*.nupkg
               nuGetFeedType: external
               publishFeedCredentials: azure-public/winsdk
             continueOnError: true # until "skip on conflict" is offered as a task input.

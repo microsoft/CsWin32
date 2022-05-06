@@ -4,7 +4,7 @@ steps:
   displayName: ✒ NuGet sign
   inputs:
     ConnectedServiceName: Xlang Code Signing
-    FolderPath: $(System.DefaultWorkingDirectory)\bin\Packages\$(BuildConfiguration)\NuGet
+    FolderPath: $(System.DefaultWorkingDirectory)\bin\Packages\$(BuildConfiguration)
     Pattern: Microsoft.Windows.CsWin32.*.nupkg
     signConfigType: inlineSignParams
     inlineOperation: |

@@ -4,7 +4,7 @@
     <RepoRootPath>$(MSBuildThisFileDirectory)</RepoRootPath>
     <BaseIntermediateOutputPath>$(RepoRootPath)obj\$([MSBuild]::MakeRelative($(RepoRootPath), $(MSBuildProjectDirectory)))\</BaseIntermediateOutputPath>
     <BaseOutputPath Condition=" '$(BaseOutputPath)' == '' ">$(RepoRootPath)bin\$(MSBuildProjectName)\</BaseOutputPath>
-    <PackageOutputPath>$(RepoRootPath)bin\Packages\$(Configuration)\NuGet\</PackageOutputPath>
+    <PackageOutputPath>$(RepoRootPath)bin\Packages\$(Configuration)\</PackageOutputPath>
     <LangVersion>10.0</LangVersion>
     <Nullable>enable</Nullable>
     <AnalysisLevel>latest</AnalysisLevel>

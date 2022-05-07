@@ -33,6 +33,15 @@ Install the `Microsoft.Windows.CsWin32` package:
 dotnet add package Microsoft.Windows.CsWin32 --prerelease
 ```
 
+**Tip**: Remove the `IncludeAssets` metadata from the package reference so that you get better code generation by allowing nuget to bring in the `System.Memory` package as a transitive dependency.
+
+```diff
+ <PackageReference Include="Microsoft.Windows.CsWin32" Version="0.1.647-beta">
+   <PrivateAssets>all</PrivateAssets>
+-  <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+ </PackageReference>
+```
+
 Your project must allow unsafe code to support the generated code that will likely use pointers.
 This does *not* automatically make all your code *unsafe*.
 Use of the `unsafe` keyword is required anywhere you use pointers.

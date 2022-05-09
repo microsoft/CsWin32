@@ -110,7 +110,7 @@ To keep CsWin32 generating the referred types you need, add them explicitly to `
 To update the metadata used as the source for code generation, you may install a newer `Microsoft.Windows.SDK.Win32Metadata` package:
 
 ```ps1
-dotnet add package Microsoft.Windows.SDK.Win32Metadata -pre
+dotnet add package Microsoft.Windows.SDK.Win32Metadata --prerelease
 ```
 
 Alternatively, you may set the `MicrosoftWindowsSdkWin32MetadataBasePath` property in your project file to the path of the directory containing `Windows.Win32.winmd`:

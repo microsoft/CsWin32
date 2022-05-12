@@ -38,7 +38,7 @@ stages:
     BuildConfiguration: Release
     BuildPlatform: Any CPU
     push_to_ci: true
-    ci_feed: MSFTNuget
+    ci_feed: https://pkgs.dev.azure.com/microsoft/_packaging/MSFTNuget/nuget/v3/index.json
     NUGET_PACKAGES: $(Agent.TempDirectory)/.nuget/packages
     SignSelection: ${{ parameters.SignSelection }}
 

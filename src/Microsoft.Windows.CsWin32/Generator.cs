@@ -1,74 +1,74 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-namespace Microsoft.Windows.CsWin32
+using System;
+using System.Collections.Generic;
+using System.Collections.Immutable;
+using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using System.Reflection.Metadata;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.Windows.SDK.Win32Docs;
+using static Microsoft.Windows.CsWin32.FastSyntaxFactory;
+
+namespace Microsoft.Windows.CsWin32;
+
+/// <summary>
+/// The core of the source generator.
+/// </summary>
+[DebuggerDisplay("{" + nameof(DebuggerDisplayString) + ",nq}")]
+public class Generator : IDisposable
 {
-    using System;
-    using System.Collections.Generic;
-    using System.Collections.Immutable;
-    using System.Collections.ObjectModel;
-    using System.Diagnostics;
-    using System.Diagnostics.CodeAnalysis;
-    using System.Globalization;
-    using System.IO;
-    using System.Linq;
-    using System.Reflection;
-    using System.Reflection.Metadata;
-    using System.Runtime.CompilerServices;
-    using System.Runtime.InteropServices;
-    using System.Text;
-    using System.Threading;
-    using Microsoft.CodeAnalysis;
-    using Microsoft.CodeAnalysis.CSharp;
-    using Microsoft.CodeAnalysis.CSharp.Syntax;
-    using Microsoft.Windows.SDK.Win32Docs;
-    using static FastSyntaxFactory;
+    internal const string InteropDecorationNamespace = "Windows.Win32.Interop";
+    internal const string NativeArrayInfoAttribute = "NativeArrayInfoAttribute";
+    internal const string RAIIFreeAttribute = "RAIIFreeAttribute";
+    internal const string GlobalNamespacePrefix = "global::";
+    internal const string GlobalWinmdRootNamespaceAlias = "winmdroot";
+    internal const string WinRTCustomMarshalerClass = "WinRTCustomMarshaler";
+    internal const string WinRTCustomMarshalerNamespace = "Windows.Win32.CsWin32.InteropServices";
+    internal const string WinRTCustomMarshalerFullName = WinRTCustomMarshalerNamespace + "." + WinRTCustomMarshalerClass;
 
-    /// <summary>
-    /// The core of the source generator.
-    /// </summary>
-    [DebuggerDisplay("{" + nameof(DebuggerDisplayString) + ",nq}")]
-    public class Generator : IDisposable
+    internal static readonly SyntaxAnnotation IsRetValAnnotation = new SyntaxAnnotation("RetVal");
+
+    internal static readonly Dictionary<string, TypeSyntax> BclInteropStructs = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)
     {
-        internal const string InteropDecorationNamespace = "Windows.Win32.Interop";
-        internal const string NativeArrayInfoAttribute = "NativeArrayInfoAttribute";
-        internal const string RAIIFreeAttribute = "RAIIFreeAttribute";
-        internal const string GlobalNamespacePrefix = "global::";
-        internal const string GlobalWinmdRootNamespaceAlias = "winmdroot";
-        internal const string WinRTCustomMarshalerClass = "WinRTCustomMarshaler";
-        internal const string WinRTCustomMarshalerNamespace = "Windows.Win32.CsWin32.InteropServices";
-        internal const string WinRTCustomMarshalerFullName = WinRTCustomMarshalerNamespace + "." + WinRTCustomMarshalerClass;
+        { nameof(System.Runtime.InteropServices.ComTypes.FILETIME), ParseTypeName("global::System.Runtime.InteropServices.ComTypes.FILETIME") },
+        { nameof(Guid), ParseTypeName("global::System.Guid") },
+        { "OLD_LARGE_INTEGER", PredefinedType(Token(SyntaxKind.LongKeyword)) },
+        { "LARGE_INTEGER", PredefinedType(Token(SyntaxKind.LongKeyword)) },
+        { "ULARGE_INTEGER", PredefinedType(Token(SyntaxKind.ULongKeyword)) },
+    };
 
-        internal static readonly SyntaxAnnotation IsRetValAnnotation = new SyntaxAnnotation("RetVal");
+    internal static readonly Dictionary<string, TypeSyntax> AdditionalBclInteropStructsMarshaled = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)
+    {
+        ////{ "BOOL", PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)) },
+    };
 
-        internal static readonly Dictionary<string, TypeSyntax> BclInteropStructs = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)
-        {
-            { nameof(System.Runtime.InteropServices.ComTypes.FILETIME), ParseTypeName("global::System.Runtime.InteropServices.ComTypes.FILETIME") },
-            { nameof(Guid), ParseTypeName("global::System.Guid") },
-            { "OLD_LARGE_INTEGER", PredefinedType(Token(SyntaxKind.LongKeyword)) },
-            { "LARGE_INTEGER", PredefinedType(Token(SyntaxKind.LongKeyword)) },
-            { "ULARGE_INTEGER", PredefinedType(Token(SyntaxKind.ULongKeyword)) },
-        };
+    internal static readonly Dictionary<string, TypeSyntax> BclInteropSafeHandles = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)
+    {
+        { "CloseHandle", ParseTypeName("Microsoft.Win32.SafeHandles.SafeFileHandle") },
+        { "RegCloseKey", ParseTypeName("Microsoft.Win32.SafeHandles.SafeRegistryHandle") },
+    };
 
-        internal static readonly Dictionary<string, TypeSyntax> AdditionalBclInteropStructsMarshaled = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)
-        {
-            ////{ "BOOL", PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)) },
-        };
+    private const string SystemRuntimeCompilerServices = "System.Runtime.CompilerServices";
+    private const string SystemRuntimeInteropServices = "System.Runtime.InteropServices";
+    private const string NativeTypedefAttribute = "NativeTypedefAttribute";
+    private const string SimpleFileNameAnnotation = "SimpleFileName";
+    private const string NamespaceContainerAnnotation = "NamespaceContainer";
+    private const string OriginalDelegateAnnotation = "OriginalDelegate";
 
-        internal static readonly Dictionary<string, TypeSyntax> BclInteropSafeHandles = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)
-        {
-            { "CloseHandle", ParseTypeName("Microsoft.Win32.SafeHandles.SafeFileHandle") },
-            { "RegCloseKey", ParseTypeName("Microsoft.Win32.SafeHandles.SafeRegistryHandle") },
-        };
-
-        private const string SystemRuntimeCompilerServices = "System.Runtime.CompilerServices";
-        private const string SystemRuntimeInteropServices = "System.Runtime.InteropServices";
-        private const string NativeTypedefAttribute = "NativeTypedefAttribute";
-        private const string SimpleFileNameAnnotation = "SimpleFileName";
-        private const string NamespaceContainerAnnotation = "NamespaceContainer";
-        private const string OriginalDelegateAnnotation = "OriginalDelegate";
-
-        private static readonly string AutoGeneratedHeader = @"// ------------------------------------------------------------------------------
+    private static readonly string AutoGeneratedHeader = @"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -79,13 +79,13 @@ namespace Microsoft.Windows.CsWin32
 
 ".Replace("\r\n", "\n");
 
-        private static readonly string PartialPInvokeContentComment = @"
+    private static readonly string PartialPInvokeContentComment = @"
 /// <content>
 /// Contains extern methods from ""{0}.dll"".
 /// </content>
 ".Replace("\r\n", "\n");
 
-        private static readonly SyntaxTriviaList InlineArrayUnsafeAsSpanComment = ParseLeadingTrivia(@"/// <summary>
+    private static readonly SyntaxTriviaList InlineArrayUnsafeAsSpanComment = ParseLeadingTrivia(@"/// <summary>
 /// Gets this inline array as a span.
 /// </summary>
 /// <remarks>
@@ -93,18 +93,18 @@ namespace Microsoft.Windows.CsWin32
 /// </remarks>
 ");
 
-        private static readonly SyntaxTriviaList InlineArrayUnsafeIndexerComment = ParseLeadingTrivia(@"/// <summary>
+    private static readonly SyntaxTriviaList InlineArrayUnsafeIndexerComment = ParseLeadingTrivia(@"/// <summary>
 /// Gets a ref to an individual element of the inline array.
 /// ⚠ Important ⚠: When this struct is on the stack, do not let the returned reference outlive the stack frame that defines it.
 /// </summary>
 ");
 
-        private static readonly SyntaxTriviaList InlineCharArrayToStringComment = ParseLeadingTrivia(@"/// <summary>
+    private static readonly SyntaxTriviaList InlineCharArrayToStringComment = ParseLeadingTrivia(@"/// <summary>
 /// Copies the fixed array to a new string, stopping before the first null terminator character or at the end of the fixed array (whichever is shorter).
 /// </summary>
 ");
 
-        private static readonly SyntaxTriviaList InlineCharArrayToStringWithLengthComment = ParseLeadingTrivia(@"/// <summary>
+    private static readonly SyntaxTriviaList InlineCharArrayToStringWithLengthComment = ParseLeadingTrivia(@"/// <summary>
 /// Copies the fixed array to a new string up to the specified length regardless of whether there are null terminating characters.
 /// </summary>
 /// <exception cref=""ArgumentOutOfRangeException"">
@@ -112,548 +112,632 @@ namespace Microsoft.Windows.CsWin32
 /// </exception>
 ");
 
-        private static readonly SyntaxTriviaList StrAsSpanComment = ParseLeadingTrivia(@"/// <summary>
+    private static readonly SyntaxTriviaList StrAsSpanComment = ParseLeadingTrivia(@"/// <summary>
 /// Returns a span of the characters in this string.
 /// </summary>
 ");
 
-        private static readonly XmlTextSyntax DocCommentStart = XmlText(" ").WithLeadingTrivia(DocumentationCommentExterior("///"));
-        private static readonly XmlTextSyntax DocCommentEnd = XmlText(XmlTextNewLine("\n", continueXmlDocumentationComment: false));
+    private static readonly XmlTextSyntax DocCommentStart = XmlText(" ").WithLeadingTrivia(DocumentationCommentExterior("///"));
+    private static readonly XmlTextSyntax DocCommentEnd = XmlText(XmlTextNewLine("\n", continueXmlDocumentationComment: false));
 
-        private static readonly SyntaxToken SemicolonWithLineFeed = TokenWithLineFeed(SyntaxKind.SemicolonToken);
-        private static readonly IdentifierNameSyntax InlineArrayIndexerExtensionsClassName = IdentifierName("InlineArrayIndexerExtensions");
-        private static readonly IdentifierNameSyntax ComInterfaceFriendlyExtensionsClassName = IdentifierName("FriendlyOverloadExtensions");
-        private static readonly TypeSyntax SafeHandleTypeSyntax = IdentifierName("SafeHandle");
-        private static readonly IdentifierNameSyntax IntPtrTypeSyntax = IdentifierName(nameof(IntPtr));
-        private static readonly AttributeSyntax ComImportAttribute = Attribute(IdentifierName("ComImport"));
-        private static readonly AttributeSyntax PreserveSigAttribute = Attribute(IdentifierName("PreserveSig"));
-        private static readonly AttributeSyntax SupportedOSPlatformAttribute = Attribute(IdentifierName("SupportedOSPlatform"));
-        private static readonly AttributeListSyntax DefaultDllImportSearchPathsAttributeList = AttributeList()
-            .WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken))
-            .AddAttributes(Attribute(IdentifierName("DefaultDllImportSearchPaths")).AddArgumentListArguments(AttributeArgument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(DllImportSearchPath)), IdentifierName(nameof(DllImportSearchPath.System32))))));
+    private static readonly SyntaxToken SemicolonWithLineFeed = TokenWithLineFeed(SyntaxKind.SemicolonToken);
+    private static readonly IdentifierNameSyntax InlineArrayIndexerExtensionsClassName = IdentifierName("InlineArrayIndexerExtensions");
+    private static readonly IdentifierNameSyntax ComInterfaceFriendlyExtensionsClassName = IdentifierName("FriendlyOverloadExtensions");
+    private static readonly TypeSyntax SafeHandleTypeSyntax = IdentifierName("SafeHandle");
+    private static readonly IdentifierNameSyntax IntPtrTypeSyntax = IdentifierName(nameof(IntPtr));
+    private static readonly AttributeSyntax ComImportAttribute = Attribute(IdentifierName("ComImport"));
+    private static readonly AttributeSyntax PreserveSigAttribute = Attribute(IdentifierName("PreserveSig"));
+    private static readonly AttributeSyntax SupportedOSPlatformAttribute = Attribute(IdentifierName("SupportedOSPlatform"));
+    private static readonly AttributeListSyntax DefaultDllImportSearchPathsAttributeList = AttributeList()
+        .WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken))
+        .AddAttributes(Attribute(IdentifierName("DefaultDllImportSearchPaths")).AddArgumentListArguments(AttributeArgument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(DllImportSearchPath)), IdentifierName(nameof(DllImportSearchPath.System32))))));
 
-        private static readonly HashSet<string> ImplicitConversionTypeDefs = new HashSet<string>(StringComparer.Ordinal)
+    private static readonly HashSet<string> ImplicitConversionTypeDefs = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "PWSTR",
+        "PSTR",
+        "LPARAM",
+        "WPARAM",
+    };
+
+    private static readonly HashSet<string> SpecialTypeDefNames = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "PCWSTR",
+        "PCSTR",
+    };
+
+    /// <summary>
+    /// This is the preferred capitalizations for modules and class names.
+    /// If they are not in this list, the capitalization will come from the metadata assembly.
+    /// </summary>
+    private static readonly ImmutableHashSet<string> CanonicalCapitalizations = ImmutableHashSet.Create<string>(
+        StringComparer.OrdinalIgnoreCase,
+        "AdvApi32",
+        "AuthZ",
+        "BCrypt",
+        "Cabinet",
+        "CfgMgr32",
+        "Chakra",
+        "CodeGeneration",
+        "CodeGeneration.Debugging",
+        "CodeGenerationAttributes",
+        "ComCtl32",
+        "ComDlg32",
+        "Crypt32",
+        "CryptNet",
+        "D3D11",
+        "D3D12",
+        "D3DCompiler_47",
+        "DbgHelp",
+        "DfsCli",
+        "DhcpCSvc",
+        "DhcpCSvc6",
+        "DnsApi",
+        "DsParse",
+        "DSRole",
+        "DwmApi",
+        "DXGI",
+        "Esent",
+        "FltLib",
+        "Fusion",
+        "Gdi32",
+        "Hid",
+        "Icu",
+        "ImageHlp",
+        "InkObjCore",
+        "IPHlpApi",
+        "Kernel32",
+        "LogonCli",
+        "Magnification",
+        "MFSensorGroup",
+        "Mpr",
+        "MSCms",
+        "MSCorEE",
+        "Msi",
+        "MswSock",
+        "NCrypt",
+        "NetApi32",
+        "NetUtils",
+        "NewDev",
+        "NTDll",
+        "Ole32",
+        "OleAut32",
+        "PowrProf",
+        "PropSys",
+        "Psapi",
+        "RpcRT4",
+        "SamCli",
+        "SchedCli",
+        "SetupApi",
+        "SHCore",
+        "Shell32",
+        "ShlwApi",
+        "SrvCli",
+        "TokenBinding",
+        "UrlMon",
+        "User32",
+        "UserEnv",
+        "UxTheme",
+        "Version",
+        "WebAuthN",
+        "WebServices",
+        "WebSocket",
+        "Win32",
+        "Win32MetaGeneration",
+        "Windows.Core",
+        "Windows.ShellScalingApi",
+        "WinHttp",
+        "WinMM",
+        "WinUsb",
+        "WksCli",
+        "WLanApi",
+        "WldAp32",
+        "WtsApi32");
+
+    private static readonly HashSet<string> CSharpKeywords = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "object",
+        "event",
+        "override",
+        "public",
+        "private",
+        "protected",
+        "internal",
+        "virtual",
+        "string",
+        "base",
+        "ref",
+        "in",
+        "out",
+        "decimal",
+        "as",
+        "params",
+    };
+
+    private static readonly HashSet<string> ObjectMembers = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "GetType",
+    };
+
+    private static readonly string[] WarningsToSuppressInGeneratedCode = new string[]
+    {
+        "CS1591", // missing docs
+        "CS1573", // missing docs for an individual parameter
+        "CS0465", // Avoid methods named "Finalize", which can't be helped
+        "CS0649", // fields never assigned to
+        "CS8019", // unused usings
+        "CS1570", // XML comment has badly formed XML
+        "CS1584", // C# bug: https://github.com/microsoft/CsWin32/issues/24
+        "CS1658", // C# bug: https://github.com/microsoft/CsWin32/issues/24
+        "CS0436", // conflicts with the imported type (InternalsVisibleTo between two projects that both use CsWin32)
+    };
+
+    private static readonly AttributeSyntax InAttributeSyntax = Attribute(IdentifierName("In")).WithArgumentList(null);
+    private static readonly AttributeSyntax OutAttributeSyntax = Attribute(IdentifierName("Out")).WithArgumentList(null);
+    private static readonly AttributeSyntax OptionalAttributeSyntax = Attribute(IdentifierName("Optional")).WithArgumentList(null);
+    private static readonly AttributeSyntax FlagsAttributeSyntax = Attribute(IdentifierName("Flags")).WithArgumentList(null);
+    private static readonly AttributeSyntax FieldOffsetAttributeSyntax = Attribute(IdentifierName("FieldOffset"));
+
+    private readonly TypeSyntaxSettings generalTypeSettings;
+    private readonly TypeSyntaxSettings fieldTypeSettings;
+    private readonly TypeSyntaxSettings delegateSignatureTypeSettings;
+    private readonly TypeSyntaxSettings enumTypeSettings;
+    private readonly TypeSyntaxSettings fieldOfHandleTypeDefTypeSettings;
+    private readonly TypeSyntaxSettings externSignatureTypeSettings;
+    private readonly TypeSyntaxSettings externReleaseSignatureTypeSettings;
+    private readonly TypeSyntaxSettings comSignatureTypeSettings;
+    private readonly TypeSyntaxSettings extensionMethodSignatureTypeSettings;
+    private readonly TypeSyntaxSettings functionPointerTypeSettings;
+    private readonly TypeSyntaxSettings errorMessageTypeSettings;
+
+    private readonly Dictionary<TypeReferenceHandle, TypeDefinitionHandle> refToDefCache = new();
+
+    private readonly GeneratorOptions options;
+    private readonly CSharpCompilation? compilation;
+    private readonly CSharpParseOptions? parseOptions;
+    private readonly bool canUseSpan;
+    private readonly bool canCallCreateSpan;
+    private readonly bool getDelegateForFunctionPointerGenericExists;
+    private readonly bool generateSupportedOSPlatformAttributes;
+    private readonly bool generateSupportedOSPlatformAttributesOnInterfaces; // only supported on net6.0 (https://github.com/dotnet/runtime/pull/48838)
+    private readonly bool generateDefaultDllImportSearchPathsAttribute;
+    private readonly GeneratedCode committedCode = new();
+    private readonly GeneratedCode volatileCode;
+    private readonly IdentifierNameSyntax methodsAndConstantsClassName;
+    private bool needsWinRTCustomMarshaler;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="Generator"/> class.
+    /// </summary>
+    /// <param name="metadataLibraryPath">The path to the winmd metadata to generate APIs from.</param>
+    /// <param name="docs">The API docs to include in the generated code.</param>
+    /// <param name="options">Options that influence the result of generation.</param>
+    /// <param name="compilation">The compilation that the generated code will be added to.</param>
+    /// <param name="parseOptions">The parse options that will be used for the generated code.</param>
+    public Generator(string metadataLibraryPath, Docs? docs, GeneratorOptions options, CSharpCompilation? compilation = null, CSharpParseOptions? parseOptions = null)
+    {
+        this.InputAssemblyName = Path.GetFileNameWithoutExtension(metadataLibraryPath);
+        this.MetadataIndex = MetadataIndex.Get(metadataLibraryPath, compilation?.Options.Platform);
+        this.ApiDocs = docs;
+
+        this.options = options;
+        this.options.Validate();
+        this.compilation = compilation;
+        this.parseOptions = parseOptions;
+        this.volatileCode = new(this.committedCode);
+
+        this.canUseSpan = this.compilation?.GetTypeByMetadataName(typeof(Span<>).FullName) is not null;
+        this.canCallCreateSpan = this.compilation?.GetTypeByMetadataName(typeof(MemoryMarshal).FullName)?.GetMembers("CreateSpan").Any() is true;
+        this.getDelegateForFunctionPointerGenericExists = this.compilation?.GetTypeByMetadataName(typeof(Marshal).FullName)?.GetMembers(nameof(Marshal.GetDelegateForFunctionPointer)).Any(m => m is IMethodSymbol { IsGenericMethod: true }) is true;
+        this.generateDefaultDllImportSearchPathsAttribute = this.compilation?.GetTypeByMetadataName(typeof(DefaultDllImportSearchPathsAttribute).FullName) is object;
+        if (this.compilation?.GetTypeByMetadataName("System.Runtime.Versioning.SupportedOSPlatformAttribute") is { } attribute
+            && (attribute.DeclaredAccessibility == Accessibility.Public || attribute.ContainingAssembly.GivesAccessTo(this.compilation.Assembly)))
         {
-            "PWSTR",
-            "PSTR",
-            "LPARAM",
-            "WPARAM",
-        };
+            this.generateSupportedOSPlatformAttributes = true;
+            AttributeData usageAttribute = attribute.GetAttributes().Single(att => att.AttributeClass?.Name == nameof(AttributeUsageAttribute));
+            var targets = (AttributeTargets)usageAttribute.ConstructorArguments[0].Value!;
+            this.generateSupportedOSPlatformAttributesOnInterfaces = (targets & AttributeTargets.Interface) == AttributeTargets.Interface;
+        }
 
-        private static readonly HashSet<string> SpecialTypeDefNames = new HashSet<string>(StringComparer.Ordinal)
+        bool useComInterfaces = options.AllowMarshaling;
+        this.generalTypeSettings = new TypeSyntaxSettings(
+            this,
+            PreferNativeInt: this.LanguageVersion >= LanguageVersion.CSharp9,
+            PreferMarshaledTypes: false,
+            AllowMarshaling: options.AllowMarshaling,
+            QualifyNames: false);
+        this.fieldTypeSettings = this.generalTypeSettings with { QualifyNames = true };
+        this.delegateSignatureTypeSettings = this.generalTypeSettings with { QualifyNames = true };
+        this.enumTypeSettings = this.generalTypeSettings;
+        this.fieldOfHandleTypeDefTypeSettings = this.generalTypeSettings with { PreferNativeInt = false };
+        this.externSignatureTypeSettings = this.generalTypeSettings with { QualifyNames = true, PreferMarshaledTypes = true };
+        this.externReleaseSignatureTypeSettings = this.externSignatureTypeSettings with { PreferNativeInt = false, PreferMarshaledTypes = false };
+        this.comSignatureTypeSettings = this.generalTypeSettings with { QualifyNames = true };
+        this.extensionMethodSignatureTypeSettings = this.generalTypeSettings with { QualifyNames = true };
+        this.functionPointerTypeSettings = this.generalTypeSettings with { QualifyNames = true };
+        this.errorMessageTypeSettings = this.generalTypeSettings with { QualifyNames = true };
+
+        this.methodsAndConstantsClassName = IdentifierName(options.ClassName);
+    }
+
+    private enum FriendlyOverloadOf
+    {
+        ExternMethod,
+        StructMethod,
+        InterfaceMethod,
+    }
+
+    internal static ImmutableDictionary<string, string> BannedAPIsWithoutMarshaling { get; } = ImmutableDictionary<string, string>.Empty
+        .Add("GetLastError", "Do not generate GetLastError. Call Marshal.GetLastWin32Error() instead. Learn more from https://docs.microsoft.com/dotnet/api/system.runtime.interopservices.marshal.getlastwin32error")
+        .Add("OLD_LARGE_INTEGER", "Use the C# long keyword instead.")
+        .Add("LARGE_INTEGER", "Use the C# long keyword instead.")
+        .Add("ULARGE_INTEGER", "Use the C# ulong keyword instead.");
+
+    internal static ImmutableDictionary<string, string> BannedAPIsWithMarshaling { get; } = BannedAPIsWithoutMarshaling
+        .Add("VARIANT", "Use `object` instead of VARIANT when in COM interface mode. VARIANT can only be emitted when emitting COM interfaces as structs.");
+
+    internal ImmutableDictionary<string, string> BannedAPIs => GetBannedAPIs(this.options);
+
+    internal SuperGenerator? SuperGenerator { get; set; }
+
+    internal string InputAssemblyName { get; }
+
+    internal MetadataIndex MetadataIndex { get; }
+
+    internal Docs? ApiDocs { get; }
+
+    internal ReadOnlyCollection<TypeDefinition> Apis => this.MetadataIndex.Apis;
+
+    internal MetadataReader Reader => this.MetadataIndex.Reader;
+
+    internal LanguageVersion LanguageVersion => this.parseOptions?.LanguageVersion ?? LanguageVersion.CSharp9;
+
+    private bool WideCharOnly => this.options.WideCharOnly;
+
+    private string Namespace => this.InputAssemblyName;
+
+    private SyntaxKind Visibility => this.options.Public ? SyntaxKind.PublicKeyword : SyntaxKind.InternalKeyword;
+
+    private IEnumerable<MemberDeclarationSyntax> NamespaceMembers
+    {
+        get
         {
-            "PCWSTR",
-            "PCSTR",
-        };
+            IEnumerable<MemberDeclarationSyntax> result =
+                from entry in this.committedCode.MembersByModule
+                select ClassDeclaration(Identifier(this.options.ClassName))
+                    .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword))
+                    .AddMembers(entry.ToArray())
+                    .WithLeadingTrivia(ParseLeadingTrivia(string.Format(CultureInfo.InvariantCulture, PartialPInvokeContentComment, entry.Key)))
+                    .WithAdditionalAnnotations(new SyntaxAnnotation(SimpleFileNameAnnotation, $"{this.options.ClassName}.{entry.Key}"));
+            result = result.Concat(this.committedCode.GeneratedTypes);
 
-        /// <summary>
-        /// This is the preferred capitalizations for modules and class names.
-        /// If they are not in this list, the capitalization will come from the metadata assembly.
-        /// </summary>
-        private static readonly ImmutableHashSet<string> CanonicalCapitalizations = ImmutableHashSet.Create<string>(
-            StringComparer.OrdinalIgnoreCase,
-            "AdvApi32",
-            "AuthZ",
-            "BCrypt",
-            "Cabinet",
-            "CfgMgr32",
-            "Chakra",
-            "CodeGeneration",
-            "CodeGeneration.Debugging",
-            "CodeGenerationAttributes",
-            "ComCtl32",
-            "ComDlg32",
-            "Crypt32",
-            "CryptNet",
-            "D3D11",
-            "D3D12",
-            "D3DCompiler_47",
-            "DbgHelp",
-            "DfsCli",
-            "DhcpCSvc",
-            "DhcpCSvc6",
-            "DnsApi",
-            "DsParse",
-            "DSRole",
-            "DwmApi",
-            "DXGI",
-            "Esent",
-            "FltLib",
-            "Fusion",
-            "Gdi32",
-            "Hid",
-            "Icu",
-            "ImageHlp",
-            "InkObjCore",
-            "IPHlpApi",
-            "Kernel32",
-            "LogonCli",
-            "Magnification",
-            "MFSensorGroup",
-            "Mpr",
-            "MSCms",
-            "MSCorEE",
-            "Msi",
-            "MswSock",
-            "NCrypt",
-            "NetApi32",
-            "NetUtils",
-            "NewDev",
-            "NTDll",
-            "Ole32",
-            "OleAut32",
-            "PowrProf",
-            "PropSys",
-            "Psapi",
-            "RpcRT4",
-            "SamCli",
-            "SchedCli",
-            "SetupApi",
-            "SHCore",
-            "Shell32",
-            "ShlwApi",
-            "SrvCli",
-            "TokenBinding",
-            "UrlMon",
-            "User32",
-            "UserEnv",
-            "UxTheme",
-            "Version",
-            "WebAuthN",
-            "WebServices",
-            "WebSocket",
-            "Win32",
-            "Win32MetaGeneration",
-            "Windows.Core",
-            "Windows.ShellScalingApi",
-            "WinHttp",
-            "WinMM",
-            "WinUsb",
-            "WksCli",
-            "WLanApi",
-            "WldAp32",
-            "WtsApi32");
-
-        private static readonly HashSet<string> CSharpKeywords = new HashSet<string>(StringComparer.Ordinal)
-        {
-            "object",
-            "event",
-            "override",
-            "public",
-            "private",
-            "protected",
-            "internal",
-            "virtual",
-            "string",
-            "base",
-            "ref",
-            "in",
-            "out",
-            "decimal",
-            "as",
-            "params",
-        };
-
-        private static readonly HashSet<string> ObjectMembers = new HashSet<string>(StringComparer.Ordinal)
-        {
-            "GetType",
-        };
-
-        private static readonly string[] WarningsToSuppressInGeneratedCode = new string[]
-        {
-            "CS1591", // missing docs
-            "CS1573", // missing docs for an individual parameter
-            "CS0465", // Avoid methods named "Finalize", which can't be helped
-            "CS0649", // fields never assigned to
-            "CS8019", // unused usings
-            "CS1570", // XML comment has badly formed XML
-            "CS1584", // C# bug: https://github.com/microsoft/CsWin32/issues/24
-            "CS1658", // C# bug: https://github.com/microsoft/CsWin32/issues/24
-            "CS0436", // conflicts with the imported type (InternalsVisibleTo between two projects that both use CsWin32)
-        };
-
-        private static readonly AttributeSyntax InAttributeSyntax = Attribute(IdentifierName("In")).WithArgumentList(null);
-        private static readonly AttributeSyntax OutAttributeSyntax = Attribute(IdentifierName("Out")).WithArgumentList(null);
-        private static readonly AttributeSyntax OptionalAttributeSyntax = Attribute(IdentifierName("Optional")).WithArgumentList(null);
-        private static readonly AttributeSyntax FlagsAttributeSyntax = Attribute(IdentifierName("Flags")).WithArgumentList(null);
-        private static readonly AttributeSyntax FieldOffsetAttributeSyntax = Attribute(IdentifierName("FieldOffset"));
-
-        private readonly TypeSyntaxSettings generalTypeSettings;
-        private readonly TypeSyntaxSettings fieldTypeSettings;
-        private readonly TypeSyntaxSettings delegateSignatureTypeSettings;
-        private readonly TypeSyntaxSettings enumTypeSettings;
-        private readonly TypeSyntaxSettings fieldOfHandleTypeDefTypeSettings;
-        private readonly TypeSyntaxSettings externSignatureTypeSettings;
-        private readonly TypeSyntaxSettings externReleaseSignatureTypeSettings;
-        private readonly TypeSyntaxSettings comSignatureTypeSettings;
-        private readonly TypeSyntaxSettings extensionMethodSignatureTypeSettings;
-        private readonly TypeSyntaxSettings functionPointerTypeSettings;
-        private readonly TypeSyntaxSettings errorMessageTypeSettings;
-
-        private readonly Dictionary<TypeReferenceHandle, TypeDefinitionHandle> refToDefCache = new();
-
-        private readonly GeneratorOptions options;
-        private readonly CSharpCompilation? compilation;
-        private readonly CSharpParseOptions? parseOptions;
-        private readonly bool canUseSpan;
-        private readonly bool canCallCreateSpan;
-        private readonly bool getDelegateForFunctionPointerGenericExists;
-        private readonly bool generateSupportedOSPlatformAttributes;
-        private readonly bool generateSupportedOSPlatformAttributesOnInterfaces; // only supported on net6.0 (https://github.com/dotnet/runtime/pull/48838)
-        private readonly bool generateDefaultDllImportSearchPathsAttribute;
-        private readonly GeneratedCode committedCode = new();
-        private readonly GeneratedCode volatileCode;
-        private readonly IdentifierNameSyntax methodsAndConstantsClassName;
-        private bool needsWinRTCustomMarshaler;
-
-        /// <summary>
-        /// Initializes a new instance of the <see cref="Generator"/> class.
-        /// </summary>
-        /// <param name="metadataLibraryPath">The path to the winmd metadata to generate APIs from.</param>
-        /// <param name="docs">The API docs to include in the generated code.</param>
-        /// <param name="options">Options that influence the result of generation.</param>
-        /// <param name="compilation">The compilation that the generated code will be added to.</param>
-        /// <param name="parseOptions">The parse options that will be used for the generated code.</param>
-        public Generator(string metadataLibraryPath, Docs? docs, GeneratorOptions options, CSharpCompilation? compilation = null, CSharpParseOptions? parseOptions = null)
-        {
-            this.InputAssemblyName = Path.GetFileNameWithoutExtension(metadataLibraryPath);
-            this.MetadataIndex = MetadataIndex.Get(metadataLibraryPath, compilation?.Options.Platform);
-            this.ApiDocs = docs;
-
-            this.options = options;
-            this.options.Validate();
-            this.compilation = compilation;
-            this.parseOptions = parseOptions;
-            this.volatileCode = new(this.committedCode);
-
-            this.canUseSpan = this.compilation?.GetTypeByMetadataName(typeof(Span<>).FullName) is not null;
-            this.canCallCreateSpan = this.compilation?.GetTypeByMetadataName(typeof(MemoryMarshal).FullName)?.GetMembers("CreateSpan").Any() is true;
-            this.getDelegateForFunctionPointerGenericExists = this.compilation?.GetTypeByMetadataName(typeof(Marshal).FullName)?.GetMembers(nameof(Marshal.GetDelegateForFunctionPointer)).Any(m => m is IMethodSymbol { IsGenericMethod: true }) is true;
-            this.generateDefaultDllImportSearchPathsAttribute = this.compilation?.GetTypeByMetadataName(typeof(DefaultDllImportSearchPathsAttribute).FullName) is object;
-            if (this.compilation?.GetTypeByMetadataName("System.Runtime.Versioning.SupportedOSPlatformAttribute") is { } attribute
-                && (attribute.DeclaredAccessibility == Accessibility.Public || attribute.ContainingAssembly.GivesAccessTo(this.compilation.Assembly)))
+            ClassDeclarationSyntax inlineArrayIndexerExtensionsClass = this.DeclareInlineArrayIndexerExtensionsClass();
+            if (inlineArrayIndexerExtensionsClass.Members.Count > 0)
             {
-                this.generateSupportedOSPlatformAttributes = true;
-                AttributeData usageAttribute = attribute.GetAttributes().Single(att => att.AttributeClass?.Name == nameof(AttributeUsageAttribute));
-                var targets = (AttributeTargets)usageAttribute.ConstructorArguments[0].Value!;
-                this.generateSupportedOSPlatformAttributesOnInterfaces = (targets & AttributeTargets.Interface) == AttributeTargets.Interface;
+                result = result.Concat(new MemberDeclarationSyntax[] { inlineArrayIndexerExtensionsClass });
             }
 
-            bool useComInterfaces = options.AllowMarshaling;
-            this.generalTypeSettings = new TypeSyntaxSettings(
-                this,
-                PreferNativeInt: this.LanguageVersion >= LanguageVersion.CSharp9,
-                PreferMarshaledTypes: false,
-                AllowMarshaling: options.AllowMarshaling,
-                QualifyNames: false);
-            this.fieldTypeSettings = this.generalTypeSettings with { QualifyNames = true };
-            this.delegateSignatureTypeSettings = this.generalTypeSettings with { QualifyNames = true };
-            this.enumTypeSettings = this.generalTypeSettings;
-            this.fieldOfHandleTypeDefTypeSettings = this.generalTypeSettings with { PreferNativeInt = false };
-            this.externSignatureTypeSettings = this.generalTypeSettings with { QualifyNames = true, PreferMarshaledTypes = true };
-            this.externReleaseSignatureTypeSettings = this.externSignatureTypeSettings with { PreferNativeInt = false, PreferMarshaledTypes = false };
-            this.comSignatureTypeSettings = this.generalTypeSettings with { QualifyNames = true };
-            this.extensionMethodSignatureTypeSettings = this.generalTypeSettings with { QualifyNames = true };
-            this.functionPointerTypeSettings = this.generalTypeSettings with { QualifyNames = true };
-            this.errorMessageTypeSettings = this.generalTypeSettings with { QualifyNames = true };
-
-            this.methodsAndConstantsClassName = IdentifierName(options.ClassName);
-        }
-
-        private enum FriendlyOverloadOf
-        {
-            ExternMethod,
-            StructMethod,
-            InterfaceMethod,
-        }
-
-        internal static ImmutableDictionary<string, string> BannedAPIsWithoutMarshaling { get; } = ImmutableDictionary<string, string>.Empty
-            .Add("GetLastError", "Do not generate GetLastError. Call Marshal.GetLastWin32Error() instead. Learn more from https://docs.microsoft.com/dotnet/api/system.runtime.interopservices.marshal.getlastwin32error")
-            .Add("OLD_LARGE_INTEGER", "Use the C# long keyword instead.")
-            .Add("LARGE_INTEGER", "Use the C# long keyword instead.")
-            .Add("ULARGE_INTEGER", "Use the C# ulong keyword instead.");
-
-        internal static ImmutableDictionary<string, string> BannedAPIsWithMarshaling { get; } = BannedAPIsWithoutMarshaling
-            .Add("VARIANT", "Use `object` instead of VARIANT when in COM interface mode. VARIANT can only be emitted when emitting COM interfaces as structs.");
-
-        internal ImmutableDictionary<string, string> BannedAPIs => GetBannedAPIs(this.options);
-
-        internal SuperGenerator? SuperGenerator { get; set; }
-
-        internal string InputAssemblyName { get; }
-
-        internal MetadataIndex MetadataIndex { get; }
-
-        internal Docs? ApiDocs { get; }
-
-        internal ReadOnlyCollection<TypeDefinition> Apis => this.MetadataIndex.Apis;
-
-        internal MetadataReader Reader => this.MetadataIndex.Reader;
-
-        internal LanguageVersion LanguageVersion => this.parseOptions?.LanguageVersion ?? LanguageVersion.CSharp9;
-
-        private bool WideCharOnly => this.options.WideCharOnly;
-
-        private string Namespace => this.InputAssemblyName;
-
-        private SyntaxKind Visibility => this.options.Public ? SyntaxKind.PublicKeyword : SyntaxKind.InternalKeyword;
-
-        private IEnumerable<MemberDeclarationSyntax> NamespaceMembers
-        {
-            get
+            ClassDeclarationSyntax comInterfaceFriendlyExtensionsClass = this.DeclareComInterfaceFriendlyExtensionsClass();
+            if (comInterfaceFriendlyExtensionsClass.Members.Count > 0)
             {
-                IEnumerable<MemberDeclarationSyntax> result =
-                    from entry in this.committedCode.MembersByModule
-                    select ClassDeclaration(Identifier(this.options.ClassName))
-                        .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword))
-                        .AddMembers(entry.ToArray())
-                        .WithLeadingTrivia(ParseLeadingTrivia(string.Format(CultureInfo.InvariantCulture, PartialPInvokeContentComment, entry.Key)))
-                        .WithAdditionalAnnotations(new SyntaxAnnotation(SimpleFileNameAnnotation, $"{this.options.ClassName}.{entry.Key}"));
-                result = result.Concat(this.committedCode.GeneratedTypes);
-
-                ClassDeclarationSyntax inlineArrayIndexerExtensionsClass = this.DeclareInlineArrayIndexerExtensionsClass();
-                if (inlineArrayIndexerExtensionsClass.Members.Count > 0)
-                {
-                    result = result.Concat(new MemberDeclarationSyntax[] { inlineArrayIndexerExtensionsClass });
-                }
-
-                ClassDeclarationSyntax comInterfaceFriendlyExtensionsClass = this.DeclareComInterfaceFriendlyExtensionsClass();
-                if (comInterfaceFriendlyExtensionsClass.Members.Count > 0)
-                {
-                    result = result.Concat(new MemberDeclarationSyntax[] { comInterfaceFriendlyExtensionsClass });
-                }
-
-                if (this.committedCode.Fields.Any())
-                {
-                    result = result.Concat(new MemberDeclarationSyntax[] { this.DeclareConstantDefiningClass() });
-                }
-
-                return result;
-            }
-        }
-
-        private IEnumerable<IGrouping<string, MemberDeclarationSyntax>> ExternMethodsByModuleClassName =>
-            from entry in this.committedCode.MembersByModule
-            from method in entry
-            group method by GetClassNameForModule(entry.Key) into x
-            select x;
-
-        private string DebuggerDisplayString => $"Generator: {this.InputAssemblyName}";
-
-        /// <inheritdoc/>
-        public void Dispose()
-        {
-            this.Dispose(true);
-            GC.SuppressFinalize(this);
-        }
-
-        /// <summary>
-        /// Generates all extern methods, structs, delegates, constants as defined by the source metadata.
-        /// </summary>
-        /// <param name="cancellationToken">A cancellation token.</param>
-        public void GenerateAll(CancellationToken cancellationToken)
-        {
-            this.GenerateAllExternMethods(cancellationToken);
-
-            // Also generate all structs/enum types too, even if not referenced by a method,
-            // since some methods use `void*` types and require structs at runtime.
-            this.RequestAllInteropTypes(cancellationToken);
-
-            this.GenerateAllConstants(cancellationToken);
-        }
-
-        /// <inheritdoc cref="TryGenerate(string, out IReadOnlyList{string}, CancellationToken)"/>
-        public bool TryGenerate(string apiNameOrModuleWildcard, CancellationToken cancellationToken) => this.TryGenerate(apiNameOrModuleWildcard, out _, cancellationToken);
-
-        /// <summary>
-        /// Generates code for a given API.
-        /// </summary>
-        /// <param name="apiNameOrModuleWildcard">The name of the method, struct or constant. Or the name of a module with a ".*" suffix in order to generate all methods and supporting types for the specified module.</param>
-        /// <param name="preciseApi">Receives the canonical API names that <paramref name="apiNameOrModuleWildcard"/> matched on.</param>
-        /// <param name="cancellationToken">A cancellation token.</param>
-        /// <returns><see langword="true" /> if any matching APIs were found and generated; <see langword="false"/> otherwise.</returns>
-        public bool TryGenerate(string apiNameOrModuleWildcard, out IReadOnlyList<string> preciseApi, CancellationToken cancellationToken)
-        {
-            if (string.IsNullOrWhiteSpace(apiNameOrModuleWildcard))
-            {
-                throw new ArgumentException("API cannot be null or empty.", nameof(apiNameOrModuleWildcard));
+                result = result.Concat(new MemberDeclarationSyntax[] { comInterfaceFriendlyExtensionsClass });
             }
 
-            if (apiNameOrModuleWildcard.EndsWith(".*", StringComparison.Ordinal))
+            if (this.committedCode.Fields.Any())
             {
-                if (this.TryGenerateAllExternMethods(apiNameOrModuleWildcard.Substring(0, apiNameOrModuleWildcard.Length - 2), cancellationToken))
-                {
-                    preciseApi = ImmutableList.Create(apiNameOrModuleWildcard);
-                    return true;
-                }
-                else
-                {
-                    preciseApi = ImmutableList<string>.Empty;
-                    return false;
-                }
+                result = result.Concat(new MemberDeclarationSyntax[] { this.DeclareConstantDefiningClass() });
+            }
+
+            return result;
+        }
+    }
+
+    private IEnumerable<IGrouping<string, MemberDeclarationSyntax>> ExternMethodsByModuleClassName =>
+        from entry in this.committedCode.MembersByModule
+        from method in entry
+        group method by GetClassNameForModule(entry.Key) into x
+        select x;
+
+    private string DebuggerDisplayString => $"Generator: {this.InputAssemblyName}";
+
+    /// <inheritdoc/>
+    public void Dispose()
+    {
+        this.Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    /// <summary>
+    /// Generates all extern methods, structs, delegates, constants as defined by the source metadata.
+    /// </summary>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    public void GenerateAll(CancellationToken cancellationToken)
+    {
+        this.GenerateAllExternMethods(cancellationToken);
+
+        // Also generate all structs/enum types too, even if not referenced by a method,
+        // since some methods use `void*` types and require structs at runtime.
+        this.RequestAllInteropTypes(cancellationToken);
+
+        this.GenerateAllConstants(cancellationToken);
+    }
+
+    /// <inheritdoc cref="TryGenerate(string, out IReadOnlyList{string}, CancellationToken)"/>
+    public bool TryGenerate(string apiNameOrModuleWildcard, CancellationToken cancellationToken) => this.TryGenerate(apiNameOrModuleWildcard, out _, cancellationToken);
+
+    /// <summary>
+    /// Generates code for a given API.
+    /// </summary>
+    /// <param name="apiNameOrModuleWildcard">The name of the method, struct or constant. Or the name of a module with a ".*" suffix in order to generate all methods and supporting types for the specified module.</param>
+    /// <param name="preciseApi">Receives the canonical API names that <paramref name="apiNameOrModuleWildcard"/> matched on.</param>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    /// <returns><see langword="true" /> if any matching APIs were found and generated; <see langword="false"/> otherwise.</returns>
+    public bool TryGenerate(string apiNameOrModuleWildcard, out IReadOnlyList<string> preciseApi, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(apiNameOrModuleWildcard))
+        {
+            throw new ArgumentException("API cannot be null or empty.", nameof(apiNameOrModuleWildcard));
+        }
+
+        if (apiNameOrModuleWildcard.EndsWith(".*", StringComparison.Ordinal))
+        {
+            if (this.TryGenerateAllExternMethods(apiNameOrModuleWildcard.Substring(0, apiNameOrModuleWildcard.Length - 2), cancellationToken))
+            {
+                preciseApi = ImmutableList.Create(apiNameOrModuleWildcard);
+                return true;
             }
             else
             {
-                bool result = this.TryGenerateNamespace(apiNameOrModuleWildcard, out preciseApi);
-                if (result || preciseApi.Count > 1)
-                {
-                    return result;
-                }
-
-                result = this.TryGenerateExternMethod(apiNameOrModuleWildcard, out preciseApi);
-                if (result || preciseApi.Count > 1)
-                {
-                    return result;
-                }
-
-                result = this.TryGenerateType(apiNameOrModuleWildcard, out preciseApi);
-                if (result || preciseApi.Count > 1)
-                {
-                    return result;
-                }
-
-                result = this.TryGenerateConstant(apiNameOrModuleWildcard, out preciseApi);
-                if (result || preciseApi.Count > 1)
-                {
-                    return result;
-                }
-
+                preciseApi = ImmutableList<string>.Empty;
                 return false;
             }
         }
-
-        /// <summary>
-        /// Generates all APIs within a given namespace, and their dependencies.
-        /// </summary>
-        /// <param name="namespace">The namespace to generate APIs for.</param>
-        /// <param name="preciseApi">Receives the canonical API names that <paramref name="namespace"/> matched on.</param>
-        /// <returns><see langword="true"/> if a matching namespace was found; otherwise <see langword="false"/>.</returns>
-        public bool TryGenerateNamespace(string @namespace, out IReadOnlyList<string> preciseApi)
+        else
         {
-            if (@namespace is null)
+            bool result = this.TryGenerateNamespace(apiNameOrModuleWildcard, out preciseApi);
+            if (result || preciseApi.Count > 1)
             {
-                throw new ArgumentNullException(nameof(@namespace));
+                return result;
             }
 
-            NamespaceMetadata? metadata;
-            if (!this.MetadataIndex.MetadataByNamespace.TryGetValue(@namespace, out metadata))
+            result = this.TryGenerateExternMethod(apiNameOrModuleWildcard, out preciseApi);
+            if (result || preciseApi.Count > 1)
             {
-                // Fallback to case insensitive search if it looks promising to do so.
-                if (@namespace.StartsWith(this.MetadataIndex.CommonNamespace, StringComparison.OrdinalIgnoreCase))
-                {
-                    foreach (var item in this.MetadataIndex.MetadataByNamespace)
-                    {
-                        if (string.Equals(item.Key, @namespace, StringComparison.OrdinalIgnoreCase))
-                        {
-                            @namespace = item.Key;
-                            metadata = item.Value;
-                            break;
-                        }
-                    }
-                }
+                return result;
             }
 
-            if (metadata is object)
+            result = this.TryGenerateType(apiNameOrModuleWildcard, out preciseApi);
+            if (result || preciseApi.Count > 1)
             {
-                this.volatileCode.GenerationTransaction(delegate
-                {
-                    foreach (var method in metadata.Methods)
-                    {
-                        this.RequestExternMethod(method.Value);
-                    }
-
-                    foreach (var type in metadata.Types)
-                    {
-                        this.RequestInteropType(type.Value);
-                    }
-
-                    foreach (var field in metadata.Fields)
-                    {
-                        this.RequestConstant(field.Value);
-                    }
-                });
-
-                preciseApi = ImmutableList.Create(@namespace);
-                return true;
+                return result;
             }
 
-            preciseApi = ImmutableList<string>.Empty;
+            result = this.TryGenerateConstant(apiNameOrModuleWildcard, out preciseApi);
+            if (result || preciseApi.Count > 1)
+            {
+                return result;
+            }
+
             return false;
         }
+    }
 
-        /// <summary>
-        /// Gets the name of the declaring enum if a supplied value matches the name of an enum's value.
-        /// </summary>
-        /// <param name="enumValueName">A string that may match an enum value name.</param>
-        /// <param name="declaringEnum">Receives the name of the declaring enum if a match is found.</param>
-        /// <returns><see langword="true"/> if a match was found; otherwise <see langword="false"/>.</returns>
-        public bool TryGetEnumName(string enumValueName, [NotNullWhen(true)] out string? declaringEnum)
+    /// <summary>
+    /// Generates all APIs within a given namespace, and their dependencies.
+    /// </summary>
+    /// <param name="namespace">The namespace to generate APIs for.</param>
+    /// <param name="preciseApi">Receives the canonical API names that <paramref name="namespace"/> matched on.</param>
+    /// <returns><see langword="true"/> if a matching namespace was found; otherwise <see langword="false"/>.</returns>
+    public bool TryGenerateNamespace(string @namespace, out IReadOnlyList<string> preciseApi)
+    {
+        if (@namespace is null)
         {
-            // First find the type reference for System.Enum
-            TypeReferenceHandle? enumTypeRefHandle = null;
-            foreach (TypeReferenceHandle typeRefHandle in this.Reader.TypeReferences)
+            throw new ArgumentNullException(nameof(@namespace));
+        }
+
+        NamespaceMetadata? metadata;
+        if (!this.MetadataIndex.MetadataByNamespace.TryGetValue(@namespace, out metadata))
+        {
+            // Fallback to case insensitive search if it looks promising to do so.
+            if (@namespace.StartsWith(this.MetadataIndex.CommonNamespace, StringComparison.OrdinalIgnoreCase))
             {
-                TypeReference typeRef = this.Reader.GetTypeReference(typeRefHandle);
-                if (this.Reader.StringComparer.Equals(typeRef.Name, nameof(Enum)) && this.Reader.StringComparer.Equals(typeRef.Namespace, nameof(System)))
+                foreach (var item in this.MetadataIndex.MetadataByNamespace)
                 {
-                    enumTypeRefHandle = typeRefHandle;
-                    break;
-                }
-            }
-
-            Debug.Assert(enumTypeRefHandle.HasValue, "We always expect at least one enum.");
-            if (enumTypeRefHandle is null)
-            {
-                // No enums -> it couldn't be what the caller is looking for.
-                declaringEnum = null;
-                return false;
-            }
-
-            foreach (TypeDefinitionHandle typeDefHandle in this.Reader.TypeDefinitions)
-            {
-                TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefHandle);
-                if (typeDef.BaseType.IsNil)
-                {
-                    continue;
-                }
-
-                if (typeDef.BaseType.Kind != HandleKind.TypeReference)
-                {
-                    continue;
-                }
-
-                var baseTypeHandle = (TypeReferenceHandle)typeDef.BaseType;
-                if (!baseTypeHandle.Equals(enumTypeRefHandle.Value))
-                {
-                    continue;
-                }
-
-                foreach (FieldDefinitionHandle fieldDefHandle in typeDef.GetFields())
-                {
-                    FieldDefinition fieldDef = this.Reader.GetFieldDefinition(fieldDefHandle);
-                    if (this.Reader.StringComparer.Equals(fieldDef.Name, enumValueName))
+                    if (string.Equals(item.Key, @namespace, StringComparison.OrdinalIgnoreCase))
                     {
-                        declaringEnum = this.Reader.GetString(typeDef.Name);
-                        return true;
+                        @namespace = item.Key;
+                        metadata = item.Value;
+                        break;
                     }
                 }
             }
+        }
 
+        if (metadata is object)
+        {
+            this.volatileCode.GenerationTransaction(delegate
+            {
+                foreach (var method in metadata.Methods)
+                {
+                    this.RequestExternMethod(method.Value);
+                }
+
+                foreach (var type in metadata.Types)
+                {
+                    this.RequestInteropType(type.Value);
+                }
+
+                foreach (var field in metadata.Fields)
+                {
+                    this.RequestConstant(field.Value);
+                }
+            });
+
+            preciseApi = ImmutableList.Create(@namespace);
+            return true;
+        }
+
+        preciseApi = ImmutableList<string>.Empty;
+        return false;
+    }
+
+    /// <summary>
+    /// Gets the name of the declaring enum if a supplied value matches the name of an enum's value.
+    /// </summary>
+    /// <param name="enumValueName">A string that may match an enum value name.</param>
+    /// <param name="declaringEnum">Receives the name of the declaring enum if a match is found.</param>
+    /// <returns><see langword="true"/> if a match was found; otherwise <see langword="false"/>.</returns>
+    public bool TryGetEnumName(string enumValueName, [NotNullWhen(true)] out string? declaringEnum)
+    {
+        // First find the type reference for System.Enum
+        TypeReferenceHandle? enumTypeRefHandle = null;
+        foreach (TypeReferenceHandle typeRefHandle in this.Reader.TypeReferences)
+        {
+            TypeReference typeRef = this.Reader.GetTypeReference(typeRefHandle);
+            if (this.Reader.StringComparer.Equals(typeRef.Name, nameof(Enum)) && this.Reader.StringComparer.Equals(typeRef.Namespace, nameof(System)))
+            {
+                enumTypeRefHandle = typeRefHandle;
+                break;
+            }
+        }
+
+        Debug.Assert(enumTypeRefHandle.HasValue, "We always expect at least one enum.");
+        if (enumTypeRefHandle is null)
+        {
+            // No enums -> it couldn't be what the caller is looking for.
             declaringEnum = null;
             return false;
         }
 
-        /// <summary>
-        /// Generates a projection of all extern methods and their supporting types.
-        /// </summary>
-        /// <param name="cancellationToken">A cancellation token.</param>
-        public void GenerateAllExternMethods(CancellationToken cancellationToken)
+        foreach (TypeDefinitionHandle typeDefHandle in this.Reader.TypeDefinitions)
         {
-            foreach (MethodDefinitionHandle methodHandle in this.Apis.SelectMany(api => api.GetMethods()))
+            TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefHandle);
+            if (typeDef.BaseType.IsNil)
             {
-                cancellationToken.ThrowIfCancellationRequested();
+                continue;
+            }
 
-                MethodDefinition methodDef = this.Reader.GetMethodDefinition(methodHandle);
+            if (typeDef.BaseType.Kind != HandleKind.TypeReference)
+            {
+                continue;
+            }
+
+            var baseTypeHandle = (TypeReferenceHandle)typeDef.BaseType;
+            if (!baseTypeHandle.Equals(enumTypeRefHandle.Value))
+            {
+                continue;
+            }
+
+            foreach (FieldDefinitionHandle fieldDefHandle in typeDef.GetFields())
+            {
+                FieldDefinition fieldDef = this.Reader.GetFieldDefinition(fieldDefHandle);
+                if (this.Reader.StringComparer.Equals(fieldDef.Name, enumValueName))
+                {
+                    declaringEnum = this.Reader.GetString(typeDef.Name);
+                    return true;
+                }
+            }
+        }
+
+        declaringEnum = null;
+        return false;
+    }
+
+    /// <summary>
+    /// Generates a projection of all extern methods and their supporting types.
+    /// </summary>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    public void GenerateAllExternMethods(CancellationToken cancellationToken)
+    {
+        foreach (MethodDefinitionHandle methodHandle in this.Apis.SelectMany(api => api.GetMethods()))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            MethodDefinition methodDef = this.Reader.GetMethodDefinition(methodHandle);
+            if (this.IsCompatibleWithPlatform(methodDef.GetCustomAttributes()))
+            {
+                try
+                {
+                    this.volatileCode.GenerationTransaction(delegate
+                    {
+                        this.RequestExternMethod(methodHandle);
+                    });
+                }
+                catch (GenerationFailedException ex) when (IsPlatformCompatibleException(ex))
+                {
+                    // Something transitively required for this method is not available for this platform, so skip this method.
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Generates a projection of all constants.
+    /// </summary>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    public void GenerateAllConstants(CancellationToken cancellationToken)
+    {
+        foreach (FieldDefinitionHandle fieldDefHandle in this.Apis.SelectMany(api => api.GetFields()))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            FieldDefinition fieldDef = this.Reader.GetFieldDefinition(fieldDefHandle);
+            if (this.IsCompatibleWithPlatform(fieldDef.GetCustomAttributes()))
+            {
+                try
+                {
+                    this.volatileCode.GenerationTransaction(delegate
+                    {
+                        this.RequestConstant(fieldDefHandle);
+                    });
+                }
+                catch (GenerationFailedException ex) when (IsPlatformCompatibleException(ex))
+                {
+                    // Something transitively required for this field is not available for this platform, so skip this method.
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Generates all extern methods exported from a particular module, along with all their supporting types.
+    /// </summary>
+    /// <param name="moduleName">The name of the module for whose exports extern methods should be generated for.</param>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    /// <returns><see langword="true"/> if a matching module name was found and extern methods generated; otherwise <see langword="false"/>.</returns>
+    public bool TryGenerateAllExternMethods(string moduleName, CancellationToken cancellationToken)
+    {
+        bool successful = false;
+        foreach (MethodDefinitionHandle methodHandle in this.Apis.SelectMany(api => api.GetMethods()))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            MethodDefinition methodDef = this.Reader.GetMethodDefinition(methodHandle);
+            ModuleReferenceHandle moduleHandle = methodDef.GetImport().Module;
+            if (moduleHandle.IsNil)
+            {
+                continue;
+            }
+
+            ModuleReference module = this.Reader.GetModuleReference(moduleHandle);
+            if (this.Reader.StringComparer.Equals(module.Name, moduleName, ignoreCase: true))
+            {
+                string? bannedReason = null;
+                foreach (var bannedApi in this.BannedAPIs)
+                {
+                    if (this.Reader.StringComparer.Equals(methodDef.Name, bannedApi.Key))
+                    {
+                        // Skip a banned API.
+                        bannedReason = bannedApi.Value;
+                        continue;
+                    }
+                }
+
+                if (bannedReason is object)
+                {
+                    continue;
+                }
+
                 if (this.IsCompatibleWithPlatform(methodDef.GetCustomAttributes()))
                 {
                     try
@@ -668,2398 +752,2467 @@ namespace Microsoft.Windows.CsWin32
                         // Something transitively required for this method is not available for this platform, so skip this method.
                     }
                 }
+
+                successful = true;
             }
         }
 
-        /// <summary>
-        /// Generates a projection of all constants.
-        /// </summary>
-        /// <param name="cancellationToken">A cancellation token.</param>
-        public void GenerateAllConstants(CancellationToken cancellationToken)
-        {
-            foreach (FieldDefinitionHandle fieldDefHandle in this.Apis.SelectMany(api => api.GetFields()))
-            {
-                cancellationToken.ThrowIfCancellationRequested();
+        return successful;
+    }
 
-                FieldDefinition fieldDef = this.Reader.GetFieldDefinition(fieldDefHandle);
-                if (this.IsCompatibleWithPlatform(fieldDef.GetCustomAttributes()))
-                {
-                    try
-                    {
-                        this.volatileCode.GenerationTransaction(delegate
-                        {
-                            this.RequestConstant(fieldDefHandle);
-                        });
-                    }
-                    catch (GenerationFailedException ex) when (IsPlatformCompatibleException(ex))
-                    {
-                        // Something transitively required for this field is not available for this platform, so skip this method.
-                    }
-                }
-            }
+    /// <summary>
+    /// Generate code for the named extern method, if it is recognized.
+    /// </summary>
+    /// <param name="possiblyQualifiedName">The name of the extern method, optionally qualified with a namespace.</param>
+    /// <param name="preciseApi">Receives the canonical API names that <paramref name="possiblyQualifiedName"/> matched on.</param>
+    /// <returns><see langword="true"/> if a match was found and the extern method generated; otherwise <see langword="false"/>.</returns>
+    public bool TryGenerateExternMethod(string possiblyQualifiedName, out IReadOnlyList<string> preciseApi)
+    {
+        if (possiblyQualifiedName is null)
+        {
+            throw new ArgumentNullException(nameof(possiblyQualifiedName));
         }
 
-        /// <summary>
-        /// Generates all extern methods exported from a particular module, along with all their supporting types.
-        /// </summary>
-        /// <param name="moduleName">The name of the module for whose exports extern methods should be generated for.</param>
-        /// <param name="cancellationToken">A cancellation token.</param>
-        /// <returns><see langword="true"/> if a matching module name was found and extern methods generated; otherwise <see langword="false"/>.</returns>
-        public bool TryGenerateAllExternMethods(string moduleName, CancellationToken cancellationToken)
+        if (this.GetMethodByName(possiblyQualifiedName) is MethodDefinitionHandle methodDefHandle)
         {
-            bool successful = false;
-            foreach (MethodDefinitionHandle methodHandle in this.Apis.SelectMany(api => api.GetMethods()))
+            MethodDefinition methodDef = this.Reader.GetMethodDefinition(methodDefHandle);
+            string methodName = this.Reader.StringComparer.Equals(methodDef.Name, possiblyQualifiedName) ? possiblyQualifiedName : this.Reader.GetString(methodDef.Name);
+            if (this.BannedAPIs.TryGetValue(methodName, out string? reason))
             {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                MethodDefinition methodDef = this.Reader.GetMethodDefinition(methodHandle);
-                ModuleReferenceHandle moduleHandle = methodDef.GetImport().Module;
-                if (moduleHandle.IsNil)
-                {
-                    continue;
-                }
-
-                ModuleReference module = this.Reader.GetModuleReference(moduleHandle);
-                if (this.Reader.StringComparer.Equals(module.Name, moduleName, ignoreCase: true))
-                {
-                    string? bannedReason = null;
-                    foreach (var bannedApi in this.BannedAPIs)
-                    {
-                        if (this.Reader.StringComparer.Equals(methodDef.Name, bannedApi.Key))
-                        {
-                            // Skip a banned API.
-                            bannedReason = bannedApi.Value;
-                            continue;
-                        }
-                    }
-
-                    if (bannedReason is object)
-                    {
-                        continue;
-                    }
-
-                    if (this.IsCompatibleWithPlatform(methodDef.GetCustomAttributes()))
-                    {
-                        try
-                        {
-                            this.volatileCode.GenerationTransaction(delegate
-                            {
-                                this.RequestExternMethod(methodHandle);
-                            });
-                        }
-                        catch (GenerationFailedException ex) when (IsPlatformCompatibleException(ex))
-                        {
-                            // Something transitively required for this method is not available for this platform, so skip this method.
-                        }
-                    }
-
-                    successful = true;
-                }
+                throw new NotSupportedException(reason);
             }
 
-            return successful;
-        }
-
-        /// <summary>
-        /// Generate code for the named extern method, if it is recognized.
-        /// </summary>
-        /// <param name="possiblyQualifiedName">The name of the extern method, optionally qualified with a namespace.</param>
-        /// <param name="preciseApi">Receives the canonical API names that <paramref name="possiblyQualifiedName"/> matched on.</param>
-        /// <returns><see langword="true"/> if a match was found and the extern method generated; otherwise <see langword="false"/>.</returns>
-        public bool TryGenerateExternMethod(string possiblyQualifiedName, out IReadOnlyList<string> preciseApi)
-        {
-            if (possiblyQualifiedName is null)
+            this.volatileCode.GenerationTransaction(delegate
             {
-                throw new ArgumentNullException(nameof(possiblyQualifiedName));
-            }
-
-            if (this.GetMethodByName(possiblyQualifiedName) is MethodDefinitionHandle methodDefHandle)
-            {
-                MethodDefinition methodDef = this.Reader.GetMethodDefinition(methodDefHandle);
-                string methodName = this.Reader.StringComparer.Equals(methodDef.Name, possiblyQualifiedName) ? possiblyQualifiedName : this.Reader.GetString(methodDef.Name);
-                if (this.BannedAPIs.TryGetValue(methodName, out string? reason))
-                {
-                    throw new NotSupportedException(reason);
-                }
-
-                this.volatileCode.GenerationTransaction(delegate
-                {
-                    this.RequestExternMethod(methodDefHandle);
-                });
-
-                string methodNamespace = this.Reader.GetString(this.Reader.GetTypeDefinition(methodDef.GetDeclaringType()).Namespace);
-                preciseApi = ImmutableList.Create($"{methodNamespace}.{methodName}");
-                return true;
-            }
-
-            preciseApi = ImmutableList<string>.Empty;
-            return false;
-        }
-
-        /// <inheritdoc cref="TryGenerateType(string, out IReadOnlyList{string})"/>
-        public bool TryGenerateType(string possiblyQualifiedName) => this.TryGenerateType(possiblyQualifiedName, out _);
-
-        /// <summary>
-        /// Generate code for the named type, if it is recognized.
-        /// </summary>
-        /// <param name="possiblyQualifiedName">The name of the interop type, optionally qualified with a namespace.</param>
-        /// <param name="preciseApi">Receives the canonical API names that <paramref name="possiblyQualifiedName"/> matched on.</param>
-        /// <returns><see langword="true"/> if a match was found and the type generated; otherwise <see langword="false"/>.</returns>
-        public bool TryGenerateType(string possiblyQualifiedName, out IReadOnlyList<string> preciseApi)
-        {
-            if (possiblyQualifiedName is null)
-            {
-                throw new ArgumentNullException(nameof(possiblyQualifiedName));
-            }
-
-            TrySplitPossiblyQualifiedName(possiblyQualifiedName, out string? typeNamespace, out string typeName);
-            var matchingTypeHandles = new List<TypeDefinitionHandle>();
-            var namespaces = this.GetNamespacesToSearch(typeNamespace);
-            bool foundApiWithMismatchedPlatform = false;
-
-            foreach (var nsMetadata in namespaces)
-            {
-                if (nsMetadata.Types.TryGetValue(typeName, out TypeDefinitionHandle handle))
-                {
-                    matchingTypeHandles.Add(handle);
-                }
-                else if (nsMetadata.TypesForOtherPlatform.Contains(typeName))
-                {
-                    foundApiWithMismatchedPlatform = true;
-                }
-            }
-
-            if (matchingTypeHandles.Count == 1)
-            {
-                this.volatileCode.GenerationTransaction(delegate
-                {
-                    this.RequestInteropType(matchingTypeHandles[0]);
-                });
-
-                TypeDefinition td = this.Reader.GetTypeDefinition(matchingTypeHandles[0]);
-                preciseApi = ImmutableList.Create($"{this.Reader.GetString(td.Namespace)}.{this.Reader.GetString(td.Name)}");
-                return true;
-            }
-            else if (matchingTypeHandles.Count > 1)
-            {
-                preciseApi = ImmutableList.CreateRange(
-                    matchingTypeHandles.Select(h =>
-                    {
-                        TypeDefinition td = this.Reader.GetTypeDefinition(h);
-                        return $"{this.Reader.GetString(td.Namespace)}.{this.Reader.GetString(td.Name)}";
-                    }));
-                return false;
-            }
-
-            if (SpecialTypeDefNames.Contains(typeName))
-            {
-                string? fullyQualifiedName = null;
-                this.volatileCode.GenerationTransaction(() => this.RequestSpecialTypeDefStruct(typeName, out fullyQualifiedName));
-                preciseApi = ImmutableList.Create(fullyQualifiedName!);
-                return true;
-            }
-
-            if (foundApiWithMismatchedPlatform)
-            {
-                throw new PlatformIncompatibleException($"The requested API ({possiblyQualifiedName}) was found but is not available given the target platform ({this.compilation?.Options.Platform}).");
-            }
-
-            preciseApi = ImmutableList<string>.Empty;
-            return false;
-        }
-
-        /// <summary>
-        /// Generate code for the named constant, if it is recognized.
-        /// </summary>
-        /// <param name="possiblyQualifiedName">The name of the constant, optionally qualified with a namespace.</param>
-        /// <param name="preciseApi">Receives the canonical API names that <paramref name="possiblyQualifiedName"/> matched on.</param>
-        /// <returns><see langword="true"/> if a match was found and the constant generated; otherwise <see langword="false"/>.</returns>
-        public bool TryGenerateConstant(string possiblyQualifiedName, out IReadOnlyList<string> preciseApi)
-        {
-            if (possiblyQualifiedName is null)
-            {
-                throw new ArgumentNullException(nameof(possiblyQualifiedName));
-            }
-
-            TrySplitPossiblyQualifiedName(possiblyQualifiedName, out string? constantNamespace, out string constantName);
-            var matchingFieldHandles = new List<FieldDefinitionHandle>();
-            var namespaces = this.GetNamespacesToSearch(constantNamespace);
-
-            foreach (var nsMetadata in namespaces)
-            {
-                if (nsMetadata.Fields.TryGetValue(constantName, out FieldDefinitionHandle fieldDefHandle))
-                {
-                    matchingFieldHandles.Add(fieldDefHandle);
-                }
-            }
-
-            if (matchingFieldHandles.Count == 1)
-            {
-                this.volatileCode.GenerationTransaction(delegate
-                {
-                    this.RequestConstant(matchingFieldHandles[0]);
-                });
-
-                FieldDefinition fd = this.Reader.GetFieldDefinition(matchingFieldHandles[0]);
-                TypeDefinition td = this.Reader.GetTypeDefinition(fd.GetDeclaringType());
-                preciseApi = ImmutableList.Create($"{this.Reader.GetString(td.Namespace)}.{this.Reader.GetString(fd.Name)}");
-                return true;
-            }
-            else if (matchingFieldHandles.Count > 1)
-            {
-                preciseApi = ImmutableList.CreateRange(
-                    matchingFieldHandles.Select(h =>
-                    {
-                        FieldDefinition fd = this.Reader.GetFieldDefinition(h);
-                        TypeDefinition td = this.Reader.GetTypeDefinition(fd.GetDeclaringType());
-                        return $"{this.Reader.GetString(td.Namespace)}.{this.Reader.GetString(fd.Name)}";
-                    }));
-                return false;
-            }
-
-            preciseApi = ImmutableList<string>.Empty;
-            return false;
-        }
-
-        /// <summary>
-        /// Produces a sequence of suggested APIs with a similar name to the specified one.
-        /// </summary>
-        /// <param name="name">The user-supplied name.</param>
-        /// <returns>A sequence of API names.</returns>
-        public IEnumerable<string> GetSuggestions(string name)
-        {
-            if (name is null)
-            {
-                throw new ArgumentNullException(nameof(name));
-            }
-
-            // Trim suffixes off the name.
-            var suffixes = new List<string> { "A", "W", "32", "64", "Ex" };
-            foreach (string suffix in suffixes)
-            {
-                if (name.EndsWith(suffix, StringComparison.Ordinal))
-                {
-                    name = name.Substring(0, name.Length - suffix.Length);
-                }
-            }
-
-            // We should match on any API for which the given string is a substring.
-            foreach (NamespaceMetadata nsMetadata in this.MetadataIndex.MetadataByNamespace.Values)
-            {
-                foreach (string candidate in nsMetadata.Fields.Keys.Concat(nsMetadata.Types.Keys).Concat(nsMetadata.Methods.Keys))
-                {
-                    if (candidate.Contains(name))
-                    {
-                        yield return candidate;
-                    }
-                }
-            }
-        }
-
-        /// <summary>
-        /// Collects the result of code generation.
-        /// </summary>
-        /// <param name="cancellationToken">A cancellation token.</param>
-        /// <returns>All the generated source files, keyed by filename.</returns>
-        public IReadOnlyDictionary<string, CompilationUnitSyntax> GetCompilationUnits(CancellationToken cancellationToken)
-        {
-            var starterNamespace = NamespaceDeclaration(ParseName(this.Namespace));
-
-            // .g.cs because the resulting files are not user-created.
-            const string FilenamePattern = "{0}.g.cs";
-            var results = new Dictionary<string, NamespaceDeclarationSyntax>(StringComparer.OrdinalIgnoreCase);
-
-            IEnumerable<MemberDeclarationSyntax> GroupMembersByNamespace(IEnumerable<MemberDeclarationSyntax> members)
-            {
-                return members.GroupBy(member =>
-                    member.HasAnnotations(NamespaceContainerAnnotation) ? member.GetAnnotations(NamespaceContainerAnnotation).Single().Data : null)
-                    .SelectMany(nsContents =>
-                        nsContents.Key is object
-                            ? new MemberDeclarationSyntax[] { NamespaceDeclaration(ParseName(nsContents.Key)).AddMembers(nsContents.ToArray()) }
-                            : nsContents.ToArray());
-            }
-
-            if (this.options.EmitSingleFile)
-            {
-                results.Add(
-                    string.Format(CultureInfo.InvariantCulture, FilenamePattern, "NativeMethods"),
-                    starterNamespace.AddMembers(GroupMembersByNamespace(this.NamespaceMembers).ToArray()));
-            }
-            else
-            {
-                var membersByFile = this.NamespaceMembers.GroupBy(
-                    member => member.HasAnnotations(SimpleFileNameAnnotation)
-                            ? member.GetAnnotations(SimpleFileNameAnnotation).Single().Data
-                            : member switch
-                            {
-                                ClassDeclarationSyntax classDecl => classDecl.Identifier.ValueText,
-                                StructDeclarationSyntax structDecl => structDecl.Identifier.ValueText,
-                                InterfaceDeclarationSyntax ifaceDecl => ifaceDecl.Identifier.ValueText,
-                                EnumDeclarationSyntax enumDecl => enumDecl.Identifier.ValueText,
-                                DelegateDeclarationSyntax delegateDecl => "Delegates", // group all delegates in one file
-                                _ => throw new NotSupportedException("Unsupported member type: " + member.GetType().Name),
-                            },
-                    StringComparer.OrdinalIgnoreCase);
-
-                foreach (var fileSimpleName in membersByFile)
-                {
-                    try
-                    {
-                        results.Add(
-                            string.Format(CultureInfo.InvariantCulture, FilenamePattern, fileSimpleName.Key),
-                            starterNamespace.AddMembers(GroupMembersByNamespace(fileSimpleName).ToArray()));
-                    }
-                    catch (ArgumentException ex)
-                    {
-                        throw new GenerationFailedException($"Failed adding \"{fileSimpleName.Key}\".", ex);
-                    }
-                }
-            }
-
-            var usingDirectives = new List<UsingDirectiveSyntax>
-            {
-                UsingDirective(AliasQualifiedName(IdentifierName(Token(SyntaxKind.GlobalKeyword)), IdentifierName(nameof(System)))),
-                UsingDirective(AliasQualifiedName(IdentifierName(Token(SyntaxKind.GlobalKeyword)), IdentifierName(nameof(System) + "." + nameof(System.Diagnostics)))),
-                UsingDirective(ParseName(GlobalNamespacePrefix + SystemRuntimeCompilerServices)),
-                UsingDirective(ParseName(GlobalNamespacePrefix + SystemRuntimeInteropServices)),
-            };
-
-            if (this.generateSupportedOSPlatformAttributes)
-            {
-                usingDirectives.Add(UsingDirective(ParseName(GlobalNamespacePrefix + "System.Runtime.Versioning")));
-            }
-
-            usingDirectives.Add(UsingDirective(NameEquals(GlobalWinmdRootNamespaceAlias), ParseName(GlobalNamespacePrefix + this.MetadataIndex.CommonNamespace)));
-
-            var normalizedResults = new Dictionary<string, CompilationUnitSyntax>(StringComparer.OrdinalIgnoreCase);
-            results.AsParallel().WithCancellation(cancellationToken).ForAll(kv =>
-            {
-                var compilationUnit = ((CompilationUnitSyntax)CompilationUnit()
-                    .AddMembers(
-                        kv.Value.AddUsings(usingDirectives.ToArray()))
-                    .Accept(new WhitespaceRewriter())!)
-                    .WithLeadingTrivia(ParseLeadingTrivia(AutoGeneratedHeader).Add(
-                        Trivia(PragmaWarningDirectiveTrivia(
-                            disableOrRestoreKeyword: TokenWithSpace(SyntaxKind.DisableKeyword),
-                            errorCodes: SeparatedList<ExpressionSyntax>(WarningsToSuppressInGeneratedCode.Select(code => IdentifierName(code))),
-                            isActive: true))));
-
-                lock (normalizedResults)
-                {
-                    normalizedResults.Add(kv.Key, compilationUnit);
-                }
+                this.RequestExternMethod(methodDefHandle);
             });
 
-            if (this.needsWinRTCustomMarshaler)
+            string methodNamespace = this.Reader.GetString(this.Reader.GetTypeDefinition(methodDef.GetDeclaringType()).Namespace);
+            preciseApi = ImmutableList.Create($"{methodNamespace}.{methodName}");
+            return true;
+        }
+
+        preciseApi = ImmutableList<string>.Empty;
+        return false;
+    }
+
+    /// <inheritdoc cref="TryGenerateType(string, out IReadOnlyList{string})"/>
+    public bool TryGenerateType(string possiblyQualifiedName) => this.TryGenerateType(possiblyQualifiedName, out _);
+
+    /// <summary>
+    /// Generate code for the named type, if it is recognized.
+    /// </summary>
+    /// <param name="possiblyQualifiedName">The name of the interop type, optionally qualified with a namespace.</param>
+    /// <param name="preciseApi">Receives the canonical API names that <paramref name="possiblyQualifiedName"/> matched on.</param>
+    /// <returns><see langword="true"/> if a match was found and the type generated; otherwise <see langword="false"/>.</returns>
+    public bool TryGenerateType(string possiblyQualifiedName, out IReadOnlyList<string> preciseApi)
+    {
+        if (possiblyQualifiedName is null)
+        {
+            throw new ArgumentNullException(nameof(possiblyQualifiedName));
+        }
+
+        TrySplitPossiblyQualifiedName(possiblyQualifiedName, out string? typeNamespace, out string typeName);
+        var matchingTypeHandles = new List<TypeDefinitionHandle>();
+        var namespaces = this.GetNamespacesToSearch(typeNamespace);
+        bool foundApiWithMismatchedPlatform = false;
+
+        foreach (var nsMetadata in namespaces)
+        {
+            if (nsMetadata.Types.TryGetValue(typeName, out TypeDefinitionHandle handle))
             {
-                string? marshalerText = this.FetchTemplateText(WinRTCustomMarshalerClass);
-                if (marshalerText == null)
+                matchingTypeHandles.Add(handle);
+            }
+            else if (nsMetadata.TypesForOtherPlatform.Contains(typeName))
+            {
+                foundApiWithMismatchedPlatform = true;
+            }
+        }
+
+        if (matchingTypeHandles.Count == 1)
+        {
+            this.volatileCode.GenerationTransaction(delegate
+            {
+                this.RequestInteropType(matchingTypeHandles[0]);
+            });
+
+            TypeDefinition td = this.Reader.GetTypeDefinition(matchingTypeHandles[0]);
+            preciseApi = ImmutableList.Create($"{this.Reader.GetString(td.Namespace)}.{this.Reader.GetString(td.Name)}");
+            return true;
+        }
+        else if (matchingTypeHandles.Count > 1)
+        {
+            preciseApi = ImmutableList.CreateRange(
+                matchingTypeHandles.Select(h =>
                 {
-                    throw new GenerationFailedException($"Failed to get template for \"{WinRTCustomMarshalerClass}\".");
-                }
-
-                var marshalerContents = SyntaxFactory.ParseSyntaxTree(marshalerText);
-                if (marshalerContents == null)
-                {
-                    throw new GenerationFailedException($"Failed adding \"{WinRTCustomMarshalerClass}\".");
-                }
-
-                var compilationUnit = ((CompilationUnitSyntax)marshalerContents.GetRoot())
-                    .WithLeadingTrivia(ParseLeadingTrivia(AutoGeneratedHeader));
-
-                normalizedResults.Add(
-                    string.Format(CultureInfo.InvariantCulture, FilenamePattern, WinRTCustomMarshalerClass),
-                    compilationUnit);
-            }
-
-            return normalizedResults;
-        }
-
-        internal static ImmutableDictionary<string, string> GetBannedAPIs(GeneratorOptions options) => options.AllowMarshaling ? BannedAPIsWithMarshaling : BannedAPIsWithoutMarshaling;
-
-        [return: NotNullIfNotNull("marshalAs")]
-        internal static AttributeSyntax? MarshalAs(MarshalAsAttribute? marshalAs)
-        {
-            if (marshalAs is null)
-            {
-                return null;
-            }
-
-            // TODO: fill in more properties to match the original
-            return MarshalAs(marshalAs.Value, marshalAs.ArraySubType, marshalAs.MarshalCookie, marshalAs.MarshalType, marshalAs.SizeConst > 0 ? LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(marshalAs.SizeConst)) : null);
-        }
-
-        internal static TypeSyntax MakeSpanOfT(TypeSyntax typeArgument) => GenericName("Span").AddTypeArgumentListArguments(typeArgument);
-
-        internal static TypeSyntax MakeReadOnlySpanOfT(TypeSyntax typeArgument) => GenericName("ReadOnlySpan").AddTypeArgumentListArguments(typeArgument);
-
-        /// <summary>
-        /// Checks whether an exception was originally thrown because of a target platform incompatibility.
-        /// </summary>
-        /// <param name="ex">An exception that may be or contain a <see cref="PlatformIncompatibleException"/>.</param>
-        /// <returns><see langword="true"/> if <paramref name="ex"/> or an inner exception is a <see cref="PlatformIncompatibleException"/>; otherwise <see langword="false" />.</returns>
-        internal static bool IsPlatformCompatibleException(Exception? ex)
-        {
-            if (ex is null)
-            {
-                return false;
-            }
-
-            return ex is PlatformIncompatibleException || IsPlatformCompatibleException(ex?.InnerException);
-        }
-
-        internal static bool IsUntypedDelegate(MetadataReader reader, TypeDefinition typeDef) => reader.StringComparer.Equals(typeDef.Name, "PROC") || reader.StringComparer.Equals(typeDef.Name, "FARPROC");
-
-        internal static string ReplaceCommonNamespaceWithAlias(Generator? generator, string fullNamespace)
-        {
-            return generator is object && generator.TryStripCommonNamespace(fullNamespace, out string? stripped) ? (stripped.Length > 0 ? $"{GlobalWinmdRootNamespaceAlias}.{stripped}" : GlobalWinmdRootNamespaceAlias) : $"global::{fullNamespace}";
-        }
-
-        internal bool TryStripCommonNamespace(string fullNamespace, [NotNullWhen(true)] out string? strippedNamespace)
-        {
-            if (fullNamespace.StartsWith(this.MetadataIndex.CommonNamespaceDot, StringComparison.Ordinal))
-            {
-                strippedNamespace = fullNamespace.Substring(this.MetadataIndex.CommonNamespaceDot.Length);
-                return true;
-            }
-            else if (fullNamespace == this.MetadataIndex.CommonNamespace)
-            {
-                strippedNamespace = string.Empty;
-                return true;
-            }
-
-            strippedNamespace = null;
+                    TypeDefinition td = this.Reader.GetTypeDefinition(h);
+                    return $"{this.Reader.GetString(td.Namespace)}.{this.Reader.GetString(td.Name)}";
+                }));
             return false;
         }
 
-        internal bool IsAttribute(CustomAttribute attribute, string ns, string name) => MetadataUtilities.IsAttribute(this.Reader, attribute, ns, name);
-
-        internal bool TryGetHandleReleaseMethod(EntityHandle handleStructDefHandle, [NotNullWhen(true)] out string? releaseMethod)
+        if (SpecialTypeDefNames.Contains(typeName))
         {
-            if (handleStructDefHandle.IsNil)
-            {
-                releaseMethod = null;
-                return false;
-            }
+            string? fullyQualifiedName = null;
+            this.volatileCode.GenerationTransaction(() => this.RequestSpecialTypeDefStruct(typeName, out fullyQualifiedName));
+            preciseApi = ImmutableList.Create(fullyQualifiedName!);
+            return true;
+        }
 
-            if (handleStructDefHandle.Kind == HandleKind.TypeReference)
+        if (foundApiWithMismatchedPlatform)
+        {
+            throw new PlatformIncompatibleException($"The requested API ({possiblyQualifiedName}) was found but is not available given the target platform ({this.compilation?.Options.Platform}).");
+        }
+
+        preciseApi = ImmutableList<string>.Empty;
+        return false;
+    }
+
+    /// <summary>
+    /// Generate code for the named constant, if it is recognized.
+    /// </summary>
+    /// <param name="possiblyQualifiedName">The name of the constant, optionally qualified with a namespace.</param>
+    /// <param name="preciseApi">Receives the canonical API names that <paramref name="possiblyQualifiedName"/> matched on.</param>
+    /// <returns><see langword="true"/> if a match was found and the constant generated; otherwise <see langword="false"/>.</returns>
+    public bool TryGenerateConstant(string possiblyQualifiedName, out IReadOnlyList<string> preciseApi)
+    {
+        if (possiblyQualifiedName is null)
+        {
+            throw new ArgumentNullException(nameof(possiblyQualifiedName));
+        }
+
+        TrySplitPossiblyQualifiedName(possiblyQualifiedName, out string? constantNamespace, out string constantName);
+        var matchingFieldHandles = new List<FieldDefinitionHandle>();
+        var namespaces = this.GetNamespacesToSearch(constantNamespace);
+
+        foreach (var nsMetadata in namespaces)
+        {
+            if (nsMetadata.Fields.TryGetValue(constantName, out FieldDefinitionHandle fieldDefHandle))
             {
-                if (this.TryGetTypeDefHandle((TypeReferenceHandle)handleStructDefHandle, out TypeDefinitionHandle typeDefHandle))
+                matchingFieldHandles.Add(fieldDefHandle);
+            }
+        }
+
+        if (matchingFieldHandles.Count == 1)
+        {
+            this.volatileCode.GenerationTransaction(delegate
+            {
+                this.RequestConstant(matchingFieldHandles[0]);
+            });
+
+            FieldDefinition fd = this.Reader.GetFieldDefinition(matchingFieldHandles[0]);
+            TypeDefinition td = this.Reader.GetTypeDefinition(fd.GetDeclaringType());
+            preciseApi = ImmutableList.Create($"{this.Reader.GetString(td.Namespace)}.{this.Reader.GetString(fd.Name)}");
+            return true;
+        }
+        else if (matchingFieldHandles.Count > 1)
+        {
+            preciseApi = ImmutableList.CreateRange(
+                matchingFieldHandles.Select(h =>
                 {
-                    return this.TryGetHandleReleaseMethod(typeDefHandle, out releaseMethod);
+                    FieldDefinition fd = this.Reader.GetFieldDefinition(h);
+                    TypeDefinition td = this.Reader.GetTypeDefinition(fd.GetDeclaringType());
+                    return $"{this.Reader.GetString(td.Namespace)}.{this.Reader.GetString(fd.Name)}";
+                }));
+            return false;
+        }
+
+        preciseApi = ImmutableList<string>.Empty;
+        return false;
+    }
+
+    /// <summary>
+    /// Produces a sequence of suggested APIs with a similar name to the specified one.
+    /// </summary>
+    /// <param name="name">The user-supplied name.</param>
+    /// <returns>A sequence of API names.</returns>
+    public IEnumerable<string> GetSuggestions(string name)
+    {
+        if (name is null)
+        {
+            throw new ArgumentNullException(nameof(name));
+        }
+
+        // Trim suffixes off the name.
+        var suffixes = new List<string> { "A", "W", "32", "64", "Ex" };
+        foreach (string suffix in suffixes)
+        {
+            if (name.EndsWith(suffix, StringComparison.Ordinal))
+            {
+                name = name.Substring(0, name.Length - suffix.Length);
+            }
+        }
+
+        // We should match on any API for which the given string is a substring.
+        foreach (NamespaceMetadata nsMetadata in this.MetadataIndex.MetadataByNamespace.Values)
+        {
+            foreach (string candidate in nsMetadata.Fields.Keys.Concat(nsMetadata.Types.Keys).Concat(nsMetadata.Methods.Keys))
+            {
+                if (candidate.Contains(name))
+                {
+                    yield return candidate;
                 }
             }
-            else if (handleStructDefHandle.Kind == HandleKind.TypeDefinition)
+        }
+    }
+
+    /// <summary>
+    /// Collects the result of code generation.
+    /// </summary>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    /// <returns>All the generated source files, keyed by filename.</returns>
+    public IReadOnlyDictionary<string, CompilationUnitSyntax> GetCompilationUnits(CancellationToken cancellationToken)
+    {
+        var starterNamespace = NamespaceDeclaration(ParseName(this.Namespace));
+
+        // .g.cs because the resulting files are not user-created.
+        const string FilenamePattern = "{0}.g.cs";
+        var results = new Dictionary<string, NamespaceDeclarationSyntax>(StringComparer.OrdinalIgnoreCase);
+
+        IEnumerable<MemberDeclarationSyntax> GroupMembersByNamespace(IEnumerable<MemberDeclarationSyntax> members)
+        {
+            return members.GroupBy(member =>
+                member.HasAnnotations(NamespaceContainerAnnotation) ? member.GetAnnotations(NamespaceContainerAnnotation).Single().Data : null)
+                .SelectMany(nsContents =>
+                    nsContents.Key is object
+                        ? new MemberDeclarationSyntax[] { NamespaceDeclaration(ParseName(nsContents.Key)).AddMembers(nsContents.ToArray()) }
+                        : nsContents.ToArray());
+        }
+
+        if (this.options.EmitSingleFile)
+        {
+            results.Add(
+                string.Format(CultureInfo.InvariantCulture, FilenamePattern, "NativeMethods"),
+                starterNamespace.AddMembers(GroupMembersByNamespace(this.NamespaceMembers).ToArray()));
+        }
+        else
+        {
+            var membersByFile = this.NamespaceMembers.GroupBy(
+                member => member.HasAnnotations(SimpleFileNameAnnotation)
+                        ? member.GetAnnotations(SimpleFileNameAnnotation).Single().Data
+                        : member switch
+                        {
+                            ClassDeclarationSyntax classDecl => classDecl.Identifier.ValueText,
+                            StructDeclarationSyntax structDecl => structDecl.Identifier.ValueText,
+                            InterfaceDeclarationSyntax ifaceDecl => ifaceDecl.Identifier.ValueText,
+                            EnumDeclarationSyntax enumDecl => enumDecl.Identifier.ValueText,
+                            DelegateDeclarationSyntax delegateDecl => "Delegates", // group all delegates in one file
+                            _ => throw new NotSupportedException("Unsupported member type: " + member.GetType().Name),
+                        },
+                StringComparer.OrdinalIgnoreCase);
+
+            foreach (var fileSimpleName in membersByFile)
             {
-                return this.TryGetHandleReleaseMethod((TypeDefinitionHandle)handleStructDefHandle, out releaseMethod);
+                try
+                {
+                    results.Add(
+                        string.Format(CultureInfo.InvariantCulture, FilenamePattern, fileSimpleName.Key),
+                        starterNamespace.AddMembers(GroupMembersByNamespace(fileSimpleName).ToArray()));
+                }
+                catch (ArgumentException ex)
+                {
+                    throw new GenerationFailedException($"Failed adding \"{fileSimpleName.Key}\".", ex);
+                }
+            }
+        }
+
+        var usingDirectives = new List<UsingDirectiveSyntax>
+        {
+            UsingDirective(AliasQualifiedName(IdentifierName(Token(SyntaxKind.GlobalKeyword)), IdentifierName(nameof(System)))),
+            UsingDirective(AliasQualifiedName(IdentifierName(Token(SyntaxKind.GlobalKeyword)), IdentifierName(nameof(System) + "." + nameof(System.Diagnostics)))),
+            UsingDirective(ParseName(GlobalNamespacePrefix + SystemRuntimeCompilerServices)),
+            UsingDirective(ParseName(GlobalNamespacePrefix + SystemRuntimeInteropServices)),
+        };
+
+        if (this.generateSupportedOSPlatformAttributes)
+        {
+            usingDirectives.Add(UsingDirective(ParseName(GlobalNamespacePrefix + "System.Runtime.Versioning")));
+        }
+
+        usingDirectives.Add(UsingDirective(NameEquals(GlobalWinmdRootNamespaceAlias), ParseName(GlobalNamespacePrefix + this.MetadataIndex.CommonNamespace)));
+
+        var normalizedResults = new Dictionary<string, CompilationUnitSyntax>(StringComparer.OrdinalIgnoreCase);
+        results.AsParallel().WithCancellation(cancellationToken).ForAll(kv =>
+        {
+            var compilationUnit = ((CompilationUnitSyntax)CompilationUnit()
+                .AddMembers(
+                    kv.Value.AddUsings(usingDirectives.ToArray()))
+                .Accept(new WhitespaceRewriter())!)
+                .WithLeadingTrivia(ParseLeadingTrivia(AutoGeneratedHeader).Add(
+                    Trivia(PragmaWarningDirectiveTrivia(
+                        disableOrRestoreKeyword: TokenWithSpace(SyntaxKind.DisableKeyword),
+                        errorCodes: SeparatedList<ExpressionSyntax>(WarningsToSuppressInGeneratedCode.Select(code => IdentifierName(code))),
+                        isActive: true))));
+
+            lock (normalizedResults)
+            {
+                normalizedResults.Add(kv.Key, compilationUnit);
+            }
+        });
+
+        if (this.needsWinRTCustomMarshaler)
+        {
+            string? marshalerText = this.FetchTemplateText(WinRTCustomMarshalerClass);
+            if (marshalerText == null)
+            {
+                throw new GenerationFailedException($"Failed to get template for \"{WinRTCustomMarshalerClass}\".");
             }
 
+            var marshalerContents = SyntaxFactory.ParseSyntaxTree(marshalerText);
+            if (marshalerContents == null)
+            {
+                throw new GenerationFailedException($"Failed adding \"{WinRTCustomMarshalerClass}\".");
+            }
+
+            var compilationUnit = ((CompilationUnitSyntax)marshalerContents.GetRoot())
+                .WithLeadingTrivia(ParseLeadingTrivia(AutoGeneratedHeader));
+
+            normalizedResults.Add(
+                string.Format(CultureInfo.InvariantCulture, FilenamePattern, WinRTCustomMarshalerClass),
+                compilationUnit);
+        }
+
+        return normalizedResults;
+    }
+
+    internal static ImmutableDictionary<string, string> GetBannedAPIs(GeneratorOptions options) => options.AllowMarshaling ? BannedAPIsWithMarshaling : BannedAPIsWithoutMarshaling;
+
+    [return: NotNullIfNotNull("marshalAs")]
+    internal static AttributeSyntax? MarshalAs(MarshalAsAttribute? marshalAs)
+    {
+        if (marshalAs is null)
+        {
+            return null;
+        }
+
+        // TODO: fill in more properties to match the original
+        return MarshalAs(marshalAs.Value, marshalAs.ArraySubType, marshalAs.MarshalCookie, marshalAs.MarshalType, marshalAs.SizeConst > 0 ? LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(marshalAs.SizeConst)) : null);
+    }
+
+    internal static TypeSyntax MakeSpanOfT(TypeSyntax typeArgument) => GenericName("Span").AddTypeArgumentListArguments(typeArgument);
+
+    internal static TypeSyntax MakeReadOnlySpanOfT(TypeSyntax typeArgument) => GenericName("ReadOnlySpan").AddTypeArgumentListArguments(typeArgument);
+
+    /// <summary>
+    /// Checks whether an exception was originally thrown because of a target platform incompatibility.
+    /// </summary>
+    /// <param name="ex">An exception that may be or contain a <see cref="PlatformIncompatibleException"/>.</param>
+    /// <returns><see langword="true"/> if <paramref name="ex"/> or an inner exception is a <see cref="PlatformIncompatibleException"/>; otherwise <see langword="false" />.</returns>
+    internal static bool IsPlatformCompatibleException(Exception? ex)
+    {
+        if (ex is null)
+        {
+            return false;
+        }
+
+        return ex is PlatformIncompatibleException || IsPlatformCompatibleException(ex?.InnerException);
+    }
+
+    internal static bool IsUntypedDelegate(MetadataReader reader, TypeDefinition typeDef) => reader.StringComparer.Equals(typeDef.Name, "PROC") || reader.StringComparer.Equals(typeDef.Name, "FARPROC");
+
+    internal static string ReplaceCommonNamespaceWithAlias(Generator? generator, string fullNamespace)
+    {
+        return generator is object && generator.TryStripCommonNamespace(fullNamespace, out string? stripped) ? (stripped.Length > 0 ? $"{GlobalWinmdRootNamespaceAlias}.{stripped}" : GlobalWinmdRootNamespaceAlias) : $"global::{fullNamespace}";
+    }
+
+    internal bool TryStripCommonNamespace(string fullNamespace, [NotNullWhen(true)] out string? strippedNamespace)
+    {
+        if (fullNamespace.StartsWith(this.MetadataIndex.CommonNamespaceDot, StringComparison.Ordinal))
+        {
+            strippedNamespace = fullNamespace.Substring(this.MetadataIndex.CommonNamespaceDot.Length);
+            return true;
+        }
+        else if (fullNamespace == this.MetadataIndex.CommonNamespace)
+        {
+            strippedNamespace = string.Empty;
+            return true;
+        }
+
+        strippedNamespace = null;
+        return false;
+    }
+
+    internal bool IsAttribute(CustomAttribute attribute, string ns, string name) => MetadataUtilities.IsAttribute(this.Reader, attribute, ns, name);
+
+    internal bool TryGetHandleReleaseMethod(EntityHandle handleStructDefHandle, [NotNullWhen(true)] out string? releaseMethod)
+    {
+        if (handleStructDefHandle.IsNil)
+        {
             releaseMethod = null;
             return false;
         }
 
-        internal bool TryGetHandleReleaseMethod(TypeDefinitionHandle handleStructDefHandle, [NotNullWhen(true)] out string? releaseMethod)
+        if (handleStructDefHandle.Kind == HandleKind.TypeReference)
         {
-            return this.MetadataIndex.HandleTypeReleaseMethod.TryGetValue(handleStructDefHandle, out releaseMethod);
-        }
-
-        internal void RequestAllInteropTypes(CancellationToken cancellationToken)
-        {
-            foreach (TypeDefinitionHandle typeDefinitionHandle in this.Reader.TypeDefinitions)
+            if (this.TryGetTypeDefHandle((TypeReferenceHandle)handleStructDefHandle, out TypeDefinitionHandle typeDefHandle))
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefinitionHandle);
-                if (typeDef.BaseType.IsNil)
-                {
-                    continue;
-                }
-
-                if (this.IsCompatibleWithPlatform(typeDef.GetCustomAttributes()))
-                {
-                    try
-                    {
-                        this.volatileCode.GenerationTransaction(delegate
-                        {
-                            this.RequestInteropType(typeDefinitionHandle);
-                        });
-                    }
-                    catch (GenerationFailedException ex) when (IsPlatformCompatibleException(ex))
-                    {
-                        // Something transitively required for this type is not available for this platform, so skip this method.
-                    }
-                }
+                return this.TryGetHandleReleaseMethod(typeDefHandle, out releaseMethod);
             }
         }
-
-        internal void RequestExternMethod(MethodDefinitionHandle methodDefinitionHandle)
+        else if (handleStructDefHandle.Kind == HandleKind.TypeDefinition)
         {
-            if (methodDefinitionHandle.IsNil)
-            {
-                return;
-            }
-
-            MethodDefinition methodDefinition = this.Reader.GetMethodDefinition(methodDefinitionHandle);
-            if (!this.IsCompatibleWithPlatform(methodDefinition.GetCustomAttributes()))
-            {
-                // We've been asked for an interop type that does not apply. This happens because the metadata
-                // may use a TypeReferenceHandle or TypeDefinitionHandle to just one of many arch-specific definitions of this type.
-                // Try to find the appropriate definition for our target architecture.
-                TypeDefinition declaringTypeDef = this.Reader.GetTypeDefinition(methodDefinition.GetDeclaringType());
-                string ns = this.Reader.GetString(declaringTypeDef.Namespace);
-                string methodName = this.Reader.GetString(methodDefinition.Name);
-                if (this.MetadataIndex.MetadataByNamespace[ns].MethodsForOtherPlatform.Contains(methodName))
-                {
-                    throw new PlatformIncompatibleException($"Request for method ({methodName}) that is not available given the target platform.");
-                }
-            }
-
-            this.volatileCode.GenerateMethod(methodDefinitionHandle, () => this.DeclareExternMethod(methodDefinitionHandle));
+            return this.TryGetHandleReleaseMethod((TypeDefinitionHandle)handleStructDefHandle, out releaseMethod);
         }
 
-        internal bool IsInterface(HandleTypeHandleInfo typeInfo)
+        releaseMethod = null;
+        return false;
+    }
+
+    internal bool TryGetHandleReleaseMethod(TypeDefinitionHandle handleStructDefHandle, [NotNullWhen(true)] out string? releaseMethod)
+    {
+        return this.MetadataIndex.HandleTypeReleaseMethod.TryGetValue(handleStructDefHandle, out releaseMethod);
+    }
+
+    internal void RequestAllInteropTypes(CancellationToken cancellationToken)
+    {
+        foreach (TypeDefinitionHandle typeDefinitionHandle in this.Reader.TypeDefinitions)
         {
-            TypeDefinitionHandle tdh = default;
-            if (typeInfo.Handle.Kind == HandleKind.TypeReference)
+            cancellationToken.ThrowIfCancellationRequested();
+            TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefinitionHandle);
+            if (typeDef.BaseType.IsNil)
             {
-                var trh = (TypeReferenceHandle)typeInfo.Handle;
-                this.TryGetTypeDefHandle(trh, out tdh);
-            }
-            else if (typeInfo.Handle.Kind == HandleKind.TypeDefinition)
-            {
-                tdh = (TypeDefinitionHandle)typeInfo.Handle;
+                continue;
             }
 
-            return !tdh.IsNil && (this.Reader.GetTypeDefinition(tdh).Attributes & TypeAttributes.Interface) == TypeAttributes.Interface;
-        }
-
-        internal bool IsInterface(TypeHandleInfo handleInfo)
-        {
-            if (handleInfo is HandleTypeHandleInfo typeInfo)
+            if (this.IsCompatibleWithPlatform(typeDef.GetCustomAttributes()))
             {
-                return this.IsInterface(typeInfo);
-            }
-            else if (handleInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo typeInfo2 })
-            {
-                return this.IsInterface(typeInfo2);
-            }
-
-            return false;
-        }
-
-        internal bool IsInterface(TypeReferenceHandle typeRefHandle)
-        {
-            if (this.TryGetTypeDefHandle(typeRefHandle, out TypeDefinitionHandle typeDefHandle))
-            {
-                TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefHandle);
-                return (typeDef.Attributes & TypeAttributes.Interface) == TypeAttributes.Interface;
-            }
-
-            return false;
-        }
-
-        internal void RequestInteropType(string @namespace, string name)
-        {
-            // PERF: Skip this search if this namespace/name has already been generated (committed, or still in volatileCode).
-            foreach (TypeDefinitionHandle tdh in this.Reader.TypeDefinitions)
-            {
-                TypeDefinition td = this.Reader.GetTypeDefinition(tdh);
-                if (this.Reader.StringComparer.Equals(td.Name, name) && this.Reader.StringComparer.Equals(td.Namespace, @namespace))
+                try
                 {
                     this.volatileCode.GenerationTransaction(delegate
                     {
-                        this.RequestInteropType(tdh);
+                        this.RequestInteropType(typeDefinitionHandle);
                     });
-
-                    return;
+                }
+                catch (GenerationFailedException ex) when (IsPlatformCompatibleException(ex))
+                {
+                    // Something transitively required for this type is not available for this platform, so skip this method.
                 }
             }
+        }
+    }
 
-            throw new GenerationFailedException($"Referenced type \"{@namespace}.{name}\" not found in \"{this.InputAssemblyName}\".");
+    internal void RequestExternMethod(MethodDefinitionHandle methodDefinitionHandle)
+    {
+        if (methodDefinitionHandle.IsNil)
+        {
+            return;
         }
 
-        internal void RequestInteropType(TypeDefinitionHandle typeDefHandle)
+        MethodDefinition methodDefinition = this.Reader.GetMethodDefinition(methodDefinitionHandle);
+        if (!this.IsCompatibleWithPlatform(methodDefinition.GetCustomAttributes()))
+        {
+            // We've been asked for an interop type that does not apply. This happens because the metadata
+            // may use a TypeReferenceHandle or TypeDefinitionHandle to just one of many arch-specific definitions of this type.
+            // Try to find the appropriate definition for our target architecture.
+            TypeDefinition declaringTypeDef = this.Reader.GetTypeDefinition(methodDefinition.GetDeclaringType());
+            string ns = this.Reader.GetString(declaringTypeDef.Namespace);
+            string methodName = this.Reader.GetString(methodDefinition.Name);
+            if (this.MetadataIndex.MetadataByNamespace[ns].MethodsForOtherPlatform.Contains(methodName))
+            {
+                throw new PlatformIncompatibleException($"Request for method ({methodName}) that is not available given the target platform.");
+            }
+        }
+
+        this.volatileCode.GenerateMethod(methodDefinitionHandle, () => this.DeclareExternMethod(methodDefinitionHandle));
+    }
+
+    internal bool IsInterface(HandleTypeHandleInfo typeInfo)
+    {
+        TypeDefinitionHandle tdh = default;
+        if (typeInfo.Handle.Kind == HandleKind.TypeReference)
+        {
+            var trh = (TypeReferenceHandle)typeInfo.Handle;
+            this.TryGetTypeDefHandle(trh, out tdh);
+        }
+        else if (typeInfo.Handle.Kind == HandleKind.TypeDefinition)
+        {
+            tdh = (TypeDefinitionHandle)typeInfo.Handle;
+        }
+
+        return !tdh.IsNil && (this.Reader.GetTypeDefinition(tdh).Attributes & TypeAttributes.Interface) == TypeAttributes.Interface;
+    }
+
+    internal bool IsInterface(TypeHandleInfo handleInfo)
+    {
+        if (handleInfo is HandleTypeHandleInfo typeInfo)
+        {
+            return this.IsInterface(typeInfo);
+        }
+        else if (handleInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo typeInfo2 })
+        {
+            return this.IsInterface(typeInfo2);
+        }
+
+        return false;
+    }
+
+    internal bool IsInterface(TypeReferenceHandle typeRefHandle)
+    {
+        if (this.TryGetTypeDefHandle(typeRefHandle, out TypeDefinitionHandle typeDefHandle))
         {
             TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefHandle);
-            if (typeDef.GetDeclaringType() is { IsNil: false } nestingParentHandle)
+            return (typeDef.Attributes & TypeAttributes.Interface) == TypeAttributes.Interface;
+        }
+
+        return false;
+    }
+
+    internal void RequestInteropType(string @namespace, string name)
+    {
+        // PERF: Skip this search if this namespace/name has already been generated (committed, or still in volatileCode).
+        foreach (TypeDefinitionHandle tdh in this.Reader.TypeDefinitions)
+        {
+            TypeDefinition td = this.Reader.GetTypeDefinition(tdh);
+            if (this.Reader.StringComparer.Equals(td.Name, name) && this.Reader.StringComparer.Equals(td.Namespace, @namespace))
             {
-                // We should only generate this type into its parent type.
-                this.RequestInteropType(nestingParentHandle);
+                this.volatileCode.GenerationTransaction(delegate
+                {
+                    this.RequestInteropType(tdh);
+                });
+
                 return;
             }
-
-            string ns = this.Reader.GetString(typeDef.Namespace);
-            if (!this.IsCompatibleWithPlatform(typeDef.GetCustomAttributes()))
-            {
-                // We've been asked for an interop type that does not apply. This happens because the metadata
-                // may use a TypeReferenceHandle or TypeDefinitionHandle to just one of many arch-specific definitions of this type.
-                // Try to find the appropriate definition for our target architecture.
-                string name = this.Reader.GetString(typeDef.Name);
-                NamespaceMetadata namespaceMetadata = this.MetadataIndex.MetadataByNamespace[ns];
-                if (!namespaceMetadata.Types.TryGetValue(name, out typeDefHandle) && namespaceMetadata.TypesForOtherPlatform.Contains(name))
-                {
-                    throw new PlatformIncompatibleException($"Request for type ({ns}.{name}) that is not available given the target platform.");
-                }
-            }
-
-            this.volatileCode.GenerateType(typeDefHandle, delegate
-            {
-                if (this.RequestInteropType(typeDefHandle, null) is MemberDeclarationSyntax typeDeclaration)
-                {
-                    if (!this.TryStripCommonNamespace(ns, out string? shortNamespace))
-                    {
-                        throw new GenerationFailedException("Unexpected namespace: " + ns);
-                    }
-
-                    if (shortNamespace.Length > 0)
-                    {
-                        typeDeclaration = typeDeclaration.WithAdditionalAnnotations(
-                            new SyntaxAnnotation(NamespaceContainerAnnotation, shortNamespace));
-                    }
-
-                    this.needsWinRTCustomMarshaler |= typeDeclaration.DescendantNodes().OfType<AttributeSyntax>()
-                        .Any(a => a.Name.ToString() == "MarshalAs" && a.ToString().Contains(WinRTCustomMarshalerFullName));
-
-                    this.volatileCode.AddInteropType(typeDefHandle, typeDeclaration);
-                }
-            });
         }
 
-        internal void RequestInteropType(TypeReferenceHandle typeRefHandle)
+        throw new GenerationFailedException($"Referenced type \"{@namespace}.{name}\" not found in \"{this.InputAssemblyName}\".");
+    }
+
+    internal void RequestInteropType(TypeDefinitionHandle typeDefHandle)
+    {
+        TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefHandle);
+        if (typeDef.GetDeclaringType() is { IsNil: false } nestingParentHandle)
         {
-            if (this.TryGetTypeDefHandle(typeRefHandle, out TypeDefinitionHandle typeDefHandle))
+            // We should only generate this type into its parent type.
+            this.RequestInteropType(nestingParentHandle);
+            return;
+        }
+
+        string ns = this.Reader.GetString(typeDef.Namespace);
+        if (!this.IsCompatibleWithPlatform(typeDef.GetCustomAttributes()))
+        {
+            // We've been asked for an interop type that does not apply. This happens because the metadata
+            // may use a TypeReferenceHandle or TypeDefinitionHandle to just one of many arch-specific definitions of this type.
+            // Try to find the appropriate definition for our target architecture.
+            string name = this.Reader.GetString(typeDef.Name);
+            NamespaceMetadata namespaceMetadata = this.MetadataIndex.MetadataByNamespace[ns];
+            if (!namespaceMetadata.Types.TryGetValue(name, out typeDefHandle) && namespaceMetadata.TypesForOtherPlatform.Contains(name))
             {
-                this.RequestInteropType(typeDefHandle);
-            }
-            else
-            {
-                TypeReference typeRef = this.Reader.GetTypeReference(typeRefHandle);
-                if (typeRef.ResolutionScope.Kind == HandleKind.AssemblyReference)
-                {
-                    if (this.SuperGenerator?.TryRequestInteropType(new(this, typeRef)) is not true)
-                    {
-                        // We can't find the interop among our metadata inputs.
-                        // Before we give up and report an error, search for the required type among the compilation's referenced assemblies.
-                        string metadataName = $"{this.Reader.GetString(typeRef.Namespace)}.{this.Reader.GetString(typeRef.Name)}";
-                        if (this.compilation?.GetTypeByMetadataName(metadataName) is null)
-                        {
-                            AssemblyReference assemblyRef = this.Reader.GetAssemblyReference((AssemblyReferenceHandle)typeRef.ResolutionScope);
-                            string scope = this.Reader.GetString(assemblyRef.Name);
-                            throw new GenerationFailedException($"Input metadata file \"{scope}\" has not been provided.");
-                        }
-                    }
-                }
+                throw new PlatformIncompatibleException($"Request for type ({ns}.{name}) that is not available given the target platform.");
             }
         }
 
-        internal void RequestConstant(FieldDefinitionHandle fieldDefHandle)
+        this.volatileCode.GenerateType(typeDefHandle, delegate
         {
-            this.volatileCode.GenerateConstant(fieldDefHandle, delegate
+            if (this.RequestInteropType(typeDefHandle, null) is MemberDeclarationSyntax typeDeclaration)
             {
-                FieldDeclarationSyntax constantDeclaration = this.DeclareConstant(fieldDefHandle);
-                constantDeclaration = this.AddApiDocumentation(constantDeclaration.Declaration.Variables[0].Identifier.ValueText, constantDeclaration);
-                this.volatileCode.AddConstant(fieldDefHandle, constantDeclaration);
-            });
-        }
-
-        internal TypeSyntax? RequestSafeHandle(string releaseMethod)
-        {
-            if (this.volatileCode.TryGetSafeHandleForReleaseMethod(releaseMethod, out TypeSyntax? safeHandleType))
-            {
-                return safeHandleType;
-            }
-
-            if (BclInteropSafeHandles.TryGetValue(releaseMethod, out TypeSyntax? bclType))
-            {
-                return bclType;
-            }
-
-            string safeHandleClassName = $"{releaseMethod}SafeHandle";
-
-            MethodDefinitionHandle? releaseMethodHandle = this.GetMethodByName(releaseMethod);
-            if (!releaseMethodHandle.HasValue)
-            {
-                throw new GenerationFailedException("Unable to find release method named: " + releaseMethod);
-            }
-
-            MethodDefinition releaseMethodDef = this.Reader.GetMethodDefinition(releaseMethodHandle.Value);
-            string releaseMethodModule = this.GetNormalizedModuleName(releaseMethodDef.GetImport());
-
-            var safeHandleTypeIdentifier = IdentifierName(safeHandleClassName);
-            safeHandleType = safeHandleTypeIdentifier;
-
-            MethodSignature<TypeHandleInfo> releaseMethodSignature = releaseMethodDef.DecodeSignature(SignatureHandleProvider.Instance, null);
-            TypeHandleInfo releaseMethodParameterTypeHandleInfo = releaseMethodSignature.ParameterTypes[0];
-            var releaseMethodParameterType = releaseMethodParameterTypeHandleInfo.ToTypeSyntax(this.externSignatureTypeSettings, default);
-
-            // If the release method takes more than one parameter, we can't generate a SafeHandle for it.
-            if (releaseMethodSignature.RequiredParameterCount != 1)
-            {
-                safeHandleType = null;
-            }
-
-            this.volatileCode.AddSafeHandleNameForReleaseMethod(releaseMethod, safeHandleType);
-
-            if (safeHandleType is null)
-            {
-                return safeHandleType;
-            }
-
-            if (this.FindSymbolIfAlreadyAvailable($"{this.Namespace}.{safeHandleType}") is object)
-            {
-                return safeHandleType;
-            }
-
-            this.RequestExternMethod(releaseMethodHandle.Value);
-
-            var atts = this.GetReturnTypeCustomAttributes(releaseMethodDef);
-            var releaseMethodReturnType = releaseMethodSignature.ReturnType.ToTypeSyntax(this.externSignatureTypeSettings, atts);
-
-            this.TryGetRenamedMethod(releaseMethod, out string? renamedReleaseMethod);
-
-            var members = new List<MemberDeclarationSyntax>();
-
-            MemberAccessExpressionSyntax thisHandle = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("handle"));
-            ExpressionSyntax intptrZero = DefaultExpression(IntPtrTypeSyntax);
-            ExpressionSyntax intptrMinusOne = ObjectCreationExpression(IntPtrTypeSyntax).AddArgumentListArguments(Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(-1))));
-
-            // private static readonly IntPtr INVALID_HANDLE_VALUE = new IntPtr(-1);
-            IdentifierNameSyntax invalidValueFieldName = IdentifierName("INVALID_HANDLE_VALUE");
-            members.Add(FieldDeclaration(VariableDeclaration(IntPtrTypeSyntax).AddVariables(
-                VariableDeclarator(invalidValueFieldName.Identifier).WithInitializer(EqualsValueClause(intptrMinusOne))))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PrivateKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword)));
-
-            // public SafeHandle() : base(INVALID_HANDLE_VALUE, true)
-            members.Add(ConstructorDeclaration(safeHandleTypeIdentifier.Identifier)
-                .AddModifiers(TokenWithSpace(this.Visibility))
-                .WithInitializer(ConstructorInitializer(SyntaxKind.BaseConstructorInitializer, ArgumentList().AddArguments(
-                    Argument(invalidValueFieldName),
-                    Argument(LiteralExpression(SyntaxKind.TrueLiteralExpression)))))
-                .WithBody(Block()));
-
-            // public SafeHandle(IntPtr preexistingHandle, bool ownsHandle = true) : base(INVALID_HANDLE_VALUE, ownsHandle) { this.SetHandle(preexistingHandle); }
-            const string preexistingHandleName = "preexistingHandle";
-            const string ownsHandleName = "ownsHandle";
-            members.Add(ConstructorDeclaration(safeHandleTypeIdentifier.Identifier)
-                .AddModifiers(TokenWithSpace(this.Visibility))
-                .AddParameterListParameters(
-                    Parameter(Identifier(preexistingHandleName)).WithType(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))),
-                    Parameter(Identifier(ownsHandleName)).WithType(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)))
-                        .WithDefault(EqualsValueClause(LiteralExpression(SyntaxKind.TrueLiteralExpression))))
-                .WithInitializer(ConstructorInitializer(SyntaxKind.BaseConstructorInitializer, ArgumentList().AddArguments(
-                    Argument(invalidValueFieldName),
-                    Argument(IdentifierName(ownsHandleName)))))
-                .WithBody(Block().AddStatements(
-                    ExpressionStatement(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("SetHandle")))
-                        .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(IdentifierName(preexistingHandleName)))))))));
-
-            // public override bool IsInvalid => this.handle == default || this.Handle == INVALID_HANDLE_VALUE;
-            members.Add(PropertyDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), nameof(SafeHandle.IsInvalid))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
-                .WithExpressionBody(ArrowExpressionClause(
-                    BinaryExpression(
-                        SyntaxKind.LogicalOrExpression,
-                        BinaryExpression(SyntaxKind.EqualsExpression, thisHandle, intptrZero),
-                        BinaryExpression(SyntaxKind.EqualsExpression, thisHandle, invalidValueFieldName))))
-                .WithSemicolonToken(SemicolonWithLineFeed));
-
-            // (struct)this.handle or (struct)(nuint)(nint)this.handle, as appropriate.
-            bool isUIntPtr = this.TryGetTypeDefFieldType(releaseMethodParameterTypeHandleInfo, out TypeHandleInfo? typeDefStructFieldType) && typeDefStructFieldType is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.UIntPtr };
-            ArgumentSyntax releaseHandleArgument = Argument(CastExpression(
-                releaseMethodParameterType.Type,
-                isUIntPtr ? CastExpression(IdentifierName("nuint"), CastExpression(IdentifierName("nint"), thisHandle)) : thisHandle));
-
-            // protected override bool ReleaseHandle() => ReleaseMethod((struct)this.handle);
-            // Special case release functions based on their return type as follows: (https://github.com/microsoft/win32metadata/issues/25)
-            //  * bool => true is success
-            //  * int => zero is success
-            //  * uint => zero is success
-            //  * byte => non-zero is success
-            ExpressionSyntax releaseInvocation = InvocationExpression(
-                MemberAccessExpression(
-                    SyntaxKind.SimpleMemberAccessExpression,
-                    IdentifierName(this.options.ClassName),
-                    IdentifierName(renamedReleaseMethod ?? releaseMethod)),
-                ArgumentList().AddArguments(releaseHandleArgument));
-            BlockSyntax? releaseBlock = null;
-            if (!(releaseMethodReturnType.Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.BoolKeyword } } ||
-                releaseMethodReturnType.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "BOOL" } } }))
-            {
-                switch (releaseMethodReturnType.Type)
+                if (!this.TryStripCommonNamespace(ns, out string? shortNamespace))
                 {
-                    case PredefinedTypeSyntax predefined:
-                        SyntaxKind returnType = predefined.Keyword.Kind();
-                        if (returnType == SyntaxKind.IntKeyword)
-                        {
-                            releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)));
-                        }
-                        else if (returnType == SyntaxKind.UIntKeyword)
-                        {
-                            releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)));
-                        }
-                        else if (returnType == SyntaxKind.ByteKeyword)
-                        {
-                            releaseInvocation = BinaryExpression(SyntaxKind.NotEqualsExpression, releaseInvocation, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)));
-                        }
-                        else if (returnType == SyntaxKind.VoidKeyword)
-                        {
-                            releaseBlock = Block(
-                                ExpressionStatement(releaseInvocation),
-                                ReturnStatement(LiteralExpression(SyntaxKind.TrueLiteralExpression)));
-                        }
-                        else
-                        {
-                            throw new NotSupportedException($"Return type {returnType} on release method {releaseMethod} not supported.");
-                        }
+                    throw new GenerationFailedException("Unexpected namespace: " + ns);
+                }
 
-                        break;
-                    case QualifiedNameSyntax { Right: IdentifierNameSyntax identifierName }:
-                        switch (identifierName.Identifier.ValueText)
-                        {
-                            case "NTSTATUS":
-                                this.TryGenerateConstantOrThrow("STATUS_SUCCESS");
-                                ExpressionSyntax statusSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, this.methodsAndConstantsClassName, IdentifierName("STATUS_SUCCESS"));
-                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, statusSuccess);
-                                break;
-                            case "HRESULT":
-                                this.TryGenerateConstantOrThrow("S_OK");
-                                ExpressionSyntax ok = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, this.methodsAndConstantsClassName, IdentifierName("S_OK"));
-                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, ok);
-                                break;
-                            default:
-                                throw new NotSupportedException($"Return type {identifierName.Identifier.ValueText} on release method {releaseMethod} not supported.");
-                        }
+                if (shortNamespace.Length > 0)
+                {
+                    typeDeclaration = typeDeclaration.WithAdditionalAnnotations(
+                        new SyntaxAnnotation(NamespaceContainerAnnotation, shortNamespace));
+                }
 
-                        break;
+                this.needsWinRTCustomMarshaler |= typeDeclaration.DescendantNodes().OfType<AttributeSyntax>()
+                    .Any(a => a.Name.ToString() == "MarshalAs" && a.ToString().Contains(WinRTCustomMarshalerFullName));
+
+                this.volatileCode.AddInteropType(typeDefHandle, typeDeclaration);
+            }
+        });
+    }
+
+    internal void RequestInteropType(TypeReferenceHandle typeRefHandle)
+    {
+        if (this.TryGetTypeDefHandle(typeRefHandle, out TypeDefinitionHandle typeDefHandle))
+        {
+            this.RequestInteropType(typeDefHandle);
+        }
+        else
+        {
+            TypeReference typeRef = this.Reader.GetTypeReference(typeRefHandle);
+            if (typeRef.ResolutionScope.Kind == HandleKind.AssemblyReference)
+            {
+                if (this.SuperGenerator?.TryRequestInteropType(new(this, typeRef)) is not true)
+                {
+                    // We can't find the interop among our metadata inputs.
+                    // Before we give up and report an error, search for the required type among the compilation's referenced assemblies.
+                    string metadataName = $"{this.Reader.GetString(typeRef.Namespace)}.{this.Reader.GetString(typeRef.Name)}";
+                    if (this.compilation?.GetTypeByMetadataName(metadataName) is null)
+                    {
+                        AssemblyReference assemblyRef = this.Reader.GetAssemblyReference((AssemblyReferenceHandle)typeRef.ResolutionScope);
+                        string scope = this.Reader.GetString(assemblyRef.Name);
+                        throw new GenerationFailedException($"Input metadata file \"{scope}\" has not been provided.");
+                    }
                 }
             }
+        }
+    }
 
-            MethodDeclarationSyntax releaseHandleDeclaration = MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Identifier("ReleaseHandle"))
-                .AddModifiers(TokenWithSpace(SyntaxKind.ProtectedKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword));
-            releaseHandleDeclaration = releaseBlock is null
-                ? releaseHandleDeclaration
-                     .WithExpressionBody(ArrowExpressionClause(releaseInvocation))
-                     .WithSemicolonToken(SemicolonWithLineFeed)
-                : releaseHandleDeclaration
-                    .WithBody(releaseBlock);
-            members.Add(releaseHandleDeclaration);
+    internal void RequestConstant(FieldDefinitionHandle fieldDefHandle)
+    {
+        this.volatileCode.GenerateConstant(fieldDefHandle, delegate
+        {
+            FieldDeclarationSyntax constantDeclaration = this.DeclareConstant(fieldDefHandle);
+            constantDeclaration = this.AddApiDocumentation(constantDeclaration.Declaration.Variables[0].Identifier.ValueText, constantDeclaration);
+            this.volatileCode.AddConstant(fieldDefHandle, constantDeclaration);
+        });
+    }
 
-            ClassDeclarationSyntax safeHandleDeclaration = ClassDeclaration(Identifier(safeHandleClassName))
-                .AddModifiers(TokenWithSpace(this.Visibility))
-                .WithBaseList(BaseList(SingletonSeparatedList<BaseTypeSyntax>(SimpleBaseType(SafeHandleTypeSyntax))))
-                .AddMembers(members.ToArray())
-                .WithLeadingTrivia(ParseLeadingTrivia($@"
+    internal TypeSyntax? RequestSafeHandle(string releaseMethod)
+    {
+        if (this.volatileCode.TryGetSafeHandleForReleaseMethod(releaseMethod, out TypeSyntax? safeHandleType))
+        {
+            return safeHandleType;
+        }
+
+        if (BclInteropSafeHandles.TryGetValue(releaseMethod, out TypeSyntax? bclType))
+        {
+            return bclType;
+        }
+
+        string safeHandleClassName = $"{releaseMethod}SafeHandle";
+
+        MethodDefinitionHandle? releaseMethodHandle = this.GetMethodByName(releaseMethod);
+        if (!releaseMethodHandle.HasValue)
+        {
+            throw new GenerationFailedException("Unable to find release method named: " + releaseMethod);
+        }
+
+        MethodDefinition releaseMethodDef = this.Reader.GetMethodDefinition(releaseMethodHandle.Value);
+        string releaseMethodModule = this.GetNormalizedModuleName(releaseMethodDef.GetImport());
+
+        var safeHandleTypeIdentifier = IdentifierName(safeHandleClassName);
+        safeHandleType = safeHandleTypeIdentifier;
+
+        MethodSignature<TypeHandleInfo> releaseMethodSignature = releaseMethodDef.DecodeSignature(SignatureHandleProvider.Instance, null);
+        TypeHandleInfo releaseMethodParameterTypeHandleInfo = releaseMethodSignature.ParameterTypes[0];
+        var releaseMethodParameterType = releaseMethodParameterTypeHandleInfo.ToTypeSyntax(this.externSignatureTypeSettings, default);
+
+        // If the release method takes more than one parameter, we can't generate a SafeHandle for it.
+        if (releaseMethodSignature.RequiredParameterCount != 1)
+        {
+            safeHandleType = null;
+        }
+
+        this.volatileCode.AddSafeHandleNameForReleaseMethod(releaseMethod, safeHandleType);
+
+        if (safeHandleType is null)
+        {
+            return safeHandleType;
+        }
+
+        if (this.FindSymbolIfAlreadyAvailable($"{this.Namespace}.{safeHandleType}") is object)
+        {
+            return safeHandleType;
+        }
+
+        this.RequestExternMethod(releaseMethodHandle.Value);
+
+        var atts = this.GetReturnTypeCustomAttributes(releaseMethodDef);
+        var releaseMethodReturnType = releaseMethodSignature.ReturnType.ToTypeSyntax(this.externSignatureTypeSettings, atts);
+
+        this.TryGetRenamedMethod(releaseMethod, out string? renamedReleaseMethod);
+
+        var members = new List<MemberDeclarationSyntax>();
+
+        MemberAccessExpressionSyntax thisHandle = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("handle"));
+        ExpressionSyntax intptrZero = DefaultExpression(IntPtrTypeSyntax);
+        ExpressionSyntax intptrMinusOne = ObjectCreationExpression(IntPtrTypeSyntax).AddArgumentListArguments(Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(-1))));
+
+        // private static readonly IntPtr INVALID_HANDLE_VALUE = new IntPtr(-1);
+        IdentifierNameSyntax invalidValueFieldName = IdentifierName("INVALID_HANDLE_VALUE");
+        members.Add(FieldDeclaration(VariableDeclaration(IntPtrTypeSyntax).AddVariables(
+            VariableDeclarator(invalidValueFieldName.Identifier).WithInitializer(EqualsValueClause(intptrMinusOne))))
+            .AddModifiers(TokenWithSpace(SyntaxKind.PrivateKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword)));
+
+        // public SafeHandle() : base(INVALID_HANDLE_VALUE, true)
+        members.Add(ConstructorDeclaration(safeHandleTypeIdentifier.Identifier)
+            .AddModifiers(TokenWithSpace(this.Visibility))
+            .WithInitializer(ConstructorInitializer(SyntaxKind.BaseConstructorInitializer, ArgumentList().AddArguments(
+                Argument(invalidValueFieldName),
+                Argument(LiteralExpression(SyntaxKind.TrueLiteralExpression)))))
+            .WithBody(Block()));
+
+        // public SafeHandle(IntPtr preexistingHandle, bool ownsHandle = true) : base(INVALID_HANDLE_VALUE, ownsHandle) { this.SetHandle(preexistingHandle); }
+        const string preexistingHandleName = "preexistingHandle";
+        const string ownsHandleName = "ownsHandle";
+        members.Add(ConstructorDeclaration(safeHandleTypeIdentifier.Identifier)
+            .AddModifiers(TokenWithSpace(this.Visibility))
+            .AddParameterListParameters(
+                Parameter(Identifier(preexistingHandleName)).WithType(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))),
+                Parameter(Identifier(ownsHandleName)).WithType(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)))
+                    .WithDefault(EqualsValueClause(LiteralExpression(SyntaxKind.TrueLiteralExpression))))
+            .WithInitializer(ConstructorInitializer(SyntaxKind.BaseConstructorInitializer, ArgumentList().AddArguments(
+                Argument(invalidValueFieldName),
+                Argument(IdentifierName(ownsHandleName)))))
+            .WithBody(Block().AddStatements(
+                ExpressionStatement(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("SetHandle")))
+                    .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(IdentifierName(preexistingHandleName)))))))));
+
+        // public override bool IsInvalid => this.handle == default || this.Handle == INVALID_HANDLE_VALUE;
+        members.Add(PropertyDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), nameof(SafeHandle.IsInvalid))
+            .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
+            .WithExpressionBody(ArrowExpressionClause(
+                BinaryExpression(
+                    SyntaxKind.LogicalOrExpression,
+                    BinaryExpression(SyntaxKind.EqualsExpression, thisHandle, intptrZero),
+                    BinaryExpression(SyntaxKind.EqualsExpression, thisHandle, invalidValueFieldName))))
+            .WithSemicolonToken(SemicolonWithLineFeed));
+
+        // (struct)this.handle or (struct)(nuint)(nint)this.handle, as appropriate.
+        bool isUIntPtr = this.TryGetTypeDefFieldType(releaseMethodParameterTypeHandleInfo, out TypeHandleInfo? typeDefStructFieldType) && typeDefStructFieldType is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.UIntPtr };
+        ArgumentSyntax releaseHandleArgument = Argument(CastExpression(
+            releaseMethodParameterType.Type,
+            isUIntPtr ? CastExpression(IdentifierName("nuint"), CastExpression(IdentifierName("nint"), thisHandle)) : thisHandle));
+
+        // protected override bool ReleaseHandle() => ReleaseMethod((struct)this.handle);
+        // Special case release functions based on their return type as follows: (https://github.com/microsoft/win32metadata/issues/25)
+        //  * bool => true is success
+        //  * int => zero is success
+        //  * uint => zero is success
+        //  * byte => non-zero is success
+        ExpressionSyntax releaseInvocation = InvocationExpression(
+            MemberAccessExpression(
+                SyntaxKind.SimpleMemberAccessExpression,
+                IdentifierName(this.options.ClassName),
+                IdentifierName(renamedReleaseMethod ?? releaseMethod)),
+            ArgumentList().AddArguments(releaseHandleArgument));
+        BlockSyntax? releaseBlock = null;
+        if (!(releaseMethodReturnType.Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.BoolKeyword } } ||
+            releaseMethodReturnType.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "BOOL" } } }))
+        {
+            switch (releaseMethodReturnType.Type)
+            {
+                case PredefinedTypeSyntax predefined:
+                    SyntaxKind returnType = predefined.Keyword.Kind();
+                    if (returnType == SyntaxKind.IntKeyword)
+                    {
+                        releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)));
+                    }
+                    else if (returnType == SyntaxKind.UIntKeyword)
+                    {
+                        releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)));
+                    }
+                    else if (returnType == SyntaxKind.ByteKeyword)
+                    {
+                        releaseInvocation = BinaryExpression(SyntaxKind.NotEqualsExpression, releaseInvocation, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)));
+                    }
+                    else if (returnType == SyntaxKind.VoidKeyword)
+                    {
+                        releaseBlock = Block(
+                            ExpressionStatement(releaseInvocation),
+                            ReturnStatement(LiteralExpression(SyntaxKind.TrueLiteralExpression)));
+                    }
+                    else
+                    {
+                        throw new NotSupportedException($"Return type {returnType} on release method {releaseMethod} not supported.");
+                    }
+
+                    break;
+                case QualifiedNameSyntax { Right: IdentifierNameSyntax identifierName }:
+                    switch (identifierName.Identifier.ValueText)
+                    {
+                        case "NTSTATUS":
+                            this.TryGenerateConstantOrThrow("STATUS_SUCCESS");
+                            ExpressionSyntax statusSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, this.methodsAndConstantsClassName, IdentifierName("STATUS_SUCCESS"));
+                            releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, statusSuccess);
+                            break;
+                        case "HRESULT":
+                            this.TryGenerateConstantOrThrow("S_OK");
+                            ExpressionSyntax ok = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, this.methodsAndConstantsClassName, IdentifierName("S_OK"));
+                            releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, ok);
+                            break;
+                        default:
+                            throw new NotSupportedException($"Return type {identifierName.Identifier.ValueText} on release method {releaseMethod} not supported.");
+                    }
+
+                    break;
+            }
+        }
+
+        MethodDeclarationSyntax releaseHandleDeclaration = MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Identifier("ReleaseHandle"))
+            .AddModifiers(TokenWithSpace(SyntaxKind.ProtectedKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword));
+        releaseHandleDeclaration = releaseBlock is null
+            ? releaseHandleDeclaration
+                 .WithExpressionBody(ArrowExpressionClause(releaseInvocation))
+                 .WithSemicolonToken(SemicolonWithLineFeed)
+            : releaseHandleDeclaration
+                .WithBody(releaseBlock);
+        members.Add(releaseHandleDeclaration);
+
+        ClassDeclarationSyntax safeHandleDeclaration = ClassDeclaration(Identifier(safeHandleClassName))
+            .AddModifiers(TokenWithSpace(this.Visibility))
+            .WithBaseList(BaseList(SingletonSeparatedList<BaseTypeSyntax>(SimpleBaseType(SafeHandleTypeSyntax))))
+            .AddMembers(members.ToArray())
+            .WithLeadingTrivia(ParseLeadingTrivia($@"
         /// <summary>
         /// Represents a Win32 handle that can be closed with <see cref=""{this.options.ClassName}.{renamedReleaseMethod ?? releaseMethod}""/>.
         /// </summary>
 "));
 
-            this.volatileCode.AddSafeHandleType(safeHandleDeclaration);
-            return safeHandleType;
-        }
+        this.volatileCode.AddSafeHandleType(safeHandleDeclaration);
+        return safeHandleType;
+    }
 
-        internal bool TryGetTypeDefFieldType(TypeHandleInfo typeDef, [NotNullWhen(true)] out TypeHandleInfo? fieldType)
+    internal bool TryGetTypeDefFieldType(TypeHandleInfo typeDef, [NotNullWhen(true)] out TypeHandleInfo? fieldType)
+    {
+        if (typeDef is HandleTypeHandleInfo handle)
         {
-            if (typeDef is HandleTypeHandleInfo handle)
+            switch (handle.Handle.Kind)
             {
-                switch (handle.Handle.Kind)
-                {
-                    case HandleKind.TypeReference:
-                        if (this.TryGetTypeDefHandle((TypeReferenceHandle)handle.Handle, out TypeDefinitionHandle tdh))
-                        {
-                            return Resolve(tdh, out fieldType);
-                        }
-
-                        break;
-                    case HandleKind.TypeDefinition:
-                        return Resolve((TypeDefinitionHandle)handle.Handle, out fieldType);
-                }
-            }
-
-            bool Resolve(TypeDefinitionHandle tdh, [NotNullWhen(true)] out TypeHandleInfo? fieldType)
-            {
-                TypeDefinition td = this.Reader.GetTypeDefinition(tdh);
-                foreach (FieldDefinitionHandle fdh in td.GetFields())
-                {
-                    FieldDefinition fd = this.Reader.GetFieldDefinition(fdh);
-                    fieldType = fd.DecodeSignature(SignatureHandleProvider.Instance, null);
-                    return true;
-                }
-
-                fieldType = null;
-                return false;
-            }
-
-            fieldType = default;
-            return false;
-        }
-
-        internal void GetBaseTypeInfo(TypeDefinition typeDef, out StringHandle baseTypeName, out StringHandle baseTypeNamespace)
-        {
-            if (typeDef.BaseType.IsNil)
-            {
-                baseTypeName = default;
-                baseTypeNamespace = default;
-            }
-            else
-            {
-                switch (typeDef.BaseType.Kind)
-                {
-                    case HandleKind.TypeReference:
-                        TypeReference baseTypeRef = this.Reader.GetTypeReference((TypeReferenceHandle)typeDef.BaseType);
-                        baseTypeName = baseTypeRef.Name;
-                        baseTypeNamespace = baseTypeRef.Namespace;
-                        break;
-                    case HandleKind.TypeDefinition:
-                        TypeDefinition baseTypeDef = this.Reader.GetTypeDefinition((TypeDefinitionHandle)typeDef.BaseType);
-                        baseTypeName = baseTypeDef.Name;
-                        baseTypeNamespace = baseTypeDef.Namespace;
-                        break;
-                    default:
-                        throw new NotSupportedException("Unsupported base type handle: " + typeDef.BaseType.Kind);
-                }
-            }
-        }
-
-        internal MemberDeclarationSyntax? RequestSpecialTypeDefStruct(string specialName, out string fullyQualifiedName)
-        {
-            string subNamespace = "Foundation";
-            string ns = $"{this.Namespace}.{subNamespace}";
-            fullyQualifiedName = $"{ns}.{specialName}";
-
-            // Skip if the compilation already defines this type or can access it from elsewhere.
-            if (this.FindSymbolIfAlreadyAvailable(fullyQualifiedName) is object)
-            {
-                // The type already exists either in this project or a referenced one.
-                return null;
-            }
-
-            MemberDeclarationSyntax? specialDeclaration = null;
-            if (this.InputAssemblyName.Equals("Windows.Win32", StringComparison.OrdinalIgnoreCase))
-            {
-                this.volatileCode.GenerateSpecialType(specialName, delegate
-                {
-                    switch (specialName)
+                case HandleKind.TypeReference:
+                    if (this.TryGetTypeDefHandle((TypeReferenceHandle)handle.Handle, out TypeDefinitionHandle tdh))
                     {
-                        case "PCWSTR":
-                            specialDeclaration = this.FetchTemplate($"{specialName}");
-
-                            if (this.canUseSpan)
-                            {
-                                // internal ReadOnlySpan<char> AsSpan() => this.Value is null ? default(ReadOnlySpan<char>) : new ReadOnlySpan<char>(this.Value, this.Length);
-                                specialDeclaration = ((TypeDeclarationSyntax)specialDeclaration).AddMembers(
-                                        this.CreateAsSpanMethodOverValueAndLength(MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword)))));
-                            }
-
-                            this.TryGenerateType("Windows.Win32.Foundation.PWSTR"); // the template references this type
-                            break;
-                        case "PCSTR":
-                            specialDeclaration = this.FetchTemplate($"{specialName}");
-
-                            if (this.canUseSpan)
-                            {
-                                // internal ReadOnlySpan<byte> AsSpan() => this.Value is null ? default(ReadOnlySpan<byte>) : new ReadOnlySpan<byte>(this.Value, this.Length);
-                                specialDeclaration = ((TypeDeclarationSyntax)specialDeclaration).AddMembers(
-                                        this.CreateAsSpanMethodOverValueAndLength(MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.ByteKeyword)))));
-                            }
-
-                            this.TryGenerateType("Windows.Win32.Foundation.PSTR"); // the template references this type
-                            break;
-                        default:
-                            throw new ArgumentException($"This special name is not recognized: \"{specialName}\".", nameof(specialName));
+                        return Resolve(tdh, out fieldType);
                     }
 
-                    if (specialDeclaration is null)
-                    {
-                        throw new GenerationFailedException("Failed to parse template.");
-                    }
-
-                    specialDeclaration = specialDeclaration.WithAdditionalAnnotations(new SyntaxAnnotation(NamespaceContainerAnnotation, subNamespace));
-
-                    this.volatileCode.AddSpecialType(specialName, specialDeclaration);
-                });
+                    break;
+                case HandleKind.TypeDefinition:
+                    return Resolve((TypeDefinitionHandle)handle.Handle, out fieldType);
             }
-            else if (this.SuperGenerator?.TryGetGenerator("Windows.Win32", out Generator? win32Generator) is true)
-            {
-                string? fullyQualifiedNameLocal = null!;
-                win32Generator.volatileCode.GenerationTransaction(delegate
-                {
-                    specialDeclaration = win32Generator.RequestSpecialTypeDefStruct(specialName, out fullyQualifiedNameLocal);
-                });
-                fullyQualifiedName = fullyQualifiedNameLocal;
-            }
-
-            return specialDeclaration;
         }
 
-        internal CustomAttribute? FindNativeArrayInfoAttribute(CustomAttributeHandleCollection customAttributeHandles)
+        bool Resolve(TypeDefinitionHandle tdh, [NotNullWhen(true)] out TypeHandleInfo? fieldType)
         {
-            foreach (var handle in customAttributeHandles)
+            TypeDefinition td = this.Reader.GetTypeDefinition(tdh);
+            foreach (FieldDefinitionHandle fdh in td.GetFields())
             {
-                CustomAttribute att = this.Reader.GetCustomAttribute(handle);
-                if (this.IsAttribute(att, InteropDecorationNamespace, NativeArrayInfoAttribute))
-                {
-                    return att;
-                }
-            }
-
-            return null;
-        }
-
-        internal CustomAttribute? FindInteropDecorativeAttribute(CustomAttributeHandleCollection customAttributeHandles, string attributeName)
-        {
-            foreach (var handle in customAttributeHandles)
-            {
-                CustomAttribute att = this.Reader.GetCustomAttribute(handle);
-                if (this.IsAttribute(att, InteropDecorationNamespace, attributeName))
-                {
-                    return att;
-                }
-            }
-
-            return null;
-        }
-
-        internal bool TryGetTypeDefHandle(TypeReferenceHandle typeRefHandle, out QualifiedTypeDefinitionHandle typeDefHandle)
-        {
-            if (this.SuperGenerator is object)
-            {
-                return this.SuperGenerator.TryGetTypeDefinitionHandle(new QualifiedTypeReferenceHandle(this, typeRefHandle), out typeDefHandle);
-            }
-
-            if (this.TryGetTypeDefHandle(typeRefHandle, out TypeDefinitionHandle localTypeDefHandle))
-            {
-                typeDefHandle = new QualifiedTypeDefinitionHandle(this, localTypeDefHandle);
+                FieldDefinition fd = this.Reader.GetFieldDefinition(fdh);
+                fieldType = fd.DecodeSignature(SignatureHandleProvider.Instance, null);
                 return true;
             }
 
-            typeDefHandle = default;
+            fieldType = null;
             return false;
         }
 
-        /// <summary>
-        /// Attempts to translate a <see cref="TypeReferenceHandle"/> to a <see cref="TypeDefinitionHandle"/>.
-        /// </summary>
-        /// <param name="typeRefHandle">The reference handle.</param>
-        /// <param name="typeDefHandle">Receives the type def handle, if one was discovered.</param>
-        /// <returns><see langword="true"/> if a TypeDefinition was found; otherwise <see langword="false"/>.</returns>
-        internal bool TryGetTypeDefHandle(TypeReferenceHandle typeRefHandle, out TypeDefinitionHandle typeDefHandle)
-        {
-            if (this.refToDefCache.TryGetValue(typeRefHandle, out typeDefHandle))
-            {
-                return !typeDefHandle.IsNil;
-            }
+        fieldType = default;
+        return false;
+    }
 
-            var typeRef = this.Reader.GetTypeReference(typeRefHandle);
-            if (typeRef.ResolutionScope.Kind != HandleKind.AssemblyReference)
+    internal void GetBaseTypeInfo(TypeDefinition typeDef, out StringHandle baseTypeName, out StringHandle baseTypeNamespace)
+    {
+        if (typeDef.BaseType.IsNil)
+        {
+            baseTypeName = default;
+            baseTypeNamespace = default;
+        }
+        else
+        {
+            switch (typeDef.BaseType.Kind)
             {
-                foreach (TypeDefinitionHandle tdh in this.Reader.TypeDefinitions)
+                case HandleKind.TypeReference:
+                    TypeReference baseTypeRef = this.Reader.GetTypeReference((TypeReferenceHandle)typeDef.BaseType);
+                    baseTypeName = baseTypeRef.Name;
+                    baseTypeNamespace = baseTypeRef.Namespace;
+                    break;
+                case HandleKind.TypeDefinition:
+                    TypeDefinition baseTypeDef = this.Reader.GetTypeDefinition((TypeDefinitionHandle)typeDef.BaseType);
+                    baseTypeName = baseTypeDef.Name;
+                    baseTypeNamespace = baseTypeDef.Namespace;
+                    break;
+                default:
+                    throw new NotSupportedException("Unsupported base type handle: " + typeDef.BaseType.Kind);
+            }
+        }
+    }
+
+    internal MemberDeclarationSyntax? RequestSpecialTypeDefStruct(string specialName, out string fullyQualifiedName)
+    {
+        string subNamespace = "Foundation";
+        string ns = $"{this.Namespace}.{subNamespace}";
+        fullyQualifiedName = $"{ns}.{specialName}";
+
+        // Skip if the compilation already defines this type or can access it from elsewhere.
+        if (this.FindSymbolIfAlreadyAvailable(fullyQualifiedName) is object)
+        {
+            // The type already exists either in this project or a referenced one.
+            return null;
+        }
+
+        MemberDeclarationSyntax? specialDeclaration = null;
+        if (this.InputAssemblyName.Equals("Windows.Win32", StringComparison.OrdinalIgnoreCase))
+        {
+            this.volatileCode.GenerateSpecialType(specialName, delegate
+            {
+                switch (specialName)
                 {
-                    TypeDefinition typeDef = this.Reader.GetTypeDefinition(tdh);
-                    if (typeDef.Name == typeRef.Name && typeDef.Namespace == typeRef.Namespace)
-                    {
-                        if (typeRef.ResolutionScope.Kind == HandleKind.TypeReference)
+                    case "PCWSTR":
+                        specialDeclaration = this.FetchTemplate($"{specialName}");
+
+                        if (this.canUseSpan)
                         {
-                            // The ref is nested. Verify that the type we found is nested in the same type as well.
-                            if (this.TryGetTypeDefHandle((TypeReferenceHandle)typeRef.ResolutionScope, out TypeDefinitionHandle nestingTypeDef) && nestingTypeDef == typeDef.GetDeclaringType())
-                            {
-                                typeDefHandle = tdh;
-                                break;
-                            }
+                            // internal ReadOnlySpan<char> AsSpan() => this.Value is null ? default(ReadOnlySpan<char>) : new ReadOnlySpan<char>(this.Value, this.Length);
+                            specialDeclaration = ((TypeDeclarationSyntax)specialDeclaration).AddMembers(
+                                    this.CreateAsSpanMethodOverValueAndLength(MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword)))));
                         }
-                        else if (typeRef.ResolutionScope.Kind == HandleKind.ModuleDefinition && typeDef.GetDeclaringType().IsNil)
+
+                        this.TryGenerateType("Windows.Win32.Foundation.PWSTR"); // the template references this type
+                        break;
+                    case "PCSTR":
+                        specialDeclaration = this.FetchTemplate($"{specialName}");
+
+                        if (this.canUseSpan)
+                        {
+                            // internal ReadOnlySpan<byte> AsSpan() => this.Value is null ? default(ReadOnlySpan<byte>) : new ReadOnlySpan<byte>(this.Value, this.Length);
+                            specialDeclaration = ((TypeDeclarationSyntax)specialDeclaration).AddMembers(
+                                    this.CreateAsSpanMethodOverValueAndLength(MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.ByteKeyword)))));
+                        }
+
+                        this.TryGenerateType("Windows.Win32.Foundation.PSTR"); // the template references this type
+                        break;
+                    default:
+                        throw new ArgumentException($"This special name is not recognized: \"{specialName}\".", nameof(specialName));
+                }
+
+                if (specialDeclaration is null)
+                {
+                    throw new GenerationFailedException("Failed to parse template.");
+                }
+
+                specialDeclaration = specialDeclaration.WithAdditionalAnnotations(new SyntaxAnnotation(NamespaceContainerAnnotation, subNamespace));
+
+                this.volatileCode.AddSpecialType(specialName, specialDeclaration);
+            });
+        }
+        else if (this.SuperGenerator?.TryGetGenerator("Windows.Win32", out Generator? win32Generator) is true)
+        {
+            string? fullyQualifiedNameLocal = null!;
+            win32Generator.volatileCode.GenerationTransaction(delegate
+            {
+                specialDeclaration = win32Generator.RequestSpecialTypeDefStruct(specialName, out fullyQualifiedNameLocal);
+            });
+            fullyQualifiedName = fullyQualifiedNameLocal;
+        }
+
+        return specialDeclaration;
+    }
+
+    internal CustomAttribute? FindNativeArrayInfoAttribute(CustomAttributeHandleCollection customAttributeHandles)
+    {
+        foreach (var handle in customAttributeHandles)
+        {
+            CustomAttribute att = this.Reader.GetCustomAttribute(handle);
+            if (this.IsAttribute(att, InteropDecorationNamespace, NativeArrayInfoAttribute))
+            {
+                return att;
+            }
+        }
+
+        return null;
+    }
+
+    internal CustomAttribute? FindInteropDecorativeAttribute(CustomAttributeHandleCollection customAttributeHandles, string attributeName)
+    {
+        foreach (var handle in customAttributeHandles)
+        {
+            CustomAttribute att = this.Reader.GetCustomAttribute(handle);
+            if (this.IsAttribute(att, InteropDecorationNamespace, attributeName))
+            {
+                return att;
+            }
+        }
+
+        return null;
+    }
+
+    internal bool TryGetTypeDefHandle(TypeReferenceHandle typeRefHandle, out QualifiedTypeDefinitionHandle typeDefHandle)
+    {
+        if (this.SuperGenerator is object)
+        {
+            return this.SuperGenerator.TryGetTypeDefinitionHandle(new QualifiedTypeReferenceHandle(this, typeRefHandle), out typeDefHandle);
+        }
+
+        if (this.TryGetTypeDefHandle(typeRefHandle, out TypeDefinitionHandle localTypeDefHandle))
+        {
+            typeDefHandle = new QualifiedTypeDefinitionHandle(this, localTypeDefHandle);
+            return true;
+        }
+
+        typeDefHandle = default;
+        return false;
+    }
+
+    /// <summary>
+    /// Attempts to translate a <see cref="TypeReferenceHandle"/> to a <see cref="TypeDefinitionHandle"/>.
+    /// </summary>
+    /// <param name="typeRefHandle">The reference handle.</param>
+    /// <param name="typeDefHandle">Receives the type def handle, if one was discovered.</param>
+    /// <returns><see langword="true"/> if a TypeDefinition was found; otherwise <see langword="false"/>.</returns>
+    internal bool TryGetTypeDefHandle(TypeReferenceHandle typeRefHandle, out TypeDefinitionHandle typeDefHandle)
+    {
+        if (this.refToDefCache.TryGetValue(typeRefHandle, out typeDefHandle))
+        {
+            return !typeDefHandle.IsNil;
+        }
+
+        var typeRef = this.Reader.GetTypeReference(typeRefHandle);
+        if (typeRef.ResolutionScope.Kind != HandleKind.AssemblyReference)
+        {
+            foreach (TypeDefinitionHandle tdh in this.Reader.TypeDefinitions)
+            {
+                TypeDefinition typeDef = this.Reader.GetTypeDefinition(tdh);
+                if (typeDef.Name == typeRef.Name && typeDef.Namespace == typeRef.Namespace)
+                {
+                    if (typeRef.ResolutionScope.Kind == HandleKind.TypeReference)
+                    {
+                        // The ref is nested. Verify that the type we found is nested in the same type as well.
+                        if (this.TryGetTypeDefHandle((TypeReferenceHandle)typeRef.ResolutionScope, out TypeDefinitionHandle nestingTypeDef) && nestingTypeDef == typeDef.GetDeclaringType())
                         {
                             typeDefHandle = tdh;
                             break;
                         }
-                        else
-                        {
-                            throw new NotSupportedException("Unrecognized ResolutionScope: " + typeRef.ResolutionScope);
-                        }
+                    }
+                    else if (typeRef.ResolutionScope.Kind == HandleKind.ModuleDefinition && typeDef.GetDeclaringType().IsNil)
+                    {
+                        typeDefHandle = tdh;
+                        break;
+                    }
+                    else
+                    {
+                        throw new NotSupportedException("Unrecognized ResolutionScope: " + typeRef.ResolutionScope);
                     }
                 }
             }
-
-            this.refToDefCache.Add(typeRefHandle, typeDefHandle);
-            return !typeDefHandle.IsNil;
         }
 
-        internal bool TryGetTypeDefHandle(TypeReference typeRef, out TypeDefinitionHandle typeDefHandle) => this.TryGetTypeDefHandle(typeRef.Namespace, typeRef.Name, out typeDefHandle);
+        this.refToDefCache.Add(typeRefHandle, typeDefHandle);
+        return !typeDefHandle.IsNil;
+    }
 
-        internal bool TryGetTypeDefHandle(StringHandle @namespace, StringHandle name, out TypeDefinitionHandle typeDefHandle)
+    internal bool TryGetTypeDefHandle(TypeReference typeRef, out TypeDefinitionHandle typeDefHandle) => this.TryGetTypeDefHandle(typeRef.Namespace, typeRef.Name, out typeDefHandle);
+
+    internal bool TryGetTypeDefHandle(StringHandle @namespace, StringHandle name, out TypeDefinitionHandle typeDefHandle)
+    {
+        // PERF: Use an index
+        foreach (TypeDefinitionHandle tdh in this.Reader.TypeDefinitions)
         {
-            // PERF: Use an index
-            foreach (TypeDefinitionHandle tdh in this.Reader.TypeDefinitions)
+            TypeDefinition td = this.Reader.GetTypeDefinition(tdh);
+            if (td.Name.Equals(name) && td.Namespace.Equals(@namespace))
             {
-                TypeDefinition td = this.Reader.GetTypeDefinition(tdh);
-                if (td.Name.Equals(name) && td.Namespace.Equals(@namespace))
-                {
-                    typeDefHandle = tdh;
-                    return true;
-                }
+                typeDefHandle = tdh;
+                return true;
             }
+        }
 
-            typeDefHandle = default;
+        typeDefHandle = default;
+        return false;
+    }
+
+    internal bool TryGetTypeDefHandle(string @namespace, string name, out TypeDefinitionHandle typeDefinitionHandle)
+    {
+        // PERF: Use an index
+        foreach (TypeDefinitionHandle tdh in this.Reader.TypeDefinitions)
+        {
+            TypeDefinition td = this.Reader.GetTypeDefinition(tdh);
+            if (this.Reader.StringComparer.Equals(td.Name, name) && this.Reader.StringComparer.Equals(td.Namespace, @namespace))
+            {
+                typeDefinitionHandle = tdh;
+                return true;
+            }
+        }
+
+        typeDefinitionHandle = default;
+        return false;
+    }
+
+    internal bool IsNonCOMInterface(TypeDefinition interfaceTypeDef)
+    {
+        if (this.Reader.StringComparer.Equals(interfaceTypeDef.Name, "IUnknown"))
+        {
             return false;
         }
 
-        internal bool TryGetTypeDefHandle(string @namespace, string name, out TypeDefinitionHandle typeDefinitionHandle)
+        // A conforming interface must have IUnknown as or an ancestor of its first base type.
+        InterfaceImplementationHandle firstBaseInterface = interfaceTypeDef.GetInterfaceImplementations().FirstOrDefault();
+        if (firstBaseInterface.IsNil)
         {
-            // PERF: Use an index
-            foreach (TypeDefinitionHandle tdh in this.Reader.TypeDefinitions)
-            {
-                TypeDefinition td = this.Reader.GetTypeDefinition(tdh);
-                if (this.Reader.StringComparer.Equals(td.Name, name) && this.Reader.StringComparer.Equals(td.Namespace, @namespace))
-                {
-                    typeDefinitionHandle = tdh;
-                    return true;
-                }
-            }
-
-            typeDefinitionHandle = default;
-            return false;
+            return true;
         }
 
-        internal bool IsNonCOMInterface(TypeDefinition interfaceTypeDef)
+        InterfaceImplementation baseIFace = this.Reader.GetInterfaceImplementation(firstBaseInterface);
+        TypeDefinitionHandle baseIFaceTypeDefHandle;
+        if (baseIFace.Interface.Kind == HandleKind.TypeDefinition)
         {
-            if (this.Reader.StringComparer.Equals(interfaceTypeDef.Name, "IUnknown"))
+            baseIFaceTypeDefHandle = (TypeDefinitionHandle)baseIFace.Interface;
+        }
+        else if (baseIFace.Interface.Kind == HandleKind.TypeReference)
+        {
+            if (!this.TryGetTypeDefHandle((TypeReferenceHandle)baseIFace.Interface, out baseIFaceTypeDefHandle))
             {
                 return false;
             }
-
-            // A conforming interface must have IUnknown as or an ancestor of its first base type.
-            InterfaceImplementationHandle firstBaseInterface = interfaceTypeDef.GetInterfaceImplementations().FirstOrDefault();
-            if (firstBaseInterface.IsNil)
-            {
-                return true;
-            }
-
-            InterfaceImplementation baseIFace = this.Reader.GetInterfaceImplementation(firstBaseInterface);
-            TypeDefinitionHandle baseIFaceTypeDefHandle;
-            if (baseIFace.Interface.Kind == HandleKind.TypeDefinition)
-            {
-                baseIFaceTypeDefHandle = (TypeDefinitionHandle)baseIFace.Interface;
-            }
-            else if (baseIFace.Interface.Kind == HandleKind.TypeReference)
-            {
-                if (!this.TryGetTypeDefHandle((TypeReferenceHandle)baseIFace.Interface, out baseIFaceTypeDefHandle))
-                {
-                    return false;
-                }
-            }
-            else
-            {
-                return false;
-            }
-
-            return this.IsNonCOMInterface(this.Reader.GetTypeDefinition(baseIFaceTypeDefHandle));
         }
-
-        internal bool IsNonCOMInterface(TypeReferenceHandle interfaceTypeRefHandle) => this.TryGetTypeDefHandle(interfaceTypeRefHandle, out TypeDefinitionHandle tdh) && this.IsNonCOMInterface(this.Reader.GetTypeDefinition(tdh));
-
-        internal bool TryFindCustomAttribute(CustomAttributeHandleCollection customAttributes, string @namespace, string name, out CustomAttribute customAttribute)
+        else
         {
-            foreach (CustomAttributeHandle attHandle in customAttributes)
-            {
-                customAttribute = this.Reader.GetCustomAttribute(attHandle);
-                if (this.IsAttribute(customAttribute, @namespace, name))
-                {
-                    return true;
-                }
-            }
-
-            customAttribute = default;
             return false;
         }
 
-        internal FunctionPointerTypeSyntax FunctionPointer(TypeDefinition delegateType)
+        return this.IsNonCOMInterface(this.Reader.GetTypeDefinition(baseIFaceTypeDefHandle));
+    }
+
+    internal bool IsNonCOMInterface(TypeReferenceHandle interfaceTypeRefHandle) => this.TryGetTypeDefHandle(interfaceTypeRefHandle, out TypeDefinitionHandle tdh) && this.IsNonCOMInterface(this.Reader.GetTypeDefinition(tdh));
+
+    internal bool TryFindCustomAttribute(CustomAttributeHandleCollection customAttributes, string @namespace, string name, out CustomAttribute customAttribute)
+    {
+        foreach (CustomAttributeHandle attHandle in customAttributes)
         {
-            CustomAttribute ufpAtt = delegateType.GetCustomAttributes().Select(ah => this.Reader.GetCustomAttribute(ah)).Single(a => this.IsAttribute(a, SystemRuntimeInteropServices, nameof(UnmanagedFunctionPointerAttribute)));
-            var attArgs = ufpAtt.DecodeValue(CustomAttributeTypeProvider.Instance);
-            CallingConvention callingConvention = (CallingConvention)attArgs.FixedArguments[0].Value!;
-
-            this.GetSignatureForDelegate(delegateType, out MethodDefinition invokeMethodDef, out MethodSignature<TypeHandleInfo> signature, out CustomAttributeHandleCollection? returnTypeAttributes);
-            if (returnTypeAttributes?.Any(h => this.IsAttribute(this.Reader.GetCustomAttribute(h), SystemRuntimeInteropServices, nameof(MarshalAsAttribute))) is true)
+            customAttribute = this.Reader.GetCustomAttribute(attHandle);
+            if (this.IsAttribute(customAttribute, @namespace, name))
             {
-                throw new NotSupportedException("Marshaling is not supported for function pointers.");
-            }
-
-            return this.FunctionPointer(invokeMethodDef, signature);
-        }
-
-        internal bool IsDelegate(TypeDefinition typeDef) => (typeDef.Attributes & TypeAttributes.Class) == TypeAttributes.Class && typeDef.BaseType.Kind == HandleKind.TypeReference && this.Reader.StringComparer.Equals(this.Reader.GetTypeReference((TypeReferenceHandle)typeDef.BaseType).Name, nameof(MulticastDelegate));
-
-        internal bool IsManagedType(TypeHandleInfo typeHandleInfo)
-        {
-            TypeHandleInfo elementType =
-                typeHandleInfo is PointerTypeHandleInfo ptr ? ptr.ElementType :
-                typeHandleInfo is ArrayTypeHandleInfo array ? array.ElementType :
-                typeHandleInfo;
-            if (elementType is PointerTypeHandleInfo ptr2)
-            {
-                return this.IsManagedType(ptr2.ElementType);
-            }
-            else if (elementType is PrimitiveTypeHandleInfo)
-            {
-                return false;
-            }
-            else if (elementType is HandleTypeHandleInfo { Handle: { Kind: HandleKind.TypeDefinition } typeDefHandle })
-            {
-                return this.IsManagedType((TypeDefinitionHandle)typeDefHandle);
-            }
-            else if (elementType is HandleTypeHandleInfo { Handle: { Kind: HandleKind.TypeReference } typeRefHandle } handleElement)
-            {
-                var trh = (TypeReferenceHandle)typeRefHandle;
-                if (this.TryGetTypeDefHandle(trh, out TypeDefinitionHandle tdr))
-                {
-                    return this.IsManagedType(tdr);
-                }
-
-                // If the type comes from an external assembly, assume that structs are blittable and anything else is not.
-                var tr = this.Reader.GetTypeReference(trh);
-                if (tr.ResolutionScope.Kind == HandleKind.AssemblyReference && handleElement.RawTypeKind is byte kind)
-                {
-                    // Structs set 0x1, classes set 0x2.
-                    return (kind & 0x1) == 0;
-                }
-            }
-
-            throw new GenerationFailedException("Unrecognized type.");
-        }
-
-        /// <summary>
-        /// Disposes of managed and unmanaged resources.
-        /// </summary>
-        /// <param name="disposing"><see langword="true"/> if being disposed.</param>
-        protected virtual void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-                MetadataIndex.Return(this.MetadataIndex);
-            }
-        }
-
-        private static SyntaxToken TokenWithNoSpace(SyntaxKind syntaxKind) => SyntaxFactory.Token(TriviaList(), syntaxKind, TriviaList());
-
-        private static SyntaxToken TokenWithSpace(SyntaxKind syntaxKind) => SyntaxFactory.Token(TriviaList(), syntaxKind, TriviaList(Space));
-
-        private static SyntaxToken TokenWithSpaces(SyntaxKind syntaxKind) => SyntaxFactory.Token(TriviaList(Space), syntaxKind, TriviaList(Space));
-
-        private static SyntaxToken TokenWithLineFeed(SyntaxKind syntaxKind) => SyntaxFactory.Token(TriviaList(), syntaxKind, TriviaList(LineFeed));
-
-        private static bool RequiresUnsafe(TypeSyntax? typeSyntax) => typeSyntax is PointerTypeSyntax || typeSyntax is FunctionPointerTypeSyntax;
-
-        private static string GetClassNameForModule(string moduleName) =>
-            moduleName.StartsWith("api-", StringComparison.Ordinal) || moduleName.StartsWith("ext-", StringComparison.Ordinal) ? "ApiSets" : moduleName.Replace('-', '_');
-
-        private static AttributeSyntax FieldOffset(int offset) => FieldOffsetAttributeSyntax.AddArgumentListArguments(AttributeArgument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(offset))));
-
-        private static AttributeSyntax StructLayout(TypeAttributes typeAttributes, TypeLayout layout = default, CharSet charSet = CharSet.Ansi)
-        {
-            LayoutKind layoutKind = (typeAttributes & TypeAttributes.ExplicitLayout) == TypeAttributes.ExplicitLayout ? LayoutKind.Explicit : LayoutKind.Sequential;
-            var structLayoutAttribute = Attribute(IdentifierName("StructLayout")).AddArgumentListArguments(
-                AttributeArgument(MemberAccessExpression(
-                    SyntaxKind.SimpleMemberAccessExpression,
-                    IdentifierName(nameof(LayoutKind)),
-                    IdentifierName(Enum.GetName(typeof(LayoutKind), layoutKind)!))));
-
-            if (layout.PackingSize > 0)
-            {
-                structLayoutAttribute = structLayoutAttribute.AddArgumentListArguments(
-                    AttributeArgument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(layout.PackingSize)))
-                        .WithNameEquals(NameEquals(nameof(StructLayoutAttribute.Pack))));
-            }
-
-            if (layout.Size > 0)
-            {
-                structLayoutAttribute = structLayoutAttribute.AddArgumentListArguments(
-                    AttributeArgument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(layout.Size)))
-                        .WithNameEquals(NameEquals(nameof(StructLayoutAttribute.Size))));
-            }
-
-            if (charSet != CharSet.Ansi)
-            {
-                structLayoutAttribute = structLayoutAttribute.AddArgumentListArguments(
-                    AttributeArgument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(CharSet)), IdentifierName(Enum.GetName(typeof(CharSet), charSet)!)))
-                    .WithNameEquals(NameEquals(IdentifierName(nameof(StructLayoutAttribute.CharSet)))));
-            }
-
-            return structLayoutAttribute;
-        }
-
-        private static AttributeSyntax GUID(Guid guid)
-        {
-            return Attribute(IdentifierName("Guid")).AddArgumentListArguments(
-                AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(guid.ToString().ToUpperInvariant()))));
-        }
-
-        private static AttributeSyntax InterfaceType(ComInterfaceType interfaceType)
-        {
-            return Attribute(IdentifierName("InterfaceType")).AddArgumentListArguments(
-                AttributeArgument(MemberAccessExpression(
-                    SyntaxKind.SimpleMemberAccessExpression,
-                    IdentifierName(nameof(ComInterfaceType)),
-                    IdentifierName(Enum.GetName(typeof(ComInterfaceType), interfaceType)!))));
-        }
-
-        private static AttributeSyntax DllImport(MethodImport import, string moduleName, string? entrypoint)
-        {
-            var dllImportAttribute = Attribute(IdentifierName("DllImport"))
-                .WithArgumentList(FixTrivia(AttributeArgumentList().AddArguments(
-                    AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(moduleName))),
-                    AttributeArgument(LiteralExpression(SyntaxKind.TrueLiteralExpression)).WithNameEquals(NameEquals(nameof(DllImportAttribute.ExactSpelling))))));
-
-            if (entrypoint is object)
-            {
-                dllImportAttribute = dllImportAttribute.AddArgumentListArguments(
-                    AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(entrypoint)))
-                        .WithNameEquals(NameEquals(nameof(DllImportAttribute.EntryPoint))));
-            }
-
-            if ((import.Attributes & MethodImportAttributes.SetLastError) == MethodImportAttributes.SetLastError)
-            {
-                dllImportAttribute = dllImportAttribute.AddArgumentListArguments(
-                    AttributeArgument(LiteralExpression(SyntaxKind.TrueLiteralExpression))
-                        .WithNameEquals(NameEquals(nameof(DllImportAttribute.SetLastError))));
-            }
-
-            return dllImportAttribute;
-        }
-
-        private static AttributeSyntax UnmanagedFunctionPointer(CallingConvention callingConvention)
-        {
-            return Attribute(IdentifierName(nameof(UnmanagedFunctionPointerAttribute)))
-                .AddArgumentListArguments(AttributeArgument(MemberAccessExpression(
-                    SyntaxKind.SimpleMemberAccessExpression,
-                    IdentifierName(nameof(CallingConvention)),
-                    IdentifierName(Enum.GetName(typeof(CallingConvention), callingConvention)!))));
-        }
-
-        private static AttributeSyntax MarshalAs(UnmanagedType unmanagedType, UnmanagedType? arraySubType = null, string? marshalCookie = null, string? marshalType = null, ExpressionSyntax? sizeConst = null)
-        {
-            var marshalAs =
-                Attribute(IdentifierName("MarshalAs"))
-                    .AddArgumentListArguments(AttributeArgument(
-                        MemberAccessExpression(
-                            SyntaxKind.SimpleMemberAccessExpression,
-                            IdentifierName(nameof(UnmanagedType)),
-                            IdentifierName(Enum.GetName(typeof(UnmanagedType), unmanagedType)!))));
-
-            if (arraySubType.HasValue && arraySubType.Value != 0 && unmanagedType is UnmanagedType.ByValArray or UnmanagedType.LPArray or UnmanagedType.SafeArray)
-            {
-                marshalAs = marshalAs.AddArgumentListArguments(
-                    AttributeArgument(
-                        MemberAccessExpression(
-                            SyntaxKind.SimpleMemberAccessExpression,
-                            IdentifierName(nameof(UnmanagedType)),
-                            IdentifierName(Enum.GetName(typeof(UnmanagedType), arraySubType.Value)!)))
-                        .WithNameEquals(NameEquals(nameof(MarshalAsAttribute.ArraySubType))));
-            }
-
-            if (sizeConst is object)
-            {
-                marshalAs = marshalAs.AddArgumentListArguments(
-                    AttributeArgument(sizeConst).WithNameEquals(NameEquals(nameof(MarshalAsAttribute.SizeConst))));
-            }
-
-            if (!string.IsNullOrEmpty(marshalCookie))
-            {
-                marshalAs = marshalAs.AddArgumentListArguments(
-                    AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(marshalCookie!)))
-                        .WithNameEquals(NameEquals(nameof(MarshalAsAttribute.MarshalCookie))));
-            }
-
-            if (!string.IsNullOrEmpty(marshalType))
-            {
-                marshalAs = marshalAs.AddArgumentListArguments(
-                    AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(marshalType!)))
-                        .WithNameEquals(NameEquals(nameof(MarshalAsAttribute.MarshalType))));
-            }
-
-            return marshalAs;
-        }
-
-        private static AttributeSyntax DebuggerBrowsable(DebuggerBrowsableState state)
-        {
-            return Attribute(IdentifierName("DebuggerBrowsable"))
-                .AddArgumentListArguments(
-                AttributeArgument(MemberAccessExpression(
-                    SyntaxKind.SimpleMemberAccessExpression,
-                    IdentifierName(nameof(DebuggerBrowsableState)),
-                    IdentifierName(Enum.GetName(typeof(DebuggerBrowsableState), state)!))));
-        }
-
-        private static AttributeSyntax DebuggerDisplay(string format)
-        {
-            return Attribute(IdentifierName("DebuggerDisplay"))
-                .AddArgumentListArguments(
-                AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(format))));
-        }
-
-        private static SyntaxToken SafeIdentifier(string name) => SafeIdentifierName(name).Identifier;
-
-        private static IdentifierNameSyntax SafeIdentifierName(string name) => IdentifierName(CSharpKeywords.Contains(name) ? "@" + name : name);
-
-        private static string GetHiddenFieldName(string fieldName) => $"__{fieldName}";
-
-        private static CrefParameterListSyntax ToCref(ParameterListSyntax parameterList) => CrefParameterList(FixTrivia(SeparatedList(parameterList.Parameters.Select(ToCref))));
-
-        private static CrefParameterSyntax ToCref(ParameterSyntax parameter)
-            => CrefParameter(
-                parameter.Modifiers.Any(SyntaxKind.InKeyword) ? TokenWithSpace(SyntaxKind.InKeyword) :
-                parameter.Modifiers.Any(SyntaxKind.RefKeyword) ? TokenWithSpace(SyntaxKind.RefKeyword) :
-                parameter.Modifiers.Any(SyntaxKind.OutKeyword) ? TokenWithSpace(SyntaxKind.OutKeyword) :
-                default,
-                parameter.Type!.WithoutTrailingTrivia());
-
-        private static FunctionPointerUnmanagedCallingConventionSyntax ToUnmanagedCallingConventionSyntax(CallingConvention callingConvention)
-        {
-            return callingConvention switch
-            {
-                CallingConvention.StdCall => FunctionPointerUnmanagedCallingConvention(Identifier("Stdcall")),
-                CallingConvention.Winapi => FunctionPointerUnmanagedCallingConvention(Identifier("Stdcall")), // Winapi isn't a valid string, and only .NET 5 supports runtime-determined calling conventions like Winapi does.
-                _ => throw new NotImplementedException(),
-            };
-        }
-
-        private static bool IsVoid(TypeSyntax typeSyntax) => typeSyntax is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.VoidKeyword } };
-
-        private static bool IsWideFunction(string methodName)
-        {
-            if (methodName.Length > 1 && methodName.EndsWith("W", StringComparison.Ordinal) && char.IsLower(methodName[methodName.Length - 2]))
-            {
-                // The name looks very much like an Wide-char method.
-                // If further confidence is ever needed, we could look at the parameter and return types
-                // to see if they have charset-related metadata in their marshaling metadata.
                 return true;
             }
-
-            return false;
         }
 
-        private static bool IsAnsiFunction(string methodName)
+        customAttribute = default;
+        return false;
+    }
+
+    internal FunctionPointerTypeSyntax FunctionPointer(TypeDefinition delegateType)
+    {
+        CustomAttribute ufpAtt = delegateType.GetCustomAttributes().Select(ah => this.Reader.GetCustomAttribute(ah)).Single(a => this.IsAttribute(a, SystemRuntimeInteropServices, nameof(UnmanagedFunctionPointerAttribute)));
+        var attArgs = ufpAtt.DecodeValue(CustomAttributeTypeProvider.Instance);
+        CallingConvention callingConvention = (CallingConvention)attArgs.FixedArguments[0].Value!;
+
+        this.GetSignatureForDelegate(delegateType, out MethodDefinition invokeMethodDef, out MethodSignature<TypeHandleInfo> signature, out CustomAttributeHandleCollection? returnTypeAttributes);
+        if (returnTypeAttributes?.Any(h => this.IsAttribute(this.Reader.GetCustomAttribute(h), SystemRuntimeInteropServices, nameof(MarshalAsAttribute))) is true)
         {
-            if (methodName.Length > 1 && methodName.EndsWith("A", StringComparison.Ordinal) && char.IsLower(methodName[methodName.Length - 2]))
+            throw new NotSupportedException("Marshaling is not supported for function pointers.");
+        }
+
+        return this.FunctionPointer(invokeMethodDef, signature);
+    }
+
+    internal bool IsDelegate(TypeDefinition typeDef) => (typeDef.Attributes & TypeAttributes.Class) == TypeAttributes.Class && typeDef.BaseType.Kind == HandleKind.TypeReference && this.Reader.StringComparer.Equals(this.Reader.GetTypeReference((TypeReferenceHandle)typeDef.BaseType).Name, nameof(MulticastDelegate));
+
+    internal bool IsManagedType(TypeHandleInfo typeHandleInfo)
+    {
+        TypeHandleInfo elementType =
+            typeHandleInfo is PointerTypeHandleInfo ptr ? ptr.ElementType :
+            typeHandleInfo is ArrayTypeHandleInfo array ? array.ElementType :
+            typeHandleInfo;
+        if (elementType is PointerTypeHandleInfo ptr2)
+        {
+            return this.IsManagedType(ptr2.ElementType);
+        }
+        else if (elementType is PrimitiveTypeHandleInfo)
+        {
+            return false;
+        }
+        else if (elementType is HandleTypeHandleInfo { Handle: { Kind: HandleKind.TypeDefinition } typeDefHandle })
+        {
+            return this.IsManagedType((TypeDefinitionHandle)typeDefHandle);
+        }
+        else if (elementType is HandleTypeHandleInfo { Handle: { Kind: HandleKind.TypeReference } typeRefHandle } handleElement)
+        {
+            var trh = (TypeReferenceHandle)typeRefHandle;
+            if (this.TryGetTypeDefHandle(trh, out TypeDefinitionHandle tdr))
             {
-                // The name looks very much like an Ansi method.
-                // If further confidence is ever needed, we could look at the parameter and return types
-                // to see if they have charset-related metadata in their marshaling metadata.
-                return true;
+                return this.IsManagedType(tdr);
             }
 
-            return false;
-        }
-
-        private static unsafe string ToHex<T>(T value)
-            where T : unmanaged
-        {
-            int fullHexLength = sizeof(T) * 2;
-            string hex = string.Format(CultureInfo.InvariantCulture, "0x{0:X" + fullHexLength + "}", value);
-            return hex;
-        }
-
-        private static ObjectCreationExpressionSyntax GuidValue(CustomAttribute guidAttribute)
-        {
-            CustomAttributeValue<TypeSyntax> args = guidAttribute.DecodeValue(CustomAttributeTypeProvider.Instance);
-            var a = (uint)args.FixedArguments[0].Value!;
-            var b = (ushort)args.FixedArguments[1].Value!;
-            var c = (ushort)args.FixedArguments[2].Value!;
-            var d = (byte)args.FixedArguments[3].Value!;
-            var e = (byte)args.FixedArguments[4].Value!;
-            var f = (byte)args.FixedArguments[5].Value!;
-            var g = (byte)args.FixedArguments[6].Value!;
-            var h = (byte)args.FixedArguments[7].Value!;
-            var i = (byte)args.FixedArguments[8].Value!;
-            var j = (byte)args.FixedArguments[9].Value!;
-            var k = (byte)args.FixedArguments[10].Value!;
-
-            return ObjectCreationExpression(IdentifierName(nameof(Guid))).AddArgumentListArguments(
-                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(a), a))),
-                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(b), b))),
-                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(c), c))),
-                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(d), d))),
-                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(e), e))),
-                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(f), f))),
-                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(g), g))),
-                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(h), h))),
-                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(i), i))),
-                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(j), j))),
-                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(k), k))));
-        }
-
-        private static ObjectCreationExpressionSyntax PropertyKeyValue(CustomAttribute propertyKeyAttribute, TypeSyntax type)
-        {
-            CustomAttributeValue<TypeSyntax> args = propertyKeyAttribute.DecodeValue(CustomAttributeTypeProvider.Instance);
-            var a = (uint)args.FixedArguments[0].Value!;
-            var b = (ushort)args.FixedArguments[1].Value!;
-            var c = (ushort)args.FixedArguments[2].Value!;
-            var d = (byte)args.FixedArguments[3].Value!;
-            var e = (byte)args.FixedArguments[4].Value!;
-            var f = (byte)args.FixedArguments[5].Value!;
-            var g = (byte)args.FixedArguments[6].Value!;
-            var h = (byte)args.FixedArguments[7].Value!;
-            var i = (byte)args.FixedArguments[8].Value!;
-            var j = (byte)args.FixedArguments[9].Value!;
-            var k = (byte)args.FixedArguments[10].Value!;
-            var pid = (uint)args.FixedArguments[11].Value!;
-
-            return ObjectCreationExpression(type).WithInitializer(
-                InitializerExpression(SyntaxKind.ObjectInitializerExpression, SeparatedList<ExpressionSyntax>(new[]
-                {
-                    AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, IdentifierName("fmtid"), GuidValue(propertyKeyAttribute)),
-                    AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, IdentifierName("pid"), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(pid))),
-                })));
-        }
-
-        /// <summary>
-        /// Checks for periods in a name and if found, splits off the last element as the name and considers everything before it to be a namespace.
-        /// </summary>
-        /// <param name="possiblyQualifiedName">A name or qualified name (e.g. "String" or "System.String").</param>
-        /// <param name="namespace">Receives the namespace portion if present in <paramref name="possiblyQualifiedName"/> (e.g. "System"); otherwise <see langword="null"/>.</param>
-        /// <param name="name">Receives the name portion from <paramref name="possiblyQualifiedName"/>.</param>
-        /// <returns>A value indicating whether a namespace was present in <paramref name="possiblyQualifiedName"/>.</returns>
-        private static bool TrySplitPossiblyQualifiedName(string possiblyQualifiedName, [NotNullWhen(true)] out string? @namespace, out string name)
-        {
-            int nameIdx = possiblyQualifiedName.LastIndexOf('.');
-            @namespace = nameIdx >= 0 ? possiblyQualifiedName.Substring(0, nameIdx) : null;
-            name = nameIdx >= 0 ? possiblyQualifiedName.Substring(nameIdx + 1) : possiblyQualifiedName;
-            return @namespace is object;
-        }
-
-        private T AddApiDocumentation<T>(string api, T memberDeclaration)
-            where T : MemberDeclarationSyntax
-        {
-            if (this.ApiDocs is object && this.ApiDocs.TryGetApiDocs(api, out var docs))
+            // If the type comes from an external assembly, assume that structs are blittable and anything else is not.
+            var tr = this.Reader.GetTypeReference(trh);
+            if (tr.ResolutionScope.Kind == HandleKind.AssemblyReference && handleElement.RawTypeKind is byte kind)
             {
-                var docCommentsBuilder = new StringBuilder();
-                if (docs.Description is object)
-                {
-                    docCommentsBuilder.Append($@"/// <summary>");
-                    EmitDoc(docs.Description, docCommentsBuilder, docs, string.Empty);
-                    docCommentsBuilder.AppendLine("</summary>");
-                }
+                // Structs set 0x1, classes set 0x2.
+                return (kind & 0x1) == 0;
+            }
+        }
 
-                if (docs.Parameters is object)
+        throw new GenerationFailedException("Unrecognized type.");
+    }
+
+    /// <summary>
+    /// Disposes of managed and unmanaged resources.
+    /// </summary>
+    /// <param name="disposing"><see langword="true"/> if being disposed.</param>
+    protected virtual void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            MetadataIndex.Return(this.MetadataIndex);
+        }
+    }
+
+    private static SyntaxToken TokenWithNoSpace(SyntaxKind syntaxKind) => SyntaxFactory.Token(TriviaList(), syntaxKind, TriviaList());
+
+    private static SyntaxToken TokenWithSpace(SyntaxKind syntaxKind) => SyntaxFactory.Token(TriviaList(), syntaxKind, TriviaList(Space));
+
+    private static SyntaxToken TokenWithSpaces(SyntaxKind syntaxKind) => SyntaxFactory.Token(TriviaList(Space), syntaxKind, TriviaList(Space));
+
+    private static SyntaxToken TokenWithLineFeed(SyntaxKind syntaxKind) => SyntaxFactory.Token(TriviaList(), syntaxKind, TriviaList(LineFeed));
+
+    private static bool RequiresUnsafe(TypeSyntax? typeSyntax) => typeSyntax is PointerTypeSyntax || typeSyntax is FunctionPointerTypeSyntax;
+
+    private static string GetClassNameForModule(string moduleName) =>
+        moduleName.StartsWith("api-", StringComparison.Ordinal) || moduleName.StartsWith("ext-", StringComparison.Ordinal) ? "ApiSets" : moduleName.Replace('-', '_');
+
+    private static AttributeSyntax FieldOffset(int offset) => FieldOffsetAttributeSyntax.AddArgumentListArguments(AttributeArgument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(offset))));
+
+    private static AttributeSyntax StructLayout(TypeAttributes typeAttributes, TypeLayout layout = default, CharSet charSet = CharSet.Ansi)
+    {
+        LayoutKind layoutKind = (typeAttributes & TypeAttributes.ExplicitLayout) == TypeAttributes.ExplicitLayout ? LayoutKind.Explicit : LayoutKind.Sequential;
+        var structLayoutAttribute = Attribute(IdentifierName("StructLayout")).AddArgumentListArguments(
+            AttributeArgument(MemberAccessExpression(
+                SyntaxKind.SimpleMemberAccessExpression,
+                IdentifierName(nameof(LayoutKind)),
+                IdentifierName(Enum.GetName(typeof(LayoutKind), layoutKind)!))));
+
+        if (layout.PackingSize > 0)
+        {
+            structLayoutAttribute = structLayoutAttribute.AddArgumentListArguments(
+                AttributeArgument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(layout.PackingSize)))
+                    .WithNameEquals(NameEquals(nameof(StructLayoutAttribute.Pack))));
+        }
+
+        if (layout.Size > 0)
+        {
+            structLayoutAttribute = structLayoutAttribute.AddArgumentListArguments(
+                AttributeArgument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(layout.Size)))
+                    .WithNameEquals(NameEquals(nameof(StructLayoutAttribute.Size))));
+        }
+
+        if (charSet != CharSet.Ansi)
+        {
+            structLayoutAttribute = structLayoutAttribute.AddArgumentListArguments(
+                AttributeArgument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(CharSet)), IdentifierName(Enum.GetName(typeof(CharSet), charSet)!)))
+                .WithNameEquals(NameEquals(IdentifierName(nameof(StructLayoutAttribute.CharSet)))));
+        }
+
+        return structLayoutAttribute;
+    }
+
+    private static AttributeSyntax GUID(Guid guid)
+    {
+        return Attribute(IdentifierName("Guid")).AddArgumentListArguments(
+            AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(guid.ToString().ToUpperInvariant()))));
+    }
+
+    private static AttributeSyntax InterfaceType(ComInterfaceType interfaceType)
+    {
+        return Attribute(IdentifierName("InterfaceType")).AddArgumentListArguments(
+            AttributeArgument(MemberAccessExpression(
+                SyntaxKind.SimpleMemberAccessExpression,
+                IdentifierName(nameof(ComInterfaceType)),
+                IdentifierName(Enum.GetName(typeof(ComInterfaceType), interfaceType)!))));
+    }
+
+    private static AttributeSyntax DllImport(MethodImport import, string moduleName, string? entrypoint)
+    {
+        var dllImportAttribute = Attribute(IdentifierName("DllImport"))
+            .WithArgumentList(FixTrivia(AttributeArgumentList().AddArguments(
+                AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(moduleName))),
+                AttributeArgument(LiteralExpression(SyntaxKind.TrueLiteralExpression)).WithNameEquals(NameEquals(nameof(DllImportAttribute.ExactSpelling))))));
+
+        if (entrypoint is object)
+        {
+            dllImportAttribute = dllImportAttribute.AddArgumentListArguments(
+                AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(entrypoint)))
+                    .WithNameEquals(NameEquals(nameof(DllImportAttribute.EntryPoint))));
+        }
+
+        if ((import.Attributes & MethodImportAttributes.SetLastError) == MethodImportAttributes.SetLastError)
+        {
+            dllImportAttribute = dllImportAttribute.AddArgumentListArguments(
+                AttributeArgument(LiteralExpression(SyntaxKind.TrueLiteralExpression))
+                    .WithNameEquals(NameEquals(nameof(DllImportAttribute.SetLastError))));
+        }
+
+        return dllImportAttribute;
+    }
+
+    private static AttributeSyntax UnmanagedFunctionPointer(CallingConvention callingConvention)
+    {
+        return Attribute(IdentifierName(nameof(UnmanagedFunctionPointerAttribute)))
+            .AddArgumentListArguments(AttributeArgument(MemberAccessExpression(
+                SyntaxKind.SimpleMemberAccessExpression,
+                IdentifierName(nameof(CallingConvention)),
+                IdentifierName(Enum.GetName(typeof(CallingConvention), callingConvention)!))));
+    }
+
+    private static AttributeSyntax MarshalAs(UnmanagedType unmanagedType, UnmanagedType? arraySubType = null, string? marshalCookie = null, string? marshalType = null, ExpressionSyntax? sizeConst = null)
+    {
+        var marshalAs =
+            Attribute(IdentifierName("MarshalAs"))
+                .AddArgumentListArguments(AttributeArgument(
+                    MemberAccessExpression(
+                        SyntaxKind.SimpleMemberAccessExpression,
+                        IdentifierName(nameof(UnmanagedType)),
+                        IdentifierName(Enum.GetName(typeof(UnmanagedType), unmanagedType)!))));
+
+        if (arraySubType.HasValue && arraySubType.Value != 0 && unmanagedType is UnmanagedType.ByValArray or UnmanagedType.LPArray or UnmanagedType.SafeArray)
+        {
+            marshalAs = marshalAs.AddArgumentListArguments(
+                AttributeArgument(
+                    MemberAccessExpression(
+                        SyntaxKind.SimpleMemberAccessExpression,
+                        IdentifierName(nameof(UnmanagedType)),
+                        IdentifierName(Enum.GetName(typeof(UnmanagedType), arraySubType.Value)!)))
+                    .WithNameEquals(NameEquals(nameof(MarshalAsAttribute.ArraySubType))));
+        }
+
+        if (sizeConst is object)
+        {
+            marshalAs = marshalAs.AddArgumentListArguments(
+                AttributeArgument(sizeConst).WithNameEquals(NameEquals(nameof(MarshalAsAttribute.SizeConst))));
+        }
+
+        if (!string.IsNullOrEmpty(marshalCookie))
+        {
+            marshalAs = marshalAs.AddArgumentListArguments(
+                AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(marshalCookie!)))
+                    .WithNameEquals(NameEquals(nameof(MarshalAsAttribute.MarshalCookie))));
+        }
+
+        if (!string.IsNullOrEmpty(marshalType))
+        {
+            marshalAs = marshalAs.AddArgumentListArguments(
+                AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(marshalType!)))
+                    .WithNameEquals(NameEquals(nameof(MarshalAsAttribute.MarshalType))));
+        }
+
+        return marshalAs;
+    }
+
+    private static AttributeSyntax DebuggerBrowsable(DebuggerBrowsableState state)
+    {
+        return Attribute(IdentifierName("DebuggerBrowsable"))
+            .AddArgumentListArguments(
+            AttributeArgument(MemberAccessExpression(
+                SyntaxKind.SimpleMemberAccessExpression,
+                IdentifierName(nameof(DebuggerBrowsableState)),
+                IdentifierName(Enum.GetName(typeof(DebuggerBrowsableState), state)!))));
+    }
+
+    private static AttributeSyntax DebuggerDisplay(string format)
+    {
+        return Attribute(IdentifierName("DebuggerDisplay"))
+            .AddArgumentListArguments(
+            AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(format))));
+    }
+
+    private static SyntaxToken SafeIdentifier(string name) => SafeIdentifierName(name).Identifier;
+
+    private static IdentifierNameSyntax SafeIdentifierName(string name) => IdentifierName(CSharpKeywords.Contains(name) ? "@" + name : name);
+
+    private static string GetHiddenFieldName(string fieldName) => $"__{fieldName}";
+
+    private static CrefParameterListSyntax ToCref(ParameterListSyntax parameterList) => CrefParameterList(FixTrivia(SeparatedList(parameterList.Parameters.Select(ToCref))));
+
+    private static CrefParameterSyntax ToCref(ParameterSyntax parameter)
+        => CrefParameter(
+            parameter.Modifiers.Any(SyntaxKind.InKeyword) ? TokenWithSpace(SyntaxKind.InKeyword) :
+            parameter.Modifiers.Any(SyntaxKind.RefKeyword) ? TokenWithSpace(SyntaxKind.RefKeyword) :
+            parameter.Modifiers.Any(SyntaxKind.OutKeyword) ? TokenWithSpace(SyntaxKind.OutKeyword) :
+            default,
+            parameter.Type!.WithoutTrailingTrivia());
+
+    private static FunctionPointerUnmanagedCallingConventionSyntax ToUnmanagedCallingConventionSyntax(CallingConvention callingConvention)
+    {
+        return callingConvention switch
+        {
+            CallingConvention.StdCall => FunctionPointerUnmanagedCallingConvention(Identifier("Stdcall")),
+            CallingConvention.Winapi => FunctionPointerUnmanagedCallingConvention(Identifier("Stdcall")), // Winapi isn't a valid string, and only .NET 5 supports runtime-determined calling conventions like Winapi does.
+            _ => throw new NotImplementedException(),
+        };
+    }
+
+    private static bool IsVoid(TypeSyntax typeSyntax) => typeSyntax is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.VoidKeyword } };
+
+    private static bool IsWideFunction(string methodName)
+    {
+        if (methodName.Length > 1 && methodName.EndsWith("W", StringComparison.Ordinal) && char.IsLower(methodName[methodName.Length - 2]))
+        {
+            // The name looks very much like an Wide-char method.
+            // If further confidence is ever needed, we could look at the parameter and return types
+            // to see if they have charset-related metadata in their marshaling metadata.
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsAnsiFunction(string methodName)
+    {
+        if (methodName.Length > 1 && methodName.EndsWith("A", StringComparison.Ordinal) && char.IsLower(methodName[methodName.Length - 2]))
+        {
+            // The name looks very much like an Ansi method.
+            // If further confidence is ever needed, we could look at the parameter and return types
+            // to see if they have charset-related metadata in their marshaling metadata.
+            return true;
+        }
+
+        return false;
+    }
+
+    private static unsafe string ToHex<T>(T value)
+        where T : unmanaged
+    {
+        int fullHexLength = sizeof(T) * 2;
+        string hex = string.Format(CultureInfo.InvariantCulture, "0x{0:X" + fullHexLength + "}", value);
+        return hex;
+    }
+
+    private static ObjectCreationExpressionSyntax GuidValue(CustomAttribute guidAttribute)
+    {
+        CustomAttributeValue<TypeSyntax> args = guidAttribute.DecodeValue(CustomAttributeTypeProvider.Instance);
+        var a = (uint)args.FixedArguments[0].Value!;
+        var b = (ushort)args.FixedArguments[1].Value!;
+        var c = (ushort)args.FixedArguments[2].Value!;
+        var d = (byte)args.FixedArguments[3].Value!;
+        var e = (byte)args.FixedArguments[4].Value!;
+        var f = (byte)args.FixedArguments[5].Value!;
+        var g = (byte)args.FixedArguments[6].Value!;
+        var h = (byte)args.FixedArguments[7].Value!;
+        var i = (byte)args.FixedArguments[8].Value!;
+        var j = (byte)args.FixedArguments[9].Value!;
+        var k = (byte)args.FixedArguments[10].Value!;
+
+        return ObjectCreationExpression(IdentifierName(nameof(Guid))).AddArgumentListArguments(
+            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(a), a))),
+            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(b), b))),
+            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(c), c))),
+            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(d), d))),
+            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(e), e))),
+            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(f), f))),
+            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(g), g))),
+            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(h), h))),
+            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(i), i))),
+            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(j), j))),
+            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(k), k))));
+    }
+
+    private static ObjectCreationExpressionSyntax PropertyKeyValue(CustomAttribute propertyKeyAttribute, TypeSyntax type)
+    {
+        CustomAttributeValue<TypeSyntax> args = propertyKeyAttribute.DecodeValue(CustomAttributeTypeProvider.Instance);
+        var a = (uint)args.FixedArguments[0].Value!;
+        var b = (ushort)args.FixedArguments[1].Value!;
+        var c = (ushort)args.FixedArguments[2].Value!;
+        var d = (byte)args.FixedArguments[3].Value!;
+        var e = (byte)args.FixedArguments[4].Value!;
+        var f = (byte)args.FixedArguments[5].Value!;
+        var g = (byte)args.FixedArguments[6].Value!;
+        var h = (byte)args.FixedArguments[7].Value!;
+        var i = (byte)args.FixedArguments[8].Value!;
+        var j = (byte)args.FixedArguments[9].Value!;
+        var k = (byte)args.FixedArguments[10].Value!;
+        var pid = (uint)args.FixedArguments[11].Value!;
+
+        return ObjectCreationExpression(type).WithInitializer(
+            InitializerExpression(SyntaxKind.ObjectInitializerExpression, SeparatedList<ExpressionSyntax>(new[]
+            {
+                AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, IdentifierName("fmtid"), GuidValue(propertyKeyAttribute)),
+                AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, IdentifierName("pid"), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(pid))),
+            })));
+    }
+
+    /// <summary>
+    /// Checks for periods in a name and if found, splits off the last element as the name and considers everything before it to be a namespace.
+    /// </summary>
+    /// <param name="possiblyQualifiedName">A name or qualified name (e.g. "String" or "System.String").</param>
+    /// <param name="namespace">Receives the namespace portion if present in <paramref name="possiblyQualifiedName"/> (e.g. "System"); otherwise <see langword="null"/>.</param>
+    /// <param name="name">Receives the name portion from <paramref name="possiblyQualifiedName"/>.</param>
+    /// <returns>A value indicating whether a namespace was present in <paramref name="possiblyQualifiedName"/>.</returns>
+    private static bool TrySplitPossiblyQualifiedName(string possiblyQualifiedName, [NotNullWhen(true)] out string? @namespace, out string name)
+    {
+        int nameIdx = possiblyQualifiedName.LastIndexOf('.');
+        @namespace = nameIdx >= 0 ? possiblyQualifiedName.Substring(0, nameIdx) : null;
+        name = nameIdx >= 0 ? possiblyQualifiedName.Substring(nameIdx + 1) : possiblyQualifiedName;
+        return @namespace is object;
+    }
+
+    private T AddApiDocumentation<T>(string api, T memberDeclaration)
+        where T : MemberDeclarationSyntax
+    {
+        if (this.ApiDocs is object && this.ApiDocs.TryGetApiDocs(api, out var docs))
+        {
+            var docCommentsBuilder = new StringBuilder();
+            if (docs.Description is object)
+            {
+                docCommentsBuilder.Append($@"/// <summary>");
+                EmitDoc(docs.Description, docCommentsBuilder, docs, string.Empty);
+                docCommentsBuilder.AppendLine("</summary>");
+            }
+
+            if (docs.Parameters is object)
+            {
+                if (memberDeclaration is BaseMethodDeclarationSyntax methodDecl)
                 {
-                    if (memberDeclaration is BaseMethodDeclarationSyntax methodDecl)
+                    foreach (var entry in docs.Parameters)
                     {
-                        foreach (var entry in docs.Parameters)
+                        if (!methodDecl.ParameterList.Parameters.Any(p => string.Equals(p.Identifier.ValueText, entry.Key, StringComparison.Ordinal)))
                         {
-                            if (!methodDecl.ParameterList.Parameters.Any(p => string.Equals(p.Identifier.ValueText, entry.Key, StringComparison.Ordinal)))
-                            {
-                                // Skip documentation for parameters that do not actually exist on the method.
-                                continue;
-                            }
-
-                            docCommentsBuilder.Append($@"/// <param name=""{entry.Key}"">");
-                            EmitDoc(entry.Value, docCommentsBuilder, docs, "parameters");
-                            docCommentsBuilder.AppendLine("</param>");
-                        }
-                    }
-                }
-
-                if (docs.Fields is object)
-                {
-                    var fieldsDocBuilder = new StringBuilder();
-                    switch (memberDeclaration)
-                    {
-                        case StructDeclarationSyntax structDeclaration:
-                            memberDeclaration = memberDeclaration.ReplaceNodes(
-                                structDeclaration.Members.OfType<FieldDeclarationSyntax>(),
-                                (_, field) =>
-                                {
-                                    var variable = field.Declaration.Variables.Single();
-                                    if (docs.Fields.TryGetValue(variable.Identifier.ValueText, out string? fieldDoc))
-                                    {
-                                        fieldsDocBuilder.Append("/// <summary>");
-                                        EmitDoc(fieldDoc, fieldsDocBuilder, docs, "members");
-                                        fieldsDocBuilder.AppendLine("</summary>");
-                                        if (field.Declaration.Type.HasAnnotations(OriginalDelegateAnnotation))
-                                        {
-                                            fieldsDocBuilder.AppendLine(@$"/// <remarks>See the <see cref=""{field.Declaration.Type.GetAnnotations(OriginalDelegateAnnotation).Single().Data}"" /> delegate for more about this function.</remarks>");
-                                        }
-
-                                        field = field.WithLeadingTrivia(ParseLeadingTrivia(fieldsDocBuilder.ToString().Replace("\r\n", "\n")));
-                                        fieldsDocBuilder.Clear();
-                                    }
-
-                                    return field;
-                                });
-                            break;
-                        case EnumDeclarationSyntax enumDeclaration:
-                            memberDeclaration = memberDeclaration.ReplaceNodes(
-                                enumDeclaration.Members,
-                                (_, field) =>
-                                {
-                                    if (docs.Fields.TryGetValue(field.Identifier.ValueText, out string? fieldDoc))
-                                    {
-                                        fieldsDocBuilder.Append($@"/// <summary>");
-                                        EmitDoc(fieldDoc, fieldsDocBuilder, docs, "members");
-                                        fieldsDocBuilder.AppendLine("</summary>");
-                                        field = field.WithLeadingTrivia(ParseLeadingTrivia(fieldsDocBuilder.ToString().Replace("\r\n", "\n")));
-                                        fieldsDocBuilder.Clear();
-                                    }
-
-                                    return field;
-                                });
-                            break;
-                    }
-                }
-
-                if (docs.ReturnValue is object)
-                {
-                    docCommentsBuilder.Append("/// <returns>");
-                    EmitDoc(docs.ReturnValue, docCommentsBuilder, docs: null, string.Empty);
-                    docCommentsBuilder.AppendLine("</returns>");
-                }
-
-                if (docs.Remarks is object || docs.HelpLink is object)
-                {
-                    docCommentsBuilder.Append($"/// <remarks>");
-                    if (docs.Remarks is object)
-                    {
-                        EmitDoc(docs.Remarks, docCommentsBuilder, docs, string.Empty);
-                    }
-                    else if (docs.HelpLink is object)
-                    {
-                        docCommentsBuilder.AppendLine();
-                        docCommentsBuilder.AppendLine($@"/// <para><see href=""{docs.HelpLink}"">Learn more about this API from docs.microsoft.com</see>.</para>");
-                        docCommentsBuilder.Append("/// ");
-                    }
-
-                    docCommentsBuilder.AppendLine($"</remarks>");
-                }
-
-                memberDeclaration = memberDeclaration.WithLeadingTrivia(
-                    ParseLeadingTrivia(docCommentsBuilder.ToString().Replace("\r\n", "\n")));
-            }
-
-            return memberDeclaration;
-
-            static void EmitLine(StringBuilder stringBuilder, string yamlDocSrc)
-            {
-                stringBuilder.Append(yamlDocSrc.Trim());
-            }
-
-            static void EmitDoc(string yamlDocSrc, StringBuilder docCommentsBuilder, ApiDetails? docs, string docsAnchor)
-            {
-                if (yamlDocSrc.Contains('\n'))
-                {
-                    docCommentsBuilder.AppendLine();
-                    var docReader = new StringReader(yamlDocSrc);
-                    string? paramDocLine;
-
-                    bool inParagraph = false;
-                    bool inComment = false;
-                    int blankLineCounter = 0;
-                    while ((paramDocLine = docReader.ReadLine()) is object)
-                    {
-                        if (string.IsNullOrWhiteSpace(paramDocLine))
-                        {
-                            if (++blankLineCounter >= 2 && inParagraph)
-                            {
-                                docCommentsBuilder.AppendLine("</para>");
-                                inParagraph = false;
-                                inComment = false;
-                            }
-
+                            // Skip documentation for parameters that do not actually exist on the method.
                             continue;
                         }
-                        else if (blankLineCounter > 0)
-                        {
-                            blankLineCounter = 0;
-                        }
-                        else if (docCommentsBuilder.Length > 0 && docCommentsBuilder[docCommentsBuilder.Length - 1] != '\n')
-                        {
-                            docCommentsBuilder.Append(' ');
-                        }
 
-                        if (inParagraph)
-                        {
-                            if (docCommentsBuilder.Length > 0 && docCommentsBuilder[docCommentsBuilder.Length - 1] is not (' ' or '\n'))
+                        docCommentsBuilder.Append($@"/// <param name=""{entry.Key}"">");
+                        EmitDoc(entry.Value, docCommentsBuilder, docs, "parameters");
+                        docCommentsBuilder.AppendLine("</param>");
+                    }
+                }
+            }
+
+            if (docs.Fields is object)
+            {
+                var fieldsDocBuilder = new StringBuilder();
+                switch (memberDeclaration)
+                {
+                    case StructDeclarationSyntax structDeclaration:
+                        memberDeclaration = memberDeclaration.ReplaceNodes(
+                            structDeclaration.Members.OfType<FieldDeclarationSyntax>(),
+                            (_, field) =>
                             {
-                                docCommentsBuilder.Append(' ');
-                            }
-                        }
-                        else
-                        {
-                            docCommentsBuilder.Append("/// <para>");
-                            inParagraph = true;
-                            inComment = true;
-                        }
+                                var variable = field.Declaration.Variables.Single();
+                                if (docs.Fields.TryGetValue(variable.Identifier.ValueText, out string? fieldDoc))
+                                {
+                                    fieldsDocBuilder.Append("/// <summary>");
+                                    EmitDoc(fieldDoc, fieldsDocBuilder, docs, "members");
+                                    fieldsDocBuilder.AppendLine("</summary>");
+                                    if (field.Declaration.Type.HasAnnotations(OriginalDelegateAnnotation))
+                                    {
+                                        fieldsDocBuilder.AppendLine(@$"/// <remarks>See the <see cref=""{field.Declaration.Type.GetAnnotations(OriginalDelegateAnnotation).Single().Data}"" /> delegate for more about this function.</remarks>");
+                                    }
 
-                        if (!inComment)
-                        {
-                            docCommentsBuilder.Append("/// ");
-                        }
+                                    field = field.WithLeadingTrivia(ParseLeadingTrivia(fieldsDocBuilder.ToString().Replace("\r\n", "\n")));
+                                    fieldsDocBuilder.Clear();
+                                }
 
-                        if (paramDocLine.IndexOf("<table", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                            paramDocLine.IndexOf("<img", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                            paramDocLine.IndexOf("<ul", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                            paramDocLine.IndexOf("<ol", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                            paramDocLine.IndexOf("```", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                            paramDocLine.IndexOf("<<", StringComparison.OrdinalIgnoreCase) >= 0)
-                        {
-                            // We don't try to format tables, so truncate at this point.
-                            if (inParagraph)
+                                return field;
+                            });
+                        break;
+                    case EnumDeclarationSyntax enumDeclaration:
+                        memberDeclaration = memberDeclaration.ReplaceNodes(
+                            enumDeclaration.Members,
+                            (_, field) =>
                             {
-                                docCommentsBuilder.AppendLine("</para>");
-                                inParagraph = false;
-                                inComment = false;
-                            }
+                                if (docs.Fields.TryGetValue(field.Identifier.ValueText, out string? fieldDoc))
+                                {
+                                    fieldsDocBuilder.Append($@"/// <summary>");
+                                    EmitDoc(fieldDoc, fieldsDocBuilder, docs, "members");
+                                    fieldsDocBuilder.AppendLine("</summary>");
+                                    field = field.WithLeadingTrivia(ParseLeadingTrivia(fieldsDocBuilder.ToString().Replace("\r\n", "\n")));
+                                    fieldsDocBuilder.Clear();
+                                }
 
-                            docCommentsBuilder.AppendLine($@"/// <para>This doc was truncated.</para>");
+                                return field;
+                            });
+                        break;
+                }
+            }
 
-                            break; // is this the right way?
+            if (docs.ReturnValue is object)
+            {
+                docCommentsBuilder.Append("/// <returns>");
+                EmitDoc(docs.ReturnValue, docCommentsBuilder, docs: null, string.Empty);
+                docCommentsBuilder.AppendLine("</returns>");
+            }
+
+            if (docs.Remarks is object || docs.HelpLink is object)
+            {
+                docCommentsBuilder.Append($"/// <remarks>");
+                if (docs.Remarks is object)
+                {
+                    EmitDoc(docs.Remarks, docCommentsBuilder, docs, string.Empty);
+                }
+                else if (docs.HelpLink is object)
+                {
+                    docCommentsBuilder.AppendLine();
+                    docCommentsBuilder.AppendLine($@"/// <para><see href=""{docs.HelpLink}"">Learn more about this API from docs.microsoft.com</see>.</para>");
+                    docCommentsBuilder.Append("/// ");
+                }
+
+                docCommentsBuilder.AppendLine($"</remarks>");
+            }
+
+            memberDeclaration = memberDeclaration.WithLeadingTrivia(
+                ParseLeadingTrivia(docCommentsBuilder.ToString().Replace("\r\n", "\n")));
+        }
+
+        return memberDeclaration;
+
+        static void EmitLine(StringBuilder stringBuilder, string yamlDocSrc)
+        {
+            stringBuilder.Append(yamlDocSrc.Trim());
+        }
+
+        static void EmitDoc(string yamlDocSrc, StringBuilder docCommentsBuilder, ApiDetails? docs, string docsAnchor)
+        {
+            if (yamlDocSrc.Contains('\n'))
+            {
+                docCommentsBuilder.AppendLine();
+                var docReader = new StringReader(yamlDocSrc);
+                string? paramDocLine;
+
+                bool inParagraph = false;
+                bool inComment = false;
+                int blankLineCounter = 0;
+                while ((paramDocLine = docReader.ReadLine()) is object)
+                {
+                    if (string.IsNullOrWhiteSpace(paramDocLine))
+                    {
+                        if (++blankLineCounter >= 2 && inParagraph)
+                        {
+                            docCommentsBuilder.AppendLine("</para>");
+                            inParagraph = false;
+                            inComment = false;
                         }
 
-                        EmitLine(docCommentsBuilder, paramDocLine);
+                        continue;
+                    }
+                    else if (blankLineCounter > 0)
+                    {
+                        blankLineCounter = 0;
+                    }
+                    else if (docCommentsBuilder.Length > 0 && docCommentsBuilder[docCommentsBuilder.Length - 1] != '\n')
+                    {
+                        docCommentsBuilder.Append(' ');
                     }
 
                     if (inParagraph)
                     {
-                        if (!inComment)
+                        if (docCommentsBuilder.Length > 0 && docCommentsBuilder[docCommentsBuilder.Length - 1] is not (' ' or '\n'))
                         {
-                            docCommentsBuilder.Append("/// ");
+                            docCommentsBuilder.Append(' ');
+                        }
+                    }
+                    else
+                    {
+                        docCommentsBuilder.Append("/// <para>");
+                        inParagraph = true;
+                        inComment = true;
+                    }
+
+                    if (!inComment)
+                    {
+                        docCommentsBuilder.Append("/// ");
+                    }
+
+                    if (paramDocLine.IndexOf("<table", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        paramDocLine.IndexOf("<img", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        paramDocLine.IndexOf("<ul", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        paramDocLine.IndexOf("<ol", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        paramDocLine.IndexOf("```", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        paramDocLine.IndexOf("<<", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        // We don't try to format tables, so truncate at this point.
+                        if (inParagraph)
+                        {
+                            docCommentsBuilder.AppendLine("</para>");
+                            inParagraph = false;
+                            inComment = false;
                         }
 
-                        docCommentsBuilder.AppendLine("</para>");
-                        inParagraph = false;
-                        inComment = false;
+                        docCommentsBuilder.AppendLine($@"/// <para>This doc was truncated.</para>");
+
+                        break; // is this the right way?
                     }
 
-                    if (docs is object)
+                    EmitLine(docCommentsBuilder, paramDocLine);
+                }
+
+                if (inParagraph)
+                {
+                    if (!inComment)
                     {
-                        docCommentsBuilder.AppendLine($@"/// <para><see href=""{docs.HelpLink}#{docsAnchor}"">Read more on docs.microsoft.com</see>.</para>");
+                        docCommentsBuilder.Append("/// ");
                     }
 
-                    docCommentsBuilder.Append("/// ");
+                    docCommentsBuilder.AppendLine("</para>");
+                    inParagraph = false;
+                    inComment = false;
                 }
-                else
+
+                if (docs is object)
                 {
-                    EmitLine(docCommentsBuilder, yamlDocSrc);
-                }
-            }
-        }
-
-        private MemberDeclarationSyntax FetchTemplate(string name)
-        {
-            if (!this.TryFetchTemplate(name, out MemberDeclarationSyntax? result))
-            {
-                throw new KeyNotFoundException();
-            }
-
-            return result;
-        }
-
-        private string? FetchTemplateText(string name)
-        {
-            using Stream? templateStream = Assembly.GetExecutingAssembly().GetManifestResourceStream($"{ThisAssembly.RootNamespace}.templates.{name.Replace('/', '.')}.cs");
-            if (templateStream is null)
-            {
-                return null;
-            }
-
-            using StreamReader sr = new(templateStream);
-            return sr.ReadToEnd().Replace("\r\n", "\n").Replace("\t", string.Empty);
-        }
-
-        private bool TryFetchTemplate(string name, [NotNullWhen(true)] out MemberDeclarationSyntax? member)
-        {
-            string? template = this.FetchTemplateText(name);
-            if (template == null)
-            {
-                member = null;
-                return false;
-            }
-
-            member = ParseMemberDeclaration(template) ?? throw new GenerationFailedException($"Unable to parse a type from a template: {name}");
-            member = this.ElevateVisibility(member);
-            return true;
-        }
-
-        private FunctionPointerTypeSyntax FunctionPointer(MethodDefinition methodDefinition, MethodSignature<TypeHandleInfo> signature)
-        {
-            FunctionPointerCallingConventionSyntax callingConventionSyntax = FunctionPointerCallingConvention(
-                Token(SyntaxKind.UnmanagedKeyword),
-                FunctionPointerUnmanagedCallingConventionList(SingletonSeparatedList(ToUnmanagedCallingConventionSyntax(CallingConvention.StdCall))));
-
-            FunctionPointerParameterListSyntax parametersList = FunctionPointerParameterList();
-
-            foreach (ParameterHandle parameterHandle in methodDefinition.GetParameters())
-            {
-                var parameter = this.Reader.GetParameter(parameterHandle);
-                if (parameter.SequenceNumber == 0)
-                {
-                    continue;
+                    docCommentsBuilder.AppendLine($@"/// <para><see href=""{docs.HelpLink}#{docsAnchor}"">Read more on docs.microsoft.com</see>.</para>");
                 }
 
-                var parameterTypeInfo = signature.ParameterTypes[parameter.SequenceNumber - 1];
-                parametersList = parametersList.AddParameters(this.TranslateDelegateToFunctionPointer(parameterTypeInfo, parameter.GetCustomAttributes()));
+                docCommentsBuilder.Append("/// ");
             }
+            else
+            {
+                EmitLine(docCommentsBuilder, yamlDocSrc);
+            }
+        }
+    }
 
-            parametersList = parametersList.AddParameters(this.TranslateDelegateToFunctionPointer(signature.ReturnType, this.GetReturnTypeCustomAttributes(methodDefinition)));
-
-            return FunctionPointerType(callingConventionSyntax, parametersList);
+    private MemberDeclarationSyntax FetchTemplate(string name)
+    {
+        if (!this.TryFetchTemplate(name, out MemberDeclarationSyntax? result))
+        {
+            throw new KeyNotFoundException();
         }
 
-        private FunctionPointerParameterSyntax TranslateDelegateToFunctionPointer(TypeHandleInfo parameterTypeInfo, CustomAttributeHandleCollection? customAttributeHandles)
-        {
-            if (this.IsDelegateReference(parameterTypeInfo, out TypeDefinition delegateTypeDef))
-            {
-                return FunctionPointerParameter(this.FunctionPointer(delegateTypeDef));
-            }
+        return result;
+    }
 
-            return FunctionPointerParameter(parameterTypeInfo.ToTypeSyntax(this.functionPointerTypeSettings, customAttributeHandles).GetUnmarshaledType());
+    private string? FetchTemplateText(string name)
+    {
+        using Stream? templateStream = Assembly.GetExecutingAssembly().GetManifestResourceStream($"{ThisAssembly.RootNamespace}.templates.{name.Replace('/', '.')}.cs");
+        if (templateStream is null)
+        {
+            return null;
         }
 
-        private bool TryGetRenamedMethod(string methodName, [NotNullWhen(true)] out string? newName)
-        {
-            if (this.WideCharOnly && IsWideFunction(methodName))
-            {
-                newName = methodName.Substring(0, methodName.Length - 1);
-                return !this.GetMethodByName(newName, exactNameMatchOnly: true).HasValue;
-            }
+        using StreamReader sr = new(templateStream);
+        return sr.ReadToEnd().Replace("\r\n", "\n").Replace("\t", string.Empty);
+    }
 
-            newName = null;
+    private bool TryFetchTemplate(string name, [NotNullWhen(true)] out MemberDeclarationSyntax? member)
+    {
+        string? template = this.FetchTemplateText(name);
+        if (template == null)
+        {
+            member = null;
             return false;
         }
 
-        private CustomAttributeHandleCollection? GetReturnTypeCustomAttributes(MethodDefinition methodDefinition)
-        {
-            CustomAttributeHandleCollection? returnTypeAttributes = null;
-            foreach (ParameterHandle parameterHandle in methodDefinition.GetParameters())
-            {
-                var parameter = this.Reader.GetParameter(parameterHandle);
-                if (parameter.Name.IsNil)
-                {
-                    returnTypeAttributes = parameter.GetCustomAttributes();
-                }
+        member = ParseMemberDeclaration(template) ?? throw new GenerationFailedException($"Unable to parse a type from a template: {name}");
+        member = this.ElevateVisibility(member);
+        return true;
+    }
 
-                // What we're looking for would always be the first element in the collection.
+    private FunctionPointerTypeSyntax FunctionPointer(MethodDefinition methodDefinition, MethodSignature<TypeHandleInfo> signature)
+    {
+        FunctionPointerCallingConventionSyntax callingConventionSyntax = FunctionPointerCallingConvention(
+            Token(SyntaxKind.UnmanagedKeyword),
+            FunctionPointerUnmanagedCallingConventionList(SingletonSeparatedList(ToUnmanagedCallingConventionSyntax(CallingConvention.StdCall))));
+
+        FunctionPointerParameterListSyntax parametersList = FunctionPointerParameterList();
+
+        foreach (ParameterHandle parameterHandle in methodDefinition.GetParameters())
+        {
+            var parameter = this.Reader.GetParameter(parameterHandle);
+            if (parameter.SequenceNumber == 0)
+            {
+                continue;
+            }
+
+            var parameterTypeInfo = signature.ParameterTypes[parameter.SequenceNumber - 1];
+            parametersList = parametersList.AddParameters(this.TranslateDelegateToFunctionPointer(parameterTypeInfo, parameter.GetCustomAttributes()));
+        }
+
+        parametersList = parametersList.AddParameters(this.TranslateDelegateToFunctionPointer(signature.ReturnType, this.GetReturnTypeCustomAttributes(methodDefinition)));
+
+        return FunctionPointerType(callingConventionSyntax, parametersList);
+    }
+
+    private FunctionPointerParameterSyntax TranslateDelegateToFunctionPointer(TypeHandleInfo parameterTypeInfo, CustomAttributeHandleCollection? customAttributeHandles)
+    {
+        if (this.IsDelegateReference(parameterTypeInfo, out TypeDefinition delegateTypeDef))
+        {
+            return FunctionPointerParameter(this.FunctionPointer(delegateTypeDef));
+        }
+
+        return FunctionPointerParameter(parameterTypeInfo.ToTypeSyntax(this.functionPointerTypeSettings, customAttributeHandles).GetUnmarshaledType());
+    }
+
+    private bool TryGetRenamedMethod(string methodName, [NotNullWhen(true)] out string? newName)
+    {
+        if (this.WideCharOnly && IsWideFunction(methodName))
+        {
+            newName = methodName.Substring(0, methodName.Length - 1);
+            return !this.GetMethodByName(newName, exactNameMatchOnly: true).HasValue;
+        }
+
+        newName = null;
+        return false;
+    }
+
+    private CustomAttributeHandleCollection? GetReturnTypeCustomAttributes(MethodDefinition methodDefinition)
+    {
+        CustomAttributeHandleCollection? returnTypeAttributes = null;
+        foreach (ParameterHandle parameterHandle in methodDefinition.GetParameters())
+        {
+            var parameter = this.Reader.GetParameter(parameterHandle);
+            if (parameter.Name.IsNil)
+            {
+                returnTypeAttributes = parameter.GetCustomAttributes();
+            }
+
+            // What we're looking for would always be the first element in the collection.
+            break;
+        }
+
+        return returnTypeAttributes;
+    }
+
+    private bool IsCompilerGenerated(TypeDefinition typeDef)
+    {
+        bool isCompilerGenerated = false;
+        foreach (CustomAttributeHandle attHandle in typeDef.GetCustomAttributes())
+        {
+            var att = this.Reader.GetCustomAttribute(attHandle);
+            if (this.IsAttribute(att, SystemRuntimeCompilerServices, nameof(CompilerGeneratedAttribute)))
+            {
+                isCompilerGenerated = true;
                 break;
             }
-
-            return returnTypeAttributes;
         }
 
-        private bool IsCompilerGenerated(TypeDefinition typeDef)
+        return isCompilerGenerated;
+    }
+
+    private ISymbol? FindSymbolIfAlreadyAvailable(string fullyQualifiedMetadataName)
+    {
+        if (this.compilation is object)
         {
-            bool isCompilerGenerated = false;
-            foreach (CustomAttributeHandle attHandle in typeDef.GetCustomAttributes())
+            if (this.compilation.Assembly.GetTypeByMetadataName(fullyQualifiedMetadataName) is { } ownSymbol)
             {
-                var att = this.Reader.GetCustomAttribute(attHandle);
-                if (this.IsAttribute(att, SystemRuntimeCompilerServices, nameof(CompilerGeneratedAttribute)))
-                {
-                    isCompilerGenerated = true;
-                    break;
-                }
+                // This assembly defines it.
+                // But if it defines it as a partial, we should not consider it as fully defined so we populate our side.
+                return ownSymbol.DeclaringSyntaxReferences.Any(sr => sr.GetSyntax() is BaseTypeDeclarationSyntax type && type.Modifiers.Any(SyntaxKind.PartialKeyword))
+                    ? null
+                    : ownSymbol;
             }
 
-            return isCompilerGenerated;
-        }
-
-        private ISymbol? FindSymbolIfAlreadyAvailable(string fullyQualifiedMetadataName)
-        {
-            if (this.compilation is object)
+            foreach (var reference in this.compilation.References)
             {
-                if (this.compilation.Assembly.GetTypeByMetadataName(fullyQualifiedMetadataName) is { } ownSymbol)
+                if (this.compilation.GetAssemblyOrModuleSymbol(reference) is IAssemblySymbol referencedAssembly)
                 {
-                    // This assembly defines it.
-                    // But if it defines it as a partial, we should not consider it as fully defined so we populate our side.
-                    return ownSymbol.DeclaringSyntaxReferences.Any(sr => sr.GetSyntax() is BaseTypeDeclarationSyntax type && type.Modifiers.Any(SyntaxKind.PartialKeyword))
-                        ? null
-                        : ownSymbol;
-                }
-
-                foreach (var reference in this.compilation.References)
-                {
-                    if (this.compilation.GetAssemblyOrModuleSymbol(reference) is IAssemblySymbol referencedAssembly)
+                    if (referencedAssembly.GetTypeByMetadataName(fullyQualifiedMetadataName) is { } externalSymbol)
                     {
-                        if (referencedAssembly.GetTypeByMetadataName(fullyQualifiedMetadataName) is { } externalSymbol)
+                        if (this.compilation.IsSymbolAccessibleWithin(externalSymbol, this.compilation.Assembly))
                         {
-                            if (this.compilation.IsSymbolAccessibleWithin(externalSymbol, this.compilation.Assembly))
-                            {
-                                // A referenced assembly declares this symbol and it is accessible to our own.
-                                return externalSymbol;
-                            }
+                            // A referenced assembly declares this symbol and it is accessible to our own.
+                            return externalSymbol;
                         }
                     }
                 }
             }
+        }
 
+        return null;
+    }
+
+    private MemberDeclarationSyntax? RequestInteropType(TypeDefinitionHandle typeDefHandle, NameSyntax? declaringType)
+    {
+        TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefHandle);
+        if (this.IsCompilerGenerated(typeDef))
+        {
             return null;
         }
 
-        private MemberDeclarationSyntax? RequestInteropType(TypeDefinitionHandle typeDefHandle, NameSyntax? declaringType)
+        // Skip if the compilation already defines this type or can access it from elsewhere.
+        string name = this.Reader.GetString(typeDef.Name);
+        string ns = this.Reader.GetString(typeDef.Namespace);
+        string fullyQualifiedName = ns + "." + name;
+        if (this.FindSymbolIfAlreadyAvailable(fullyQualifiedName) is object)
         {
-            TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefHandle);
-            if (this.IsCompilerGenerated(typeDef))
+            // The type already exists either in this project or a referenced one.
+            return null;
+        }
+
+        try
+        {
+            StringHandle baseTypeName, baseTypeNamespace;
+            this.GetBaseTypeInfo(typeDef, out baseTypeName, out baseTypeNamespace);
+
+            MemberDeclarationSyntax? typeDeclaration;
+
+            if ((typeDef.Attributes & TypeAttributes.Interface) == TypeAttributes.Interface)
             {
-                return null;
+                typeDeclaration = this.DeclareInterface(typeDef);
             }
-
-            // Skip if the compilation already defines this type or can access it from elsewhere.
-            string name = this.Reader.GetString(typeDef.Name);
-            string ns = this.Reader.GetString(typeDef.Namespace);
-            string fullyQualifiedName = ns + "." + name;
-            if (this.FindSymbolIfAlreadyAvailable(fullyQualifiedName) is object)
+            else if (this.Reader.StringComparer.Equals(baseTypeName, nameof(ValueType)) && this.Reader.StringComparer.Equals(baseTypeNamespace, nameof(System)))
             {
-                // The type already exists either in this project or a referenced one.
-                return null;
-            }
-
-            try
-            {
-                StringHandle baseTypeName, baseTypeNamespace;
-                this.GetBaseTypeInfo(typeDef, out baseTypeName, out baseTypeNamespace);
-
-                MemberDeclarationSyntax? typeDeclaration;
-
-                if ((typeDef.Attributes & TypeAttributes.Interface) == TypeAttributes.Interface)
+                // Is this a special typedef struct?
+                if (this.IsTypeDefStruct(typeDef))
                 {
-                    typeDeclaration = this.DeclareInterface(typeDef);
+                    typeDeclaration = this.DeclareTypeDefStruct(typeDef);
                 }
-                else if (this.Reader.StringComparer.Equals(baseTypeName, nameof(ValueType)) && this.Reader.StringComparer.Equals(baseTypeNamespace, nameof(System)))
+                else if (this.IsEmptyStructWithGuid(typeDef))
                 {
-                    // Is this a special typedef struct?
-                    if (this.IsTypeDefStruct(typeDef))
-                    {
-                        typeDeclaration = this.DeclareTypeDefStruct(typeDef);
-                    }
-                    else if (this.IsEmptyStructWithGuid(typeDef))
-                    {
-                        typeDeclaration = this.DeclareCocreatableClass(typeDef);
-                    }
-                    else
-                    {
-                        StructDeclarationSyntax structDeclaration = this.DeclareStruct(typeDef);
-
-                        // Proactively generate all nested types as well.
-                        NameSyntax nestedDeclaringType = declaringType is null ? IdentifierName(name) : QualifiedName(declaringType, IdentifierName(name));
-                        foreach (TypeDefinitionHandle nestedHandle in typeDef.GetNestedTypes())
-                        {
-                            if (this.RequestInteropType(nestedHandle, nestedDeclaringType) is { } nestedType)
-                            {
-                                structDeclaration = structDeclaration.AddMembers(nestedType);
-                            }
-                        }
-
-                        typeDeclaration = structDeclaration;
-                    }
-                }
-                else if (this.Reader.StringComparer.Equals(baseTypeName, nameof(Enum)) && this.Reader.StringComparer.Equals(baseTypeNamespace, nameof(System)))
-                {
-                    // Consider reusing .NET types like FILE_SHARE_FLAGS -> System.IO.FileShare
-                    typeDeclaration = this.DeclareEnum(typeDef);
-                }
-                else if (this.Reader.StringComparer.Equals(baseTypeName, nameof(MulticastDelegate)) && this.Reader.StringComparer.Equals(baseTypeNamespace, nameof(System)))
-                {
-                    typeDeclaration =
-                        this.IsUntypedDelegate(typeDef) ? this.DeclareUntypedDelegate(typeDef) :
-                        this.options.AllowMarshaling ? this.DeclareDelegate(typeDef) :
-                        null;
+                    typeDeclaration = this.DeclareCocreatableClass(typeDef);
                 }
                 else
                 {
-                    // not yet supported.
-                    return null;
+                    StructDeclarationSyntax structDeclaration = this.DeclareStruct(typeDef);
+
+                    // Proactively generate all nested types as well.
+                    NameSyntax nestedDeclaringType = declaringType is null ? IdentifierName(name) : QualifiedName(declaringType, IdentifierName(name));
+                    foreach (TypeDefinitionHandle nestedHandle in typeDef.GetNestedTypes())
+                    {
+                        if (this.RequestInteropType(nestedHandle, nestedDeclaringType) is { } nestedType)
+                        {
+                            structDeclaration = structDeclaration.AddMembers(nestedType);
+                        }
+                    }
+
+                    typeDeclaration = structDeclaration;
                 }
-
-                return typeDeclaration;
             }
-            catch (Exception ex)
+            else if (this.Reader.StringComparer.Equals(baseTypeName, nameof(Enum)) && this.Reader.StringComparer.Equals(baseTypeNamespace, nameof(System)))
             {
-                throw new GenerationFailedException("Failed to generate " + this.Reader.GetString(typeDef.Name), ex);
+                // Consider reusing .NET types like FILE_SHARE_FLAGS -> System.IO.FileShare
+                typeDeclaration = this.DeclareEnum(typeDef);
             }
+            else if (this.Reader.StringComparer.Equals(baseTypeName, nameof(MulticastDelegate)) && this.Reader.StringComparer.Equals(baseTypeNamespace, nameof(System)))
+            {
+                typeDeclaration =
+                    this.IsUntypedDelegate(typeDef) ? this.DeclareUntypedDelegate(typeDef) :
+                    this.options.AllowMarshaling ? this.DeclareDelegate(typeDef) :
+                    null;
+            }
+            else
+            {
+                // not yet supported.
+                return null;
+            }
+
+            return typeDeclaration;
+        }
+        catch (Exception ex)
+        {
+            throw new GenerationFailedException("Failed to generate " + this.Reader.GetString(typeDef.Name), ex);
+        }
+    }
+
+    private bool IsUntypedDelegate(TypeDefinition typeDef) => IsUntypedDelegate(this.Reader, typeDef);
+
+    private bool IsTypeDefStruct(TypeDefinition typeDef) => typeDef.GetCustomAttributes().Any(att => this.IsAttribute(this.Reader.GetCustomAttribute(att), InteropDecorationNamespace, NativeTypedefAttribute));
+
+    private bool IsEmptyStructWithGuid(TypeDefinition typeDef)
+    {
+        return typeDef.GetCustomAttributes().Any(att => this.IsAttribute(this.Reader.GetCustomAttribute(att), InteropDecorationNamespace, nameof(GuidAttribute)))
+            && typeDef.GetFields().Count == 0;
+    }
+
+    private void DeclareExternMethod(MethodDefinitionHandle methodDefinitionHandle)
+    {
+        MethodDefinition methodDefinition = this.Reader.GetMethodDefinition(methodDefinitionHandle);
+        MethodImport import = methodDefinition.GetImport();
+        if (import.Name.IsNil)
+        {
+            // Not an exported method.
+            return;
         }
 
-        private bool IsUntypedDelegate(TypeDefinition typeDef) => IsUntypedDelegate(this.Reader, typeDef);
-
-        private bool IsTypeDefStruct(TypeDefinition typeDef) => typeDef.GetCustomAttributes().Any(att => this.IsAttribute(this.Reader.GetCustomAttribute(att), InteropDecorationNamespace, NativeTypedefAttribute));
-
-        private bool IsEmptyStructWithGuid(TypeDefinition typeDef)
+        var methodName = this.Reader.GetString(methodDefinition.Name);
+        try
         {
-            return typeDef.GetCustomAttributes().Any(att => this.IsAttribute(this.Reader.GetCustomAttribute(att), InteropDecorationNamespace, nameof(GuidAttribute)))
-                && typeDef.GetFields().Count == 0;
-        }
-
-        private void DeclareExternMethod(MethodDefinitionHandle methodDefinitionHandle)
-        {
-            MethodDefinition methodDefinition = this.Reader.GetMethodDefinition(methodDefinitionHandle);
-            MethodImport import = methodDefinition.GetImport();
-            if (import.Name.IsNil)
+            if (this.WideCharOnly && IsAnsiFunction(methodName))
             {
-                // Not an exported method.
+                // Skip Ansi functions.
                 return;
             }
 
-            var methodName = this.Reader.GetString(methodDefinition.Name);
-            try
+            var moduleName = this.GetNormalizedModuleName(import);
+
+            string? entrypoint = null;
+            if (this.TryGetRenamedMethod(methodName, out string? newName))
             {
-                if (this.WideCharOnly && IsAnsiFunction(methodName))
-                {
-                    // Skip Ansi functions.
-                    return;
-                }
-
-                var moduleName = this.GetNormalizedModuleName(import);
-
-                string? entrypoint = null;
-                if (this.TryGetRenamedMethod(methodName, out string? newName))
-                {
-                    entrypoint = methodName;
-                    methodName = newName;
-                }
-
-                // If this method releases a handle, recreate the method signature such that we take the struct rather than the SafeHandle as a parameter.
-                TypeSyntaxSettings typeSettings = this.MetadataIndex.ReleaseMethods.Contains(entrypoint ?? methodName) ? this.externReleaseSignatureTypeSettings : this.externSignatureTypeSettings;
-                MethodSignature<TypeHandleInfo> signature = methodDefinition.DecodeSignature(SignatureHandleProvider.Instance, null);
-
-                CustomAttributeHandleCollection? returnTypeAttributes = this.GetReturnTypeCustomAttributes(methodDefinition);
-                var returnType = signature.ReturnType.ToTypeSyntax(typeSettings, returnTypeAttributes, ParameterAttributes.Out);
-
-                MethodDeclarationSyntax methodDeclaration = MethodDeclaration(
-                    List<AttributeListSyntax>()
-                        .Add(AttributeList()
-                            .WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken))
-                            .AddAttributes(DllImport(import, moduleName, entrypoint))),
-                    modifiers: TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.ExternKeyword)),
-                    returnType.Type.WithTrailingTrivia(TriviaList(Space)),
-                    explicitInterfaceSpecifier: null!,
-                    SafeIdentifier(methodName),
-                    null!,
-                    FixTrivia(this.CreateParameterList(methodDefinition, signature, typeSettings)),
-                    List<TypeParameterConstraintClauseSyntax>(),
-                    body: null!,
-                    TokenWithLineFeed(SyntaxKind.SemicolonToken));
-                methodDeclaration = returnType.AddReturnMarshalAs(methodDeclaration);
-
-                if (this.generateDefaultDllImportSearchPathsAttribute)
-                {
-                    methodDeclaration = methodDeclaration.AddAttributeLists(DefaultDllImportSearchPathsAttributeList);
-                }
-
-                if (this.GetSupportedOSPlatformAttribute(methodDefinition.GetCustomAttributes()) is AttributeSyntax supportedOSPlatformAttribute)
-                {
-                    methodDeclaration = methodDeclaration.AddAttributeLists(AttributeList().AddAttributes(supportedOSPlatformAttribute));
-                }
-
-                // Add documentation if we can find it.
-                methodDeclaration = this.AddApiDocumentation(entrypoint ?? methodName, methodDeclaration);
-
-                if (RequiresUnsafe(methodDeclaration.ReturnType) || methodDeclaration.ParameterList.Parameters.Any(p => RequiresUnsafe(p.Type)))
-                {
-                    methodDeclaration = methodDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));
-                }
-
-                this.volatileCode.AddMemberToModule(moduleName, this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, this.methodsAndConstantsClassName, FriendlyOverloadOf.ExternMethod));
-                this.volatileCode.AddMemberToModule(moduleName, methodDeclaration);
+                entrypoint = methodName;
+                methodName = newName;
             }
-            catch (Exception ex)
+
+            // If this method releases a handle, recreate the method signature such that we take the struct rather than the SafeHandle as a parameter.
+            TypeSyntaxSettings typeSettings = this.MetadataIndex.ReleaseMethods.Contains(entrypoint ?? methodName) ? this.externReleaseSignatureTypeSettings : this.externSignatureTypeSettings;
+            MethodSignature<TypeHandleInfo> signature = methodDefinition.DecodeSignature(SignatureHandleProvider.Instance, null);
+
+            CustomAttributeHandleCollection? returnTypeAttributes = this.GetReturnTypeCustomAttributes(methodDefinition);
+            var returnType = signature.ReturnType.ToTypeSyntax(typeSettings, returnTypeAttributes, ParameterAttributes.Out);
+
+            MethodDeclarationSyntax methodDeclaration = MethodDeclaration(
+                List<AttributeListSyntax>()
+                    .Add(AttributeList()
+                        .WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken))
+                        .AddAttributes(DllImport(import, moduleName, entrypoint))),
+                modifiers: TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.ExternKeyword)),
+                returnType.Type.WithTrailingTrivia(TriviaList(Space)),
+                explicitInterfaceSpecifier: null!,
+                SafeIdentifier(methodName),
+                null!,
+                FixTrivia(this.CreateParameterList(methodDefinition, signature, typeSettings)),
+                List<TypeParameterConstraintClauseSyntax>(),
+                body: null!,
+                TokenWithLineFeed(SyntaxKind.SemicolonToken));
+            methodDeclaration = returnType.AddReturnMarshalAs(methodDeclaration);
+
+            if (this.generateDefaultDllImportSearchPathsAttribute)
             {
-                throw new GenerationFailedException($"Failed while generating extern method: {methodName}", ex);
+                methodDeclaration = methodDeclaration.AddAttributeLists(DefaultDllImportSearchPathsAttributeList);
+            }
+
+            if (this.GetSupportedOSPlatformAttribute(methodDefinition.GetCustomAttributes()) is AttributeSyntax supportedOSPlatformAttribute)
+            {
+                methodDeclaration = methodDeclaration.AddAttributeLists(AttributeList().AddAttributes(supportedOSPlatformAttribute));
+            }
+
+            // Add documentation if we can find it.
+            methodDeclaration = this.AddApiDocumentation(entrypoint ?? methodName, methodDeclaration);
+
+            if (RequiresUnsafe(methodDeclaration.ReturnType) || methodDeclaration.ParameterList.Parameters.Any(p => RequiresUnsafe(p.Type)))
+            {
+                methodDeclaration = methodDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));
+            }
+
+            this.volatileCode.AddMemberToModule(moduleName, this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, this.methodsAndConstantsClassName, FriendlyOverloadOf.ExternMethod));
+            this.volatileCode.AddMemberToModule(moduleName, methodDeclaration);
+        }
+        catch (Exception ex)
+        {
+            throw new GenerationFailedException($"Failed while generating extern method: {methodName}", ex);
+        }
+    }
+
+    private bool IsCompatibleWithPlatform(CustomAttributeHandleCollection customAttributesOnMember) => MetadataUtilities.IsCompatibleWithPlatform(this.Reader, this.MetadataIndex, this.compilation?.Options.Platform, customAttributesOnMember);
+
+    private AttributeSyntax? GetSupportedOSPlatformAttribute(CustomAttributeHandleCollection attributes)
+    {
+        AttributeSyntax? supportedOSPlatformAttribute = null;
+        if (this.generateSupportedOSPlatformAttributes && this.FindInteropDecorativeAttribute(attributes, "SupportedOSPlatformAttribute") is CustomAttribute templateOSPlatformAttribute)
+        {
+            CustomAttributeValue<TypeSyntax> args = templateOSPlatformAttribute.DecodeValue(CustomAttributeTypeProvider.Instance);
+            supportedOSPlatformAttribute = SupportedOSPlatformAttribute.AddArgumentListArguments(AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal((string)args.FixedArguments[0].Value!))));
+        }
+
+        return supportedOSPlatformAttribute;
+    }
+
+    /// <summary>
+    /// Searches for an extern method.
+    /// </summary>
+    /// <param name="possiblyQualifiedName">A simple method name or one qualified with a namespace.</param>
+    /// <param name="exactNameMatchOnly"><see langword="true"/> to only match on an exact method name; <see langword="false"/> to allow for fuzzy matching such as an omitted W or A suffix.</param>
+    /// <returns>The matching method if exactly one is found, or <see langword="null"/> if none was found.</returns>
+    /// <exception cref="ArgumentException">Thrown if the <paramref name="possiblyQualifiedName"/> argument is not qualified and more than one matching method name was found.</exception>
+    private MethodDefinitionHandle? GetMethodByName(string possiblyQualifiedName, bool exactNameMatchOnly = false)
+    {
+        TrySplitPossiblyQualifiedName(possiblyQualifiedName, out string? methodNamespace, out string methodName);
+        return this.GetMethodByName(methodNamespace, methodName, exactNameMatchOnly);
+    }
+
+    /// <summary>
+    /// Searches for an extern method.
+    /// </summary>
+    /// <param name="methodNamespace">The namespace the method is found in, if known.</param>
+    /// <param name="methodName">The simple name of the method.</param>
+    /// <param name="exactNameMatchOnly"><see langword="true"/> to only match on an exact method name; <see langword="false"/> to allow for fuzzy matching such as an omitted W or A suffix.</param>
+    /// <returns>The matching method if exactly one is found, or <see langword="null"/> if none was found.</returns>
+    private MethodDefinitionHandle? GetMethodByName(string? methodNamespace, string methodName, bool exactNameMatchOnly = false)
+    {
+        IEnumerable<NamespaceMetadata> namespaces = this.GetNamespacesToSearch(methodNamespace);
+        bool foundApiWithMismatchedPlatform = false;
+
+        var matchingMethodHandles = new List<MethodDefinitionHandle>();
+        foreach (var nsMetadata in namespaces)
+        {
+            if (nsMetadata.Methods.TryGetValue(methodName, out MethodDefinitionHandle handle))
+            {
+                matchingMethodHandles.Add(handle);
+            }
+            else if (nsMetadata.MethodsForOtherPlatform.Contains(methodName))
+            {
+                foundApiWithMismatchedPlatform = true;
             }
         }
 
-        private bool IsCompatibleWithPlatform(CustomAttributeHandleCollection customAttributesOnMember) => MetadataUtilities.IsCompatibleWithPlatform(this.Reader, this.MetadataIndex, this.compilation?.Options.Platform, customAttributesOnMember);
-
-        private AttributeSyntax? GetSupportedOSPlatformAttribute(CustomAttributeHandleCollection attributes)
+        if (!exactNameMatchOnly && matchingMethodHandles.Count == 0)
         {
-            AttributeSyntax? supportedOSPlatformAttribute = null;
-            if (this.generateSupportedOSPlatformAttributes && this.FindInteropDecorativeAttribute(attributes, "SupportedOSPlatformAttribute") is CustomAttribute templateOSPlatformAttribute)
-            {
-                CustomAttributeValue<TypeSyntax> args = templateOSPlatformAttribute.DecodeValue(CustomAttributeTypeProvider.Instance);
-                supportedOSPlatformAttribute = SupportedOSPlatformAttribute.AddArgumentListArguments(AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal((string)args.FixedArguments[0].Value!))));
-            }
-
-            return supportedOSPlatformAttribute;
-        }
-
-        /// <summary>
-        /// Searches for an extern method.
-        /// </summary>
-        /// <param name="possiblyQualifiedName">A simple method name or one qualified with a namespace.</param>
-        /// <param name="exactNameMatchOnly"><see langword="true"/> to only match on an exact method name; <see langword="false"/> to allow for fuzzy matching such as an omitted W or A suffix.</param>
-        /// <returns>The matching method if exactly one is found, or <see langword="null"/> if none was found.</returns>
-        /// <exception cref="ArgumentException">Thrown if the <paramref name="possiblyQualifiedName"/> argument is not qualified and more than one matching method name was found.</exception>
-        private MethodDefinitionHandle? GetMethodByName(string possiblyQualifiedName, bool exactNameMatchOnly = false)
-        {
-            TrySplitPossiblyQualifiedName(possiblyQualifiedName, out string? methodNamespace, out string methodName);
-            return this.GetMethodByName(methodNamespace, methodName, exactNameMatchOnly);
-        }
-
-        /// <summary>
-        /// Searches for an extern method.
-        /// </summary>
-        /// <param name="methodNamespace">The namespace the method is found in, if known.</param>
-        /// <param name="methodName">The simple name of the method.</param>
-        /// <param name="exactNameMatchOnly"><see langword="true"/> to only match on an exact method name; <see langword="false"/> to allow for fuzzy matching such as an omitted W or A suffix.</param>
-        /// <returns>The matching method if exactly one is found, or <see langword="null"/> if none was found.</returns>
-        private MethodDefinitionHandle? GetMethodByName(string? methodNamespace, string methodName, bool exactNameMatchOnly = false)
-        {
-            IEnumerable<NamespaceMetadata> namespaces = this.GetNamespacesToSearch(methodNamespace);
-            bool foundApiWithMismatchedPlatform = false;
-
-            var matchingMethodHandles = new List<MethodDefinitionHandle>();
             foreach (var nsMetadata in namespaces)
             {
-                if (nsMetadata.Methods.TryGetValue(methodName, out MethodDefinitionHandle handle))
+                if (nsMetadata.Methods.TryGetValue(methodName + "W", out MethodDefinitionHandle handle) ||
+                    nsMetadata.Methods.TryGetValue(methodName + "A", out handle))
                 {
                     matchingMethodHandles.Add(handle);
                 }
-                else if (nsMetadata.MethodsForOtherPlatform.Contains(methodName))
-                {
-                    foundApiWithMismatchedPlatform = true;
-                }
-            }
-
-            if (!exactNameMatchOnly && matchingMethodHandles.Count == 0)
-            {
-                foreach (var nsMetadata in namespaces)
-                {
-                    if (nsMetadata.Methods.TryGetValue(methodName + "W", out MethodDefinitionHandle handle) ||
-                        nsMetadata.Methods.TryGetValue(methodName + "A", out handle))
-                    {
-                        matchingMethodHandles.Add(handle);
-                    }
-                }
-            }
-
-            if (matchingMethodHandles.Count == 1)
-            {
-                return matchingMethodHandles[0];
-            }
-            else if (matchingMethodHandles.Count > 1)
-            {
-                string matches = string.Join(
-                    ", ",
-                    matchingMethodHandles.Select(h =>
-                    {
-                        MethodDefinition md = this.Reader.GetMethodDefinition(h);
-                        TypeDefinition td = this.Reader.GetTypeDefinition(md.GetDeclaringType());
-                        return $"{this.Reader.GetString(td.Namespace)}.{this.Reader.GetString(md.Name)}";
-                    }));
-                throw new ArgumentException("The method name is ambiguous. Use the fully-qualified name instead. Possible matches: " + matches);
-            }
-
-            if (foundApiWithMismatchedPlatform)
-            {
-                throw new PlatformIncompatibleException($"The requested API ({methodName}) was found but is not available given the target platform ({this.compilation?.Options.Platform}).");
-            }
-
-            return null;
-        }
-
-        private void TryGenerateTypeOrThrow(string possiblyQualifiedName)
-        {
-            if (!this.TryGenerateType(possiblyQualifiedName))
-            {
-                throw new GenerationFailedException("Unable to find expected type: " + possiblyQualifiedName);
             }
         }
 
-        private void TryGenerateConstantOrThrow(string possiblyQualifiedName)
+        if (matchingMethodHandles.Count == 1)
         {
-            if (!this.TryGenerateConstant(possiblyQualifiedName, out _))
-            {
-                throw new GenerationFailedException("Unable to find expected constant: " + possiblyQualifiedName);
-            }
+            return matchingMethodHandles[0];
+        }
+        else if (matchingMethodHandles.Count > 1)
+        {
+            string matches = string.Join(
+                ", ",
+                matchingMethodHandles.Select(h =>
+                {
+                    MethodDefinition md = this.Reader.GetMethodDefinition(h);
+                    TypeDefinition td = this.Reader.GetTypeDefinition(md.GetDeclaringType());
+                    return $"{this.Reader.GetString(td.Namespace)}.{this.Reader.GetString(md.Name)}";
+                }));
+            throw new ArgumentException("The method name is ambiguous. Use the fully-qualified name instead. Possible matches: " + matches);
         }
 
-        private FieldDeclarationSyntax DeclareConstant(FieldDefinitionHandle fieldDefHandle)
+        if (foundApiWithMismatchedPlatform)
         {
-            FieldDefinition fieldDef = this.Reader.GetFieldDefinition(fieldDefHandle);
-            string name = this.Reader.GetString(fieldDef.Name);
-            try
-            {
-                TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null) with { IsConstantField = true };
-                var customAttributes = fieldDef.GetCustomAttributes();
-                var fieldType = fieldTypeInfo.ToTypeSyntax(this.fieldTypeSettings, customAttributes);
-                ExpressionSyntax value =
-                    fieldDef.GetDefaultValue() is { IsNil: false } constantHandle ? this.ToExpressionSyntax(this.Reader.GetConstant(constantHandle)) :
-                    this.FindInteropDecorativeAttribute(customAttributes, nameof(GuidAttribute)) is CustomAttribute guidAttribute ? GuidValue(guidAttribute) :
-                    this.FindInteropDecorativeAttribute(customAttributes, "PropertyKeyAttribute") is CustomAttribute propertyKeyAttribute ? PropertyKeyValue(propertyKeyAttribute, fieldType.Type) :
-                    throw new NotSupportedException("Unsupported constant: " + name);
-                bool requiresUnsafe = false;
-                if (fieldType.Type is not PredefinedTypeSyntax && value is not ObjectCreationExpressionSyntax)
-                {
-                    if (fieldTypeInfo is HandleTypeHandleInfo handleFieldTypeInfo && this.TryGetHandleReleaseMethod(handleFieldTypeInfo.Handle, out _))
-                    {
-                        // Cast to IntPtr first, then the actual handle struct.
-                        value = CastExpression(fieldType.Type, CastExpression(IntPtrTypeSyntax, ParenthesizedExpression(value)));
-                    }
-                    else if (fieldType.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "PCSTR" } } })
-                    {
-                        value = CastExpression(fieldType.Type, CastExpression(PointerType(PredefinedType(Token(SyntaxKind.ByteKeyword))), ParenthesizedExpression(value)));
-                        requiresUnsafe = true;
-                    }
-                    else if (fieldType.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "PCWSTR" } } })
-                    {
-                        value = CastExpression(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword))), ParenthesizedExpression(value));
-                        requiresUnsafe = true;
-                    }
-                    else
-                    {
-                        value = CastExpression(fieldType.Type, ParenthesizedExpression(value));
-                    }
-                }
+            throw new PlatformIncompatibleException($"The requested API ({methodName}) was found but is not available given the target platform ({this.compilation?.Options.Platform}).");
+        }
 
-                var modifiers = TokenList(TokenWithSpace(this.Visibility));
-                if (this.IsTypeDefStruct(fieldTypeInfo) || value is ObjectCreationExpressionSyntax)
+        return null;
+    }
+
+    private void TryGenerateTypeOrThrow(string possiblyQualifiedName)
+    {
+        if (!this.TryGenerateType(possiblyQualifiedName))
+        {
+            throw new GenerationFailedException("Unable to find expected type: " + possiblyQualifiedName);
+        }
+    }
+
+    private void TryGenerateConstantOrThrow(string possiblyQualifiedName)
+    {
+        if (!this.TryGenerateConstant(possiblyQualifiedName, out _))
+        {
+            throw new GenerationFailedException("Unable to find expected constant: " + possiblyQualifiedName);
+        }
+    }
+
+    private FieldDeclarationSyntax DeclareConstant(FieldDefinitionHandle fieldDefHandle)
+    {
+        FieldDefinition fieldDef = this.Reader.GetFieldDefinition(fieldDefHandle);
+        string name = this.Reader.GetString(fieldDef.Name);
+        try
+        {
+            TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null) with { IsConstantField = true };
+            var customAttributes = fieldDef.GetCustomAttributes();
+            var fieldType = fieldTypeInfo.ToTypeSyntax(this.fieldTypeSettings, customAttributes);
+            ExpressionSyntax value =
+                fieldDef.GetDefaultValue() is { IsNil: false } constantHandle ? this.ToExpressionSyntax(this.Reader.GetConstant(constantHandle)) :
+                this.FindInteropDecorativeAttribute(customAttributes, nameof(GuidAttribute)) is CustomAttribute guidAttribute ? GuidValue(guidAttribute) :
+                this.FindInteropDecorativeAttribute(customAttributes, "PropertyKeyAttribute") is CustomAttribute propertyKeyAttribute ? PropertyKeyValue(propertyKeyAttribute, fieldType.Type) :
+                throw new NotSupportedException("Unsupported constant: " + name);
+            bool requiresUnsafe = false;
+            if (fieldType.Type is not PredefinedTypeSyntax && value is not ObjectCreationExpressionSyntax)
+            {
+                if (fieldTypeInfo is HandleTypeHandleInfo handleFieldTypeInfo && this.TryGetHandleReleaseMethod(handleFieldTypeInfo.Handle, out _))
                 {
-                    modifiers = modifiers.Add(TokenWithSpace(SyntaxKind.StaticKeyword)).Add(TokenWithSpace(SyntaxKind.ReadOnlyKeyword));
+                    // Cast to IntPtr first, then the actual handle struct.
+                    value = CastExpression(fieldType.Type, CastExpression(IntPtrTypeSyntax, ParenthesizedExpression(value)));
+                }
+                else if (fieldType.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "PCSTR" } } })
+                {
+                    value = CastExpression(fieldType.Type, CastExpression(PointerType(PredefinedType(Token(SyntaxKind.ByteKeyword))), ParenthesizedExpression(value)));
+                    requiresUnsafe = true;
+                }
+                else if (fieldType.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "PCWSTR" } } })
+                {
+                    value = CastExpression(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword))), ParenthesizedExpression(value));
+                    requiresUnsafe = true;
                 }
                 else
                 {
-                    modifiers = modifiers.Add(TokenWithSpace(SyntaxKind.ConstKeyword));
+                    value = CastExpression(fieldType.Type, ParenthesizedExpression(value));
                 }
+            }
 
-                if (requiresUnsafe)
+            var modifiers = TokenList(TokenWithSpace(this.Visibility));
+            if (this.IsTypeDefStruct(fieldTypeInfo) || value is ObjectCreationExpressionSyntax)
+            {
+                modifiers = modifiers.Add(TokenWithSpace(SyntaxKind.StaticKeyword)).Add(TokenWithSpace(SyntaxKind.ReadOnlyKeyword));
+            }
+            else
+            {
+                modifiers = modifiers.Add(TokenWithSpace(SyntaxKind.ConstKeyword));
+            }
+
+            if (requiresUnsafe)
+            {
+                modifiers = modifiers.Add(TokenWithSpace(SyntaxKind.UnsafeKeyword));
+            }
+
+            var result = FieldDeclaration(VariableDeclaration(fieldType.Type).AddVariables(
+                VariableDeclarator(Identifier(name)).WithInitializer(EqualsValueClause(value))))
+                .WithModifiers(modifiers);
+            result = fieldType.AddMarshalAs(result);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            TypeDefinition typeDef = this.Reader.GetTypeDefinition(fieldDef.GetDeclaringType());
+            string typeName = this.Reader.GetString(typeDef.Name);
+            string? ns = this.Reader.GetString(typeDef.Namespace);
+            throw new GenerationFailedException($"Failed creating field: {ns}.{typeName}.{name}", ex);
+        }
+    }
+
+    private ClassDeclarationSyntax DeclareConstantDefiningClass()
+    {
+        return ClassDeclaration(this.methodsAndConstantsClassName.Identifier)
+            .AddMembers(this.committedCode.Fields.ToArray())
+            .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)));
+    }
+
+    private ClassDeclarationSyntax DeclareInlineArrayIndexerExtensionsClass()
+    {
+        return ClassDeclaration(InlineArrayIndexerExtensionsClassName.Identifier)
+            .AddMembers(this.committedCode.InlineArrayIndexerExtensions.ToArray())
+            .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)));
+    }
+
+    private ClassDeclarationSyntax DeclareComInterfaceFriendlyExtensionsClass()
+    {
+        return ClassDeclaration(ComInterfaceFriendlyExtensionsClassName.Identifier)
+            .AddMembers(this.committedCode.ComInterfaceExtensions.ToArray())
+            .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)));
+    }
+
+    /// <summary>
+    /// Generates a type to represent a COM interface.
+    /// </summary>
+    /// <param name="typeDef">The type definition of the interface.</param>
+    /// <returns>The type declaration.</returns>
+    /// <remarks>
+    /// COM interfaces are represented as structs in order to maintain the "unmanaged type" trait
+    /// so that all structs are blittable.
+    /// </remarks>
+    private TypeDeclarationSyntax? DeclareInterface(TypeDefinition typeDef)
+    {
+        Stack<QualifiedTypeDefinitionHandle> baseTypes = new Stack<QualifiedTypeDefinitionHandle>();
+        (Generator Generator, InterfaceImplementationHandle Handle) baseTypeHandle = (this, typeDef.GetInterfaceImplementations().SingleOrDefault());
+        while (!baseTypeHandle.Handle.IsNil)
+        {
+            InterfaceImplementation baseTypeImpl = baseTypeHandle.Generator.Reader.GetInterfaceImplementation(baseTypeHandle.Handle);
+            if (!baseTypeHandle.Generator.TryGetTypeDefHandle((TypeReferenceHandle)baseTypeImpl.Interface, out QualifiedTypeDefinitionHandle baseTypeDefHandle))
+            {
+                throw new GenerationFailedException("Failed to find base type.");
+            }
+
+            baseTypes.Push(baseTypeDefHandle);
+            TypeDefinition baseType = baseTypeDefHandle.Reader.GetTypeDefinition(baseTypeDefHandle.DefinitionHandle);
+            baseTypeHandle = (baseTypeHandle.Generator, baseType.GetInterfaceImplementations().SingleOrDefault());
+        }
+
+        return !this.options.AllowMarshaling || this.IsNonCOMInterface(typeDef)
+            ? this.DeclareInterfaceAsStruct(typeDef, baseTypes)
+            : this.DeclareInterfaceAsInterface(typeDef, baseTypes);
+    }
+
+    private TypeDeclarationSyntax DeclareInterfaceAsStruct(TypeDefinition typeDef, Stack<QualifiedTypeDefinitionHandle> baseTypes)
+    {
+        IdentifierNameSyntax ifaceName = IdentifierName(this.Reader.GetString(typeDef.Name));
+        IdentifierNameSyntax vtblFieldName = IdentifierName("lpVtbl");
+        var members = new List<MemberDeclarationSyntax>();
+        var vtblMembers = new List<MemberDeclarationSyntax>();
+        TypeSyntaxSettings typeSettings = this.comSignatureTypeSettings;
+
+        // It is imperative that we generate methods for all base interfaces as well, ahead of any implemented by *this* interface.
+        var allMethods = new List<QualifiedMethodDefinitionHandle>();
+        while (baseTypes.Count > 0)
+        {
+            QualifiedTypeDefinitionHandle qualifiedBaseType = baseTypes.Pop();
+            TypeDefinition baseType = qualifiedBaseType.Generator.Reader.GetTypeDefinition(qualifiedBaseType.DefinitionHandle);
+            allMethods.AddRange(baseType.GetMethods().Select(m => new QualifiedMethodDefinitionHandle(qualifiedBaseType.Generator, m)));
+        }
+
+        allMethods.AddRange(typeDef.GetMethods().Select(m => new QualifiedMethodDefinitionHandle(this, m)));
+        int methodCounter = 0;
+        foreach (QualifiedMethodDefinitionHandle methodDefHandle in allMethods)
+        {
+            methodCounter++;
+            var methodDefinition = methodDefHandle.Resolve();
+            string methodName = methodDefinition.Reader.GetString(methodDefinition.Method.Name);
+            IdentifierNameSyntax innerMethodName = IdentifierName($"{methodName}_{methodCounter}");
+
+            MethodSignature<TypeHandleInfo> signature = methodDefinition.Method.DecodeSignature(SignatureHandleProvider.Instance, null);
+            CustomAttributeHandleCollection? returnTypeAttributes = methodDefinition.Generator.GetReturnTypeCustomAttributes(methodDefinition.Method);
+            var returnType = signature.ReturnType.ToTypeSyntax(typeSettings, returnTypeAttributes);
+
+            ParameterListSyntax parameterList = methodDefinition.Generator.CreateParameterList(methodDefinition.Method, signature, typeSettings);
+            FunctionPointerParameterListSyntax funcPtrParameters = FunctionPointerParameterList()
+                .AddParameters(FunctionPointerParameter(PointerType(ifaceName)))
+                .AddParameters(parameterList.Parameters.Select(p => FunctionPointerParameter(p.Type!).WithModifiers(p.Modifiers)).ToArray())
+                .AddParameters(FunctionPointerParameter(returnType.Type));
+
+            FieldDeclarationSyntax vtblFunctionPtr = FieldDeclaration(
+                VariableDeclaration(
+                    FunctionPointerType().WithCallingConvention(FunctionPointerCallingConvention(TokenWithSpace(SyntaxKind.UnmanagedKeyword))
+                        .WithUnmanagedCallingConventionList(FunctionPointerUnmanagedCallingConventionList(
+                            SingletonSeparatedList(FunctionPointerUnmanagedCallingConvention(Identifier("Stdcall"))))))
+                    .WithParameterList(funcPtrParameters))
+                .WithVariables(SingletonSeparatedList(VariableDeclarator(innerMethodName.Identifier))))
+                .WithModifiers(TokenList(TokenWithSpace(SyntaxKind.InternalKeyword)));
+            vtblMembers.Add(vtblFunctionPtr);
+
+            IdentifierNameSyntax pThisLocal = IdentifierName("pThis");
+            InvocationExpressionSyntax vtblInvocation = InvocationExpression(MemberAccessExpression(SyntaxKind.PointerMemberAccessExpression, vtblFieldName, innerMethodName))
+                .WithArgumentList(FixTrivia(ArgumentList()
+                    .AddArguments(Argument(pThisLocal))
+                    .AddArguments(parameterList.Parameters.Select(p => Argument(IdentifierName(p.Identifier.ValueText)).WithRefKindKeyword(p.Modifiers.Count > 0 ? p.Modifiers[0] : default)).ToArray())));
+            StatementSyntax vtblInvocationStatement = IsVoid(returnType.Type)
+                ? ExpressionStatement(vtblInvocation)
+                : ReturnStatement(vtblInvocation);
+            var body = Block().AddStatements(
+                FixedStatement(
+                    VariableDeclaration(PointerType(ifaceName)).AddVariables(
+                        VariableDeclarator(pThisLocal.Identifier).WithInitializer(EqualsValueClause(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, ThisExpression())))),
+                    vtblInvocationStatement).WithFixedKeyword(TokenWithSpace(SyntaxKind.FixedKeyword)));
+
+            MethodDeclarationSyntax methodDeclaration = MethodDeclaration(
+                List<AttributeListSyntax>(),
+                modifiers: TokenList(TokenWithSpace(this.Visibility)),
+                returnType.Type.WithTrailingTrivia(TriviaList(Space)),
+                explicitInterfaceSpecifier: null!,
+                SafeIdentifier(methodName),
+                null!,
+                parameterList,
+                List<TypeParameterConstraintClauseSyntax>(),
+                body: body,
+                semicolonToken: default);
+            methodDeclaration = returnType.AddReturnMarshalAs(methodDeclaration);
+
+            if (methodName == nameof(object.GetType) && parameterList.Parameters.Count == 0)
+            {
+                methodDeclaration = methodDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.NewKeyword));
+            }
+
+            if (methodDeclaration.ReturnType is PointerTypeSyntax || methodDeclaration.ParameterList.Parameters.Any(p => p.Type is PointerTypeSyntax))
+            {
+                methodDeclaration = methodDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));
+            }
+
+            // Add documentation if we can find it.
+            methodDeclaration = this.AddApiDocumentation($"{ifaceName}.{methodName}", methodDeclaration);
+
+            members.AddRange(methodDefinition.Generator.DeclareFriendlyOverloads(methodDefinition.Method, methodDeclaration, IdentifierName(ifaceName.Identifier.ValueText), FriendlyOverloadOf.StructMethod));
+            members.Add(methodDeclaration);
+        }
+
+        var vtblStruct = StructDeclaration(Identifier("Vtbl"))
+            .AddMembers(vtblMembers.ToArray())
+            .AddModifiers(TokenWithSpace(SyntaxKind.PrivateKeyword));
+        members.Add(vtblStruct);
+
+        // private Vtbl* lpVtbl;
+        members.Add(FieldDeclaration(VariableDeclaration(PointerType(IdentifierName(vtblStruct.Identifier))).AddVariables(VariableDeclarator(vtblFieldName.Identifier))).AddModifiers(TokenWithSpace(SyntaxKind.PrivateKeyword)));
+
+        StructDeclarationSyntax iface = StructDeclaration(ifaceName.Identifier)
+            .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword))
+            .AddMembers(members.ToArray());
+
+        if (this.FindGuidFromAttribute(typeDef) is Guid guid)
+        {
+            iface = iface.AddAttributeLists(AttributeList().AddAttributes(GUID(guid)));
+        }
+
+        if (this.GetSupportedOSPlatformAttribute(typeDef.GetCustomAttributes()) is AttributeSyntax supportedOSPlatformAttribute)
+        {
+            iface = iface.AddAttributeLists(AttributeList().AddAttributes(supportedOSPlatformAttribute));
+        }
+
+        return iface;
+    }
+
+    private TypeDeclarationSyntax? DeclareInterfaceAsInterface(TypeDefinition typeDef, Stack<QualifiedTypeDefinitionHandle> baseTypes)
+    {
+        if (this.Reader.StringComparer.Equals(typeDef.Name, "IUnknown") || this.Reader.StringComparer.Equals(typeDef.Name, "IDispatch"))
+        {
+            // We do not generate interfaces for these COM base types.
+            return null;
+        }
+
+        IdentifierNameSyntax ifaceName = IdentifierName(this.Reader.GetString(typeDef.Name));
+        TypeSyntaxSettings typeSettings = this.comSignatureTypeSettings;
+
+        // It is imperative that we generate methods for all base interfaces as well, ahead of any implemented by *this* interface.
+        var allMethods = new List<MethodDefinitionHandle>();
+        bool foundIUnknown = false;
+        bool foundIDispatch = false;
+        bool foundIInspectable = false;
+        var baseTypeSyntaxList = new List<BaseTypeSyntax>();
+        while (baseTypes.Count > 0)
+        {
+            QualifiedTypeDefinitionHandle baseTypeHandle = baseTypes.Pop();
+            TypeDefinition baseType = baseTypeHandle.Reader.GetTypeDefinition(baseTypeHandle.DefinitionHandle);
+            if (!foundIUnknown)
+            {
+                if (!baseTypeHandle.Reader.StringComparer.Equals(baseType.Name, "IUnknown"))
                 {
-                    modifiers = modifiers.Add(TokenWithSpace(SyntaxKind.UnsafeKeyword));
+                    throw new NotSupportedException("Unsupported base COM interface type: " + baseTypeHandle.Reader.GetString(baseType.Name));
                 }
 
-                var result = FieldDeclaration(VariableDeclaration(fieldType.Type).AddVariables(
-                    VariableDeclarator(Identifier(name)).WithInitializer(EqualsValueClause(value))))
-                    .WithModifiers(modifiers);
-                result = fieldType.AddMarshalAs(result);
-                return result;
+                foundIUnknown = true;
             }
-            catch (Exception ex)
+            else
             {
-                TypeDefinition typeDef = this.Reader.GetTypeDefinition(fieldDef.GetDeclaringType());
-                string typeName = this.Reader.GetString(typeDef.Name);
-                string? ns = this.Reader.GetString(typeDef.Namespace);
-                throw new GenerationFailedException($"Failed creating field: {ns}.{typeName}.{name}", ex);
-            }
-        }
-
-        private ClassDeclarationSyntax DeclareConstantDefiningClass()
-        {
-            return ClassDeclaration(this.methodsAndConstantsClassName.Identifier)
-                .AddMembers(this.committedCode.Fields.ToArray())
-                .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)));
-        }
-
-        private ClassDeclarationSyntax DeclareInlineArrayIndexerExtensionsClass()
-        {
-            return ClassDeclaration(InlineArrayIndexerExtensionsClassName.Identifier)
-                .AddMembers(this.committedCode.InlineArrayIndexerExtensions.ToArray())
-                .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)));
-        }
-
-        private ClassDeclarationSyntax DeclareComInterfaceFriendlyExtensionsClass()
-        {
-            return ClassDeclaration(ComInterfaceFriendlyExtensionsClassName.Identifier)
-                .AddMembers(this.committedCode.ComInterfaceExtensions.ToArray())
-                .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)));
-        }
-
-        /// <summary>
-        /// Generates a type to represent a COM interface.
-        /// </summary>
-        /// <param name="typeDef">The type definition of the interface.</param>
-        /// <returns>The type declaration.</returns>
-        /// <remarks>
-        /// COM interfaces are represented as structs in order to maintain the "unmanaged type" trait
-        /// so that all structs are blittable.
-        /// </remarks>
-        private TypeDeclarationSyntax? DeclareInterface(TypeDefinition typeDef)
-        {
-            Stack<QualifiedTypeDefinitionHandle> baseTypes = new Stack<QualifiedTypeDefinitionHandle>();
-            (Generator Generator, InterfaceImplementationHandle Handle) baseTypeHandle = (this, typeDef.GetInterfaceImplementations().SingleOrDefault());
-            while (!baseTypeHandle.Handle.IsNil)
-            {
-                InterfaceImplementation baseTypeImpl = baseTypeHandle.Generator.Reader.GetInterfaceImplementation(baseTypeHandle.Handle);
-                if (!baseTypeHandle.Generator.TryGetTypeDefHandle((TypeReferenceHandle)baseTypeImpl.Interface, out QualifiedTypeDefinitionHandle baseTypeDefHandle))
+                if (baseTypeHandle.Reader.StringComparer.Equals(baseType.Name, "IDispatch"))
                 {
-                    throw new GenerationFailedException("Failed to find base type.");
+                    foundIDispatch = true;
                 }
-
-                baseTypes.Push(baseTypeDefHandle);
-                TypeDefinition baseType = baseTypeDefHandle.Reader.GetTypeDefinition(baseTypeDefHandle.DefinitionHandle);
-                baseTypeHandle = (baseTypeHandle.Generator, baseType.GetInterfaceImplementations().SingleOrDefault());
+                else if (baseTypeHandle.Reader.StringComparer.Equals(baseType.Name, "IInspectable"))
+                {
+                    foundIInspectable = true;
+                }
+                else
+                {
+                    baseTypeHandle.Generator.RequestInteropType(baseTypeHandle.DefinitionHandle);
+                    baseTypeSyntaxList.Add(SimpleBaseType(new HandleTypeHandleInfo(baseTypeHandle.Reader, baseTypeHandle.DefinitionHandle).ToTypeSyntax(this.comSignatureTypeSettings, null).Type));
+                    allMethods.AddRange(baseType.GetMethods());
+                }
             }
-
-            return !this.options.AllowMarshaling || this.IsNonCOMInterface(typeDef)
-                ? this.DeclareInterfaceAsStruct(typeDef, baseTypes)
-                : this.DeclareInterfaceAsInterface(typeDef, baseTypes);
         }
 
-        private TypeDeclarationSyntax DeclareInterfaceAsStruct(TypeDefinition typeDef, Stack<QualifiedTypeDefinitionHandle> baseTypes)
+        int inheritedMethods = allMethods.Count;
+        allMethods.AddRange(typeDef.GetMethods());
+
+        AttributeSyntax ifaceType = InterfaceType(
+            foundIInspectable ? ComInterfaceType.InterfaceIsIInspectable :
+            foundIDispatch ? ComInterfaceType.InterfaceIsIDispatch :
+            foundIUnknown ? ComInterfaceType.InterfaceIsIUnknown :
+            throw new NotSupportedException("No COM interface base type found."));
+
+        var members = new List<MemberDeclarationSyntax>();
+        var friendlyOverloads = new List<MethodDeclarationSyntax>();
+
+        foreach (MethodDefinitionHandle methodDefHandle in allMethods)
         {
-            IdentifierNameSyntax ifaceName = IdentifierName(this.Reader.GetString(typeDef.Name));
-            IdentifierNameSyntax vtblFieldName = IdentifierName("lpVtbl");
-            var members = new List<MemberDeclarationSyntax>();
-            var vtblMembers = new List<MemberDeclarationSyntax>();
-            TypeSyntaxSettings typeSettings = this.comSignatureTypeSettings;
-
-            // It is imperative that we generate methods for all base interfaces as well, ahead of any implemented by *this* interface.
-            var allMethods = new List<QualifiedMethodDefinitionHandle>();
-            while (baseTypes.Count > 0)
+            var methodDefinition = this.Reader.GetMethodDefinition(methodDefHandle);
+            string methodName = this.Reader.GetString(methodDefinition.Name);
+            try
             {
-                QualifiedTypeDefinitionHandle qualifiedBaseType = baseTypes.Pop();
-                TypeDefinition baseType = qualifiedBaseType.Generator.Reader.GetTypeDefinition(qualifiedBaseType.DefinitionHandle);
-                allMethods.AddRange(baseType.GetMethods().Select(m => new QualifiedMethodDefinitionHandle(qualifiedBaseType.Generator, m)));
-            }
+                IdentifierNameSyntax innerMethodName = IdentifierName(methodName);
+                MethodSignature<TypeHandleInfo> signature = methodDefinition.DecodeSignature(SignatureHandleProvider.Instance, null);
 
-            allMethods.AddRange(typeDef.GetMethods().Select(m => new QualifiedMethodDefinitionHandle(this, m)));
-            int methodCounter = 0;
-            foreach (QualifiedMethodDefinitionHandle methodDefHandle in allMethods)
-            {
-                methodCounter++;
-                var methodDefinition = methodDefHandle.Resolve();
-                string methodName = methodDefinition.Reader.GetString(methodDefinition.Method.Name);
-                IdentifierNameSyntax innerMethodName = IdentifierName($"{methodName}_{methodCounter}");
+                CustomAttributeHandleCollection? returnTypeAttributes = this.GetReturnTypeCustomAttributes(methodDefinition);
+                var (returnType, marshalAs) = signature.ReturnType.ToTypeSyntax(typeSettings, returnTypeAttributes);
+                AttributeSyntax? returnsAttribute = MarshalAs(marshalAs);
 
-                MethodSignature<TypeHandleInfo> signature = methodDefinition.Method.DecodeSignature(SignatureHandleProvider.Instance, null);
-                CustomAttributeHandleCollection? returnTypeAttributes = methodDefinition.Generator.GetReturnTypeCustomAttributes(methodDefinition.Method);
-                var returnType = signature.ReturnType.ToTypeSyntax(typeSettings, returnTypeAttributes);
+                bool preserveSig = returnType is not QualifiedNameSyntax { Right: { Identifier: { ValueText: "HRESULT" } } }
+                    || this.options.ComInterop.PreserveSigMethods.Contains($"{ifaceName}.{methodName}")
+                    || this.options.ComInterop.PreserveSigMethods.Contains(ifaceName.ToString());
 
-                ParameterListSyntax parameterList = methodDefinition.Generator.CreateParameterList(methodDefinition.Method, signature, typeSettings);
-                FunctionPointerParameterListSyntax funcPtrParameters = FunctionPointerParameterList()
-                    .AddParameters(FunctionPointerParameter(PointerType(ifaceName)))
-                    .AddParameters(parameterList.Parameters.Select(p => FunctionPointerParameter(p.Type!).WithModifiers(p.Modifiers)).ToArray())
-                    .AddParameters(FunctionPointerParameter(returnType.Type));
+                var parameterList = this.CreateParameterList(methodDefinition, signature, this.comSignatureTypeSettings);
 
-                FieldDeclarationSyntax vtblFunctionPtr = FieldDeclaration(
-                    VariableDeclaration(
-                        FunctionPointerType().WithCallingConvention(FunctionPointerCallingConvention(TokenWithSpace(SyntaxKind.UnmanagedKeyword))
-                            .WithUnmanagedCallingConventionList(FunctionPointerUnmanagedCallingConventionList(
-                                SingletonSeparatedList(FunctionPointerUnmanagedCallingConvention(Identifier("Stdcall"))))))
-                        .WithParameterList(funcPtrParameters))
-                    .WithVariables(SingletonSeparatedList(VariableDeclarator(innerMethodName.Identifier))))
-                    .WithModifiers(TokenList(TokenWithSpace(SyntaxKind.InternalKeyword)));
-                vtblMembers.Add(vtblFunctionPtr);
+                if (!preserveSig)
+                {
+                    ParameterSyntax? lastParameter = parameterList.Parameters.Count > 0 ? parameterList.Parameters[parameterList.Parameters.Count - 1] : null;
+                    if (lastParameter?.HasAnnotation(IsRetValAnnotation) is true)
+                    {
+                        // Move the retval parameter to the return value position.
+                        parameterList = parameterList.WithParameters(parameterList.Parameters.RemoveAt(parameterList.Parameters.Count - 1));
+                        returnType = lastParameter.Modifiers.Any(SyntaxKind.OutKeyword) ? lastParameter.Type! : ((PointerTypeSyntax)lastParameter.Type!).ElementType;
+                        returnsAttribute = lastParameter.DescendantNodes().OfType<AttributeSyntax>().FirstOrDefault(att => att.Name.ToString() == "MarshalAs");
+                    }
+                    else
+                    {
+                        // Remove the return type
+                        returnType = PredefinedType(Token(SyntaxKind.VoidKeyword));
+                    }
+                }
 
-                IdentifierNameSyntax pThisLocal = IdentifierName("pThis");
-                InvocationExpressionSyntax vtblInvocation = InvocationExpression(MemberAccessExpression(SyntaxKind.PointerMemberAccessExpression, vtblFieldName, innerMethodName))
-                    .WithArgumentList(FixTrivia(ArgumentList()
-                        .AddArguments(Argument(pThisLocal))
-                        .AddArguments(parameterList.Parameters.Select(p => Argument(IdentifierName(p.Identifier.ValueText)).WithRefKindKeyword(p.Modifiers.Count > 0 ? p.Modifiers[0] : default)).ToArray())));
-                StatementSyntax vtblInvocationStatement = IsVoid(returnType.Type)
-                    ? ExpressionStatement(vtblInvocation)
-                    : ReturnStatement(vtblInvocation);
-                var body = Block().AddStatements(
-                    FixedStatement(
-                        VariableDeclaration(PointerType(ifaceName)).AddVariables(
-                            VariableDeclarator(pThisLocal.Identifier).WithInitializer(EqualsValueClause(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, ThisExpression())))),
-                        vtblInvocationStatement).WithFixedKeyword(TokenWithSpace(SyntaxKind.FixedKeyword)));
+                MethodDeclarationSyntax methodDeclaration = MethodDeclaration(returnType.WithTrailingTrivia(TriviaList(Space)), SafeIdentifier(methodName))
+                    .WithParameterList(FixTrivia(parameterList))
+                    .WithSemicolonToken(SemicolonWithLineFeed);
+                if (returnsAttribute is object)
+                {
+                    methodDeclaration = methodDeclaration.AddAttributeLists(
+                        AttributeList().WithTarget(AttributeTargetSpecifier(Token(SyntaxKind.ReturnKeyword))).AddAttributes(returnsAttribute));
+                }
 
-                MethodDeclarationSyntax methodDeclaration = MethodDeclaration(
-                    List<AttributeListSyntax>(),
-                    modifiers: TokenList(TokenWithSpace(this.Visibility)),
-                    returnType.Type.WithTrailingTrivia(TriviaList(Space)),
-                    explicitInterfaceSpecifier: null!,
-                    SafeIdentifier(methodName),
-                    null!,
-                    parameterList,
-                    List<TypeParameterConstraintClauseSyntax>(),
-                    body: body,
-                    semicolonToken: default);
-                methodDeclaration = returnType.AddReturnMarshalAs(methodDeclaration);
+                if (preserveSig)
+                {
+                    methodDeclaration = methodDeclaration.AddAttributeLists(AttributeList().AddAttributes(PreserveSigAttribute));
+                }
 
-                if (methodName == nameof(object.GetType) && parameterList.Parameters.Count == 0)
+                if (inheritedMethods-- > 0)
                 {
                     methodDeclaration = methodDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.NewKeyword));
                 }
@@ -3071,3088 +3224,2934 @@ namespace Microsoft.Windows.CsWin32
 
                 // Add documentation if we can find it.
                 methodDeclaration = this.AddApiDocumentation($"{ifaceName}.{methodName}", methodDeclaration);
-
-                members.AddRange(methodDefinition.Generator.DeclareFriendlyOverloads(methodDefinition.Method, methodDeclaration, IdentifierName(ifaceName.Identifier.ValueText), FriendlyOverloadOf.StructMethod));
                 members.Add(methodDeclaration);
+
+                NameSyntax declaringTypeName = HandleTypeHandleInfo.GetNestingQualifiedName(this, this.Reader, typeDef);
+                friendlyOverloads.AddRange(
+                    this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, declaringTypeName, FriendlyOverloadOf.InterfaceMethod));
             }
-
-            var vtblStruct = StructDeclaration(Identifier("Vtbl"))
-                .AddMembers(vtblMembers.ToArray())
-                .AddModifiers(TokenWithSpace(SyntaxKind.PrivateKeyword));
-            members.Add(vtblStruct);
-
-            // private Vtbl* lpVtbl;
-            members.Add(FieldDeclaration(VariableDeclaration(PointerType(IdentifierName(vtblStruct.Identifier))).AddVariables(VariableDeclarator(vtblFieldName.Identifier))).AddModifiers(TokenWithSpace(SyntaxKind.PrivateKeyword)));
-
-            StructDeclarationSyntax iface = StructDeclaration(ifaceName.Identifier)
-                .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword))
-                .AddMembers(members.ToArray());
-
-            if (this.FindGuidFromAttribute(typeDef) is Guid guid)
+            catch (Exception ex)
             {
-                iface = iface.AddAttributeLists(AttributeList().AddAttributes(GUID(guid)));
+                throw new GenerationFailedException($"Failed while generating the method: {methodName}", ex);
             }
-
-            if (this.GetSupportedOSPlatformAttribute(typeDef.GetCustomAttributes()) is AttributeSyntax supportedOSPlatformAttribute)
-            {
-                iface = iface.AddAttributeLists(AttributeList().AddAttributes(supportedOSPlatformAttribute));
-            }
-
-            return iface;
         }
 
-        private TypeDeclarationSyntax? DeclareInterfaceAsInterface(TypeDefinition typeDef, Stack<QualifiedTypeDefinitionHandle> baseTypes)
+        InterfaceDeclarationSyntax ifaceDeclaration = InterfaceDeclaration(ifaceName.Identifier)
+            .WithKeyword(TokenWithSpace(SyntaxKind.InterfaceKeyword))
+            .AddModifiers(TokenWithSpace(this.Visibility))
+            .AddMembers(members.ToArray());
+
+        if (this.FindGuidFromAttribute(typeDef) is Guid guid)
         {
-            if (this.Reader.StringComparer.Equals(typeDef.Name, "IUnknown") || this.Reader.StringComparer.Equals(typeDef.Name, "IDispatch"))
+            ifaceDeclaration = ifaceDeclaration.AddAttributeLists(AttributeList().AddAttributes(GUID(guid), ifaceType, ComImportAttribute));
+        }
+
+        if (baseTypeSyntaxList.Count > 0)
+        {
+            ifaceDeclaration = ifaceDeclaration
+                .WithBaseList(BaseList(SeparatedList(baseTypeSyntaxList.ToArray())));
+        }
+
+        if (this.generateSupportedOSPlatformAttributesOnInterfaces && this.GetSupportedOSPlatformAttribute(typeDef.GetCustomAttributes()) is AttributeSyntax supportedOSPlatformAttribute)
+        {
+            ifaceDeclaration = ifaceDeclaration.AddAttributeLists(AttributeList().AddAttributes(supportedOSPlatformAttribute));
+        }
+
+        // Only add overloads to instance collections after everything else is done,
+        // so we don't leave extension methods behind if we fail to generate the target interface.
+        this.volatileCode.AddComInterfaceExtension(friendlyOverloads);
+
+        return ifaceDeclaration;
+    }
+
+    private Guid? FindGuidFromAttribute(TypeDefinition typeDef) => this.FindGuidFromAttribute(typeDef.GetCustomAttributes());
+
+    private Guid? FindGuidFromAttribute(CustomAttributeHandleCollection attributes)
+    {
+        Guid? guid = null;
+        if (this.FindInteropDecorativeAttribute(attributes, nameof(GuidAttribute)) is CustomAttribute att)
+        {
+            CustomAttributeValue<TypeSyntax> args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
+            guid = new Guid(
+                (uint)args.FixedArguments[0].Value!,
+                (ushort)args.FixedArguments[1].Value!,
+                (ushort)args.FixedArguments[2].Value!,
+                (byte)args.FixedArguments[3].Value!,
+                (byte)args.FixedArguments[4].Value!,
+                (byte)args.FixedArguments[5].Value!,
+                (byte)args.FixedArguments[6].Value!,
+                (byte)args.FixedArguments[7].Value!,
+                (byte)args.FixedArguments[8].Value!,
+                (byte)args.FixedArguments[9].Value!,
+                (byte)args.FixedArguments[10].Value!);
+        }
+
+        return guid;
+    }
+
+    private DelegateDeclarationSyntax DeclareDelegate(TypeDefinition typeDef)
+    {
+        if (!this.options.AllowMarshaling)
+        {
+            throw new NotSupportedException("Delegates are not declared while in all-structs mode.");
+        }
+
+        string name = this.Reader.GetString(typeDef.Name);
+        TypeSyntaxSettings typeSettings = this.delegateSignatureTypeSettings;
+
+        CallingConvention? callingConvention = null;
+        foreach (CustomAttributeHandle handle in typeDef.GetCustomAttributes())
+        {
+            var att = this.Reader.GetCustomAttribute(handle);
+            if (this.IsAttribute(att, SystemRuntimeInteropServices, nameof(UnmanagedFunctionPointerAttribute)))
             {
-                // We do not generate interfaces for these COM base types.
-                return null;
+                var args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
+                callingConvention = (CallingConvention)(int)args.FixedArguments[0].Value!;
             }
+        }
 
-            IdentifierNameSyntax ifaceName = IdentifierName(this.Reader.GetString(typeDef.Name));
-            TypeSyntaxSettings typeSettings = this.comSignatureTypeSettings;
+        this.GetSignatureForDelegate(typeDef, out MethodDefinition invokeMethodDef, out MethodSignature<TypeHandleInfo> signature, out CustomAttributeHandleCollection? returnTypeAttributes);
+        var returnValue = signature.ReturnType.ToTypeSyntax(typeSettings, returnTypeAttributes);
 
-            // It is imperative that we generate methods for all base interfaces as well, ahead of any implemented by *this* interface.
-            var allMethods = new List<MethodDefinitionHandle>();
-            bool foundIUnknown = false;
-            bool foundIDispatch = false;
-            bool foundIInspectable = false;
-            var baseTypeSyntaxList = new List<BaseTypeSyntax>();
-            while (baseTypes.Count > 0)
+        DelegateDeclarationSyntax result = DelegateDeclaration(returnValue.Type, Identifier(name))
+            .WithParameterList(FixTrivia(this.CreateParameterList(invokeMethodDef, signature, typeSettings)))
+            .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword));
+        result = returnValue.AddReturnMarshalAs(result);
+
+        if (callingConvention.HasValue)
+        {
+            result = result.AddAttributeLists(AttributeList().AddAttributes(UnmanagedFunctionPointer(callingConvention.Value)).WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken)));
+        }
+
+        return result;
+    }
+
+    private MemberDeclarationSyntax DeclareUntypedDelegate(TypeDefinition typeDef)
+    {
+        IdentifierNameSyntax name = IdentifierName(this.Reader.GetString(typeDef.Name));
+        IdentifierNameSyntax valueFieldName = IdentifierName("Value");
+
+        // internal IntPtr Value;
+        FieldDeclarationSyntax valueField = FieldDeclaration(VariableDeclaration(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space)))
+            .AddVariables(VariableDeclarator(valueFieldName.Identifier))).AddModifiers(TokenWithSpace(this.Visibility));
+
+        // internal T CreateDelegate<T>() => Marshal.GetDelegateForFunctionPointer<T>(this.Value);
+        IdentifierNameSyntax typeParameter = IdentifierName("TDelegate");
+        MemberAccessExpressionSyntax methodToCall = this.getDelegateForFunctionPointerGenericExists
+            ? MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Marshal)), GenericName(nameof(Marshal.GetDelegateForFunctionPointer)).AddTypeArgumentListArguments(typeParameter))
+            : MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Marshal)), IdentifierName(nameof(Marshal.GetDelegateForFunctionPointer)));
+        ArgumentListSyntax arguments = ArgumentList().AddArguments(Argument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), valueFieldName)));
+        if (!this.getDelegateForFunctionPointerGenericExists)
+        {
+            arguments = arguments.AddArguments(Argument(TypeOfExpression(typeParameter)));
+        }
+
+        ExpressionSyntax bodyExpression = InvocationExpression(methodToCall, arguments);
+        if (!this.getDelegateForFunctionPointerGenericExists)
+        {
+            bodyExpression = CastExpression(typeParameter, bodyExpression);
+        }
+
+        MethodDeclarationSyntax createDelegateMethod = MethodDeclaration(typeParameter, Identifier("CreateDelegate"))
+            .AddTypeParameterListParameters(TypeParameter(typeParameter.Identifier))
+            .AddConstraintClauses(TypeParameterConstraintClause(typeParameter, SingletonSeparatedList<TypeParameterConstraintSyntax>(TypeConstraint(IdentifierName("Delegate")))))
+            .WithExpressionBody(ArrowExpressionClause(bodyExpression))
+            .AddModifiers(TokenWithSpace(this.Visibility))
+            .WithSemicolonToken(SemicolonWithLineFeed);
+
+        StructDeclarationSyntax typedefStruct = StructDeclaration(name.Identifier)
+            .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.PartialKeyword)))
+            .AddMembers(valueField)
+            .AddMembers(this.CreateCommonTypeDefMembers(name, IntPtrTypeSyntax, valueFieldName).ToArray())
+            .AddMembers(createDelegateMethod);
+        return typedefStruct;
+    }
+
+    private void GetSignatureForDelegate(TypeDefinition typeDef, out MethodDefinition invokeMethodDef, out MethodSignature<TypeHandleInfo> signature, out CustomAttributeHandleCollection? returnTypeAttributes)
+    {
+        invokeMethodDef = typeDef.GetMethods().Select(this.Reader.GetMethodDefinition).Single(def => this.Reader.StringComparer.Equals(def.Name, "Invoke"));
+        signature = invokeMethodDef.DecodeSignature(SignatureHandleProvider.Instance, null);
+        returnTypeAttributes = this.GetReturnTypeCustomAttributes(invokeMethodDef);
+    }
+
+    private StructDeclarationSyntax DeclareStruct(TypeDefinition typeDef)
+    {
+        IdentifierNameSyntax name = IdentifierName(this.Reader.GetString(typeDef.Name));
+        TypeSyntaxSettings typeSettings = this.fieldTypeSettings;
+
+        bool hasUtf16CharField = false;
+        var members = new List<MemberDeclarationSyntax>();
+        SyntaxList<MemberDeclarationSyntax> additionalMembers = default;
+        foreach (FieldDefinitionHandle fieldDefHandle in typeDef.GetFields())
+        {
+            FieldDefinition fieldDef = this.Reader.GetFieldDefinition(fieldDefHandle);
+            string fieldName = this.Reader.GetString(fieldDef.Name);
+
+            try
             {
-                QualifiedTypeDefinitionHandle baseTypeHandle = baseTypes.Pop();
-                TypeDefinition baseType = baseTypeHandle.Reader.GetTypeDefinition(baseTypeHandle.DefinitionHandle);
-                if (!foundIUnknown)
+                CustomAttribute? fixedBufferAttribute = null;
+                foreach (CustomAttributeHandle attHandle in fieldDef.GetCustomAttributes())
                 {
-                    if (!baseTypeHandle.Reader.StringComparer.Equals(baseType.Name, "IUnknown"))
+                    CustomAttribute att = this.Reader.GetCustomAttribute(attHandle);
+                    if (this.IsAttribute(att, SystemRuntimeCompilerServices, nameof(FixedBufferAttribute)))
                     {
-                        throw new NotSupportedException("Unsupported base COM interface type: " + baseTypeHandle.Reader.GetString(baseType.Name));
+                        fixedBufferAttribute = att;
+                        break;
                     }
+                }
 
-                    foundIUnknown = true;
+                FieldDeclarationSyntax field;
+                VariableDeclaratorSyntax fieldDeclarator = VariableDeclarator(SafeIdentifier(fieldName));
+                if (fixedBufferAttribute.HasValue)
+                {
+                    CustomAttributeValue<TypeSyntax> attributeArgs = fixedBufferAttribute.Value.DecodeValue(CustomAttributeTypeProvider.Instance);
+                    TypeSyntax fieldType = (TypeSyntax)attributeArgs.FixedArguments[0].Value!;
+                    ExpressionSyntax size = LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal((int)attributeArgs.FixedArguments[1].Value!));
+                    field = FieldDeclaration(
+                        VariableDeclaration(fieldType))
+                        .AddDeclarationVariables(
+                            fieldDeclarator
+                                .WithArgumentList(BracketedArgumentList(SingletonSeparatedList(Argument(size)))))
+                        .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword), Token(SyntaxKind.FixedKeyword));
                 }
                 else
                 {
-                    if (baseTypeHandle.Reader.StringComparer.Equals(baseType.Name, "IDispatch"))
+                    CustomAttributeHandleCollection fieldAttributes = fieldDef.GetCustomAttributes();
+                    TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null);
+                    hasUtf16CharField |= fieldTypeInfo is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.Char };
+                    TypeSyntaxAndMarshaling fieldTypeSyntax = fieldTypeInfo.ToTypeSyntax(typeSettings, fieldAttributes);
+                    var fieldInfo = this.ReinterpretFieldType(fieldDef, fieldTypeSyntax.Type, fieldAttributes);
+                    additionalMembers = additionalMembers.AddRange(fieldInfo.AdditionalMembers);
+
+                    field = FieldDeclaration(VariableDeclaration(fieldInfo.FieldType).AddVariables(fieldDeclarator))
+                        .AddModifiers(TokenWithSpace(this.Visibility));
+
+                    if (fieldInfo.MarshalAsAttribute is object)
                     {
-                        foundIDispatch = true;
+                        field = field.AddAttributeLists(AttributeList().AddAttributes(fieldInfo.MarshalAsAttribute));
                     }
-                    else if (baseTypeHandle.Reader.StringComparer.Equals(baseType.Name, "IInspectable"))
+
+                    if (fieldInfo.FieldType is PointerTypeSyntax || fieldInfo.FieldType is FunctionPointerTypeSyntax)
                     {
-                        foundIInspectable = true;
+                        field = field.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));
                     }
-                    else
+
+                    if (ObjectMembers.Contains(fieldName))
                     {
-                        baseTypeHandle.Generator.RequestInteropType(baseTypeHandle.DefinitionHandle);
-                        baseTypeSyntaxList.Add(SimpleBaseType(new HandleTypeHandleInfo(baseTypeHandle.Reader, baseTypeHandle.DefinitionHandle).ToTypeSyntax(this.comSignatureTypeSettings, null).Type));
-                        allMethods.AddRange(baseType.GetMethods());
+                        field = field.AddModifiers(TokenWithSpace(SyntaxKind.NewKeyword));
                     }
                 }
-            }
 
-            int inheritedMethods = allMethods.Count;
-            allMethods.AddRange(typeDef.GetMethods());
-
-            AttributeSyntax ifaceType = InterfaceType(
-                foundIInspectable ? ComInterfaceType.InterfaceIsIInspectable :
-                foundIDispatch ? ComInterfaceType.InterfaceIsIDispatch :
-                foundIUnknown ? ComInterfaceType.InterfaceIsIUnknown :
-                throw new NotSupportedException("No COM interface base type found."));
-
-            var members = new List<MemberDeclarationSyntax>();
-            var friendlyOverloads = new List<MethodDeclarationSyntax>();
-
-            foreach (MethodDefinitionHandle methodDefHandle in allMethods)
-            {
-                var methodDefinition = this.Reader.GetMethodDefinition(methodDefHandle);
-                string methodName = this.Reader.GetString(methodDefinition.Name);
-                try
+                int offset = fieldDef.GetOffset();
+                if (offset >= 0)
                 {
-                    IdentifierNameSyntax innerMethodName = IdentifierName(methodName);
-                    MethodSignature<TypeHandleInfo> signature = methodDefinition.DecodeSignature(SignatureHandleProvider.Instance, null);
-
-                    CustomAttributeHandleCollection? returnTypeAttributes = this.GetReturnTypeCustomAttributes(methodDefinition);
-                    var (returnType, marshalAs) = signature.ReturnType.ToTypeSyntax(typeSettings, returnTypeAttributes);
-                    AttributeSyntax? returnsAttribute = MarshalAs(marshalAs);
-
-                    bool preserveSig = returnType is not QualifiedNameSyntax { Right: { Identifier: { ValueText: "HRESULT" } } }
-                        || this.options.ComInterop.PreserveSigMethods.Contains($"{ifaceName}.{methodName}")
-                        || this.options.ComInterop.PreserveSigMethods.Contains(ifaceName.ToString());
-
-                    var parameterList = this.CreateParameterList(methodDefinition, signature, this.comSignatureTypeSettings);
-
-                    if (!preserveSig)
-                    {
-                        ParameterSyntax? lastParameter = parameterList.Parameters.Count > 0 ? parameterList.Parameters[parameterList.Parameters.Count - 1] : null;
-                        if (lastParameter?.HasAnnotation(IsRetValAnnotation) is true)
-                        {
-                            // Move the retval parameter to the return value position.
-                            parameterList = parameterList.WithParameters(parameterList.Parameters.RemoveAt(parameterList.Parameters.Count - 1));
-                            returnType = lastParameter.Modifiers.Any(SyntaxKind.OutKeyword) ? lastParameter.Type! : ((PointerTypeSyntax)lastParameter.Type!).ElementType;
-                            returnsAttribute = lastParameter.DescendantNodes().OfType<AttributeSyntax>().FirstOrDefault(att => att.Name.ToString() == "MarshalAs");
-                        }
-                        else
-                        {
-                            // Remove the return type
-                            returnType = PredefinedType(Token(SyntaxKind.VoidKeyword));
-                        }
-                    }
-
-                    MethodDeclarationSyntax methodDeclaration = MethodDeclaration(returnType.WithTrailingTrivia(TriviaList(Space)), SafeIdentifier(methodName))
-                        .WithParameterList(FixTrivia(parameterList))
-                        .WithSemicolonToken(SemicolonWithLineFeed);
-                    if (returnsAttribute is object)
-                    {
-                        methodDeclaration = methodDeclaration.AddAttributeLists(
-                            AttributeList().WithTarget(AttributeTargetSpecifier(Token(SyntaxKind.ReturnKeyword))).AddAttributes(returnsAttribute));
-                    }
-
-                    if (preserveSig)
-                    {
-                        methodDeclaration = methodDeclaration.AddAttributeLists(AttributeList().AddAttributes(PreserveSigAttribute));
-                    }
-
-                    if (inheritedMethods-- > 0)
-                    {
-                        methodDeclaration = methodDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.NewKeyword));
-                    }
-
-                    if (methodDeclaration.ReturnType is PointerTypeSyntax || methodDeclaration.ParameterList.Parameters.Any(p => p.Type is PointerTypeSyntax))
-                    {
-                        methodDeclaration = methodDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));
-                    }
-
-                    // Add documentation if we can find it.
-                    methodDeclaration = this.AddApiDocumentation($"{ifaceName}.{methodName}", methodDeclaration);
-                    members.Add(methodDeclaration);
-
-                    NameSyntax declaringTypeName = HandleTypeHandleInfo.GetNestingQualifiedName(this, this.Reader, typeDef);
-                    friendlyOverloads.AddRange(
-                        this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, declaringTypeName, FriendlyOverloadOf.InterfaceMethod));
+                    field = field.AddAttributeLists(AttributeList().AddAttributes(FieldOffset(offset)));
                 }
-                catch (Exception ex)
-                {
-                    throw new GenerationFailedException($"Failed while generating the method: {methodName}", ex);
-                }
+
+                members.Add(field);
             }
-
-            InterfaceDeclarationSyntax ifaceDeclaration = InterfaceDeclaration(ifaceName.Identifier)
-                .WithKeyword(TokenWithSpace(SyntaxKind.InterfaceKeyword))
-                .AddModifiers(TokenWithSpace(this.Visibility))
-                .AddMembers(members.ToArray());
-
-            if (this.FindGuidFromAttribute(typeDef) is Guid guid)
+            catch (Exception ex)
             {
-                ifaceDeclaration = ifaceDeclaration.AddAttributeLists(AttributeList().AddAttributes(GUID(guid), ifaceType, ComImportAttribute));
+                throw new GenerationFailedException("Failed while generating field: " + fieldName, ex);
             }
-
-            if (baseTypeSyntaxList.Count > 0)
-            {
-                ifaceDeclaration = ifaceDeclaration
-                    .WithBaseList(BaseList(SeparatedList(baseTypeSyntaxList.ToArray())));
-            }
-
-            if (this.generateSupportedOSPlatformAttributesOnInterfaces && this.GetSupportedOSPlatformAttribute(typeDef.GetCustomAttributes()) is AttributeSyntax supportedOSPlatformAttribute)
-            {
-                ifaceDeclaration = ifaceDeclaration.AddAttributeLists(AttributeList().AddAttributes(supportedOSPlatformAttribute));
-            }
-
-            // Only add overloads to instance collections after everything else is done,
-            // so we don't leave extension methods behind if we fail to generate the target interface.
-            this.volatileCode.AddComInterfaceExtension(friendlyOverloads);
-
-            return ifaceDeclaration;
         }
 
-        private Guid? FindGuidFromAttribute(TypeDefinition typeDef) => this.FindGuidFromAttribute(typeDef.GetCustomAttributes());
+        // Add the additional members, taking care to not introduce redundant declarations.
+        members.AddRange(additionalMembers.Where(c => c is not StructDeclarationSyntax cs || !members.OfType<StructDeclarationSyntax>().Any(m => m.Identifier.ValueText == cs.Identifier.ValueText)));
 
-        private Guid? FindGuidFromAttribute(CustomAttributeHandleCollection attributes)
+        StructDeclarationSyntax result = StructDeclaration(name.Identifier)
+            .AddMembers(members.ToArray())
+            .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.PartialKeyword)));
+
+        TypeLayout layout = typeDef.GetLayout();
+        CharSet charSet = hasUtf16CharField ? CharSet.Unicode : CharSet.Ansi;
+        if (!layout.IsDefault || (typeDef.Attributes & TypeAttributes.ExplicitLayout) == TypeAttributes.ExplicitLayout || charSet != CharSet.Ansi)
         {
-            Guid? guid = null;
-            if (this.FindInteropDecorativeAttribute(attributes, nameof(GuidAttribute)) is CustomAttribute att)
-            {
-                CustomAttributeValue<TypeSyntax> args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
-                guid = new Guid(
-                    (uint)args.FixedArguments[0].Value!,
-                    (ushort)args.FixedArguments[1].Value!,
-                    (ushort)args.FixedArguments[2].Value!,
-                    (byte)args.FixedArguments[3].Value!,
-                    (byte)args.FixedArguments[4].Value!,
-                    (byte)args.FixedArguments[5].Value!,
-                    (byte)args.FixedArguments[6].Value!,
-                    (byte)args.FixedArguments[7].Value!,
-                    (byte)args.FixedArguments[8].Value!,
-                    (byte)args.FixedArguments[9].Value!,
-                    (byte)args.FixedArguments[10].Value!);
-            }
-
-            return guid;
+            result = result.AddAttributeLists(AttributeList().AddAttributes(StructLayout(typeDef.Attributes, layout, charSet)));
         }
 
-        private DelegateDeclarationSyntax DeclareDelegate(TypeDefinition typeDef)
+        if (this.FindGuidFromAttribute(typeDef) is Guid guid)
         {
-            if (!this.options.AllowMarshaling)
-            {
-                throw new NotSupportedException("Delegates are not declared while in all-structs mode.");
-            }
+            result = result.AddAttributeLists(AttributeList().AddAttributes(GUID(guid)));
+        }
 
-            string name = this.Reader.GetString(typeDef.Name);
-            TypeSyntaxSettings typeSettings = this.delegateSignatureTypeSettings;
+        result = this.AddApiDocumentation(name.Identifier.ValueText, result);
 
-            CallingConvention? callingConvention = null;
-            foreach (CustomAttributeHandle handle in typeDef.GetCustomAttributes())
+        return result;
+    }
+
+    /// <summary>
+    /// Creates an empty class that when instantiated, creates a cocreatable Windows object
+    /// that may implement a number of interfaces at runtime, discoverable only by documentation.
+    /// </summary>
+    private ClassDeclarationSyntax DeclareCocreatableClass(TypeDefinition typeDef)
+    {
+        IdentifierNameSyntax name = IdentifierName(this.Reader.GetString(typeDef.Name));
+        Guid guid = this.FindGuidFromAttribute(typeDef) ?? throw new ArgumentException("Type does not have a GuidAttribute.");
+        var classModifiers = TokenList(TokenWithSpace(this.Visibility));
+        classModifiers = classModifiers.Add(TokenWithSpace(SyntaxKind.PartialKeyword));
+        ClassDeclarationSyntax result = ClassDeclaration(name.Identifier)
+            .WithModifiers(classModifiers)
+            .AddAttributeLists(AttributeList().AddAttributes(GUID(guid), ComImportAttribute));
+
+        result = this.AddApiDocumentation(name.Identifier.ValueText, result);
+        return result;
+    }
+
+    /// <summary>
+    /// Creates a struct that emulates a typedef in the C language headers.
+    /// </summary>
+    private StructDeclarationSyntax DeclareTypeDefStruct(TypeDefinition typeDef)
+    {
+        IdentifierNameSyntax name = IdentifierName(this.Reader.GetString(typeDef.Name));
+        if (name.Identifier.ValueText == "BOOL")
+        {
+            return this.DeclareTypeDefBOOLStruct(typeDef);
+        }
+
+        bool isHandle = name.Identifier.ValueText == "HGDIOBJ";
+        foreach (CustomAttributeHandle attHandle in typeDef.GetCustomAttributes())
+        {
+            CustomAttribute att = this.Reader.GetCustomAttribute(attHandle);
+
+            // If this struct represents a handle, generate the SafeHandle-equivalent.
+            if (this.IsAttribute(att, InteropDecorationNamespace, RAIIFreeAttribute))
             {
-                var att = this.Reader.GetCustomAttribute(handle);
-                if (this.IsAttribute(att, SystemRuntimeInteropServices, nameof(UnmanagedFunctionPointerAttribute)))
+                var args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
+                if (args.FixedArguments[0].Value is string freeMethodName)
                 {
-                    var args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
-                    callingConvention = (CallingConvention)(int)args.FixedArguments[0].Value!;
-                }
-            }
-
-            this.GetSignatureForDelegate(typeDef, out MethodDefinition invokeMethodDef, out MethodSignature<TypeHandleInfo> signature, out CustomAttributeHandleCollection? returnTypeAttributes);
-            var returnValue = signature.ReturnType.ToTypeSyntax(typeSettings, returnTypeAttributes);
-
-            DelegateDeclarationSyntax result = DelegateDeclaration(returnValue.Type, Identifier(name))
-                .WithParameterList(FixTrivia(this.CreateParameterList(invokeMethodDef, signature, typeSettings)))
-                .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword));
-            result = returnValue.AddReturnMarshalAs(result);
-
-            if (callingConvention.HasValue)
-            {
-                result = result.AddAttributeLists(AttributeList().AddAttributes(UnmanagedFunctionPointer(callingConvention.Value)).WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken)));
-            }
-
-            return result;
-        }
-
-        private MemberDeclarationSyntax DeclareUntypedDelegate(TypeDefinition typeDef)
-        {
-            IdentifierNameSyntax name = IdentifierName(this.Reader.GetString(typeDef.Name));
-            IdentifierNameSyntax valueFieldName = IdentifierName("Value");
-
-            // internal IntPtr Value;
-            FieldDeclarationSyntax valueField = FieldDeclaration(VariableDeclaration(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space)))
-                .AddVariables(VariableDeclarator(valueFieldName.Identifier))).AddModifiers(TokenWithSpace(this.Visibility));
-
-            // internal T CreateDelegate<T>() => Marshal.GetDelegateForFunctionPointer<T>(this.Value);
-            IdentifierNameSyntax typeParameter = IdentifierName("TDelegate");
-            MemberAccessExpressionSyntax methodToCall = this.getDelegateForFunctionPointerGenericExists
-                ? MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Marshal)), GenericName(nameof(Marshal.GetDelegateForFunctionPointer)).AddTypeArgumentListArguments(typeParameter))
-                : MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Marshal)), IdentifierName(nameof(Marshal.GetDelegateForFunctionPointer)));
-            ArgumentListSyntax arguments = ArgumentList().AddArguments(Argument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), valueFieldName)));
-            if (!this.getDelegateForFunctionPointerGenericExists)
-            {
-                arguments = arguments.AddArguments(Argument(TypeOfExpression(typeParameter)));
-            }
-
-            ExpressionSyntax bodyExpression = InvocationExpression(methodToCall, arguments);
-            if (!this.getDelegateForFunctionPointerGenericExists)
-            {
-                bodyExpression = CastExpression(typeParameter, bodyExpression);
-            }
-
-            MethodDeclarationSyntax createDelegateMethod = MethodDeclaration(typeParameter, Identifier("CreateDelegate"))
-                .AddTypeParameterListParameters(TypeParameter(typeParameter.Identifier))
-                .AddConstraintClauses(TypeParameterConstraintClause(typeParameter, SingletonSeparatedList<TypeParameterConstraintSyntax>(TypeConstraint(IdentifierName("Delegate")))))
-                .WithExpressionBody(ArrowExpressionClause(bodyExpression))
-                .AddModifiers(TokenWithSpace(this.Visibility))
-                .WithSemicolonToken(SemicolonWithLineFeed);
-
-            StructDeclarationSyntax typedefStruct = StructDeclaration(name.Identifier)
-                .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.PartialKeyword)))
-                .AddMembers(valueField)
-                .AddMembers(this.CreateCommonTypeDefMembers(name, IntPtrTypeSyntax, valueFieldName).ToArray())
-                .AddMembers(createDelegateMethod);
-            return typedefStruct;
-        }
-
-        private void GetSignatureForDelegate(TypeDefinition typeDef, out MethodDefinition invokeMethodDef, out MethodSignature<TypeHandleInfo> signature, out CustomAttributeHandleCollection? returnTypeAttributes)
-        {
-            invokeMethodDef = typeDef.GetMethods().Select(this.Reader.GetMethodDefinition).Single(def => this.Reader.StringComparer.Equals(def.Name, "Invoke"));
-            signature = invokeMethodDef.DecodeSignature(SignatureHandleProvider.Instance, null);
-            returnTypeAttributes = this.GetReturnTypeCustomAttributes(invokeMethodDef);
-        }
-
-        private StructDeclarationSyntax DeclareStruct(TypeDefinition typeDef)
-        {
-            IdentifierNameSyntax name = IdentifierName(this.Reader.GetString(typeDef.Name));
-            TypeSyntaxSettings typeSettings = this.fieldTypeSettings;
-
-            bool hasUtf16CharField = false;
-            var members = new List<MemberDeclarationSyntax>();
-            SyntaxList<MemberDeclarationSyntax> additionalMembers = default;
-            foreach (FieldDefinitionHandle fieldDefHandle in typeDef.GetFields())
-            {
-                FieldDefinition fieldDef = this.Reader.GetFieldDefinition(fieldDefHandle);
-                string fieldName = this.Reader.GetString(fieldDef.Name);
-
-                try
-                {
-                    CustomAttribute? fixedBufferAttribute = null;
-                    foreach (CustomAttributeHandle attHandle in fieldDef.GetCustomAttributes())
-                    {
-                        CustomAttribute att = this.Reader.GetCustomAttribute(attHandle);
-                        if (this.IsAttribute(att, SystemRuntimeCompilerServices, nameof(FixedBufferAttribute)))
-                        {
-                            fixedBufferAttribute = att;
-                            break;
-                        }
-                    }
-
-                    FieldDeclarationSyntax field;
-                    VariableDeclaratorSyntax fieldDeclarator = VariableDeclarator(SafeIdentifier(fieldName));
-                    if (fixedBufferAttribute.HasValue)
-                    {
-                        CustomAttributeValue<TypeSyntax> attributeArgs = fixedBufferAttribute.Value.DecodeValue(CustomAttributeTypeProvider.Instance);
-                        TypeSyntax fieldType = (TypeSyntax)attributeArgs.FixedArguments[0].Value!;
-                        ExpressionSyntax size = LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal((int)attributeArgs.FixedArguments[1].Value!));
-                        field = FieldDeclaration(
-                            VariableDeclaration(fieldType))
-                            .AddDeclarationVariables(
-                                fieldDeclarator
-                                    .WithArgumentList(BracketedArgumentList(SingletonSeparatedList(Argument(size)))))
-                            .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword), Token(SyntaxKind.FixedKeyword));
-                    }
-                    else
-                    {
-                        CustomAttributeHandleCollection fieldAttributes = fieldDef.GetCustomAttributes();
-                        TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null);
-                        hasUtf16CharField |= fieldTypeInfo is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.Char };
-                        TypeSyntaxAndMarshaling fieldTypeSyntax = fieldTypeInfo.ToTypeSyntax(typeSettings, fieldAttributes);
-                        var fieldInfo = this.ReinterpretFieldType(fieldDef, fieldTypeSyntax.Type, fieldAttributes);
-                        additionalMembers = additionalMembers.AddRange(fieldInfo.AdditionalMembers);
-
-                        field = FieldDeclaration(VariableDeclaration(fieldInfo.FieldType).AddVariables(fieldDeclarator))
-                            .AddModifiers(TokenWithSpace(this.Visibility));
-
-                        if (fieldInfo.MarshalAsAttribute is object)
-                        {
-                            field = field.AddAttributeLists(AttributeList().AddAttributes(fieldInfo.MarshalAsAttribute));
-                        }
-
-                        if (fieldInfo.FieldType is PointerTypeSyntax || fieldInfo.FieldType is FunctionPointerTypeSyntax)
-                        {
-                            field = field.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));
-                        }
-
-                        if (ObjectMembers.Contains(fieldName))
-                        {
-                            field = field.AddModifiers(TokenWithSpace(SyntaxKind.NewKeyword));
-                        }
-                    }
-
-                    int offset = fieldDef.GetOffset();
-                    if (offset >= 0)
-                    {
-                        field = field.AddAttributeLists(AttributeList().AddAttributes(FieldOffset(offset)));
-                    }
-
-                    members.Add(field);
-                }
-                catch (Exception ex)
-                {
-                    throw new GenerationFailedException("Failed while generating field: " + fieldName, ex);
-                }
-            }
-
-            // Add the additional members, taking care to not introduce redundant declarations.
-            members.AddRange(additionalMembers.Where(c => c is not StructDeclarationSyntax cs || !members.OfType<StructDeclarationSyntax>().Any(m => m.Identifier.ValueText == cs.Identifier.ValueText)));
-
-            StructDeclarationSyntax result = StructDeclaration(name.Identifier)
-                .AddMembers(members.ToArray())
-                .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.PartialKeyword)));
-
-            TypeLayout layout = typeDef.GetLayout();
-            CharSet charSet = hasUtf16CharField ? CharSet.Unicode : CharSet.Ansi;
-            if (!layout.IsDefault || (typeDef.Attributes & TypeAttributes.ExplicitLayout) == TypeAttributes.ExplicitLayout || charSet != CharSet.Ansi)
-            {
-                result = result.AddAttributeLists(AttributeList().AddAttributes(StructLayout(typeDef.Attributes, layout, charSet)));
-            }
-
-            if (this.FindGuidFromAttribute(typeDef) is Guid guid)
-            {
-                result = result.AddAttributeLists(AttributeList().AddAttributes(GUID(guid)));
-            }
-
-            result = this.AddApiDocumentation(name.Identifier.ValueText, result);
-
-            return result;
-        }
-
-        /// <summary>
-        /// Creates an empty class that when instantiated, creates a cocreatable Windows object
-        /// that may implement a number of interfaces at runtime, discoverable only by documentation.
-        /// </summary>
-        private ClassDeclarationSyntax DeclareCocreatableClass(TypeDefinition typeDef)
-        {
-            IdentifierNameSyntax name = IdentifierName(this.Reader.GetString(typeDef.Name));
-            Guid guid = this.FindGuidFromAttribute(typeDef) ?? throw new ArgumentException("Type does not have a GuidAttribute.");
-            var classModifiers = TokenList(TokenWithSpace(this.Visibility));
-            classModifiers = classModifiers.Add(TokenWithSpace(SyntaxKind.PartialKeyword));
-            ClassDeclarationSyntax result = ClassDeclaration(name.Identifier)
-                .WithModifiers(classModifiers)
-                .AddAttributeLists(AttributeList().AddAttributes(GUID(guid), ComImportAttribute));
-
-            result = this.AddApiDocumentation(name.Identifier.ValueText, result);
-            return result;
-        }
-
-        /// <summary>
-        /// Creates a struct that emulates a typedef in the C language headers.
-        /// </summary>
-        private StructDeclarationSyntax DeclareTypeDefStruct(TypeDefinition typeDef)
-        {
-            IdentifierNameSyntax name = IdentifierName(this.Reader.GetString(typeDef.Name));
-            if (name.Identifier.ValueText == "BOOL")
-            {
-                return this.DeclareTypeDefBOOLStruct(typeDef);
-            }
-
-            bool isHandle = name.Identifier.ValueText == "HGDIOBJ";
-            foreach (CustomAttributeHandle attHandle in typeDef.GetCustomAttributes())
-            {
-                CustomAttribute att = this.Reader.GetCustomAttribute(attHandle);
-
-                // If this struct represents a handle, generate the SafeHandle-equivalent.
-                if (this.IsAttribute(att, InteropDecorationNamespace, RAIIFreeAttribute))
-                {
-                    var args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
-                    if (args.FixedArguments[0].Value is string freeMethodName)
-                    {
-                        ////this.GenerateSafeHandle(freeMethodName);
-                        this.TryGenerateExternMethod(freeMethodName, out _);
-                        isHandle = true;
-                    }
-
-                    break;
-                }
-            }
-
-            TypeSyntaxSettings typeSettings = isHandle ? this.fieldOfHandleTypeDefTypeSettings : this.fieldTypeSettings;
-
-            FieldDefinition fieldDef = this.Reader.GetFieldDefinition(typeDef.GetFields().Single());
-            string fieldName = this.Reader.GetString(fieldDef.Name);
-            IdentifierNameSyntax fieldIdentifierName = SafeIdentifierName(fieldName);
-            VariableDeclaratorSyntax fieldDeclarator = VariableDeclarator(fieldIdentifierName.Identifier);
-            var fieldAttributes = fieldDef.GetCustomAttributes();
-            var fieldType = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null).ToTypeSyntax(typeSettings, fieldAttributes);
-            (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? _) fieldInfo =
-                this.ReinterpretFieldType(fieldDef, fieldType.Type, fieldAttributes);
-            SyntaxList<MemberDeclarationSyntax> members = List<MemberDeclarationSyntax>();
-
-            FieldDeclarationSyntax fieldSyntax = FieldDeclaration(
-                VariableDeclaration(fieldInfo.FieldType).AddVariables(fieldDeclarator))
-                .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.ReadOnlyKeyword));
-            members = members.Add(fieldSyntax);
-
-            members = members.AddRange(this.CreateCommonTypeDefMembers(name, fieldInfo.FieldType, fieldIdentifierName));
-
-            IdentifierNameSyntax valueParameter = IdentifierName("value");
-            MemberAccessExpressionSyntax fieldAccessExpression = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), fieldIdentifierName);
-
-            if (isHandle && fieldInfo.FieldType is not IdentifierNameSyntax { Identifier: { ValueText: nameof(IntPtr) } })
-            {
-                // Handle types must interop with IntPtr for SafeHandle support, so if IntPtr isn't the field type,
-                // we need to create new conversion operators.
-                ExpressionSyntax valueValueArg = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, fieldIdentifierName);
-                if (fieldInfo.FieldType is IdentifierNameSyntax { Identifier: { ValueText: nameof(UIntPtr) } })
-                {
-                    valueValueArg = CastExpression(PredefinedType(TokenWithSpace(SyntaxKind.LongKeyword)), valueValueArg);
+                    ////this.GenerateSafeHandle(freeMethodName);
+                    this.TryGenerateExternMethod(freeMethodName, out _);
+                    isHandle = true;
                 }
 
-                // public static implicit operator IntPtr(MSIHANDLE value) => new IntPtr(value.Value);
-                members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), IntPtrTypeSyntax)
-                    .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))))
-                    .WithExpressionBody(ArrowExpressionClause(
-                        ObjectCreationExpression(IntPtrTypeSyntax).AddArgumentListArguments(Argument(valueValueArg))))
+                break;
+            }
+        }
+
+        TypeSyntaxSettings typeSettings = isHandle ? this.fieldOfHandleTypeDefTypeSettings : this.fieldTypeSettings;
+
+        FieldDefinition fieldDef = this.Reader.GetFieldDefinition(typeDef.GetFields().Single());
+        string fieldName = this.Reader.GetString(fieldDef.Name);
+        IdentifierNameSyntax fieldIdentifierName = SafeIdentifierName(fieldName);
+        VariableDeclaratorSyntax fieldDeclarator = VariableDeclarator(fieldIdentifierName.Identifier);
+        var fieldAttributes = fieldDef.GetCustomAttributes();
+        var fieldType = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null).ToTypeSyntax(typeSettings, fieldAttributes);
+        (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? _) fieldInfo =
+            this.ReinterpretFieldType(fieldDef, fieldType.Type, fieldAttributes);
+        SyntaxList<MemberDeclarationSyntax> members = List<MemberDeclarationSyntax>();
+
+        FieldDeclarationSyntax fieldSyntax = FieldDeclaration(
+            VariableDeclaration(fieldInfo.FieldType).AddVariables(fieldDeclarator))
+            .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.ReadOnlyKeyword));
+        members = members.Add(fieldSyntax);
+
+        members = members.AddRange(this.CreateCommonTypeDefMembers(name, fieldInfo.FieldType, fieldIdentifierName));
+
+        IdentifierNameSyntax valueParameter = IdentifierName("value");
+        MemberAccessExpressionSyntax fieldAccessExpression = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), fieldIdentifierName);
+
+        if (isHandle && fieldInfo.FieldType is not IdentifierNameSyntax { Identifier: { ValueText: nameof(IntPtr) } })
+        {
+            // Handle types must interop with IntPtr for SafeHandle support, so if IntPtr isn't the field type,
+            // we need to create new conversion operators.
+            ExpressionSyntax valueValueArg = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, fieldIdentifierName);
+            if (fieldInfo.FieldType is IdentifierNameSyntax { Identifier: { ValueText: nameof(UIntPtr) } })
+            {
+                valueValueArg = CastExpression(PredefinedType(TokenWithSpace(SyntaxKind.LongKeyword)), valueValueArg);
+            }
+
+            // public static implicit operator IntPtr(MSIHANDLE value) => new IntPtr(value.Value);
+            members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), IntPtrTypeSyntax)
+                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))))
+                .WithExpressionBody(ArrowExpressionClause(
+                    ObjectCreationExpression(IntPtrTypeSyntax).AddArgumentListArguments(Argument(valueValueArg))))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
+                .WithSemicolonToken(SemicolonWithLineFeed));
+
+            if (fieldInfo.FieldType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.UIntKeyword } })
+            {
+                // public static explicit operator MSIHANDLE(IntPtr value) => new MSIHANDLE((uint)value.ToInt32());
+                members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
+                    .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))))
+                    .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(
+                        Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToInt32)))))))))
                     .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
                     .WithSemicolonToken(SemicolonWithLineFeed));
-
-                if (fieldInfo.FieldType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.UIntKeyword } })
-                {
-                    // public static explicit operator MSIHANDLE(IntPtr value) => new MSIHANDLE((uint)value.ToInt32());
-                    members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
-                        .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))))
-                        .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(
-                            Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToInt32)))))))))
-                        .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
-                        .WithSemicolonToken(SemicolonWithLineFeed));
-                }
-                else if (fieldInfo.FieldType is PointerTypeSyntax)
-                {
-                    // public static explicit operator MSIHANDLE(IntPtr value) => new MSIHANDLE(value.ToPointer());
-                    members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
-                        .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))))
-                        .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(
-                            Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToPointer)))))))))
-                        .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
-                        .WithSemicolonToken(SemicolonWithLineFeed));
-                }
-                else if (fieldInfo.FieldType is IdentifierNameSyntax { Identifier: { ValueText: nameof(UIntPtr) } })
-                {
-                    // public static explicit operator SOCKET(IntPtr value) => new SOCKET((UIntPtr)value.ToInt64());
-                    members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
-                        .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))))
-                        .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(
-                            Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToInt64)))))))))
-                        .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
-                        .WithSemicolonToken(SemicolonWithLineFeed));
-                }
             }
-
-            switch (name.Identifier.ValueText)
+            else if (fieldInfo.FieldType is PointerTypeSyntax)
             {
-                case "BSTR":
-                    members = members.AddRange(this.CreateAdditionalTypeDefBSTRMembers());
-                    break;
-                case "PWSTR":
-                    members = members.AddRange(this.CreateAdditionalTypeDefPWSTRMembers());
-                    break;
-                case "HRESULT":
-                case "NTSTATUS":
-                    members = members.AddRange(this.ExtractMembersFromTemplate(name.Identifier.ValueText));
-                    break;
-                default:
-                    break;
+                // public static explicit operator MSIHANDLE(IntPtr value) => new MSIHANDLE(value.ToPointer());
+                members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
+                    .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))))
+                    .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(
+                        Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToPointer)))))))))
+                    .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
+                    .WithSemicolonToken(SemicolonWithLineFeed));
             }
-
-            var structModifiers = TokenList(TokenWithSpace(this.Visibility));
-            if (RequiresUnsafe(fieldInfo.FieldType))
+            else if (fieldInfo.FieldType is IdentifierNameSyntax { Identifier: { ValueText: nameof(UIntPtr) } })
             {
-                structModifiers = structModifiers.Add(TokenWithSpace(SyntaxKind.UnsafeKeyword));
+                // public static explicit operator SOCKET(IntPtr value) => new SOCKET((UIntPtr)value.ToInt64());
+                members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
+                    .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))))
+                    .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(
+                        Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToInt64)))))))))
+                    .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
+                    .WithSemicolonToken(SemicolonWithLineFeed));
             }
-
-            structModifiers = structModifiers.Add(TokenWithSpace(SyntaxKind.ReadOnlyKeyword)).Add(TokenWithSpace(SyntaxKind.PartialKeyword));
-            StructDeclarationSyntax result = StructDeclaration(name.Identifier)
-                .WithBaseList(BaseList(SingletonSeparatedList<BaseTypeSyntax>(SimpleBaseType(GenericName(nameof(IEquatable<int>), TypeArgumentList().WithGreaterThanToken(TokenWithLineFeed(SyntaxKind.GreaterThanToken))).AddTypeArgumentListArguments(name)))).WithColonToken(TokenWithSpace(SyntaxKind.ColonToken)))
-                .WithMembers(members)
-                .WithModifiers(structModifiers)
-                .AddAttributeLists(AttributeList().WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken)).AddAttributes(DebuggerDisplay("{" + fieldName + "}")));
-
-            result = this.AddApiDocumentation(name.Identifier.ValueText, result);
-            return result;
         }
 
-        private IEnumerable<MemberDeclarationSyntax> CreateCommonTypeDefMembers(IdentifierNameSyntax structName, TypeSyntax fieldType, IdentifierNameSyntax fieldName)
+        switch (name.Identifier.ValueText)
         {
-            // Add constructor
-            IdentifierNameSyntax valueParameter = IdentifierName("value");
-            MemberAccessExpressionSyntax fieldAccessExpression = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), fieldName);
-            yield return ConstructorDeclaration(structName.Identifier)
-                .AddModifiers(TokenWithSpace(this.Visibility))
-                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(fieldType.WithTrailingTrivia(TriviaList(Space))))
-                .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, valueParameter).WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken))))
-                .WithSemicolonToken(SemicolonWithLineFeed);
+            case "BSTR":
+                members = members.AddRange(this.CreateAdditionalTypeDefBSTRMembers());
+                break;
+            case "PWSTR":
+                members = members.AddRange(this.CreateAdditionalTypeDefPWSTRMembers());
+                break;
+            case "HRESULT":
+            case "NTSTATUS":
+                members = members.AddRange(this.ExtractMembersFromTemplate(name.Identifier.ValueText));
+                break;
+            default:
+                break;
+        }
 
-            // If this typedef struct represents a pointer, add an IsNull property.
-            if (fieldType is IdentifierNameSyntax { Identifier: { Value: nameof(IntPtr) or nameof(UIntPtr) } })
+        var structModifiers = TokenList(TokenWithSpace(this.Visibility));
+        if (RequiresUnsafe(fieldInfo.FieldType))
+        {
+            structModifiers = structModifiers.Add(TokenWithSpace(SyntaxKind.UnsafeKeyword));
+        }
+
+        structModifiers = structModifiers.Add(TokenWithSpace(SyntaxKind.ReadOnlyKeyword)).Add(TokenWithSpace(SyntaxKind.PartialKeyword));
+        StructDeclarationSyntax result = StructDeclaration(name.Identifier)
+            .WithBaseList(BaseList(SingletonSeparatedList<BaseTypeSyntax>(SimpleBaseType(GenericName(nameof(IEquatable<int>), TypeArgumentList().WithGreaterThanToken(TokenWithLineFeed(SyntaxKind.GreaterThanToken))).AddTypeArgumentListArguments(name)))).WithColonToken(TokenWithSpace(SyntaxKind.ColonToken)))
+            .WithMembers(members)
+            .WithModifiers(structModifiers)
+            .AddAttributeLists(AttributeList().WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken)).AddAttributes(DebuggerDisplay("{" + fieldName + "}")));
+
+        result = this.AddApiDocumentation(name.Identifier.ValueText, result);
+        return result;
+    }
+
+    private IEnumerable<MemberDeclarationSyntax> CreateCommonTypeDefMembers(IdentifierNameSyntax structName, TypeSyntax fieldType, IdentifierNameSyntax fieldName)
+    {
+        // Add constructor
+        IdentifierNameSyntax valueParameter = IdentifierName("value");
+        MemberAccessExpressionSyntax fieldAccessExpression = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), fieldName);
+        yield return ConstructorDeclaration(structName.Identifier)
+            .AddModifiers(TokenWithSpace(this.Visibility))
+            .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(fieldType.WithTrailingTrivia(TriviaList(Space))))
+            .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, valueParameter).WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken))))
+            .WithSemicolonToken(SemicolonWithLineFeed);
+
+        // If this typedef struct represents a pointer, add an IsNull property.
+        if (fieldType is IdentifierNameSyntax { Identifier: { Value: nameof(IntPtr) or nameof(UIntPtr) } })
+        {
+            // internal static bool IsNull => value == default;
+            yield return PropertyDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), "IsNull")
+                .AddModifiers(TokenWithSpace(this.Visibility))
+                .WithExpressionBody(ArrowExpressionClause(BinaryExpression(SyntaxKind.EqualsExpression, fieldName, LiteralExpression(SyntaxKind.DefaultLiteralExpression))))
+                .WithSemicolonToken(SemicolonWithLineFeed);
+        }
+
+        // public static implicit operator int(HWND value) => value.Value;
+        yield return ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), fieldType)
+            .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(structName.WithTrailingTrivia(TriviaList(Space))))
+            .WithExpressionBody(ArrowExpressionClause(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, fieldName)))
+            .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
+            .WithSemicolonToken(SemicolonWithLineFeed);
+
+        // public static explicit operator HWND(int value) => new HWND(value);
+        // Except make converting char* or byte* to typedefs representing strings, and LPARAM/WPARAM to nint/nuint, implicit.
+        SyntaxKind explicitOrImplicitModifier = ImplicitConversionTypeDefs.Contains(structName.Identifier.ValueText) ? SyntaxKind.ImplicitKeyword : SyntaxKind.ExplicitKeyword;
+        yield return ConversionOperatorDeclaration(Token(explicitOrImplicitModifier), structName)
+            .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(fieldType.WithTrailingTrivia(TriviaList(Space))))
+            .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(structName).AddArgumentListArguments(Argument(valueParameter))))
+            .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
+            .WithSemicolonToken(SemicolonWithLineFeed);
+
+        // public static bool operator ==(HANDLE left, HANDLE right) => left.Value == right.Value;
+        var leftParameter = IdentifierName("left");
+        var rightParameter = IdentifierName("right");
+        yield return OperatorDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), TokenWithNoSpace(SyntaxKind.EqualsEqualsToken))
+            .WithOperatorKeyword(TokenWithSpace(SyntaxKind.OperatorKeyword))
+            .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))
+            .AddParameterListParameters(
+                Parameter(leftParameter.Identifier).WithType(structName.WithTrailingTrivia(TriviaList(Space))),
+                Parameter(rightParameter.Identifier).WithType(structName.WithTrailingTrivia(TriviaList(Space))))
+            .WithExpressionBody(ArrowExpressionClause(
+                BinaryExpression(
+                    SyntaxKind.EqualsExpression,
+                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, leftParameter, fieldName),
+                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, rightParameter, fieldName))))
+            .WithSemicolonToken(SemicolonWithLineFeed);
+
+        // public static bool operator !=(HANDLE left, HANDLE right) => !(left == right);
+        yield return OperatorDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Token(SyntaxKind.ExclamationEqualsToken))
+            .WithOperatorKeyword(TokenWithSpace(SyntaxKind.OperatorKeyword))
+            .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))
+            .AddParameterListParameters(
+                Parameter(leftParameter.Identifier).WithType(structName.WithTrailingTrivia(TriviaList(Space))),
+                Parameter(rightParameter.Identifier).WithType(structName.WithTrailingTrivia(TriviaList(Space))))
+            .WithExpressionBody(ArrowExpressionClause(
+                PrefixUnaryExpression(
+                    SyntaxKind.LogicalNotExpression,
+                    ParenthesizedExpression(BinaryExpression(SyntaxKind.EqualsExpression, leftParameter, rightParameter)))))
+            .WithSemicolonToken(SemicolonWithLineFeed);
+
+        // public bool Equals(HWND other) => this.Value == other.Value;
+        IdentifierNameSyntax other = IdentifierName("other");
+        yield return MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Identifier(nameof(IEquatable<int>.Equals)))
+            .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword))
+            .AddParameterListParameters(Parameter(other.Identifier).WithType(structName.WithTrailingTrivia(TriviaList(Space))))
+            .WithExpressionBody(ArrowExpressionClause(
+                BinaryExpression(
+                    SyntaxKind.EqualsExpression,
+                    fieldAccessExpression,
+                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, other, fieldName))))
+            .WithSemicolonToken(SemicolonWithLineFeed);
+
+        // public override bool Equals(object obj) => obj is HWND other && this.Equals(other);
+        IdentifierNameSyntax objParam = IdentifierName("obj");
+        yield return MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Identifier(nameof(IEquatable<int>.Equals)))
+            .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
+            .AddParameterListParameters(Parameter(objParam.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.ObjectKeyword))))
+            .WithExpressionBody(ArrowExpressionClause(
+                BinaryExpression(
+                    SyntaxKind.LogicalAndExpression,
+                    IsPatternExpression(objParam, DeclarationPattern(structName, SingleVariableDesignation(Identifier("other")))),
+                    InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName(nameof(Equals))))
+                        .WithArgumentList(ArgumentList().AddArguments(Argument(IdentifierName("other")))))))
+            .WithSemicolonToken(SemicolonWithLineFeed);
+
+        // public override int GetHashCode() => unchecked((int)this.Value); // if Value is a pointer
+        // public override int GetHashCode() => this.Value.GetHashCode(); // if Value is not a pointer
+        ExpressionSyntax hashExpr = fieldType is PointerTypeSyntax ?
+            CheckedExpression(SyntaxKind.UncheckedExpression, CastExpression(PredefinedType(TokenWithNoSpace(SyntaxKind.IntKeyword)), fieldAccessExpression)) :
+            InvocationExpression(
+                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, fieldAccessExpression, IdentifierName(nameof(object.GetHashCode))),
+                ArgumentList());
+        yield return MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), Identifier(nameof(object.GetHashCode)))
+            .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
+            .WithExpressionBody(ArrowExpressionClause(hashExpr))
+            .WithSemicolonToken(SemicolonWithLineFeed);
+    }
+
+    private IEnumerable<MemberDeclarationSyntax> ExtractMembersFromTemplate(string name) => ((TypeDeclarationSyntax)this.FetchTemplate($"{name}")).Members;
+
+    /// <summary>
+    /// Promotes an <see langword="internal" /> member to be <see langword="public"/> if <see cref="Visibility"/> indicates that generated APIs should be public.
+    /// This change is applied recursively.
+    /// </summary>
+    /// <param name="member">The member to potentially make public.</param>
+    /// <returns>The modified or original <paramref name="member"/>.</returns>
+    private MemberDeclarationSyntax ElevateVisibility(MemberDeclarationSyntax member)
+    {
+        if (this.Visibility == SyntaxKind.PublicKeyword)
+        {
+            MemberDeclarationSyntax publicMember = member;
+            int indexOfInternal = publicMember.Modifiers.IndexOf(SyntaxKind.InternalKeyword);
+            if (indexOfInternal >= 0)
             {
-                // internal static bool IsNull => value == default;
-                yield return PropertyDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), "IsNull")
-                    .AddModifiers(TokenWithSpace(this.Visibility))
-                    .WithExpressionBody(ArrowExpressionClause(BinaryExpression(SyntaxKind.EqualsExpression, fieldName, LiteralExpression(SyntaxKind.DefaultLiteralExpression))))
-                    .WithSemicolonToken(SemicolonWithLineFeed);
+                publicMember = publicMember.WithModifiers(publicMember.Modifiers.Replace(publicMember.Modifiers[indexOfInternal], TokenWithSpace(this.Visibility)));
             }
 
-            // public static implicit operator int(HWND value) => value.Value;
-            yield return ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), fieldType)
-                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(structName.WithTrailingTrivia(TriviaList(Space))))
-                .WithExpressionBody(ArrowExpressionClause(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, fieldName)))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
-                .WithSemicolonToken(SemicolonWithLineFeed);
+            // Apply change recursively.
+            if (publicMember is TypeDeclarationSyntax memberContainer)
+            {
+                publicMember = memberContainer.WithMembers(List(memberContainer.Members.Select(this.ElevateVisibility)));
+            }
 
-            // public static explicit operator HWND(int value) => new HWND(value);
-            // Except make converting char* or byte* to typedefs representing strings, and LPARAM/WPARAM to nint/nuint, implicit.
-            SyntaxKind explicitOrImplicitModifier = ImplicitConversionTypeDefs.Contains(structName.Identifier.ValueText) ? SyntaxKind.ImplicitKeyword : SyntaxKind.ExplicitKeyword;
-            yield return ConversionOperatorDeclaration(Token(explicitOrImplicitModifier), structName)
-                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(fieldType.WithTrailingTrivia(TriviaList(Space))))
-                .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(structName).AddArgumentListArguments(Argument(valueParameter))))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
-                .WithSemicolonToken(SemicolonWithLineFeed);
+            return publicMember;
+        }
 
-            // public static bool operator ==(HANDLE left, HANDLE right) => left.Value == right.Value;
-            var leftParameter = IdentifierName("left");
-            var rightParameter = IdentifierName("right");
-            yield return OperatorDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), TokenWithNoSpace(SyntaxKind.EqualsEqualsToken))
-                .WithOperatorKeyword(TokenWithSpace(SyntaxKind.OperatorKeyword))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))
-                .AddParameterListParameters(
-                    Parameter(leftParameter.Identifier).WithType(structName.WithTrailingTrivia(TriviaList(Space))),
-                    Parameter(rightParameter.Identifier).WithType(structName.WithTrailingTrivia(TriviaList(Space))))
-                .WithExpressionBody(ArrowExpressionClause(
-                    BinaryExpression(
-                        SyntaxKind.EqualsExpression,
-                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, leftParameter, fieldName),
-                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, rightParameter, fieldName))))
-                .WithSemicolonToken(SemicolonWithLineFeed);
+        return member;
+    }
 
-            // public static bool operator !=(HANDLE left, HANDLE right) => !(left == right);
-            yield return OperatorDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Token(SyntaxKind.ExclamationEqualsToken))
-                .WithOperatorKeyword(TokenWithSpace(SyntaxKind.OperatorKeyword))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))
-                .AddParameterListParameters(
-                    Parameter(leftParameter.Identifier).WithType(structName.WithTrailingTrivia(TriviaList(Space))),
-                    Parameter(rightParameter.Identifier).WithType(structName.WithTrailingTrivia(TriviaList(Space))))
-                .WithExpressionBody(ArrowExpressionClause(
-                    PrefixUnaryExpression(
-                        SyntaxKind.LogicalNotExpression,
-                        ParenthesizedExpression(BinaryExpression(SyntaxKind.EqualsExpression, leftParameter, rightParameter)))))
-                .WithSemicolonToken(SemicolonWithLineFeed);
+    private IEnumerable<MemberDeclarationSyntax> CreateAdditionalTypeDefBSTRMembers()
+    {
+        ExpressionSyntax thisValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Value"));
 
-            // public bool Equals(HWND other) => this.Value == other.Value;
-            IdentifierNameSyntax other = IdentifierName("other");
-            yield return MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Identifier(nameof(IEquatable<int>.Equals)))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword))
-                .AddParameterListParameters(Parameter(other.Identifier).WithType(structName.WithTrailingTrivia(TriviaList(Space))))
-                .WithExpressionBody(ArrowExpressionClause(
-                    BinaryExpression(
-                        SyntaxKind.EqualsExpression,
-                        fieldAccessExpression,
-                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, other, fieldName))))
-                .WithSemicolonToken(SemicolonWithLineFeed);
-
-            // public override bool Equals(object obj) => obj is HWND other && this.Equals(other);
-            IdentifierNameSyntax objParam = IdentifierName("obj");
-            yield return MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Identifier(nameof(IEquatable<int>.Equals)))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
-                .AddParameterListParameters(Parameter(objParam.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.ObjectKeyword))))
-                .WithExpressionBody(ArrowExpressionClause(
-                    BinaryExpression(
-                        SyntaxKind.LogicalAndExpression,
-                        IsPatternExpression(objParam, DeclarationPattern(structName, SingleVariableDesignation(Identifier("other")))),
-                        InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName(nameof(Equals))))
-                            .WithArgumentList(ArgumentList().AddArguments(Argument(IdentifierName("other")))))))
-                .WithSemicolonToken(SemicolonWithLineFeed);
-
-            // public override int GetHashCode() => unchecked((int)this.Value); // if Value is a pointer
-            // public override int GetHashCode() => this.Value.GetHashCode(); // if Value is not a pointer
-            ExpressionSyntax hashExpr = fieldType is PointerTypeSyntax ?
-                CheckedExpression(SyntaxKind.UncheckedExpression, CastExpression(PredefinedType(TokenWithNoSpace(SyntaxKind.IntKeyword)), fieldAccessExpression)) :
+        // public override string ToString() => Marshal.PtrToStringBSTR(new IntPtr(this.Value));
+        yield return MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword)), Identifier(nameof(this.ToString)))
+            .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
+            .WithExpressionBody(ArrowExpressionClause(
                 InvocationExpression(
-                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, fieldAccessExpression, IdentifierName(nameof(object.GetHashCode))),
-                    ArgumentList());
-            yield return MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), Identifier(nameof(object.GetHashCode)))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
-                .WithExpressionBody(ArrowExpressionClause(hashExpr))
-                .WithSemicolonToken(SemicolonWithLineFeed);
-        }
+                    MemberAccessExpression(
+                        SyntaxKind.SimpleMemberAccessExpression,
+                        IdentifierName(nameof(Marshal)),
+                        IdentifierName(nameof(Marshal.PtrToStringBSTR))))
+            .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(ObjectCreationExpression(IntPtrTypeSyntax).WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(thisValue))))))))))
+            .WithSemicolonToken(SemicolonWithLineFeed);
 
-        private IEnumerable<MemberDeclarationSyntax> ExtractMembersFromTemplate(string name) => ((TypeDeclarationSyntax)this.FetchTemplate($"{name}")).Members;
-
-        /// <summary>
-        /// Promotes an <see langword="internal" /> member to be <see langword="public"/> if <see cref="Visibility"/> indicates that generated APIs should be public.
-        /// This change is applied recursively.
-        /// </summary>
-        /// <param name="member">The member to potentially make public.</param>
-        /// <returns>The modified or original <paramref name="member"/>.</returns>
-        private MemberDeclarationSyntax ElevateVisibility(MemberDeclarationSyntax member)
+        if (this.canUseSpan)
         {
-            if (this.Visibility == SyntaxKind.PublicKeyword)
-            {
-                MemberDeclarationSyntax publicMember = member;
-                int indexOfInternal = publicMember.Modifiers.IndexOf(SyntaxKind.InternalKeyword);
-                if (indexOfInternal >= 0)
-                {
-                    publicMember = publicMember.WithModifiers(publicMember.Modifiers.Replace(publicMember.Modifiers[indexOfInternal], TokenWithSpace(this.Visibility)));
-                }
-
-                // Apply change recursively.
-                if (publicMember is TypeDeclarationSyntax memberContainer)
-                {
-                    publicMember = memberContainer.WithMembers(List(memberContainer.Members.Select(this.ElevateVisibility)));
-                }
-
-                return publicMember;
-            }
-
-            return member;
-        }
-
-        private IEnumerable<MemberDeclarationSyntax> CreateAdditionalTypeDefBSTRMembers()
-        {
-            ExpressionSyntax thisValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Value"));
-
-            // public override string ToString() => Marshal.PtrToStringBSTR(new IntPtr(this.Value));
-            yield return MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword)), Identifier(nameof(this.ToString)))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
-                .WithExpressionBody(ArrowExpressionClause(
-                    InvocationExpression(
-                        MemberAccessExpression(
-                            SyntaxKind.SimpleMemberAccessExpression,
-                            IdentifierName(nameof(Marshal)),
-                            IdentifierName(nameof(Marshal.PtrToStringBSTR))))
-                .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(ObjectCreationExpression(IntPtrTypeSyntax).WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(thisValue))))))))))
+            // public static implicit operator ReadOnlySpan<char>(BSTR bstr) => bstr.Value != null ? new ReadOnlySpan<char>(bstr.Value, *((int*)bstr.Value - 1) / 2) : default;
+            TypeSyntax rosChar = MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword)));
+            IdentifierNameSyntax bstrParam = IdentifierName("bstr");
+            ExpressionSyntax bstrValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, bstrParam, IdentifierName("Value"));
+            ExpressionSyntax length = BinaryExpression(
+                SyntaxKind.DivideExpression,
+                PrefixUnaryExpression(
+                    SyntaxKind.PointerIndirectionExpression,
+                    ParenthesizedExpression(
+                        BinaryExpression(
+                            SyntaxKind.SubtractExpression,
+                            CastExpression(PointerType(PredefinedType(TokenWithNoSpace(SyntaxKind.IntKeyword))), bstrValue),
+                            LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(1))))),
+                LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(2)));
+            ExpressionSyntax rosCreation = ObjectCreationExpression(rosChar).AddArgumentListArguments(Argument(bstrValue), Argument(length));
+            ExpressionSyntax bstrNotNull = BinaryExpression(SyntaxKind.NotEqualsExpression, bstrValue, LiteralExpression(SyntaxKind.NullLiteralExpression));
+            ExpressionSyntax conditional = ConditionalExpression(bstrNotNull, rosCreation, DefaultExpression(rosChar));
+            yield return ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), rosChar)
+                .AddParameterListParameters(Parameter(bstrParam.Identifier).WithType(IdentifierName("BSTR").WithTrailingTrivia(TriviaList(Space))))
+                .WithExpressionBody(ArrowExpressionClause(conditional))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword)) // operators MUST be public
                 .WithSemicolonToken(SemicolonWithLineFeed);
 
-            if (this.canUseSpan)
-            {
-                // public static implicit operator ReadOnlySpan<char>(BSTR bstr) => bstr.Value != null ? new ReadOnlySpan<char>(bstr.Value, *((int*)bstr.Value - 1) / 2) : default;
-                TypeSyntax rosChar = MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword)));
-                IdentifierNameSyntax bstrParam = IdentifierName("bstr");
-                ExpressionSyntax bstrValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, bstrParam, IdentifierName("Value"));
-                ExpressionSyntax length = BinaryExpression(
-                    SyntaxKind.DivideExpression,
-                    PrefixUnaryExpression(
-                        SyntaxKind.PointerIndirectionExpression,
-                        ParenthesizedExpression(
-                            BinaryExpression(
-                                SyntaxKind.SubtractExpression,
-                                CastExpression(PointerType(PredefinedType(TokenWithNoSpace(SyntaxKind.IntKeyword))), bstrValue),
-                                LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(1))))),
-                    LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(2)));
-                ExpressionSyntax rosCreation = ObjectCreationExpression(rosChar).AddArgumentListArguments(Argument(bstrValue), Argument(length));
-                ExpressionSyntax bstrNotNull = BinaryExpression(SyntaxKind.NotEqualsExpression, bstrValue, LiteralExpression(SyntaxKind.NullLiteralExpression));
-                ExpressionSyntax conditional = ConditionalExpression(bstrNotNull, rosCreation, DefaultExpression(rosChar));
-                yield return ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), rosChar)
-                    .AddParameterListParameters(Parameter(bstrParam.Identifier).WithType(IdentifierName("BSTR").WithTrailingTrivia(TriviaList(Space))))
-                    .WithExpressionBody(ArrowExpressionClause(conditional))
-                    .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword)) // operators MUST be public
-                    .WithSemicolonToken(SemicolonWithLineFeed);
-
-                // internal ReadOnlySpan<char> AsSpan() => this;
-                yield return MethodDeclaration(rosChar, Identifier("AsSpan"))
-                    .AddModifiers(TokenWithSpace(this.Visibility))
-                    .WithExpressionBody(ArrowExpressionClause(ThisExpression()))
-                    .WithSemicolonToken(SemicolonWithLineFeed);
-            }
-        }
-
-        private IEnumerable<MemberDeclarationSyntax> CreateAdditionalTypeDefPWSTRMembers()
-        {
-#pragma warning disable SA1114 // Parameter list should follow declaration
-            ExpressionSyntax thisValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Value"));
-            ExpressionSyntax thisValueIsNull = IsPatternExpression(thisValue, ConstantPattern(LiteralExpression(SyntaxKind.NullLiteralExpression)));
-
-            // internal int Length { get; }
-            IdentifierNameSyntax localPointer = IdentifierName("p");
-            yield return PropertyDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), Identifier("Length").WithTrailingTrivia(LineFeed))
+            // internal ReadOnlySpan<char> AsSpan() => this;
+            yield return MethodDeclaration(rosChar, Identifier("AsSpan"))
                 .AddModifiers(TokenWithSpace(this.Visibility))
-                .WithAccessorList(AccessorList().AddAccessors(AccessorDeclaration(
-                    SyntaxKind.GetAccessorDeclaration,
-                    Block().AddStatements(
-                        //// char* p = this.Value;
-                        LocalDeclarationStatement(
-                            VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword))))
-                                .AddVariables(VariableDeclarator(localPointer.Identifier).WithInitializer(EqualsValueClause(thisValue)))),
-                        //// if (p is null) return 0;
-                        IfStatement(
-                            IsPatternExpression(localPointer, ConstantPattern(LiteralExpression(SyntaxKind.NullLiteralExpression))),
-                            ReturnStatement(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)))).WithCloseParenToken(TokenWithLineFeed(SyntaxKind.CloseParenToken)),
-                        //// while (*p != '\0') p++;
-                        WhileStatement(
-                            BinaryExpression(SyntaxKind.NotEqualsExpression, PrefixUnaryExpression(SyntaxKind.PointerIndirectionExpression, localPointer), LiteralExpression(SyntaxKind.CharacterLiteralExpression, Literal('\0'))),
-                            ExpressionStatement(PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, localPointer))),
-                        //// return checked((int)(p - this.Value));
-                        ReturnStatement(
-                            CheckedExpression(
-                                SyntaxKind.CheckedExpression,
-                                CastExpression(
-                                    PredefinedType(TokenWithNoSpace(SyntaxKind.IntKeyword)),
-                                    ParenthesizedExpression(BinaryExpression(SyntaxKind.SubtractExpression, localPointer, thisValue))))))).WithKeyword(TokenWithLineFeed(SyntaxKind.GetKeyword))));
-
-            // public override string? ToString() => this.Value is null ? null : new string(this.Value);
-            yield return MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword)), Identifier(nameof(this.ToString)))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
-                .WithExpressionBody(ArrowExpressionClause(
-                    ConditionalExpression(
-                        thisValueIsNull,
-                        LiteralExpression(SyntaxKind.NullLiteralExpression),
-                        ObjectCreationExpression(PredefinedType(Token(SyntaxKind.StringKeyword)))
-                            .AddArgumentListArguments(Argument(thisValue)))))
+                .WithExpressionBody(ArrowExpressionClause(ThisExpression()))
                 .WithSemicolonToken(SemicolonWithLineFeed);
+        }
+    }
 
-            if (this.canUseSpan)
-            {
-                // internal Span<char> AsSpan() => this.Value is null ? default : new Span<char>(this.Value, this.Length);
-                yield return this.CreateAsSpanMethodOverValueAndLength(MakeSpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword))));
-            }
+    private IEnumerable<MemberDeclarationSyntax> CreateAdditionalTypeDefPWSTRMembers()
+    {
+#pragma warning disable SA1114 // Parameter list should follow declaration
+        ExpressionSyntax thisValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Value"));
+        ExpressionSyntax thisValueIsNull = IsPatternExpression(thisValue, ConstantPattern(LiteralExpression(SyntaxKind.NullLiteralExpression)));
+
+        // internal int Length { get; }
+        IdentifierNameSyntax localPointer = IdentifierName("p");
+        yield return PropertyDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), Identifier("Length").WithTrailingTrivia(LineFeed))
+            .AddModifiers(TokenWithSpace(this.Visibility))
+            .WithAccessorList(AccessorList().AddAccessors(AccessorDeclaration(
+                SyntaxKind.GetAccessorDeclaration,
+                Block().AddStatements(
+                    //// char* p = this.Value;
+                    LocalDeclarationStatement(
+                        VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword))))
+                            .AddVariables(VariableDeclarator(localPointer.Identifier).WithInitializer(EqualsValueClause(thisValue)))),
+                    //// if (p is null) return 0;
+                    IfStatement(
+                        IsPatternExpression(localPointer, ConstantPattern(LiteralExpression(SyntaxKind.NullLiteralExpression))),
+                        ReturnStatement(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)))).WithCloseParenToken(TokenWithLineFeed(SyntaxKind.CloseParenToken)),
+                    //// while (*p != '\0') p++;
+                    WhileStatement(
+                        BinaryExpression(SyntaxKind.NotEqualsExpression, PrefixUnaryExpression(SyntaxKind.PointerIndirectionExpression, localPointer), LiteralExpression(SyntaxKind.CharacterLiteralExpression, Literal('\0'))),
+                        ExpressionStatement(PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, localPointer))),
+                    //// return checked((int)(p - this.Value));
+                    ReturnStatement(
+                        CheckedExpression(
+                            SyntaxKind.CheckedExpression,
+                            CastExpression(
+                                PredefinedType(TokenWithNoSpace(SyntaxKind.IntKeyword)),
+                                ParenthesizedExpression(BinaryExpression(SyntaxKind.SubtractExpression, localPointer, thisValue))))))).WithKeyword(TokenWithLineFeed(SyntaxKind.GetKeyword))));
+
+        // public override string? ToString() => this.Value is null ? null : new string(this.Value);
+        yield return MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword)), Identifier(nameof(this.ToString)))
+            .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
+            .WithExpressionBody(ArrowExpressionClause(
+                ConditionalExpression(
+                    thisValueIsNull,
+                    LiteralExpression(SyntaxKind.NullLiteralExpression),
+                    ObjectCreationExpression(PredefinedType(Token(SyntaxKind.StringKeyword)))
+                        .AddArgumentListArguments(Argument(thisValue)))))
+            .WithSemicolonToken(SemicolonWithLineFeed);
+
+        if (this.canUseSpan)
+        {
+            // internal Span<char> AsSpan() => this.Value is null ? default : new Span<char>(this.Value, this.Length);
+            yield return this.CreateAsSpanMethodOverValueAndLength(MakeSpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword))));
+        }
 #pragma warning restore SA1114 // Parameter list should follow declaration
+    }
+
+    private MethodDeclarationSyntax CreateAsSpanMethodOverValueAndLength(TypeSyntax spanType)
+    {
+        ExpressionSyntax thisValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Value"));
+        ExpressionSyntax thisLength = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Length"));
+
+        // internal X AsSpan() => this.Value is null ? default(X) : new X(this.Value, this.Length);
+        return MethodDeclaration(spanType, Identifier("AsSpan"))
+            .AddModifiers(TokenWithSpace(this.Visibility))
+            .WithExpressionBody(ArrowExpressionClause(ConditionalExpression(
+                condition: IsPatternExpression(thisValue, ConstantPattern(LiteralExpression(SyntaxKind.NullLiteralExpression))),
+                whenTrue: DefaultExpression(spanType),
+                whenFalse: ObjectCreationExpression(spanType).AddArgumentListArguments(Argument(thisValue), Argument(thisLength)))))
+            .WithSemicolonToken(SemicolonWithLineFeed)
+            .WithLeadingTrivia(StrAsSpanComment);
+    }
+
+    private StructDeclarationSyntax DeclareTypeDefBOOLStruct(TypeDefinition typeDef)
+    {
+        IdentifierNameSyntax name = IdentifierName("BOOL");
+
+        FieldDefinition fieldDef = this.Reader.GetFieldDefinition(typeDef.GetFields().Single());
+        var fieldAttributes = fieldDef.GetCustomAttributes();
+        IdentifierNameSyntax fieldName = IdentifierName("value");
+        VariableDeclaratorSyntax fieldDeclarator = VariableDeclarator(fieldName.Identifier);
+        (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? MarshalAs) fieldInfo =
+            this.ReinterpretFieldType(fieldDef, fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null).ToTypeSyntax(this.fieldTypeSettings, fieldAttributes).Type, fieldAttributes);
+        SyntaxList<MemberDeclarationSyntax> members = List<MemberDeclarationSyntax>();
+
+        FieldDeclarationSyntax fieldSyntax = FieldDeclaration(
+            VariableDeclaration(fieldInfo.FieldType).AddVariables(fieldDeclarator))
+            .AddModifiers(TokenWithSpace(SyntaxKind.PrivateKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword));
+        members = members.Add(fieldSyntax);
+        MemberAccessExpressionSyntax fieldAccessExpression = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("value"));
+
+        // Add property accessor
+        members = members.Add(PropertyDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), "Value")
+            .WithExpressionBody(ArrowExpressionClause(fieldAccessExpression)).WithSemicolonToken(SemicolonWithLineFeed)
+            .AddModifiers(TokenWithSpace(this.Visibility)));
+
+        // unsafe BOOL(bool value) => this.value = *(sbyte*)&value;
+        IdentifierNameSyntax valueParameter = IdentifierName("value");
+        ExpressionSyntax boolToSByte = PrefixUnaryExpression(
+            SyntaxKind.PointerIndirectionExpression,
+            CastExpression(
+                PointerType(PredefinedType(TokenWithNoSpace(SyntaxKind.SByteKeyword))),
+                PrefixUnaryExpression(SyntaxKind.AddressOfExpression, valueParameter)));
+        members = members.Add(ConstructorDeclaration(name.Identifier)
+            .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword))
+            .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword))))
+            .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, boolToSByte).WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken))))
+            .WithSemicolonToken(SemicolonWithLineFeed));
+
+        // BOOL(int value) => this.value = value;
+        members = members.Add(ConstructorDeclaration(name.Identifier)
+            .AddModifiers(TokenWithSpace(this.Visibility))
+            .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))))
+            .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, valueParameter).WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken))))
+            .WithSemicolonToken(SemicolonWithLineFeed));
+
+        // public unsafe static implicit operator bool(BOOL value)
+        // {
+        //     sbyte v = checked((sbyte)value.value);
+        //     return *(bool*)&v;
+        // }
+        IdentifierNameSyntax localVarName = IdentifierName("v");
+        ExpressionSyntax sbyteToBool = PrefixUnaryExpression(
+            SyntaxKind.PointerIndirectionExpression,
+            CastExpression(
+                PointerType(PredefinedType(TokenWithNoSpace(SyntaxKind.BoolKeyword))),
+                PrefixUnaryExpression(SyntaxKind.AddressOfExpression, localVarName)));
+        var implicitBOOLtoBoolBody = Block().AddStatements(
+            LocalDeclarationStatement(VariableDeclaration(PredefinedType(Token(SyntaxKind.SByteKeyword)))).AddDeclarationVariables(
+                VariableDeclarator(localVarName.Identifier).WithInitializer(EqualsValueClause(CheckedExpression(SyntaxKind.CheckedExpression, CastExpression(PredefinedType(Token(SyntaxKind.SByteKeyword)), MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, fieldName)))))),
+            ReturnStatement(sbyteToBool));
+        members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), PredefinedType(Token(SyntaxKind.BoolKeyword)))
+            .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))))
+            .WithBody(implicitBOOLtoBoolBody)
+            .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword))); // operators MUST be public
+
+        // public static implicit operator BOOL(bool value) => new BOOL(value);
+        members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), name)
+            .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword))))
+            .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(Argument(valueParameter))))
+            .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
+            .WithSemicolonToken(SemicolonWithLineFeed));
+
+        // public static explicit operator BOOL(int value) => new BOOL(value);
+        members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
+            .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))))
+            .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(Argument(valueParameter))))
+            .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
+            .WithSemicolonToken(SemicolonWithLineFeed));
+
+        StructDeclarationSyntax result = StructDeclaration(name.Identifier)
+            .WithMembers(members)
+            .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.ReadOnlyKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)));
+
+        result = this.AddApiDocumentation(name.Identifier.ValueText, result);
+        return result;
+    }
+
+    private EnumDeclarationSyntax DeclareEnum(TypeDefinition typeDef)
+    {
+        bool flagsEnum = false;
+        foreach (CustomAttributeHandle attributeHandle in typeDef.GetCustomAttributes())
+        {
+            CustomAttribute attribute = this.Reader.GetCustomAttribute(attributeHandle);
+            if (this.IsAttribute(attribute, nameof(System), "FlagsAttribute"))
+            {
+                flagsEnum = true;
+                break;
+            }
         }
 
-        private MethodDeclarationSyntax CreateAsSpanMethodOverValueAndLength(TypeSyntax spanType)
+        var enumValues = new List<SyntaxNodeOrToken>();
+        TypeSyntax? enumBaseType = null;
+        foreach (FieldDefinitionHandle fieldDefHandle in typeDef.GetFields())
         {
-            ExpressionSyntax thisValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Value"));
-            ExpressionSyntax thisLength = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Length"));
+            FieldDefinition fieldDef = this.Reader.GetFieldDefinition(fieldDefHandle);
+            string enumValueName = this.Reader.GetString(fieldDef.Name);
+            ConstantHandle valueHandle = fieldDef.GetDefaultValue();
+            if (valueHandle.IsNil)
+            {
+                enumBaseType = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null).ToTypeSyntax(this.enumTypeSettings, null).Type;
+                continue;
+            }
 
-            // internal X AsSpan() => this.Value is null ? default(X) : new X(this.Value, this.Length);
-            return MethodDeclaration(spanType, Identifier("AsSpan"))
-                .AddModifiers(TokenWithSpace(this.Visibility))
-                .WithExpressionBody(ArrowExpressionClause(ConditionalExpression(
-                    condition: IsPatternExpression(thisValue, ConstantPattern(LiteralExpression(SyntaxKind.NullLiteralExpression))),
-                    whenTrue: DefaultExpression(spanType),
-                    whenFalse: ObjectCreationExpression(spanType).AddArgumentListArguments(Argument(thisValue), Argument(thisLength)))))
-                .WithSemicolonToken(SemicolonWithLineFeed)
-                .WithLeadingTrivia(StrAsSpanComment);
+            Constant value = this.Reader.GetConstant(valueHandle);
+            ExpressionSyntax enumValue = flagsEnum ? this.ToHexExpressionSyntax(value) : this.ToExpressionSyntax(value);
+            EnumMemberDeclarationSyntax enumMember = EnumMemberDeclaration(SafeIdentifier(enumValueName))
+                .WithEqualsValue(EqualsValueClause(enumValue));
+            enumValues.Add(enumMember);
+            enumValues.Add(TokenWithLineFeed(SyntaxKind.CommaToken));
         }
 
-        private StructDeclarationSyntax DeclareTypeDefBOOLStruct(TypeDefinition typeDef)
+        if (enumBaseType is null)
         {
-            IdentifierNameSyntax name = IdentifierName("BOOL");
-
-            FieldDefinition fieldDef = this.Reader.GetFieldDefinition(typeDef.GetFields().Single());
-            var fieldAttributes = fieldDef.GetCustomAttributes();
-            IdentifierNameSyntax fieldName = IdentifierName("value");
-            VariableDeclaratorSyntax fieldDeclarator = VariableDeclarator(fieldName.Identifier);
-            (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? MarshalAs) fieldInfo =
-                this.ReinterpretFieldType(fieldDef, fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null).ToTypeSyntax(this.fieldTypeSettings, fieldAttributes).Type, fieldAttributes);
-            SyntaxList<MemberDeclarationSyntax> members = List<MemberDeclarationSyntax>();
-
-            FieldDeclarationSyntax fieldSyntax = FieldDeclaration(
-                VariableDeclaration(fieldInfo.FieldType).AddVariables(fieldDeclarator))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PrivateKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword));
-            members = members.Add(fieldSyntax);
-            MemberAccessExpressionSyntax fieldAccessExpression = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("value"));
-
-            // Add property accessor
-            members = members.Add(PropertyDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), "Value")
-                .WithExpressionBody(ArrowExpressionClause(fieldAccessExpression)).WithSemicolonToken(SemicolonWithLineFeed)
-                .AddModifiers(TokenWithSpace(this.Visibility)));
-
-            // unsafe BOOL(bool value) => this.value = *(sbyte*)&value;
-            IdentifierNameSyntax valueParameter = IdentifierName("value");
-            ExpressionSyntax boolToSByte = PrefixUnaryExpression(
-                SyntaxKind.PointerIndirectionExpression,
-                CastExpression(
-                    PointerType(PredefinedType(TokenWithNoSpace(SyntaxKind.SByteKeyword))),
-                    PrefixUnaryExpression(SyntaxKind.AddressOfExpression, valueParameter)));
-            members = members.Add(ConstructorDeclaration(name.Identifier)
-                .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword))
-                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword))))
-                .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, boolToSByte).WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken))))
-                .WithSemicolonToken(SemicolonWithLineFeed));
-
-            // BOOL(int value) => this.value = value;
-            members = members.Add(ConstructorDeclaration(name.Identifier)
-                .AddModifiers(TokenWithSpace(this.Visibility))
-                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))))
-                .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, valueParameter).WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken))))
-                .WithSemicolonToken(SemicolonWithLineFeed));
-
-            // public unsafe static implicit operator bool(BOOL value)
-            // {
-            //     sbyte v = checked((sbyte)value.value);
-            //     return *(bool*)&v;
-            // }
-            IdentifierNameSyntax localVarName = IdentifierName("v");
-            ExpressionSyntax sbyteToBool = PrefixUnaryExpression(
-                SyntaxKind.PointerIndirectionExpression,
-                CastExpression(
-                    PointerType(PredefinedType(TokenWithNoSpace(SyntaxKind.BoolKeyword))),
-                    PrefixUnaryExpression(SyntaxKind.AddressOfExpression, localVarName)));
-            var implicitBOOLtoBoolBody = Block().AddStatements(
-                LocalDeclarationStatement(VariableDeclaration(PredefinedType(Token(SyntaxKind.SByteKeyword)))).AddDeclarationVariables(
-                    VariableDeclarator(localVarName.Identifier).WithInitializer(EqualsValueClause(CheckedExpression(SyntaxKind.CheckedExpression, CastExpression(PredefinedType(Token(SyntaxKind.SByteKeyword)), MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, fieldName)))))),
-                ReturnStatement(sbyteToBool));
-            members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), PredefinedType(Token(SyntaxKind.BoolKeyword)))
-                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))))
-                .WithBody(implicitBOOLtoBoolBody)
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword))); // operators MUST be public
-
-            // public static implicit operator BOOL(bool value) => new BOOL(value);
-            members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), name)
-                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword))))
-                .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(Argument(valueParameter))))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
-                .WithSemicolonToken(SemicolonWithLineFeed));
-
-            // public static explicit operator BOOL(int value) => new BOOL(value);
-            members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
-                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))))
-                .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(Argument(valueParameter))))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
-                .WithSemicolonToken(SemicolonWithLineFeed));
-
-            StructDeclarationSyntax result = StructDeclaration(name.Identifier)
-                .WithMembers(members)
-                .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.ReadOnlyKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)));
-
-            result = this.AddApiDocumentation(name.Identifier.ValueText, result);
-            return result;
+            throw new NotSupportedException("Unknown enum type.");
         }
 
-        private EnumDeclarationSyntax DeclareEnum(TypeDefinition typeDef)
+        var name = this.Reader.GetString(typeDef.Name);
+        EnumDeclarationSyntax result = EnumDeclaration(Identifier(name))
+            .WithMembers(SeparatedList<EnumMemberDeclarationSyntax>(enumValues))
+            .WithModifiers(TokenList(TokenWithSpace(this.Visibility)));
+
+        if (!(enumBaseType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.IntKeyword } }))
         {
-            bool flagsEnum = false;
-            foreach (CustomAttributeHandle attributeHandle in typeDef.GetCustomAttributes())
-            {
-                CustomAttribute attribute = this.Reader.GetCustomAttribute(attributeHandle);
-                if (this.IsAttribute(attribute, nameof(System), "FlagsAttribute"))
-                {
-                    flagsEnum = true;
-                    break;
-                }
-            }
-
-            var enumValues = new List<SyntaxNodeOrToken>();
-            TypeSyntax? enumBaseType = null;
-            foreach (FieldDefinitionHandle fieldDefHandle in typeDef.GetFields())
-            {
-                FieldDefinition fieldDef = this.Reader.GetFieldDefinition(fieldDefHandle);
-                string enumValueName = this.Reader.GetString(fieldDef.Name);
-                ConstantHandle valueHandle = fieldDef.GetDefaultValue();
-                if (valueHandle.IsNil)
-                {
-                    enumBaseType = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null).ToTypeSyntax(this.enumTypeSettings, null).Type;
-                    continue;
-                }
-
-                Constant value = this.Reader.GetConstant(valueHandle);
-                ExpressionSyntax enumValue = flagsEnum ? this.ToHexExpressionSyntax(value) : this.ToExpressionSyntax(value);
-                EnumMemberDeclarationSyntax enumMember = EnumMemberDeclaration(SafeIdentifier(enumValueName))
-                    .WithEqualsValue(EqualsValueClause(enumValue));
-                enumValues.Add(enumMember);
-                enumValues.Add(TokenWithLineFeed(SyntaxKind.CommaToken));
-            }
-
-            if (enumBaseType is null)
-            {
-                throw new NotSupportedException("Unknown enum type.");
-            }
-
-            var name = this.Reader.GetString(typeDef.Name);
-            EnumDeclarationSyntax result = EnumDeclaration(Identifier(name))
-                .WithMembers(SeparatedList<EnumMemberDeclarationSyntax>(enumValues))
-                .WithModifiers(TokenList(TokenWithSpace(this.Visibility)));
-
-            if (!(enumBaseType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.IntKeyword } }))
-            {
-                result = result.WithIdentifier(result.Identifier.WithTrailingTrivia(Space))
-                    .WithBaseList(BaseList(SingletonSeparatedList<BaseTypeSyntax>(SimpleBaseType(enumBaseType).WithTrailingTrivia(LineFeed))).WithColonToken(TokenWithSpace(SyntaxKind.ColonToken)));
-            }
-
-            if (flagsEnum)
-            {
-                result = result.AddAttributeLists(
-                    AttributeList().WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken)).AddAttributes(FlagsAttributeSyntax));
-            }
-
-            result = this.AddApiDocumentation(name, result);
-
-            return result;
+            result = result.WithIdentifier(result.Identifier.WithTrailingTrivia(Space))
+                .WithBaseList(BaseList(SingletonSeparatedList<BaseTypeSyntax>(SimpleBaseType(enumBaseType).WithTrailingTrivia(LineFeed))).WithColonToken(TokenWithSpace(SyntaxKind.ColonToken)));
         }
 
-        private IEnumerable<MethodDeclarationSyntax> DeclareFriendlyOverloads(MethodDefinition methodDefinition, MethodDeclarationSyntax externMethodDeclaration, NameSyntax declaringTypeName, FriendlyOverloadOf overloadOf)
+        if (flagsEnum)
         {
-            if (this.TryFetchTemplate(externMethodDeclaration.Identifier.ValueText, out MemberDeclarationSyntax? templateFriendlyOverload))
-            {
-                yield return (MethodDeclarationSyntax)templateFriendlyOverload;
-            }
+            result = result.AddAttributeLists(
+                AttributeList().WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken)).AddAttributes(FlagsAttributeSyntax));
+        }
 
-            if (this.options.AllowMarshaling && this.TryFetchTemplate("marshaling/" + externMethodDeclaration.Identifier.ValueText, out templateFriendlyOverload))
-            {
-                yield return (MethodDeclarationSyntax)templateFriendlyOverload;
-            }
+        result = this.AddApiDocumentation(name, result);
 
-            if (!this.options.AllowMarshaling && this.TryFetchTemplate("no_marshaling/" + externMethodDeclaration.Identifier.ValueText, out templateFriendlyOverload))
-            {
-                yield return (MethodDeclarationSyntax)templateFriendlyOverload;
-            }
+        return result;
+    }
+
+    private IEnumerable<MethodDeclarationSyntax> DeclareFriendlyOverloads(MethodDefinition methodDefinition, MethodDeclarationSyntax externMethodDeclaration, NameSyntax declaringTypeName, FriendlyOverloadOf overloadOf)
+    {
+        if (this.TryFetchTemplate(externMethodDeclaration.Identifier.ValueText, out MemberDeclarationSyntax? templateFriendlyOverload))
+        {
+            yield return (MethodDeclarationSyntax)templateFriendlyOverload;
+        }
+
+        if (this.options.AllowMarshaling && this.TryFetchTemplate("marshaling/" + externMethodDeclaration.Identifier.ValueText, out templateFriendlyOverload))
+        {
+            yield return (MethodDeclarationSyntax)templateFriendlyOverload;
+        }
+
+        if (!this.options.AllowMarshaling && this.TryFetchTemplate("no_marshaling/" + externMethodDeclaration.Identifier.ValueText, out templateFriendlyOverload))
+        {
+            yield return (MethodDeclarationSyntax)templateFriendlyOverload;
+        }
 
 #pragma warning disable SA1114 // Parameter list should follow declaration
-            static ParameterSyntax StripAttributes(ParameterSyntax parameter) => parameter.WithAttributeLists(List<AttributeListSyntax>());
-            static ExpressionSyntax GetSpanLength(ExpressionSyntax span) => MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, span, IdentifierName(nameof(Span<int>.Length)));
-            bool isReleaseMethod = this.MetadataIndex.ReleaseMethods.Contains(externMethodDeclaration.Identifier.ValueText);
+        static ParameterSyntax StripAttributes(ParameterSyntax parameter) => parameter.WithAttributeLists(List<AttributeListSyntax>());
+        static ExpressionSyntax GetSpanLength(ExpressionSyntax span) => MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, span, IdentifierName(nameof(Span<int>.Length)));
+        bool isReleaseMethod = this.MetadataIndex.ReleaseMethods.Contains(externMethodDeclaration.Identifier.ValueText);
 
-            var originalSignature = methodDefinition.DecodeSignature(SignatureHandleProvider.Instance, null);
-            var parameters = externMethodDeclaration.ParameterList.Parameters.Select(StripAttributes).ToList();
-            var lengthParamUsedBy = new Dictionary<int, int>();
-            var arguments = externMethodDeclaration.ParameterList.Parameters.Select(p => Argument(IdentifierName(p.Identifier.Text)).WithRefKindKeyword(p.Modifiers.FirstOrDefault(p => p.Kind() is SyntaxKind.RefKeyword or SyntaxKind.OutKeyword or SyntaxKind.InKeyword))).ToList();
-            var externMethodReturnType = externMethodDeclaration.ReturnType.WithoutLeadingTrivia();
-            var fixedBlocks = new List<VariableDeclarationSyntax>();
-            var leadingOutsideTryStatements = new List<StatementSyntax>();
-            var leadingStatements = new List<StatementSyntax>();
-            var trailingStatements = new List<StatementSyntax>();
-            var finallyStatements = new List<StatementSyntax>();
-            bool signatureChanged = false;
-            foreach (ParameterHandle paramHandle in methodDefinition.GetParameters())
+        var originalSignature = methodDefinition.DecodeSignature(SignatureHandleProvider.Instance, null);
+        var parameters = externMethodDeclaration.ParameterList.Parameters.Select(StripAttributes).ToList();
+        var lengthParamUsedBy = new Dictionary<int, int>();
+        var arguments = externMethodDeclaration.ParameterList.Parameters.Select(p => Argument(IdentifierName(p.Identifier.Text)).WithRefKindKeyword(p.Modifiers.FirstOrDefault(p => p.Kind() is SyntaxKind.RefKeyword or SyntaxKind.OutKeyword or SyntaxKind.InKeyword))).ToList();
+        var externMethodReturnType = externMethodDeclaration.ReturnType.WithoutLeadingTrivia();
+        var fixedBlocks = new List<VariableDeclarationSyntax>();
+        var leadingOutsideTryStatements = new List<StatementSyntax>();
+        var leadingStatements = new List<StatementSyntax>();
+        var trailingStatements = new List<StatementSyntax>();
+        var finallyStatements = new List<StatementSyntax>();
+        bool signatureChanged = false;
+        foreach (ParameterHandle paramHandle in methodDefinition.GetParameters())
+        {
+            var param = this.Reader.GetParameter(paramHandle);
+            if (param.SequenceNumber == 0 || param.SequenceNumber - 1 >= parameters.Count)
             {
-                var param = this.Reader.GetParameter(paramHandle);
-                if (param.SequenceNumber == 0 || param.SequenceNumber - 1 >= parameters.Count)
+                continue;
+            }
+
+            bool isOptional = (param.Attributes & ParameterAttributes.Optional) == ParameterAttributes.Optional;
+            bool isIn = (param.Attributes & ParameterAttributes.In) == ParameterAttributes.In;
+            bool isConst = param.GetCustomAttributes().Any(ah => this.IsAttribute(this.Reader.GetCustomAttribute(ah), InteropDecorationNamespace, "ConstAttribute"));
+            bool isComOutPtr = param.GetCustomAttributes().Any(ah => this.IsAttribute(this.Reader.GetCustomAttribute(ah), InteropDecorationNamespace, "ComOutPtrAttribute"));
+            bool isOut = isComOutPtr || (param.Attributes & ParameterAttributes.Out) == ParameterAttributes.Out;
+
+            // TODO:
+            // * Review double/triple pointer scenarios.
+            //   * Consider CredEnumerateA, which is a "pointer to an array of pointers" (3-asterisks!). How does FriendlyAttribute improve this, if at all? The memory must be freed through another p/invoke.
+            ParameterSyntax externParam = parameters[param.SequenceNumber - 1];
+            if (externParam.Type is null)
+            {
+                throw new GenerationFailedException();
+            }
+
+            TypeHandleInfo parameterTypeInfo = originalSignature.ParameterTypes[param.SequenceNumber - 1];
+            if (this.IsManagedType(parameterTypeInfo) && (externParam.Modifiers.Any(SyntaxKind.OutKeyword) || externParam.Modifiers.Any(SyntaxKind.RefKeyword)))
+            {
+                bool hasOut = externParam.Modifiers.Any(SyntaxKind.OutKeyword);
+                arguments[param.SequenceNumber - 1] = arguments[param.SequenceNumber - 1].WithRefKindKeyword(TokenWithSpace(hasOut ? SyntaxKind.OutKeyword : SyntaxKind.RefKeyword));
+            }
+            else if (isOut && !isIn && !isReleaseMethod && parameterTypeInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo pointedElementInfo } && this.TryGetHandleReleaseMethod(pointedElementInfo.Handle, out string? outReleaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, outReleaseMethod))
+            {
+                if (this.RequestSafeHandle(outReleaseMethod) is TypeSyntax safeHandleType)
                 {
-                    continue;
+                    signatureChanged = true;
+
+                    IdentifierNameSyntax origName = IdentifierName(externParam.Identifier.ValueText);
+                    IdentifierNameSyntax typeDefHandleName = IdentifierName(externParam.Identifier.ValueText + "Local");
+
+                    // out SafeHandle
+                    parameters[param.SequenceNumber - 1] = externParam
+                        .WithType(safeHandleType.WithTrailingTrivia(TriviaList(Space)))
+                        .WithModifiers(TokenList(TokenWithSpace(SyntaxKind.OutKeyword)));
+
+                    // HANDLE SomeLocal;
+                    leadingStatements.Add(LocalDeclarationStatement(VariableDeclaration(pointedElementInfo.ToTypeSyntax(this.externSignatureTypeSettings, null).Type).AddVariables(
+                        VariableDeclarator(typeDefHandleName.Identifier))));
+
+                    // Argument: &SomeLocal
+                    arguments[param.SequenceNumber - 1] = Argument(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, typeDefHandleName));
+
+                    // Some = new SafeHandle(SomeLocal, ownsHandle: true);
+                    trailingStatements.Add(ExpressionStatement(AssignmentExpression(
+                        SyntaxKind.SimpleAssignmentExpression,
+                        origName,
+                        ObjectCreationExpression(safeHandleType).AddArgumentListArguments(
+                            Argument(typeDefHandleName),
+                            Argument(LiteralExpression(SyntaxKind.TrueLiteralExpression)).WithNameColon(NameColon(IdentifierName("ownsHandle")))))));
+                }
+            }
+            else if (isIn && !isOut && !isReleaseMethod && parameterTypeInfo is HandleTypeHandleInfo parameterHandleTypeInfo && this.TryGetHandleReleaseMethod(parameterHandleTypeInfo.Handle, out string? releaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, releaseMethod))
+            {
+                IdentifierNameSyntax origName = IdentifierName(externParam.Identifier.ValueText);
+                IdentifierNameSyntax typeDefHandleName = IdentifierName(externParam.Identifier.ValueText + "Local");
+                signatureChanged = true;
+
+                IdentifierNameSyntax refAddedName = IdentifierName(externParam.Identifier.ValueText + "AddRef");
+
+                // bool hParamNameAddRef = false;
+                leadingOutsideTryStatements.Add(LocalDeclarationStatement(
+                    VariableDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword))).AddVariables(
+                        VariableDeclarator(refAddedName.Identifier).WithInitializer(EqualsValueClause(LiteralExpression(SyntaxKind.FalseLiteralExpression))))));
+
+                // HANDLE hTemplateFileLocal;
+                leadingStatements.Add(LocalDeclarationStatement(VariableDeclaration(externParam.Type).AddVariables(
+                    VariableDeclarator(typeDefHandleName.Identifier))));
+
+                // if (hTemplateFile is object)
+                leadingStatements.Add(IfStatement(
+                    BinaryExpression(SyntaxKind.IsExpression, origName, PredefinedType(Token(SyntaxKind.ObjectKeyword))),
+                    Block().AddStatements(
+                    //// hTemplateFile.DangerousAddRef(ref hTemplateFileAddRef);
+                    ExpressionStatement(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName(nameof(SafeHandle.DangerousAddRef))))
+                        .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(refAddedName).WithRefKindKeyword(TokenWithSpace(SyntaxKind.RefKeyword)))))),
+                    //// hTemplateFileLocal = (HANDLE)hTemplateFile.DangerousGetHandle();
+                    ExpressionStatement(
+                        AssignmentExpression(
+                            SyntaxKind.SimpleAssignmentExpression,
+                            typeDefHandleName,
+                            CastExpression(
+                                externParam.Type.WithoutTrailingTrivia(),
+                                InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName(nameof(SafeHandle.DangerousGetHandle))), ArgumentList())))
+                        .WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken)))),
+                    //// else hTemplateFileLocal = default;
+                    ElseClause(ExpressionStatement(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, typeDefHandleName, DefaultExpression(externParam.Type.WithoutTrailingTrivia())).WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken))))));
+
+                // if (hTemplateFileAddRef)
+                //     hTemplateFile.DangerousRelease();
+                finallyStatements.Add(
+                    IfStatement(
+                        refAddedName,
+                        ExpressionStatement(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName(nameof(SafeHandle.DangerousRelease))), ArgumentList())))
+                    .WithCloseParenToken(TokenWithLineFeed(SyntaxKind.CloseParenToken)));
+
+                // Accept the SafeHandle instead.
+                parameters[param.SequenceNumber - 1] = externParam
+                    .WithType(IdentifierName(nameof(SafeHandle)).WithTrailingTrivia(TriviaList(Space)));
+
+                // hParamNameLocal;
+                arguments[param.SequenceNumber - 1] = Argument(typeDefHandleName);
+            }
+            else if ((externParam.Type is PointerTypeSyntax { ElementType: TypeSyntax ptrElementType }
+                && !IsVoid(ptrElementType)
+                && !this.IsInterface(parameterTypeInfo)
+                && this.canUseSpan) ||
+                externParam.Type is ArrayTypeSyntax)
+            {
+                TypeSyntax elementType = externParam.Type is PointerTypeSyntax ptr ? ptr.ElementType
+                    : externParam.Type is ArrayTypeSyntax array ? array.ElementType
+                    : throw new InvalidOperationException();
+                bool isPointerToPointer = elementType is PointerTypeSyntax or FunctionPointerTypeSyntax;
+
+                // If there are no SAL annotations at all...
+                if (!isOptional && !isIn && !isOut)
+                {
+                    // Consider that const means [In]
+                    if (isConst)
+                    {
+                        isIn = true;
+                        isOut = false;
+                    }
+                    else
+                    {
+                        // Otherwise assume bidirectional.
+                        isIn = isOut = true;
+                    }
                 }
 
-                bool isOptional = (param.Attributes & ParameterAttributes.Optional) == ParameterAttributes.Optional;
-                bool isIn = (param.Attributes & ParameterAttributes.In) == ParameterAttributes.In;
-                bool isConst = param.GetCustomAttributes().Any(ah => this.IsAttribute(this.Reader.GetCustomAttribute(ah), InteropDecorationNamespace, "ConstAttribute"));
-                bool isComOutPtr = param.GetCustomAttributes().Any(ah => this.IsAttribute(this.Reader.GetCustomAttribute(ah), InteropDecorationNamespace, "ComOutPtrAttribute"));
-                bool isOut = isComOutPtr || (param.Attributes & ParameterAttributes.Out) == ParameterAttributes.Out;
-
-                // TODO:
-                // * Review double/triple pointer scenarios.
-                //   * Consider CredEnumerateA, which is a "pointer to an array of pointers" (3-asterisks!). How does FriendlyAttribute improve this, if at all? The memory must be freed through another p/invoke.
-                ParameterSyntax externParam = parameters[param.SequenceNumber - 1];
-                if (externParam.Type is null)
+                bool isArray = false;
+                bool isNullTerminated = false; // TODO
+                short? sizeParamIndex = null;
+                int? sizeConst = null;
+                foreach (CustomAttributeHandle attHandle in param.GetCustomAttributes())
                 {
-                    throw new GenerationFailedException();
+                    CustomAttribute att = this.Reader.GetCustomAttribute(attHandle);
+                    if (this.IsAttribute(att, InteropDecorationNamespace, NativeArrayInfoAttribute))
+                    {
+                        var args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
+                        isArray = true;
+                        sizeParamIndex = (short?)args.NamedArguments.FirstOrDefault(a => a.Name == "CountParamIndex").Value;
+                        sizeConst = (int?)args.NamedArguments.FirstOrDefault(a => a.Name == "CountConst").Value;
+
+                        break;
+                    }
                 }
 
-                TypeHandleInfo parameterTypeInfo = originalSignature.ParameterTypes[param.SequenceNumber - 1];
-                if (this.IsManagedType(parameterTypeInfo) && (externParam.Modifiers.Any(SyntaxKind.OutKeyword) || externParam.Modifiers.Any(SyntaxKind.RefKeyword)))
+                IdentifierNameSyntax origName = IdentifierName(parameters[param.SequenceNumber - 1].Identifier.ValueText);
+                IdentifierNameSyntax localName = IdentifierName(origName + "Local");
+                if (isArray)
                 {
-                    bool hasOut = externParam.Modifiers.Any(SyntaxKind.OutKeyword);
-                    arguments[param.SequenceNumber - 1] = arguments[param.SequenceNumber - 1].WithRefKindKeyword(TokenWithSpace(hasOut ? SyntaxKind.OutKeyword : SyntaxKind.RefKeyword));
-                }
-                else if (isOut && !isIn && !isReleaseMethod && parameterTypeInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo pointedElementInfo } && this.TryGetHandleReleaseMethod(pointedElementInfo.Handle, out string? outReleaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, outReleaseMethod))
-                {
-                    if (this.RequestSafeHandle(outReleaseMethod) is TypeSyntax safeHandleType)
+                    // TODO: add support for in/out size parameters. (e.g. RSGetViewports)
+                    // TODO: add support for lists of pointers via a generated pointer-wrapping struct (e.g. PSSetSamplers)
+                    if (sizeParamIndex.HasValue
+                        && !(externMethodDeclaration.ParameterList.Parameters[sizeParamIndex.Value].Type is PointerTypeSyntax)
+                        && !isPointerToPointer)
                     {
                         signatureChanged = true;
 
-                        IdentifierNameSyntax origName = IdentifierName(externParam.Identifier.ValueText);
-                        IdentifierNameSyntax typeDefHandleName = IdentifierName(externParam.Identifier.ValueText + "Local");
-
-                        // out SafeHandle
-                        parameters[param.SequenceNumber - 1] = externParam
-                            .WithType(safeHandleType.WithTrailingTrivia(TriviaList(Space)))
-                            .WithModifiers(TokenList(TokenWithSpace(SyntaxKind.OutKeyword)));
-
-                        // HANDLE SomeLocal;
-                        leadingStatements.Add(LocalDeclarationStatement(VariableDeclaration(pointedElementInfo.ToTypeSyntax(this.externSignatureTypeSettings, null).Type).AddVariables(
-                            VariableDeclarator(typeDefHandleName.Identifier))));
-
-                        // Argument: &SomeLocal
-                        arguments[param.SequenceNumber - 1] = Argument(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, typeDefHandleName));
-
-                        // Some = new SafeHandle(SomeLocal, ownsHandle: true);
-                        trailingStatements.Add(ExpressionStatement(AssignmentExpression(
-                            SyntaxKind.SimpleAssignmentExpression,
-                            origName,
-                            ObjectCreationExpression(safeHandleType).AddArgumentListArguments(
-                                Argument(typeDefHandleName),
-                                Argument(LiteralExpression(SyntaxKind.TrueLiteralExpression)).WithNameColon(NameColon(IdentifierName("ownsHandle")))))));
-                    }
-                }
-                else if (isIn && !isOut && !isReleaseMethod && parameterTypeInfo is HandleTypeHandleInfo parameterHandleTypeInfo && this.TryGetHandleReleaseMethod(parameterHandleTypeInfo.Handle, out string? releaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, releaseMethod))
-                {
-                    IdentifierNameSyntax origName = IdentifierName(externParam.Identifier.ValueText);
-                    IdentifierNameSyntax typeDefHandleName = IdentifierName(externParam.Identifier.ValueText + "Local");
-                    signatureChanged = true;
-
-                    IdentifierNameSyntax refAddedName = IdentifierName(externParam.Identifier.ValueText + "AddRef");
-
-                    // bool hParamNameAddRef = false;
-                    leadingOutsideTryStatements.Add(LocalDeclarationStatement(
-                        VariableDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword))).AddVariables(
-                            VariableDeclarator(refAddedName.Identifier).WithInitializer(EqualsValueClause(LiteralExpression(SyntaxKind.FalseLiteralExpression))))));
-
-                    // HANDLE hTemplateFileLocal;
-                    leadingStatements.Add(LocalDeclarationStatement(VariableDeclaration(externParam.Type).AddVariables(
-                        VariableDeclarator(typeDefHandleName.Identifier))));
-
-                    // if (hTemplateFile is object)
-                    leadingStatements.Add(IfStatement(
-                        BinaryExpression(SyntaxKind.IsExpression, origName, PredefinedType(Token(SyntaxKind.ObjectKeyword))),
-                        Block().AddStatements(
-                        //// hTemplateFile.DangerousAddRef(ref hTemplateFileAddRef);
-                        ExpressionStatement(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName(nameof(SafeHandle.DangerousAddRef))))
-                            .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(refAddedName).WithRefKindKeyword(TokenWithSpace(SyntaxKind.RefKeyword)))))),
-                        //// hTemplateFileLocal = (HANDLE)hTemplateFile.DangerousGetHandle();
-                        ExpressionStatement(
-                            AssignmentExpression(
-                                SyntaxKind.SimpleAssignmentExpression,
-                                typeDefHandleName,
-                                CastExpression(
-                                    externParam.Type.WithoutTrailingTrivia(),
-                                    InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName(nameof(SafeHandle.DangerousGetHandle))), ArgumentList())))
-                            .WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken)))),
-                        //// else hTemplateFileLocal = default;
-                        ElseClause(ExpressionStatement(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, typeDefHandleName, DefaultExpression(externParam.Type.WithoutTrailingTrivia())).WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken))))));
-
-                    // if (hTemplateFileAddRef)
-                    //     hTemplateFile.DangerousRelease();
-                    finallyStatements.Add(
-                        IfStatement(
-                            refAddedName,
-                            ExpressionStatement(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName(nameof(SafeHandle.DangerousRelease))), ArgumentList())))
-                        .WithCloseParenToken(TokenWithLineFeed(SyntaxKind.CloseParenToken)));
-
-                    // Accept the SafeHandle instead.
-                    parameters[param.SequenceNumber - 1] = externParam
-                        .WithType(IdentifierName(nameof(SafeHandle)).WithTrailingTrivia(TriviaList(Space)));
-
-                    // hParamNameLocal;
-                    arguments[param.SequenceNumber - 1] = Argument(typeDefHandleName);
-                }
-                else if ((externParam.Type is PointerTypeSyntax { ElementType: TypeSyntax ptrElementType }
-                    && !IsVoid(ptrElementType)
-                    && !this.IsInterface(parameterTypeInfo)
-                    && this.canUseSpan) ||
-                    externParam.Type is ArrayTypeSyntax)
-                {
-                    TypeSyntax elementType = externParam.Type is PointerTypeSyntax ptr ? ptr.ElementType
-                        : externParam.Type is ArrayTypeSyntax array ? array.ElementType
-                        : throw new InvalidOperationException();
-                    bool isPointerToPointer = elementType is PointerTypeSyntax or FunctionPointerTypeSyntax;
-
-                    // If there are no SAL annotations at all...
-                    if (!isOptional && !isIn && !isOut)
-                    {
-                        // Consider that const means [In]
-                        if (isConst)
+                        if (lengthParamUsedBy.TryGetValue(sizeParamIndex.Value, out int userIndex))
                         {
-                            isIn = true;
-                            isOut = false;
+                            // Multiple array parameters share a common 'length' parameter.
+                            // Since we're making this a little less obvious, add a quick if check in the helper method
+                            // that enforces that all such parameters have a common span length.
+                            ExpressionSyntax otherUserName = IdentifierName(parameters[userIndex].Identifier.ValueText);
+                            leadingStatements.Add(IfStatement(
+                                BinaryExpression(
+                                    SyntaxKind.NotEqualsExpression,
+                                    GetSpanLength(otherUserName),
+                                    GetSpanLength(origName)),
+                                ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentException))).WithArgumentList(ArgumentList()))));
                         }
                         else
                         {
-                            // Otherwise assume bidirectional.
-                            isIn = isOut = true;
+                            lengthParamUsedBy.Add(sizeParamIndex.Value, param.SequenceNumber - 1);
                         }
-                    }
 
-                    bool isArray = false;
-                    bool isNullTerminated = false; // TODO
-                    short? sizeParamIndex = null;
-                    int? sizeConst = null;
-                    foreach (CustomAttributeHandle attHandle in param.GetCustomAttributes())
-                    {
-                        CustomAttribute att = this.Reader.GetCustomAttribute(attHandle);
-                        if (this.IsAttribute(att, InteropDecorationNamespace, NativeArrayInfoAttribute))
+                        if (externParam.Type is PointerTypeSyntax)
                         {
-                            var args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
-                            isArray = true;
-                            sizeParamIndex = (short?)args.NamedArguments.FirstOrDefault(a => a.Name == "CountParamIndex").Value;
-                            sizeConst = (int?)args.NamedArguments.FirstOrDefault(a => a.Name == "CountConst").Value;
-
-                            break;
-                        }
-                    }
-
-                    IdentifierNameSyntax origName = IdentifierName(parameters[param.SequenceNumber - 1].Identifier.ValueText);
-                    IdentifierNameSyntax localName = IdentifierName(origName + "Local");
-                    if (isArray)
-                    {
-                        // TODO: add support for in/out size parameters. (e.g. RSGetViewports)
-                        // TODO: add support for lists of pointers via a generated pointer-wrapping struct (e.g. PSSetSamplers)
-                        if (sizeParamIndex.HasValue
-                            && !(externMethodDeclaration.ParameterList.Parameters[sizeParamIndex.Value].Type is PointerTypeSyntax)
-                            && !isPointerToPointer)
-                        {
-                            signatureChanged = true;
-
-                            if (lengthParamUsedBy.TryGetValue(sizeParamIndex.Value, out int userIndex))
-                            {
-                                // Multiple array parameters share a common 'length' parameter.
-                                // Since we're making this a little less obvious, add a quick if check in the helper method
-                                // that enforces that all such parameters have a common span length.
-                                ExpressionSyntax otherUserName = IdentifierName(parameters[userIndex].Identifier.ValueText);
-                                leadingStatements.Add(IfStatement(
-                                    BinaryExpression(
-                                        SyntaxKind.NotEqualsExpression,
-                                        GetSpanLength(otherUserName),
-                                        GetSpanLength(origName)),
-                                    ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentException))).WithArgumentList(ArgumentList()))));
-                            }
-                            else
-                            {
-                                lengthParamUsedBy.Add(sizeParamIndex.Value, param.SequenceNumber - 1);
-                            }
-
-                            if (externParam.Type is PointerTypeSyntax)
-                            {
-                                parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
-                                    .WithType((isIn && isConst ? MakeReadOnlySpanOfT(elementType) : MakeSpanOfT(elementType)).WithTrailingTrivia(TriviaList(Space)));
-                                fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
-                                    VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
-                                arguments[param.SequenceNumber - 1] = Argument(localName);
-                            }
-
-                            ExpressionSyntax sizeArgExpression = GetSpanLength(origName);
-                            if (!(parameters[sizeParamIndex.Value].Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.IntKeyword } }))
-                            {
-                                sizeArgExpression = CastExpression(parameters[sizeParamIndex.Value].Type!, sizeArgExpression);
-                            }
-
-                            arguments[sizeParamIndex.Value] = Argument(sizeArgExpression);
-                        }
-                        else if (sizeConst.HasValue && !isPointerToPointer && this.canUseSpan)
-                        {
-                            // TODO: add support for lists of pointers via a generated pointer-wrapping struct
-                            signatureChanged = true;
-
-                            // Accept a span instead of a pointer.
                             parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
                                 .WithType((isIn && isConst ? MakeReadOnlySpanOfT(elementType) : MakeSpanOfT(elementType)).WithTrailingTrivia(TriviaList(Space)));
                             fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
                                 VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
                             arguments[param.SequenceNumber - 1] = Argument(localName);
+                        }
 
-                            // Add a runtime check that the span is at least the required length.
-                            leadingStatements.Add(IfStatement(
-                                BinaryExpression(
-                                    SyntaxKind.LessThanExpression,
-                                    GetSpanLength(origName),
-                                    LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(sizeConst.Value))),
-                                ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentException))).WithArgumentList(ArgumentList()))));
-                        }
-                        else if (isNullTerminated && isConst && parameters[param.SequenceNumber - 1].Type is PointerTypeSyntax { ElementType: PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.CharKeyword } } })
+                        ExpressionSyntax sizeArgExpression = GetSpanLength(origName);
+                        if (!(parameters[sizeParamIndex.Value].Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.IntKeyword } }))
                         {
-                            // replace char* with string
-                            signatureChanged = true;
-                            parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
-                                .WithType(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword)));
-                            fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
-                                VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
-                            arguments[param.SequenceNumber - 1] = Argument(localName);
+                            sizeArgExpression = CastExpression(parameters[sizeParamIndex.Value].Type!, sizeArgExpression);
                         }
+
+                        arguments[sizeParamIndex.Value] = Argument(sizeArgExpression);
                     }
-                    else if (isIn && isOptional && !isOut && !isPointerToPointer)
+                    else if (sizeConst.HasValue && !isPointerToPointer && this.canUseSpan)
                     {
+                        // TODO: add support for lists of pointers via a generated pointer-wrapping struct
                         signatureChanged = true;
+
+                        // Accept a span instead of a pointer.
                         parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
-                            .WithType(NullableType(elementType).WithTrailingTrivia(TriviaList(Space)));
-                        leadingStatements.Add(
-                            LocalDeclarationStatement(VariableDeclaration(elementType)
-                                .AddVariables(VariableDeclarator(localName.Identifier).WithInitializer(
-                                    EqualsValueClause(ConditionalExpression(
-                                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName("HasValue")),
-                                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName("Value")),
-                                        DefaultExpression(elementType)))))));
-                        arguments[param.SequenceNumber - 1] = Argument(ConditionalExpression(
-                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName("HasValue")),
-                            PrefixUnaryExpression(SyntaxKind.AddressOfExpression, localName),
-                            LiteralExpression(SyntaxKind.NullLiteralExpression)));
-                    }
-                    else if (isIn && isOut && !isOptional)
-                    {
-                        signatureChanged = true;
-                        parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
-                            .WithType(elementType.WithTrailingTrivia(TriviaList(Space)))
-                            .WithModifiers(TokenList(TokenWithSpace(SyntaxKind.RefKeyword)));
+                            .WithType((isIn && isConst ? MakeReadOnlySpanOfT(elementType) : MakeSpanOfT(elementType)).WithTrailingTrivia(TriviaList(Space)));
                         fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
-                            VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(
-                                PrefixUnaryExpression(SyntaxKind.AddressOfExpression, origName)))));
+                            VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
                         arguments[param.SequenceNumber - 1] = Argument(localName);
+
+                        // Add a runtime check that the span is at least the required length.
+                        leadingStatements.Add(IfStatement(
+                            BinaryExpression(
+                                SyntaxKind.LessThanExpression,
+                                GetSpanLength(origName),
+                                LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(sizeConst.Value))),
+                            ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentException))).WithArgumentList(ArgumentList()))));
                     }
-                    else if (isOut && !isIn && !isOptional)
+                    else if (isNullTerminated && isConst && parameters[param.SequenceNumber - 1].Type is PointerTypeSyntax { ElementType: PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.CharKeyword } } })
                     {
+                        // replace char* with string
                         signatureChanged = true;
                         parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
-                            .WithType(elementType.WithTrailingTrivia(TriviaList(Space)))
-                            .WithModifiers(TokenList(TokenWithSpace(SyntaxKind.OutKeyword)));
+                            .WithType(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword)));
                         fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
-                            VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(
-                                PrefixUnaryExpression(SyntaxKind.AddressOfExpression, origName)))));
-                        arguments[param.SequenceNumber - 1] = Argument(localName);
-                    }
-                    else if (isIn && !isOut && !isOptional)
-                    {
-                        // Use the "in" modifier to avoid copying the struct.
-                        signatureChanged = true;
-                        parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
-                            .WithType(elementType.WithTrailingTrivia(TriviaList(Space)))
-                            .WithModifiers(TokenList(TokenWithSpace(SyntaxKind.InKeyword)));
-                        fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
-                            VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(
-                                PrefixUnaryExpression(SyntaxKind.AddressOfExpression, origName)))));
+                            VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
                         arguments[param.SequenceNumber - 1] = Argument(localName);
                     }
                 }
-                else if (isIn && !isOut && isConst && externParam.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "PCWSTR" } } })
+                else if (isIn && isOptional && !isOut && !isPointerToPointer)
                 {
-                    IdentifierNameSyntax origName = IdentifierName(externParam.Identifier.ValueText);
-                    IdentifierNameSyntax localName = IdentifierName(origName + "Local");
                     signatureChanged = true;
-                    parameters[param.SequenceNumber - 1] = externParam
-                        .WithType(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword)));
-                    fixedBlocks.Add(VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword)))).AddVariables(
-                        VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
+                    parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
+                        .WithType(NullableType(elementType).WithTrailingTrivia(TriviaList(Space)));
+                    leadingStatements.Add(
+                        LocalDeclarationStatement(VariableDeclaration(elementType)
+                            .AddVariables(VariableDeclarator(localName.Identifier).WithInitializer(
+                                EqualsValueClause(ConditionalExpression(
+                                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName("HasValue")),
+                                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName("Value")),
+                                    DefaultExpression(elementType)))))));
+                    arguments[param.SequenceNumber - 1] = Argument(ConditionalExpression(
+                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName("HasValue")),
+                        PrefixUnaryExpression(SyntaxKind.AddressOfExpression, localName),
+                        LiteralExpression(SyntaxKind.NullLiteralExpression)));
+                }
+                else if (isIn && isOut && !isOptional)
+                {
+                    signatureChanged = true;
+                    parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
+                        .WithType(elementType.WithTrailingTrivia(TriviaList(Space)))
+                        .WithModifiers(TokenList(TokenWithSpace(SyntaxKind.RefKeyword)));
+                    fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
+                        VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(
+                            PrefixUnaryExpression(SyntaxKind.AddressOfExpression, origName)))));
                     arguments[param.SequenceNumber - 1] = Argument(localName);
                 }
-                else if (isIn && !isOut && isConst && externParam.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "PCSTR" } } })
+                else if (isOut && !isIn && !isOptional)
                 {
-                    IdentifierNameSyntax origName = IdentifierName(externParam.Identifier.ValueText);
-                    IdentifierNameSyntax localName = IdentifierName(origName + "Local");
                     signatureChanged = true;
-                    parameters[param.SequenceNumber - 1] = externParam
-                        .WithType(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword)));
-
-                    // fixed (byte* someLocal = some is object ? System.Text.Encoding.UTF8.GetBytes(some) : null)
-                    fixedBlocks.Add(VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.ByteKeyword)))).AddVariables(
+                    parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
+                        .WithType(elementType.WithTrailingTrivia(TriviaList(Space)))
+                        .WithModifiers(TokenList(TokenWithSpace(SyntaxKind.OutKeyword)));
+                    fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
                         VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(
-                            ConditionalExpression(
-                                BinaryExpression(SyntaxKind.IsExpression, origName, PredefinedType(Token(SyntaxKind.ObjectKeyword))),
-                                InvocationExpression(
-                                    MemberAccessExpression(
-                                        SyntaxKind.SimpleMemberAccessExpression,
-                                        ParseTypeName("global::System.Text.Encoding.UTF8"),
-                                        IdentifierName(nameof(Encoding.GetBytes))))
-                                .WithArgumentList(
-                                    ArgumentList(
-                                        SingletonSeparatedList(Argument(origName)))),
-                                LiteralExpression(SyntaxKind.NullLiteralExpression))))));
-
-                    // new PCSTR(someLocal)
-                    arguments[param.SequenceNumber - 1] = Argument(ObjectCreationExpression(externParam.Type).AddArgumentListArguments(Argument(localName)));
+                            PrefixUnaryExpression(SyntaxKind.AddressOfExpression, origName)))));
+                    arguments[param.SequenceNumber - 1] = Argument(localName);
+                }
+                else if (isIn && !isOut && !isOptional)
+                {
+                    // Use the "in" modifier to avoid copying the struct.
+                    signatureChanged = true;
+                    parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
+                        .WithType(elementType.WithTrailingTrivia(TriviaList(Space)))
+                        .WithModifiers(TokenList(TokenWithSpace(SyntaxKind.InKeyword)));
+                    fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
+                        VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(
+                            PrefixUnaryExpression(SyntaxKind.AddressOfExpression, origName)))));
+                    arguments[param.SequenceNumber - 1] = Argument(localName);
                 }
             }
-
-            TypeSyntax? returnSafeHandleType = originalSignature.ReturnType is HandleTypeHandleInfo returnTypeHandleInfo
-                && this.TryGetHandleReleaseMethod(returnTypeHandleInfo.Handle, out string? returnReleaseMethod)
-                ? this.RequestSafeHandle(returnReleaseMethod) : null;
-            SyntaxToken friendlyMethodName = externMethodDeclaration.Identifier;
-
-            if (returnSafeHandleType is object && !signatureChanged)
+            else if (isIn && !isOut && isConst && externParam.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "PCWSTR" } } })
             {
-                // The parameter types are all the same, but we need a friendly overload with a different return type.
-                // Our only choice is to rename the friendly overload.
-                friendlyMethodName = Identifier(externMethodDeclaration.Identifier.ValueText + "_SafeHandle");
+                IdentifierNameSyntax origName = IdentifierName(externParam.Identifier.ValueText);
+                IdentifierNameSyntax localName = IdentifierName(origName + "Local");
                 signatureChanged = true;
+                parameters[param.SequenceNumber - 1] = externParam
+                    .WithType(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword)));
+                fixedBlocks.Add(VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword)))).AddVariables(
+                    VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
+                arguments[param.SequenceNumber - 1] = Argument(localName);
             }
-
-            if (signatureChanged)
+            else if (isIn && !isOut && isConst && externParam.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "PCSTR" } } })
             {
-                if (lengthParamUsedBy.Count > 0)
-                {
-                    // Remove in reverse order so as to not invalidate the indexes of elements to remove.
-                    // Also take care to only remove each element once, even if it shows up multiple times in the collection.
-                    var parameterIndexesToRemove = new SortedSet<int>(lengthParamUsedBy.Keys);
-                    foreach (int indexToRemove in parameterIndexesToRemove.Reverse())
-                    {
-                        parameters.RemoveAt(indexToRemove);
-                    }
-                }
+                IdentifierNameSyntax origName = IdentifierName(externParam.Identifier.ValueText);
+                IdentifierNameSyntax localName = IdentifierName(origName + "Local");
+                signatureChanged = true;
+                parameters[param.SequenceNumber - 1] = externParam
+                    .WithType(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword)));
 
-                TypeSyntax docRefExternName = overloadOf == FriendlyOverloadOf.InterfaceMethod
-                    ? QualifiedName(declaringTypeName, IdentifierName(externMethodDeclaration.Identifier))
-                    : IdentifierName(externMethodDeclaration.Identifier);
-                var leadingTrivia = Trivia(
-                    DocumentationCommentTrivia(SyntaxKind.SingleLineDocumentationCommentTrivia).AddContent(
-                        XmlText("/// "),
-                        XmlEmptyElement("inheritdoc").AddAttributes(XmlCrefAttribute(NameMemberCref(docRefExternName, ToCref(externMethodDeclaration.ParameterList)))),
-                        XmlText().AddTextTokens(XmlTextNewLine("\n", continueXmlDocumentationComment: false))));
-                InvocationExpressionSyntax externInvocation = InvocationExpression(
-                    overloadOf switch
-                    {
-                        FriendlyOverloadOf.ExternMethod => QualifiedName(declaringTypeName, IdentifierName(externMethodDeclaration.Identifier.Text)),
-                        FriendlyOverloadOf.StructMethod => MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName(externMethodDeclaration.Identifier.Text)),
-                        FriendlyOverloadOf.InterfaceMethod => MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("@this"), IdentifierName(externMethodDeclaration.Identifier.Text)),
-                        _ => throw new NotSupportedException("Unrecognized friendly overload mode " + overloadOf),
-                    })
-                    .WithArgumentList(FixTrivia(ArgumentList().AddArguments(arguments.ToArray())));
-                bool hasVoidReturn = externMethodReturnType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.VoidKeyword } };
-                var body = Block().AddStatements(leadingStatements.ToArray());
-                IdentifierNameSyntax resultLocal = IdentifierName("__result");
-                if (returnSafeHandleType is object)
-                {
-                    //// HANDLE result = invocation();
-                    body = body.AddStatements(LocalDeclarationStatement(VariableDeclaration(externMethodReturnType)
-                        .AddVariables(VariableDeclarator(resultLocal.Identifier).WithInitializer(EqualsValueClause(externInvocation)))));
+                // fixed (byte* someLocal = some is object ? System.Text.Encoding.UTF8.GetBytes(some) : null)
+                fixedBlocks.Add(VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.ByteKeyword)))).AddVariables(
+                    VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(
+                        ConditionalExpression(
+                            BinaryExpression(SyntaxKind.IsExpression, origName, PredefinedType(Token(SyntaxKind.ObjectKeyword))),
+                            InvocationExpression(
+                                MemberAccessExpression(
+                                    SyntaxKind.SimpleMemberAccessExpression,
+                                    ParseTypeName("global::System.Text.Encoding.UTF8"),
+                                    IdentifierName(nameof(Encoding.GetBytes))))
+                            .WithArgumentList(
+                                ArgumentList(
+                                    SingletonSeparatedList(Argument(origName)))),
+                            LiteralExpression(SyntaxKind.NullLiteralExpression))))));
 
-                    body = body.AddStatements(trailingStatements.ToArray());
-
-                    //// return new SafeHandle(result, ownsHandle: true);
-                    body = body.AddStatements(ReturnStatement(ObjectCreationExpression(returnSafeHandleType).AddArgumentListArguments(
-                        Argument(resultLocal),
-                        Argument(LiteralExpression(SyntaxKind.TrueLiteralExpression)).WithNameColon(NameColon(IdentifierName("ownsHandle"))))));
-                }
-                else if (hasVoidReturn)
-                {
-                    body = body.AddStatements(ExpressionStatement(externInvocation));
-                    body = body.AddStatements(trailingStatements.ToArray());
-                }
-                else
-                {
-                    // var result = externInvocation();
-                    body = body.AddStatements(LocalDeclarationStatement(VariableDeclaration(externMethodReturnType)
-                        .AddVariables(VariableDeclarator(resultLocal.Identifier).WithInitializer(EqualsValueClause(externInvocation)))));
-
-                    body = body.AddStatements(trailingStatements.ToArray());
-
-                    // return result;
-                    body = body.AddStatements(ReturnStatement(resultLocal));
-                }
-
-                foreach (var fixedExpression in fixedBlocks)
-                {
-                    body = Block(FixedStatement(fixedExpression, body).WithFixedKeyword(TokenWithSpace(SyntaxKind.FixedKeyword)));
-                }
-
-                if (finallyStatements.Count > 0)
-                {
-                    body = Block()
-                        .AddStatements(leadingOutsideTryStatements.ToArray())
-                        .AddStatements(TryStatement(body, default, FinallyClause(Block().AddStatements(finallyStatements.ToArray()))));
-                }
-                else if (leadingOutsideTryStatements.Count > 0)
-                {
-                    body = body.WithStatements(body.Statements.InsertRange(0, leadingOutsideTryStatements));
-                }
-
-                var modifiers = TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword));
-                if (overloadOf != FriendlyOverloadOf.StructMethod)
-                {
-                    modifiers = modifiers.Insert(1, TokenWithSpace(SyntaxKind.StaticKeyword));
-                }
-
-                if (overloadOf == FriendlyOverloadOf.InterfaceMethod)
-                {
-                    parameters.Insert(0, Parameter(Identifier("@this")).WithType(declaringTypeName.WithTrailingTrivia(TriviaList(Space))).AddModifiers(TokenWithSpace(SyntaxKind.ThisKeyword)));
-                }
-
-                body = body
-                    .WithOpenBraceToken(Token(TriviaList(LineFeed), SyntaxKind.OpenBraceToken, TriviaList(LineFeed)))
-                    .WithCloseBraceToken(TokenWithLineFeed(SyntaxKind.CloseBraceToken));
-
-                MethodDeclarationSyntax friendlyDeclaration = externMethodDeclaration
-                    .WithReturnType(externMethodReturnType.WithTrailingTrivia(TriviaList(Space)))
-                    .WithIdentifier(friendlyMethodName)
-                    .WithModifiers(modifiers)
-                    .WithAttributeLists(List<AttributeListSyntax>())
-                    .WithParameterList(FixTrivia(ParameterList().AddParameters(parameters.ToArray())))
-                    .WithBody(body)
-                    .WithSemicolonToken(default);
-
-                if (returnSafeHandleType is object)
-                {
-                    friendlyDeclaration = friendlyDeclaration.WithReturnType(returnSafeHandleType.WithTrailingTrivia(TriviaList(Space)));
-                }
-
-                if (this.GetSupportedOSPlatformAttribute(methodDefinition.GetCustomAttributes()) is AttributeSyntax supportedOSPlatformAttribute)
-                {
-                    friendlyDeclaration = friendlyDeclaration.AddAttributeLists(AttributeList().AddAttributes(supportedOSPlatformAttribute));
-                }
-
-                friendlyDeclaration = friendlyDeclaration
-                    .WithLeadingTrivia(leadingTrivia);
-
-                yield return friendlyDeclaration;
+                // new PCSTR(someLocal)
+                arguments[param.SequenceNumber - 1] = Argument(ObjectCreationExpression(externParam.Type).AddArgumentListArguments(Argument(localName)));
             }
+        }
+
+        TypeSyntax? returnSafeHandleType = originalSignature.ReturnType is HandleTypeHandleInfo returnTypeHandleInfo
+            && this.TryGetHandleReleaseMethod(returnTypeHandleInfo.Handle, out string? returnReleaseMethod)
+            ? this.RequestSafeHandle(returnReleaseMethod) : null;
+        SyntaxToken friendlyMethodName = externMethodDeclaration.Identifier;
+
+        if (returnSafeHandleType is object && !signatureChanged)
+        {
+            // The parameter types are all the same, but we need a friendly overload with a different return type.
+            // Our only choice is to rename the friendly overload.
+            friendlyMethodName = Identifier(externMethodDeclaration.Identifier.ValueText + "_SafeHandle");
+            signatureChanged = true;
+        }
+
+        if (signatureChanged)
+        {
+            if (lengthParamUsedBy.Count > 0)
+            {
+                // Remove in reverse order so as to not invalidate the indexes of elements to remove.
+                // Also take care to only remove each element once, even if it shows up multiple times in the collection.
+                var parameterIndexesToRemove = new SortedSet<int>(lengthParamUsedBy.Keys);
+                foreach (int indexToRemove in parameterIndexesToRemove.Reverse())
+                {
+                    parameters.RemoveAt(indexToRemove);
+                }
+            }
+
+            TypeSyntax docRefExternName = overloadOf == FriendlyOverloadOf.InterfaceMethod
+                ? QualifiedName(declaringTypeName, IdentifierName(externMethodDeclaration.Identifier))
+                : IdentifierName(externMethodDeclaration.Identifier);
+            var leadingTrivia = Trivia(
+                DocumentationCommentTrivia(SyntaxKind.SingleLineDocumentationCommentTrivia).AddContent(
+                    XmlText("/// "),
+                    XmlEmptyElement("inheritdoc").AddAttributes(XmlCrefAttribute(NameMemberCref(docRefExternName, ToCref(externMethodDeclaration.ParameterList)))),
+                    XmlText().AddTextTokens(XmlTextNewLine("\n", continueXmlDocumentationComment: false))));
+            InvocationExpressionSyntax externInvocation = InvocationExpression(
+                overloadOf switch
+                {
+                    FriendlyOverloadOf.ExternMethod => QualifiedName(declaringTypeName, IdentifierName(externMethodDeclaration.Identifier.Text)),
+                    FriendlyOverloadOf.StructMethod => MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName(externMethodDeclaration.Identifier.Text)),
+                    FriendlyOverloadOf.InterfaceMethod => MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("@this"), IdentifierName(externMethodDeclaration.Identifier.Text)),
+                    _ => throw new NotSupportedException("Unrecognized friendly overload mode " + overloadOf),
+                })
+                .WithArgumentList(FixTrivia(ArgumentList().AddArguments(arguments.ToArray())));
+            bool hasVoidReturn = externMethodReturnType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.VoidKeyword } };
+            var body = Block().AddStatements(leadingStatements.ToArray());
+            IdentifierNameSyntax resultLocal = IdentifierName("__result");
+            if (returnSafeHandleType is object)
+            {
+                //// HANDLE result = invocation();
+                body = body.AddStatements(LocalDeclarationStatement(VariableDeclaration(externMethodReturnType)
+                    .AddVariables(VariableDeclarator(resultLocal.Identifier).WithInitializer(EqualsValueClause(externInvocation)))));
+
+                body = body.AddStatements(trailingStatements.ToArray());
+
+                //// return new SafeHandle(result, ownsHandle: true);
+                body = body.AddStatements(ReturnStatement(ObjectCreationExpression(returnSafeHandleType).AddArgumentListArguments(
+                    Argument(resultLocal),
+                    Argument(LiteralExpression(SyntaxKind.TrueLiteralExpression)).WithNameColon(NameColon(IdentifierName("ownsHandle"))))));
+            }
+            else if (hasVoidReturn)
+            {
+                body = body.AddStatements(ExpressionStatement(externInvocation));
+                body = body.AddStatements(trailingStatements.ToArray());
+            }
+            else
+            {
+                // var result = externInvocation();
+                body = body.AddStatements(LocalDeclarationStatement(VariableDeclaration(externMethodReturnType)
+                    .AddVariables(VariableDeclarator(resultLocal.Identifier).WithInitializer(EqualsValueClause(externInvocation)))));
+
+                body = body.AddStatements(trailingStatements.ToArray());
+
+                // return result;
+                body = body.AddStatements(ReturnStatement(resultLocal));
+            }
+
+            foreach (var fixedExpression in fixedBlocks)
+            {
+                body = Block(FixedStatement(fixedExpression, body).WithFixedKeyword(TokenWithSpace(SyntaxKind.FixedKeyword)));
+            }
+
+            if (finallyStatements.Count > 0)
+            {
+                body = Block()
+                    .AddStatements(leadingOutsideTryStatements.ToArray())
+                    .AddStatements(TryStatement(body, default, FinallyClause(Block().AddStatements(finallyStatements.ToArray()))));
+            }
+            else if (leadingOutsideTryStatements.Count > 0)
+            {
+                body = body.WithStatements(body.Statements.InsertRange(0, leadingOutsideTryStatements));
+            }
+
+            var modifiers = TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword));
+            if (overloadOf != FriendlyOverloadOf.StructMethod)
+            {
+                modifiers = modifiers.Insert(1, TokenWithSpace(SyntaxKind.StaticKeyword));
+            }
+
+            if (overloadOf == FriendlyOverloadOf.InterfaceMethod)
+            {
+                parameters.Insert(0, Parameter(Identifier("@this")).WithType(declaringTypeName.WithTrailingTrivia(TriviaList(Space))).AddModifiers(TokenWithSpace(SyntaxKind.ThisKeyword)));
+            }
+
+            body = body
+                .WithOpenBraceToken(Token(TriviaList(LineFeed), SyntaxKind.OpenBraceToken, TriviaList(LineFeed)))
+                .WithCloseBraceToken(TokenWithLineFeed(SyntaxKind.CloseBraceToken));
+
+            MethodDeclarationSyntax friendlyDeclaration = externMethodDeclaration
+                .WithReturnType(externMethodReturnType.WithTrailingTrivia(TriviaList(Space)))
+                .WithIdentifier(friendlyMethodName)
+                .WithModifiers(modifiers)
+                .WithAttributeLists(List<AttributeListSyntax>())
+                .WithParameterList(FixTrivia(ParameterList().AddParameters(parameters.ToArray())))
+                .WithBody(body)
+                .WithSemicolonToken(default);
+
+            if (returnSafeHandleType is object)
+            {
+                friendlyDeclaration = friendlyDeclaration.WithReturnType(returnSafeHandleType.WithTrailingTrivia(TriviaList(Space)));
+            }
+
+            if (this.GetSupportedOSPlatformAttribute(methodDefinition.GetCustomAttributes()) is AttributeSyntax supportedOSPlatformAttribute)
+            {
+                friendlyDeclaration = friendlyDeclaration.AddAttributeLists(AttributeList().AddAttributes(supportedOSPlatformAttribute));
+            }
+
+            friendlyDeclaration = friendlyDeclaration
+                .WithLeadingTrivia(leadingTrivia);
+
+            yield return friendlyDeclaration;
+        }
 #pragma warning restore SA1114 // Parameter list should follow declaration
+    }
+
+    private string GetNormalizedModuleName(MethodImport import)
+    {
+        ModuleReference module = this.Reader.GetModuleReference(import.Module);
+        string moduleName = this.Reader.GetString(module.Name);
+        if (CanonicalCapitalizations.TryGetValue(moduleName, out string? canonicalModuleName))
+        {
+            moduleName = canonicalModuleName;
         }
 
-        private string GetNormalizedModuleName(MethodImport import)
+        return moduleName;
+    }
+
+    private ParameterListSyntax CreateParameterList(MethodDefinition methodDefinition, MethodSignature<TypeHandleInfo> signature, TypeSyntaxSettings typeSettings)
+        => ParameterList().AddParameters(methodDefinition.GetParameters().Select(this.Reader.GetParameter).Where(p => !p.Name.IsNil).Select(p => this.CreateParameter(signature.ParameterTypes[p.SequenceNumber - 1], p, typeSettings)).ToArray());
+
+    private ParameterSyntax CreateParameter(TypeHandleInfo parameterInfo, Parameter parameter, TypeSyntaxSettings typeSettings)
+    {
+        string name = this.Reader.GetString(parameter.Name);
+        try
         {
-            ModuleReference module = this.Reader.GetModuleReference(import.Module);
-            string moduleName = this.Reader.GetString(module.Name);
-            if (CanonicalCapitalizations.TryGetValue(moduleName, out string? canonicalModuleName))
+            // TODO:
+            // * Notice [Out][RAIIFree] handle producing parameters. Can we make these provide SafeHandle's?
+            bool isReturnOrOutParam = parameter.SequenceNumber == 0 || (parameter.Attributes & ParameterAttributes.Out) == ParameterAttributes.Out;
+            var parameterTypeSyntax = parameterInfo.ToTypeSyntax(typeSettings, parameter.GetCustomAttributes(), parameter.Attributes);
+
+            // Determine the custom attributes to apply.
+            var attributes = AttributeList();
+            if (parameterTypeSyntax.Type is PointerTypeSyntax ptr)
             {
-                moduleName = canonicalModuleName;
+                if ((parameter.Attributes & ParameterAttributes.Optional) == ParameterAttributes.Optional)
+                {
+                    attributes = attributes.AddAttributes(OptionalAttributeSyntax);
+                }
             }
 
-            return moduleName;
-        }
-
-        private ParameterListSyntax CreateParameterList(MethodDefinition methodDefinition, MethodSignature<TypeHandleInfo> signature, TypeSyntaxSettings typeSettings)
-            => ParameterList().AddParameters(methodDefinition.GetParameters().Select(this.Reader.GetParameter).Where(p => !p.Name.IsNil).Select(p => this.CreateParameter(signature.ParameterTypes[p.SequenceNumber - 1], p, typeSettings)).ToArray());
-
-        private ParameterSyntax CreateParameter(TypeHandleInfo parameterInfo, Parameter parameter, TypeSyntaxSettings typeSettings)
-        {
-            string name = this.Reader.GetString(parameter.Name);
-            try
+            var modifiers = TokenList();
+            if (parameterTypeSyntax.ParameterModifier.HasValue)
             {
-                // TODO:
-                // * Notice [Out][RAIIFree] handle producing parameters. Can we make these provide SafeHandle's?
-                bool isReturnOrOutParam = parameter.SequenceNumber == 0 || (parameter.Attributes & ParameterAttributes.Out) == ParameterAttributes.Out;
-                var parameterTypeSyntax = parameterInfo.ToTypeSyntax(typeSettings, parameter.GetCustomAttributes(), parameter.Attributes);
+                modifiers = modifiers.Add(parameterTypeSyntax.ParameterModifier.Value.WithTrailingTrivia(TriviaList(Space)));
+            }
 
-                // Determine the custom attributes to apply.
-                var attributes = AttributeList();
-                if (parameterTypeSyntax.Type is PointerTypeSyntax ptr)
+            if (parameterTypeSyntax.MarshalAsAttribute is object)
+            {
+                if ((parameter.Attributes & ParameterAttributes.Out) == ParameterAttributes.Out)
                 {
-                    if ((parameter.Attributes & ParameterAttributes.Optional) == ParameterAttributes.Optional)
+                    if ((parameter.Attributes & ParameterAttributes.In) == ParameterAttributes.In)
                     {
-                        attributes = attributes.AddAttributes(OptionalAttributeSyntax);
+                        attributes = attributes.AddAttributes(InAttributeSyntax);
+                    }
+
+                    if (!modifiers.Any(SyntaxKind.OutKeyword))
+                    {
+                        attributes = attributes.AddAttributes(OutAttributeSyntax);
                     }
                 }
-
-                var modifiers = TokenList();
-                if (parameterTypeSyntax.ParameterModifier.HasValue)
-                {
-                    modifiers = modifiers.Add(parameterTypeSyntax.ParameterModifier.Value.WithTrailingTrivia(TriviaList(Space)));
-                }
-
-                if (parameterTypeSyntax.MarshalAsAttribute is object)
-                {
-                    if ((parameter.Attributes & ParameterAttributes.Out) == ParameterAttributes.Out)
-                    {
-                        if ((parameter.Attributes & ParameterAttributes.In) == ParameterAttributes.In)
-                        {
-                            attributes = attributes.AddAttributes(InAttributeSyntax);
-                        }
-
-                        if (!modifiers.Any(SyntaxKind.OutKeyword))
-                        {
-                            attributes = attributes.AddAttributes(OutAttributeSyntax);
-                        }
-                    }
-                }
-
-                ParameterSyntax parameterSyntax = Parameter(
-                    attributes.Attributes.Count > 0 ? List<AttributeListSyntax>().Add(attributes) : List<AttributeListSyntax>(),
-                    modifiers,
-                    parameterTypeSyntax.Type.WithTrailingTrivia(TriviaList(Space)),
-                    SafeIdentifier(name),
-                    @default: null);
-                parameterSyntax = parameterTypeSyntax.AddMarshalAs(parameterSyntax);
-
-                if (parameter.GetCustomAttributes().Any(h => this.IsAttribute(this.Reader.GetCustomAttribute(h), InteropDecorationNamespace, "RetValAttribute")))
-                {
-                    parameterSyntax = parameterSyntax.WithAdditionalAnnotations(IsRetValAnnotation);
-                }
-
-                return parameterSyntax;
             }
-            catch (Exception ex)
+
+            ParameterSyntax parameterSyntax = Parameter(
+                attributes.Attributes.Count > 0 ? List<AttributeListSyntax>().Add(attributes) : List<AttributeListSyntax>(),
+                modifiers,
+                parameterTypeSyntax.Type.WithTrailingTrivia(TriviaList(Space)),
+                SafeIdentifier(name),
+                @default: null);
+            parameterSyntax = parameterTypeSyntax.AddMarshalAs(parameterSyntax);
+
+            if (parameter.GetCustomAttributes().Any(h => this.IsAttribute(this.Reader.GetCustomAttribute(h), InteropDecorationNamespace, "RetValAttribute")))
             {
-                throw new GenerationFailedException("Failed while generating parameter: " + name, ex);
+                parameterSyntax = parameterSyntax.WithAdditionalAnnotations(IsRetValAnnotation);
             }
+
+            return parameterSyntax;
+        }
+        catch (Exception ex)
+        {
+            throw new GenerationFailedException("Failed while generating parameter: " + name, ex);
+        }
+    }
+
+    private (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? MarshalAsAttribute) ReinterpretFieldType(FieldDefinition fieldDef, TypeSyntax originalType, CustomAttributeHandleCollection customAttributes)
+    {
+        TypeSyntaxSettings typeSettings = this.fieldTypeSettings;
+        TypeHandleInfo fieldTypeHandleInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null);
+        AttributeSyntax? marshalAs = null;
+
+        // If the field is a fixed length array, we have to work some code gen magic since C# does not allow those.
+        if (originalType is ArrayTypeSyntax arrayType && arrayType.RankSpecifiers.Count > 0 && arrayType.RankSpecifiers[0].Sizes.Count == 1)
+        {
+            return this.DeclareFixedLengthArrayStruct(fieldDef, customAttributes, fieldTypeHandleInfo, arrayType);
         }
 
-        private (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? MarshalAsAttribute) ReinterpretFieldType(FieldDefinition fieldDef, TypeSyntax originalType, CustomAttributeHandleCollection customAttributes)
+        // If the field is a delegate type, we have to replace that with a native function pointer to avoid the struct becoming a 'managed type'.
+        if (!this.options.AllowMarshaling && this.IsDelegateReference(fieldTypeHandleInfo, out TypeDefinition typeDef) && !this.IsUntypedDelegate(typeDef))
         {
-            TypeSyntaxSettings typeSettings = this.fieldTypeSettings;
-            TypeHandleInfo fieldTypeHandleInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null);
-            AttributeSyntax? marshalAs = null;
-
-            // If the field is a fixed length array, we have to work some code gen magic since C# does not allow those.
-            if (originalType is ArrayTypeSyntax arrayType && arrayType.RankSpecifiers.Count > 0 && arrayType.RankSpecifiers[0].Sizes.Count == 1)
-            {
-                return this.DeclareFixedLengthArrayStruct(fieldDef, customAttributes, fieldTypeHandleInfo, arrayType);
-            }
-
-            // If the field is a delegate type, we have to replace that with a native function pointer to avoid the struct becoming a 'managed type'.
-            if (!this.options.AllowMarshaling && this.IsDelegateReference(fieldTypeHandleInfo, out TypeDefinition typeDef) && !this.IsUntypedDelegate(typeDef))
-            {
-                return (this.FunctionPointer(typeDef), default(SyntaxList<MemberDeclarationSyntax>), marshalAs);
-            }
-
-            // If the field is a pointer to a COM interface (and we're using bona fide interfaces),
-            // then we must type it as an array.
-            if (fieldTypeHandleInfo is PointerTypeHandleInfo ptr3 && this.IsManagedType(ptr3.ElementType))
-            {
-                return (ArrayType(ptr3.ElementType.ToTypeSyntax(typeSettings, null).Type).AddRankSpecifiers(ArrayRankSpecifier()), default(SyntaxList<MemberDeclarationSyntax>), marshalAs);
-            }
-
-            return (originalType, default(SyntaxList<MemberDeclarationSyntax>), marshalAs);
+            return (this.FunctionPointer(typeDef), default(SyntaxList<MemberDeclarationSyntax>), marshalAs);
         }
 
-        private (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? MarshalAsAttribute) DeclareFixedLengthArrayStruct(FieldDefinition fieldDef, CustomAttributeHandleCollection customAttributes, TypeHandleInfo fieldTypeHandleInfo, ArrayTypeSyntax arrayType)
+        // If the field is a pointer to a COM interface (and we're using bona fide interfaces),
+        // then we must type it as an array.
+        if (fieldTypeHandleInfo is PointerTypeHandleInfo ptr3 && this.IsManagedType(ptr3.ElementType))
         {
-            if (this.options.AllowMarshaling && this.IsManagedType(fieldTypeHandleInfo))
-            {
-                ArrayTypeSyntax ranklessArray = arrayType.WithRankSpecifiers(new SyntaxList<ArrayRankSpecifierSyntax>(ArrayRankSpecifier()));
-                AttributeSyntax marshalAs = MarshalAs(UnmanagedType.ByValArray, sizeConst: arrayType.RankSpecifiers[0].Sizes[0]);
-                return (ranklessArray, default(SyntaxList<MemberDeclarationSyntax>), marshalAs);
-            }
+            return (ArrayType(ptr3.ElementType.ToTypeSyntax(typeSettings, null).Type).AddRankSpecifiers(ArrayRankSpecifier()), default(SyntaxList<MemberDeclarationSyntax>), marshalAs);
+        }
 
-            int length = int.Parse(((LiteralExpressionSyntax)arrayType.RankSpecifiers[0].Sizes[0]).Token.ValueText, CultureInfo.InvariantCulture);
-            TypeSyntax elementType = arrayType.ElementType;
+        return (originalType, default(SyntaxList<MemberDeclarationSyntax>), marshalAs);
+    }
 
-            // C# does not allow Span<T> where T is a pointer type.
-            if (elementType is PointerTypeSyntax ptr)
-            {
-                elementType = IntPtrTypeSyntax;
-            }
+    private (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? MarshalAsAttribute) DeclareFixedLengthArrayStruct(FieldDefinition fieldDef, CustomAttributeHandleCollection customAttributes, TypeHandleInfo fieldTypeHandleInfo, ArrayTypeSyntax arrayType)
+    {
+        if (this.options.AllowMarshaling && this.IsManagedType(fieldTypeHandleInfo))
+        {
+            ArrayTypeSyntax ranklessArray = arrayType.WithRankSpecifiers(new SyntaxList<ArrayRankSpecifierSyntax>(ArrayRankSpecifier()));
+            AttributeSyntax marshalAs = MarshalAs(UnmanagedType.ByValArray, sizeConst: arrayType.RankSpecifiers[0].Sizes[0]);
+            return (ranklessArray, default(SyntaxList<MemberDeclarationSyntax>), marshalAs);
+        }
 
-            var lengthLiteralSyntax = LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(length));
+        int length = int.Parse(((LiteralExpressionSyntax)arrayType.RankSpecifiers[0].Sizes[0]).Token.ValueText, CultureInfo.InvariantCulture);
+        TypeSyntax elementType = arrayType.ElementType;
 
-            // internal struct __TheStruct_Count
-            // {
-            //     internal TheStruct _0, _1, _2, _3, _4, _5, _6, _7, _8;
-            //     /// <summary>Always <c>8</c>.</summary>
-            //     internal readonly int Length => 8;
+        // C# does not allow Span<T> where T is a pointer type.
+        if (elementType is PointerTypeSyntax ptr)
+        {
+            elementType = IntPtrTypeSyntax;
+        }
+
+        var lengthLiteralSyntax = LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(length));
+
+        // internal struct __TheStruct_Count
+        // {
+        //     internal TheStruct _0, _1, _2, _3, _4, _5, _6, _7, _8;
+        //     /// <summary>Always <c>8</c>.</summary>
+        //     internal readonly int Length => 8;
+        // ...
+        IdentifierNameSyntax fixedLengthStructName = IdentifierName($"__{elementType.ToString().Replace(' ', '_').Replace('.', '_').Replace(':', '_').Replace('*', '_').Replace('<', '_').Replace('>', '_').Replace('[', '_').Replace(']', '_').Replace(',', '_')}_{length}");
+        SyntaxTokenList fieldModifiers = TokenList(TokenWithSpace(this.Visibility));
+        if (RequiresUnsafe(elementType))
+        {
+            fieldModifiers = fieldModifiers.Add(TokenWithSpace(SyntaxKind.UnsafeKeyword));
+        }
+
+        var fixedLengthStruct = StructDeclaration(fixedLengthStructName.Identifier)
+            .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.PartialKeyword))
+            .AddMembers(
+                FieldDeclaration(VariableDeclaration(elementType)
+                    .AddVariables(Enumerable.Range(0, length).Select(n => VariableDeclarator(Identifier($"_{n}"))).ToArray()))
+                    .WithModifiers(fieldModifiers),
+                PropertyDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), "Length")
+                    .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
+                    .WithExpressionBody(ArrowExpressionClause(lengthLiteralSyntax))
+                    .WithSemicolonToken(SemicolonWithLineFeed)
+                    .WithLeadingTrivia(Trivia(DocumentationCommentTrivia(SyntaxKind.SingleLineDocumentationCommentTrivia).AddContent(
+                        DocCommentStart,
+                        XmlElement("summary", List(new XmlNodeSyntax[]
+                        {
+                            XmlText("Always "),
+                            XmlElement("c", List(new XmlNodeSyntax[] { XmlText(lengthLiteralSyntax.Token.ValueText) })),
+                            XmlText("."),
+                        })),
+                        DocCommentEnd))));
+
+        IdentifierNameSyntax GetElementFieldName(int index) => IdentifierName(FormattableString.Invariant($"_{index}"));
+        var firstElementFieldName = GetElementFieldName(0);
+        if (this.canCallCreateSpan)
+        {
             // ...
-            IdentifierNameSyntax fixedLengthStructName = IdentifierName($"__{elementType.ToString().Replace(' ', '_').Replace('.', '_').Replace(':', '_').Replace('*', '_').Replace('<', '_').Replace('>', '_').Replace('[', '_').Replace(']', '_').Replace(',', '_')}_{length}");
-            SyntaxTokenList fieldModifiers = TokenList(TokenWithSpace(this.Visibility));
-            if (RequiresUnsafe(elementType))
-            {
-                fieldModifiers = fieldModifiers.Add(TokenWithSpace(SyntaxKind.UnsafeKeyword));
-            }
-
-            var fixedLengthStruct = StructDeclaration(fixedLengthStructName.Identifier)
-                .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.PartialKeyword))
+            //     internal ref TheStruct this[int index] => ref AsSpan()[index];
+            //     internal Span<TheStruct> AsSpan() => MemoryMarshal.CreateSpan(ref _0, 4);
+            fixedLengthStruct = fixedLengthStruct
                 .AddMembers(
-                    FieldDeclaration(VariableDeclaration(elementType)
-                        .AddVariables(Enumerable.Range(0, length).Select(n => VariableDeclarator(Identifier($"_{n}"))).ToArray()))
-                        .WithModifiers(fieldModifiers),
-                    PropertyDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), "Length")
-                        .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
-                        .WithExpressionBody(ArrowExpressionClause(lengthLiteralSyntax))
+                    IndexerDeclaration(RefType(elementType).WithTrailingTrivia(TriviaList(Space)))
+                        .AddModifiers(TokenWithSpace(this.Visibility))
+                        .AddParameterListParameters(Parameter(Identifier("index")).WithType(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))))
+                        .WithExpressionBody(ArrowExpressionClause(RefExpression(
+                            ElementAccessExpression(InvocationExpression(IdentifierName("AsSpan")))
+                                .AddArgumentListArguments(Argument(IdentifierName("index"))))))
                         .WithSemicolonToken(SemicolonWithLineFeed)
-                        .WithLeadingTrivia(Trivia(DocumentationCommentTrivia(SyntaxKind.SingleLineDocumentationCommentTrivia).AddContent(
-                            DocCommentStart,
-                            XmlElement("summary", List(new XmlNodeSyntax[]
-                            {
-                                XmlText("Always "),
-                                XmlElement("c", List(new XmlNodeSyntax[] { XmlText(lengthLiteralSyntax.Token.ValueText) })),
-                                XmlText("."),
-                            })),
-                            DocCommentEnd))));
-
-            IdentifierNameSyntax GetElementFieldName(int index) => IdentifierName(FormattableString.Invariant($"_{index}"));
-            var firstElementFieldName = GetElementFieldName(0);
-            if (this.canCallCreateSpan)
-            {
-                // ...
-                //     internal ref TheStruct this[int index] => ref AsSpan()[index];
-                //     internal Span<TheStruct> AsSpan() => MemoryMarshal.CreateSpan(ref _0, 4);
-                fixedLengthStruct = fixedLengthStruct
-                    .AddMembers(
-                        IndexerDeclaration(RefType(elementType).WithTrailingTrivia(TriviaList(Space)))
-                            .AddModifiers(TokenWithSpace(this.Visibility))
-                            .AddParameterListParameters(Parameter(Identifier("index")).WithType(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))))
-                            .WithExpressionBody(ArrowExpressionClause(RefExpression(
-                                ElementAccessExpression(InvocationExpression(IdentifierName("AsSpan")))
-                                    .AddArgumentListArguments(Argument(IdentifierName("index"))))))
-                            .WithSemicolonToken(SemicolonWithLineFeed)
-                            .WithLeadingTrivia(InlineArrayUnsafeIndexerComment),
-                        MethodDeclaration(MakeSpanOfT(elementType).WithTrailingTrivia(TriviaList(Space)), Identifier("AsSpan"))
-                            .AddModifiers(TokenWithSpace(this.Visibility))
-                            .WithExpressionBody(ArrowExpressionClause(
-                                InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("MemoryMarshal"), IdentifierName("CreateSpan")))
-                                    .WithArgumentList(FixTrivia(ArgumentList().AddArguments(
-                                        Argument(nameColon: null, TokenWithSpace(SyntaxKind.RefKeyword), firstElementFieldName),
-                                        Argument(lengthLiteralSyntax))))))
-                            .WithSemicolonToken(SemicolonWithLineFeed)
-                            .WithLeadingTrivia(InlineArrayUnsafeAsSpanComment));
-            }
+                        .WithLeadingTrivia(InlineArrayUnsafeIndexerComment),
+                    MethodDeclaration(MakeSpanOfT(elementType).WithTrailingTrivia(TriviaList(Space)), Identifier("AsSpan"))
+                        .AddModifiers(TokenWithSpace(this.Visibility))
+                        .WithExpressionBody(ArrowExpressionClause(
+                            InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("MemoryMarshal"), IdentifierName("CreateSpan")))
+                                .WithArgumentList(FixTrivia(ArgumentList().AddArguments(
+                                    Argument(nameColon: null, TokenWithSpace(SyntaxKind.RefKeyword), firstElementFieldName),
+                                    Argument(lengthLiteralSyntax))))))
+                        .WithSemicolonToken(SemicolonWithLineFeed)
+                        .WithLeadingTrivia(InlineArrayUnsafeAsSpanComment));
+        }
 
 #pragma warning disable SA1515 // Single-line comment should be preceded by blank line
 #pragma warning disable SA1114 // Parameter list should follow declaration
 
-            if (elementType is PredefinedTypeSyntax && this.canUseSpan)
-            {
-                // internal unsafe readonly void CopyTo(Span<T> target, int length = 4)
-                IdentifierNameSyntax targetParameterName = IdentifierName("target");
-                IdentifierNameSyntax lengthParameterName = IdentifierName("length");
-                fixedLengthStruct = fixedLengthStruct.AddMembers(
-                    MethodDeclaration(PredefinedType(Token(SyntaxKind.VoidKeyword)), Identifier("CopyTo"))
-                        .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
-                        .AddParameterListParameters(
-                            Parameter(targetParameterName.Identifier).WithType(MakeSpanOfT(elementType).WithTrailingTrivia(Space)),
-                            Parameter(lengthParameterName.Identifier).WithType(PredefinedType(Token(SyntaxKind.IntKeyword)).WithTrailingTrivia(Space)).WithDefault(EqualsValueClause(lengthLiteralSyntax)))
-                        .WithBody(Block().AddStatements(
-                            // if (length > 4) throw new ArgumentOutOfRangeException(nameof(length));
-                            IfStatement(
-                                BinaryExpression(SyntaxKind.GreaterThanExpression, lengthParameterName, lengthLiteralSyntax),
-                                ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentOutOfRangeException))).AddArgumentListArguments(Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(lengthParameterName.Identifier.ValueText)))))),
-                            // fixed (T* p0 = &_0)
-                            FixedStatement(
-                                VariableDeclaration(PointerType(elementType)).AddVariables(
-                                    VariableDeclarator(Identifier("p0")).WithInitializer(EqualsValueClause(
-                                        PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName("_0"))))),
-                                // for (int i = 0; i < length; i++)
+        if (elementType is PredefinedTypeSyntax && this.canUseSpan)
+        {
+            // internal unsafe readonly void CopyTo(Span<T> target, int length = 4)
+            IdentifierNameSyntax targetParameterName = IdentifierName("target");
+            IdentifierNameSyntax lengthParameterName = IdentifierName("length");
+            fixedLengthStruct = fixedLengthStruct.AddMembers(
+                MethodDeclaration(PredefinedType(Token(SyntaxKind.VoidKeyword)), Identifier("CopyTo"))
+                    .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
+                    .AddParameterListParameters(
+                        Parameter(targetParameterName.Identifier).WithType(MakeSpanOfT(elementType).WithTrailingTrivia(Space)),
+                        Parameter(lengthParameterName.Identifier).WithType(PredefinedType(Token(SyntaxKind.IntKeyword)).WithTrailingTrivia(Space)).WithDefault(EqualsValueClause(lengthLiteralSyntax)))
+                    .WithBody(Block().AddStatements(
+                        // if (length > 4) throw new ArgumentOutOfRangeException(nameof(length));
+                        IfStatement(
+                            BinaryExpression(SyntaxKind.GreaterThanExpression, lengthParameterName, lengthLiteralSyntax),
+                            ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentOutOfRangeException))).AddArgumentListArguments(Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(lengthParameterName.Identifier.ValueText)))))),
+                        // fixed (T* p0 = &_0)
+                        FixedStatement(
+                            VariableDeclaration(PointerType(elementType)).AddVariables(
+                                VariableDeclarator(Identifier("p0")).WithInitializer(EqualsValueClause(
+                                    PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName("_0"))))),
+                            // for (int i = 0; i < length; i++)
+                            ForStatement(
+                                VariableDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))).AddVariables(VariableDeclarator(Identifier("i")).WithInitializer(EqualsValueClause(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))))),
+                                BinaryExpression(SyntaxKind.LessThanExpression, IdentifierName("i"), lengthParameterName),
+                                SingletonSeparatedList<ExpressionSyntax>(PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, IdentifierName("i"))),
+                                // target[i] = p0[i];
+                                ExpressionStatement(AssignmentExpression(
+                                    SyntaxKind.SimpleAssignmentExpression,
+                                    ElementAccessExpression(targetParameterName).AddArgumentListArguments(Argument(IdentifierName("i"))),
+                                    ElementAccessExpression(IdentifierName("p0")).AddArgumentListArguments(Argument(IdentifierName("i"))))))))));
+
+            // internal readonly T[] ToArray(int length = 4)
+            fixedLengthStruct = fixedLengthStruct.AddMembers(
+                MethodDeclaration(ArrayType(elementType, SingletonList(ArrayRankSpecifier())), Identifier("ToArray"))
+                    .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
+                    .AddParameterListParameters(
+                        Parameter(lengthParameterName.Identifier).WithType(PredefinedType(Token(SyntaxKind.IntKeyword)).WithTrailingTrivia(Space)).WithDefault(EqualsValueClause(lengthLiteralSyntax)))
+                    .WithBody(Block().AddStatements(
+                        // if (length > 4) throw new ArgumentOutOfRangeException(nameof(length));
+                        IfStatement(
+                            BinaryExpression(SyntaxKind.GreaterThanExpression, lengthParameterName, lengthLiteralSyntax),
+                            ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentOutOfRangeException))).AddArgumentListArguments(Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(lengthParameterName.Identifier.ValueText)))))),
+                        // T[] target = new T[length];
+                        LocalDeclarationStatement(VariableDeclaration(ArrayType(elementType, SingletonList(ArrayRankSpecifier()))).AddVariables(
+                            VariableDeclarator(targetParameterName.Identifier).WithInitializer(EqualsValueClause(ArrayCreationExpression(ArrayType(elementType).AddRankSpecifiers(ArrayRankSpecifier().AddSizes(lengthParameterName))))))),
+                        // CopyTo(target, length);
+                        ExpressionStatement(InvocationExpression(IdentifierName("CopyTo"), ArgumentList().AddArguments(Argument(targetParameterName), Argument(lengthParameterName)))),
+                        ReturnStatement(targetParameterName))));
+
+            // internal unsafe readonly bool Equals(ReadOnlySpan<T> value)
+            IdentifierNameSyntax valueParameterName = IdentifierName("value");
+            IdentifierNameSyntax commonLengthLocal = IdentifierName("commonLength");
+            fixedLengthStruct = fixedLengthStruct.AddMembers(
+                MethodDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), Identifier("Equals"))
+                    .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
+                    .AddParameterListParameters(
+                        Parameter(valueParameterName.Identifier).WithType(MakeReadOnlySpanOfT(elementType).WithTrailingTrivia(Space)))
+                    .WithBody(Block().AddStatements(
+                        // fixed (T* p0 = &_0)
+                        FixedStatement(
+                            VariableDeclaration(PointerType(elementType)).AddVariables(
+                                VariableDeclarator(Identifier("p0")).WithInitializer(EqualsValueClause(
+                                    PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName("_0"))))),
+                            Block().AddStatements(
+                                // int commonLength = Math.Min(value.Length, 4);
+                                LocalDeclarationStatement(VariableDeclaration(PredefinedType(TokenWithSpaces(SyntaxKind.IntKeyword))).AddVariables(
+                                    VariableDeclarator(commonLengthLocal.Identifier).WithInitializer(EqualsValueClause(
+                                        InvocationExpression(
+                                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Math)), IdentifierName(nameof(Math.Min))),
+                                            ArgumentList().AddArguments(
+                                                Argument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameterName, IdentifierName(nameof(ReadOnlySpan<int>.Length)))),
+                                                Argument(lengthLiteralSyntax))))))),
+                                // for (int i = 0; i < commonLength; i++)
                                 ForStatement(
                                     VariableDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))).AddVariables(VariableDeclarator(Identifier("i")).WithInitializer(EqualsValueClause(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))))),
-                                    BinaryExpression(SyntaxKind.LessThanExpression, IdentifierName("i"), lengthParameterName),
+                                    BinaryExpression(SyntaxKind.LessThanExpression, IdentifierName("i"), commonLengthLocal),
                                     SingletonSeparatedList<ExpressionSyntax>(PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, IdentifierName("i"))),
-                                    // target[i] = p0[i];
-                                    ExpressionStatement(AssignmentExpression(
-                                        SyntaxKind.SimpleAssignmentExpression,
-                                        ElementAccessExpression(targetParameterName).AddArgumentListArguments(Argument(IdentifierName("i"))),
-                                        ElementAccessExpression(IdentifierName("p0")).AddArgumentListArguments(Argument(IdentifierName("i"))))))))));
-
-                // internal readonly T[] ToArray(int length = 4)
-                fixedLengthStruct = fixedLengthStruct.AddMembers(
-                    MethodDeclaration(ArrayType(elementType, SingletonList(ArrayRankSpecifier())), Identifier("ToArray"))
-                        .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
-                        .AddParameterListParameters(
-                            Parameter(lengthParameterName.Identifier).WithType(PredefinedType(Token(SyntaxKind.IntKeyword)).WithTrailingTrivia(Space)).WithDefault(EqualsValueClause(lengthLiteralSyntax)))
-                        .WithBody(Block().AddStatements(
-                            // if (length > 4) throw new ArgumentOutOfRangeException(nameof(length));
-                            IfStatement(
-                                BinaryExpression(SyntaxKind.GreaterThanExpression, lengthParameterName, lengthLiteralSyntax),
-                                ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentOutOfRangeException))).AddArgumentListArguments(Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(lengthParameterName.Identifier.ValueText)))))),
-                            // T[] target = new T[length];
-                            LocalDeclarationStatement(VariableDeclaration(ArrayType(elementType, SingletonList(ArrayRankSpecifier()))).AddVariables(
-                                VariableDeclarator(targetParameterName.Identifier).WithInitializer(EqualsValueClause(ArrayCreationExpression(ArrayType(elementType).AddRankSpecifiers(ArrayRankSpecifier().AddSizes(lengthParameterName))))))),
-                            // CopyTo(target, length);
-                            ExpressionStatement(InvocationExpression(IdentifierName("CopyTo"), ArgumentList().AddArguments(Argument(targetParameterName), Argument(lengthParameterName)))),
-                            ReturnStatement(targetParameterName))));
-
-                // internal unsafe readonly bool Equals(ReadOnlySpan<T> value)
-                IdentifierNameSyntax valueParameterName = IdentifierName("value");
-                IdentifierNameSyntax commonLengthLocal = IdentifierName("commonLength");
-                fixedLengthStruct = fixedLengthStruct.AddMembers(
-                    MethodDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), Identifier("Equals"))
-                        .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
-                        .AddParameterListParameters(
-                            Parameter(valueParameterName.Identifier).WithType(MakeReadOnlySpanOfT(elementType).WithTrailingTrivia(Space)))
-                        .WithBody(Block().AddStatements(
-                            // fixed (T* p0 = &_0)
-                            FixedStatement(
-                                VariableDeclaration(PointerType(elementType)).AddVariables(
-                                    VariableDeclarator(Identifier("p0")).WithInitializer(EqualsValueClause(
-                                        PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName("_0"))))),
-                                Block().AddStatements(
-                                    // int commonLength = Math.Min(value.Length, 4);
-                                    LocalDeclarationStatement(VariableDeclaration(PredefinedType(TokenWithSpaces(SyntaxKind.IntKeyword))).AddVariables(
-                                        VariableDeclarator(commonLengthLocal.Identifier).WithInitializer(EqualsValueClause(
-                                            InvocationExpression(
-                                                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Math)), IdentifierName(nameof(Math.Min))),
-                                                ArgumentList().AddArguments(
-                                                    Argument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameterName, IdentifierName(nameof(ReadOnlySpan<int>.Length)))),
-                                                    Argument(lengthLiteralSyntax))))))),
-                                    // for (int i = 0; i < commonLength; i++)
-                                    ForStatement(
-                                        VariableDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))).AddVariables(VariableDeclarator(Identifier("i")).WithInitializer(EqualsValueClause(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))))),
-                                        BinaryExpression(SyntaxKind.LessThanExpression, IdentifierName("i"), commonLengthLocal),
-                                        SingletonSeparatedList<ExpressionSyntax>(PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, IdentifierName("i"))),
-                                        // if (p0[i] != value[i])
-                                        IfStatement(
-                                            BinaryExpression(
-                                                SyntaxKind.NotEqualsExpression,
-                                                ElementAccessExpression(IdentifierName("p0")).AddArgumentListArguments(Argument(IdentifierName("i"))),
-                                                ElementAccessExpression(valueParameterName).AddArgumentListArguments(Argument(IdentifierName("i")))),
-                                            // return false;
-                                            ReturnStatement(LiteralExpression(SyntaxKind.FalseLiteralExpression)))),
-                                    // for (int i = commonLength; i < 4; i++)
-                                    ForStatement(
-                                        VariableDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))).AddVariables(VariableDeclarator(Identifier("i")).WithInitializer(EqualsValueClause(commonLengthLocal))),
-                                        BinaryExpression(SyntaxKind.LessThanExpression, IdentifierName("i"), lengthLiteralSyntax),
-                                        SingletonSeparatedList<ExpressionSyntax>(PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, IdentifierName("i"))),
-                                        // if (p0[i] != default)
-                                        IfStatement(
-                                            BinaryExpression(
-                                                SyntaxKind.NotEqualsExpression,
-                                                ElementAccessExpression(IdentifierName("p0")).AddArgumentListArguments(Argument(IdentifierName("i"))),
-                                                DefaultExpression(elementType)),
-                                            // return false;
-                                            ReturnStatement(LiteralExpression(SyntaxKind.FalseLiteralExpression)))))),
-                            ReturnStatement(LiteralExpression(SyntaxKind.TrueLiteralExpression)))));
-            }
+                                    // if (p0[i] != value[i])
+                                    IfStatement(
+                                        BinaryExpression(
+                                            SyntaxKind.NotEqualsExpression,
+                                            ElementAccessExpression(IdentifierName("p0")).AddArgumentListArguments(Argument(IdentifierName("i"))),
+                                            ElementAccessExpression(valueParameterName).AddArgumentListArguments(Argument(IdentifierName("i")))),
+                                        // return false;
+                                        ReturnStatement(LiteralExpression(SyntaxKind.FalseLiteralExpression)))),
+                                // for (int i = commonLength; i < 4; i++)
+                                ForStatement(
+                                    VariableDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))).AddVariables(VariableDeclarator(Identifier("i")).WithInitializer(EqualsValueClause(commonLengthLocal))),
+                                    BinaryExpression(SyntaxKind.LessThanExpression, IdentifierName("i"), lengthLiteralSyntax),
+                                    SingletonSeparatedList<ExpressionSyntax>(PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, IdentifierName("i"))),
+                                    // if (p0[i] != default)
+                                    IfStatement(
+                                        BinaryExpression(
+                                            SyntaxKind.NotEqualsExpression,
+                                            ElementAccessExpression(IdentifierName("p0")).AddArgumentListArguments(Argument(IdentifierName("i"))),
+                                            DefaultExpression(elementType)),
+                                        // return false;
+                                        ReturnStatement(LiteralExpression(SyntaxKind.FalseLiteralExpression)))))),
+                        ReturnStatement(LiteralExpression(SyntaxKind.TrueLiteralExpression)))));
+        }
 
 #pragma warning restore SA1114 // Parameter list should follow declaration
 #pragma warning restore SA1515 // Single-line comment should be preceded by blank line
 
-            if (elementType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.CharKeyword } })
+        if (elementType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.CharKeyword } })
+        {
+            if (this.canUseSpan)
             {
-                if (this.canUseSpan)
-                {
-                    // internal readonly bool Equals(string value) => Equals(value.AsSpan());
-                    fixedLengthStruct = fixedLengthStruct.AddMembers(
-                        MethodDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), Identifier("Equals"))
-                            .AddModifiers(Token(this.Visibility), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
-                            .AddParameterListParameters(Parameter(Identifier("value")).WithType(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword))))
-                            .WithExpressionBody(ArrowExpressionClause(InvocationExpression(
-                                IdentifierName("Equals"),
-                                ArgumentList().AddArguments(Argument(
-                                    InvocationExpression(
-                                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("value"), IdentifierName("AsSpan")),
-                                        ArgumentList()))))))
-                            .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
-                }
-
-                // ...
-                //     internal unsafe readonly string ToString(int length)
-                //     {
-                //         if (length < 0 || length > Length)
-                //             throw new ArgumentOutOfRangeException(nameof(length), length, "Length must be between 0 and the fixed array length.");
-                //         fixed (char* p0 = &_0)
-                //             return new string(p0, 0, length);
-                //     }
+                // internal readonly bool Equals(string value) => Equals(value.AsSpan());
                 fixedLengthStruct = fixedLengthStruct.AddMembers(
-                    MethodDeclaration(PredefinedType(Token(SyntaxKind.StringKeyword)), Identifier(nameof(this.ToString)))
-                        .AddModifiers(Token(this.Visibility), Token(SyntaxKind.UnsafeKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
-                        .AddParameterListParameters(
-                            Parameter(Identifier("length")).WithType(PredefinedType(Token(SyntaxKind.IntKeyword)).WithTrailingTrivia(Space)))
-                        .WithBody(Block(
-                            IfStatement(
-                                BinaryExpression(
-                                    SyntaxKind.LogicalOrExpression,
-                                    BinaryExpression(SyntaxKind.LessThanExpression, IdentifierName("length"), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))),
-                                    BinaryExpression(SyntaxKind.GreaterThanExpression, IdentifierName("length"), IdentifierName("Length"))),
-                                ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentOutOfRangeException))).AddArgumentListArguments(
-                                    Argument(InvocationExpression(IdentifierName("nameof"), ArgumentList().AddArguments(Argument(IdentifierName("length"))))),
-                                    Argument(IdentifierName("length")),
-                                    Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal("Length must be between 0 and the fixed array length.")))))),
-                            FixedStatement(
-                                VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword)))).AddVariables(
-                                    VariableDeclarator(Identifier("p0")).WithInitializer(EqualsValueClause(
-                                        PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName("_0"))))),
-                                ReturnStatement(
-                                    ObjectCreationExpression(PredefinedType(Token(SyntaxKind.StringKeyword))).AddArgumentListArguments(
-                                        Argument(IdentifierName("p0")),
-                                        Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))),
-                                        Argument(IdentifierName("length")))))))
-                        .WithLeadingTrivia(InlineCharArrayToStringWithLengthComment));
+                    MethodDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), Identifier("Equals"))
+                        .AddModifiers(Token(this.Visibility), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
+                        .AddParameterListParameters(Parameter(Identifier("value")).WithType(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword))))
+                        .WithExpressionBody(ArrowExpressionClause(InvocationExpression(
+                            IdentifierName("Equals"),
+                            ArgumentList().AddArguments(Argument(
+                                InvocationExpression(
+                                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("value"), IdentifierName("AsSpan")),
+                                    ArgumentList()))))))
+                        .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+            }
 
-                IdentifierNameSyntax lengthLocalVar = IdentifierName("length");
-                StatementSyntax[] lengthDeclarationStatements;
-                bool unsafeRequired = false;
-
-                // int length;
-                // fixed (char* p = &_0)
-                // {
-                //     char* pLastExclusive = p + Length;
-                //     char* pCh = p;
-                //     for (; pCh < pLastExclusive && *pCh != '\0'; pCh++);
-                //     length = checked((int)(pCh - p));
-                // }
-                IdentifierNameSyntax p = IdentifierName("p");
-                IdentifierNameSyntax pLastExclusive = IdentifierName("pLastExclusive");
-                IdentifierNameSyntax pCh = IdentifierName("pCh");
-                unsafeRequired = true;
-                lengthDeclarationStatements = new StatementSyntax[]
-                {
-                        LocalDeclarationStatement(VariableDeclaration(PredefinedType(Token(SyntaxKind.IntKeyword))).AddVariables(
-                                VariableDeclarator(lengthLocalVar.Identifier))),
+            // ...
+            //     internal unsafe readonly string ToString(int length)
+            //     {
+            //         if (length < 0 || length > Length)
+            //             throw new ArgumentOutOfRangeException(nameof(length), length, "Length must be between 0 and the fixed array length.");
+            //         fixed (char* p0 = &_0)
+            //             return new string(p0, 0, length);
+            //     }
+            fixedLengthStruct = fixedLengthStruct.AddMembers(
+                MethodDeclaration(PredefinedType(Token(SyntaxKind.StringKeyword)), Identifier(nameof(this.ToString)))
+                    .AddModifiers(Token(this.Visibility), Token(SyntaxKind.UnsafeKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
+                    .AddParameterListParameters(
+                        Parameter(Identifier("length")).WithType(PredefinedType(Token(SyntaxKind.IntKeyword)).WithTrailingTrivia(Space)))
+                    .WithBody(Block(
+                        IfStatement(
+                            BinaryExpression(
+                                SyntaxKind.LogicalOrExpression,
+                                BinaryExpression(SyntaxKind.LessThanExpression, IdentifierName("length"), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))),
+                                BinaryExpression(SyntaxKind.GreaterThanExpression, IdentifierName("length"), IdentifierName("Length"))),
+                            ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentOutOfRangeException))).AddArgumentListArguments(
+                                Argument(InvocationExpression(IdentifierName("nameof"), ArgumentList().AddArguments(Argument(IdentifierName("length"))))),
+                                Argument(IdentifierName("length")),
+                                Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal("Length must be between 0 and the fixed array length.")))))),
                         FixedStatement(
                             VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword)))).AddVariables(
-                                VariableDeclarator(p.Identifier).WithInitializer(EqualsValueClause(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName("_0"))))),
-                            Block().AddStatements(
-                                LocalDeclarationStatement(VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword)))).AddVariables(
-                                    VariableDeclarator(pLastExclusive.Identifier).WithInitializer(EqualsValueClause(BinaryExpression(SyntaxKind.AddExpression, p, IdentifierName("Length")))))),
-                                LocalDeclarationStatement(VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword)))).AddVariables(
-                                    VariableDeclarator(pCh.Identifier).WithInitializer(EqualsValueClause(p)))),
-                                ForStatement(
-                                    null,
-                                    BinaryExpression(
-                                            SyntaxKind.LogicalAndExpression,
-                                            BinaryExpression(
-                                                SyntaxKind.LessThanExpression,
-                                                pCh,
-                                                pLastExclusive),
-                                            BinaryExpression(
-                                                SyntaxKind.NotEqualsExpression,
-                                                PrefixUnaryExpression(SyntaxKind.PointerIndirectionExpression, pCh),
-                                                LiteralExpression(SyntaxKind.CharacterLiteralExpression, Literal('\0')))),
-                                    SingletonSeparatedList<ExpressionSyntax>(PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, pCh)),
-                                    EmptyStatement()),
-                                ExpressionStatement(AssignmentExpression(
-                                    SyntaxKind.SimpleAssignmentExpression,
-                                    lengthLocalVar,
-                                    CheckedExpression(SyntaxKind.CheckedExpression, CastExpression(
-                                        PredefinedType(Token(SyntaxKind.IntKeyword)),
-                                        ParenthesizedExpression(BinaryExpression(SyntaxKind.SubtractExpression, pCh, p)))))))),
-                };
+                                VariableDeclarator(Identifier("p0")).WithInitializer(EqualsValueClause(
+                                    PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName("_0"))))),
+                            ReturnStatement(
+                                ObjectCreationExpression(PredefinedType(Token(SyntaxKind.StringKeyword))).AddArgumentListArguments(
+                                    Argument(IdentifierName("p0")),
+                                    Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))),
+                                    Argument(IdentifierName("length")))))))
+                    .WithLeadingTrivia(InlineCharArrayToStringWithLengthComment));
 
-                // ...
-                //     public override readonly string ToString()
-                //     {
-                //         ...
-                //         return ToString(length);
-                //     }
-                MethodDeclarationSyntax toStringOverride =
-                    MethodDeclaration(PredefinedType(Token(SyntaxKind.StringKeyword)), Identifier(nameof(this.ToString)))
-                        .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.OverrideKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
-                        .WithBody(Block(lengthDeclarationStatements).AddStatements(
-                            ReturnStatement(InvocationExpression(
-                                IdentifierName("ToString"),
-                                ArgumentList().AddArguments(Argument(lengthLocalVar))))))
-                        .WithLeadingTrivia(InlineCharArrayToStringComment);
-                if (unsafeRequired)
-                {
-                    toStringOverride = toStringOverride.AddModifiers(Token(SyntaxKind.UnsafeKeyword));
-                }
+            IdentifierNameSyntax lengthLocalVar = IdentifierName("length");
+            StatementSyntax[] lengthDeclarationStatements;
+            bool unsafeRequired = false;
 
-                fixedLengthStruct = fixedLengthStruct.AddMembers(toStringOverride);
-
-                if (this.canUseSpan)
-                {
-                    // public static implicit operator __char_64(string? value) => value.AsSpan();
-                    fixedLengthStruct = fixedLengthStruct.AddMembers(
-                        ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), fixedLengthStructName)
-                            .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword))
-                            .AddParameterListParameters(Parameter(Identifier("value")).WithType(PredefinedType(Token(SyntaxKind.StringKeyword)).WithTrailingTrivia(TriviaList(Space))))
-                            .WithExpressionBody(ArrowExpressionClause(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("value"), IdentifierName(nameof(MemoryExtensions.AsSpan))))))
-                            .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
-                }
-
-                // public static unsafe implicit operator __char_64(ReadOnlySpan<char> value)
-                // {
-                //     __char_64 result = default;
-                // #if NETCOREAPP2_1_OR_GREATER
-                //     value.CopyTo(result.AsSpan());
-                // #else
-                //     if (value.Length > result.Length)
-                //     {
-                //         throw new ArgumentException("Too long");
-                //     }
-                //     char* pwzAppName = &result._0;
-                //     for (int i = 0; i < value.Length; i++)
-                //     {
-                //         *pwzAppName++ = value[i];
-                //     }
-                // #endif
-                //     return result;
-                // }
-                IdentifierNameSyntax resultLocalVar = IdentifierName("result");
-                IdentifierNameSyntax valueParam = IdentifierName("value");
-                StatementSyntax[] middleBlock;
-                if (this.canCallCreateSpan)
-                {
-                    unsafeRequired = false;
-                    middleBlock = new StatementSyntax[]
-                    {
-                            // value.CopyTo(result.AsSpan());
-                            ExpressionStatement(InvocationExpression(
-                                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParam, IdentifierName(nameof(ReadOnlySpan<int>.CopyTo))),
-                                ArgumentList().AddArguments(Argument(
-                                    InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, resultLocalVar, IdentifierName("AsSpan")), ArgumentList()))))),
-                    };
-                }
-                else
-                {
-                    unsafeRequired = true;
-                    IdentifierNameSyntax i = IdentifierName("i");
-                    middleBlock = new StatementSyntax[]
-                    {
-                            // if (value.Length > result.Length) throw new ArgumentException("Too long");
-                            IfStatement(
-                                BinaryExpression(
-                                    SyntaxKind.GreaterThanExpression,
-                                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParam, IdentifierName(nameof(ReadOnlySpan<int>.Length))),
-                                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, resultLocalVar, IdentifierName("Length"))),
-                                ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentException))).AddArgumentListArguments(Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal("Length exceeds fixed array size.")))))),
-
-                            // char* p = &result._0;
+            // int length;
+            // fixed (char* p = &_0)
+            // {
+            //     char* pLastExclusive = p + Length;
+            //     char* pCh = p;
+            //     for (; pCh < pLastExclusive && *pCh != '\0'; pCh++);
+            //     length = checked((int)(pCh - p));
+            // }
+            IdentifierNameSyntax p = IdentifierName("p");
+            IdentifierNameSyntax pLastExclusive = IdentifierName("pLastExclusive");
+            IdentifierNameSyntax pCh = IdentifierName("pCh");
+            unsafeRequired = true;
+            lengthDeclarationStatements = new StatementSyntax[]
+            {
+                    LocalDeclarationStatement(VariableDeclaration(PredefinedType(Token(SyntaxKind.IntKeyword))).AddVariables(
+                            VariableDeclarator(lengthLocalVar.Identifier))),
+                    FixedStatement(
+                        VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword)))).AddVariables(
+                            VariableDeclarator(p.Identifier).WithInitializer(EqualsValueClause(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName("_0"))))),
+                        Block().AddStatements(
                             LocalDeclarationStatement(VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword)))).AddVariables(
-                                VariableDeclarator(p.Identifier).WithInitializer(EqualsValueClause(PrefixUnaryExpression(
-                                    SyntaxKind.AddressOfExpression,
-                                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, resultLocalVar, IdentifierName("_0"))))))),
-
-                            // for (int i = 0; i < value.Length; i++)
-                            //     *p++ = value[i];
+                                VariableDeclarator(pLastExclusive.Identifier).WithInitializer(EqualsValueClause(BinaryExpression(SyntaxKind.AddExpression, p, IdentifierName("Length")))))),
+                            LocalDeclarationStatement(VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword)))).AddVariables(
+                                VariableDeclarator(pCh.Identifier).WithInitializer(EqualsValueClause(p)))),
                             ForStatement(
-                                VariableDeclaration(PredefinedType(Token(SyntaxKind.IntKeyword))).AddVariables(
-                                    VariableDeclarator(i.Identifier).WithInitializer(EqualsValueClause(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))))),
-                                BinaryExpression(SyntaxKind.LessThanExpression, i, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParam, IdentifierName(nameof(ReadOnlySpan<char>.Length)))),
-                                SingletonSeparatedList<ExpressionSyntax>(PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, i)),
-                                ExpressionStatement(AssignmentExpression(
-                                    SyntaxKind.SimpleAssignmentExpression,
-                                    PrefixUnaryExpression(SyntaxKind.PointerIndirectionExpression, PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, p)),
-                                    ElementAccessExpression(valueParam).AddArgumentListArguments(Argument(i))))),
-                    };
-                }
-
-                if (this.canUseSpan)
-                {
-                    ConversionOperatorDeclarationSyntax conversionDecl =
-                        ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), fixedLengthStructName)
-                            .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword))
-                            .AddParameterListParameters(Parameter(valueParam.Identifier).WithType(MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword))).WithTrailingTrivia(TriviaList(Space))))
-                            .WithBody(Block()
-
-                                // __char_64 result = default;
-                                .AddStatements(LocalDeclarationStatement(VariableDeclaration(fixedLengthStructName).AddVariables(
-                                    VariableDeclarator(resultLocalVar.Identifier).WithInitializer(EqualsValueClause(DefaultExpression(fixedLengthStructName))))))
-
-                                .AddStatements(middleBlock)
-
-                                // return result;
-                                .AddStatements(ReturnStatement(resultLocalVar)));
-                    if (unsafeRequired)
-                    {
-                        conversionDecl = conversionDecl.AddModifiers(Token(SyntaxKind.UnsafeKeyword));
-                    }
-
-                    fixedLengthStruct = fixedLengthStruct.AddMembers(conversionDecl);
-                }
-
-                // Make sure .NET marshals these `char` arrays as UTF-16.
-                fixedLengthStruct = fixedLengthStruct
-                    .AddAttributeLists(AttributeList().AddAttributes(StructLayout(TypeAttributes.SequentialLayout, charSet: CharSet.Unicode)));
-            }
-
-            IdentifierNameSyntax indexParamName = IdentifierName("index");
-            IdentifierNameSyntax p0 = IdentifierName("p0");
-            IdentifierNameSyntax atThis = IdentifierName("@this");
-            TypeSyntax qualifiedElementType = elementType == IntPtrTypeSyntax ? elementType : ((ArrayTypeSyntax)fieldTypeHandleInfo.ToTypeSyntax(this.extensionMethodSignatureTypeSettings, customAttributes).Type).ElementType;
-
-            ////internal static unsafe ref readonly uint ReadOnlyItemRef(this in MainAVIHeader.__dwReserved_4 @this, int index)
-            ////{
-            ////    fixed (uint* p0 = &@this._0)
-            ////        return ref p0[index];
-            ////    - or (for managed elements) -
-            ////    switch (index)
-            ////    {
-            ////      case 0: ref return @this._0;
-            ////      case 1: ref return @this._1;
-            ////      default: throw new ArgumentOutOfRangeException();
-            ////    }
-            ////}
-            StatementSyntax? statement =
-                fieldTypeHandleInfo is ArrayTypeHandleInfo { ElementType: { } arrayElement } && this.IsManagedType(arrayElement)
-                 ? SwitchStatement(indexParamName)
-                    .AddSections(Enumerable.Range(0, length).Select(n => SwitchSection()
-                        .AddLabels(CaseSwitchLabel(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(n))))
-                        .AddStatements(ReturnStatement(RefExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, atThis, GetElementFieldName(n)))))).ToArray())
-                    .AddSections(SwitchSection().AddLabels(DefaultSwitchLabel()).AddStatements(ThrowStatement(
-                        ObjectCreationExpression(IdentifierName(nameof(ArgumentOutOfRangeException)))
-                            .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(InvocationExpression(IdentifierName("nameof")).WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(indexParamName)))))))))))
-                 : FixedStatement(
-                    VariableDeclaration(PointerType(qualifiedElementType)).AddVariables(
-                        VariableDeclarator(p0.Identifier).WithInitializer(EqualsValueClause(
-                            PrefixUnaryExpression(
-                                SyntaxKind.AddressOfExpression,
-                                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, atThis, firstElementFieldName))))),
-                    ReturnStatement(RefExpression(ElementAccessExpression(p0).AddArgumentListArguments(Argument(indexParamName)))))
-                    .WithFixedKeyword(TokenWithSpace(SyntaxKind.FixedKeyword));
-            BlockSyntax body = Block().AddStatements(statement);
-            ParameterSyntax thisParameter = Parameter(atThis.Identifier)
-                .WithType(QualifiedName((NameSyntax)new HandleTypeHandleInfo(this.Reader, fieldDef.GetDeclaringType()).ToTypeSyntax(this.extensionMethodSignatureTypeSettings, customAttributes).Type, fixedLengthStructName).WithTrailingTrivia(TriviaList(Space)))
-                .AddModifiers(TokenWithSpace(SyntaxKind.ThisKeyword));
-            ParameterSyntax indexParameter = Parameter(indexParamName.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)));
-            SyntaxTokenList methodModifiers = TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword));
-            MethodDeclarationSyntax getAtMethod = MethodDeclaration(RefType(qualifiedElementType.WithTrailingTrivia(TriviaList(Space))).WithReadOnlyKeyword(TokenWithSpace(SyntaxKind.ReadOnlyKeyword)), Identifier("ReadOnlyItemRef"))
-                .WithModifiers(methodModifiers)
-                .WithParameterList(FixTrivia(ParameterList().AddParameters(thisParameter.AddModifiers(TokenWithSpace(SyntaxKind.InKeyword)), indexParameter)))
-                .WithBody(body);
-            this.volatileCode.AddInlineArrayIndexerExtension(getAtMethod);
-
-            ////internal static unsafe ref uint ItemRef(this ref MainAVIHeader.__dwReserved_4 @this, int index)
-            ////{
-            ////    fixed (uint* p0 = &@this._0)
-            ////        return ref p0[index];
-            ////}
-            MethodDeclarationSyntax getOrSetAtMethod = MethodDeclaration(RefType(qualifiedElementType.WithTrailingTrivia(TriviaList(Space))), Identifier("ItemRef"))
-                .WithModifiers(methodModifiers)
-                .WithParameterList(FixTrivia(ParameterList().AddParameters(thisParameter.AddModifiers(TokenWithSpace(SyntaxKind.RefKeyword)), indexParameter)))
-                .WithBody(body);
-            this.volatileCode.AddInlineArrayIndexerExtension(getOrSetAtMethod);
-
-            return (fixedLengthStructName, List<MemberDeclarationSyntax>().Add(fixedLengthStruct), null);
-        }
-
-        private bool IsTypeDefStruct(TypeHandleInfo? typeHandleInfo)
-        {
-            if (typeHandleInfo is HandleTypeHandleInfo handleInfo)
-            {
-                if (handleInfo.Handle.Kind == HandleKind.TypeDefinition)
-                {
-                    TypeDefinition typeDef = this.Reader.GetTypeDefinition((TypeDefinitionHandle)handleInfo.Handle);
-                    return this.IsTypeDefStruct(typeDef);
-                }
-                else if (handleInfo.Handle.Kind == HandleKind.TypeReference)
-                {
-                    if (this.TryGetTypeDefHandle((TypeReferenceHandle)handleInfo.Handle, out TypeDefinitionHandle tdh))
-                    {
-                        TypeDefinition typeDef = this.Reader.GetTypeDefinition(tdh);
-                        return this.IsTypeDefStruct(typeDef);
-                    }
-                    else if (this.SuperGenerator is object)
-                    {
-                        TypeReference typeReference = this.Reader.GetTypeReference((TypeReferenceHandle)handleInfo.Handle);
-                        if (this.SuperGenerator.TryGetTargetGenerator(new QualifiedTypeReference(this, typeReference), out Generator? targetGenerator))
-                        {
-                            if (targetGenerator.TryGetTypeDefHandle(this.Reader.GetString(typeReference.Namespace), this.Reader.GetString(typeReference.Name), out TypeDefinitionHandle foreignTypeDefHandle))
-                            {
-                                TypeDefinition foreignTypeDef = targetGenerator.Reader.GetTypeDefinition(foreignTypeDefHandle);
-                                return targetGenerator.IsTypeDefStruct(foreignTypeDef);
-                            }
-                        }
-                    }
-                }
-            }
-            else if (SpecialTypeDefNames.Contains(null!/*TODO*/))
-            {
-                return true;
-            }
-
-            return false;
-        }
-
-        private bool IsDelegateReference(TypeHandleInfo typeHandleInfo, out TypeDefinition delegateTypeDef)
-        {
-            if (typeHandleInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo handleInfo })
-            {
-                return this.IsDelegateReference(handleInfo, out delegateTypeDef);
-            }
-            else if (typeHandleInfo is HandleTypeHandleInfo handleInfo1)
-            {
-                return this.IsDelegateReference(handleInfo1, out delegateTypeDef);
-            }
-
-            delegateTypeDef = default;
-            return false;
-        }
-
-        private bool IsDelegateReference(HandleTypeHandleInfo typeHandleInfo, out TypeDefinition delegateTypeDef)
-        {
-            if (typeHandleInfo.Handle.Kind == HandleKind.TypeDefinition)
-            {
-                var tdh = (TypeDefinitionHandle)typeHandleInfo.Handle;
-                delegateTypeDef = this.Reader.GetTypeDefinition(tdh);
-                return this.IsDelegate(delegateTypeDef);
-            }
-
-            if (typeHandleInfo.Handle.Kind == HandleKind.TypeReference)
-            {
-                var trh = (TypeReferenceHandle)typeHandleInfo.Handle;
-                if (this.TryGetTypeDefHandle(trh, out TypeDefinitionHandle tdh))
-                {
-                    delegateTypeDef = this.Reader.GetTypeDefinition(tdh);
-                    return this.IsDelegate(delegateTypeDef);
-                }
-            }
-
-            delegateTypeDef = default;
-            return false;
-        }
-
-        private bool IsManagedType(TypeDefinitionHandle typeDefinitionHandle)
-        {
-            var visitedTypes = new HashSet<TypeDefinitionHandle>();
-            return Helper(typeDefinitionHandle)!.Value;
-
-            bool? Helper(TypeDefinitionHandle typeDefinitionHandle)
-            {
-                if (!visitedTypes.Add(typeDefinitionHandle))
-                {
-                    // Avoid recursion. We just don't know the answer yet.
-                    return null;
-                }
-
-                TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefinitionHandle);
-                try
-                {
-                    if ((typeDef.Attributes & TypeAttributes.Interface) == TypeAttributes.Interface)
-                    {
-                        return this.options.AllowMarshaling && !this.IsNonCOMInterface(typeDef);
-                    }
-
-                    this.GetBaseTypeInfo(typeDef, out StringHandle baseName, out StringHandle baseNamespace);
-                    if (this.Reader.StringComparer.Equals(baseName, nameof(ValueType)) && this.Reader.StringComparer.Equals(baseNamespace, nameof(System)))
-                    {
-                        if (this.IsTypeDefStruct(typeDef))
-                        {
-                            return false;
-                        }
-                        else
-                        {
-                            foreach (FieldDefinitionHandle fieldHandle in typeDef.GetFields())
-                            {
-                                FieldDefinition fieldDef = this.Reader.GetFieldDefinition(fieldHandle);
-                                try
-                                {
-                                    TypeHandleInfo elementType = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null);
-                                    while (elementType is ITypeHandleContainer container)
-                                    {
-                                        elementType = container.ElementType;
-                                    }
-
-                                    if (elementType is PrimitiveTypeHandleInfo)
-                                    {
-                                        // These are never managed.
-                                        continue;
-                                    }
-                                    else if (elementType is HandleTypeHandleInfo { Handle: { Kind: HandleKind.TypeDefinition } fieldTypeDefHandle })
-                                    {
-                                        if (Helper((TypeDefinitionHandle)fieldTypeDefHandle) is true)
-                                        {
-                                            return true;
-                                        }
-                                    }
-                                    else if (elementType is HandleTypeHandleInfo { Handle: { Kind: HandleKind.TypeReference } fieldTypeRefHandle })
-                                    {
-                                        if (this.TryGetTypeDefHandle((TypeReferenceHandle)fieldTypeRefHandle, out TypeDefinitionHandle tdr) && Helper(tdr) is true)
-                                        {
-                                            return true;
-                                        }
-                                    }
-                                    else
-                                    {
-                                        throw new GenerationFailedException("Unrecognized type.");
-                                    }
-                                }
-                                catch (Exception ex)
-                                {
-                                    throw new GenerationFailedException($"Unable to ascertain whether the {this.Reader.GetString(fieldDef.Name)} field represents a managed type.", ex);
-                                }
-                            }
-
-                            return false;
-                        }
-                    }
-                    else if (this.Reader.StringComparer.Equals(baseName, nameof(Enum)) && this.Reader.StringComparer.Equals(baseNamespace, nameof(System)))
-                    {
-                        return false;
-                    }
-                    else if (this.Reader.StringComparer.Equals(baseName, nameof(MulticastDelegate)) && this.Reader.StringComparer.Equals(baseNamespace, nameof(System)))
-                    {
-                        // Delegates appear as unmanaged function pointers when using structs instead of COM interfaces.
-                        return this.options.AllowMarshaling;
-                    }
-
-                    throw new NotSupportedException();
-                }
-                catch (Exception ex)
-                {
-                    throw new GenerationFailedException($"Unable to determine if {new HandleTypeHandleInfo(this.Reader, typeDefinitionHandle).ToTypeSyntax(this.errorMessageTypeSettings, null)} is a managed type.", ex);
-                }
-            }
-        }
-
-        private UnmanagedType? GetUnmanagedType(BlobHandle blobHandle)
-        {
-            if (blobHandle.IsNil)
-            {
-                return null;
-            }
-
-            BlobReader br = this.Reader.GetBlobReader(blobHandle);
-            UnmanagedType unmgdType = (UnmanagedType)br.ReadByte();
-            return unmgdType;
-        }
-
-        private MarshalAsAttribute ToMarshalAsAttribute(BlobHandle blobHandle)
-        {
-            BlobReader br = this.Reader.GetBlobReader(blobHandle);
-            UnmanagedType unmgdType = (UnmanagedType)br.ReadByte();
-            MarshalAsAttribute ma = new MarshalAsAttribute(unmgdType);
-            switch (unmgdType)
-            {
-                case UnmanagedType.Interface:
-                case UnmanagedType.IUnknown:
-                case UnmanagedType.IDispatch:
-                    if (br.RemainingBytes == 0)
-                    {
-                        break;
-                    }
-
-                    ma.IidParameterIndex = br.ReadCompressedInteger();
-                    break;
-
-                case UnmanagedType.ByValArray:
-                    if (br.RemainingBytes == 0)
-                    {
-                        break;
-                    }
-
-                    ma.SizeConst = br.ReadCompressedInteger();
-
-                    if (br.RemainingBytes == 0)
-                    {
-                        break;
-                    }
-
-                    ma.ArraySubType = (UnmanagedType)br.ReadCompressedInteger();
-
-                    break;
-
-                case UnmanagedType.SafeArray:
-                    if (br.RemainingBytes == 0)
-                    {
-                        break;
-                    }
-
-                    ma.SafeArraySubType = (VarEnum)br.ReadCompressedInteger();
-
-                    if (br.RemainingBytes == 0)
-                    {
-                        break;
-                    }
-                    ////string udtName = br.ReadSerializedString();
-                    ////ma.SafeArrayUserDefinedSubType = Helpers.LoadTypeFromAssemblyQualifiedName(udtName, module.GetRoAssembly(), ignoreCase: false, throwOnError: false);
-                    break;
-
-                case UnmanagedType.LPArray:
-                    if (br.RemainingBytes == 0)
-                    {
-                        break;
-                    }
-
-                    ma.ArraySubType = (UnmanagedType)br.ReadCompressedInteger();
-
-                    if (br.RemainingBytes == 0)
-                    {
-                        break;
-                    }
-
-                    ma.SizeParamIndex = (short)br.ReadCompressedInteger();
-
-                    if (br.RemainingBytes == 0)
-                    {
-                        break;
-                    }
-
-                    ma.SizeConst = br.ReadCompressedInteger();
-                    break;
-
-                case UnmanagedType.CustomMarshaler:
-                    if (br.RemainingBytes == 0)
-                    {
-                        break;
-                    }
-
-                    br.ReadSerializedString(); // Skip the typelib guid.
-
-                    if (br.RemainingBytes == 0)
-                    {
-                        break;
-                    }
-
-                    br.ReadSerializedString(); // Skip name of native type.
-
-                    if (br.RemainingBytes == 0)
-                    {
-                        break;
-                    }
-
-                    ma.MarshalType = br.ReadSerializedString();
-                    ////ma.MarshalTypeRef = Helpers.LoadTypeFromAssemblyQualifiedName(ma.MarshalType, module.GetRoAssembly(), ignoreCase: false, throwOnError: false);
-
-                    if (br.RemainingBytes == 0)
-                    {
-                        break;
-                    }
-
-                    ma.MarshalCookie = br.ReadSerializedString();
-                    break;
-
-                default:
-                    break;
-            }
-
-            return ma;
-        }
-
-        private ExpressionSyntax ToExpressionSyntax(Constant constant)
-        {
-            var blobReader = this.Reader.GetBlobReader(constant.Value);
-            return constant.TypeCode switch
-            {
-                ConstantTypeCode.Boolean => blobReader.ReadBoolean() ? LiteralExpression(SyntaxKind.TrueLiteralExpression) : LiteralExpression(SyntaxKind.FalseLiteralExpression),
-                ConstantTypeCode.Char => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(blobReader.ReadChar())),
-                ConstantTypeCode.SByte => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(blobReader.ReadSByte())),
-                ConstantTypeCode.Byte => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(blobReader.ReadByte())),
-                ConstantTypeCode.Int16 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(blobReader.ReadInt16())),
-                ConstantTypeCode.UInt16 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(blobReader.ReadUInt16())),
-                ConstantTypeCode.Int32 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(blobReader.ReadInt32())),
-                ConstantTypeCode.UInt32 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(blobReader.ReadUInt32())),
-                ConstantTypeCode.Int64 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(blobReader.ReadInt64())),
-                ConstantTypeCode.UInt64 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(blobReader.ReadUInt64())),
-                ConstantTypeCode.Single => FloatExpression(blobReader.ReadSingle()),
-                ConstantTypeCode.Double => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(blobReader.ReadDouble())),
-                ConstantTypeCode.String => blobReader.ReadConstant(constant.TypeCode) is string value ? LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(value)) : LiteralExpression(SyntaxKind.NullLiteralExpression),
-                ConstantTypeCode.NullReference => LiteralExpression(SyntaxKind.NullLiteralExpression),
-                _ => throw new NotSupportedException("ConstantTypeCode not supported: " + constant.TypeCode),
+                                null,
+                                BinaryExpression(
+                                        SyntaxKind.LogicalAndExpression,
+                                        BinaryExpression(
+                                            SyntaxKind.LessThanExpression,
+                                            pCh,
+                                            pLastExclusive),
+                                        BinaryExpression(
+                                            SyntaxKind.NotEqualsExpression,
+                                            PrefixUnaryExpression(SyntaxKind.PointerIndirectionExpression, pCh),
+                                            LiteralExpression(SyntaxKind.CharacterLiteralExpression, Literal('\0')))),
+                                SingletonSeparatedList<ExpressionSyntax>(PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, pCh)),
+                                EmptyStatement()),
+                            ExpressionStatement(AssignmentExpression(
+                                SyntaxKind.SimpleAssignmentExpression,
+                                lengthLocalVar,
+                                CheckedExpression(SyntaxKind.CheckedExpression, CastExpression(
+                                    PredefinedType(Token(SyntaxKind.IntKeyword)),
+                                    ParenthesizedExpression(BinaryExpression(SyntaxKind.SubtractExpression, pCh, p)))))))),
             };
 
-            static ExpressionSyntax FloatExpression(float value)
+            // ...
+            //     public override readonly string ToString()
+            //     {
+            //         ...
+            //         return ToString(length);
+            //     }
+            MethodDeclarationSyntax toStringOverride =
+                MethodDeclaration(PredefinedType(Token(SyntaxKind.StringKeyword)), Identifier(nameof(this.ToString)))
+                    .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.OverrideKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
+                    .WithBody(Block(lengthDeclarationStatements).AddStatements(
+                        ReturnStatement(InvocationExpression(
+                            IdentifierName("ToString"),
+                            ArgumentList().AddArguments(Argument(lengthLocalVar))))))
+                    .WithLeadingTrivia(InlineCharArrayToStringComment);
+            if (unsafeRequired)
             {
-                return
-                    float.IsPositiveInfinity(value) ? MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, PredefinedType(Token(SyntaxKind.FloatKeyword)), IdentifierName(nameof(float.PositiveInfinity))) :
-                    float.IsNegativeInfinity(value) ? MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, PredefinedType(Token(SyntaxKind.FloatKeyword)), IdentifierName(nameof(float.NegativeInfinity))) :
-                    float.IsNaN(value) ? MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, PredefinedType(Token(SyntaxKind.FloatKeyword)), IdentifierName(nameof(float.NaN))) :
-                    LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(value));
+                toStringOverride = toStringOverride.AddModifiers(Token(SyntaxKind.UnsafeKeyword));
             }
-        }
 
-        private ExpressionSyntax ToHexExpressionSyntax(Constant constant)
-        {
-            var blobReader = this.Reader.GetBlobReader(constant.Value);
-            var blobReader2 = this.Reader.GetBlobReader(constant.Value);
-            return constant.TypeCode switch
-            {
-                ConstantTypeCode.SByte => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadSByte()), blobReader2.ReadSByte())),
-                ConstantTypeCode.Byte => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadByte()), blobReader2.ReadByte())),
-                ConstantTypeCode.Int16 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadInt16()), blobReader2.ReadInt16())),
-                ConstantTypeCode.UInt16 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadUInt16()), blobReader2.ReadUInt16())),
-                ConstantTypeCode.Int32 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadInt32()), blobReader2.ReadInt32())),
-                ConstantTypeCode.UInt32 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadUInt32()), blobReader2.ReadUInt32())),
-                ConstantTypeCode.Int64 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadInt64()), blobReader2.ReadInt64())),
-                ConstantTypeCode.UInt64 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadUInt64()), blobReader2.ReadUInt64())),
-                _ => throw new NotSupportedException("ConstantTypeCode not supported: " + constant.TypeCode),
-            };
-        }
+            fixedLengthStruct = fixedLengthStruct.AddMembers(toStringOverride);
 
-        private IEnumerable<NamespaceMetadata> GetNamespacesToSearch(string? @namespace)
-        {
-            if (@namespace is object)
+            if (this.canUseSpan)
             {
-                return this.MetadataIndex.MetadataByNamespace.TryGetValue(@namespace, out var metadata)
-                    ? new[] { metadata }
-                    : Array.Empty<NamespaceMetadata>();
+                // public static implicit operator __char_64(string? value) => value.AsSpan();
+                fixedLengthStruct = fixedLengthStruct.AddMembers(
+                    ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), fixedLengthStructName)
+                        .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword))
+                        .AddParameterListParameters(Parameter(Identifier("value")).WithType(PredefinedType(Token(SyntaxKind.StringKeyword)).WithTrailingTrivia(TriviaList(Space))))
+                        .WithExpressionBody(ArrowExpressionClause(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("value"), IdentifierName(nameof(MemoryExtensions.AsSpan))))))
+                        .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
+            }
+
+            // public static unsafe implicit operator __char_64(ReadOnlySpan<char> value)
+            // {
+            //     __char_64 result = default;
+            // #if NETCOREAPP2_1_OR_GREATER
+            //     value.CopyTo(result.AsSpan());
+            // #else
+            //     if (value.Length > result.Length)
+            //     {
+            //         throw new ArgumentException("Too long");
+            //     }
+            //     char* pwzAppName = &result._0;
+            //     for (int i = 0; i < value.Length; i++)
+            //     {
+            //         *pwzAppName++ = value[i];
+            //     }
+            // #endif
+            //     return result;
+            // }
+            IdentifierNameSyntax resultLocalVar = IdentifierName("result");
+            IdentifierNameSyntax valueParam = IdentifierName("value");
+            StatementSyntax[] middleBlock;
+            if (this.canCallCreateSpan)
+            {
+                unsafeRequired = false;
+                middleBlock = new StatementSyntax[]
+                {
+                        // value.CopyTo(result.AsSpan());
+                        ExpressionStatement(InvocationExpression(
+                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParam, IdentifierName(nameof(ReadOnlySpan<int>.CopyTo))),
+                            ArgumentList().AddArguments(Argument(
+                                InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, resultLocalVar, IdentifierName("AsSpan")), ArgumentList()))))),
+                };
             }
             else
             {
-                return this.MetadataIndex.MetadataByNamespace.Values;
+                unsafeRequired = true;
+                IdentifierNameSyntax i = IdentifierName("i");
+                middleBlock = new StatementSyntax[]
+                {
+                        // if (value.Length > result.Length) throw new ArgumentException("Too long");
+                        IfStatement(
+                            BinaryExpression(
+                                SyntaxKind.GreaterThanExpression,
+                                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParam, IdentifierName(nameof(ReadOnlySpan<int>.Length))),
+                                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, resultLocalVar, IdentifierName("Length"))),
+                            ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentException))).AddArgumentListArguments(Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal("Length exceeds fixed array size.")))))),
+
+                        // char* p = &result._0;
+                        LocalDeclarationStatement(VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword)))).AddVariables(
+                            VariableDeclarator(p.Identifier).WithInitializer(EqualsValueClause(PrefixUnaryExpression(
+                                SyntaxKind.AddressOfExpression,
+                                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, resultLocalVar, IdentifierName("_0"))))))),
+
+                        // for (int i = 0; i < value.Length; i++)
+                        //     *p++ = value[i];
+                        ForStatement(
+                            VariableDeclaration(PredefinedType(Token(SyntaxKind.IntKeyword))).AddVariables(
+                                VariableDeclarator(i.Identifier).WithInitializer(EqualsValueClause(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))))),
+                            BinaryExpression(SyntaxKind.LessThanExpression, i, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParam, IdentifierName(nameof(ReadOnlySpan<char>.Length)))),
+                            SingletonSeparatedList<ExpressionSyntax>(PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, i)),
+                            ExpressionStatement(AssignmentExpression(
+                                SyntaxKind.SimpleAssignmentExpression,
+                                PrefixUnaryExpression(SyntaxKind.PointerIndirectionExpression, PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, p)),
+                                ElementAccessExpression(valueParam).AddArgumentListArguments(Argument(i))))),
+                };
             }
+
+            if (this.canUseSpan)
+            {
+                ConversionOperatorDeclarationSyntax conversionDecl =
+                    ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), fixedLengthStructName)
+                        .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword))
+                        .AddParameterListParameters(Parameter(valueParam.Identifier).WithType(MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword))).WithTrailingTrivia(TriviaList(Space))))
+                        .WithBody(Block()
+
+                            // __char_64 result = default;
+                            .AddStatements(LocalDeclarationStatement(VariableDeclaration(fixedLengthStructName).AddVariables(
+                                VariableDeclarator(resultLocalVar.Identifier).WithInitializer(EqualsValueClause(DefaultExpression(fixedLengthStructName))))))
+
+                            .AddStatements(middleBlock)
+
+                            // return result;
+                            .AddStatements(ReturnStatement(resultLocalVar)));
+                if (unsafeRequired)
+                {
+                    conversionDecl = conversionDecl.AddModifiers(Token(SyntaxKind.UnsafeKeyword));
+                }
+
+                fixedLengthStruct = fixedLengthStruct.AddMembers(conversionDecl);
+            }
+
+            // Make sure .NET marshals these `char` arrays as UTF-16.
+            fixedLengthStruct = fixedLengthStruct
+                .AddAttributeLists(AttributeList().AddAttributes(StructLayout(TypeAttributes.SequentialLayout, charSet: CharSet.Unicode)));
         }
 
-        private class GeneratedCode
+        IdentifierNameSyntax indexParamName = IdentifierName("index");
+        IdentifierNameSyntax p0 = IdentifierName("p0");
+        IdentifierNameSyntax atThis = IdentifierName("@this");
+        TypeSyntax qualifiedElementType = elementType == IntPtrTypeSyntax ? elementType : ((ArrayTypeSyntax)fieldTypeHandleInfo.ToTypeSyntax(this.extensionMethodSignatureTypeSettings, customAttributes).Type).ElementType;
+
+        ////internal static unsafe ref readonly uint ReadOnlyItemRef(this in MainAVIHeader.__dwReserved_4 @this, int index)
+        ////{
+        ////    fixed (uint* p0 = &@this._0)
+        ////        return ref p0[index];
+        ////    - or (for managed elements) -
+        ////    switch (index)
+        ////    {
+        ////      case 0: ref return @this._0;
+        ////      case 1: ref return @this._1;
+        ////      default: throw new ArgumentOutOfRangeException();
+        ////    }
+        ////}
+        StatementSyntax? statement =
+            fieldTypeHandleInfo is ArrayTypeHandleInfo { ElementType: { } arrayElement } && this.IsManagedType(arrayElement)
+             ? SwitchStatement(indexParamName)
+                .AddSections(Enumerable.Range(0, length).Select(n => SwitchSection()
+                    .AddLabels(CaseSwitchLabel(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(n))))
+                    .AddStatements(ReturnStatement(RefExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, atThis, GetElementFieldName(n)))))).ToArray())
+                .AddSections(SwitchSection().AddLabels(DefaultSwitchLabel()).AddStatements(ThrowStatement(
+                    ObjectCreationExpression(IdentifierName(nameof(ArgumentOutOfRangeException)))
+                        .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(InvocationExpression(IdentifierName("nameof")).WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(indexParamName)))))))))))
+             : FixedStatement(
+                VariableDeclaration(PointerType(qualifiedElementType)).AddVariables(
+                    VariableDeclarator(p0.Identifier).WithInitializer(EqualsValueClause(
+                        PrefixUnaryExpression(
+                            SyntaxKind.AddressOfExpression,
+                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, atThis, firstElementFieldName))))),
+                ReturnStatement(RefExpression(ElementAccessExpression(p0).AddArgumentListArguments(Argument(indexParamName)))))
+                .WithFixedKeyword(TokenWithSpace(SyntaxKind.FixedKeyword));
+        BlockSyntax body = Block().AddStatements(statement);
+        ParameterSyntax thisParameter = Parameter(atThis.Identifier)
+            .WithType(QualifiedName((NameSyntax)new HandleTypeHandleInfo(this.Reader, fieldDef.GetDeclaringType()).ToTypeSyntax(this.extensionMethodSignatureTypeSettings, customAttributes).Type, fixedLengthStructName).WithTrailingTrivia(TriviaList(Space)))
+            .AddModifiers(TokenWithSpace(SyntaxKind.ThisKeyword));
+        ParameterSyntax indexParameter = Parameter(indexParamName.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)));
+        SyntaxTokenList methodModifiers = TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword));
+        MethodDeclarationSyntax getAtMethod = MethodDeclaration(RefType(qualifiedElementType.WithTrailingTrivia(TriviaList(Space))).WithReadOnlyKeyword(TokenWithSpace(SyntaxKind.ReadOnlyKeyword)), Identifier("ReadOnlyItemRef"))
+            .WithModifiers(methodModifiers)
+            .WithParameterList(FixTrivia(ParameterList().AddParameters(thisParameter.AddModifiers(TokenWithSpace(SyntaxKind.InKeyword)), indexParameter)))
+            .WithBody(body);
+        this.volatileCode.AddInlineArrayIndexerExtension(getAtMethod);
+
+        ////internal static unsafe ref uint ItemRef(this ref MainAVIHeader.__dwReserved_4 @this, int index)
+        ////{
+        ////    fixed (uint* p0 = &@this._0)
+        ////        return ref p0[index];
+        ////}
+        MethodDeclarationSyntax getOrSetAtMethod = MethodDeclaration(RefType(qualifiedElementType.WithTrailingTrivia(TriviaList(Space))), Identifier("ItemRef"))
+            .WithModifiers(methodModifiers)
+            .WithParameterList(FixTrivia(ParameterList().AddParameters(thisParameter.AddModifiers(TokenWithSpace(SyntaxKind.RefKeyword)), indexParameter)))
+            .WithBody(body);
+        this.volatileCode.AddInlineArrayIndexerExtension(getOrSetAtMethod);
+
+        return (fixedLengthStructName, List<MemberDeclarationSyntax>().Add(fixedLengthStruct), null);
+    }
+
+    private bool IsTypeDefStruct(TypeHandleInfo? typeHandleInfo)
+    {
+        if (typeHandleInfo is HandleTypeHandleInfo handleInfo)
         {
-            private readonly GeneratedCode? parent;
-
-            private Dictionary<string, List<MemberDeclarationSyntax>> modulesAndMembers = new Dictionary<string, List<MemberDeclarationSyntax>>(StringComparer.OrdinalIgnoreCase);
-
-            /// <summary>
-            /// The structs, enums, delegates and other supporting types for extern methods.
-            /// </summary>
-            private Dictionary<TypeDefinitionHandle, MemberDeclarationSyntax> types = new();
-
-            private Dictionary<FieldDefinitionHandle, FieldDeclarationSyntax> fieldsToSyntax = new();
-
-            private List<ClassDeclarationSyntax> safeHandleTypes = new();
-
-            private Dictionary<string, MemberDeclarationSyntax> specialTypes = new(StringComparer.Ordinal);
-
-            /// <summary>
-            /// The set of types that are or have been generated so we don't stack overflow for self-referencing types.
-            /// </summary>
-            private Dictionary<TypeDefinitionHandle, Exception?> typesGenerating = new();
-
-            /// <summary>
-            /// The set of methods that are or have been generated.
-            /// </summary>
-            private Dictionary<MethodDefinitionHandle, Exception?> methodsGenerating = new();
-
-            /// <summary>
-            /// A collection of the names of special types we are or have generated.
-            /// </summary>
-            private Dictionary<string, Exception?> specialTypesGenerating = new(StringComparer.Ordinal);
-
-            private Dictionary<string, TypeSyntax?> releaseMethodsWithSafeHandleTypesGenerating = new();
-
-            private List<MethodDeclarationSyntax> inlineArrayIndexerExtensionsMembers = new();
-
-            private List<MethodDeclarationSyntax> comInterfaceFriendlyExtensionsMembers = new();
-
-            private bool generating;
-
-            internal GeneratedCode()
+            if (handleInfo.Handle.Kind == HandleKind.TypeDefinition)
             {
+                TypeDefinition typeDef = this.Reader.GetTypeDefinition((TypeDefinitionHandle)handleInfo.Handle);
+                return this.IsTypeDefStruct(typeDef);
             }
-
-            internal GeneratedCode(GeneratedCode parent)
+            else if (handleInfo.Handle.Kind == HandleKind.TypeReference)
             {
-                this.parent = parent;
-            }
-
-            internal IEnumerable<MemberDeclarationSyntax> GeneratedTypes => this.types.Values.Concat(this.specialTypes.Values).Concat(this.safeHandleTypes);
-
-            internal IEnumerable<MethodDeclarationSyntax> ComInterfaceExtensions => this.comInterfaceFriendlyExtensionsMembers;
-
-            internal IEnumerable<MethodDeclarationSyntax> InlineArrayIndexerExtensions => this.inlineArrayIndexerExtensionsMembers;
-
-            internal IEnumerable<FieldDeclarationSyntax> Fields => this.fieldsToSyntax.Values;
-
-            internal IEnumerable<IGrouping<string, MemberDeclarationSyntax>> MembersByModule
-            {
-                get
+                if (this.TryGetTypeDefHandle((TypeReferenceHandle)handleInfo.Handle, out TypeDefinitionHandle tdh))
                 {
-                    foreach (var item in this.modulesAndMembers)
+                    TypeDefinition typeDef = this.Reader.GetTypeDefinition(tdh);
+                    return this.IsTypeDefStruct(typeDef);
+                }
+                else if (this.SuperGenerator is object)
+                {
+                    TypeReference typeReference = this.Reader.GetTypeReference((TypeReferenceHandle)handleInfo.Handle);
+                    if (this.SuperGenerator.TryGetTargetGenerator(new QualifiedTypeReference(this, typeReference), out Generator? targetGenerator))
                     {
-                        yield return new Grouping<string, MemberDeclarationSyntax>(item.Key, item.Value);
-                    }
-                }
-            }
-
-            internal void AddSafeHandleType(ClassDeclarationSyntax safeHandleDeclaration)
-            {
-                this.ThrowIfNotGenerating();
-
-                this.safeHandleTypes.Add(safeHandleDeclaration);
-            }
-
-            internal void AddMemberToModule(string moduleName, MemberDeclarationSyntax member)
-            {
-                this.ThrowIfNotGenerating();
-
-                if (!this.modulesAndMembers.TryGetValue(moduleName, out var methodsList))
-                {
-                    this.modulesAndMembers.Add(moduleName, methodsList = new List<MemberDeclarationSyntax>());
-                }
-
-                methodsList.Add(member);
-            }
-
-            internal void AddMemberToModule(string moduleName, IEnumerable<MemberDeclarationSyntax> members)
-            {
-                this.ThrowIfNotGenerating();
-
-                if (!this.modulesAndMembers.TryGetValue(moduleName, out var methodsList))
-                {
-                    this.modulesAndMembers.Add(moduleName, methodsList = new List<MemberDeclarationSyntax>());
-                }
-
-                methodsList.AddRange(members);
-            }
-
-            internal void AddConstant(FieldDefinitionHandle fieldDefHandle, FieldDeclarationSyntax constantDeclaration)
-            {
-                this.ThrowIfNotGenerating();
-                this.fieldsToSyntax.Add(fieldDefHandle, constantDeclaration);
-            }
-
-            internal void AddInlineArrayIndexerExtension(MethodDeclarationSyntax inlineIndexer)
-            {
-                this.ThrowIfNotGenerating();
-
-                string thisParameter = inlineIndexer.ParameterList.Parameters[0].Type!.ToString();
-                if (!this.inlineArrayIndexerExtensionsMembers.Any(m => m.Identifier.ValueText == inlineIndexer.Identifier.ValueText && m.ParameterList.Parameters[0].Type!.ToString() == thisParameter))
-                {
-                    this.inlineArrayIndexerExtensionsMembers.Add(inlineIndexer);
-                }
-            }
-
-            internal void AddComInterfaceExtension(MethodDeclarationSyntax extension)
-            {
-                this.ThrowIfNotGenerating();
-                this.comInterfaceFriendlyExtensionsMembers.Add(extension);
-            }
-
-            internal void AddComInterfaceExtension(IEnumerable<MethodDeclarationSyntax> extension)
-            {
-                this.ThrowIfNotGenerating();
-                this.comInterfaceFriendlyExtensionsMembers.AddRange(extension);
-            }
-
-            internal void AddSpecialType(string specialName, MemberDeclarationSyntax specialDeclaration)
-            {
-                this.ThrowIfNotGenerating();
-                this.specialTypes.Add(specialName, specialDeclaration);
-            }
-
-            internal void AddInteropType(TypeDefinitionHandle typeDefinitionHandle, MemberDeclarationSyntax typeDeclaration)
-            {
-                this.ThrowIfNotGenerating();
-                this.types.Add(typeDefinitionHandle, typeDeclaration);
-            }
-
-            internal void GenerationTransaction(Action generator)
-            {
-                if (this.parent is null)
-                {
-                    throw new InvalidOperationException("Code generation should occur in a volatile instance.");
-                }
-
-                if (this.generating)
-                {
-                    // A transaction is already running. Just run the generator.
-                    generator();
-                    return;
-                }
-
-                try
-                {
-                    this.generating = true;
-                    generator();
-                    this.Commit(this.parent);
-                }
-                catch
-                {
-                    this.Commit(null);
-                    throw;
-                }
-                finally
-                {
-                    this.generating = false;
-                }
-            }
-
-            internal void GenerateMethod(MethodDefinitionHandle methodDefinitionHandle, Action generator)
-            {
-                this.ThrowIfNotGenerating();
-
-                if (this.methodsGenerating.TryGetValue(methodDefinitionHandle, out Exception? failure) || this.parent?.methodsGenerating.TryGetValue(methodDefinitionHandle, out failure) is true)
-                {
-                    if (failure is object)
-                    {
-                        throw new GenerationFailedException("This member already failed in generation previously.", failure);
-                    }
-
-                    return;
-                }
-
-                this.methodsGenerating.Add(methodDefinitionHandle, null);
-                try
-                {
-                    generator();
-                }
-                catch (Exception ex)
-                {
-                    this.methodsGenerating[methodDefinitionHandle] = ex;
-                    throw;
-                }
-            }
-
-            internal void GenerateSpecialType(string name, Action generator)
-            {
-                this.ThrowIfNotGenerating();
-
-                if (this.specialTypesGenerating.TryGetValue(name, out Exception? failure) || this.parent?.specialTypesGenerating.TryGetValue(name, out failure) is true)
-                {
-                    if (failure is object)
-                    {
-                        throw new GenerationFailedException("This type already failed in generation previously.", failure);
-                    }
-
-                    return;
-                }
-
-                this.specialTypesGenerating.Add(name, null);
-                try
-                {
-                    generator();
-                }
-                catch (Exception ex)
-                {
-                    this.specialTypesGenerating[name] = ex;
-                    throw;
-                }
-            }
-
-            internal void GenerateType(TypeDefinitionHandle typeDefinitionHandle, Action generator)
-            {
-                this.ThrowIfNotGenerating();
-
-                if (this.typesGenerating.TryGetValue(typeDefinitionHandle, out Exception? failure) || this.parent?.typesGenerating.TryGetValue(typeDefinitionHandle, out failure) is true)
-                {
-                    if (failure is object)
-                    {
-                        throw new GenerationFailedException("This type already failed in generation previously.", failure);
-                    }
-
-                    return;
-                }
-
-                this.typesGenerating.Add(typeDefinitionHandle, null);
-                try
-                {
-                    generator();
-                }
-                catch (Exception ex)
-                {
-                    this.typesGenerating[typeDefinitionHandle] = ex;
-                    throw;
-                }
-            }
-
-            internal void GenerateConstant(FieldDefinitionHandle fieldDefinitionHandle, Action generator)
-            {
-                this.ThrowIfNotGenerating();
-
-                if (this.fieldsToSyntax.ContainsKey(fieldDefinitionHandle) || this.parent?.fieldsToSyntax.ContainsKey(fieldDefinitionHandle) is true)
-                {
-                    return;
-                }
-
-                generator();
-            }
-
-            internal bool TryGetSafeHandleForReleaseMethod(string releaseMethod, out TypeSyntax? safeHandleType)
-            {
-                return this.releaseMethodsWithSafeHandleTypesGenerating.TryGetValue(releaseMethod, out safeHandleType)
-                    || this.parent?.releaseMethodsWithSafeHandleTypesGenerating.TryGetValue(releaseMethod, out safeHandleType) is true;
-            }
-
-            internal void AddSafeHandleNameForReleaseMethod(string releaseMethod, TypeSyntax? safeHandleType)
-            {
-                this.ThrowIfNotGenerating();
-
-                this.releaseMethodsWithSafeHandleTypesGenerating.Add(releaseMethod, safeHandleType);
-            }
-
-            private static void Commit<TKey, TValue>(Dictionary<TKey, TValue> source, Dictionary<TKey, TValue>? target)
-            {
-                if (target is object)
-                {
-                    foreach (var item in source)
-                    {
-                        target.Add(item.Key, item.Value);
-                    }
-                }
-
-                source.Clear();
-            }
-
-            private static void Commit<T>(List<T> source, List<T>? target)
-            {
-                if (target is object)
-                {
-                    target.AddRange(source);
-                }
-
-                source.Clear();
-            }
-
-            private void Commit(GeneratedCode? parent)
-            {
-                foreach (var item in this.modulesAndMembers)
-                {
-                    if (parent is object)
-                    {
-                        if (!parent.modulesAndMembers.TryGetValue(item.Key, out var list))
+                        if (targetGenerator.TryGetTypeDefHandle(this.Reader.GetString(typeReference.Namespace), this.Reader.GetString(typeReference.Name), out TypeDefinitionHandle foreignTypeDefHandle))
                         {
-                            parent.modulesAndMembers.Add(item.Key, list = new());
+                            TypeDefinition foreignTypeDef = targetGenerator.Reader.GetTypeDefinition(foreignTypeDefHandle);
+                            return targetGenerator.IsTypeDefStruct(foreignTypeDef);
                         }
-
-                        list.AddRange(item.Value);
                     }
-
-                    item.Value.Clear();
-                }
-
-                Commit(this.types, parent?.types);
-                Commit(this.fieldsToSyntax, parent?.fieldsToSyntax);
-                Commit(this.safeHandleTypes, parent?.safeHandleTypes);
-                Commit(this.specialTypes, parent?.specialTypes);
-                Commit(this.typesGenerating, parent?.typesGenerating);
-                Commit(this.methodsGenerating, parent?.methodsGenerating);
-                Commit(this.specialTypesGenerating, parent?.specialTypesGenerating);
-                Commit(this.releaseMethodsWithSafeHandleTypesGenerating, parent?.releaseMethodsWithSafeHandleTypesGenerating);
-                Commit(this.inlineArrayIndexerExtensionsMembers, parent?.inlineArrayIndexerExtensionsMembers);
-                Commit(this.comInterfaceFriendlyExtensionsMembers, parent?.comInterfaceFriendlyExtensionsMembers);
-            }
-
-            private void ThrowIfNotGenerating()
-            {
-                if (!this.generating)
-                {
-                    throw new InvalidOperationException("Generating code must take place within a recognized top-level call.");
                 }
             }
+        }
+        else if (SpecialTypeDefNames.Contains(null!/*TODO*/))
+        {
+            return true;
+        }
 
-            private class Grouping<TKey, TElement> : IGrouping<TKey, TElement>
+        return false;
+    }
+
+    private bool IsDelegateReference(TypeHandleInfo typeHandleInfo, out TypeDefinition delegateTypeDef)
+    {
+        if (typeHandleInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo handleInfo })
+        {
+            return this.IsDelegateReference(handleInfo, out delegateTypeDef);
+        }
+        else if (typeHandleInfo is HandleTypeHandleInfo handleInfo1)
+        {
+            return this.IsDelegateReference(handleInfo1, out delegateTypeDef);
+        }
+
+        delegateTypeDef = default;
+        return false;
+    }
+
+    private bool IsDelegateReference(HandleTypeHandleInfo typeHandleInfo, out TypeDefinition delegateTypeDef)
+    {
+        if (typeHandleInfo.Handle.Kind == HandleKind.TypeDefinition)
+        {
+            var tdh = (TypeDefinitionHandle)typeHandleInfo.Handle;
+            delegateTypeDef = this.Reader.GetTypeDefinition(tdh);
+            return this.IsDelegate(delegateTypeDef);
+        }
+
+        if (typeHandleInfo.Handle.Kind == HandleKind.TypeReference)
+        {
+            var trh = (TypeReferenceHandle)typeHandleInfo.Handle;
+            if (this.TryGetTypeDefHandle(trh, out TypeDefinitionHandle tdh))
             {
-                private readonly IEnumerable<TElement> values;
-
-                internal Grouping(TKey key, IEnumerable<TElement> values)
-                {
-                    this.Key = key;
-                    this.values = values;
-                }
-
-                public TKey Key { get; }
-
-                public IEnumerator<TElement> GetEnumerator() => this.values.GetEnumerator();
-
-                System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => this.GetEnumerator();
+                delegateTypeDef = this.Reader.GetTypeDefinition(tdh);
+                return this.IsDelegate(delegateTypeDef);
             }
         }
 
-        private class WhitespaceRewriter : CSharpSyntaxRewriter
+        delegateTypeDef = default;
+        return false;
+    }
+
+    private bool IsManagedType(TypeDefinitionHandle typeDefinitionHandle)
+    {
+        var visitedTypes = new HashSet<TypeDefinitionHandle>();
+        return Helper(typeDefinitionHandle)!.Value;
+
+        bool? Helper(TypeDefinitionHandle typeDefinitionHandle)
         {
-            private readonly List<SyntaxTrivia> indentationLevels = new List<SyntaxTrivia> { default };
-            private int indentationLevel;
-
-            internal WhitespaceRewriter()
-                : base(visitIntoStructuredTrivia: true)
+            if (!visitedTypes.Add(typeDefinitionHandle))
             {
+                // Avoid recursion. We just don't know the answer yet.
+                return null;
             }
 
-            private SyntaxTrivia IndentTrivia => this.indentationLevels[this.indentationLevel];
-
-            private SyntaxTrivia OuterIndentTrivia => this.indentationLevels[Math.Max(0, this.indentationLevel - 1)];
-
-            public override SyntaxNode? VisitNamespaceDeclaration(NamespaceDeclarationSyntax node)
+            TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefinitionHandle);
+            try
             {
-                node = node
-                    .WithNamespaceKeyword(node.NamespaceKeyword.WithLeadingTrivia(TriviaList(this.IndentTrivia)))
-                    .WithOpenBraceToken(node.OpenBraceToken.WithLeadingTrivia(TriviaList(this.IndentTrivia)))
-                    .WithCloseBraceToken(node.CloseBraceToken.WithLeadingTrivia(TriviaList(this.IndentTrivia)));
-                using var indent = new Indent(this);
-                SyntaxNode? result = base.VisitNamespaceDeclaration(node);
-                if (result is NamespaceDeclarationSyntax ns)
+                if ((typeDef.Attributes & TypeAttributes.Interface) == TypeAttributes.Interface)
                 {
-                    result = ns.WithMembers(AddSpacingBetweenMembers(ns.Members, ns.Usings.Count > 0));
+                    return this.options.AllowMarshaling && !this.IsNonCOMInterface(typeDef);
                 }
 
-                return result;
-            }
-
-            public override SyntaxNode? VisitStructDeclaration(StructDeclarationSyntax node)
-            {
-                node = this.WithIndentingTrivia(node)
-                    .WithOpenBraceToken(node.OpenBraceToken.WithLeadingTrivia(TriviaList(this.IndentTrivia)))
-                    .WithCloseBraceToken(node.CloseBraceToken.WithLeadingTrivia(TriviaList(this.IndentTrivia)));
-                using var indent = new Indent(this);
-                SyntaxNode? result = base.VisitStructDeclaration(node);
-                if (result is StructDeclarationSyntax s)
+                this.GetBaseTypeInfo(typeDef, out StringHandle baseName, out StringHandle baseNamespace);
+                if (this.Reader.StringComparer.Equals(baseName, nameof(ValueType)) && this.Reader.StringComparer.Equals(baseNamespace, nameof(System)))
                 {
-                    result = s.WithMembers(AddSpacingBetweenMembers(s.Members));
-                }
-
-                return result;
-            }
-
-            public override SyntaxNode? VisitClassDeclaration(ClassDeclarationSyntax node)
-            {
-                node = this.WithIndentingTrivia(node)
-                    .WithOpenBraceToken(node.OpenBraceToken.WithLeadingTrivia(TriviaList(this.IndentTrivia)))
-                    .WithCloseBraceToken(node.CloseBraceToken.WithLeadingTrivia(TriviaList(this.IndentTrivia)));
-                using var indent = new Indent(this);
-                SyntaxNode? result = base.VisitClassDeclaration(node);
-                if (result is ClassDeclarationSyntax c)
-                {
-                    result = c.WithMembers(AddSpacingBetweenMembers(c.Members));
-                }
-
-                return result;
-            }
-
-            public override SyntaxNode? VisitEnumDeclaration(EnumDeclarationSyntax node)
-            {
-                node = this.WithIndentingTrivia(node)
-                    .WithOpenBraceToken(node.OpenBraceToken.WithLeadingTrivia(TriviaList(this.IndentTrivia)))
-                    .WithCloseBraceToken(node.CloseBraceToken.WithLeadingTrivia(TriviaList(this.IndentTrivia)));
-                using var indent = new Indent(this);
-                return base.VisitEnumDeclaration(node);
-            }
-
-            public override SyntaxNode? VisitUsingDirective(UsingDirectiveSyntax node)
-            {
-                return base.VisitUsingDirective(node.WithLeadingTrivia(this.IndentTrivia));
-            }
-
-            public override SyntaxNode? VisitBlock(BlockSyntax node)
-            {
-                SyntaxTriviaList leadingTrivia;
-                if (node.Parent is FixedStatementSyntax or AccessorDeclarationSyntax or TryStatementSyntax or FinallyClauseSyntax)
-                {
-                    leadingTrivia = TriviaList(this.IndentTrivia);
-                }
-                else
-                {
-                    leadingTrivia = TriviaList(LineFeed).Add(this.IndentTrivia);
-                }
-
-                node = node
-                    .WithOpenBraceToken(Token(leadingTrivia, SyntaxKind.OpenBraceToken, TriviaList(LineFeed)))
-                    .WithCloseBraceToken(Token(TriviaList(this.IndentTrivia), SyntaxKind.CloseBraceToken, TriviaList(LineFeed)));
-                using var indent = new Indent(this);
-                return base.VisitBlock(node);
-            }
-
-            public override SyntaxNode? VisitBaseList(BaseListSyntax node)
-            {
-                if (node.Parent is EnumDeclarationSyntax)
-                {
-                    return base.VisitBaseList(node);
-                }
-                else
-                {
-                    return base.VisitBaseList(this.WithIndentingTrivia(node));
-                }
-            }
-
-            public override SyntaxNode? VisitAttributeList(AttributeListSyntax node)
-            {
-                if (node.Parent is ParameterSyntax)
-                {
-                    return base.VisitAttributeList(node.WithCloseBracketToken(TokenWithSpace(SyntaxKind.CloseBracketToken)));
-                }
-                else if (node.Parent is BaseTypeDeclarationSyntax)
-                {
-                    return base.VisitAttributeList(this.WithOuterIndentingTrivia(node));
-                }
-                else
-                {
-                    return base.VisitAttributeList(this.WithIndentingTrivia(node));
-                }
-            }
-
-            public override SyntaxNode? VisitMethodDeclaration(MethodDeclarationSyntax node) => base.VisitMethodDeclaration(this.WithIndentingTrivia(node));
-
-            public override SyntaxNode? VisitConstructorDeclaration(ConstructorDeclarationSyntax node) => base.VisitConstructorDeclaration(this.WithIndentingTrivia(node));
-
-            public override SyntaxNode? VisitOperatorDeclaration(OperatorDeclarationSyntax node) => base.VisitOperatorDeclaration(this.WithIndentingTrivia(node));
-
-            public override SyntaxNode? VisitConversionOperatorDeclaration(ConversionOperatorDeclarationSyntax node) => base.VisitConversionOperatorDeclaration(this.WithIndentingTrivia(node));
-
-            public override SyntaxNode? VisitDelegateDeclaration(DelegateDeclarationSyntax node) => base.VisitDelegateDeclaration(this.WithIndentingTrivia(node));
-
-            public override SyntaxNode? VisitFieldDeclaration(FieldDeclarationSyntax node) => base.VisitFieldDeclaration(this.WithIndentingTrivia(node));
-
-            public override SyntaxNode? VisitEnumMemberDeclaration(EnumMemberDeclarationSyntax node) => base.VisitEnumMemberDeclaration(this.WithIndentingTrivia(node));
-
-            public override SyntaxNode? VisitPropertyDeclaration(PropertyDeclarationSyntax node) => base.VisitPropertyDeclaration(this.WithIndentingTrivia(node));
-
-            public override SyntaxNode? VisitIndexerDeclaration(IndexerDeclarationSyntax node) => base.VisitIndexerDeclaration(this.WithIndentingTrivia(node));
-
-            public override SyntaxNode? VisitAccessorList(AccessorListSyntax node)
-            {
-                node = node
-                    .WithOpenBraceToken(Token(TriviaList(this.IndentTrivia), SyntaxKind.OpenBraceToken, TriviaList(LineFeed)))
-                    .WithCloseBraceToken(Token(TriviaList(this.IndentTrivia), SyntaxKind.CloseBraceToken, TriviaList(LineFeed)));
-                using var indent = new Indent(this);
-                return base.VisitAccessorList(node);
-            }
-
-            public override SyntaxNode? VisitAccessorDeclaration(AccessorDeclarationSyntax node) => base.VisitAccessorDeclaration(this.WithIndentingTrivia(node));
-
-            public override SyntaxNode? VisitLocalDeclarationStatement(LocalDeclarationStatementSyntax node) => base.VisitLocalDeclarationStatement(this.WithIndentingTrivia(node));
-
-            public override SyntaxNode? VisitExpressionStatement(ExpressionStatementSyntax node) => base.VisitExpressionStatement(this.WithIndentingTrivia(node));
-
-            public override SyntaxNode? VisitTryStatement(TryStatementSyntax node) => base.VisitTryStatement(this.WithIndentingTrivia(node));
-
-            public override SyntaxNode? VisitFinallyClause(FinallyClauseSyntax node) => base.VisitFinallyClause(this.WithIndentingTrivia(node));
-
-            public override SyntaxNode? VisitIfStatement(IfStatementSyntax node)
-            {
-                node = this.WithIndentingTrivia(node);
-                if (node.Statement is BlockSyntax)
-                {
-                    return base.VisitIfStatement(node);
-                }
-                else
-                {
-                    using var indent = new Indent(this);
-                    return base.VisitIfStatement(node);
-                }
-            }
-
-            public override SyntaxNode? VisitWhileStatement(WhileStatementSyntax node)
-            {
-                node = this.WithIndentingTrivia(node);
-                if (node.Statement is BlockSyntax)
-                {
-                    return base.VisitWhileStatement(node);
-                }
-                else
-                {
-                    using var indent = new Indent(this);
-                    return base.VisitWhileStatement(node);
-                }
-            }
-
-            public override SyntaxNode? VisitElseClause(ElseClauseSyntax node)
-            {
-                node = this.WithIndentingTrivia(node);
-                if (node.Statement is BlockSyntax)
-                {
-                    return base.VisitElseClause(node);
-                }
-                else
-                {
-                    using var indent = new Indent(this);
-                    return base.VisitElseClause(node);
-                }
-            }
-
-            public override SyntaxNode? VisitFixedStatement(FixedStatementSyntax node)
-            {
-                node = this.WithIndentingTrivia(node);
-                if (node.Statement is BlockSyntax)
-                {
-                    return base.VisitFixedStatement(node);
-                }
-                else
-                {
-                    using var indent = new Indent(this);
-                    return base.VisitFixedStatement(node);
-                }
-            }
-
-            public override SyntaxNode? VisitReturnStatement(ReturnStatementSyntax node) => base.VisitReturnStatement(node.WithLeadingTrivia(this.IndentTrivia));
-
-            public override SyntaxToken VisitToken(SyntaxToken token)
-            {
-                if (token.IsKind(SyntaxKind.CommaToken) && token.Parent is ParameterListSyntax or AttributeArgumentListSyntax or ArgumentListSyntax)
-                {
-                    return TokenWithSpace(SyntaxKind.CommaToken);
-                }
-
-                return base.VisitToken(token);
-            }
-
-            public override SyntaxTriviaList VisitList(SyntaxTriviaList list)
-            {
-#if DEBUG && false // Nodes that contain any annotations at all cause a lot of lock contention that slows us down. Consider removing it all and enforcing (part of it) with this code
-                if (list.Any() && list[0].IsEquivalentTo(SyntaxFactory.ElasticMarker))
-                {
-                    throw new GenerationFailedException("Elastic trivia got by us.");
-                }
-#endif
-
-                string? indent = null;
-                for (int i = list.Count - 1; i >= 0; i--)
-                {
-                    if (list[i].GetStructure() is DocumentationCommentTriviaSyntax trivia)
+                    if (this.IsTypeDefStruct(typeDef))
                     {
-                        indent ??= list[i].Token.Parent is BaseTypeDeclarationSyntax ? this.OuterIndentTrivia.ToString() : this.IndentTrivia.ToString();
-                        var comment = new StringBuilder(trivia.Content.ToFullString());
-                        comment.Insert(0, indent);
-                        comment.Replace("\n", "\n" + indent);
-                        comment.Length -= indent.Length; // Remove the extra indent after the last newline.
-                        list = list.RemoveAt(i).InsertRange(i, ParseLeadingTrivia(comment.ToString()));
-                    }
-                }
-
-                return list; // do not recurse into trivia
-            }
-
-            private static SyntaxList<MemberDeclarationSyntax> AddSpacingBetweenMembers(SyntaxList<MemberDeclarationSyntax> members, bool insertLineAboveFirstMember = false)
-            {
-                for (int i = members.Count - 1; i > 0; i--)
-                {
-                    if (members[i] is
-                        ClassDeclarationSyntax or
-                        StructDeclarationSyntax or
-                        NamespaceDeclarationSyntax or
-                        EnumDeclarationSyntax or
-                        MethodDeclarationSyntax or
-                        IndexerDeclarationSyntax or
-                        PropertyDeclarationSyntax)
-                    {
-                        members = members.Replace(members[i], members[i].WithLeadingTrivia(members[i].GetLeadingTrivia().Insert(0, LineFeed)));
-                    }
-                }
-
-                if (insertLineAboveFirstMember && members.Count > 0)
-                {
-                    members = members.Replace(members[0], members[0].WithLeadingTrivia(members[0].GetLeadingTrivia().Insert(0, LineFeed)));
-                }
-
-                return members;
-            }
-
-            private static TSyntax WithIndentingTrivia<TSyntax>(TSyntax node, SyntaxTrivia indentTrivia)
-                where TSyntax : SyntaxNode
-            {
-                if (node is MemberDeclarationSyntax memberDeclaration)
-                {
-                    SyntaxToken firstToken = GetFirstToken(memberDeclaration);
-                    return node.ReplaceToken(firstToken, firstToken.WithLeadingTrivia(firstToken.HasLeadingTrivia ? firstToken.LeadingTrivia.Add(indentTrivia) : TriviaList(indentTrivia)));
-                }
-
-                // Take care to preserve xml doc comments, pragmas, etc.
-                return node.WithLeadingTrivia(node.HasLeadingTrivia ? node.GetLeadingTrivia().Add(indentTrivia) : TriviaList(indentTrivia));
-
-                static SyntaxToken GetFirstToken(MemberDeclarationSyntax memberDeclaration)
-                {
-                    if (!memberDeclaration.AttributeLists.Any())
-                    {
-                        return memberDeclaration.GetFirstToken();
-                    }
-                    else if (memberDeclaration.Modifiers.Any())
-                    {
-                        return memberDeclaration.Modifiers[0];
+                        return false;
                     }
                     else
                     {
-                        return memberDeclaration.GetFirstToken();
+                        foreach (FieldDefinitionHandle fieldHandle in typeDef.GetFields())
+                        {
+                            FieldDefinition fieldDef = this.Reader.GetFieldDefinition(fieldHandle);
+                            try
+                            {
+                                TypeHandleInfo elementType = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null);
+                                while (elementType is ITypeHandleContainer container)
+                                {
+                                    elementType = container.ElementType;
+                                }
+
+                                if (elementType is PrimitiveTypeHandleInfo)
+                                {
+                                    // These are never managed.
+                                    continue;
+                                }
+                                else if (elementType is HandleTypeHandleInfo { Handle: { Kind: HandleKind.TypeDefinition } fieldTypeDefHandle })
+                                {
+                                    if (Helper((TypeDefinitionHandle)fieldTypeDefHandle) is true)
+                                    {
+                                        return true;
+                                    }
+                                }
+                                else if (elementType is HandleTypeHandleInfo { Handle: { Kind: HandleKind.TypeReference } fieldTypeRefHandle })
+                                {
+                                    if (this.TryGetTypeDefHandle((TypeReferenceHandle)fieldTypeRefHandle, out TypeDefinitionHandle tdr) && Helper(tdr) is true)
+                                    {
+                                        return true;
+                                    }
+                                }
+                                else
+                                {
+                                    throw new GenerationFailedException("Unrecognized type.");
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                throw new GenerationFailedException($"Unable to ascertain whether the {this.Reader.GetString(fieldDef.Name)} field represents a managed type.", ex);
+                            }
+                        }
+
+                        return false;
                     }
+                }
+                else if (this.Reader.StringComparer.Equals(baseName, nameof(Enum)) && this.Reader.StringComparer.Equals(baseNamespace, nameof(System)))
+                {
+                    return false;
+                }
+                else if (this.Reader.StringComparer.Equals(baseName, nameof(MulticastDelegate)) && this.Reader.StringComparer.Equals(baseNamespace, nameof(System)))
+                {
+                    // Delegates appear as unmanaged function pointers when using structs instead of COM interfaces.
+                    return this.options.AllowMarshaling;
+                }
+
+                throw new NotSupportedException();
+            }
+            catch (Exception ex)
+            {
+                throw new GenerationFailedException($"Unable to determine if {new HandleTypeHandleInfo(this.Reader, typeDefinitionHandle).ToTypeSyntax(this.errorMessageTypeSettings, null)} is a managed type.", ex);
+            }
+        }
+    }
+
+    private UnmanagedType? GetUnmanagedType(BlobHandle blobHandle)
+    {
+        if (blobHandle.IsNil)
+        {
+            return null;
+        }
+
+        BlobReader br = this.Reader.GetBlobReader(blobHandle);
+        UnmanagedType unmgdType = (UnmanagedType)br.ReadByte();
+        return unmgdType;
+    }
+
+    private MarshalAsAttribute ToMarshalAsAttribute(BlobHandle blobHandle)
+    {
+        BlobReader br = this.Reader.GetBlobReader(blobHandle);
+        UnmanagedType unmgdType = (UnmanagedType)br.ReadByte();
+        MarshalAsAttribute ma = new MarshalAsAttribute(unmgdType);
+        switch (unmgdType)
+        {
+            case UnmanagedType.Interface:
+            case UnmanagedType.IUnknown:
+            case UnmanagedType.IDispatch:
+                if (br.RemainingBytes == 0)
+                {
+                    break;
+                }
+
+                ma.IidParameterIndex = br.ReadCompressedInteger();
+                break;
+
+            case UnmanagedType.ByValArray:
+                if (br.RemainingBytes == 0)
+                {
+                    break;
+                }
+
+                ma.SizeConst = br.ReadCompressedInteger();
+
+                if (br.RemainingBytes == 0)
+                {
+                    break;
+                }
+
+                ma.ArraySubType = (UnmanagedType)br.ReadCompressedInteger();
+
+                break;
+
+            case UnmanagedType.SafeArray:
+                if (br.RemainingBytes == 0)
+                {
+                    break;
+                }
+
+                ma.SafeArraySubType = (VarEnum)br.ReadCompressedInteger();
+
+                if (br.RemainingBytes == 0)
+                {
+                    break;
+                }
+                ////string udtName = br.ReadSerializedString();
+                ////ma.SafeArrayUserDefinedSubType = Helpers.LoadTypeFromAssemblyQualifiedName(udtName, module.GetRoAssembly(), ignoreCase: false, throwOnError: false);
+                break;
+
+            case UnmanagedType.LPArray:
+                if (br.RemainingBytes == 0)
+                {
+                    break;
+                }
+
+                ma.ArraySubType = (UnmanagedType)br.ReadCompressedInteger();
+
+                if (br.RemainingBytes == 0)
+                {
+                    break;
+                }
+
+                ma.SizeParamIndex = (short)br.ReadCompressedInteger();
+
+                if (br.RemainingBytes == 0)
+                {
+                    break;
+                }
+
+                ma.SizeConst = br.ReadCompressedInteger();
+                break;
+
+            case UnmanagedType.CustomMarshaler:
+                if (br.RemainingBytes == 0)
+                {
+                    break;
+                }
+
+                br.ReadSerializedString(); // Skip the typelib guid.
+
+                if (br.RemainingBytes == 0)
+                {
+                    break;
+                }
+
+                br.ReadSerializedString(); // Skip name of native type.
+
+                if (br.RemainingBytes == 0)
+                {
+                    break;
+                }
+
+                ma.MarshalType = br.ReadSerializedString();
+                ////ma.MarshalTypeRef = Helpers.LoadTypeFromAssemblyQualifiedName(ma.MarshalType, module.GetRoAssembly(), ignoreCase: false, throwOnError: false);
+
+                if (br.RemainingBytes == 0)
+                {
+                    break;
+                }
+
+                ma.MarshalCookie = br.ReadSerializedString();
+                break;
+
+            default:
+                break;
+        }
+
+        return ma;
+    }
+
+    private ExpressionSyntax ToExpressionSyntax(Constant constant)
+    {
+        var blobReader = this.Reader.GetBlobReader(constant.Value);
+        return constant.TypeCode switch
+        {
+            ConstantTypeCode.Boolean => blobReader.ReadBoolean() ? LiteralExpression(SyntaxKind.TrueLiteralExpression) : LiteralExpression(SyntaxKind.FalseLiteralExpression),
+            ConstantTypeCode.Char => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(blobReader.ReadChar())),
+            ConstantTypeCode.SByte => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(blobReader.ReadSByte())),
+            ConstantTypeCode.Byte => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(blobReader.ReadByte())),
+            ConstantTypeCode.Int16 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(blobReader.ReadInt16())),
+            ConstantTypeCode.UInt16 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(blobReader.ReadUInt16())),
+            ConstantTypeCode.Int32 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(blobReader.ReadInt32())),
+            ConstantTypeCode.UInt32 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(blobReader.ReadUInt32())),
+            ConstantTypeCode.Int64 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(blobReader.ReadInt64())),
+            ConstantTypeCode.UInt64 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(blobReader.ReadUInt64())),
+            ConstantTypeCode.Single => FloatExpression(blobReader.ReadSingle()),
+            ConstantTypeCode.Double => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(blobReader.ReadDouble())),
+            ConstantTypeCode.String => blobReader.ReadConstant(constant.TypeCode) is string value ? LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(value)) : LiteralExpression(SyntaxKind.NullLiteralExpression),
+            ConstantTypeCode.NullReference => LiteralExpression(SyntaxKind.NullLiteralExpression),
+            _ => throw new NotSupportedException("ConstantTypeCode not supported: " + constant.TypeCode),
+        };
+
+        static ExpressionSyntax FloatExpression(float value)
+        {
+            return
+                float.IsPositiveInfinity(value) ? MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, PredefinedType(Token(SyntaxKind.FloatKeyword)), IdentifierName(nameof(float.PositiveInfinity))) :
+                float.IsNegativeInfinity(value) ? MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, PredefinedType(Token(SyntaxKind.FloatKeyword)), IdentifierName(nameof(float.NegativeInfinity))) :
+                float.IsNaN(value) ? MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, PredefinedType(Token(SyntaxKind.FloatKeyword)), IdentifierName(nameof(float.NaN))) :
+                LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(value));
+        }
+    }
+
+    private ExpressionSyntax ToHexExpressionSyntax(Constant constant)
+    {
+        var blobReader = this.Reader.GetBlobReader(constant.Value);
+        var blobReader2 = this.Reader.GetBlobReader(constant.Value);
+        return constant.TypeCode switch
+        {
+            ConstantTypeCode.SByte => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadSByte()), blobReader2.ReadSByte())),
+            ConstantTypeCode.Byte => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadByte()), blobReader2.ReadByte())),
+            ConstantTypeCode.Int16 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadInt16()), blobReader2.ReadInt16())),
+            ConstantTypeCode.UInt16 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadUInt16()), blobReader2.ReadUInt16())),
+            ConstantTypeCode.Int32 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadInt32()), blobReader2.ReadInt32())),
+            ConstantTypeCode.UInt32 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadUInt32()), blobReader2.ReadUInt32())),
+            ConstantTypeCode.Int64 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadInt64()), blobReader2.ReadInt64())),
+            ConstantTypeCode.UInt64 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadUInt64()), blobReader2.ReadUInt64())),
+            _ => throw new NotSupportedException("ConstantTypeCode not supported: " + constant.TypeCode),
+        };
+    }
+
+    private IEnumerable<NamespaceMetadata> GetNamespacesToSearch(string? @namespace)
+    {
+        if (@namespace is object)
+        {
+            return this.MetadataIndex.MetadataByNamespace.TryGetValue(@namespace, out var metadata)
+                ? new[] { metadata }
+                : Array.Empty<NamespaceMetadata>();
+        }
+        else
+        {
+            return this.MetadataIndex.MetadataByNamespace.Values;
+        }
+    }
+
+    private class GeneratedCode
+    {
+        private readonly GeneratedCode? parent;
+
+        private Dictionary<string, List<MemberDeclarationSyntax>> modulesAndMembers = new Dictionary<string, List<MemberDeclarationSyntax>>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// The structs, enums, delegates and other supporting types for extern methods.
+        /// </summary>
+        private Dictionary<TypeDefinitionHandle, MemberDeclarationSyntax> types = new();
+
+        private Dictionary<FieldDefinitionHandle, FieldDeclarationSyntax> fieldsToSyntax = new();
+
+        private List<ClassDeclarationSyntax> safeHandleTypes = new();
+
+        private Dictionary<string, MemberDeclarationSyntax> specialTypes = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// The set of types that are or have been generated so we don't stack overflow for self-referencing types.
+        /// </summary>
+        private Dictionary<TypeDefinitionHandle, Exception?> typesGenerating = new();
+
+        /// <summary>
+        /// The set of methods that are or have been generated.
+        /// </summary>
+        private Dictionary<MethodDefinitionHandle, Exception?> methodsGenerating = new();
+
+        /// <summary>
+        /// A collection of the names of special types we are or have generated.
+        /// </summary>
+        private Dictionary<string, Exception?> specialTypesGenerating = new(StringComparer.Ordinal);
+
+        private Dictionary<string, TypeSyntax?> releaseMethodsWithSafeHandleTypesGenerating = new();
+
+        private List<MethodDeclarationSyntax> inlineArrayIndexerExtensionsMembers = new();
+
+        private List<MethodDeclarationSyntax> comInterfaceFriendlyExtensionsMembers = new();
+
+        private bool generating;
+
+        internal GeneratedCode()
+        {
+        }
+
+        internal GeneratedCode(GeneratedCode parent)
+        {
+            this.parent = parent;
+        }
+
+        internal IEnumerable<MemberDeclarationSyntax> GeneratedTypes => this.types.Values.Concat(this.specialTypes.Values).Concat(this.safeHandleTypes);
+
+        internal IEnumerable<MethodDeclarationSyntax> ComInterfaceExtensions => this.comInterfaceFriendlyExtensionsMembers;
+
+        internal IEnumerable<MethodDeclarationSyntax> InlineArrayIndexerExtensions => this.inlineArrayIndexerExtensionsMembers;
+
+        internal IEnumerable<FieldDeclarationSyntax> Fields => this.fieldsToSyntax.Values;
+
+        internal IEnumerable<IGrouping<string, MemberDeclarationSyntax>> MembersByModule
+        {
+            get
+            {
+                foreach (var item in this.modulesAndMembers)
+                {
+                    yield return new Grouping<string, MemberDeclarationSyntax>(item.Key, item.Value);
+                }
+            }
+        }
+
+        internal void AddSafeHandleType(ClassDeclarationSyntax safeHandleDeclaration)
+        {
+            this.ThrowIfNotGenerating();
+
+            this.safeHandleTypes.Add(safeHandleDeclaration);
+        }
+
+        internal void AddMemberToModule(string moduleName, MemberDeclarationSyntax member)
+        {
+            this.ThrowIfNotGenerating();
+
+            if (!this.modulesAndMembers.TryGetValue(moduleName, out var methodsList))
+            {
+                this.modulesAndMembers.Add(moduleName, methodsList = new List<MemberDeclarationSyntax>());
+            }
+
+            methodsList.Add(member);
+        }
+
+        internal void AddMemberToModule(string moduleName, IEnumerable<MemberDeclarationSyntax> members)
+        {
+            this.ThrowIfNotGenerating();
+
+            if (!this.modulesAndMembers.TryGetValue(moduleName, out var methodsList))
+            {
+                this.modulesAndMembers.Add(moduleName, methodsList = new List<MemberDeclarationSyntax>());
+            }
+
+            methodsList.AddRange(members);
+        }
+
+        internal void AddConstant(FieldDefinitionHandle fieldDefHandle, FieldDeclarationSyntax constantDeclaration)
+        {
+            this.ThrowIfNotGenerating();
+            this.fieldsToSyntax.Add(fieldDefHandle, constantDeclaration);
+        }
+
+        internal void AddInlineArrayIndexerExtension(MethodDeclarationSyntax inlineIndexer)
+        {
+            this.ThrowIfNotGenerating();
+
+            string thisParameter = inlineIndexer.ParameterList.Parameters[0].Type!.ToString();
+            if (!this.inlineArrayIndexerExtensionsMembers.Any(m => m.Identifier.ValueText == inlineIndexer.Identifier.ValueText && m.ParameterList.Parameters[0].Type!.ToString() == thisParameter))
+            {
+                this.inlineArrayIndexerExtensionsMembers.Add(inlineIndexer);
+            }
+        }
+
+        internal void AddComInterfaceExtension(MethodDeclarationSyntax extension)
+        {
+            this.ThrowIfNotGenerating();
+            this.comInterfaceFriendlyExtensionsMembers.Add(extension);
+        }
+
+        internal void AddComInterfaceExtension(IEnumerable<MethodDeclarationSyntax> extension)
+        {
+            this.ThrowIfNotGenerating();
+            this.comInterfaceFriendlyExtensionsMembers.AddRange(extension);
+        }
+
+        internal void AddSpecialType(string specialName, MemberDeclarationSyntax specialDeclaration)
+        {
+            this.ThrowIfNotGenerating();
+            this.specialTypes.Add(specialName, specialDeclaration);
+        }
+
+        internal void AddInteropType(TypeDefinitionHandle typeDefinitionHandle, MemberDeclarationSyntax typeDeclaration)
+        {
+            this.ThrowIfNotGenerating();
+            this.types.Add(typeDefinitionHandle, typeDeclaration);
+        }
+
+        internal void GenerationTransaction(Action generator)
+        {
+            if (this.parent is null)
+            {
+                throw new InvalidOperationException("Code generation should occur in a volatile instance.");
+            }
+
+            if (this.generating)
+            {
+                // A transaction is already running. Just run the generator.
+                generator();
+                return;
+            }
+
+            try
+            {
+                this.generating = true;
+                generator();
+                this.Commit(this.parent);
+            }
+            catch
+            {
+                this.Commit(null);
+                throw;
+            }
+            finally
+            {
+                this.generating = false;
+            }
+        }
+
+        internal void GenerateMethod(MethodDefinitionHandle methodDefinitionHandle, Action generator)
+        {
+            this.ThrowIfNotGenerating();
+
+            if (this.methodsGenerating.TryGetValue(methodDefinitionHandle, out Exception? failure) || this.parent?.methodsGenerating.TryGetValue(methodDefinitionHandle, out failure) is true)
+            {
+                if (failure is object)
+                {
+                    throw new GenerationFailedException("This member already failed in generation previously.", failure);
+                }
+
+                return;
+            }
+
+            this.methodsGenerating.Add(methodDefinitionHandle, null);
+            try
+            {
+                generator();
+            }
+            catch (Exception ex)
+            {
+                this.methodsGenerating[methodDefinitionHandle] = ex;
+                throw;
+            }
+        }
+
+        internal void GenerateSpecialType(string name, Action generator)
+        {
+            this.ThrowIfNotGenerating();
+
+            if (this.specialTypesGenerating.TryGetValue(name, out Exception? failure) || this.parent?.specialTypesGenerating.TryGetValue(name, out failure) is true)
+            {
+                if (failure is object)
+                {
+                    throw new GenerationFailedException("This type already failed in generation previously.", failure);
+                }
+
+                return;
+            }
+
+            this.specialTypesGenerating.Add(name, null);
+            try
+            {
+                generator();
+            }
+            catch (Exception ex)
+            {
+                this.specialTypesGenerating[name] = ex;
+                throw;
+            }
+        }
+
+        internal void GenerateType(TypeDefinitionHandle typeDefinitionHandle, Action generator)
+        {
+            this.ThrowIfNotGenerating();
+
+            if (this.typesGenerating.TryGetValue(typeDefinitionHandle, out Exception? failure) || this.parent?.typesGenerating.TryGetValue(typeDefinitionHandle, out failure) is true)
+            {
+                if (failure is object)
+                {
+                    throw new GenerationFailedException("This type already failed in generation previously.", failure);
+                }
+
+                return;
+            }
+
+            this.typesGenerating.Add(typeDefinitionHandle, null);
+            try
+            {
+                generator();
+            }
+            catch (Exception ex)
+            {
+                this.typesGenerating[typeDefinitionHandle] = ex;
+                throw;
+            }
+        }
+
+        internal void GenerateConstant(FieldDefinitionHandle fieldDefinitionHandle, Action generator)
+        {
+            this.ThrowIfNotGenerating();
+
+            if (this.fieldsToSyntax.ContainsKey(fieldDefinitionHandle) || this.parent?.fieldsToSyntax.ContainsKey(fieldDefinitionHandle) is true)
+            {
+                return;
+            }
+
+            generator();
+        }
+
+        internal bool TryGetSafeHandleForReleaseMethod(string releaseMethod, out TypeSyntax? safeHandleType)
+        {
+            return this.releaseMethodsWithSafeHandleTypesGenerating.TryGetValue(releaseMethod, out safeHandleType)
+                || this.parent?.releaseMethodsWithSafeHandleTypesGenerating.TryGetValue(releaseMethod, out safeHandleType) is true;
+        }
+
+        internal void AddSafeHandleNameForReleaseMethod(string releaseMethod, TypeSyntax? safeHandleType)
+        {
+            this.ThrowIfNotGenerating();
+
+            this.releaseMethodsWithSafeHandleTypesGenerating.Add(releaseMethod, safeHandleType);
+        }
+
+        private static void Commit<TKey, TValue>(Dictionary<TKey, TValue> source, Dictionary<TKey, TValue>? target)
+        {
+            if (target is object)
+            {
+                foreach (var item in source)
+                {
+                    target.Add(item.Key, item.Value);
                 }
             }
 
-            private TSyntax WithIndentingTrivia<TSyntax>(TSyntax node)
-                where TSyntax : SyntaxNode
+            source.Clear();
+        }
+
+        private static void Commit<T>(List<T> source, List<T>? target)
+        {
+            if (target is object)
             {
-                return WithIndentingTrivia(node, this.IndentTrivia);
+                target.AddRange(source);
             }
 
-            private TSyntax WithOuterIndentingTrivia<TSyntax>(TSyntax node)
-                where TSyntax : SyntaxNode
-            {
-                return WithIndentingTrivia(node, this.OuterIndentTrivia);
-            }
+            source.Clear();
+        }
 
-            private struct Indent : IDisposable
+        private void Commit(GeneratedCode? parent)
+        {
+            foreach (var item in this.modulesAndMembers)
             {
-                private readonly WhitespaceRewriter rewriter;
-
-                internal Indent(WhitespaceRewriter rewriter)
+                if (parent is object)
                 {
-                    this.rewriter = rewriter;
-                    rewriter.indentationLevel++;
-                    for (int i = rewriter.indentationLevels.Count; i <= rewriter.indentationLevel; i++)
+                    if (!parent.modulesAndMembers.TryGetValue(item.Key, out var list))
                     {
-                        rewriter.indentationLevels.Add(SyntaxTrivia(SyntaxKind.WhitespaceTrivia, new string('\t', i)));
+                        parent.modulesAndMembers.Add(item.Key, list = new());
                     }
+
+                    list.AddRange(item.Value);
                 }
 
-                public void Dispose()
+                item.Value.Clear();
+            }
+
+            Commit(this.types, parent?.types);
+            Commit(this.fieldsToSyntax, parent?.fieldsToSyntax);
+            Commit(this.safeHandleTypes, parent?.safeHandleTypes);
+            Commit(this.specialTypes, parent?.specialTypes);
+            Commit(this.typesGenerating, parent?.typesGenerating);
+            Commit(this.methodsGenerating, parent?.methodsGenerating);
+            Commit(this.specialTypesGenerating, parent?.specialTypesGenerating);
+            Commit(this.releaseMethodsWithSafeHandleTypesGenerating, parent?.releaseMethodsWithSafeHandleTypesGenerating);
+            Commit(this.inlineArrayIndexerExtensionsMembers, parent?.inlineArrayIndexerExtensionsMembers);
+            Commit(this.comInterfaceFriendlyExtensionsMembers, parent?.comInterfaceFriendlyExtensionsMembers);
+        }
+
+        private void ThrowIfNotGenerating()
+        {
+            if (!this.generating)
+            {
+                throw new InvalidOperationException("Generating code must take place within a recognized top-level call.");
+            }
+        }
+
+        private class Grouping<TKey, TElement> : IGrouping<TKey, TElement>
+        {
+            private readonly IEnumerable<TElement> values;
+
+            internal Grouping(TKey key, IEnumerable<TElement> values)
+            {
+                this.Key = key;
+                this.values = values;
+            }
+
+            public TKey Key { get; }
+
+            public IEnumerator<TElement> GetEnumerator() => this.values.GetEnumerator();
+
+            System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => this.GetEnumerator();
+        }
+    }
+
+    private class WhitespaceRewriter : CSharpSyntaxRewriter
+    {
+        private readonly List<SyntaxTrivia> indentationLevels = new List<SyntaxTrivia> { default };
+        private int indentationLevel;
+
+        internal WhitespaceRewriter()
+            : base(visitIntoStructuredTrivia: true)
+        {
+        }
+
+        private SyntaxTrivia IndentTrivia => this.indentationLevels[this.indentationLevel];
+
+        private SyntaxTrivia OuterIndentTrivia => this.indentationLevels[Math.Max(0, this.indentationLevel - 1)];
+
+        public override SyntaxNode? VisitNamespaceDeclaration(NamespaceDeclarationSyntax node)
+        {
+            node = node
+                .WithNamespaceKeyword(node.NamespaceKeyword.WithLeadingTrivia(TriviaList(this.IndentTrivia)))
+                .WithOpenBraceToken(node.OpenBraceToken.WithLeadingTrivia(TriviaList(this.IndentTrivia)))
+                .WithCloseBraceToken(node.CloseBraceToken.WithLeadingTrivia(TriviaList(this.IndentTrivia)));
+            using var indent = new Indent(this);
+            SyntaxNode? result = base.VisitNamespaceDeclaration(node);
+            if (result is NamespaceDeclarationSyntax ns)
+            {
+                result = ns.WithMembers(AddSpacingBetweenMembers(ns.Members, ns.Usings.Count > 0));
+            }
+
+            return result;
+        }
+
+        public override SyntaxNode? VisitStructDeclaration(StructDeclarationSyntax node)
+        {
+            node = this.WithIndentingTrivia(node)
+                .WithOpenBraceToken(node.OpenBraceToken.WithLeadingTrivia(TriviaList(this.IndentTrivia)))
+                .WithCloseBraceToken(node.CloseBraceToken.WithLeadingTrivia(TriviaList(this.IndentTrivia)));
+            using var indent = new Indent(this);
+            SyntaxNode? result = base.VisitStructDeclaration(node);
+            if (result is StructDeclarationSyntax s)
+            {
+                result = s.WithMembers(AddSpacingBetweenMembers(s.Members));
+            }
+
+            return result;
+        }
+
+        public override SyntaxNode? VisitClassDeclaration(ClassDeclarationSyntax node)
+        {
+            node = this.WithIndentingTrivia(node)
+                .WithOpenBraceToken(node.OpenBraceToken.WithLeadingTrivia(TriviaList(this.IndentTrivia)))
+                .WithCloseBraceToken(node.CloseBraceToken.WithLeadingTrivia(TriviaList(this.IndentTrivia)));
+            using var indent = new Indent(this);
+            SyntaxNode? result = base.VisitClassDeclaration(node);
+            if (result is ClassDeclarationSyntax c)
+            {
+                result = c.WithMembers(AddSpacingBetweenMembers(c.Members));
+            }
+
+            return result;
+        }
+
+        public override SyntaxNode? VisitEnumDeclaration(EnumDeclarationSyntax node)
+        {
+            node = this.WithIndentingTrivia(node)
+                .WithOpenBraceToken(node.OpenBraceToken.WithLeadingTrivia(TriviaList(this.IndentTrivia)))
+                .WithCloseBraceToken(node.CloseBraceToken.WithLeadingTrivia(TriviaList(this.IndentTrivia)));
+            using var indent = new Indent(this);
+            return base.VisitEnumDeclaration(node);
+        }
+
+        public override SyntaxNode? VisitUsingDirective(UsingDirectiveSyntax node)
+        {
+            return base.VisitUsingDirective(node.WithLeadingTrivia(this.IndentTrivia));
+        }
+
+        public override SyntaxNode? VisitBlock(BlockSyntax node)
+        {
+            SyntaxTriviaList leadingTrivia;
+            if (node.Parent is FixedStatementSyntax or AccessorDeclarationSyntax or TryStatementSyntax or FinallyClauseSyntax)
+            {
+                leadingTrivia = TriviaList(this.IndentTrivia);
+            }
+            else
+            {
+                leadingTrivia = TriviaList(LineFeed).Add(this.IndentTrivia);
+            }
+
+            node = node
+                .WithOpenBraceToken(Token(leadingTrivia, SyntaxKind.OpenBraceToken, TriviaList(LineFeed)))
+                .WithCloseBraceToken(Token(TriviaList(this.IndentTrivia), SyntaxKind.CloseBraceToken, TriviaList(LineFeed)));
+            using var indent = new Indent(this);
+            return base.VisitBlock(node);
+        }
+
+        public override SyntaxNode? VisitBaseList(BaseListSyntax node)
+        {
+            if (node.Parent is EnumDeclarationSyntax)
+            {
+                return base.VisitBaseList(node);
+            }
+            else
+            {
+                return base.VisitBaseList(this.WithIndentingTrivia(node));
+            }
+        }
+
+        public override SyntaxNode? VisitAttributeList(AttributeListSyntax node)
+        {
+            if (node.Parent is ParameterSyntax)
+            {
+                return base.VisitAttributeList(node.WithCloseBracketToken(TokenWithSpace(SyntaxKind.CloseBracketToken)));
+            }
+            else if (node.Parent is BaseTypeDeclarationSyntax)
+            {
+                return base.VisitAttributeList(this.WithOuterIndentingTrivia(node));
+            }
+            else
+            {
+                return base.VisitAttributeList(this.WithIndentingTrivia(node));
+            }
+        }
+
+        public override SyntaxNode? VisitMethodDeclaration(MethodDeclarationSyntax node) => base.VisitMethodDeclaration(this.WithIndentingTrivia(node));
+
+        public override SyntaxNode? VisitConstructorDeclaration(ConstructorDeclarationSyntax node) => base.VisitConstructorDeclaration(this.WithIndentingTrivia(node));
+
+        public override SyntaxNode? VisitOperatorDeclaration(OperatorDeclarationSyntax node) => base.VisitOperatorDeclaration(this.WithIndentingTrivia(node));
+
+        public override SyntaxNode? VisitConversionOperatorDeclaration(ConversionOperatorDeclarationSyntax node) => base.VisitConversionOperatorDeclaration(this.WithIndentingTrivia(node));
+
+        public override SyntaxNode? VisitDelegateDeclaration(DelegateDeclarationSyntax node) => base.VisitDelegateDeclaration(this.WithIndentingTrivia(node));
+
+        public override SyntaxNode? VisitFieldDeclaration(FieldDeclarationSyntax node) => base.VisitFieldDeclaration(this.WithIndentingTrivia(node));
+
+        public override SyntaxNode? VisitEnumMemberDeclaration(EnumMemberDeclarationSyntax node) => base.VisitEnumMemberDeclaration(this.WithIndentingTrivia(node));
+
+        public override SyntaxNode? VisitPropertyDeclaration(PropertyDeclarationSyntax node) => base.VisitPropertyDeclaration(this.WithIndentingTrivia(node));
+
+        public override SyntaxNode? VisitIndexerDeclaration(IndexerDeclarationSyntax node) => base.VisitIndexerDeclaration(this.WithIndentingTrivia(node));
+
+        public override SyntaxNode? VisitAccessorList(AccessorListSyntax node)
+        {
+            node = node
+                .WithOpenBraceToken(Token(TriviaList(this.IndentTrivia), SyntaxKind.OpenBraceToken, TriviaList(LineFeed)))
+                .WithCloseBraceToken(Token(TriviaList(this.IndentTrivia), SyntaxKind.CloseBraceToken, TriviaList(LineFeed)));
+            using var indent = new Indent(this);
+            return base.VisitAccessorList(node);
+        }
+
+        public override SyntaxNode? VisitAccessorDeclaration(AccessorDeclarationSyntax node) => base.VisitAccessorDeclaration(this.WithIndentingTrivia(node));
+
+        public override SyntaxNode? VisitLocalDeclarationStatement(LocalDeclarationStatementSyntax node) => base.VisitLocalDeclarationStatement(this.WithIndentingTrivia(node));
+
+        public override SyntaxNode? VisitExpressionStatement(ExpressionStatementSyntax node) => base.VisitExpressionStatement(this.WithIndentingTrivia(node));
+
+        public override SyntaxNode? VisitTryStatement(TryStatementSyntax node) => base.VisitTryStatement(this.WithIndentingTrivia(node));
+
+        public override SyntaxNode? VisitFinallyClause(FinallyClauseSyntax node) => base.VisitFinallyClause(this.WithIndentingTrivia(node));
+
+        public override SyntaxNode? VisitIfStatement(IfStatementSyntax node)
+        {
+            node = this.WithIndentingTrivia(node);
+            if (node.Statement is BlockSyntax)
+            {
+                return base.VisitIfStatement(node);
+            }
+            else
+            {
+                using var indent = new Indent(this);
+                return base.VisitIfStatement(node);
+            }
+        }
+
+        public override SyntaxNode? VisitWhileStatement(WhileStatementSyntax node)
+        {
+            node = this.WithIndentingTrivia(node);
+            if (node.Statement is BlockSyntax)
+            {
+                return base.VisitWhileStatement(node);
+            }
+            else
+            {
+                using var indent = new Indent(this);
+                return base.VisitWhileStatement(node);
+            }
+        }
+
+        public override SyntaxNode? VisitElseClause(ElseClauseSyntax node)
+        {
+            node = this.WithIndentingTrivia(node);
+            if (node.Statement is BlockSyntax)
+            {
+                return base.VisitElseClause(node);
+            }
+            else
+            {
+                using var indent = new Indent(this);
+                return base.VisitElseClause(node);
+            }
+        }
+
+        public override SyntaxNode? VisitFixedStatement(FixedStatementSyntax node)
+        {
+            node = this.WithIndentingTrivia(node);
+            if (node.Statement is BlockSyntax)
+            {
+                return base.VisitFixedStatement(node);
+            }
+            else
+            {
+                using var indent = new Indent(this);
+                return base.VisitFixedStatement(node);
+            }
+        }
+
+        public override SyntaxNode? VisitReturnStatement(ReturnStatementSyntax node) => base.VisitReturnStatement(node.WithLeadingTrivia(this.IndentTrivia));
+
+        public override SyntaxToken VisitToken(SyntaxToken token)
+        {
+            if (token.IsKind(SyntaxKind.CommaToken) && token.Parent is ParameterListSyntax or AttributeArgumentListSyntax or ArgumentListSyntax)
+            {
+                return TokenWithSpace(SyntaxKind.CommaToken);
+            }
+
+            return base.VisitToken(token);
+        }
+
+        public override SyntaxTriviaList VisitList(SyntaxTriviaList list)
+        {
+#if DEBUG && false // Nodes that contain any annotations at all cause a lot of lock contention that slows us down. Consider removing it all and enforcing (part of it) with this code
+            if (list.Any() && list[0].IsEquivalentTo(SyntaxFactory.ElasticMarker))
+            {
+                throw new GenerationFailedException("Elastic trivia got by us.");
+            }
+#endif
+
+            string? indent = null;
+            for (int i = list.Count - 1; i >= 0; i--)
+            {
+                if (list[i].GetStructure() is DocumentationCommentTriviaSyntax trivia)
                 {
-                    this.rewriter.indentationLevel--;
+                    indent ??= list[i].Token.Parent is BaseTypeDeclarationSyntax ? this.OuterIndentTrivia.ToString() : this.IndentTrivia.ToString();
+                    var comment = new StringBuilder(trivia.Content.ToFullString());
+                    comment.Insert(0, indent);
+                    comment.Replace("\n", "\n" + indent);
+                    comment.Length -= indent.Length; // Remove the extra indent after the last newline.
+                    list = list.RemoveAt(i).InsertRange(i, ParseLeadingTrivia(comment.ToString()));
                 }
+            }
+
+            return list; // do not recurse into trivia
+        }
+
+        private static SyntaxList<MemberDeclarationSyntax> AddSpacingBetweenMembers(SyntaxList<MemberDeclarationSyntax> members, bool insertLineAboveFirstMember = false)
+        {
+            for (int i = members.Count - 1; i > 0; i--)
+            {
+                if (members[i] is
+                    ClassDeclarationSyntax or
+                    StructDeclarationSyntax or
+                    NamespaceDeclarationSyntax or
+                    EnumDeclarationSyntax or
+                    MethodDeclarationSyntax or
+                    IndexerDeclarationSyntax or
+                    PropertyDeclarationSyntax)
+                {
+                    members = members.Replace(members[i], members[i].WithLeadingTrivia(members[i].GetLeadingTrivia().Insert(0, LineFeed)));
+                }
+            }
+
+            if (insertLineAboveFirstMember && members.Count > 0)
+            {
+                members = members.Replace(members[0], members[0].WithLeadingTrivia(members[0].GetLeadingTrivia().Insert(0, LineFeed)));
+            }
+
+            return members;
+        }
+
+        private static TSyntax WithIndentingTrivia<TSyntax>(TSyntax node, SyntaxTrivia indentTrivia)
+            where TSyntax : SyntaxNode
+        {
+            if (node is MemberDeclarationSyntax memberDeclaration)
+            {
+                SyntaxToken firstToken = GetFirstToken(memberDeclaration);
+                return node.ReplaceToken(firstToken, firstToken.WithLeadingTrivia(firstToken.HasLeadingTrivia ? firstToken.LeadingTrivia.Add(indentTrivia) : TriviaList(indentTrivia)));
+            }
+
+            // Take care to preserve xml doc comments, pragmas, etc.
+            return node.WithLeadingTrivia(node.HasLeadingTrivia ? node.GetLeadingTrivia().Add(indentTrivia) : TriviaList(indentTrivia));
+
+            static SyntaxToken GetFirstToken(MemberDeclarationSyntax memberDeclaration)
+            {
+                if (!memberDeclaration.AttributeLists.Any())
+                {
+                    return memberDeclaration.GetFirstToken();
+                }
+                else if (memberDeclaration.Modifiers.Any())
+                {
+                    return memberDeclaration.Modifiers[0];
+                }
+                else
+                {
+                    return memberDeclaration.GetFirstToken();
+                }
+            }
+        }
+
+        private TSyntax WithIndentingTrivia<TSyntax>(TSyntax node)
+            where TSyntax : SyntaxNode
+        {
+            return WithIndentingTrivia(node, this.IndentTrivia);
+        }
+
+        private TSyntax WithOuterIndentingTrivia<TSyntax>(TSyntax node)
+            where TSyntax : SyntaxNode
+        {
+            return WithIndentingTrivia(node, this.OuterIndentTrivia);
+        }
+
+        private struct Indent : IDisposable
+        {
+            private readonly WhitespaceRewriter rewriter;
+
+            internal Indent(WhitespaceRewriter rewriter)
+            {
+                this.rewriter = rewriter;
+                rewriter.indentationLevel++;
+                for (int i = rewriter.indentationLevels.Count; i <= rewriter.indentationLevel; i++)
+                {
+                    rewriter.indentationLevels.Add(SyntaxTrivia(SyntaxKind.WhitespaceTrivia, new string('\t', i)));
+                }
+            }
+
+            public void Dispose()
+            {
+                this.rewriter.indentationLevel--;
             }
         }
     }

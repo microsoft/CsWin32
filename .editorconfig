@@ -20,16 +20,17 @@ insert_final_newline = true
 trim_trailing_whitespace = true
 
 # Xml project files
-[*.{csproj,vbproj,vcxproj,vcxproj.filters,proj,projitems,shproj,runsettings}]
+[*.{csproj,vbproj,vcxproj,vcxproj.filters,proj,projitems,shproj,msbuildproj}]
 indent_size = 2
 
 # Xml config files
-[*.{props,targets,ruleset,config,nuspec,resx,vsixmanifest,vsct}]
+[*.{props,targets,ruleset,config,nuspec,resx,vsixmanifest,vsct,runsettings}]
 indent_size = 2
 
 # JSON files
 [*.json]
 indent_size = 2
+indent_style = space
 
 # Dotnet code style settings:
 [*.{cs,vb}]
@@ -128,7 +129,7 @@ csharp_indent_switch_labels = true
 csharp_indent_labels = flush_left
 
 # Prefer "var" everywhere
-csharp_style_var_for_built_in_types = true:suggestion
+csharp_style_var_for_built_in_types = false
 csharp_style_var_when_type_is_apparent = true:suggestion
 csharp_style_var_elsewhere = false:suggestion
 
@@ -160,8 +161,6 @@ csharp_new_line_before_members_in_anonymous_types = true
 # Blocks are allowed
 csharp_prefer_braces = true:silent
 
-[*.cs]
-
 # SA1130: Use lambda syntax
 dotnet_diagnostic.SA1130.severity = silent
 
@@ -170,6 +169,9 @@ dotnet_diagnostic.SA1649.severity = none  # Disabled because of https://github.c
 
 # IDE0005: Using directive is unnecessary.
 dotnet_diagnostic.IDE0005.severity = warning
+
+# IDE1006: Naming Styles - StyleCop handles these for us
+dotnet_diagnostic.IDE1006.severity = none
 
 [*.sln]
 indent_style = tab

@@ -20,6 +20,9 @@
     Per-machine requires elevation and will download and install all SDKs and runtimes to machine-wide locations so all applications can find it.
 .PARAMETER NoPrerequisites
     Skips the installation of prerequisite software (e.g. SDKs, tools).
+.PARAMETER NoNuGetCredProvider
+    Skips the installation of the NuGet credential provider. Useful in pipelines with the `NuGetAuthenticate` task, as a workaround for https://github.com/microsoft/artifacts-credprovider/issues/244.
+    This switch is ignored and installation is skipped when -NoPrerequisites is specified.
 .PARAMETER UpgradePrerequisites
     Takes time to install prerequisites even if they are already present in case they need to be upgraded.
     No effect if -NoPrerequisites is specified.
@@ -28,12 +31,14 @@
 .PARAMETER AccessToken
     An optional access token for authenticating to Azure Artifacts authenticated feeds.
 #>
-[CmdletBinding(SupportsShouldProcess=$true)]
+[CmdletBinding(SupportsShouldProcess = $true)]
 Param (
-    [ValidateSet('repo','user','machine')]
-    [string]$InstallLocality='user',
+    [ValidateSet('repo', 'user', 'machine')]
+    [string]$InstallLocality = 'user',
     [Parameter()]
     [switch]$NoPrerequisites,
+    [Parameter()]
+    [switch]$NoNuGetCredProvider,
     [Parameter()]
     [switch]$UpgradePrerequisites,
     [Parameter()]
@@ -43,9 +48,13 @@ Param (
 )
 
 $EnvVars = @{}
+$PrependPath = @()
 
 if (!$NoPrerequisites) {
-    & "$PSScriptRoot\tools\Install-NuGetCredProvider.ps1" -AccessToken $AccessToken -Force:$UpgradePrerequisites
+    if (!$NoNuGetCredProvider) {
+        & "$PSScriptRoot\tools\Install-NuGetCredProvider.ps1" -AccessToken $AccessToken -Force:$UpgradePrerequisites
+    }
+
     & "$PSScriptRoot\tools\Install-DotNetSdk.ps1" -InstallLocality $InstallLocality
     if ($LASTEXITCODE -eq 3010) {
         Exit 3010
@@ -59,8 +68,8 @@ if (!$NoPrerequisites) {
 }
 
 # Workaround nuget credential provider bug that causes very unreliable package restores on Azure Pipelines
-$env:NUGET_PLUGIN_HANDSHAKE_TIMEOUT_IN_SECONDS=20
-$env:NUGET_PLUGIN_REQUEST_TIMEOUT_IN_SECONDS=20
+$env:NUGET_PLUGIN_HANDSHAKE_TIMEOUT_IN_SECONDS = 20
+$env:NUGET_PLUGIN_REQUEST_TIMEOUT_IN_SECONDS = 20
 
 Push-Location $PSScriptRoot
 try {
@@ -74,7 +83,7 @@ try {
         }
     }
 
-    & "$PSScriptRoot/tools/Set-EnvVars.ps1" -Variables $EnvVars | Out-Null
+    & "$PSScriptRoot/tools/Set-EnvVars.ps1" -Variables $EnvVars -PrependPath $PrependPath | Out-Null
 }
 catch {
     Write-Error $error[0]

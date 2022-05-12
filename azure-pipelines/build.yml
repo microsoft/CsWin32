@@ -1,6 +1,9 @@
 parameters:
-  windowsPool: Hosted Windows 2019 with VS2019
-  includeMacOS:
+- name: windowsPool
+  type: object
+  default:
+    vmImage: windows-2022
+- name: includeMacOS
 
 jobs:
 - job: Windows
@@ -14,14 +17,14 @@ jobs:
 
   - template: install-dependencies.yml
 
-  - powershell: '& (./azure-pipelines/Get-nbgv.ps1) cloud'
+  - powershell: '& (./azure-pipelines/Get-nbgv.ps1) cloud -c'
     displayName: ⚙ Set build number
 
   - template: dotnet.yml
 
 - job: Linux
   pool:
-    vmImage: Ubuntu 18.04
+    vmImage: Ubuntu 20.04
   variables:
     TestFilter: "&WindowsOnly!=true"
     Platform: NonWindows
@@ -51,8 +54,7 @@ jobs:
   - Windows
   - Linux
   - macOS
-  pool:
-    vmImage: Ubuntu 18.04
+  pool: ${{ parameters.windowsPool }} # Use Windows agent because PublishSymbols task requires it (https://github.com/microsoft/azure-pipelines-tasks/issues/13821).
   condition: succeededOrFailed()
   steps:
   - checkout: self
@@ -60,6 +62,9 @@ jobs:
   - template: install-dependencies.yml
     parameters:
       initArgs: -NoRestore
+  - template: publish-symbols.yml
+    parameters:
+      includeMacOS: ${{ parameters.includeMacOS }}
   - template: publish-codecoverage.yml
     parameters:
       includeMacOS: ${{ parameters.includeMacOS }}

@@ -9,6 +9,8 @@
 *.user
 *.userosscache
 *.sln.docstates
+*.lutconfig
+launchSettings.json
 
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs

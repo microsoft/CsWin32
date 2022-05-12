@@ -1,392 +1,391 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-namespace Microsoft.Windows.CsWin32
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Text.Json;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.Text;
+
+namespace Microsoft.Windows.CsWin32;
+
+/// <summary>
+/// Generates the source code for the p/invoke methods and supporting types into some C# project.
+/// </summary>
+[Generator]
+public class SourceGenerator : ISourceGenerator
 {
-    using System;
-    using System.Collections.Generic;
-    using System.IO;
-    using System.Linq;
-    using System.Text;
-    using System.Text.Json;
-    using Microsoft.CodeAnalysis;
-    using Microsoft.CodeAnalysis.CSharp;
-    using Microsoft.CodeAnalysis.Text;
-
-    /// <summary>
-    /// Generates the source code for the p/invoke methods and supporting types into some C# project.
-    /// </summary>
-    [Generator]
-    public class SourceGenerator : ISourceGenerator
-    {
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
-        public static readonly DiagnosticDescriptor InternalError = new DiagnosticDescriptor(
-            "PInvoke000",
-            "CsWin32InternalError",
-            "An internal error occurred: {0}",
-            "Functionality",
-            DiagnosticSeverity.Error,
-            isEnabledByDefault: true);
+    public static readonly DiagnosticDescriptor InternalError = new DiagnosticDescriptor(
+        "PInvoke000",
+        "CsWin32InternalError",
+        "An internal error occurred: {0}",
+        "Functionality",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
 
-        public static readonly DiagnosticDescriptor NoMatchingMethodOrType = new DiagnosticDescriptor(
-            "PInvoke001",
-            "No matching method, type or constant found",
-            "Method, type or constant \"{0}\" not found.",
-            "Functionality",
-            DiagnosticSeverity.Warning,
-            isEnabledByDefault: true);
+    public static readonly DiagnosticDescriptor NoMatchingMethodOrType = new DiagnosticDescriptor(
+        "PInvoke001",
+        "No matching method, type or constant found",
+        "Method, type or constant \"{0}\" not found.",
+        "Functionality",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
 
-        public static readonly DiagnosticDescriptor NoMatchingMethodOrTypeWithSuggestions = new DiagnosticDescriptor(
-            "PInvoke001",
-            "No matching method, type or constant found",
-            "Method, type or constant \"{0}\" not found. Did you mean {1}?",
-            "Functionality",
-            DiagnosticSeverity.Warning,
-            isEnabledByDefault: true);
+    public static readonly DiagnosticDescriptor NoMatchingMethodOrTypeWithSuggestions = new DiagnosticDescriptor(
+        "PInvoke001",
+        "No matching method, type or constant found",
+        "Method, type or constant \"{0}\" not found. Did you mean {1}?",
+        "Functionality",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
 
-        public static readonly DiagnosticDescriptor NoMethodsForModule = new DiagnosticDescriptor(
-            "PInvoke001",
-            "No module found",
-            "No methods found under module \"{0}\".",
-            "Functionality",
-            DiagnosticSeverity.Warning,
-            isEnabledByDefault: true);
+    public static readonly DiagnosticDescriptor NoMethodsForModule = new DiagnosticDescriptor(
+        "PInvoke001",
+        "No module found",
+        "No methods found under module \"{0}\".",
+        "Functionality",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
 
-        public static readonly DiagnosticDescriptor UnsafeCodeRequired = new DiagnosticDescriptor(
-            "PInvoke002",
-            "AllowUnsafeCode",
-            "AllowUnsafeBlocks must be set to 'true' in the project file for many APIs. Compiler errors may result.",
-            "Functionality",
-            DiagnosticSeverity.Warning,
-            isEnabledByDefault: true,
-            description: "Many generated types or P/Invoke methods require use of pointers, so the receiving compilation must allow unsafe code.");
+    public static readonly DiagnosticDescriptor UnsafeCodeRequired = new DiagnosticDescriptor(
+        "PInvoke002",
+        "AllowUnsafeCode",
+        "AllowUnsafeBlocks must be set to 'true' in the project file for many APIs. Compiler errors may result.",
+        "Functionality",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "Many generated types or P/Invoke methods require use of pointers, so the receiving compilation must allow unsafe code.");
 
-        public static readonly DiagnosticDescriptor BannedApi = new DiagnosticDescriptor(
-            "PInvoke003",
-            "BannedAPI",
-            "This API will not be generated. {0}",
-            "Functionality",
-            DiagnosticSeverity.Warning,
-            isEnabledByDefault: true);
+    public static readonly DiagnosticDescriptor BannedApi = new DiagnosticDescriptor(
+        "PInvoke003",
+        "BannedAPI",
+        "This API will not be generated. {0}",
+        "Functionality",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
 
-        public static readonly DiagnosticDescriptor UseEnumValueDeclaringType = new DiagnosticDescriptor(
-            "PInvoke004",
-            "UseEnumDeclaringType",
-            "Use the name of the enum that declares this constant: {0}",
-            "Functionality",
-            DiagnosticSeverity.Warning,
-            isEnabledByDefault: true,
-            description: "Constants that are defined within enums should be generated by requesting the name of their declaring enum instead.");
+    public static readonly DiagnosticDescriptor UseEnumValueDeclaringType = new DiagnosticDescriptor(
+        "PInvoke004",
+        "UseEnumDeclaringType",
+        "Use the name of the enum that declares this constant: {0}",
+        "Functionality",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "Constants that are defined within enums should be generated by requesting the name of their declaring enum instead.");
 
-        public static readonly DiagnosticDescriptor CpuArchitectureIncompatibility = new DiagnosticDescriptor(
-            "PInvoke005",
-            "TargetSpecificCpuArchitecture",
-            "This API is only available when targeting a specific CPU architecture. AnyCPU cannot generate this API.",
-            "Functionality",
-            DiagnosticSeverity.Warning,
-            isEnabledByDefault: true);
+    public static readonly DiagnosticDescriptor CpuArchitectureIncompatibility = new DiagnosticDescriptor(
+        "PInvoke005",
+        "TargetSpecificCpuArchitecture",
+        "This API is only available when targeting a specific CPU architecture. AnyCPU cannot generate this API.",
+        "Functionality",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
 
-        public static readonly DiagnosticDescriptor DocParsingError = new DiagnosticDescriptor(
-            "PInvoke006",
-            "DocsParseError",
-            "An error occurred while reading docs file: \"{0}\": {1}",
-            "Configuration",
-            DiagnosticSeverity.Warning,
-            isEnabledByDefault: true);
+    public static readonly DiagnosticDescriptor DocParsingError = new DiagnosticDescriptor(
+        "PInvoke006",
+        "DocsParseError",
+        "An error occurred while reading docs file: \"{0}\": {1}",
+        "Configuration",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
 
-        public static readonly DiagnosticDescriptor AmbiguousMatchError = new DiagnosticDescriptor(
-            "PInvoke007",
-            "AmbiguousMatch",
-            "The API \"{0}\" is ambiguous.",
-            "Functionality",
-            DiagnosticSeverity.Error,
-            isEnabledByDefault: true);
+    public static readonly DiagnosticDescriptor AmbiguousMatchError = new DiagnosticDescriptor(
+        "PInvoke007",
+        "AmbiguousMatch",
+        "The API \"{0}\" is ambiguous.",
+        "Functionality",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
 
-        public static readonly DiagnosticDescriptor AmbiguousMatchErrorWithSuggestions = new DiagnosticDescriptor(
-            "PInvoke007",
-            "AmbiguousMatch",
-            "The API \"{0}\" is ambiguous. Please specify one of: {1}",
-            "Functionality",
-            DiagnosticSeverity.Error,
-            isEnabledByDefault: true);
+    public static readonly DiagnosticDescriptor AmbiguousMatchErrorWithSuggestions = new DiagnosticDescriptor(
+        "PInvoke007",
+        "AmbiguousMatch",
+        "The API \"{0}\" is ambiguous. Please specify one of: {1}",
+        "Functionality",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
 
-        public static readonly DiagnosticDescriptor OptionsParsingError = new DiagnosticDescriptor(
-            "PInvoke008",
-            "BadOptions",
-            "An error occurred while parsing \"{0}\": {1}",
-            "Configuration",
-            DiagnosticSeverity.Error,
-            isEnabledByDefault: true);
+    public static readonly DiagnosticDescriptor OptionsParsingError = new DiagnosticDescriptor(
+        "PInvoke008",
+        "BadOptions",
+        "An error occurred while parsing \"{0}\": {1}",
+        "Configuration",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
 #pragma warning restore CS1591 // Missing XML comment for publicly visible type or member
 
-        private const string NativeMethodsTxtAdditionalFileName = "NativeMethods.txt";
-        private const string NativeMethodsJsonAdditionalFileName = "NativeMethods.json";
+    private const string NativeMethodsTxtAdditionalFileName = "NativeMethods.txt";
+    private const string NativeMethodsJsonAdditionalFileName = "NativeMethods.json";
 
-        /// <inheritdoc/>
-        public void Initialize(GeneratorInitializationContext context)
+    /// <inheritdoc/>
+    public void Initialize(GeneratorInitializationContext context)
+    {
+    }
+
+    /// <inheritdoc/>
+    public void Execute(GeneratorExecutionContext context)
+    {
+        if (context.Compilation is not CSharpCompilation compilation)
         {
+            return;
         }
 
-        /// <inheritdoc/>
-        public void Execute(GeneratorExecutionContext context)
+        GeneratorOptions options;
+        AdditionalText? nativeMethodsJsonFile = context.AdditionalFiles
+            .FirstOrDefault(af => string.Equals(Path.GetFileName(af.Path), NativeMethodsJsonAdditionalFileName, StringComparison.OrdinalIgnoreCase));
+        if (nativeMethodsJsonFile is object)
         {
-            if (context.Compilation is not CSharpCompilation compilation)
-            {
-                return;
-            }
-
-            GeneratorOptions options;
-            AdditionalText? nativeMethodsJsonFile = context.AdditionalFiles
-                .FirstOrDefault(af => string.Equals(Path.GetFileName(af.Path), NativeMethodsJsonAdditionalFileName, StringComparison.OrdinalIgnoreCase));
-            if (nativeMethodsJsonFile is object)
-            {
-                string optionsJson = nativeMethodsJsonFile.GetText(context.CancellationToken)!.ToString();
-                try
-                {
-                    options = JsonSerializer.Deserialize<GeneratorOptions>(optionsJson, new JsonSerializerOptions
-                    {
-                        AllowTrailingCommas = true,
-                        ReadCommentHandling = JsonCommentHandling.Skip,
-                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                    });
-                }
-                catch (JsonException ex)
-                {
-                    context.ReportDiagnostic(Diagnostic.Create(OptionsParsingError, location: null, nativeMethodsJsonFile.Path, ex.Message));
-                    return;
-                }
-            }
-            else
-            {
-                options = new GeneratorOptions();
-            }
-
-            AdditionalText? nativeMethodsTxtFile = context.AdditionalFiles
-                .FirstOrDefault(af => string.Equals(Path.GetFileName(af.Path), NativeMethodsTxtAdditionalFileName, StringComparison.OrdinalIgnoreCase));
-            if (nativeMethodsTxtFile is null)
-            {
-                return;
-            }
-
-            var parseOptions = (CSharpParseOptions)context.ParseOptions;
-
-            if (!compilation.Options.AllowUnsafe)
-            {
-                context.ReportDiagnostic(Diagnostic.Create(UnsafeCodeRequired, location: null));
-            }
-
-            Docs? docs = ParseDocs(context);
-            IReadOnlyList<Generator> generators = CollectMetadataPaths(context).Select(path => new Generator(path, docs, options, compilation, parseOptions)).ToList();
+            string optionsJson = nativeMethodsJsonFile.GetText(context.CancellationToken)!.ToString();
             try
             {
-                SuperGenerator.Combine(generators);
-                SourceText? nativeMethodsTxt = nativeMethodsTxtFile.GetText(context.CancellationToken);
-                if (nativeMethodsTxt is null)
+                options = JsonSerializer.Deserialize<GeneratorOptions>(optionsJson, new JsonSerializerOptions
                 {
-                    return;
+                    AllowTrailingCommas = true,
+                    ReadCommentHandling = JsonCommentHandling.Skip,
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                });
+            }
+            catch (JsonException ex)
+            {
+                context.ReportDiagnostic(Diagnostic.Create(OptionsParsingError, location: null, nativeMethodsJsonFile.Path, ex.Message));
+                return;
+            }
+        }
+        else
+        {
+            options = new GeneratorOptions();
+        }
+
+        AdditionalText? nativeMethodsTxtFile = context.AdditionalFiles
+            .FirstOrDefault(af => string.Equals(Path.GetFileName(af.Path), NativeMethodsTxtAdditionalFileName, StringComparison.OrdinalIgnoreCase));
+        if (nativeMethodsTxtFile is null)
+        {
+            return;
+        }
+
+        var parseOptions = (CSharpParseOptions)context.ParseOptions;
+
+        if (!compilation.Options.AllowUnsafe)
+        {
+            context.ReportDiagnostic(Diagnostic.Create(UnsafeCodeRequired, location: null));
+        }
+
+        Docs? docs = ParseDocs(context);
+        IReadOnlyList<Generator> generators = CollectMetadataPaths(context).Select(path => new Generator(path, docs, options, compilation, parseOptions)).ToList();
+        try
+        {
+            SuperGenerator.Combine(generators);
+            SourceText? nativeMethodsTxt = nativeMethodsTxtFile.GetText(context.CancellationToken);
+            if (nativeMethodsTxt is null)
+            {
+                return;
+            }
+
+            foreach (TextLine line in nativeMethodsTxt.Lines)
+            {
+                context.CancellationToken.ThrowIfCancellationRequested();
+                string name = line.ToString();
+                if (string.IsNullOrWhiteSpace(name) || name.StartsWith("//", StringComparison.InvariantCulture))
+                {
+                    continue;
                 }
 
-                foreach (TextLine line in nativeMethodsTxt.Lines)
+                name = name.Trim();
+                var location = Location.Create(nativeMethodsTxtFile.Path, line.Span, nativeMethodsTxt.Lines.GetLinePositionSpan(line.Span));
+                try
                 {
-                    context.CancellationToken.ThrowIfCancellationRequested();
-                    string name = line.ToString();
-                    if (string.IsNullOrWhiteSpace(name) || name.StartsWith("//", StringComparison.InvariantCulture))
+                    if (Generator.GetBannedAPIs(options).TryGetValue(name, out string? reason))
                     {
+                        context.ReportDiagnostic(Diagnostic.Create(BannedApi, location, reason));
                         continue;
                     }
 
-                    name = name.Trim();
-                    var location = Location.Create(nativeMethodsTxtFile.Path, line.Span, nativeMethodsTxt.Lines.GetLinePositionSpan(line.Span));
-                    try
+                    if (name.EndsWith(".*", StringComparison.Ordinal))
                     {
-                        if (Generator.GetBannedAPIs(options).TryGetValue(name, out string? reason))
-                        {
-                            context.ReportDiagnostic(Diagnostic.Create(BannedApi, location, reason));
-                            continue;
-                        }
-
-                        if (name.EndsWith(".*", StringComparison.Ordinal))
-                        {
-                            var moduleName = name.Substring(0, name.Length - 2);
-                            int matches = 0;
-                            foreach (Generator generator in generators)
-                            {
-                                if (generator.TryGenerateAllExternMethods(moduleName, context.CancellationToken))
-                                {
-                                    matches++;
-                                }
-                            }
-
-                            switch (matches)
-                            {
-                                case 0:
-                                    context.ReportDiagnostic(Diagnostic.Create(NoMethodsForModule, location, moduleName));
-                                    break;
-                                case > 1:
-                                    context.ReportDiagnostic(Diagnostic.Create(AmbiguousMatchError, location, moduleName));
-                                    break;
-                            }
-
-                            continue;
-                        }
-
-                        List<string> matchingApis = new();
+                        var moduleName = name.Substring(0, name.Length - 2);
+                        int matches = 0;
                         foreach (Generator generator in generators)
                         {
-                            if (generator.TryGenerate(name, out IReadOnlyList<string> preciseApi, context.CancellationToken))
+                            if (generator.TryGenerateAllExternMethods(moduleName, context.CancellationToken))
                             {
-                                matchingApis.AddRange(preciseApi);
-                                continue;
-                            }
-
-                            matchingApis.AddRange(preciseApi);
-                            if (generator.TryGetEnumName(name, out string? declaringEnum))
-                            {
-                                context.ReportDiagnostic(Diagnostic.Create(UseEnumValueDeclaringType, location, declaringEnum));
-                                generator.TryGenerate(declaringEnum, out preciseApi, context.CancellationToken);
-                                matchingApis.AddRange(preciseApi);
+                                matches++;
                             }
                         }
 
-                        switch (matchingApis.Count)
+                        switch (matches)
                         {
                             case 0:
-                                ReportNoMatch(location, name);
+                                context.ReportDiagnostic(Diagnostic.Create(NoMethodsForModule, location, moduleName));
                                 break;
                             case > 1:
-                                context.ReportDiagnostic(Diagnostic.Create(AmbiguousMatchErrorWithSuggestions, location, name, ConcatSuggestions(matchingApis)));
+                                context.ReportDiagnostic(Diagnostic.Create(AmbiguousMatchError, location, moduleName));
                                 break;
                         }
-                    }
-                    catch (GenerationFailedException ex)
-                    {
-                        if (Generator.IsPlatformCompatibleException(ex))
-                        {
-                            context.ReportDiagnostic(Diagnostic.Create(CpuArchitectureIncompatibility, location));
-                        }
-                        else
-                        {
-                            // Build up a complete error message.
-                            context.ReportDiagnostic(Diagnostic.Create(InternalError, location, AssembleFullExceptionMessage(ex)));
-                        }
-                    }
-                }
 
-                foreach (Generator generator in generators)
-                {
-                    var compilationUnits = generator.GetCompilationUnits(context.CancellationToken)
-                        .OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
-                        .ThenBy(pair => pair.Key, StringComparer.Ordinal);
-                    foreach (var unit in compilationUnits)
-                    {
-                        context.AddSource($"{generator.InputAssemblyName}.{unit.Key}", unit.Value.ToFullString());
-                    }
-                }
-
-                string ConcatSuggestions(IReadOnlyList<string> suggestions)
-                {
-                    var suggestionBuilder = new StringBuilder();
-                    for (int i = 0; i < suggestions.Count; i++)
-                    {
-                        if (i > 0)
-                        {
-                            suggestionBuilder.Append(i < suggestions.Count - 1 ? ", " : " or ");
-                        }
-
-                        suggestionBuilder.Append('"');
-                        suggestionBuilder.Append(suggestions[i]);
-                        suggestionBuilder.Append('"');
+                        continue;
                     }
 
-                    return suggestionBuilder.ToString();
-                }
-
-                void ReportNoMatch(Location? location, string failedAttempt)
-                {
-                    List<string> suggestions = new();
+                    List<string> matchingApis = new();
                     foreach (Generator generator in generators)
                     {
-                        suggestions.AddRange(generator.GetSuggestions(failedAttempt).Take(4));
+                        if (generator.TryGenerate(name, out IReadOnlyList<string> preciseApi, context.CancellationToken))
+                        {
+                            matchingApis.AddRange(preciseApi);
+                            continue;
+                        }
+
+                        matchingApis.AddRange(preciseApi);
+                        if (generator.TryGetEnumName(name, out string? declaringEnum))
+                        {
+                            context.ReportDiagnostic(Diagnostic.Create(UseEnumValueDeclaringType, location, declaringEnum));
+                            generator.TryGenerate(declaringEnum, out preciseApi, context.CancellationToken);
+                            matchingApis.AddRange(preciseApi);
+                        }
                     }
 
-                    if (suggestions.Count > 0)
+                    switch (matchingApis.Count)
                     {
-                        context.ReportDiagnostic(Diagnostic.Create(NoMatchingMethodOrTypeWithSuggestions, location, failedAttempt, ConcatSuggestions(suggestions)));
+                        case 0:
+                            ReportNoMatch(location, name);
+                            break;
+                        case > 1:
+                            context.ReportDiagnostic(Diagnostic.Create(AmbiguousMatchErrorWithSuggestions, location, name, ConcatSuggestions(matchingApis)));
+                            break;
+                    }
+                }
+                catch (GenerationFailedException ex)
+                {
+                    if (Generator.IsPlatformCompatibleException(ex))
+                    {
+                        context.ReportDiagnostic(Diagnostic.Create(CpuArchitectureIncompatibility, location));
                     }
                     else
                     {
-                        context.ReportDiagnostic(Diagnostic.Create(NoMatchingMethodOrType, location, failedAttempt));
+                        // Build up a complete error message.
+                        context.ReportDiagnostic(Diagnostic.Create(InternalError, location, AssembleFullExceptionMessage(ex)));
                     }
                 }
             }
-            finally
+
+            foreach (Generator generator in generators)
             {
+                var compilationUnits = generator.GetCompilationUnits(context.CancellationToken)
+                    .OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(pair => pair.Key, StringComparer.Ordinal);
+                foreach (var unit in compilationUnits)
+                {
+                    context.AddSource($"{generator.InputAssemblyName}.{unit.Key}", unit.Value.ToFullString());
+                }
+            }
+
+            string ConcatSuggestions(IReadOnlyList<string> suggestions)
+            {
+                var suggestionBuilder = new StringBuilder();
+                for (int i = 0; i < suggestions.Count; i++)
+                {
+                    if (i > 0)
+                    {
+                        suggestionBuilder.Append(i < suggestions.Count - 1 ? ", " : " or ");
+                    }
+
+                    suggestionBuilder.Append('"');
+                    suggestionBuilder.Append(suggestions[i]);
+                    suggestionBuilder.Append('"');
+                }
+
+                return suggestionBuilder.ToString();
+            }
+
+            void ReportNoMatch(Location? location, string failedAttempt)
+            {
+                List<string> suggestions = new();
                 foreach (Generator generator in generators)
                 {
-                    generator.Dispose();
+                    suggestions.AddRange(generator.GetSuggestions(failedAttempt).Take(4));
+                }
+
+                if (suggestions.Count > 0)
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(NoMatchingMethodOrTypeWithSuggestions, location, failedAttempt, ConcatSuggestions(suggestions)));
+                }
+                else
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(NoMatchingMethodOrType, location, failedAttempt));
                 }
             }
         }
-
-        private static string AssembleFullExceptionMessage(Exception ex)
+        finally
         {
-            var sb = new StringBuilder();
-
-            Exception? inner = ex;
-            while (inner is object)
+            foreach (Generator generator in generators)
             {
-                sb.Append(inner.Message);
-                if (sb.Length > 0 && sb[sb.Length - 1] != '.')
-                {
-                    sb.Append('.');
-                }
+                generator.Dispose();
+            }
+        }
+    }
 
-                sb.Append(' ');
-                inner = inner.InnerException;
+    private static string AssembleFullExceptionMessage(Exception ex)
+    {
+        var sb = new StringBuilder();
+
+        Exception? inner = ex;
+        while (inner is object)
+        {
+            sb.Append(inner.Message);
+            if (sb.Length > 0 && sb[sb.Length - 1] != '.')
+            {
+                sb.Append('.');
             }
 
-            return sb.ToString();
+            sb.Append(' ');
+            inner = inner.InnerException;
         }
 
-        private static IReadOnlyList<string> CollectMetadataPaths(GeneratorExecutionContext context)
-        {
-            if (!context.AnalyzerConfigOptions.GlobalOptions.TryGetValue("build_property.CsWin32InputMetadataPaths", out string? delimitedMetadataBasePaths) ||
-                string.IsNullOrWhiteSpace(delimitedMetadataBasePaths))
-            {
-                return Array.Empty<string>();
-            }
+        return sb.ToString();
+    }
 
-            string[] metadataBasePaths = delimitedMetadataBasePaths.Split('|');
-            return metadataBasePaths;
+    private static IReadOnlyList<string> CollectMetadataPaths(GeneratorExecutionContext context)
+    {
+        if (!context.AnalyzerConfigOptions.GlobalOptions.TryGetValue("build_property.CsWin32InputMetadataPaths", out string? delimitedMetadataBasePaths) ||
+            string.IsNullOrWhiteSpace(delimitedMetadataBasePaths))
+        {
+            return Array.Empty<string>();
         }
 
-        private static Docs? ParseDocs(GeneratorExecutionContext context)
+        string[] metadataBasePaths = delimitedMetadataBasePaths.Split('|');
+        return metadataBasePaths;
+    }
+
+    private static Docs? ParseDocs(GeneratorExecutionContext context)
+    {
+        Docs? docs = null;
+        if (context.AnalyzerConfigOptions.GlobalOptions.TryGetValue("build_property.CsWin32InputDocPaths", out string? delimitedApiDocsPaths) &&
+            !string.IsNullOrWhiteSpace(delimitedApiDocsPaths))
         {
-            Docs? docs = null;
-            if (context.AnalyzerConfigOptions.GlobalOptions.TryGetValue("build_property.CsWin32InputDocPaths", out string? delimitedApiDocsPaths) &&
-                !string.IsNullOrWhiteSpace(delimitedApiDocsPaths))
+            string[] apiDocsPaths = delimitedApiDocsPaths!.Split('|');
+            if (apiDocsPaths.Length > 0)
             {
-                string[] apiDocsPaths = delimitedApiDocsPaths!.Split('|');
-                if (apiDocsPaths.Length > 0)
+                List<Docs> docsList = new(apiDocsPaths.Length);
+                foreach (string path in apiDocsPaths)
                 {
-                    List<Docs> docsList = new(apiDocsPaths.Length);
-                    foreach (string path in apiDocsPaths)
+                    try
                     {
-                        try
-                        {
-                            docsList.Add(Docs.Get(path));
-                        }
-                        catch (Exception e)
-                        {
-                            context.ReportDiagnostic(Diagnostic.Create(DocParsingError, null, path, e.Message));
-                        }
+                        docsList.Add(Docs.Get(path));
                     }
-
-                    docs = Docs.Merge(docsList);
+                    catch (Exception e)
+                    {
+                        context.ReportDiagnostic(Diagnostic.Create(DocParsingError, null, path, e.Message));
+                    }
                 }
-            }
 
-            return docs;
+                docs = Docs.Merge(docsList);
+            }
         }
+
+        return docs;
     }
 }

@@ -400,6 +400,20 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
+    public void ObsoleteAttributePropagated()
+    {
+        const string StructName = "IMAGE_OPTIONAL_HEADER32";
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate(StructName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        StructDeclarationSyntax structDecl = (StructDeclarationSyntax)this.FindGeneratedType(StructName).Single();
+        (FieldDeclarationSyntax Field, VariableDeclaratorSyntax Variable)? field = this.FindFieldDeclaration(structDecl, "LoaderFlags");
+        Assert.NotNull(field);
+        Assert.Contains(field!.Value.Field.AttributeLists, al => IsAttributePresent(al, "Obsolete"));
+    }
+
+    [Fact]
     public void ReleaseMethodGeneratedWithHandleStruct()
     {
         this.generator = this.CreateGenerator();
@@ -2543,6 +2557,22 @@ namespace Windows.Win32
     private IEnumerable<BaseTypeDeclarationSyntax> FindGeneratedType(string name) => this.compilation.SyntaxTrees.SelectMany(st => st.GetRoot().DescendantNodes().OfType<BaseTypeDeclarationSyntax>()).Where(btd => btd.Identifier.ValueText == name);
 
     private IEnumerable<FieldDeclarationSyntax> FindGeneratedConstant(string name) => this.compilation.SyntaxTrees.SelectMany(st => st.GetRoot().DescendantNodes().OfType<FieldDeclarationSyntax>()).Where(fd => (fd.Modifiers.Any(SyntaxKind.StaticKeyword) || fd.Modifiers.Any(SyntaxKind.ConstKeyword)) && fd.Declaration.Variables.Any(vd => vd.Identifier.ValueText == name));
+
+    private (FieldDeclarationSyntax Field, VariableDeclaratorSyntax Variable)? FindFieldDeclaration(TypeDeclarationSyntax type, string fieldName)
+    {
+        foreach (FieldDeclarationSyntax field in type.Members.OfType<FieldDeclarationSyntax>())
+        {
+            foreach (VariableDeclaratorSyntax variable in field.Declaration.Variables)
+            {
+                if (variable.Identifier.ValueText == fieldName)
+                {
+                    return (field, variable);
+                }
+            }
+        }
+
+        return null;
+    }
 
     private bool IsMethodGenerated(string name) => this.FindGeneratedMethod(name).Any();
 

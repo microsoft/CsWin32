@@ -212,6 +212,9 @@ internal class MetadataIndex : IDisposable
     /// </summary>
     internal MemberReferenceHandle SupportedArchitectureAttributeCtor { get; }
 
+    /// <summary>
+    /// Gets the "Apis" classes across all namespaces.
+    /// </summary>
     internal ReadOnlyCollection<TypeDefinition> Apis => new(this.apis);
 
     /// <summary>

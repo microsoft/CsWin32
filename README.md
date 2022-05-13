@@ -55,6 +55,7 @@ Each line may consist of *one* of the following:
 * A namespace to generate all APIs from (e.g. `Windows.Win32.Storage.FileSystem` would search the metadata for all APIs within that namespace and generate them).
 * Module name followed by `.*` to generate all methods exported from that module (e.g. `Kernel32.*`).
 * The name of a struct, enum, constant or interface to generate. This *may* be qualified with a namespace but is only recommended in cases of ambiguity, which CsWin32 will prompt where appropriate.
+* A prefix shared by many constants, followed by `*`, to generate all constants that share that prefix (e.g. `ALG_SID_MD*`).
 * A comment (i.e. any line starting with `//`) or white space line, which will be ignored.
 
 When generating any type or member, all supporting types will also be generated.

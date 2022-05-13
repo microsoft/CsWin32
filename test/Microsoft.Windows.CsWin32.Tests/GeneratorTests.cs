@@ -298,6 +298,27 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         Assert.False(this.IsMethodGenerated("GetLastError"));
     }
 
+    [Theory, PairwiseData]
+    public void WildcardForConstants(bool withNamespace)
+    {
+        this.generator = this.CreateGenerator();
+        string ns = withNamespace ? "Windows.Win32.Security.Cryptography." : string.Empty;
+        Assert.True(this.generator.TryGenerate(ns + "ALG_SID_MD*", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        Assert.Single(this.FindGeneratedConstant("ALG_SID_MD2"));
+        Assert.Single(this.FindGeneratedConstant("ALG_SID_MD4"));
+        Assert.Empty(this.FindGeneratedConstant("ALG_SID_HMAC"));
+    }
+
+    [Fact]
+    public void WildcardForConstants_NoMatch()
+    {
+        this.generator = this.CreateGenerator();
+        Assert.False(this.generator.TryGenerate("IDONTEXIST*", out IReadOnlyList<string> preciseApi, CancellationToken.None));
+        Assert.Empty(preciseApi);
+    }
+
     [Fact]
     public void FriendlyOverloadOfCOMInterfaceRemovesParameter()
     {

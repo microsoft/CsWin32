@@ -493,6 +493,19 @@ public class Generator : IDisposable
                 return false;
             }
         }
+        else if (apiNameOrModuleWildcard.EndsWith("*", StringComparison.Ordinal))
+        {
+            if (this.TryGenerateConstants(apiNameOrModuleWildcard))
+            {
+                preciseApi = ImmutableList.Create(apiNameOrModuleWildcard);
+                return true;
+            }
+            else
+            {
+                preciseApi = ImmutableList<string>.Empty;
+                return false;
+            }
+        }
         else
         {
             bool result = this.TryGenerateNamespace(apiNameOrModuleWildcard, out preciseApi);
@@ -867,6 +880,55 @@ public class Generator : IDisposable
 
         preciseApi = ImmutableList<string>.Empty;
         return false;
+    }
+
+    /// <summary>
+    /// Generates code for all constants with a common prefix.
+    /// </summary>
+    /// <param name="constantNameWithTrailingWildcard">The prefix, including a trailing <c>*</c>. A qualifying namespace is allowed.</param>
+    /// <returns><see langword="true" /> if at least one constant matched the prefix and was generated; otherwise <see langword="false" />.</returns>
+    public bool TryGenerateConstants(string constantNameWithTrailingWildcard)
+    {
+        if (constantNameWithTrailingWildcard is null)
+        {
+            throw new ArgumentNullException(nameof(constantNameWithTrailingWildcard));
+        }
+
+        if (constantNameWithTrailingWildcard.Length < 2 || constantNameWithTrailingWildcard[constantNameWithTrailingWildcard.Length - 1] != '*')
+        {
+            throw new ArgumentException("A name with a wildcard ending is expected.", nameof(constantNameWithTrailingWildcard));
+        }
+
+        TrySplitPossiblyQualifiedName(constantNameWithTrailingWildcard, out string? constantNamespace, out string constantName);
+        string prefix = constantName.Substring(0, constantName.Length - 1);
+        var namespaces = this.GetNamespacesToSearch(constantNamespace);
+        var matchingFieldHandles = from ns in namespaces
+                                   from field in ns.Fields
+                                   where field.Key.StartsWith(prefix, StringComparison.Ordinal)
+                                   select field.Value;
+
+        bool anyMatch = false;
+        foreach (FieldDefinitionHandle fieldHandle in matchingFieldHandles)
+        {
+            FieldDefinition field = this.Reader.GetFieldDefinition(fieldHandle);
+            if (this.IsCompatibleWithPlatform(field.GetCustomAttributes()))
+            {
+                try
+                {
+                    this.volatileCode.GenerationTransaction(delegate
+                    {
+                        this.RequestConstant(fieldHandle);
+                    });
+                    anyMatch = true;
+                }
+                catch (GenerationFailedException ex) when (IsPlatformCompatibleException(ex))
+                {
+                    // Something transitively required for this API is not available for this platform, so skip this method.
+                }
+            }
+        }
+
+        return anyMatch;
     }
 
     /// <summary>

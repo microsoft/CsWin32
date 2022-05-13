@@ -127,6 +127,7 @@ public class Generator : IDisposable
     private static readonly IdentifierNameSyntax IntPtrTypeSyntax = IdentifierName(nameof(IntPtr));
     private static readonly AttributeSyntax ComImportAttribute = Attribute(IdentifierName("ComImport"));
     private static readonly AttributeSyntax PreserveSigAttribute = Attribute(IdentifierName("PreserveSig"));
+    private static readonly AttributeSyntax ObsoleteAttribute = Attribute(IdentifierName("Obsolete")).WithArgumentList(null);
     private static readonly AttributeSyntax SupportedOSPlatformAttribute = Attribute(IdentifierName("SupportedOSPlatform"));
     private static readonly AttributeListSyntax DefaultDllImportSearchPathsAttributeList = AttributeList()
         .WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken))
@@ -2558,6 +2559,20 @@ public class Generator : IDisposable
         return isCompilerGenerated;
     }
 
+    private bool HasObsoleteAttribute(CustomAttributeHandleCollection attributes)
+    {
+        foreach (CustomAttributeHandle attHandle in attributes)
+        {
+            var att = this.Reader.GetCustomAttribute(attHandle);
+            if (this.IsAttribute(att, nameof(System), nameof(ObsoleteAttribute)))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private ISymbol? FindSymbolIfAlreadyAvailable(string fullyQualifiedMetadataName)
     {
         if (this.compilation is object)
@@ -3429,6 +3444,11 @@ public class Generator : IDisposable
                     if (fieldInfo.MarshalAsAttribute is object)
                     {
                         field = field.AddAttributeLists(AttributeList().AddAttributes(fieldInfo.MarshalAsAttribute));
+                    }
+
+                    if (this.HasObsoleteAttribute(fieldDef.GetCustomAttributes()))
+                    {
+                        field = field.AddAttributeLists(AttributeList().AddAttributes(ObsoleteAttribute));
                     }
 
                     if (fieldInfo.FieldType is PointerTypeSyntax || fieldInfo.FieldType is FunctionPointerTypeSyntax)

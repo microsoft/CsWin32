@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
 using Windows.Win32;
 using Windows.Win32.Foundation;
+using Windows.Win32.Networking.ActiveDirectory;
 using Windows.Win32.System.Diagnostics.Debug;
 
 #pragma warning disable CA1812 // dead code
@@ -45,5 +46,11 @@ internal static unsafe class GeneratedForm
     private static void RegKeyHandle()
     {
         WIN32_ERROR status = PInvoke.RegLoadAppKey(string.Empty, out SafeRegistryHandle handle, 0, 0, 0);
+    }
+
+    private static void PreserveSigBasedOnMetadata()
+    {
+        IDirectorySearch ds = null!;
+        HRESULT hr = ds.GetNextRow(0);
     }
 }

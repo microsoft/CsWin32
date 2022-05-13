@@ -3176,6 +3176,7 @@ public class Generator : IDisposable
                 AttributeSyntax? returnsAttribute = MarshalAs(marshalAs);
 
                 bool preserveSig = returnType is not QualifiedNameSyntax { Right: { Identifier: { ValueText: "HRESULT" } } }
+                    || (methodDefinition.ImplAttributes & MethodImplAttributes.PreserveSig) == MethodImplAttributes.PreserveSig
                     || this.options.ComInterop.PreserveSigMethods.Contains($"{ifaceName}.{methodName}")
                     || this.options.ComInterop.PreserveSigMethods.Contains(ifaceName.ToString());
 

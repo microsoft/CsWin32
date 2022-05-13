@@ -8,6 +8,7 @@ GetTickCount
 GetWindowText
 GetWindowTextLength
 HDC_UserSize
+IDirectorySearch
 IEnumDebugPropertyInfo
 IPersistFile
 KEY_EVENT_RECORD

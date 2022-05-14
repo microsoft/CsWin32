@@ -7,6 +7,7 @@ using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Reflection.Metadata;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
@@ -2498,6 +2499,63 @@ namespace Windows.Win32
         using FileStream competingReader = File.OpenRead(MetadataPath);
         this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate("CreateFile", CancellationToken.None));
+    }
+
+    [Fact]
+    public void ContainsIllegalCharactersForAPIName_InvisibleCharacters()
+    {
+        // You can't see them, but there are invisible hyphens in this name.
+        // Copy-paste from docs.microsoft.com has been known to include these invisible characters and break matching in NativeMethods.txt.
+        Assert.True(Generator.ContainsIllegalCharactersForAPIName("SHGet­Known­Folder­Item"));
+    }
+
+    [Fact]
+    public void ContainsIllegalCharactersForAPIName_DisallowedVisibleCharacters()
+    {
+        Assert.True(Generator.ContainsIllegalCharactersForAPIName("Method-1"));
+    }
+
+    [Fact]
+    public void ContainsIllegalCharactersForAPIName_LegalNames()
+    {
+        Assert.False(Generator.ContainsIllegalCharactersForAPIName("SHGetKnownFolderItem"));
+        Assert.False(Generator.ContainsIllegalCharactersForAPIName("Method1"));
+        Assert.False(Generator.ContainsIllegalCharactersForAPIName("Method_1"));
+        Assert.False(Generator.ContainsIllegalCharactersForAPIName("Qualified.Name"));
+    }
+
+    [Fact]
+    public void ContainsIllegalCharactersForAPIName_AllActualAPINames()
+    {
+        using FileStream metadataStream = File.OpenRead(MetadataPath);
+        using System.Reflection.PortableExecutable.PEReader peReader = new(metadataStream);
+        MetadataReader metadataReader = peReader.GetMetadataReader();
+        foreach (MethodDefinitionHandle methodDefHandle in metadataReader.MethodDefinitions)
+        {
+            MethodDefinition methodDef = metadataReader.GetMethodDefinition(methodDefHandle);
+            string methodName = metadataReader.GetString(methodDef.Name);
+            Assert.False(Generator.ContainsIllegalCharactersForAPIName(methodName), methodName);
+        }
+
+        foreach (TypeDefinitionHandle typeDefHandle in metadataReader.TypeDefinitions)
+        {
+            TypeDefinition typeDef = metadataReader.GetTypeDefinition(typeDefHandle);
+            string typeName = metadataReader.GetString(typeDef.Name);
+            if (typeName == "<Module>")
+            {
+                // Skip this special one.
+                continue;
+            }
+
+            Assert.False(Generator.ContainsIllegalCharactersForAPIName(typeName), typeName);
+        }
+
+        foreach (FieldDefinitionHandle fieldDefHandle in metadataReader.FieldDefinitions)
+        {
+            FieldDefinition fieldDef = metadataReader.GetFieldDefinition(fieldDefHandle);
+            string fieldName = metadataReader.GetString(fieldDef.Name);
+            Assert.False(Generator.ContainsIllegalCharactersForAPIName(fieldName), fieldName);
+        }
     }
 
     private static string ConstructGlobalConfigString(bool omitDocs = false)

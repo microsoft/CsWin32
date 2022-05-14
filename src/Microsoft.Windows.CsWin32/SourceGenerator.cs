@@ -36,6 +36,14 @@ public class SourceGenerator : ISourceGenerator
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
+    public static readonly DiagnosticDescriptor NoMatchingMethodOrTypeWithBadCharacters = new DiagnosticDescriptor(
+        "PInvoke001",
+        "No matching method, type or constant found",
+        "Method, type or constant \"{0}\" not found. It contains unexpected characters, possibly including invisible characters, which can happen when copying and pasting from docs.microsoft.com among other places. Try deleting the line and retyping it.",
+        "Functionality",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
     public static readonly DiagnosticDescriptor NoMatchingMethodOrTypeWithSuggestions = new DiagnosticDescriptor(
         "PInvoke001",
         "No matching method, type or constant found",
@@ -315,7 +323,10 @@ public class SourceGenerator : ISourceGenerator
                 }
                 else
                 {
-                    context.ReportDiagnostic(Diagnostic.Create(NoMatchingMethodOrType, location, failedAttempt));
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        Generator.ContainsIllegalCharactersForAPIName(failedAttempt) ? NoMatchingMethodOrTypeWithBadCharacters : NoMatchingMethodOrType,
+                        location,
+                        failedAttempt));
                 }
             }
         }

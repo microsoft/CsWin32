@@ -449,6 +449,30 @@ public class Generator : IDisposable
 
     private string DebuggerDisplayString => $"Generator: {this.InputAssemblyName}";
 
+    /// <summary>
+    /// Tests whether a string contains characters that do not belong in an API name.
+    /// </summary>
+    /// <param name="apiName">The user-supplied string that was expected to match some API name.</param>
+    /// <returns><see langword="true"/> if the string contains characters that are likely mistakenly included and causing a mismatch; <see langword="false"/> otherwise.</returns>
+    public static bool ContainsIllegalCharactersForAPIName(string apiName)
+    {
+        for (int i = 0; i < apiName.Length; i++)
+        {
+            char ch = apiName[i];
+            bool allowed = false;
+            allowed |= char.IsLetterOrDigit(ch);
+            allowed |= ch == '_';
+            allowed |= ch == '.'; // for qualified name searches
+
+            if (!allowed)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <inheritdoc/>
     public void Dispose()
     {

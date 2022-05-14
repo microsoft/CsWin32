@@ -41,6 +41,12 @@ public class Generator : IDisposable
 
     internal static readonly SyntaxAnnotation IsRetValAnnotation = new SyntaxAnnotation("RetVal");
 
+    /// <summary>
+    /// A map of .NET interop structs to use, keyed by the native structs that should <em>not</em> be generated.
+    /// </summary>
+    /// <devremarks>
+    /// When adding to this dictionary, consider also adding to <see cref="BannedAPIsWithoutMarshaling"/>.
+    /// </devremarks>
     internal static readonly Dictionary<string, TypeSyntax> BclInteropStructs = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)
     {
         { nameof(System.Runtime.InteropServices.ComTypes.FILETIME), ParseTypeName("global::System.Runtime.InteropServices.ComTypes.FILETIME") },
@@ -48,6 +54,7 @@ public class Generator : IDisposable
         { "OLD_LARGE_INTEGER", PredefinedType(Token(SyntaxKind.LongKeyword)) },
         { "LARGE_INTEGER", PredefinedType(Token(SyntaxKind.LongKeyword)) },
         { "ULARGE_INTEGER", PredefinedType(Token(SyntaxKind.ULongKeyword)) },
+        { "OVERLAPPED", ParseTypeName("global::System.Threading.NativeOverlapped") },
     };
 
     internal static readonly Dictionary<string, TypeSyntax> AdditionalBclInteropStructsMarshaled = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)
@@ -372,7 +379,8 @@ public class Generator : IDisposable
         .Add("GetLastError", "Do not generate GetLastError. Call Marshal.GetLastWin32Error() instead. Learn more from https://docs.microsoft.com/dotnet/api/system.runtime.interopservices.marshal.getlastwin32error")
         .Add("OLD_LARGE_INTEGER", "Use the C# long keyword instead.")
         .Add("LARGE_INTEGER", "Use the C# long keyword instead.")
-        .Add("ULARGE_INTEGER", "Use the C# ulong keyword instead.");
+        .Add("ULARGE_INTEGER", "Use the C# ulong keyword instead.")
+        .Add("OVERLAPPED", "Use System.Threading.NativeOverlapped instead.");
 
     internal static ImmutableDictionary<string, string> BannedAPIsWithMarshaling { get; } = BannedAPIsWithoutMarshaling
         .Add("VARIANT", "Use `object` instead of VARIANT when in COM interface mode. VARIANT can only be emitted when emitting COM interfaces as structs.");

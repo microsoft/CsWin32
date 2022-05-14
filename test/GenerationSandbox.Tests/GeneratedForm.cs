@@ -2,6 +2,7 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System.Runtime.InteropServices;
+using System.Threading;
 using Microsoft.Win32.SafeHandles;
 using Windows.Win32;
 using Windows.Win32.Foundation;
@@ -52,5 +53,11 @@ internal static unsafe class GeneratedForm
     {
         IDirectorySearch ds = null!;
         HRESULT hr = ds.GetNextRow(0);
+    }
+
+    private static unsafe void OverlappedAPIs()
+    {
+        NativeOverlapped overlapped = default;
+        PInvoke.WriteFile(default(HANDLE), null, 0, null, &overlapped);
     }
 }

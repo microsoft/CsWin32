@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-using System;
 using System.Runtime.InteropServices;
 using Windows.Win32.Foundation;
 using Windows.Win32.Graphics.Gdi;
@@ -22,7 +21,7 @@ internal class Program
         RegisterWindowClass();
         InitInstance();
 
-        while (GetMessage(out var msg, default, 0, 0))
+        while (GetMessage(out MSG msg, default, 0, 0))
         {
             TranslateMessage(msg);
             DispatchMessage(msg);
@@ -35,7 +34,7 @@ internal class Program
         {
             fixed (char* szClassName = WindowClassName)
             {
-                WNDCLASSEXW wcex = default(WNDCLASSEXW);
+                var wcex = default(WNDCLASSEXW);
                 PCWSTR szNull = default;
                 PCWSTR szCursorName = new((char*)IDC_ARROW);
                 PCWSTR szIconName = new((char*)IDI_APPLICATION);
@@ -90,7 +89,7 @@ internal class Program
                         0,
                         "button",
                         "Add element",
-                        WINDOW_STYLE.WS_VISIBLE | WINDOW_STYLE.WS_CHILD | (WINDOW_STYLE)BS_PUSHBUTTON,
+                        WINDOW_STYLE.WS_VISIBLE | WINDOW_STYLE.WS_CHILD | BS_PUSHBUTTON,
                         12,
                         12,
                         100,

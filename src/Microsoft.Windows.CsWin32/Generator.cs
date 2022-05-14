@@ -1,21 +1,16 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-using System;
-using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
-using System.IO;
-using System.Linq;
 using System.Reflection;
 using System.Reflection.Metadata;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Threading;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -587,7 +582,7 @@ public class Generator : IDisposable
             // Fallback to case insensitive search if it looks promising to do so.
             if (@namespace.StartsWith(this.MetadataIndex.CommonNamespace, StringComparison.OrdinalIgnoreCase))
             {
-                foreach (var item in this.MetadataIndex.MetadataByNamespace)
+                foreach (KeyValuePair<string, NamespaceMetadata> item in this.MetadataIndex.MetadataByNamespace)
                 {
                     if (string.Equals(item.Key, @namespace, StringComparison.OrdinalIgnoreCase))
                     {
@@ -603,17 +598,17 @@ public class Generator : IDisposable
         {
             this.volatileCode.GenerationTransaction(delegate
             {
-                foreach (var method in metadata.Methods)
+                foreach (KeyValuePair<string, MethodDefinitionHandle> method in metadata.Methods)
                 {
                     this.RequestExternMethod(method.Value);
                 }
 
-                foreach (var type in metadata.Types)
+                foreach (KeyValuePair<string, TypeDefinitionHandle> type in metadata.Types)
                 {
                     this.RequestInteropType(type.Value);
                 }
 
-                foreach (var field in metadata.Fields)
+                foreach (KeyValuePair<string, FieldDefinitionHandle> field in metadata.Fields)
                 {
                     this.RequestConstant(field.Value);
                 }
@@ -769,7 +764,7 @@ public class Generator : IDisposable
             if (this.Reader.StringComparer.Equals(module.Name, moduleName, ignoreCase: true))
             {
                 string? bannedReason = null;
-                foreach (var bannedApi in this.BannedAPIs)
+                foreach (KeyValuePair<string, string> bannedApi in this.BannedAPIs)
                 {
                     if (this.Reader.StringComparer.Equals(methodDef.Name, bannedApi.Key))
                     {
@@ -860,10 +855,10 @@ public class Generator : IDisposable
 
         TrySplitPossiblyQualifiedName(possiblyQualifiedName, out string? typeNamespace, out string typeName);
         var matchingTypeHandles = new List<TypeDefinitionHandle>();
-        var namespaces = this.GetNamespacesToSearch(typeNamespace);
+        IEnumerable<NamespaceMetadata>? namespaces = this.GetNamespacesToSearch(typeNamespace);
         bool foundApiWithMismatchedPlatform = false;
 
-        foreach (var nsMetadata in namespaces)
+        foreach (NamespaceMetadata? nsMetadata in namespaces)
         {
             if (nsMetadata.Types.TryGetValue(typeName, out TypeDefinitionHandle handle))
             {
@@ -933,11 +928,11 @@ public class Generator : IDisposable
 
         TrySplitPossiblyQualifiedName(constantNameWithTrailingWildcard, out string? constantNamespace, out string constantName);
         string prefix = constantName.Substring(0, constantName.Length - 1);
-        var namespaces = this.GetNamespacesToSearch(constantNamespace);
-        var matchingFieldHandles = from ns in namespaces
-                                   from field in ns.Fields
-                                   where field.Key.StartsWith(prefix, StringComparison.Ordinal)
-                                   select field.Value;
+        IEnumerable<NamespaceMetadata>? namespaces = this.GetNamespacesToSearch(constantNamespace);
+        IEnumerable<FieldDefinitionHandle>? matchingFieldHandles = from ns in namespaces
+                                                                   from field in ns.Fields
+                                                                   where field.Key.StartsWith(prefix, StringComparison.Ordinal)
+                                                                   select field.Value;
 
         bool anyMatch = false;
         foreach (FieldDefinitionHandle fieldHandle in matchingFieldHandles)
@@ -978,9 +973,9 @@ public class Generator : IDisposable
 
         TrySplitPossiblyQualifiedName(possiblyQualifiedName, out string? constantNamespace, out string constantName);
         var matchingFieldHandles = new List<FieldDefinitionHandle>();
-        var namespaces = this.GetNamespacesToSearch(constantNamespace);
+        IEnumerable<NamespaceMetadata>? namespaces = this.GetNamespacesToSearch(constantNamespace);
 
-        foreach (var nsMetadata in namespaces)
+        foreach (NamespaceMetadata? nsMetadata in namespaces)
         {
             if (nsMetadata.Fields.TryGetValue(constantName, out FieldDefinitionHandle fieldDefHandle))
             {
@@ -1058,7 +1053,7 @@ public class Generator : IDisposable
     /// <returns>All the generated source files, keyed by filename.</returns>
     public IReadOnlyDictionary<string, CompilationUnitSyntax> GetCompilationUnits(CancellationToken cancellationToken)
     {
-        var starterNamespace = NamespaceDeclaration(ParseName(this.Namespace));
+        NamespaceDeclarationSyntax? starterNamespace = NamespaceDeclaration(ParseName(this.Namespace));
 
         // .g.cs because the resulting files are not user-created.
         const string FilenamePattern = "{0}.g.cs";
@@ -1082,7 +1077,7 @@ public class Generator : IDisposable
         }
         else
         {
-            var membersByFile = this.NamespaceMembers.GroupBy(
+            IEnumerable<IGrouping<string?, MemberDeclarationSyntax>>? membersByFile = this.NamespaceMembers.GroupBy(
                 member => member.HasAnnotations(SimpleFileNameAnnotation)
                         ? member.GetAnnotations(SimpleFileNameAnnotation).Single().Data
                         : member switch
@@ -1096,7 +1091,7 @@ public class Generator : IDisposable
                         },
                 StringComparer.OrdinalIgnoreCase);
 
-            foreach (var fileSimpleName in membersByFile)
+            foreach (IGrouping<string?, MemberDeclarationSyntax>? fileSimpleName in membersByFile)
             {
                 try
                 {
@@ -1129,7 +1124,7 @@ public class Generator : IDisposable
         var normalizedResults = new Dictionary<string, CompilationUnitSyntax>(StringComparer.OrdinalIgnoreCase);
         results.AsParallel().WithCancellation(cancellationToken).ForAll(kv =>
         {
-            var compilationUnit = ((CompilationUnitSyntax)CompilationUnit()
+            CompilationUnitSyntax? compilationUnit = ((CompilationUnitSyntax)CompilationUnit()
                 .AddMembers(
                     kv.Value.AddUsings(usingDirectives.ToArray()))
                 .Accept(new WhitespaceRewriter())!)
@@ -1153,13 +1148,13 @@ public class Generator : IDisposable
                 throw new GenerationFailedException($"Failed to get template for \"{WinRTCustomMarshalerClass}\".");
             }
 
-            var marshalerContents = SyntaxFactory.ParseSyntaxTree(marshalerText);
+            SyntaxTree? marshalerContents = SyntaxFactory.ParseSyntaxTree(marshalerText);
             if (marshalerContents == null)
             {
                 throw new GenerationFailedException($"Failed adding \"{WinRTCustomMarshalerClass}\".");
             }
 
-            var compilationUnit = ((CompilationUnitSyntax)marshalerContents.GetRoot())
+            CompilationUnitSyntax? compilationUnit = ((CompilationUnitSyntax)marshalerContents.GetRoot())
                 .WithLeadingTrivia(ParseLeadingTrivia(AutoGeneratedHeader));
 
             normalizedResults.Add(
@@ -1479,12 +1474,12 @@ public class Generator : IDisposable
         MethodDefinition releaseMethodDef = this.Reader.GetMethodDefinition(releaseMethodHandle.Value);
         string releaseMethodModule = this.GetNormalizedModuleName(releaseMethodDef.GetImport());
 
-        var safeHandleTypeIdentifier = IdentifierName(safeHandleClassName);
+        IdentifierNameSyntax? safeHandleTypeIdentifier = IdentifierName(safeHandleClassName);
         safeHandleType = safeHandleTypeIdentifier;
 
         MethodSignature<TypeHandleInfo> releaseMethodSignature = releaseMethodDef.DecodeSignature(SignatureHandleProvider.Instance, null);
         TypeHandleInfo releaseMethodParameterTypeHandleInfo = releaseMethodSignature.ParameterTypes[0];
-        var releaseMethodParameterType = releaseMethodParameterTypeHandleInfo.ToTypeSyntax(this.externSignatureTypeSettings, default);
+        TypeSyntaxAndMarshaling releaseMethodParameterType = releaseMethodParameterTypeHandleInfo.ToTypeSyntax(this.externSignatureTypeSettings, default);
 
         // If the release method takes more than one parameter, we can't generate a SafeHandle for it.
         if (releaseMethodSignature.RequiredParameterCount != 1)
@@ -1506,8 +1501,8 @@ public class Generator : IDisposable
 
         this.RequestExternMethod(releaseMethodHandle.Value);
 
-        var atts = this.GetReturnTypeCustomAttributes(releaseMethodDef);
-        var releaseMethodReturnType = releaseMethodSignature.ReturnType.ToTypeSyntax(this.externSignatureTypeSettings, atts);
+        CustomAttributeHandleCollection? atts = this.GetReturnTypeCustomAttributes(releaseMethodDef);
+        TypeSyntaxAndMarshaling releaseMethodReturnType = releaseMethodSignature.ReturnType.ToTypeSyntax(this.externSignatureTypeSettings, atts);
 
         this.TryGetRenamedMethod(releaseMethod, out string? renamedReleaseMethod);
 
@@ -1788,7 +1783,7 @@ public class Generator : IDisposable
 
     internal CustomAttribute? FindNativeArrayInfoAttribute(CustomAttributeHandleCollection customAttributeHandles)
     {
-        foreach (var handle in customAttributeHandles)
+        foreach (CustomAttributeHandle handle in customAttributeHandles)
         {
             CustomAttribute att = this.Reader.GetCustomAttribute(handle);
             if (this.IsAttribute(att, InteropDecorationNamespace, NativeArrayInfoAttribute))
@@ -1802,7 +1797,7 @@ public class Generator : IDisposable
 
     internal CustomAttribute? FindInteropDecorativeAttribute(CustomAttributeHandleCollection customAttributeHandles, string attributeName)
     {
-        foreach (var handle in customAttributeHandles)
+        foreach (CustomAttributeHandle handle in customAttributeHandles)
         {
             CustomAttribute att = this.Reader.GetCustomAttribute(handle);
             if (this.IsAttribute(att, InteropDecorationNamespace, attributeName))
@@ -1844,7 +1839,7 @@ public class Generator : IDisposable
             return !typeDefHandle.IsNil;
         }
 
-        var typeRef = this.Reader.GetTypeReference(typeRefHandle);
+        TypeReference typeRef = this.Reader.GetTypeReference(typeRefHandle);
         if (typeRef.ResolutionScope.Kind != HandleKind.AssemblyReference)
         {
             foreach (TypeDefinitionHandle tdh in this.Reader.TypeDefinitions)
@@ -1969,8 +1964,8 @@ public class Generator : IDisposable
     internal FunctionPointerTypeSyntax FunctionPointer(TypeDefinition delegateType)
     {
         CustomAttribute ufpAtt = delegateType.GetCustomAttributes().Select(ah => this.Reader.GetCustomAttribute(ah)).Single(a => this.IsAttribute(a, SystemRuntimeInteropServices, nameof(UnmanagedFunctionPointerAttribute)));
-        var attArgs = ufpAtt.DecodeValue(CustomAttributeTypeProvider.Instance);
-        CallingConvention callingConvention = (CallingConvention)attArgs.FixedArguments[0].Value!;
+        CustomAttributeValue<TypeSyntax> attArgs = ufpAtt.DecodeValue(CustomAttributeTypeProvider.Instance);
+        var callingConvention = (CallingConvention)attArgs.FixedArguments[0].Value!;
 
         this.GetSignatureForDelegate(delegateType, out MethodDefinition invokeMethodDef, out MethodSignature<TypeHandleInfo> signature, out CustomAttributeHandleCollection? returnTypeAttributes);
         if (returnTypeAttributes?.Any(h => this.IsAttribute(this.Reader.GetCustomAttribute(h), SystemRuntimeInteropServices, nameof(MarshalAsAttribute))) is true)
@@ -2010,7 +2005,7 @@ public class Generator : IDisposable
             }
 
             // If the type comes from an external assembly, assume that structs are blittable and anything else is not.
-            var tr = this.Reader.GetTypeReference(trh);
+            TypeReference tr = this.Reader.GetTypeReference(trh);
             if (tr.ResolutionScope.Kind == HandleKind.AssemblyReference && handleElement.RawTypeKind is byte kind)
             {
                 // Structs set 0x1, classes set 0x2.
@@ -2051,7 +2046,7 @@ public class Generator : IDisposable
     private static AttributeSyntax StructLayout(TypeAttributes typeAttributes, TypeLayout layout = default, CharSet charSet = CharSet.Ansi)
     {
         LayoutKind layoutKind = (typeAttributes & TypeAttributes.ExplicitLayout) == TypeAttributes.ExplicitLayout ? LayoutKind.Explicit : LayoutKind.Sequential;
-        var structLayoutAttribute = Attribute(IdentifierName("StructLayout")).AddArgumentListArguments(
+        AttributeSyntax? structLayoutAttribute = Attribute(IdentifierName("StructLayout")).AddArgumentListArguments(
             AttributeArgument(MemberAccessExpression(
                 SyntaxKind.SimpleMemberAccessExpression,
                 IdentifierName(nameof(LayoutKind)),
@@ -2098,7 +2093,7 @@ public class Generator : IDisposable
 
     private static AttributeSyntax DllImport(MethodImport import, string moduleName, string? entrypoint)
     {
-        var dllImportAttribute = Attribute(IdentifierName("DllImport"))
+        AttributeSyntax? dllImportAttribute = Attribute(IdentifierName("DllImport"))
             .WithArgumentList(FixTrivia(AttributeArgumentList().AddArguments(
                 AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(moduleName))),
                 AttributeArgument(LiteralExpression(SyntaxKind.TrueLiteralExpression)).WithNameEquals(NameEquals(nameof(DllImportAttribute.ExactSpelling))))));
@@ -2131,7 +2126,7 @@ public class Generator : IDisposable
 
     private static AttributeSyntax MarshalAs(UnmanagedType unmanagedType, UnmanagedType? arraySubType = null, string? marshalCookie = null, string? marshalType = null, ExpressionSyntax? sizeConst = null)
     {
-        var marshalAs =
+        AttributeSyntax? marshalAs =
             Attribute(IdentifierName("MarshalAs"))
                 .AddArgumentListArguments(AttributeArgument(
                     MemberAccessExpression(
@@ -2255,17 +2250,17 @@ public class Generator : IDisposable
     private static ObjectCreationExpressionSyntax GuidValue(CustomAttribute guidAttribute)
     {
         CustomAttributeValue<TypeSyntax> args = guidAttribute.DecodeValue(CustomAttributeTypeProvider.Instance);
-        var a = (uint)args.FixedArguments[0].Value!;
-        var b = (ushort)args.FixedArguments[1].Value!;
-        var c = (ushort)args.FixedArguments[2].Value!;
-        var d = (byte)args.FixedArguments[3].Value!;
-        var e = (byte)args.FixedArguments[4].Value!;
-        var f = (byte)args.FixedArguments[5].Value!;
-        var g = (byte)args.FixedArguments[6].Value!;
-        var h = (byte)args.FixedArguments[7].Value!;
-        var i = (byte)args.FixedArguments[8].Value!;
-        var j = (byte)args.FixedArguments[9].Value!;
-        var k = (byte)args.FixedArguments[10].Value!;
+        uint a = (uint)args.FixedArguments[0].Value!;
+        ushort b = (ushort)args.FixedArguments[1].Value!;
+        ushort c = (ushort)args.FixedArguments[2].Value!;
+        byte d = (byte)args.FixedArguments[3].Value!;
+        byte e = (byte)args.FixedArguments[4].Value!;
+        byte f = (byte)args.FixedArguments[5].Value!;
+        byte g = (byte)args.FixedArguments[6].Value!;
+        byte h = (byte)args.FixedArguments[7].Value!;
+        byte i = (byte)args.FixedArguments[8].Value!;
+        byte j = (byte)args.FixedArguments[9].Value!;
+        byte k = (byte)args.FixedArguments[10].Value!;
 
         return ObjectCreationExpression(IdentifierName(nameof(Guid))).AddArgumentListArguments(
             Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(a), a))),
@@ -2284,18 +2279,18 @@ public class Generator : IDisposable
     private static ObjectCreationExpressionSyntax PropertyKeyValue(CustomAttribute propertyKeyAttribute, TypeSyntax type)
     {
         CustomAttributeValue<TypeSyntax> args = propertyKeyAttribute.DecodeValue(CustomAttributeTypeProvider.Instance);
-        var a = (uint)args.FixedArguments[0].Value!;
-        var b = (ushort)args.FixedArguments[1].Value!;
-        var c = (ushort)args.FixedArguments[2].Value!;
-        var d = (byte)args.FixedArguments[3].Value!;
-        var e = (byte)args.FixedArguments[4].Value!;
-        var f = (byte)args.FixedArguments[5].Value!;
-        var g = (byte)args.FixedArguments[6].Value!;
-        var h = (byte)args.FixedArguments[7].Value!;
-        var i = (byte)args.FixedArguments[8].Value!;
-        var j = (byte)args.FixedArguments[9].Value!;
-        var k = (byte)args.FixedArguments[10].Value!;
-        var pid = (uint)args.FixedArguments[11].Value!;
+        uint a = (uint)args.FixedArguments[0].Value!;
+        ushort b = (ushort)args.FixedArguments[1].Value!;
+        ushort c = (ushort)args.FixedArguments[2].Value!;
+        byte d = (byte)args.FixedArguments[3].Value!;
+        byte e = (byte)args.FixedArguments[4].Value!;
+        byte f = (byte)args.FixedArguments[5].Value!;
+        byte g = (byte)args.FixedArguments[6].Value!;
+        byte h = (byte)args.FixedArguments[7].Value!;
+        byte i = (byte)args.FixedArguments[8].Value!;
+        byte j = (byte)args.FixedArguments[9].Value!;
+        byte k = (byte)args.FixedArguments[10].Value!;
+        uint pid = (uint)args.FixedArguments[11].Value!;
 
         return ObjectCreationExpression(type).WithInitializer(
             InitializerExpression(SyntaxKind.ObjectInitializerExpression, SeparatedList<ExpressionSyntax>(new[]
@@ -2323,7 +2318,7 @@ public class Generator : IDisposable
     private T AddApiDocumentation<T>(string api, T memberDeclaration)
         where T : MemberDeclarationSyntax
     {
-        if (this.ApiDocs is object && this.ApiDocs.TryGetApiDocs(api, out var docs))
+        if (this.ApiDocs is object && this.ApiDocs.TryGetApiDocs(api, out ApiDetails? docs))
         {
             var docCommentsBuilder = new StringBuilder();
             if (docs.Description is object)
@@ -2337,7 +2332,7 @@ public class Generator : IDisposable
             {
                 if (memberDeclaration is BaseMethodDeclarationSyntax methodDecl)
                 {
-                    foreach (var entry in docs.Parameters)
+                    foreach (KeyValuePair<string, string> entry in docs.Parameters)
                     {
                         if (!methodDecl.ParameterList.Parameters.Any(p => string.Equals(p.Identifier.ValueText, entry.Key, StringComparison.Ordinal)))
                         {
@@ -2362,7 +2357,7 @@ public class Generator : IDisposable
                             structDeclaration.Members.OfType<FieldDeclarationSyntax>(),
                             (_, field) =>
                             {
-                                var variable = field.Declaration.Variables.Single();
+                                VariableDeclaratorSyntax? variable = field.Declaration.Variables.Single();
                                 if (docs.Fields.TryGetValue(variable.Identifier.ValueText, out string? fieldDoc))
                                 {
                                     fieldsDocBuilder.Append("/// <summary>");
@@ -2582,13 +2577,13 @@ public class Generator : IDisposable
 
         foreach (ParameterHandle parameterHandle in methodDefinition.GetParameters())
         {
-            var parameter = this.Reader.GetParameter(parameterHandle);
+            Parameter parameter = this.Reader.GetParameter(parameterHandle);
             if (parameter.SequenceNumber == 0)
             {
                 continue;
             }
 
-            var parameterTypeInfo = signature.ParameterTypes[parameter.SequenceNumber - 1];
+            TypeHandleInfo? parameterTypeInfo = signature.ParameterTypes[parameter.SequenceNumber - 1];
             parametersList = parametersList.AddParameters(this.TranslateDelegateToFunctionPointer(parameterTypeInfo, parameter.GetCustomAttributes()));
         }
 
@@ -2624,7 +2619,7 @@ public class Generator : IDisposable
         CustomAttributeHandleCollection? returnTypeAttributes = null;
         foreach (ParameterHandle parameterHandle in methodDefinition.GetParameters())
         {
-            var parameter = this.Reader.GetParameter(parameterHandle);
+            Parameter parameter = this.Reader.GetParameter(parameterHandle);
             if (parameter.Name.IsNil)
             {
                 returnTypeAttributes = parameter.GetCustomAttributes();
@@ -2642,7 +2637,7 @@ public class Generator : IDisposable
         bool isCompilerGenerated = false;
         foreach (CustomAttributeHandle attHandle in typeDef.GetCustomAttributes())
         {
-            var att = this.Reader.GetCustomAttribute(attHandle);
+            CustomAttribute att = this.Reader.GetCustomAttribute(attHandle);
             if (this.IsAttribute(att, SystemRuntimeCompilerServices, nameof(CompilerGeneratedAttribute)))
             {
                 isCompilerGenerated = true;
@@ -2657,7 +2652,7 @@ public class Generator : IDisposable
     {
         foreach (CustomAttributeHandle attHandle in attributes)
         {
-            var att = this.Reader.GetCustomAttribute(attHandle);
+            CustomAttribute att = this.Reader.GetCustomAttribute(attHandle);
             if (this.IsAttribute(att, nameof(System), nameof(ObsoleteAttribute)))
             {
                 return true;
@@ -2680,7 +2675,7 @@ public class Generator : IDisposable
                     : ownSymbol;
             }
 
-            foreach (var reference in this.compilation.References)
+            foreach (MetadataReference? reference in this.compilation.References)
             {
                 if (this.compilation.GetAssemblyOrModuleSymbol(reference) is IAssemblySymbol referencedAssembly)
                 {
@@ -2802,7 +2797,7 @@ public class Generator : IDisposable
             return;
         }
 
-        var methodName = this.Reader.GetString(methodDefinition.Name);
+        string? methodName = this.Reader.GetString(methodDefinition.Name);
         try
         {
             if (this.WideCharOnly && IsAnsiFunction(methodName))
@@ -2811,7 +2806,7 @@ public class Generator : IDisposable
                 return;
             }
 
-            var moduleName = this.GetNormalizedModuleName(import);
+            string? moduleName = this.GetNormalizedModuleName(import);
 
             string? entrypoint = null;
             if (this.TryGetRenamedMethod(methodName, out string? newName))
@@ -2825,7 +2820,7 @@ public class Generator : IDisposable
             MethodSignature<TypeHandleInfo> signature = methodDefinition.DecodeSignature(SignatureHandleProvider.Instance, null);
 
             CustomAttributeHandleCollection? returnTypeAttributes = this.GetReturnTypeCustomAttributes(methodDefinition);
-            var returnType = signature.ReturnType.ToTypeSyntax(typeSettings, returnTypeAttributes, ParameterAttributes.Out);
+            TypeSyntaxAndMarshaling returnType = signature.ReturnType.ToTypeSyntax(typeSettings, returnTypeAttributes, ParameterAttributes.Out);
 
             MethodDeclarationSyntax methodDeclaration = MethodDeclaration(
                 List<AttributeListSyntax>()
@@ -2910,7 +2905,7 @@ public class Generator : IDisposable
         bool foundApiWithMismatchedPlatform = false;
 
         var matchingMethodHandles = new List<MethodDefinitionHandle>();
-        foreach (var nsMetadata in namespaces)
+        foreach (NamespaceMetadata? nsMetadata in namespaces)
         {
             if (nsMetadata.Methods.TryGetValue(methodName, out MethodDefinitionHandle handle))
             {
@@ -2924,7 +2919,7 @@ public class Generator : IDisposable
 
         if (!exactNameMatchOnly && matchingMethodHandles.Count == 0)
         {
-            foreach (var nsMetadata in namespaces)
+            foreach (NamespaceMetadata? nsMetadata in namespaces)
             {
                 if (nsMetadata.Methods.TryGetValue(methodName + "W", out MethodDefinitionHandle handle) ||
                     nsMetadata.Methods.TryGetValue(methodName + "A", out handle))
@@ -2982,8 +2977,8 @@ public class Generator : IDisposable
         try
         {
             TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null) with { IsConstantField = true };
-            var customAttributes = fieldDef.GetCustomAttributes();
-            var fieldType = fieldTypeInfo.ToTypeSyntax(this.fieldTypeSettings, customAttributes);
+            CustomAttributeHandleCollection customAttributes = fieldDef.GetCustomAttributes();
+            TypeSyntaxAndMarshaling fieldType = fieldTypeInfo.ToTypeSyntax(this.fieldTypeSettings, customAttributes);
             ExpressionSyntax value =
                 fieldDef.GetDefaultValue() is { IsNil: false } constantHandle ? this.ToExpressionSyntax(this.Reader.GetConstant(constantHandle)) :
                 this.FindInteropDecorativeAttribute(customAttributes, nameof(GuidAttribute)) is CustomAttribute guidAttribute ? GuidValue(guidAttribute) :
@@ -3013,7 +3008,7 @@ public class Generator : IDisposable
                 }
             }
 
-            var modifiers = TokenList(TokenWithSpace(this.Visibility));
+            SyntaxTokenList modifiers = TokenList(TokenWithSpace(this.Visibility));
             if (this.IsTypeDefStruct(fieldTypeInfo) || value is ObjectCreationExpressionSyntax)
             {
                 modifiers = modifiers.Add(TokenWithSpace(SyntaxKind.StaticKeyword)).Add(TokenWithSpace(SyntaxKind.ReadOnlyKeyword));
@@ -3028,7 +3023,7 @@ public class Generator : IDisposable
                 modifiers = modifiers.Add(TokenWithSpace(SyntaxKind.UnsafeKeyword));
             }
 
-            var result = FieldDeclaration(VariableDeclaration(fieldType.Type).AddVariables(
+            FieldDeclarationSyntax? result = FieldDeclaration(VariableDeclaration(fieldType.Type).AddVariables(
                 VariableDeclarator(Identifier(name)).WithInitializer(EqualsValueClause(value))))
                 .WithModifiers(modifiers);
             result = fieldType.AddMarshalAs(result);
@@ -3075,7 +3070,7 @@ public class Generator : IDisposable
     /// </remarks>
     private TypeDeclarationSyntax? DeclareInterface(TypeDefinition typeDef)
     {
-        Stack<QualifiedTypeDefinitionHandle> baseTypes = new Stack<QualifiedTypeDefinitionHandle>();
+        var baseTypes = new Stack<QualifiedTypeDefinitionHandle>();
         (Generator Generator, InterfaceImplementationHandle Handle) baseTypeHandle = (this, typeDef.GetInterfaceImplementations().SingleOrDefault());
         while (!baseTypeHandle.Handle.IsNil)
         {
@@ -3117,13 +3112,13 @@ public class Generator : IDisposable
         foreach (QualifiedMethodDefinitionHandle methodDefHandle in allMethods)
         {
             methodCounter++;
-            var methodDefinition = methodDefHandle.Resolve();
+            QualifiedMethodDefinition methodDefinition = methodDefHandle.Resolve();
             string methodName = methodDefinition.Reader.GetString(methodDefinition.Method.Name);
             IdentifierNameSyntax innerMethodName = IdentifierName($"{methodName}_{methodCounter}");
 
             MethodSignature<TypeHandleInfo> signature = methodDefinition.Method.DecodeSignature(SignatureHandleProvider.Instance, null);
             CustomAttributeHandleCollection? returnTypeAttributes = methodDefinition.Generator.GetReturnTypeCustomAttributes(methodDefinition.Method);
-            var returnType = signature.ReturnType.ToTypeSyntax(typeSettings, returnTypeAttributes);
+            TypeSyntaxAndMarshaling returnType = signature.ReturnType.ToTypeSyntax(typeSettings, returnTypeAttributes);
 
             ParameterListSyntax parameterList = methodDefinition.Generator.CreateParameterList(methodDefinition.Method, signature, typeSettings);
             FunctionPointerParameterListSyntax funcPtrParameters = FunctionPointerParameterList()
@@ -3149,7 +3144,7 @@ public class Generator : IDisposable
             StatementSyntax vtblInvocationStatement = IsVoid(returnType.Type)
                 ? ExpressionStatement(vtblInvocation)
                 : ReturnStatement(vtblInvocation);
-            var body = Block().AddStatements(
+            BlockSyntax? body = Block().AddStatements(
                 FixedStatement(
                     VariableDeclaration(PointerType(ifaceName)).AddVariables(
                         VariableDeclarator(pThisLocal.Identifier).WithInitializer(EqualsValueClause(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, ThisExpression())))),
@@ -3185,7 +3180,7 @@ public class Generator : IDisposable
             members.Add(methodDeclaration);
         }
 
-        var vtblStruct = StructDeclaration(Identifier("Vtbl"))
+        StructDeclarationSyntax? vtblStruct = StructDeclaration(Identifier("Vtbl"))
             .AddMembers(vtblMembers.ToArray())
             .AddModifiers(TokenWithSpace(SyntaxKind.PrivateKeyword));
         members.Add(vtblStruct);
@@ -3273,7 +3268,7 @@ public class Generator : IDisposable
 
         foreach (MethodDefinitionHandle methodDefHandle in allMethods)
         {
-            var methodDefinition = this.Reader.GetMethodDefinition(methodDefHandle);
+            MethodDefinition methodDefinition = this.Reader.GetMethodDefinition(methodDefHandle);
             string methodName = this.Reader.GetString(methodDefinition.Name);
             try
             {
@@ -3281,7 +3276,7 @@ public class Generator : IDisposable
                 MethodSignature<TypeHandleInfo> signature = methodDefinition.DecodeSignature(SignatureHandleProvider.Instance, null);
 
                 CustomAttributeHandleCollection? returnTypeAttributes = this.GetReturnTypeCustomAttributes(methodDefinition);
-                var (returnType, marshalAs) = signature.ReturnType.ToTypeSyntax(typeSettings, returnTypeAttributes);
+                (TypeSyntax returnType, MarshalAsAttribute? marshalAs) = signature.ReturnType.ToTypeSyntax(typeSettings, returnTypeAttributes);
                 AttributeSyntax? returnsAttribute = MarshalAs(marshalAs);
 
                 bool preserveSig = returnType is not QualifiedNameSyntax { Right: { Identifier: { ValueText: "HRESULT" } } }
@@ -3289,7 +3284,7 @@ public class Generator : IDisposable
                     || this.options.ComInterop.PreserveSigMethods.Contains($"{ifaceName}.{methodName}")
                     || this.options.ComInterop.PreserveSigMethods.Contains(ifaceName.ToString());
 
-                var parameterList = this.CreateParameterList(methodDefinition, signature, this.comSignatureTypeSettings);
+                ParameterListSyntax? parameterList = this.CreateParameterList(methodDefinition, signature, this.comSignatureTypeSettings);
 
                 if (!preserveSig)
                 {
@@ -3412,16 +3407,16 @@ public class Generator : IDisposable
         CallingConvention? callingConvention = null;
         foreach (CustomAttributeHandle handle in typeDef.GetCustomAttributes())
         {
-            var att = this.Reader.GetCustomAttribute(handle);
+            CustomAttribute att = this.Reader.GetCustomAttribute(handle);
             if (this.IsAttribute(att, SystemRuntimeInteropServices, nameof(UnmanagedFunctionPointerAttribute)))
             {
-                var args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
+                CustomAttributeValue<TypeSyntax> args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
                 callingConvention = (CallingConvention)(int)args.FixedArguments[0].Value!;
             }
         }
 
         this.GetSignatureForDelegate(typeDef, out MethodDefinition invokeMethodDef, out MethodSignature<TypeHandleInfo> signature, out CustomAttributeHandleCollection? returnTypeAttributes);
-        var returnValue = signature.ReturnType.ToTypeSyntax(typeSettings, returnTypeAttributes);
+        TypeSyntaxAndMarshaling returnValue = signature.ReturnType.ToTypeSyntax(typeSettings, returnTypeAttributes);
 
         DelegateDeclarationSyntax result = DelegateDeclaration(returnValue.Type, Identifier(name))
             .WithParameterList(FixTrivia(this.CreateParameterList(invokeMethodDef, signature, typeSettings)))
@@ -3515,7 +3510,7 @@ public class Generator : IDisposable
                 if (fixedBufferAttribute.HasValue)
                 {
                     CustomAttributeValue<TypeSyntax> attributeArgs = fixedBufferAttribute.Value.DecodeValue(CustomAttributeTypeProvider.Instance);
-                    TypeSyntax fieldType = (TypeSyntax)attributeArgs.FixedArguments[0].Value!;
+                    var fieldType = (TypeSyntax)attributeArgs.FixedArguments[0].Value!;
                     ExpressionSyntax size = LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal((int)attributeArgs.FixedArguments[1].Value!));
                     field = FieldDeclaration(
                         VariableDeclaration(fieldType))
@@ -3530,7 +3525,7 @@ public class Generator : IDisposable
                     TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null);
                     hasUtf16CharField |= fieldTypeInfo is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.Char };
                     TypeSyntaxAndMarshaling fieldTypeSyntax = fieldTypeInfo.ToTypeSyntax(typeSettings, fieldAttributes);
-                    var fieldInfo = this.ReinterpretFieldType(fieldDef, fieldTypeSyntax.Type, fieldAttributes);
+                    (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? MarshalAsAttribute) fieldInfo = this.ReinterpretFieldType(fieldDef, fieldTypeSyntax.Type, fieldAttributes);
                     additionalMembers = additionalMembers.AddRange(fieldInfo.AdditionalMembers);
 
                     field = FieldDeclaration(VariableDeclaration(fieldInfo.FieldType).AddVariables(fieldDeclarator))
@@ -3603,7 +3598,7 @@ public class Generator : IDisposable
     {
         IdentifierNameSyntax name = IdentifierName(this.Reader.GetString(typeDef.Name));
         Guid guid = this.FindGuidFromAttribute(typeDef) ?? throw new ArgumentException("Type does not have a GuidAttribute.");
-        var classModifiers = TokenList(TokenWithSpace(this.Visibility));
+        SyntaxTokenList classModifiers = TokenList(TokenWithSpace(this.Visibility));
         classModifiers = classModifiers.Add(TokenWithSpace(SyntaxKind.PartialKeyword));
         ClassDeclarationSyntax result = ClassDeclaration(name.Identifier)
             .WithModifiers(classModifiers)
@@ -3632,7 +3627,7 @@ public class Generator : IDisposable
             // If this struct represents a handle, generate the SafeHandle-equivalent.
             if (this.IsAttribute(att, InteropDecorationNamespace, RAIIFreeAttribute))
             {
-                var args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
+                CustomAttributeValue<TypeSyntax> args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
                 if (args.FixedArguments[0].Value is string freeMethodName)
                 {
                     ////this.GenerateSafeHandle(freeMethodName);
@@ -3650,8 +3645,8 @@ public class Generator : IDisposable
         string fieldName = this.Reader.GetString(fieldDef.Name);
         IdentifierNameSyntax fieldIdentifierName = SafeIdentifierName(fieldName);
         VariableDeclaratorSyntax fieldDeclarator = VariableDeclarator(fieldIdentifierName.Identifier);
-        var fieldAttributes = fieldDef.GetCustomAttributes();
-        var fieldType = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null).ToTypeSyntax(typeSettings, fieldAttributes);
+        CustomAttributeHandleCollection fieldAttributes = fieldDef.GetCustomAttributes();
+        TypeSyntaxAndMarshaling fieldType = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null).ToTypeSyntax(typeSettings, fieldAttributes);
         (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? _) fieldInfo =
             this.ReinterpretFieldType(fieldDef, fieldType.Type, fieldAttributes);
         SyntaxList<MemberDeclarationSyntax> members = List<MemberDeclarationSyntax>();
@@ -3732,7 +3727,7 @@ public class Generator : IDisposable
                 break;
         }
 
-        var structModifiers = TokenList(TokenWithSpace(this.Visibility));
+        SyntaxTokenList structModifiers = TokenList(TokenWithSpace(this.Visibility));
         if (RequiresUnsafe(fieldInfo.FieldType))
         {
             structModifiers = structModifiers.Add(TokenWithSpace(SyntaxKind.UnsafeKeyword));
@@ -3787,8 +3782,8 @@ public class Generator : IDisposable
             .WithSemicolonToken(SemicolonWithLineFeed);
 
         // public static bool operator ==(HANDLE left, HANDLE right) => left.Value == right.Value;
-        var leftParameter = IdentifierName("left");
-        var rightParameter = IdentifierName("right");
+        IdentifierNameSyntax? leftParameter = IdentifierName("left");
+        IdentifierNameSyntax? rightParameter = IdentifierName("right");
         yield return OperatorDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), TokenWithNoSpace(SyntaxKind.EqualsEqualsToken))
             .WithOperatorKeyword(TokenWithSpace(SyntaxKind.OperatorKeyword))
             .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))
@@ -4006,7 +4001,7 @@ public class Generator : IDisposable
         IdentifierNameSyntax name = IdentifierName("BOOL");
 
         FieldDefinition fieldDef = this.Reader.GetFieldDefinition(typeDef.GetFields().Single());
-        var fieldAttributes = fieldDef.GetCustomAttributes();
+        CustomAttributeHandleCollection fieldAttributes = fieldDef.GetCustomAttributes();
         IdentifierNameSyntax fieldName = IdentifierName("value");
         VariableDeclaratorSyntax fieldDeclarator = VariableDeclarator(fieldName.Identifier);
         (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? MarshalAs) fieldInfo =
@@ -4055,7 +4050,7 @@ public class Generator : IDisposable
             CastExpression(
                 PointerType(PredefinedType(TokenWithNoSpace(SyntaxKind.BoolKeyword))),
                 PrefixUnaryExpression(SyntaxKind.AddressOfExpression, localVarName)));
-        var implicitBOOLtoBoolBody = Block().AddStatements(
+        BlockSyntax? implicitBOOLtoBoolBody = Block().AddStatements(
             LocalDeclarationStatement(VariableDeclaration(PredefinedType(Token(SyntaxKind.SByteKeyword)))).AddDeclarationVariables(
                 VariableDeclarator(localVarName.Identifier).WithInitializer(EqualsValueClause(CheckedExpression(SyntaxKind.CheckedExpression, CastExpression(PredefinedType(Token(SyntaxKind.SByteKeyword)), MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, fieldName)))))),
             ReturnStatement(sbyteToBool));
@@ -4125,7 +4120,7 @@ public class Generator : IDisposable
             throw new NotSupportedException("Unknown enum type.");
         }
 
-        var name = this.Reader.GetString(typeDef.Name);
+        string? name = this.Reader.GetString(typeDef.Name);
         EnumDeclarationSyntax result = EnumDeclaration(Identifier(name))
             .WithMembers(SeparatedList<EnumMemberDeclarationSyntax>(enumValues))
             .WithModifiers(TokenList(TokenWithSpace(this.Visibility)));
@@ -4169,11 +4164,11 @@ public class Generator : IDisposable
         static ExpressionSyntax GetSpanLength(ExpressionSyntax span) => MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, span, IdentifierName(nameof(Span<int>.Length)));
         bool isReleaseMethod = this.MetadataIndex.ReleaseMethods.Contains(externMethodDeclaration.Identifier.ValueText);
 
-        var originalSignature = methodDefinition.DecodeSignature(SignatureHandleProvider.Instance, null);
+        MethodSignature<TypeHandleInfo> originalSignature = methodDefinition.DecodeSignature(SignatureHandleProvider.Instance, null);
         var parameters = externMethodDeclaration.ParameterList.Parameters.Select(StripAttributes).ToList();
         var lengthParamUsedBy = new Dictionary<int, int>();
         var arguments = externMethodDeclaration.ParameterList.Parameters.Select(p => Argument(IdentifierName(p.Identifier.Text)).WithRefKindKeyword(p.Modifiers.FirstOrDefault(p => p.Kind() is SyntaxKind.RefKeyword or SyntaxKind.OutKeyword or SyntaxKind.InKeyword))).ToList();
-        var externMethodReturnType = externMethodDeclaration.ReturnType.WithoutLeadingTrivia();
+        TypeSyntax? externMethodReturnType = externMethodDeclaration.ReturnType.WithoutLeadingTrivia();
         var fixedBlocks = new List<VariableDeclarationSyntax>();
         var leadingOutsideTryStatements = new List<StatementSyntax>();
         var leadingStatements = new List<StatementSyntax>();
@@ -4182,7 +4177,7 @@ public class Generator : IDisposable
         bool signatureChanged = false;
         foreach (ParameterHandle paramHandle in methodDefinition.GetParameters())
         {
-            var param = this.Reader.GetParameter(paramHandle);
+            Parameter param = this.Reader.GetParameter(paramHandle);
             if (param.SequenceNumber == 0 || param.SequenceNumber - 1 >= parameters.Count)
             {
                 continue;
@@ -4326,7 +4321,7 @@ public class Generator : IDisposable
                     CustomAttribute att = this.Reader.GetCustomAttribute(attHandle);
                     if (this.IsAttribute(att, InteropDecorationNamespace, NativeArrayInfoAttribute))
                     {
-                        var args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
+                        CustomAttributeValue<TypeSyntax> args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
                         isArray = true;
                         sizeParamIndex = (short?)args.NamedArguments.FirstOrDefault(a => a.Name == "CountParamIndex").Value;
                         sizeConst = (int?)args.NamedArguments.FirstOrDefault(a => a.Name == "CountConst").Value;
@@ -4533,7 +4528,7 @@ public class Generator : IDisposable
             TypeSyntax docRefExternName = overloadOf == FriendlyOverloadOf.InterfaceMethod
                 ? QualifiedName(declaringTypeName, IdentifierName(externMethodDeclaration.Identifier))
                 : IdentifierName(externMethodDeclaration.Identifier);
-            var leadingTrivia = Trivia(
+            SyntaxTrivia leadingTrivia = Trivia(
                 DocumentationCommentTrivia(SyntaxKind.SingleLineDocumentationCommentTrivia).AddContent(
                     XmlText("/// "),
                     XmlEmptyElement("inheritdoc").AddAttributes(XmlCrefAttribute(NameMemberCref(docRefExternName, ToCref(externMethodDeclaration.ParameterList)))),
@@ -4548,7 +4543,7 @@ public class Generator : IDisposable
                 })
                 .WithArgumentList(FixTrivia(ArgumentList().AddArguments(arguments.ToArray())));
             bool hasVoidReturn = externMethodReturnType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.VoidKeyword } };
-            var body = Block().AddStatements(leadingStatements.ToArray());
+            BlockSyntax? body = Block().AddStatements(leadingStatements.ToArray());
             IdentifierNameSyntax resultLocal = IdentifierName("__result");
             if (returnSafeHandleType is object)
             {
@@ -4580,7 +4575,7 @@ public class Generator : IDisposable
                 body = body.AddStatements(ReturnStatement(resultLocal));
             }
 
-            foreach (var fixedExpression in fixedBlocks)
+            foreach (VariableDeclarationSyntax? fixedExpression in fixedBlocks)
             {
                 body = Block(FixedStatement(fixedExpression, body).WithFixedKeyword(TokenWithSpace(SyntaxKind.FixedKeyword)));
             }
@@ -4596,7 +4591,7 @@ public class Generator : IDisposable
                 body = body.WithStatements(body.Statements.InsertRange(0, leadingOutsideTryStatements));
             }
 
-            var modifiers = TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword));
+            SyntaxTokenList modifiers = TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword));
             if (overloadOf != FriendlyOverloadOf.StructMethod)
             {
                 modifiers = modifiers.Insert(1, TokenWithSpace(SyntaxKind.StaticKeyword));
@@ -4661,10 +4656,10 @@ public class Generator : IDisposable
             // TODO:
             // * Notice [Out][RAIIFree] handle producing parameters. Can we make these provide SafeHandle's?
             bool isReturnOrOutParam = parameter.SequenceNumber == 0 || (parameter.Attributes & ParameterAttributes.Out) == ParameterAttributes.Out;
-            var parameterTypeSyntax = parameterInfo.ToTypeSyntax(typeSettings, parameter.GetCustomAttributes(), parameter.Attributes);
+            TypeSyntaxAndMarshaling parameterTypeSyntax = parameterInfo.ToTypeSyntax(typeSettings, parameter.GetCustomAttributes(), parameter.Attributes);
 
             // Determine the custom attributes to apply.
-            var attributes = AttributeList();
+            AttributeListSyntax? attributes = AttributeList();
             if (parameterTypeSyntax.Type is PointerTypeSyntax ptr)
             {
                 if ((parameter.Attributes & ParameterAttributes.Optional) == ParameterAttributes.Optional)
@@ -4673,7 +4668,7 @@ public class Generator : IDisposable
                 }
             }
 
-            var modifiers = TokenList();
+            SyntaxTokenList modifiers = TokenList();
             if (parameterTypeSyntax.ParameterModifier.HasValue)
             {
                 modifiers = modifiers.Add(parameterTypeSyntax.ParameterModifier.Value.WithTrailingTrivia(TriviaList(Space)));
@@ -4762,7 +4757,7 @@ public class Generator : IDisposable
             elementType = IntPtrTypeSyntax;
         }
 
-        var lengthLiteralSyntax = LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(length));
+        LiteralExpressionSyntax? lengthLiteralSyntax = LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(length));
 
         // internal struct __TheStruct_Count
         // {
@@ -4777,7 +4772,7 @@ public class Generator : IDisposable
             fieldModifiers = fieldModifiers.Add(TokenWithSpace(SyntaxKind.UnsafeKeyword));
         }
 
-        var fixedLengthStruct = StructDeclaration(fixedLengthStructName.Identifier)
+        StructDeclarationSyntax? fixedLengthStruct = StructDeclaration(fixedLengthStructName.Identifier)
             .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.PartialKeyword))
             .AddMembers(
                 FieldDeclaration(VariableDeclaration(elementType)
@@ -4798,7 +4793,7 @@ public class Generator : IDisposable
                         DocCommentEnd))));
 
         IdentifierNameSyntax GetElementFieldName(int index) => IdentifierName(FormattableString.Invariant($"_{index}"));
-        var firstElementFieldName = GetElementFieldName(0);
+        IdentifierNameSyntax? firstElementFieldName = GetElementFieldName(0);
         if (this.canCallCreateSpan)
         {
             // ...
@@ -5400,15 +5395,15 @@ public class Generator : IDisposable
         }
 
         BlobReader br = this.Reader.GetBlobReader(blobHandle);
-        UnmanagedType unmgdType = (UnmanagedType)br.ReadByte();
+        var unmgdType = (UnmanagedType)br.ReadByte();
         return unmgdType;
     }
 
     private MarshalAsAttribute ToMarshalAsAttribute(BlobHandle blobHandle)
     {
         BlobReader br = this.Reader.GetBlobReader(blobHandle);
-        UnmanagedType unmgdType = (UnmanagedType)br.ReadByte();
-        MarshalAsAttribute ma = new MarshalAsAttribute(unmgdType);
+        var unmgdType = (UnmanagedType)br.ReadByte();
+        var ma = new MarshalAsAttribute(unmgdType);
         switch (unmgdType)
         {
             case UnmanagedType.Interface:
@@ -5518,7 +5513,7 @@ public class Generator : IDisposable
 
     private ExpressionSyntax ToExpressionSyntax(Constant constant)
     {
-        var blobReader = this.Reader.GetBlobReader(constant.Value);
+        BlobReader blobReader = this.Reader.GetBlobReader(constant.Value);
         return constant.TypeCode switch
         {
             ConstantTypeCode.Boolean => blobReader.ReadBoolean() ? LiteralExpression(SyntaxKind.TrueLiteralExpression) : LiteralExpression(SyntaxKind.FalseLiteralExpression),
@@ -5550,8 +5545,8 @@ public class Generator : IDisposable
 
     private ExpressionSyntax ToHexExpressionSyntax(Constant constant)
     {
-        var blobReader = this.Reader.GetBlobReader(constant.Value);
-        var blobReader2 = this.Reader.GetBlobReader(constant.Value);
+        BlobReader blobReader = this.Reader.GetBlobReader(constant.Value);
+        BlobReader blobReader2 = this.Reader.GetBlobReader(constant.Value);
         return constant.TypeCode switch
         {
             ConstantTypeCode.SByte => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadSByte()), blobReader2.ReadSByte())),
@@ -5570,7 +5565,7 @@ public class Generator : IDisposable
     {
         if (@namespace is object)
         {
-            return this.MetadataIndex.MetadataByNamespace.TryGetValue(@namespace, out var metadata)
+            return this.MetadataIndex.MetadataByNamespace.TryGetValue(@namespace, out NamespaceMetadata? metadata)
                 ? new[] { metadata }
                 : Array.Empty<NamespaceMetadata>();
         }
@@ -5584,39 +5579,39 @@ public class Generator : IDisposable
     {
         private readonly GeneratedCode? parent;
 
-        private Dictionary<string, List<MemberDeclarationSyntax>> modulesAndMembers = new Dictionary<string, List<MemberDeclarationSyntax>>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, List<MemberDeclarationSyntax>> modulesAndMembers = new Dictionary<string, List<MemberDeclarationSyntax>>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
         /// The structs, enums, delegates and other supporting types for extern methods.
         /// </summary>
-        private Dictionary<TypeDefinitionHandle, MemberDeclarationSyntax> types = new();
+        private readonly Dictionary<TypeDefinitionHandle, MemberDeclarationSyntax> types = new();
 
-        private Dictionary<FieldDefinitionHandle, FieldDeclarationSyntax> fieldsToSyntax = new();
+        private readonly Dictionary<FieldDefinitionHandle, FieldDeclarationSyntax> fieldsToSyntax = new();
 
-        private List<ClassDeclarationSyntax> safeHandleTypes = new();
+        private readonly List<ClassDeclarationSyntax> safeHandleTypes = new();
 
-        private Dictionary<string, MemberDeclarationSyntax> specialTypes = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, MemberDeclarationSyntax> specialTypes = new(StringComparer.Ordinal);
 
         /// <summary>
         /// The set of types that are or have been generated so we don't stack overflow for self-referencing types.
         /// </summary>
-        private Dictionary<TypeDefinitionHandle, Exception?> typesGenerating = new();
+        private readonly Dictionary<TypeDefinitionHandle, Exception?> typesGenerating = new();
 
         /// <summary>
         /// The set of methods that are or have been generated.
         /// </summary>
-        private Dictionary<MethodDefinitionHandle, Exception?> methodsGenerating = new();
+        private readonly Dictionary<MethodDefinitionHandle, Exception?> methodsGenerating = new();
 
         /// <summary>
         /// A collection of the names of special types we are or have generated.
         /// </summary>
-        private Dictionary<string, Exception?> specialTypesGenerating = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, Exception?> specialTypesGenerating = new(StringComparer.Ordinal);
 
-        private Dictionary<string, TypeSyntax?> releaseMethodsWithSafeHandleTypesGenerating = new();
+        private readonly Dictionary<string, TypeSyntax?> releaseMethodsWithSafeHandleTypesGenerating = new();
 
-        private List<MethodDeclarationSyntax> inlineArrayIndexerExtensionsMembers = new();
+        private readonly List<MethodDeclarationSyntax> inlineArrayIndexerExtensionsMembers = new();
 
-        private List<MethodDeclarationSyntax> comInterfaceFriendlyExtensionsMembers = new();
+        private readonly List<MethodDeclarationSyntax> comInterfaceFriendlyExtensionsMembers = new();
 
         private bool generating;
 
@@ -5641,7 +5636,7 @@ public class Generator : IDisposable
         {
             get
             {
-                foreach (var item in this.modulesAndMembers)
+                foreach (KeyValuePair<string, List<MemberDeclarationSyntax>> item in this.modulesAndMembers)
                 {
                     yield return new Grouping<string, MemberDeclarationSyntax>(item.Key, item.Value);
                 }
@@ -5659,7 +5654,7 @@ public class Generator : IDisposable
         {
             this.ThrowIfNotGenerating();
 
-            if (!this.modulesAndMembers.TryGetValue(moduleName, out var methodsList))
+            if (!this.modulesAndMembers.TryGetValue(moduleName, out List<MemberDeclarationSyntax>? methodsList))
             {
                 this.modulesAndMembers.Add(moduleName, methodsList = new List<MemberDeclarationSyntax>());
             }
@@ -5671,7 +5666,7 @@ public class Generator : IDisposable
         {
             this.ThrowIfNotGenerating();
 
-            if (!this.modulesAndMembers.TryGetValue(moduleName, out var methodsList))
+            if (!this.modulesAndMembers.TryGetValue(moduleName, out List<MemberDeclarationSyntax>? methodsList))
             {
                 this.modulesAndMembers.Add(moduleName, methodsList = new List<MemberDeclarationSyntax>());
             }
@@ -5858,7 +5853,7 @@ public class Generator : IDisposable
         {
             if (target is object)
             {
-                foreach (var item in source)
+                foreach (KeyValuePair<TKey, TValue> item in source)
                 {
                     target.Add(item.Key, item.Value);
                 }
@@ -5879,11 +5874,11 @@ public class Generator : IDisposable
 
         private void Commit(GeneratedCode? parent)
         {
-            foreach (var item in this.modulesAndMembers)
+            foreach (KeyValuePair<string, List<MemberDeclarationSyntax>> item in this.modulesAndMembers)
             {
                 if (parent is object)
                 {
-                    if (!parent.modulesAndMembers.TryGetValue(item.Key, out var list))
+                    if (!parent.modulesAndMembers.TryGetValue(item.Key, out List<MemberDeclarationSyntax>? list))
                     {
                         parent.modulesAndMembers.Add(item.Key, list = new());
                     }

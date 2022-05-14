@@ -1,10 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Text;
 using System.Text.Json;
 using Microsoft.CodeAnalysis;
@@ -215,7 +211,7 @@ public class SourceGenerator : ISourceGenerator
 
                     if (name.EndsWith(".*", StringComparison.Ordinal))
                     {
-                        var moduleName = name.Substring(0, name.Length - 2);
+                        string? moduleName = name.Substring(0, name.Length - 2);
                         int matches = 0;
                         foreach (Generator generator in generators)
                         {
@@ -282,10 +278,10 @@ public class SourceGenerator : ISourceGenerator
 
             foreach (Generator generator in generators)
             {
-                var compilationUnits = generator.GetCompilationUnits(context.CancellationToken)
+                IOrderedEnumerable<KeyValuePair<string, CodeAnalysis.CSharp.Syntax.CompilationUnitSyntax>>? compilationUnits = generator.GetCompilationUnits(context.CancellationToken)
                     .OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
                     .ThenBy(pair => pair.Key, StringComparer.Ordinal);
-                foreach (var unit in compilationUnits)
+                foreach (KeyValuePair<string, CodeAnalysis.CSharp.Syntax.CompilationUnitSyntax> unit in compilationUnits)
                 {
                     context.AddSource($"{generator.InputAssemblyName}.{unit.Key}", unit.Value.ToFullString());
                 }

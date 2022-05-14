@@ -1,11 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-using System;
-using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
-using System.IO;
-using System.Linq;
 using MessagePack;
 using Microsoft.Windows.SDK.Win32Docs;
 
@@ -41,7 +37,7 @@ public class Docs
         }
 
         using FileStream docsStream = File.OpenRead(docsPath);
-        var data = MessagePackSerializer.Deserialize<Dictionary<string, ApiDetails>>(docsStream);
+        Dictionary<string, ApiDetails>? data = MessagePackSerializer.Deserialize<Dictionary<string, ApiDetails>>(docsStream);
         var docs = new Docs(data);
 
         lock (DocsByPath)

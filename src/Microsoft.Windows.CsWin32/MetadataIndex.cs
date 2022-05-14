@@ -1,13 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-using System;
-using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
-using System.IO;
 using System.IO.MemoryMappedFiles;
-using System.Linq;
 using System.Reflection;
 using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
@@ -142,7 +138,7 @@ internal class MetadataIndex : IDisposable
                                     CustomAttribute att = this.mr.GetCustomAttribute(h);
                                     if (MetadataUtilities.IsAttribute(this.mr, att, Generator.InteropDecorationNamespace, Generator.RAIIFreeAttribute))
                                     {
-                                        var args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
+                                        CustomAttributeValue<CodeAnalysis.CSharp.Syntax.TypeSyntax> args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
                                         if (args.FixedArguments[0].Value is string freeMethodName)
                                         {
                                             this.handleTypeReleaseMethod.Add(tdh, freeMethodName);
@@ -241,7 +237,7 @@ internal class MetadataIndex : IDisposable
     internal static MetadataIndex Get(string metadataPath, Platform? platform)
     {
         metadataPath = Path.GetFullPath(metadataPath);
-        CacheKey key = new CacheKey(metadataPath, platform);
+        var key = new CacheKey(metadataPath, platform);
         MemoryMappedViewStream metadataBytes;
         lock (Cache)
         {
@@ -253,7 +249,7 @@ internal class MetadataIndex : IDisposable
             // Read the entire metadata file exactly once so that many MemoryStreams can share the memory.
             if (!MetadataFiles.TryGetValue(metadataPath, out MemoryMappedFile? file))
             {
-                FileStream metadataStream = new FileStream(metadataPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                var metadataStream = new FileStream(metadataPath, FileMode.Open, FileAccess.Read, FileShare.Read);
                 file = MemoryMappedFile.CreateFromFile(metadataStream, mapName: null, capacity: 0, MemoryMappedFileAccess.Read, HandleInheritability.None, leaveOpen: false);
                 MetadataFiles.Add(metadataPath, file);
             }
@@ -266,7 +262,7 @@ internal class MetadataIndex : IDisposable
 
     internal static void Return(MetadataIndex index)
     {
-        CacheKey key = new CacheKey(index.metadataPath, index.platform);
+        var key = new CacheKey(index.metadataPath, index.platform);
         lock (Cache)
         {
             if (!Cache.TryGetValue(key, out Stack<MetadataIndex> stack))

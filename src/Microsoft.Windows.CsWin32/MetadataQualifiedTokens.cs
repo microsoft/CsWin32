@@ -5,9 +5,6 @@ using System.Reflection.Metadata;
 
 namespace Microsoft.Windows.CsWin32;
 
-#pragma warning disable SA1313 // Parameter names should begin with lower-case letter
-#pragma warning disable SA1649 // Filenames must match first declared type
-
 internal record struct QualifiedTypeReferenceHandle(Generator Generator, TypeReferenceHandle ReferenceHandle)
 {
     internal MetadataReader Reader => this.Generator.Reader;

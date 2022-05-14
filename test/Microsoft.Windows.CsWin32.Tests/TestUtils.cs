@@ -3,16 +3,13 @@
 
 using System.Text.RegularExpressions;
 
-namespace Microsoft.Windows.CsWin32.Tests
+internal static class TestUtils
 {
-    internal static class TestUtils
-    {
-        private const string ExpectedGeneratedSourceLineEnding = "\r\n";
-        private static readonly Regex NewLineRegex = new(@"\r?\n");
+    private const string ExpectedGeneratedSourceLineEnding = "\r\n";
+    private static readonly Regex NewLineRegex = new(@"\r?\n");
 
-        public static string NormalizeToExpectedLineEndings(string text)
-        {
-            return NewLineRegex.Replace(text, ExpectedGeneratedSourceLineEnding);
-        }
+    public static string NormalizeToExpectedLineEndings(string text)
+    {
+        return NewLineRegex.Replace(text, ExpectedGeneratedSourceLineEnding);
     }
 }

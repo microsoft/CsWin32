@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-using System;
 using System.Reflection.Metadata;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using static Microsoft.CodeAnalysis.CSharp.SyntaxFactory;
@@ -21,7 +20,7 @@ internal class CustomAttributeTypeProvider : ICustomAttributeTypeProvider<TypeSy
     public TypeSyntax GetTypeFromReference(MetadataReader reader, TypeReferenceHandle handle, byte rawTypeKind)
     {
         // CONSIDER: reuse GetNestingQualifiedName (with namespace support added) here.
-        var tr = reader.GetTypeReference(handle);
+        TypeReference tr = reader.GetTypeReference(handle);
         string name = reader.GetString(tr.Name);
         string ns = reader.GetString(tr.Namespace);
         return ParseName(ns + "." + name);

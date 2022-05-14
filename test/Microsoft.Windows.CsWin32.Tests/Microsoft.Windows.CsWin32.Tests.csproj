@@ -6,6 +6,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Using Include="Microsoft.Windows.CsWin32" />
+    <Using Include="Xunit" />
+    <Using Include="Xunit.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
     <_AssemblyMetadata1 Include="@(ProjectionMetadataWinmd)">
       <Value>%(Identity)</Value>
     </_AssemblyMetadata1>

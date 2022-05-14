@@ -1,9 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-using System;
 using System.Diagnostics.CodeAnalysis;
-using System.Linq;
 using System.Reflection;
 using System.Reflection.Metadata;
 using System.Runtime.InteropServices;
@@ -108,7 +106,7 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
 
         if (nameSyntax is QualifiedNameSyntax qualifiedName)
         {
-            var ns = qualifiedName.Left.ToString();
+            string? ns = qualifiedName.Left.ToString();
 
             // Look for WinRT namespaces
             if (ns.StartsWith("global::Windows.Foundation") || ns.StartsWith("global::Windows.UI") || ns.StartsWith("global::Windows.Graphics") || ns.StartsWith("global::Windows.System"))
@@ -117,7 +115,7 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
                 // whether it's an interface or an object. "isInterface" comes back as false for a WinRT interface,
                 // so that doesn't help. Looking at the name should be good enough, but if we needed to, the
                 // Win32 projection could give us an attribute to make sure
-                var objName = qualifiedName.Right.ToString();
+                string? objName = qualifiedName.Right.ToString();
                 bool isInterfaceName = InterfaceNameMatcher.IsMatch(objName);
                 if (!isInterfaceName)
                 {

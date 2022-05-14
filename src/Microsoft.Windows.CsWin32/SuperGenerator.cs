@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-using System;
-using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection.Metadata;
@@ -89,8 +87,8 @@ public class SuperGenerator
         QualifiedTypeReference typeRef = typeRefHandle.Resolve();
         if (this.TryGetTargetGenerator(typeRef, out Generator? targetGenerator))
         {
-            var @namespace = typeRef.Generator.Reader.GetString(typeRef.Reference.Namespace);
-            var @name = typeRef.Generator.Reader.GetString(typeRef.Reference.Name);
+            string? @namespace = typeRef.Generator.Reader.GetString(typeRef.Reference.Namespace);
+            string? @name = typeRef.Generator.Reader.GetString(typeRef.Reference.Name);
             if (targetGenerator.TryGetTypeDefHandle(@namespace, name, out TypeDefinitionHandle targetTypeDefHandle))
             {
                 typeDefHandle = new QualifiedTypeDefinitionHandle(targetGenerator, targetTypeDefHandle);

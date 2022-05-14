@@ -1,10 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-using System;
 using System.ComponentModel;
-using System.IO;
-using System.Linq;
 using System.Runtime.InteropServices;
 using Windows.Win32;
 using Windows.Win32.Devices.Display;
@@ -15,8 +12,6 @@ using Windows.Win32.System.Com;
 using Windows.Win32.System.Console;
 using Windows.Win32.System.ErrorReporting;
 using Windows.Win32.UI.Shell;
-using Xunit;
-using Xunit.Abstractions;
 
 [Trait("WindowsOnly", "true")]
 public class BasicTests

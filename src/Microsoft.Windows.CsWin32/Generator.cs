@@ -293,8 +293,6 @@ public class Generator : IDisposable
     private readonly TypeSyntaxSettings functionPointerTypeSettings;
     private readonly TypeSyntaxSettings errorMessageTypeSettings;
 
-    private readonly Dictionary<TypeReferenceHandle, TypeDefinitionHandle> refToDefCache = new();
-
     private readonly GeneratorOptions options;
     private readonly CSharpCompilation? compilation;
     private readonly CSharpParseOptions? parseOptions;
@@ -1816,7 +1814,7 @@ public class Generator : IDisposable
             return this.SuperGenerator.TryGetTypeDefinitionHandle(new QualifiedTypeReferenceHandle(this, typeRefHandle), out typeDefHandle);
         }
 
-        if (this.TryGetTypeDefHandle(typeRefHandle, out TypeDefinitionHandle localTypeDefHandle))
+        if (this.MetadataIndex.TryGetTypeDefHandle(typeRefHandle, out TypeDefinitionHandle localTypeDefHandle))
         {
             typeDefHandle = new QualifiedTypeDefinitionHandle(this, localTypeDefHandle);
             return true;
@@ -1826,52 +1824,7 @@ public class Generator : IDisposable
         return false;
     }
 
-    /// <summary>
-    /// Attempts to translate a <see cref="TypeReferenceHandle"/> to a <see cref="TypeDefinitionHandle"/>.
-    /// </summary>
-    /// <param name="typeRefHandle">The reference handle.</param>
-    /// <param name="typeDefHandle">Receives the type def handle, if one was discovered.</param>
-    /// <returns><see langword="true"/> if a TypeDefinition was found; otherwise <see langword="false"/>.</returns>
-    internal bool TryGetTypeDefHandle(TypeReferenceHandle typeRefHandle, out TypeDefinitionHandle typeDefHandle)
-    {
-        if (this.refToDefCache.TryGetValue(typeRefHandle, out typeDefHandle))
-        {
-            return !typeDefHandle.IsNil;
-        }
-
-        TypeReference typeRef = this.Reader.GetTypeReference(typeRefHandle);
-        if (typeRef.ResolutionScope.Kind != HandleKind.AssemblyReference)
-        {
-            foreach (TypeDefinitionHandle tdh in this.Reader.TypeDefinitions)
-            {
-                TypeDefinition typeDef = this.Reader.GetTypeDefinition(tdh);
-                if (typeDef.Name == typeRef.Name && typeDef.Namespace == typeRef.Namespace)
-                {
-                    if (typeRef.ResolutionScope.Kind == HandleKind.TypeReference)
-                    {
-                        // The ref is nested. Verify that the type we found is nested in the same type as well.
-                        if (this.TryGetTypeDefHandle((TypeReferenceHandle)typeRef.ResolutionScope, out TypeDefinitionHandle nestingTypeDef) && nestingTypeDef == typeDef.GetDeclaringType())
-                        {
-                            typeDefHandle = tdh;
-                            break;
-                        }
-                    }
-                    else if (typeRef.ResolutionScope.Kind == HandleKind.ModuleDefinition && typeDef.GetDeclaringType().IsNil)
-                    {
-                        typeDefHandle = tdh;
-                        break;
-                    }
-                    else
-                    {
-                        throw new NotSupportedException("Unrecognized ResolutionScope: " + typeRef.ResolutionScope);
-                    }
-                }
-            }
-        }
-
-        this.refToDefCache.Add(typeRefHandle, typeDefHandle);
-        return !typeDefHandle.IsNil;
-    }
+    internal bool TryGetTypeDefHandle(TypeReferenceHandle typeRefHandle, out TypeDefinitionHandle typeDefHandle) => this.MetadataIndex.TryGetTypeDefHandle(typeRefHandle, out typeDefHandle);
 
     internal bool TryGetTypeDefHandle(TypeReference typeRef, out TypeDefinitionHandle typeDefHandle) => this.TryGetTypeDefHandle(typeRef.Namespace, typeRef.Name, out typeDefHandle);
 

@@ -37,6 +37,8 @@ internal class MetadataIndex : IDisposable
 
     private readonly HashSet<string> releaseMethods = new HashSet<string>(StringComparer.Ordinal);
 
+    private readonly Dictionary<TypeReferenceHandle, TypeDefinitionHandle> refToDefCache = new();
+
     /// <summary>
     /// The set of names of typedef structs that represent handles where the handle has length of <see cref="IntPtr"/>
     /// and is therefore appropriate to wrap in a <see cref="SafeHandle"/>.
@@ -272,6 +274,53 @@ internal class MetadataIndex : IDisposable
 
             stack.Push(index);
         }
+    }
+
+    /// <summary>
+    /// Attempts to translate a <see cref="TypeReferenceHandle"/> to a <see cref="TypeDefinitionHandle"/>.
+    /// </summary>
+    /// <param name="typeRefHandle">The reference handle.</param>
+    /// <param name="typeDefHandle">Receives the type def handle, if one was discovered.</param>
+    /// <returns><see langword="true"/> if a TypeDefinition was found; otherwise <see langword="false"/>.</returns>
+    internal bool TryGetTypeDefHandle(TypeReferenceHandle typeRefHandle, out TypeDefinitionHandle typeDefHandle)
+    {
+        if (this.refToDefCache.TryGetValue(typeRefHandle, out typeDefHandle))
+        {
+            return !typeDefHandle.IsNil;
+        }
+
+        TypeReference typeRef = this.Reader.GetTypeReference(typeRefHandle);
+        if (typeRef.ResolutionScope.Kind != HandleKind.AssemblyReference)
+        {
+            foreach (TypeDefinitionHandle tdh in this.Reader.TypeDefinitions)
+            {
+                TypeDefinition typeDef = this.Reader.GetTypeDefinition(tdh);
+                if (typeDef.Name == typeRef.Name && typeDef.Namespace == typeRef.Namespace)
+                {
+                    if (typeRef.ResolutionScope.Kind == HandleKind.TypeReference)
+                    {
+                        // The ref is nested. Verify that the type we found is nested in the same type as well.
+                        if (this.TryGetTypeDefHandle((TypeReferenceHandle)typeRef.ResolutionScope, out TypeDefinitionHandle nestingTypeDef) && nestingTypeDef == typeDef.GetDeclaringType())
+                        {
+                            typeDefHandle = tdh;
+                            break;
+                        }
+                    }
+                    else if (typeRef.ResolutionScope.Kind == HandleKind.ModuleDefinition && typeDef.GetDeclaringType().IsNil)
+                    {
+                        typeDefHandle = tdh;
+                        break;
+                    }
+                    else
+                    {
+                        throw new NotSupportedException("Unrecognized ResolutionScope: " + typeRef.ResolutionScope);
+                    }
+                }
+            }
+        }
+
+        this.refToDefCache.Add(typeRefHandle, typeDefHandle);
+        return !typeDefHandle.IsNil;
     }
 
     private static string CommonPrefix(IReadOnlyList<string> ss)

@@ -1492,7 +1492,7 @@ public class Generator : IDisposable
             return safeHandleType;
         }
 
-        if (this.FindSymbolIfAlreadyAvailable($"{this.Namespace}.{safeHandleType}") is object)
+        if (this.FindTypeSymbolIfAlreadyAvailable($"{this.Namespace}.{safeHandleType}") is object)
         {
             return safeHandleType;
         }
@@ -1715,7 +1715,7 @@ public class Generator : IDisposable
         fullyQualifiedName = $"{ns}.{specialName}";
 
         // Skip if the compilation already defines this type or can access it from elsewhere.
-        if (this.FindSymbolIfAlreadyAvailable(fullyQualifiedName) is object)
+        if (this.FindTypeSymbolIfAlreadyAvailable(fullyQualifiedName) is object)
         {
             // The type already exists either in this project or a referenced one.
             return null;
@@ -2615,7 +2615,7 @@ public class Generator : IDisposable
         return false;
     }
 
-    private ISymbol? FindSymbolIfAlreadyAvailable(string fullyQualifiedMetadataName)
+    private ISymbol? FindTypeSymbolIfAlreadyAvailable(string fullyQualifiedMetadataName)
     {
         if (this.compilation is object)
         {
@@ -2659,7 +2659,7 @@ public class Generator : IDisposable
         string name = this.Reader.GetString(typeDef.Name);
         string ns = this.Reader.GetString(typeDef.Namespace);
         string fullyQualifiedName = ns + "." + name;
-        if (this.FindSymbolIfAlreadyAvailable(fullyQualifiedName) is object)
+        if (this.FindTypeSymbolIfAlreadyAvailable(fullyQualifiedName) is object)
         {
             // The type already exists either in this project or a referenced one.
             return null;

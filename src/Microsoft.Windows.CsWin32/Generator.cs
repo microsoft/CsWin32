@@ -4469,6 +4469,38 @@ public class Generator : IDisposable
                 // new PCSTR(someLocal)
                 arguments[param.SequenceNumber - 1] = Argument(ObjectCreationExpression(externParam.Type).AddArgumentListArguments(Argument(localName)));
             }
+            else if (isIn && isOut && this.canUseSpan && externParam.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "PWSTR" } } })
+            {
+                IdentifierNameSyntax origName = IdentifierName(externParam.Identifier.ValueText);
+                IdentifierNameSyntax localName = IdentifierName("p" + origName);
+                IdentifierNameSyntax localWstrName = IdentifierName("wstr" + origName);
+                signatureChanged = true;
+                parameters[param.SequenceNumber - 1] = externParam
+                    .WithType(MakeSpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword))))
+                    .AddModifiers(Token(SyntaxKind.RefKeyword));
+
+                // fixed (char* pParam1 = Param1)
+                fixedBlocks.Add(VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword)))).AddVariables(
+                    VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(
+                        origName))));
+
+                // wstrParam1
+                arguments[param.SequenceNumber - 1] = Argument(localWstrName);
+
+                // PWSTR wstrParam1 = pParam1;
+                leadingStatements.Add(LocalDeclarationStatement(
+                    VariableDeclaration(externParam.Type).AddVariables(VariableDeclarator(localWstrName.Identifier).WithInitializer(EqualsValueClause(localName)))));
+
+                // Param1 = Param1.Slice(0, wstrParam1.Length);
+                trailingStatements.Add(ExpressionStatement(AssignmentExpression(
+                    SyntaxKind.SimpleAssignmentExpression,
+                    origName,
+                    InvocationExpression(
+                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName(nameof(Span<char>.Slice))),
+                        ArgumentList().AddArguments(
+                            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))),
+                            Argument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, localWstrName, IdentifierName("Length"))))))));
+            }
         }
 
         TypeSyntax? returnSafeHandleType = originalSignature.ReturnType is HandleTypeHandleInfo returnTypeHandleInfo

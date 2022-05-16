@@ -22,3 +22,4 @@ WER_REPORT_INFORMATION
 wglGetProcAddress
 WPARAM
 WriteFile
+PathParseIconLocation

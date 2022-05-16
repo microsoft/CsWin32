@@ -1289,6 +1289,18 @@ i++)						if (p0[i] != default(uint))							return false;
     }
 
     [Fact]
+    public void InOutPWSTRGetsRefSpanCharFriendlyOverload()
+    {
+        const string MethodName = "PathParseIconLocation";
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate(MethodName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        IEnumerable<MethodDeclarationSyntax> generatedMethods = this.FindGeneratedMethod(MethodName);
+        Assert.Contains(generatedMethods, m => m.ParameterList.Parameters.Count == 1 && m.ParameterList.Parameters[0].Modifiers.Any(SyntaxKind.RefKeyword) && m.ParameterList.Parameters[0].Type?.ToString() == "Span<char>");
+    }
+
+    [Fact]
     public void NullMethodsClass()
     {
         Assert.Throws<InvalidOperationException>(() => this.CreateGenerator(new GeneratorOptions { ClassName = null! }));

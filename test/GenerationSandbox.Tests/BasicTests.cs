@@ -433,4 +433,13 @@ public class BasicTests
         IPersistFile persistFile = (IPersistFile)shellLink;
         Assert.NotNull(persistFile);
     }
+
+    [Fact]
+    public void PathParseIconLocation_Friendly()
+    {
+        Span<char> buffer = "hi there,3".ToCharArray();
+        int result = PInvoke.PathParseIconLocation(ref buffer);
+        Assert.Equal(3, result);
+        Assert.Equal("hi there", buffer.ToString());
+    }
 }

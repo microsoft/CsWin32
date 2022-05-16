@@ -311,6 +311,54 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
+    public void TypeDefConstantsDeclaredWithinTypeDef()
+    {
+        const string constant = "S_OK";
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate(constant, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        FieldDeclarationSyntax field = this.FindGeneratedConstant(constant).Single();
+        StructDeclarationSyntax declaringStruct = Assert.IsType<StructDeclarationSyntax>(field.Parent);
+        Assert.Equal("HRESULT", declaringStruct.Identifier.ToString());
+    }
+
+    [Fact]
+    public void TypeDefConstantsRedirectedToPInvokeWhenTypeDefAlreadyInRefAssembly()
+    {
+        CSharpCompilation referencedProject = this.compilation.WithAssemblyName("refdProj");
+
+        using var referencedGenerator = this.CreateGenerator(new GeneratorOptions { Public = true }, referencedProject);
+        Assert.True(referencedGenerator.TryGenerate("HRESULT", CancellationToken.None));
+        referencedProject = this.AddGeneratedCode(referencedProject, referencedGenerator);
+        this.AssertNoDiagnostics(referencedProject);
+
+        // Now produce more code in a referencing project that includes at least one of the same types as generated in the referenced project.
+        const string constant = "S_OK";
+        this.compilation = this.compilation.AddReferences(referencedProject.ToMetadataReference());
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate(constant, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        FieldDeclarationSyntax field = this.FindGeneratedConstant(constant).Single();
+        ClassDeclarationSyntax declaringClass = Assert.IsType<ClassDeclarationSyntax>(field.Parent);
+        Assert.Equal("PInvoke", declaringClass.Identifier.ToString());
+    }
+
+    [Theory]
+    [InlineData("IDC_ARROW")] // PCWSTR / PWSTR
+    public void SpecialTypeDefsDoNotContainTheirOwnConstants(string constantName)
+    {
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate(constantName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        FieldDeclarationSyntax field = this.FindGeneratedConstant(constantName).Single();
+        ClassDeclarationSyntax declaringClass = Assert.IsType<ClassDeclarationSyntax>(field.Parent);
+        Assert.Equal("PInvoke", declaringClass.Identifier.ToString());
+    }
+
+    [Fact]
     public void FriendlyOverloadOfCOMInterfaceRemovesParameter()
     {
         const string ifaceName = "IEnumDebugPropertyInfo";

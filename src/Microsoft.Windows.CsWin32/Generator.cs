@@ -293,6 +293,11 @@ public class Generator : IDisposable
     private static readonly AttributeSyntax OptionalAttributeSyntax = Attribute(IdentifierName("Optional")).WithArgumentList(null);
     private static readonly AttributeSyntax FlagsAttributeSyntax = Attribute(IdentifierName("Flags")).WithArgumentList(null);
     private static readonly AttributeSyntax FieldOffsetAttributeSyntax = Attribute(IdentifierName("FieldOffset"));
+    private static readonly AttributeListSyntax CsWin32StampAttribute = AttributeList()
+        .WithTarget(AttributeTargetSpecifier(Token(SyntaxKind.AssemblyKeyword))).AddAttributes(
+        Attribute(ParseName("global::System.Reflection.AssemblyMetadata")).AddArgumentListArguments(
+            AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(ThisAssembly.AssemblyName))),
+            AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(ThisAssembly.AssemblyInformationalVersion)))));
 
     private readonly TypeSyntaxSettings generalTypeSettings;
     private readonly TypeSyntaxSettings fieldTypeSettings;
@@ -1157,6 +1162,19 @@ public class Generator : IDisposable
                 normalizedResults.Add(kv.Key, compilationUnit);
             }
         });
+
+        if (this.compilation?.GetTypeByMetadataName("System.Reflection.AssemblyMetadataAttribute") is not null)
+        {
+            if (this.options.EmitSingleFile)
+            {
+                KeyValuePair<string, CompilationUnitSyntax> originalEntry = normalizedResults.Single();
+                normalizedResults[originalEntry.Key] = originalEntry.Value.WithLeadingTrivia().AddAttributeLists(CsWin32StampAttribute).WithLeadingTrivia(originalEntry.Value.GetLeadingTrivia());
+            }
+            else
+            {
+                normalizedResults.Add(string.Format(CultureInfo.InvariantCulture, FilenamePattern, "CsWin32Stamp"), CompilationUnit().AddAttributeLists(CsWin32StampAttribute).WithLeadingTrivia(FileHeader));
+            }
+        }
 
         if (this.needsWinRTCustomMarshaler)
         {

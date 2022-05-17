@@ -87,6 +87,13 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.generator?.Dispose();
     }
 
+    [Fact]
+    public void NoGeneration()
+    {
+        this.generator = this.CreateGenerator();
+        Assert.Empty(this.generator.GetCompilationUnits(CancellationToken.None));
+    }
+
     [Theory]
     [InlineData("COPYFILE2_CALLBACK_NONE", "COPYFILE2_MESSAGE_TYPE")]
     [InlineData("RTL_RUN_ONCE_ASYNC", null)]

@@ -1064,6 +1064,11 @@ public class Generator : IDisposable
     /// <returns>All the generated source files, keyed by filename.</returns>
     public IReadOnlyDictionary<string, CompilationUnitSyntax> GetCompilationUnits(CancellationToken cancellationToken)
     {
+        if (this.committedCode.IsEmpty)
+        {
+            return ImmutableDictionary<string, CompilationUnitSyntax>.Empty;
+        }
+
         NamespaceDeclarationSyntax? starterNamespace = NamespaceDeclaration(ParseName(this.Namespace));
 
         // .g.cs because the resulting files are not user-created.
@@ -5567,6 +5572,9 @@ public class Generator : IDisposable
         {
             this.parent = parent;
         }
+
+        internal bool IsEmpty => this.modulesAndMembers.Count == 0 && this.types.Count == 0 && this.fieldsToSyntax.Count == 0 && this.safeHandleTypes.Count == 0 && this.specialTypes.Count == 0
+            && this.inlineArrayIndexerExtensionsMembers.Count == 0 && this.comInterfaceFriendlyExtensionsMembers.Count == 0;
 
         internal IEnumerable<MemberDeclarationSyntax> GeneratedTypes => this.GetTypesWithInjectedFields().Concat(this.specialTypes.Values).Concat(this.safeHandleTypes);
 

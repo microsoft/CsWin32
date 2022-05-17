@@ -15,24 +15,28 @@ internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleIn
 
     internal override TypeSyntaxAndMarshaling ToTypeSyntax(TypeSyntaxSettings inputs, CustomAttributeHandleCollection? customAttributes, ParameterAttributes parameterAttributes)
     {
-        (CodeAnalysis.CSharp.Syntax.TypeSyntax elementSyntax, MarshalAsAttribute? marshalAs) = this.ElementType.ToTypeSyntax(inputs, customAttributes);
-        if (marshalAs is object || inputs.Generator?.IsManagedType(this.ElementType) is true)
+        TypeSyntaxAndMarshaling elementTypeDetails = this.ElementType.ToTypeSyntax(inputs, customAttributes);
+        if (elementTypeDetails.MarshalAsAttribute is object || inputs.Generator?.IsManagedType(this.ElementType) is true)
         {
             bool xIn = (parameterAttributes & ParameterAttributes.In) == ParameterAttributes.In;
             bool xOut = (parameterAttributes & ParameterAttributes.Out) == ParameterAttributes.Out;
 
             // A pointer to a marshaled object is not allowed.
-            if (customAttributes.HasValue && inputs.Generator?.FindNativeArrayInfoAttribute(customAttributes.Value) is object)
+            if (customAttributes.HasValue && inputs.Generator?.FindNativeArrayInfoAttribute(customAttributes.Value) is { } nativeArrayInfo)
             {
                 // But this pointer represents an array, so type as an array.
-                return new TypeSyntaxAndMarshaling(
-                    ArrayType(elementSyntax).AddRankSpecifiers(ArrayRankSpecifier()),
-                    marshalAs is object ? new MarshalAsAttribute(UnmanagedType.LPArray) { ArraySubType = marshalAs.Value } : new MarshalAsAttribute(UnmanagedType.LPArray));
+                MarshalAsAttribute marshalAsAttribute = new MarshalAsAttribute(UnmanagedType.LPArray);
+                if (elementTypeDetails.MarshalAsAttribute is object)
+                {
+                    marshalAsAttribute.ArraySubType = elementTypeDetails.MarshalAsAttribute.Value;
+                }
+
+                return new TypeSyntaxAndMarshaling(ArrayType(elementTypeDetails.Type).AddRankSpecifiers(ArrayRankSpecifier()), marshalAsAttribute, nativeArrayInfo);
             }
             else if (xIn || xOut)
             {
                 // But we can use a modifier to emulate a pointer and thereby enable marshaling.
-                return new TypeSyntaxAndMarshaling(elementSyntax, marshalAs)
+                return new TypeSyntaxAndMarshaling(elementTypeDetails.Type, elementTypeDetails.MarshalAsAttribute, elementTypeDetails.NativeArrayInfo)
                 {
                     ParameterModifier = Token(
                         xIn && xOut ? SyntaxKind.RefKeyword :
@@ -51,17 +55,18 @@ internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleIn
                 // We can replace a pointer to a struct with a managed equivalent by changing the pointer to an array.
                 // We only want to enter this branch for struct fields, since method parameters can use in/out/ref modifiers.
                 return new TypeSyntaxAndMarshaling(
-                    ArrayType(elementSyntax).AddRankSpecifiers(ArrayRankSpecifier()),
-                    marshalAs is object ? new MarshalAsAttribute(UnmanagedType.LPArray) { ArraySubType = marshalAs.Value } : null);
+                    ArrayType(elementTypeDetails.Type).AddRankSpecifiers(ArrayRankSpecifier()),
+                    elementTypeDetails.MarshalAsAttribute is object ? new MarshalAsAttribute(UnmanagedType.LPArray) { ArraySubType = elementTypeDetails.MarshalAsAttribute.Value } : null,
+                    elementTypeDetails.NativeArrayInfo);
             }
         }
         else if (inputs.AllowMarshaling && inputs.Generator is object
             && customAttributes?.Any(ah => MetadataUtilities.IsAttribute(inputs.Generator.Reader, inputs.Generator!.Reader.GetCustomAttribute(ah), Generator.InteropDecorationNamespace, "ComOutPtrAttribute")) is true)
         {
-            return new TypeSyntaxAndMarshaling(PredefinedType(Token(SyntaxKind.ObjectKeyword)), new MarshalAsAttribute(UnmanagedType.IUnknown));
+            return new TypeSyntaxAndMarshaling(PredefinedType(Token(SyntaxKind.ObjectKeyword)), new MarshalAsAttribute(UnmanagedType.IUnknown), null);
         }
 
-        return new TypeSyntaxAndMarshaling(PointerType(elementSyntax));
+        return new TypeSyntaxAndMarshaling(PointerType(elementTypeDetails.Type));
     }
 
     private bool TryGetElementTypeDefinition(Generator generator, out TypeDefinition typeDef)

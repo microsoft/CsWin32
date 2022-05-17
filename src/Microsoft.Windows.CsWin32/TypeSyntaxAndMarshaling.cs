@@ -11,10 +11,19 @@ namespace Microsoft.Windows.CsWin32;
 
 internal struct TypeSyntaxAndMarshaling
 {
-    internal TypeSyntaxAndMarshaling(TypeSyntax type, MarshalAsAttribute? marshalAs = null)
+    internal TypeSyntaxAndMarshaling(TypeSyntax type)
+    {
+        this.Type = type;
+        this.MarshalAsAttribute = null;
+        this.NativeArrayInfo = null;
+        this.ParameterModifier = null;
+    }
+
+    internal TypeSyntaxAndMarshaling(TypeSyntax type, MarshalAsAttribute? marshalAs, Generator.NativeArrayInfo? nativeArrayInfo)
     {
         this.Type = type;
         this.MarshalAsAttribute = marshalAs;
+        this.NativeArrayInfo = nativeArrayInfo;
         this.ParameterModifier = null;
     }
 
@@ -22,39 +31,35 @@ internal struct TypeSyntaxAndMarshaling
 
     internal MarshalAsAttribute? MarshalAsAttribute { get; init; }
 
-    internal SyntaxToken? ParameterModifier { get; init; }
+    internal Generator.NativeArrayInfo? NativeArrayInfo { get; }
 
-    internal void Deconstruct(out TypeSyntax type, out MarshalAsAttribute? marshalAs)
-    {
-        type = this.Type;
-        marshalAs = this.MarshalAsAttribute;
-    }
+    internal SyntaxToken? ParameterModifier { get; init; }
 
     internal FieldDeclarationSyntax AddMarshalAs(FieldDeclarationSyntax fieldDeclaration)
     {
         return this.MarshalAsAttribute is object
-            ? fieldDeclaration.AddAttributeLists(AttributeList().AddAttributes(Generator.MarshalAs(this.MarshalAsAttribute)))
+            ? fieldDeclaration.AddAttributeLists(AttributeList().AddAttributes(Generator.MarshalAs(this.MarshalAsAttribute, this.NativeArrayInfo)))
             : fieldDeclaration;
     }
 
     internal ParameterSyntax AddMarshalAs(ParameterSyntax parameter)
     {
         return this.MarshalAsAttribute is object
-            ? parameter.AddAttributeLists(AttributeList().AddAttributes(Generator.MarshalAs(this.MarshalAsAttribute)))
+            ? parameter.AddAttributeLists(AttributeList().AddAttributes(Generator.MarshalAs(this.MarshalAsAttribute, this.NativeArrayInfo)))
             : parameter;
     }
 
     internal MethodDeclarationSyntax AddReturnMarshalAs(MethodDeclarationSyntax methodDeclaration)
     {
         return this.MarshalAsAttribute is object
-            ? methodDeclaration.AddAttributeLists(AttributeList().WithTarget(AttributeTargetSpecifier(Token(SyntaxKind.ReturnKeyword))).AddAttributes(Generator.MarshalAs(this.MarshalAsAttribute)))
+            ? methodDeclaration.AddAttributeLists(AttributeList().WithTarget(AttributeTargetSpecifier(Token(SyntaxKind.ReturnKeyword))).AddAttributes(Generator.MarshalAs(this.MarshalAsAttribute, this.NativeArrayInfo)))
             : methodDeclaration;
     }
 
     internal DelegateDeclarationSyntax AddReturnMarshalAs(DelegateDeclarationSyntax methodDeclaration)
     {
         return this.MarshalAsAttribute is object
-            ? methodDeclaration.AddAttributeLists(AttributeList().WithTarget(AttributeTargetSpecifier(Token(SyntaxKind.ReturnKeyword))).AddAttributes(Generator.MarshalAs(this.MarshalAsAttribute)))
+            ? methodDeclaration.AddAttributeLists(AttributeList().WithTarget(AttributeTargetSpecifier(Token(SyntaxKind.ReturnKeyword))).AddAttributes(Generator.MarshalAs(this.MarshalAsAttribute, this.NativeArrayInfo)))
             : methodDeclaration;
     }
 

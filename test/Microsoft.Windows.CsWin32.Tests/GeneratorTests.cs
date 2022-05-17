@@ -2608,6 +2608,21 @@ namespace Windows.Win32
         }
     }
 
+    [Fact]
+    public void ParametersIncludeSizeParamIndex()
+    {
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate("IEnumSearchScopeRules", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        MethodDeclarationSyntax nextMethod = this.FindGeneratedMethod("Next").Single(m => !m.Modifiers.Any(SyntaxKind.StaticKeyword));
+        AttributeSyntax marshalAsAttribute = nextMethod.ParameterList.Parameters[1].AttributeLists.SelectMany(al => al.Attributes).Single(a => a.Name.ToString() == "MarshalAs");
+        AttributeArgumentSyntax? sizeParamIndex = marshalAsAttribute.ArgumentList?.Arguments.Single(a => a.NameEquals?.Name.ToString() == nameof(MarshalAsAttribute.SizeParamIndex));
+        Assert.NotNull(sizeParamIndex);
+        Assert.Equal("0", ((LiteralExpressionSyntax)sizeParamIndex!.Expression).Token.ValueText);
+    }
+
     private static string ConstructGlobalConfigString(bool omitDocs = false)
     {
         StringBuilder globalConfigBuilder = new();

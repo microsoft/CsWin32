@@ -89,7 +89,7 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
         }
         else if (TryMarshalAsObject(inputs, simpleName, out MarshalAsAttribute? marshalAs))
         {
-            return new TypeSyntaxAndMarshaling(PredefinedType(Token(SyntaxKind.ObjectKeyword)), marshalAs);
+            return new TypeSyntaxAndMarshaling(PredefinedType(Token(SyntaxKind.ObjectKeyword)), marshalAs, null);
         }
         else if (!inputs.AllowMarshaling && this.IsDelegate(inputs, out TypeDefinition delegateDefinition) && inputs.Generator is object && !Generator.IsUntypedDelegate(this.reader, delegateDefinition))
         {
@@ -125,7 +125,7 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
                         marshalCookie = marshalCookie.Substring(Generator.GlobalNamespacePrefix.Length);
                     }
 
-                    return new TypeSyntaxAndMarshaling(syntax, new MarshalAsAttribute(UnmanagedType.CustomMarshaler) { MarshalCookie = marshalCookie, MarshalType = Generator.WinRTCustomMarshalerFullName });
+                    return new TypeSyntaxAndMarshaling(syntax, new MarshalAsAttribute(UnmanagedType.CustomMarshaler) { MarshalCookie = marshalCookie, MarshalType = Generator.WinRTCustomMarshalerFullName }, null);
                 }
             }
         }

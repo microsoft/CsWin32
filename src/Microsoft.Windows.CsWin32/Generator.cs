@@ -1171,7 +1171,7 @@ public class Generator : IDisposable
     internal static ImmutableDictionary<string, string> GetBannedAPIs(GeneratorOptions options) => options.AllowMarshaling ? BannedAPIsWithMarshaling : BannedAPIsWithoutMarshaling;
 
     [return: NotNullIfNotNull("marshalAs")]
-    internal static AttributeSyntax? MarshalAs(MarshalAsAttribute? marshalAs)
+    internal static AttributeSyntax? MarshalAs(MarshalAsAttribute? marshalAs, NativeArrayInfo? nativeArrayInfo)
     {
         if (marshalAs is null)
         {
@@ -1179,7 +1179,13 @@ public class Generator : IDisposable
         }
 
         // TODO: fill in more properties to match the original
-        return MarshalAs(marshalAs.Value, marshalAs.ArraySubType, marshalAs.MarshalCookie, marshalAs.MarshalType, marshalAs.SizeConst > 0 ? LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(marshalAs.SizeConst)) : null);
+        return MarshalAs(
+            marshalAs.Value,
+            marshalAs.ArraySubType,
+            marshalAs.MarshalCookie,
+            marshalAs.MarshalType,
+            nativeArrayInfo?.CountConst.HasValue is true ? LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(nativeArrayInfo.Value.CountConst.Value)) : null,
+            nativeArrayInfo?.CountParamIndex.HasValue is true ? LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(nativeArrayInfo.Value.CountParamIndex.Value)) : null);
     }
 
     internal static TypeSyntax MakeSpanOfT(TypeSyntax typeArgument) => GenericName("Span").AddTypeArgumentListArguments(typeArgument);
@@ -1797,14 +1803,14 @@ public class Generator : IDisposable
         return specialDeclaration;
     }
 
-    internal CustomAttribute? FindNativeArrayInfoAttribute(CustomAttributeHandleCollection customAttributeHandles)
+    internal NativeArrayInfo? FindNativeArrayInfoAttribute(CustomAttributeHandleCollection customAttributeHandles)
     {
         foreach (CustomAttributeHandle handle in customAttributeHandles)
         {
             CustomAttribute att = this.Reader.GetCustomAttribute(handle);
             if (this.IsAttribute(att, InteropDecorationNamespace, NativeArrayInfoAttribute))
             {
-                return att;
+                return DecodeNativeArrayInfoAttribute(att);
             }
         }
 
@@ -2095,7 +2101,7 @@ public class Generator : IDisposable
                 IdentifierName(Enum.GetName(typeof(CallingConvention), callingConvention)!))));
     }
 
-    private static AttributeSyntax MarshalAs(UnmanagedType unmanagedType, UnmanagedType? arraySubType = null, string? marshalCookie = null, string? marshalType = null, ExpressionSyntax? sizeConst = null)
+    private static AttributeSyntax MarshalAs(UnmanagedType unmanagedType, UnmanagedType? arraySubType = null, string? marshalCookie = null, string? marshalType = null, ExpressionSyntax? sizeConst = null, ExpressionSyntax? sizeParamIndex = null)
     {
         AttributeSyntax? marshalAs =
             Attribute(IdentifierName("MarshalAs"))
@@ -2120,6 +2126,12 @@ public class Generator : IDisposable
         {
             marshalAs = marshalAs.AddArgumentListArguments(
                 AttributeArgument(sizeConst).WithNameEquals(NameEquals(nameof(MarshalAsAttribute.SizeConst))));
+        }
+
+        if (sizeParamIndex is object)
+        {
+            marshalAs = marshalAs.AddArgumentListArguments(
+                AttributeArgument(sizeParamIndex).WithNameEquals(NameEquals(nameof(MarshalAsAttribute.SizeParamIndex))));
         }
 
         if (!string.IsNullOrEmpty(marshalCookie))
@@ -2284,6 +2296,16 @@ public class Generator : IDisposable
         @namespace = nameIdx >= 0 ? possiblyQualifiedName.Substring(0, nameIdx) : null;
         name = nameIdx >= 0 ? possiblyQualifiedName.Substring(nameIdx + 1) : possiblyQualifiedName;
         return @namespace is object;
+    }
+
+    private static NativeArrayInfo DecodeNativeArrayInfoAttribute(CustomAttribute nativeArrayInfoAttribute)
+    {
+        CustomAttributeValue<TypeSyntax> args = nativeArrayInfoAttribute.DecodeValue(CustomAttributeTypeProvider.Instance);
+        return new NativeArrayInfo
+        {
+            CountConst = (int?)args.NamedArguments.FirstOrDefault(a => a.Name == "CountConst").Value,
+            CountParamIndex = (short?)args.NamedArguments.FirstOrDefault(a => a.Name == "CountParamIndex").Value,
+        };
     }
 
     private T AddApiDocumentation<T>(string api, T memberDeclaration)
@@ -3248,8 +3270,9 @@ public class Generator : IDisposable
                 MethodSignature<TypeHandleInfo> signature = methodDefinition.DecodeSignature(SignatureHandleProvider.Instance, null);
 
                 CustomAttributeHandleCollection? returnTypeAttributes = this.GetReturnTypeCustomAttributes(methodDefinition);
-                (TypeSyntax returnType, MarshalAsAttribute? marshalAs) = signature.ReturnType.ToTypeSyntax(typeSettings, returnTypeAttributes);
-                AttributeSyntax? returnsAttribute = MarshalAs(marshalAs);
+                TypeSyntaxAndMarshaling returnTypeDetails = signature.ReturnType.ToTypeSyntax(typeSettings, returnTypeAttributes);
+                TypeSyntax returnType = returnTypeDetails.Type;
+                AttributeSyntax? returnsAttribute = MarshalAs(returnTypeDetails.MarshalAsAttribute, returnTypeDetails.NativeArrayInfo);
 
                 bool preserveSig = returnType is not QualifiedNameSyntax { Right: { Identifier: { ValueText: "HRESULT" } } }
                     || (methodDefinition.ImplAttributes & MethodImplAttributes.PreserveSig) == MethodImplAttributes.PreserveSig
@@ -4293,11 +4316,10 @@ public class Generator : IDisposable
                     CustomAttribute att = this.Reader.GetCustomAttribute(attHandle);
                     if (this.IsAttribute(att, InteropDecorationNamespace, NativeArrayInfoAttribute))
                     {
-                        CustomAttributeValue<TypeSyntax> args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
                         isArray = true;
-                        sizeParamIndex = (short?)args.NamedArguments.FirstOrDefault(a => a.Name == "CountParamIndex").Value;
-                        sizeConst = (int?)args.NamedArguments.FirstOrDefault(a => a.Name == "CountConst").Value;
-
+                        NativeArrayInfo nativeArrayInfo = DecodeNativeArrayInfoAttribute(att);
+                        sizeParamIndex = nativeArrayInfo.CountParamIndex;
+                        sizeConst = nativeArrayInfo.CountConst;
                         break;
                     }
                 }
@@ -5403,118 +5425,6 @@ public class Generator : IDisposable
         return unmgdType;
     }
 
-    private MarshalAsAttribute ToMarshalAsAttribute(BlobHandle blobHandle)
-    {
-        BlobReader br = this.Reader.GetBlobReader(blobHandle);
-        var unmgdType = (UnmanagedType)br.ReadByte();
-        var ma = new MarshalAsAttribute(unmgdType);
-        switch (unmgdType)
-        {
-            case UnmanagedType.Interface:
-            case UnmanagedType.IUnknown:
-            case UnmanagedType.IDispatch:
-                if (br.RemainingBytes == 0)
-                {
-                    break;
-                }
-
-                ma.IidParameterIndex = br.ReadCompressedInteger();
-                break;
-
-            case UnmanagedType.ByValArray:
-                if (br.RemainingBytes == 0)
-                {
-                    break;
-                }
-
-                ma.SizeConst = br.ReadCompressedInteger();
-
-                if (br.RemainingBytes == 0)
-                {
-                    break;
-                }
-
-                ma.ArraySubType = (UnmanagedType)br.ReadCompressedInteger();
-
-                break;
-
-            case UnmanagedType.SafeArray:
-                if (br.RemainingBytes == 0)
-                {
-                    break;
-                }
-
-                ma.SafeArraySubType = (VarEnum)br.ReadCompressedInteger();
-
-                if (br.RemainingBytes == 0)
-                {
-                    break;
-                }
-                ////string udtName = br.ReadSerializedString();
-                ////ma.SafeArrayUserDefinedSubType = Helpers.LoadTypeFromAssemblyQualifiedName(udtName, module.GetRoAssembly(), ignoreCase: false, throwOnError: false);
-                break;
-
-            case UnmanagedType.LPArray:
-                if (br.RemainingBytes == 0)
-                {
-                    break;
-                }
-
-                ma.ArraySubType = (UnmanagedType)br.ReadCompressedInteger();
-
-                if (br.RemainingBytes == 0)
-                {
-                    break;
-                }
-
-                ma.SizeParamIndex = (short)br.ReadCompressedInteger();
-
-                if (br.RemainingBytes == 0)
-                {
-                    break;
-                }
-
-                ma.SizeConst = br.ReadCompressedInteger();
-                break;
-
-            case UnmanagedType.CustomMarshaler:
-                if (br.RemainingBytes == 0)
-                {
-                    break;
-                }
-
-                br.ReadSerializedString(); // Skip the typelib guid.
-
-                if (br.RemainingBytes == 0)
-                {
-                    break;
-                }
-
-                br.ReadSerializedString(); // Skip name of native type.
-
-                if (br.RemainingBytes == 0)
-                {
-                    break;
-                }
-
-                ma.MarshalType = br.ReadSerializedString();
-                ////ma.MarshalTypeRef = Helpers.LoadTypeFromAssemblyQualifiedName(ma.MarshalType, module.GetRoAssembly(), ignoreCase: false, throwOnError: false);
-
-                if (br.RemainingBytes == 0)
-                {
-                    break;
-                }
-
-                ma.MarshalCookie = br.ReadSerializedString();
-                break;
-
-            default:
-                break;
-        }
-
-        return ma;
-    }
-
     private ExpressionSyntax ToExpressionSyntax(Constant constant)
     {
         BlobReader blobReader = this.Reader.GetBlobReader(constant.Value);
@@ -5577,6 +5487,13 @@ public class Generator : IDisposable
         {
             return this.MetadataIndex.MetadataByNamespace.Values;
         }
+    }
+
+    internal struct NativeArrayInfo
+    {
+        internal short? CountParamIndex { get; init; }
+
+        internal int? CountConst { get; init; }
     }
 
     private class GeneratedCode

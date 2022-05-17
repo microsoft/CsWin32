@@ -437,7 +437,9 @@ public class BasicTests
     [Fact]
     public void PathParseIconLocation_Friendly()
     {
-        Span<char> buffer = "hi there,3".ToCharArray();
+        string sourceString = "hi there,3";
+        Span<char> buffer = new char[PInvoke.MAX_PATH];
+        sourceString.AsSpan().CopyTo(buffer);
         int result = PInvoke.PathParseIconLocation(ref buffer);
         Assert.Equal(3, result);
         Assert.Equal("hi there", buffer.ToString());

@@ -23,3 +23,4 @@ wglGetProcAddress
 WPARAM
 WriteFile
 PathParseIconLocation
+MAX_PATH

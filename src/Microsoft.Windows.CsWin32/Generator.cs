@@ -4150,6 +4150,12 @@ public class Generator : IDisposable
 
     private IEnumerable<MethodDeclarationSyntax> DeclareFriendlyOverloads(MethodDefinition methodDefinition, MethodDeclarationSyntax externMethodDeclaration, NameSyntax declaringTypeName, FriendlyOverloadOf overloadOf, HashSet<string> helperMethodsAdded)
     {
+        // If/when we ever need helper methods for the friendly overloads again, they can be added when used with code like this:
+        ////if (helperMethodsAdded.Add(SomeHelperMethodName))
+        ////{
+        ////    yield return PInvokeHelperMethods[SomeHelperMethodName];
+        ////}
+
         if (this.TryFetchTemplate(externMethodDeclaration.Identifier.ValueText, out MemberDeclarationSyntax? templateFriendlyOverload))
         {
             yield return (MethodDeclarationSyntax)templateFriendlyOverload;
@@ -4520,17 +4526,15 @@ public class Generator : IDisposable
                 // wstrParam1
                 arguments[param.SequenceNumber - 1] = Argument(localWstrName);
 
-                // EnsureNullTerminated(pParam, nameof(pParam));
-                const string EnsureNullTerminatedMethodName = "EnsureNullTerminated";
-                leadingOutsideTryStatements.Add(ExpressionStatement(
-                    InvocationExpression(
-                        IdentifierName(EnsureNullTerminatedMethodName),
-                        ArgumentList().AddArguments(
-                            Argument(origName), Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(origName.ToString())))))));
-                if (helperMethodsAdded.Add(EnsureNullTerminatedMethodName))
-                {
-                    yield return PInvokeHelperMethods[EnsureNullTerminatedMethodName];
-                }
+                // if (buffer.LastIndexOf('\0') == -1) throw new ArgumentException("Required null terminator is missing.", "Param1");
+                InvocationExpressionSyntax lastIndexOf = InvocationExpression(
+                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName(nameof(MemoryExtensions.LastIndexOf))),
+                    ArgumentList().AddArguments(Argument(LiteralExpression(SyntaxKind.CharacterLiteralExpression, Literal('\0')))));
+                leadingOutsideTryStatements.Add(IfStatement(
+                    BinaryExpression(SyntaxKind.EqualsExpression, lastIndexOf, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(-1))),
+                    ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentException))).AddArgumentListArguments(
+                        Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal("Required null terminator missing."))),
+                        Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(externParam.Identifier.ValueText)))))));
 
                 // PWSTR wstrParam1 = pParam1;
                 leadingStatements.Add(LocalDeclarationStatement(

@@ -1,5 +1,6 @@
 ﻿BOOL
 CHAR
+CreateCursor
 CreateFile
 DISPLAYCONFIG_VIDEO_SIGNAL_INFO
 EnumWindows

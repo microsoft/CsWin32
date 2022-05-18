@@ -444,4 +444,34 @@ public class BasicTests
         Assert.Equal(3, result);
         Assert.Equal("hi there", buffer.ToString());
     }
+
+    [Fact]
+    public void ZeroIsInvalidSafeHandle()
+    {
+        // Verify that zero is default and considered invalid.
+        FreeLibrarySafeHandle h = new();
+        Assert.True(h.IsInvalid);
+        Assert.Equal(IntPtr.Zero, h.DangerousGetHandle());
+
+        // Verify that -1 is considered valid.
+        h = new(new IntPtr(-1), ownsHandle: false);
+        Assert.False(h.IsInvalid);
+    }
+
+    [Fact]
+    public void ZeroOrMinusOneIsInvalidSafeHandle()
+    {
+        // Verify that zero or -1 is default and considered invalid.
+        DestroyCursorSafeHandle h = new();
+        Assert.True(h.IsInvalid);
+        Assert.True(h.DangerousGetHandle().ToInt32() is 0 or -1);
+
+        // Verify that 0 is considered invalid.
+        h = new(IntPtr.Zero, ownsHandle: false);
+        Assert.True(h.IsInvalid);
+
+        // Verify that -1 is considered invalid.
+        h = new(new IntPtr(-1), ownsHandle: false);
+        Assert.True(h.IsInvalid);
+    }
 }

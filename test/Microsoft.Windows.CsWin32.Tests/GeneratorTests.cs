@@ -242,7 +242,9 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [CombinatorialData]
     public void InterestingAPIs(
         [CombinatorialValues(
-            "CreateFile", // SafeHandle-derived type
+            "CreateFile", // built-in SafeHandle use
+            "CreateCursor", // 0 or -1 invalid SafeHandle generated
+            "PlaySound", // 0 invalid SafeHandle generated
             "D3DGetTraceInstructionOffsets", // SizeParamIndex
             "PlgBlt", // SizeConst
             "ENABLE_TRACE_PARAMETERS_V1", // bad xml created at some point.

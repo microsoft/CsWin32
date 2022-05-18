@@ -66,6 +66,7 @@ public class Generator : IDisposable
     private const string SystemRuntimeCompilerServices = "System.Runtime.CompilerServices";
     private const string SystemRuntimeInteropServices = "System.Runtime.InteropServices";
     private const string NativeTypedefAttribute = "NativeTypedefAttribute";
+    private const string InvalidHandleValueAttribute = "InvalidHandleValueAttribute";
     private const string SimpleFileNameAnnotation = "SimpleFileName";
     private const string NamespaceContainerAnnotation = "NamespaceContainer";
     private const string OriginalDelegateAnnotation = "OriginalDelegate";
@@ -1508,198 +1509,211 @@ public class Generator : IDisposable
 
     internal TypeSyntax? RequestSafeHandle(string releaseMethod)
     {
-        if (this.volatileCode.TryGetSafeHandleForReleaseMethod(releaseMethod, out TypeSyntax? safeHandleType))
+        try
         {
-            return safeHandleType;
-        }
-
-        if (BclInteropSafeHandles.TryGetValue(releaseMethod, out TypeSyntax? bclType))
-        {
-            return bclType;
-        }
-
-        string safeHandleClassName = $"{releaseMethod}SafeHandle";
-
-        MethodDefinitionHandle? releaseMethodHandle = this.GetMethodByName(releaseMethod);
-        if (!releaseMethodHandle.HasValue)
-        {
-            throw new GenerationFailedException("Unable to find release method named: " + releaseMethod);
-        }
-
-        MethodDefinition releaseMethodDef = this.Reader.GetMethodDefinition(releaseMethodHandle.Value);
-        string releaseMethodModule = this.GetNormalizedModuleName(releaseMethodDef.GetImport());
-
-        IdentifierNameSyntax? safeHandleTypeIdentifier = IdentifierName(safeHandleClassName);
-        safeHandleType = safeHandleTypeIdentifier;
-
-        MethodSignature<TypeHandleInfo> releaseMethodSignature = releaseMethodDef.DecodeSignature(SignatureHandleProvider.Instance, null);
-        TypeHandleInfo releaseMethodParameterTypeHandleInfo = releaseMethodSignature.ParameterTypes[0];
-        TypeSyntaxAndMarshaling releaseMethodParameterType = releaseMethodParameterTypeHandleInfo.ToTypeSyntax(this.externSignatureTypeSettings, default);
-
-        // If the release method takes more than one parameter, we can't generate a SafeHandle for it.
-        if (releaseMethodSignature.RequiredParameterCount != 1)
-        {
-            safeHandleType = null;
-        }
-
-        this.volatileCode.AddSafeHandleNameForReleaseMethod(releaseMethod, safeHandleType);
-
-        if (safeHandleType is null)
-        {
-            return safeHandleType;
-        }
-
-        if (this.FindTypeSymbolIfAlreadyAvailable($"{this.Namespace}.{safeHandleType}") is object)
-        {
-            return safeHandleType;
-        }
-
-        this.RequestExternMethod(releaseMethodHandle.Value);
-
-        CustomAttributeHandleCollection? atts = this.GetReturnTypeCustomAttributes(releaseMethodDef);
-        TypeSyntaxAndMarshaling releaseMethodReturnType = releaseMethodSignature.ReturnType.ToTypeSyntax(this.externSignatureTypeSettings, atts);
-
-        this.TryGetRenamedMethod(releaseMethod, out string? renamedReleaseMethod);
-
-        var members = new List<MemberDeclarationSyntax>();
-
-        MemberAccessExpressionSyntax thisHandle = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("handle"));
-        ExpressionSyntax intptrZero = DefaultExpression(IntPtrTypeSyntax);
-        ExpressionSyntax intptrMinusOne = ObjectCreationExpression(IntPtrTypeSyntax).AddArgumentListArguments(Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(-1))));
-
-        // private static readonly IntPtr INVALID_HANDLE_VALUE = new IntPtr(-1);
-        IdentifierNameSyntax invalidValueFieldName = IdentifierName("INVALID_HANDLE_VALUE");
-        members.Add(FieldDeclaration(VariableDeclaration(IntPtrTypeSyntax).AddVariables(
-            VariableDeclarator(invalidValueFieldName.Identifier).WithInitializer(EqualsValueClause(intptrMinusOne))))
-            .AddModifiers(TokenWithSpace(SyntaxKind.PrivateKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword)));
-
-        // public SafeHandle() : base(INVALID_HANDLE_VALUE, true)
-        members.Add(ConstructorDeclaration(safeHandleTypeIdentifier.Identifier)
-            .AddModifiers(TokenWithSpace(this.Visibility))
-            .WithInitializer(ConstructorInitializer(SyntaxKind.BaseConstructorInitializer, ArgumentList().AddArguments(
-                Argument(invalidValueFieldName),
-                Argument(LiteralExpression(SyntaxKind.TrueLiteralExpression)))))
-            .WithBody(Block()));
-
-        // public SafeHandle(IntPtr preexistingHandle, bool ownsHandle = true) : base(INVALID_HANDLE_VALUE, ownsHandle) { this.SetHandle(preexistingHandle); }
-        const string preexistingHandleName = "preexistingHandle";
-        const string ownsHandleName = "ownsHandle";
-        members.Add(ConstructorDeclaration(safeHandleTypeIdentifier.Identifier)
-            .AddModifiers(TokenWithSpace(this.Visibility))
-            .AddParameterListParameters(
-                Parameter(Identifier(preexistingHandleName)).WithType(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))),
-                Parameter(Identifier(ownsHandleName)).WithType(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)))
-                    .WithDefault(EqualsValueClause(LiteralExpression(SyntaxKind.TrueLiteralExpression))))
-            .WithInitializer(ConstructorInitializer(SyntaxKind.BaseConstructorInitializer, ArgumentList().AddArguments(
-                Argument(invalidValueFieldName),
-                Argument(IdentifierName(ownsHandleName)))))
-            .WithBody(Block().AddStatements(
-                ExpressionStatement(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("SetHandle")))
-                    .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(IdentifierName(preexistingHandleName)))))))));
-
-        // public override bool IsInvalid => this.handle == default || this.Handle == INVALID_HANDLE_VALUE;
-        members.Add(PropertyDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), nameof(SafeHandle.IsInvalid))
-            .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
-            .WithExpressionBody(ArrowExpressionClause(
-                BinaryExpression(
-                    SyntaxKind.LogicalOrExpression,
-                    BinaryExpression(SyntaxKind.EqualsExpression, thisHandle, intptrZero),
-                    BinaryExpression(SyntaxKind.EqualsExpression, thisHandle, invalidValueFieldName))))
-            .WithSemicolonToken(SemicolonWithLineFeed));
-
-        // (struct)this.handle or (struct)(nuint)(nint)this.handle, as appropriate.
-        bool isUIntPtr = this.TryGetTypeDefFieldType(releaseMethodParameterTypeHandleInfo, out TypeHandleInfo? typeDefStructFieldType) && typeDefStructFieldType is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.UIntPtr };
-        ArgumentSyntax releaseHandleArgument = Argument(CastExpression(
-            releaseMethodParameterType.Type,
-            isUIntPtr ? CastExpression(IdentifierName("nuint"), CastExpression(IdentifierName("nint"), thisHandle)) : thisHandle));
-
-        // protected override bool ReleaseHandle() => ReleaseMethod((struct)this.handle);
-        // Special case release functions based on their return type as follows: (https://github.com/microsoft/win32metadata/issues/25)
-        //  * bool => true is success
-        //  * int => zero is success
-        //  * uint => zero is success
-        //  * byte => non-zero is success
-        ExpressionSyntax releaseInvocation = InvocationExpression(
-            MemberAccessExpression(
-                SyntaxKind.SimpleMemberAccessExpression,
-                IdentifierName(this.options.ClassName),
-                IdentifierName(renamedReleaseMethod ?? releaseMethod)),
-            ArgumentList().AddArguments(releaseHandleArgument));
-        BlockSyntax? releaseBlock = null;
-        if (!(releaseMethodReturnType.Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.BoolKeyword } } ||
-            releaseMethodReturnType.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "BOOL" } } }))
-        {
-            switch (releaseMethodReturnType.Type)
+            if (this.volatileCode.TryGetSafeHandleForReleaseMethod(releaseMethod, out TypeSyntax? safeHandleType))
             {
-                case PredefinedTypeSyntax predefined:
-                    SyntaxKind returnType = predefined.Keyword.Kind();
-                    if (returnType == SyntaxKind.IntKeyword)
-                    {
-                        releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)));
-                    }
-                    else if (returnType == SyntaxKind.UIntKeyword)
-                    {
-                        releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)));
-                    }
-                    else if (returnType == SyntaxKind.ByteKeyword)
-                    {
-                        releaseInvocation = BinaryExpression(SyntaxKind.NotEqualsExpression, releaseInvocation, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)));
-                    }
-                    else if (returnType == SyntaxKind.VoidKeyword)
-                    {
-                        releaseBlock = Block(
-                            ExpressionStatement(releaseInvocation),
-                            ReturnStatement(LiteralExpression(SyntaxKind.TrueLiteralExpression)));
-                    }
-                    else
-                    {
-                        throw new NotSupportedException($"Return type {returnType} on release method {releaseMethod} not supported.");
-                    }
-
-                    break;
-                case QualifiedNameSyntax { Right: IdentifierNameSyntax identifierName }:
-                    switch (identifierName.Identifier.ValueText)
-                    {
-                        case "NTSTATUS":
-                            this.TryGenerateConstantOrThrow("STATUS_SUCCESS");
-                            ExpressionSyntax statusSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseName("winmdroot.Foundation.NTSTATUS"), IdentifierName("STATUS_SUCCESS"));
-                            releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, statusSuccess);
-                            break;
-                        case "HRESULT":
-                            this.TryGenerateConstantOrThrow("S_OK");
-                            ExpressionSyntax ok = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseName("winmdroot.Foundation.HRESULT"), IdentifierName("S_OK"));
-                            releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, ok);
-                            break;
-                        default:
-                            throw new NotSupportedException($"Return type {identifierName.Identifier.ValueText} on release method {releaseMethod} not supported.");
-                    }
-
-                    break;
+                return safeHandleType;
             }
-        }
 
-        MethodDeclarationSyntax releaseHandleDeclaration = MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Identifier("ReleaseHandle"))
-            .AddModifiers(TokenWithSpace(SyntaxKind.ProtectedKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword));
-        releaseHandleDeclaration = releaseBlock is null
-            ? releaseHandleDeclaration
-                 .WithExpressionBody(ArrowExpressionClause(releaseInvocation))
-                 .WithSemicolonToken(SemicolonWithLineFeed)
-            : releaseHandleDeclaration
-                .WithBody(releaseBlock);
-        members.Add(releaseHandleDeclaration);
+            if (BclInteropSafeHandles.TryGetValue(releaseMethod, out TypeSyntax? bclType))
+            {
+                return bclType;
+            }
 
-        ClassDeclarationSyntax safeHandleDeclaration = ClassDeclaration(Identifier(safeHandleClassName))
-            .AddModifiers(TokenWithSpace(this.Visibility))
-            .WithBaseList(BaseList(SingletonSeparatedList<BaseTypeSyntax>(SimpleBaseType(SafeHandleTypeSyntax))))
-            .AddMembers(members.ToArray())
-            .WithLeadingTrivia(ParseLeadingTrivia($@"
+            string safeHandleClassName = $"{releaseMethod}SafeHandle";
+
+            MethodDefinitionHandle? releaseMethodHandle = this.GetMethodByName(releaseMethod);
+            if (!releaseMethodHandle.HasValue)
+            {
+                throw new GenerationFailedException("Unable to find release method named: " + releaseMethod);
+            }
+
+            MethodDefinition releaseMethodDef = this.Reader.GetMethodDefinition(releaseMethodHandle.Value);
+            string releaseMethodModule = this.GetNormalizedModuleName(releaseMethodDef.GetImport());
+
+            IdentifierNameSyntax? safeHandleTypeIdentifier = IdentifierName(safeHandleClassName);
+            safeHandleType = safeHandleTypeIdentifier;
+
+            MethodSignature<TypeHandleInfo> releaseMethodSignature = releaseMethodDef.DecodeSignature(SignatureHandleProvider.Instance, null);
+            TypeHandleInfo releaseMethodParameterTypeHandleInfo = releaseMethodSignature.ParameterTypes[0];
+            TypeSyntaxAndMarshaling releaseMethodParameterType = releaseMethodParameterTypeHandleInfo.ToTypeSyntax(this.externSignatureTypeSettings, default);
+
+            // If the release method takes more than one parameter, we can't generate a SafeHandle for it.
+            if (releaseMethodSignature.RequiredParameterCount != 1)
+            {
+                safeHandleType = null;
+            }
+
+            this.volatileCode.AddSafeHandleNameForReleaseMethod(releaseMethod, safeHandleType);
+
+            if (safeHandleType is null)
+            {
+                return safeHandleType;
+            }
+
+            if (this.FindTypeSymbolIfAlreadyAvailable($"{this.Namespace}.{safeHandleType}") is object)
+            {
+                return safeHandleType;
+            }
+
+            this.RequestExternMethod(releaseMethodHandle.Value);
+
+            // Collect all the known invalid values for this handle.
+            // If no invalid values are given (e.g. BSTR), we'll just assume 0 is invalid.
+            HashSet<IntPtr> invalidHandleValues = this.GetInvalidHandleValues(((HandleTypeHandleInfo)releaseMethodParameterTypeHandleInfo).Handle);
+            long preferredInvalidValue = invalidHandleValues.Contains(new IntPtr(-1)) ? -1 : invalidHandleValues.FirstOrDefault().ToInt64();
+
+            CustomAttributeHandleCollection? atts = this.GetReturnTypeCustomAttributes(releaseMethodDef);
+            TypeSyntaxAndMarshaling releaseMethodReturnType = releaseMethodSignature.ReturnType.ToTypeSyntax(this.externSignatureTypeSettings, atts);
+
+            this.TryGetRenamedMethod(releaseMethod, out string? renamedReleaseMethod);
+
+            var members = new List<MemberDeclarationSyntax>();
+
+            MemberAccessExpressionSyntax thisHandle = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("handle"));
+            ExpressionSyntax intptrZero = DefaultExpression(IntPtrTypeSyntax);
+            ExpressionSyntax invalidHandleIntPtr = ObjectCreationExpression(IntPtrTypeSyntax).AddArgumentListArguments(Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(preferredInvalidValue))));
+
+            // private static readonly IntPtr INVALID_HANDLE_VALUE = new IntPtr(-1);
+            IdentifierNameSyntax invalidValueFieldName = IdentifierName("INVALID_HANDLE_VALUE");
+            members.Add(FieldDeclaration(VariableDeclaration(IntPtrTypeSyntax).AddVariables(
+                VariableDeclarator(invalidValueFieldName.Identifier).WithInitializer(EqualsValueClause(invalidHandleIntPtr))))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PrivateKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword)));
+
+            // public SafeHandle() : base(INVALID_HANDLE_VALUE, true)
+            members.Add(ConstructorDeclaration(safeHandleTypeIdentifier.Identifier)
+                .AddModifiers(TokenWithSpace(this.Visibility))
+                .WithInitializer(ConstructorInitializer(SyntaxKind.BaseConstructorInitializer, ArgumentList().AddArguments(
+                    Argument(invalidValueFieldName),
+                    Argument(LiteralExpression(SyntaxKind.TrueLiteralExpression)))))
+                .WithBody(Block()));
+
+            // public SafeHandle(IntPtr preexistingHandle, bool ownsHandle = true) : base(INVALID_HANDLE_VALUE, ownsHandle) { this.SetHandle(preexistingHandle); }
+            const string preexistingHandleName = "preexistingHandle";
+            const string ownsHandleName = "ownsHandle";
+            members.Add(ConstructorDeclaration(safeHandleTypeIdentifier.Identifier)
+                .AddModifiers(TokenWithSpace(this.Visibility))
+                .AddParameterListParameters(
+                    Parameter(Identifier(preexistingHandleName)).WithType(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))),
+                    Parameter(Identifier(ownsHandleName)).WithType(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)))
+                        .WithDefault(EqualsValueClause(LiteralExpression(SyntaxKind.TrueLiteralExpression))))
+                .WithInitializer(ConstructorInitializer(SyntaxKind.BaseConstructorInitializer, ArgumentList().AddArguments(
+                    Argument(invalidValueFieldName),
+                    Argument(IdentifierName(ownsHandleName)))))
+                .WithBody(Block().AddStatements(
+                    ExpressionStatement(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("SetHandle")))
+                        .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(IdentifierName(preexistingHandleName)))))))));
+
+            // public override bool IsInvalid => this.handle.ToInt64() == 0 || this.handle.ToInt64() == -1;
+            ExpressionSyntax thisHandleToInt64 = InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, thisHandle, IdentifierName(nameof(IntPtr.ToInt64))), ArgumentList());
+            ExpressionSyntax overallTest = invalidHandleValues.Count == 0
+                ? LiteralExpression(SyntaxKind.FalseLiteralExpression)
+                : invalidHandleValues.Select(v => BinaryExpression(SyntaxKind.EqualsExpression, thisHandleToInt64, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(v.ToInt64()))))
+                    .Aggregate((left, right) => BinaryExpression(SyntaxKind.LogicalOrExpression, left, right));
+            members.Add(PropertyDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), nameof(SafeHandle.IsInvalid))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
+                .WithExpressionBody(ArrowExpressionClause(overallTest))
+                .WithSemicolonToken(SemicolonWithLineFeed));
+
+            // (struct)this.handle or (struct)(nuint)(nint)this.handle, as appropriate.
+            bool isUIntPtr = this.TryGetTypeDefFieldType(releaseMethodParameterTypeHandleInfo, out TypeHandleInfo? typeDefStructFieldType) && typeDefStructFieldType is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.UIntPtr };
+            ArgumentSyntax releaseHandleArgument = Argument(CastExpression(
+                releaseMethodParameterType.Type,
+                isUIntPtr ? CastExpression(IdentifierName("nuint"), CastExpression(IdentifierName("nint"), thisHandle)) : thisHandle));
+
+            // protected override bool ReleaseHandle() => ReleaseMethod((struct)this.handle);
+            // Special case release functions based on their return type as follows: (https://github.com/microsoft/win32metadata/issues/25)
+            //  * bool => true is success
+            //  * int => zero is success
+            //  * uint => zero is success
+            //  * byte => non-zero is success
+            ExpressionSyntax releaseInvocation = InvocationExpression(
+                MemberAccessExpression(
+                    SyntaxKind.SimpleMemberAccessExpression,
+                    IdentifierName(this.options.ClassName),
+                    IdentifierName(renamedReleaseMethod ?? releaseMethod)),
+                ArgumentList().AddArguments(releaseHandleArgument));
+            BlockSyntax? releaseBlock = null;
+            if (!(releaseMethodReturnType.Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.BoolKeyword } } ||
+                releaseMethodReturnType.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "BOOL" } } }))
+            {
+                switch (releaseMethodReturnType.Type)
+                {
+                    case PredefinedTypeSyntax predefined:
+                        SyntaxKind returnType = predefined.Keyword.Kind();
+                        if (returnType == SyntaxKind.IntKeyword)
+                        {
+                            releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)));
+                        }
+                        else if (returnType == SyntaxKind.UIntKeyword)
+                        {
+                            releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)));
+                        }
+                        else if (returnType == SyntaxKind.ByteKeyword)
+                        {
+                            releaseInvocation = BinaryExpression(SyntaxKind.NotEqualsExpression, releaseInvocation, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)));
+                        }
+                        else if (returnType == SyntaxKind.VoidKeyword)
+                        {
+                            releaseBlock = Block(
+                                ExpressionStatement(releaseInvocation),
+                                ReturnStatement(LiteralExpression(SyntaxKind.TrueLiteralExpression)));
+                        }
+                        else
+                        {
+                            throw new NotSupportedException($"Return type {returnType} on release method {releaseMethod} not supported.");
+                        }
+
+                        break;
+                    case QualifiedNameSyntax { Right: IdentifierNameSyntax identifierName }:
+                        switch (identifierName.Identifier.ValueText)
+                        {
+                            case "NTSTATUS":
+                                this.TryGenerateConstantOrThrow("STATUS_SUCCESS");
+                                ExpressionSyntax statusSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseName("winmdroot.Foundation.NTSTATUS"), IdentifierName("STATUS_SUCCESS"));
+                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, statusSuccess);
+                                break;
+                            case "HRESULT":
+                                this.TryGenerateConstantOrThrow("S_OK");
+                                ExpressionSyntax ok = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseName("winmdroot.Foundation.HRESULT"), IdentifierName("S_OK"));
+                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, ok);
+                                break;
+                            default:
+                                throw new NotSupportedException($"Return type {identifierName.Identifier.ValueText} on release method {releaseMethod} not supported.");
+                        }
+
+                        break;
+                }
+            }
+
+            MethodDeclarationSyntax releaseHandleDeclaration = MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Identifier("ReleaseHandle"))
+                .AddModifiers(TokenWithSpace(SyntaxKind.ProtectedKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword));
+            releaseHandleDeclaration = releaseBlock is null
+                ? releaseHandleDeclaration
+                     .WithExpressionBody(ArrowExpressionClause(releaseInvocation))
+                     .WithSemicolonToken(SemicolonWithLineFeed)
+                : releaseHandleDeclaration
+                    .WithBody(releaseBlock);
+            members.Add(releaseHandleDeclaration);
+
+            ClassDeclarationSyntax safeHandleDeclaration = ClassDeclaration(Identifier(safeHandleClassName))
+                .AddModifiers(TokenWithSpace(this.Visibility))
+                .WithBaseList(BaseList(SingletonSeparatedList<BaseTypeSyntax>(SimpleBaseType(SafeHandleTypeSyntax))))
+                .AddMembers(members.ToArray())
+                .WithLeadingTrivia(ParseLeadingTrivia($@"
         /// <summary>
         /// Represents a Win32 handle that can be closed with <see cref=""{this.options.ClassName}.{renamedReleaseMethod ?? releaseMethod}""/>.
         /// </summary>
 "));
 
-        this.volatileCode.AddSafeHandleType(safeHandleDeclaration);
-        return safeHandleType;
+            this.volatileCode.AddSafeHandleType(safeHandleDeclaration);
+            return safeHandleType;
+        }
+        catch (Exception ex)
+        {
+            throw new GenerationFailedException($"Failed while generating SafeHandle for {releaseMethod}.", ex);
+        }
     }
 
     internal bool TryGetTypeDefFieldType(TypeHandleInfo typeDef, [NotNullWhen(true)] out TypeHandleInfo? fieldType)
@@ -2594,6 +2608,41 @@ public class Generator : IDisposable
     }
 
     private bool TryFetchTemplate(string name, [NotNullWhen(true)] out MemberDeclarationSyntax? member) => TryFetchTemplate(name, this, out member);
+
+    private HashSet<IntPtr> GetInvalidHandleValues(EntityHandle handle)
+    {
+        QualifiedTypeDefinitionHandle tdh;
+        if (handle.Kind == HandleKind.TypeReference)
+        {
+            if (!this.TryGetTypeDefHandle((TypeReferenceHandle)handle, out tdh))
+            {
+                throw new GenerationFailedException("Unable to look up type definition.");
+            }
+        }
+        else if (handle.Kind == HandleKind.TypeDefinition)
+        {
+            tdh = new QualifiedTypeDefinitionHandle(this, (TypeDefinitionHandle)handle);
+        }
+        else
+        {
+            throw new GenerationFailedException("Unexpected handle type.");
+        }
+
+        HashSet<IntPtr> invalidHandleValues = new();
+        QualifiedTypeDefinition td = tdh.Resolve();
+        foreach (CustomAttributeHandle ah in td.Definition.GetCustomAttributes())
+        {
+            CustomAttribute a = td.Reader.GetCustomAttribute(ah);
+            if (MetadataUtilities.IsAttribute(td.Reader, a, InteropDecorationNamespace, InvalidHandleValueAttribute))
+            {
+                CustomAttributeValue<TypeSyntax> attributeData = a.DecodeValue(CustomAttributeTypeProvider.Instance);
+                long invalidValue = (long)(attributeData.FixedArguments[0].Value ?? throw new GenerationFailedException("Missing invalid value attribute."));
+                invalidHandleValues.Add((IntPtr)invalidValue);
+            }
+        }
+
+        return invalidHandleValues;
+    }
 
     private FunctionPointerTypeSyntax FunctionPointer(MethodDefinition methodDefinition, MethodSignature<TypeHandleInfo> signature)
     {

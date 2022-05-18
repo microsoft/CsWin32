@@ -6,6 +6,12 @@ using System.Reflection.Metadata;
 
 namespace Microsoft.Windows.CsWin32;
 
+/// <summary>
+/// An immutable index into metadata.
+/// </summary>
+/// <devremarks>
+/// This class must not contain definitions. It may contain handles. See <see cref="MetadataIndex"/> devremarks for details.
+/// </devremarks>
 [DebuggerDisplay("{" + nameof(DebuggerDisplay) + ",nq}")]
 internal class NamespaceMetadata
 {

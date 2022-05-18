@@ -12,10 +12,22 @@ using Microsoft.CodeAnalysis;
 
 namespace Microsoft.Windows.CsWin32;
 
+/// <summary>
+/// A cached, shareable index into a particular metadata file.
+/// </summary>
+/// <devremarks>
+/// This class <em>must not</em> store anything to do with a <see cref="MetadataReader"/>,
+/// since that is attached to a stream which will not allow for concurrent use.
+/// This means we cannot store definitions (e.g. <see cref="TypeDefinition"/>)
+/// because they store the <see cref="MetadataReader"/> as a field.
+/// We can store handles though (e.g. <see cref="TypeDefinitionHandle"/>, since
+/// the only thing they store is an index into the metadata, which is constant across
+/// <see cref="MetadataReader"/> instances for a given metadata file.
+/// </devremarks>
 [DebuggerDisplay("{" + nameof(DebuggerDisplay) + ",nq}")]
-internal class MetadataIndex : IDisposable
+internal class MetadataIndex
 {
-    private static readonly Dictionary<CacheKey, Stack<MetadataIndex>> Cache = new();
+    private static readonly Dictionary<CacheKey, MetadataIndex> Cache = new();
 
     /// <summary>
     /// A cache of metadata files read.
@@ -27,13 +39,7 @@ internal class MetadataIndex : IDisposable
 
     private readonly Platform? platform;
 
-    private readonly Stream metadataStream;
-
-    private readonly PEReader peReader;
-
-    private readonly MetadataReader mr;
-
-    private readonly List<TypeDefinition> apis = new();
+    private readonly List<TypeDefinitionHandle> apis = new();
 
     private readonly HashSet<string> releaseMethods = new HashSet<string>(StringComparer.Ordinal);
 
@@ -50,160 +56,153 @@ internal class MetadataIndex : IDisposable
     /// </summary>
     private readonly Dictionary<TypeDefinitionHandle, string> handleTypeReleaseMethod = new();
 
-    private MetadataIndex(string metadataPath, Stream metadataStream, Platform? platform)
+    /// <summary>
+    /// Initializes a new instance of the <see cref="MetadataIndex"/> class.
+    /// </summary>
+    /// <param name="metadataPath">The path to the metadata that this index will represent.</param>
+    /// <param name="platform">The platform filter to apply when reading the metadata.</param>
+    private MetadataIndex(string metadataPath, Platform? platform)
     {
         this.metadataPath = metadataPath;
         this.platform = platform;
 
-        try
-        {
-            this.metadataStream = metadataStream;
-            this.peReader = new PEReader(this.metadataStream);
-            this.mr = this.peReader.GetMetadataReader();
+        using PEReader peReader = new PEReader(CreateFileView(metadataPath));
+        MetadataReader mr = peReader.GetMetadataReader();
 
-            foreach (MemberReferenceHandle memberRefHandle in this.mr.MemberReferences)
+        foreach (MemberReferenceHandle memberRefHandle in mr.MemberReferences)
+        {
+            MemberReference memberReference = mr.GetMemberReference(memberRefHandle);
+            if (memberReference.GetKind() == MemberReferenceKind.Method)
             {
-                MemberReference memberReference = this.mr.GetMemberReference(memberRefHandle);
-                if (memberReference.GetKind() == MemberReferenceKind.Method)
+                if (memberReference.Parent.Kind == HandleKind.TypeReference)
                 {
-                    if (memberReference.Parent.Kind == HandleKind.TypeReference)
+                    if (mr.StringComparer.Equals(memberReference.Name, ".ctor"))
                     {
-                        if (this.mr.StringComparer.Equals(memberReference.Name, ".ctor"))
+                        var trh = (TypeReferenceHandle)memberReference.Parent;
+                        TypeReference tr = mr.GetTypeReference(trh);
+                        if (mr.StringComparer.Equals(tr.Name, "SupportedArchitectureAttribute") &&
+                            mr.StringComparer.Equals(tr.Namespace, "Windows.Win32.Interop"))
                         {
-                            var trh = (TypeReferenceHandle)memberReference.Parent;
-                            TypeReference tr = this.mr.GetTypeReference(trh);
-                            if (this.mr.StringComparer.Equals(tr.Name, "SupportedArchitectureAttribute") &&
-                                this.mr.StringComparer.Equals(tr.Namespace, "Windows.Win32.Interop"))
-                            {
-                                this.SupportedArchitectureAttributeCtor = memberRefHandle;
-                                break;
-                            }
+                            this.SupportedArchitectureAttributeCtor = memberRefHandle;
+                            break;
                         }
                     }
                 }
             }
+        }
 
-            void PopulateNamespace(NamespaceDefinition ns, string? parentNamespace)
+        void PopulateNamespace(NamespaceDefinition ns, string? parentNamespace)
+        {
+            string nsLeafName = mr.GetString(ns.Name);
+            string nsFullName = string.IsNullOrEmpty(parentNamespace) ? nsLeafName : $"{parentNamespace}.{nsLeafName}";
+
+            var nsMetadata = new NamespaceMetadata(nsFullName);
+
+            foreach (TypeDefinitionHandle tdh in ns.TypeDefinitions)
             {
-                string nsLeafName = this.mr.GetString(ns.Name);
-                string nsFullName = string.IsNullOrEmpty(parentNamespace) ? nsLeafName : $"{parentNamespace}.{nsLeafName}";
-
-                var nsMetadata = new NamespaceMetadata(nsFullName);
-
-                foreach (TypeDefinitionHandle tdh in ns.TypeDefinitions)
+                TypeDefinition td = mr.GetTypeDefinition(tdh);
+                string typeName = mr.GetString(td.Name);
+                if (typeName == "Apis")
                 {
-                    TypeDefinition td = this.mr.GetTypeDefinition(tdh);
-                    string typeName = this.mr.GetString(td.Name);
-                    if (typeName == "Apis")
+                    this.apis.Add(tdh);
+                    foreach (MethodDefinitionHandle methodDefHandle in td.GetMethods())
                     {
-                        this.apis.Add(td);
-                        foreach (MethodDefinitionHandle methodDefHandle in td.GetMethods())
+                        MethodDefinition methodDef = mr.GetMethodDefinition(methodDefHandle);
+                        string methodName = mr.GetString(methodDef.Name);
+                        if (MetadataUtilities.IsCompatibleWithPlatform(mr, this, platform, methodDef.GetCustomAttributes()))
                         {
-                            MethodDefinition methodDef = this.mr.GetMethodDefinition(methodDefHandle);
-                            string methodName = this.mr.GetString(methodDef.Name);
-                            if (MetadataUtilities.IsCompatibleWithPlatform(this.mr, this, platform, methodDef.GetCustomAttributes()))
-                            {
-                                nsMetadata.Methods.Add(methodName, methodDefHandle);
-                            }
-                            else
-                            {
-                                nsMetadata.MethodsForOtherPlatform.Add(methodName);
-                            }
+                            nsMetadata.Methods.Add(methodName, methodDefHandle);
                         }
-
-                        foreach (FieldDefinitionHandle fieldDefHandle in td.GetFields())
+                        else
                         {
-                            FieldDefinition fieldDef = this.mr.GetFieldDefinition(fieldDefHandle);
-                            const FieldAttributes expectedFlags = FieldAttributes.Static | FieldAttributes.Public;
-                            if ((fieldDef.Attributes & expectedFlags) == expectedFlags)
-                            {
-                                string fieldName = this.mr.GetString(fieldDef.Name);
-                                nsMetadata.Fields.Add(fieldName, fieldDefHandle);
-                            }
+                            nsMetadata.MethodsForOtherPlatform.Add(methodName);
                         }
                     }
-                    else if (typeName == "<Module>")
-                    {
-                    }
-                    else if (MetadataUtilities.IsCompatibleWithPlatform(this.mr, this, platform, td.GetCustomAttributes()))
-                    {
-                        nsMetadata.Types.Add(typeName, tdh);
 
-                        // Detect if this is a struct representing a native handle.
-                        if (td.GetFields().Count == 1 && td.BaseType.Kind == HandleKind.TypeReference)
+                    foreach (FieldDefinitionHandle fieldDefHandle in td.GetFields())
+                    {
+                        FieldDefinition fieldDef = mr.GetFieldDefinition(fieldDefHandle);
+                        const FieldAttributes expectedFlags = FieldAttributes.Static | FieldAttributes.Public;
+                        if ((fieldDef.Attributes & expectedFlags) == expectedFlags)
                         {
-                            TypeReference baseType = this.mr.GetTypeReference((TypeReferenceHandle)td.BaseType);
-                            if (this.mr.StringComparer.Equals(baseType.Name, nameof(ValueType)) && this.mr.StringComparer.Equals(baseType.Namespace, nameof(System)))
+                            string fieldName = mr.GetString(fieldDef.Name);
+                            nsMetadata.Fields.Add(fieldName, fieldDefHandle);
+                        }
+                    }
+                }
+                else if (typeName == "<Module>")
+                {
+                }
+                else if (MetadataUtilities.IsCompatibleWithPlatform(mr, this, platform, td.GetCustomAttributes()))
+                {
+                    nsMetadata.Types.Add(typeName, tdh);
+
+                    // Detect if this is a struct representing a native handle.
+                    if (td.GetFields().Count == 1 && td.BaseType.Kind == HandleKind.TypeReference)
+                    {
+                        TypeReference baseType = mr.GetTypeReference((TypeReferenceHandle)td.BaseType);
+                        if (mr.StringComparer.Equals(baseType.Name, nameof(ValueType)) && mr.StringComparer.Equals(baseType.Namespace, nameof(System)))
+                        {
+                            foreach (CustomAttributeHandle h in td.GetCustomAttributes())
                             {
-                                foreach (CustomAttributeHandle h in td.GetCustomAttributes())
+                                CustomAttribute att = mr.GetCustomAttribute(h);
+                                if (MetadataUtilities.IsAttribute(mr, att, Generator.InteropDecorationNamespace, Generator.RAIIFreeAttribute))
                                 {
-                                    CustomAttribute att = this.mr.GetCustomAttribute(h);
-                                    if (MetadataUtilities.IsAttribute(this.mr, att, Generator.InteropDecorationNamespace, Generator.RAIIFreeAttribute))
+                                    CustomAttributeValue<CodeAnalysis.CSharp.Syntax.TypeSyntax> args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
+                                    if (args.FixedArguments[0].Value is string freeMethodName)
                                     {
-                                        CustomAttributeValue<CodeAnalysis.CSharp.Syntax.TypeSyntax> args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
-                                        if (args.FixedArguments[0].Value is string freeMethodName)
+                                        this.handleTypeReleaseMethod.Add(tdh, freeMethodName);
+                                        this.releaseMethods.Add(freeMethodName);
+
+                                        using FieldDefinitionHandleCollection.Enumerator fieldEnum = td.GetFields().GetEnumerator();
+                                        fieldEnum.MoveNext();
+                                        FieldDefinitionHandle fieldHandle = fieldEnum.Current;
+                                        FieldDefinition fieldDef = mr.GetFieldDefinition(fieldHandle);
+                                        if (fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null) is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.IntPtr or PrimitiveTypeCode.UIntPtr })
                                         {
-                                            this.handleTypeReleaseMethod.Add(tdh, freeMethodName);
-                                            this.releaseMethods.Add(freeMethodName);
-
-                                            using FieldDefinitionHandleCollection.Enumerator fieldEnum = td.GetFields().GetEnumerator();
-                                            fieldEnum.MoveNext();
-                                            FieldDefinitionHandle fieldHandle = fieldEnum.Current;
-                                            FieldDefinition fieldDef = this.mr.GetFieldDefinition(fieldHandle);
-                                            if (fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null) is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.IntPtr or PrimitiveTypeCode.UIntPtr })
-                                            {
-                                                this.handleTypeStructsWithIntPtrSizeFields.Add(typeName);
-                                            }
+                                            this.handleTypeStructsWithIntPtrSizeFields.Add(typeName);
                                         }
-
-                                        break;
                                     }
+
+                                    break;
                                 }
                             }
                         }
                     }
-                    else
-                    {
-                        nsMetadata.TypesForOtherPlatform.Add(typeName);
-                    }
                 }
-
-                if (!nsMetadata.IsEmpty)
+                else
                 {
-                    this.MetadataByNamespace.Add(nsFullName, nsMetadata);
-                }
-
-                foreach (NamespaceDefinitionHandle childNsHandle in ns.NamespaceDefinitions)
-                {
-                    PopulateNamespace(this.mr.GetNamespaceDefinition(childNsHandle), nsFullName);
+                    nsMetadata.TypesForOtherPlatform.Add(typeName);
                 }
             }
 
-            foreach (NamespaceDefinitionHandle childNsHandle in this.mr.GetNamespaceDefinitionRoot().NamespaceDefinitions)
+            if (!nsMetadata.IsEmpty)
             {
-                PopulateNamespace(this.mr.GetNamespaceDefinitionRoot(), parentNamespace: null);
+                this.MetadataByNamespace.Add(nsFullName, nsMetadata);
             }
 
-            this.CommonNamespace = CommonPrefix(this.MetadataByNamespace.Keys.ToList());
-            if (this.CommonNamespace[this.CommonNamespace.Length - 1] == '.')
+            foreach (NamespaceDefinitionHandle childNsHandle in ns.NamespaceDefinitions)
             {
-                this.CommonNamespaceDot = this.CommonNamespace;
-                this.CommonNamespace = this.CommonNamespace.Substring(0, this.CommonNamespace.Length - 1);
-            }
-            else
-            {
-                this.CommonNamespaceDot = this.CommonNamespace + ".";
+                PopulateNamespace(mr.GetNamespaceDefinition(childNsHandle), nsFullName);
             }
         }
-        catch
+
+        foreach (NamespaceDefinitionHandle childNsHandle in mr.GetNamespaceDefinitionRoot().NamespaceDefinitions)
         {
-            this.peReader?.Dispose();
-            this.metadataStream?.Dispose();
-            throw;
+            PopulateNamespace(mr.GetNamespaceDefinitionRoot(), parentNamespace: null);
+        }
+
+        this.CommonNamespace = CommonPrefix(this.MetadataByNamespace.Keys.ToList());
+        if (this.CommonNamespace[this.CommonNamespace.Length - 1] == '.')
+        {
+            this.CommonNamespaceDot = this.CommonNamespace;
+            this.CommonNamespace = this.CommonNamespace.Substring(0, this.CommonNamespace.Length - 1);
+        }
+        else
+        {
+            this.CommonNamespaceDot = this.CommonNamespace + ".";
         }
     }
-
-    internal MetadataReader Reader => this.mr;
 
     /// <summary>
     /// Gets the ref handle to the constructor on the SupportedArchitectureAttribute, if there is one.
@@ -213,7 +212,7 @@ internal class MetadataIndex : IDisposable
     /// <summary>
     /// Gets the "Apis" classes across all namespaces.
     /// </summary>
-    internal ReadOnlyCollection<TypeDefinition> Apis => new(this.apis);
+    internal ReadOnlyCollection<TypeDefinitionHandle> Apis => new(this.apis);
 
     /// <summary>
     /// Gets a dictionary of namespace metadata, indexed by the string handle to their namespace.
@@ -230,25 +229,27 @@ internal class MetadataIndex : IDisposable
 
     private string DebuggerDisplay => $"{this.metadataPath} ({this.platform})";
 
-    public void Dispose()
-    {
-        this.peReader.Dispose();
-        this.metadataStream.Dispose();
-    }
-
     internal static MetadataIndex Get(string metadataPath, Platform? platform)
     {
         metadataPath = Path.GetFullPath(metadataPath);
-        var key = new CacheKey(metadataPath, platform);
-        MemoryMappedViewStream metadataBytes;
+        CacheKey key = new(metadataPath, platform);
         lock (Cache)
         {
-            if (Cache.TryGetValue(key, out Stack<MetadataIndex> stack) && stack.Count > 0)
+            if (!Cache.TryGetValue(key, out MetadataIndex index))
             {
-                return stack.Pop();
+                Cache.Add(key, index = new MetadataIndex(metadataPath, platform));
             }
 
-            // Read the entire metadata file exactly once so that many MemoryStreams can share the memory.
+            return index;
+        }
+    }
+
+    internal static MemoryMappedViewStream CreateFileView(string metadataPath)
+    {
+        lock (Cache)
+        {
+            // We use a memory mapped file so that many threads can perform random access on it concurrently,
+            // only mapping the file into memory once.
             if (!MetadataFiles.TryGetValue(metadataPath, out MemoryMappedFile? file))
             {
                 var metadataStream = new FileStream(metadataPath, FileMode.Open, FileAccess.Read, FileShare.Read);
@@ -256,51 +257,36 @@ internal class MetadataIndex : IDisposable
                 MetadataFiles.Add(metadataPath, file);
             }
 
-            metadataBytes = file.CreateViewStream(offset: 0, size: 0, MemoryMappedFileAccess.Read);
-        }
-
-        return new MetadataIndex(metadataPath, metadataBytes, platform);
-    }
-
-    internal static void Return(MetadataIndex index)
-    {
-        var key = new CacheKey(index.metadataPath, index.platform);
-        lock (Cache)
-        {
-            if (!Cache.TryGetValue(key, out Stack<MetadataIndex> stack))
-            {
-                Cache.Add(key, stack = new Stack<MetadataIndex>());
-            }
-
-            stack.Push(index);
+            return file.CreateViewStream(offset: 0, size: 0, MemoryMappedFileAccess.Read);
         }
     }
 
     /// <summary>
     /// Attempts to translate a <see cref="TypeReferenceHandle"/> to a <see cref="TypeDefinitionHandle"/>.
     /// </summary>
+    /// <param name="reader">The metadata reader to use.</param>
     /// <param name="typeRefHandle">The reference handle.</param>
     /// <param name="typeDefHandle">Receives the type def handle, if one was discovered.</param>
     /// <returns><see langword="true"/> if a TypeDefinition was found; otherwise <see langword="false"/>.</returns>
-    internal bool TryGetTypeDefHandle(TypeReferenceHandle typeRefHandle, out TypeDefinitionHandle typeDefHandle)
+    internal bool TryGetTypeDefHandle(MetadataReader reader, TypeReferenceHandle typeRefHandle, out TypeDefinitionHandle typeDefHandle)
     {
         if (this.refToDefCache.TryGetValue(typeRefHandle, out typeDefHandle))
         {
             return !typeDefHandle.IsNil;
         }
 
-        TypeReference typeRef = this.Reader.GetTypeReference(typeRefHandle);
+        TypeReference typeRef = reader.GetTypeReference(typeRefHandle);
         if (typeRef.ResolutionScope.Kind != HandleKind.AssemblyReference)
         {
-            foreach (TypeDefinitionHandle tdh in this.Reader.TypeDefinitions)
+            foreach (TypeDefinitionHandle tdh in reader.TypeDefinitions)
             {
-                TypeDefinition typeDef = this.Reader.GetTypeDefinition(tdh);
+                TypeDefinition typeDef = reader.GetTypeDefinition(tdh);
                 if (typeDef.Name == typeRef.Name && typeDef.Namespace == typeRef.Namespace)
                 {
                     if (typeRef.ResolutionScope.Kind == HandleKind.TypeReference)
                     {
                         // The ref is nested. Verify that the type we found is nested in the same type as well.
-                        if (this.TryGetTypeDefHandle((TypeReferenceHandle)typeRef.ResolutionScope, out TypeDefinitionHandle nestingTypeDef) && nestingTypeDef == typeDef.GetDeclaringType())
+                        if (this.TryGetTypeDefHandle(reader, (TypeReferenceHandle)typeRef.ResolutionScope, out TypeDefinitionHandle nestingTypeDef) && nestingTypeDef == typeDef.GetDeclaringType())
                         {
                             typeDefHandle = tdh;
                             break;

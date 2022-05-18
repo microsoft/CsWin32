@@ -2,12 +2,12 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System.Collections.Immutable;
-using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Reflection;
 using System.Reflection.Metadata;
+using System.Reflection.PortableExecutable;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -312,6 +312,7 @@ public class Generator : IDisposable
     private readonly TypeSyntaxSettings functionPointerTypeSettings;
     private readonly TypeSyntaxSettings errorMessageTypeSettings;
 
+    private readonly PEReader peReader;
     private readonly GeneratorOptions options;
     private readonly CSharpCompilation? compilation;
     private readonly CSharpParseOptions? parseOptions;
@@ -351,6 +352,8 @@ public class Generator : IDisposable
         this.InputAssemblyName = Path.GetFileNameWithoutExtension(metadataLibraryPath);
         this.MetadataIndex = MetadataIndex.Get(metadataLibraryPath, compilation?.Options.Platform);
         this.ApiDocs = docs;
+        this.peReader = new PEReader(MetadataIndex.CreateFileView(metadataLibraryPath));
+        this.Reader = this.peReader.GetMetadataReader();
 
         this.options = options;
         this.options.Validate();
@@ -419,9 +422,7 @@ public class Generator : IDisposable
 
     internal Docs? ApiDocs { get; }
 
-    internal ReadOnlyCollection<TypeDefinition> Apis => this.MetadataIndex.Apis;
-
-    internal MetadataReader Reader => this.MetadataIndex.Reader;
+    internal MetadataReader Reader { get; }
 
     internal LanguageVersion LanguageVersion => this.parseOptions?.LanguageVersion ?? LanguageVersion.CSharp9;
 
@@ -713,7 +714,7 @@ public class Generator : IDisposable
     /// <param name="cancellationToken">A cancellation token.</param>
     public void GenerateAllExternMethods(CancellationToken cancellationToken)
     {
-        foreach (MethodDefinitionHandle methodHandle in this.Apis.SelectMany(api => api.GetMethods()))
+        foreach (MethodDefinitionHandle methodHandle in this.MetadataIndex.Apis.SelectMany(api => this.Reader.GetTypeDefinition(api).GetMethods()))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -741,7 +742,7 @@ public class Generator : IDisposable
     /// <param name="cancellationToken">A cancellation token.</param>
     public void GenerateAllConstants(CancellationToken cancellationToken)
     {
-        foreach (FieldDefinitionHandle fieldDefHandle in this.Apis.SelectMany(api => api.GetFields()))
+        foreach (FieldDefinitionHandle fieldDefHandle in this.MetadataIndex.Apis.SelectMany(api => this.Reader.GetTypeDefinition(api).GetFields()))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -772,7 +773,7 @@ public class Generator : IDisposable
     public bool TryGenerateAllExternMethods(string moduleName, CancellationToken cancellationToken)
     {
         bool successful = false;
-        foreach (MethodDefinitionHandle methodHandle in this.Apis.SelectMany(api => api.GetMethods()))
+        foreach (MethodDefinitionHandle methodHandle in this.MetadataIndex.Apis.SelectMany(api => this.Reader.GetTypeDefinition(api).GetMethods()))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -1885,7 +1886,7 @@ public class Generator : IDisposable
             return this.SuperGenerator.TryGetTypeDefinitionHandle(new QualifiedTypeReferenceHandle(this, typeRefHandle), out typeDefHandle);
         }
 
-        if (this.MetadataIndex.TryGetTypeDefHandle(typeRefHandle, out TypeDefinitionHandle localTypeDefHandle))
+        if (this.MetadataIndex.TryGetTypeDefHandle(this.Reader, typeRefHandle, out TypeDefinitionHandle localTypeDefHandle))
         {
             typeDefHandle = new QualifiedTypeDefinitionHandle(this, localTypeDefHandle);
             return true;
@@ -1895,7 +1896,7 @@ public class Generator : IDisposable
         return false;
     }
 
-    internal bool TryGetTypeDefHandle(TypeReferenceHandle typeRefHandle, out TypeDefinitionHandle typeDefHandle) => this.MetadataIndex.TryGetTypeDefHandle(typeRefHandle, out typeDefHandle);
+    internal bool TryGetTypeDefHandle(TypeReferenceHandle typeRefHandle, out TypeDefinitionHandle typeDefHandle) => this.MetadataIndex.TryGetTypeDefHandle(this.Reader, typeRefHandle, out typeDefHandle);
 
     internal bool TryGetTypeDefHandle(TypeReference typeRef, out TypeDefinitionHandle typeDefHandle) => this.TryGetTypeDefHandle(typeRef.Namespace, typeRef.Name, out typeDefHandle);
 
@@ -2048,7 +2049,7 @@ public class Generator : IDisposable
     {
         if (disposing)
         {
-            MetadataIndex.Return(this.MetadataIndex);
+            this.peReader.Dispose();
         }
     }
 

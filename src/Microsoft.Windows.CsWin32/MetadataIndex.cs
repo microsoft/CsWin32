@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
@@ -43,7 +44,7 @@ internal class MetadataIndex
 
     private readonly HashSet<string> releaseMethods = new HashSet<string>(StringComparer.Ordinal);
 
-    private readonly Dictionary<TypeReferenceHandle, TypeDefinitionHandle> refToDefCache = new();
+    private readonly ConcurrentDictionary<TypeReferenceHandle, TypeDefinitionHandle> refToDefCache = new();
 
     /// <summary>
     /// The set of names of typedef structs that represent handles where the handle has length of <see cref="IntPtr"/>
@@ -305,7 +306,7 @@ internal class MetadataIndex
             }
         }
 
-        this.refToDefCache.Add(typeRefHandle, typeDefHandle);
+        this.refToDefCache.TryAdd(typeRefHandle, typeDefHandle);
         return !typeDefHandle.IsNil;
     }
 

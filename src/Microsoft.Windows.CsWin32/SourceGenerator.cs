@@ -352,6 +352,9 @@ public class SourceGenerator : ISourceGenerator
             inner = inner.InnerException;
         }
 
+        sb.AppendLine();
+        sb.AppendLine(ex.ToString());
+
         return sb.ToString();
     }
 

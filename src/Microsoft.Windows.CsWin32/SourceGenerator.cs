@@ -283,7 +283,7 @@ public class SourceGenerator : ISourceGenerator
                     .ThenBy(pair => pair.Key, StringComparer.Ordinal);
                 foreach (KeyValuePair<string, CodeAnalysis.CSharp.Syntax.CompilationUnitSyntax> unit in compilationUnits)
                 {
-                    context.AddSource($"{generator.InputAssemblyName}.{unit.Key}", unit.Value.ToFullString());
+                    context.AddSource($"{generator.InputAssemblyName}.{unit.Key}", unit.Value.GetText(Encoding.UTF8));
                 }
             }
 

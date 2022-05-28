@@ -54,6 +54,7 @@ public class Generator : IDisposable
 
     internal static readonly Dictionary<string, TypeSyntax> AdditionalBclInteropStructsMarshaled = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)
     {
+        { nameof(System.Runtime.InteropServices.ComTypes.IDataObject), ParseTypeName("global::System.Runtime.InteropServices.ComTypes.IDataObject") },
         ////{ "BOOL", PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)) },
     };
 
@@ -385,7 +386,7 @@ public class Generator : IDisposable
         this.delegateSignatureTypeSettings = this.generalTypeSettings with { QualifyNames = true };
         this.enumTypeSettings = this.generalTypeSettings;
         this.fieldOfHandleTypeDefTypeSettings = this.generalTypeSettings with { PreferNativeInt = false };
-        this.externSignatureTypeSettings = this.generalTypeSettings with { QualifyNames = true, PreferMarshaledTypes = true };
+        this.externSignatureTypeSettings = this.generalTypeSettings with { QualifyNames = true, PreferMarshaledTypes = options.AllowMarshaling };
         this.externReleaseSignatureTypeSettings = this.externSignatureTypeSettings with { PreferNativeInt = false, PreferMarshaledTypes = false };
         this.comSignatureTypeSettings = this.generalTypeSettings with { QualifyNames = true };
         this.extensionMethodSignatureTypeSettings = this.generalTypeSettings with { QualifyNames = true };

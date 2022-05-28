@@ -299,6 +299,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             "D3D9ON12_ARGS", // Contains an inline array of IUnknown objects
             "NCryptOpenKey", // Generates a SafeHandle based on a UIntPtr
             "X509_CERT", // A constant defined as PCSTR
+            "CIDLData_CreateFromIDArray", // Method with out parameter of a possibly marshaled interop type shared with the BCL,
             "ID3D12Resource", // COM interface with base types
             "ID2D1RectangleGeometry")] // COM interface with base types
         string api,

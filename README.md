@@ -76,6 +76,10 @@ Constants are defined on the same class as the p/invoke methods (by default, the
 Other supporting types are defined within or under the `Windows.Win32` namespace.
 Discovery of the namespace for a given type can be done with the Go To All feature (Ctrl+T) in Visual Studio with the type name as the search query.
 
+A project may include many NativeMethods.txt files. CsWin32 will read them all to generate APIs, provided these files are included as `AdditionalFiles` in the project.
+A `NativeMethods.txt` file directly in the project directory is added automatically to `AdditionalFiles`.
+Files in other directories must be added to the project file manually.
+
 ### Customizing generated code
 
 Several aspects of the generated code can be customized, including:

@@ -165,9 +165,9 @@ public class SourceGenerator : ISourceGenerator
             options = new GeneratorOptions();
         }
 
-        AdditionalText? nativeMethodsTxtFile = context.AdditionalFiles
-            .FirstOrDefault(af => string.Equals(Path.GetFileName(af.Path), NativeMethodsTxtAdditionalFileName, StringComparison.OrdinalIgnoreCase));
-        if (nativeMethodsTxtFile is null)
+        IEnumerable<AdditionalText> nativeMethodsTxtFiles = context.AdditionalFiles
+            .Where(af => string.Equals(Path.GetFileName(af.Path), NativeMethodsTxtAdditionalFileName, StringComparison.OrdinalIgnoreCase));
+        if (!nativeMethodsTxtFiles.Any())
         {
             return;
         }
@@ -184,94 +184,97 @@ public class SourceGenerator : ISourceGenerator
         try
         {
             SuperGenerator.Combine(generators);
-            SourceText? nativeMethodsTxt = nativeMethodsTxtFile.GetText(context.CancellationToken);
-            if (nativeMethodsTxt is null)
+            foreach (AdditionalText nativeMethodsTxtFile in nativeMethodsTxtFiles)
             {
-                return;
-            }
-
-            foreach (TextLine line in nativeMethodsTxt.Lines)
-            {
-                context.CancellationToken.ThrowIfCancellationRequested();
-                string name = line.ToString();
-                if (string.IsNullOrWhiteSpace(name) || name.StartsWith("//", StringComparison.InvariantCulture))
+                SourceText? nativeMethodsTxt = nativeMethodsTxtFile.GetText(context.CancellationToken);
+                if (nativeMethodsTxt is null)
                 {
-                    continue;
+                    return;
                 }
 
-                name = name.Trim();
-                var location = Location.Create(nativeMethodsTxtFile.Path, line.Span, nativeMethodsTxt.Lines.GetLinePositionSpan(line.Span));
-                try
+                foreach (TextLine line in nativeMethodsTxt.Lines)
                 {
-                    if (Generator.GetBannedAPIs(options).TryGetValue(name, out string? reason))
+                    context.CancellationToken.ThrowIfCancellationRequested();
+                    string name = line.ToString();
+                    if (string.IsNullOrWhiteSpace(name) || name.StartsWith("//", StringComparison.InvariantCulture))
                     {
-                        context.ReportDiagnostic(Diagnostic.Create(BannedApi, location, reason));
                         continue;
                     }
 
-                    if (name.EndsWith(".*", StringComparison.Ordinal))
+                    name = name.Trim();
+                    var location = Location.Create(nativeMethodsTxtFile.Path, line.Span, nativeMethodsTxt.Lines.GetLinePositionSpan(line.Span));
+                    try
                     {
-                        string? moduleName = name.Substring(0, name.Length - 2);
-                        int matches = 0;
-                        foreach (Generator generator in generators)
+                        if (Generator.GetBannedAPIs(options).TryGetValue(name, out string? reason))
                         {
-                            if (generator.TryGenerateAllExternMethods(moduleName, context.CancellationToken))
-                            {
-                                matches++;
-                            }
-                        }
-
-                        switch (matches)
-                        {
-                            case 0:
-                                context.ReportDiagnostic(Diagnostic.Create(NoMethodsForModule, location, moduleName));
-                                break;
-                            case > 1:
-                                context.ReportDiagnostic(Diagnostic.Create(AmbiguousMatchError, location, moduleName));
-                                break;
-                        }
-
-                        continue;
-                    }
-
-                    List<string> matchingApis = new();
-                    foreach (Generator generator in generators)
-                    {
-                        if (generator.TryGenerate(name, out IReadOnlyList<string> preciseApi, context.CancellationToken))
-                        {
-                            matchingApis.AddRange(preciseApi);
+                            context.ReportDiagnostic(Diagnostic.Create(BannedApi, location, reason));
                             continue;
                         }
 
-                        matchingApis.AddRange(preciseApi);
-                        if (generator.TryGetEnumName(name, out string? declaringEnum))
+                        if (name.EndsWith(".*", StringComparison.Ordinal))
                         {
-                            context.ReportDiagnostic(Diagnostic.Create(UseEnumValueDeclaringType, location, declaringEnum));
-                            generator.TryGenerate(declaringEnum, out preciseApi, context.CancellationToken);
+                            string? moduleName = name.Substring(0, name.Length - 2);
+                            int matches = 0;
+                            foreach (Generator generator in generators)
+                            {
+                                if (generator.TryGenerateAllExternMethods(moduleName, context.CancellationToken))
+                                {
+                                    matches++;
+                                }
+                            }
+
+                            switch (matches)
+                            {
+                                case 0:
+                                    context.ReportDiagnostic(Diagnostic.Create(NoMethodsForModule, location, moduleName));
+                                    break;
+                                case > 1:
+                                    context.ReportDiagnostic(Diagnostic.Create(AmbiguousMatchError, location, moduleName));
+                                    break;
+                            }
+
+                            continue;
+                        }
+
+                        List<string> matchingApis = new();
+                        foreach (Generator generator in generators)
+                        {
+                            if (generator.TryGenerate(name, out IReadOnlyList<string> preciseApi, context.CancellationToken))
+                            {
+                                matchingApis.AddRange(preciseApi);
+                                continue;
+                            }
+
                             matchingApis.AddRange(preciseApi);
+                            if (generator.TryGetEnumName(name, out string? declaringEnum))
+                            {
+                                context.ReportDiagnostic(Diagnostic.Create(UseEnumValueDeclaringType, location, declaringEnum));
+                                generator.TryGenerate(declaringEnum, out preciseApi, context.CancellationToken);
+                                matchingApis.AddRange(preciseApi);
+                            }
+                        }
+
+                        switch (matchingApis.Count)
+                        {
+                            case 0:
+                                ReportNoMatch(location, name);
+                                break;
+                            case > 1:
+                                context.ReportDiagnostic(Diagnostic.Create(AmbiguousMatchErrorWithSuggestions, location, name, ConcatSuggestions(matchingApis)));
+                                break;
                         }
                     }
-
-                    switch (matchingApis.Count)
+                    catch (GenerationFailedException ex)
                     {
-                        case 0:
-                            ReportNoMatch(location, name);
-                            break;
-                        case > 1:
-                            context.ReportDiagnostic(Diagnostic.Create(AmbiguousMatchErrorWithSuggestions, location, name, ConcatSuggestions(matchingApis)));
-                            break;
-                    }
-                }
-                catch (GenerationFailedException ex)
-                {
-                    if (Generator.IsPlatformCompatibleException(ex))
-                    {
-                        context.ReportDiagnostic(Diagnostic.Create(CpuArchitectureIncompatibility, location));
-                    }
-                    else
-                    {
-                        // Build up a complete error message.
-                        context.ReportDiagnostic(Diagnostic.Create(InternalError, location, AssembleFullExceptionMessage(ex)));
+                        if (Generator.IsPlatformCompatibleException(ex))
+                        {
+                            context.ReportDiagnostic(Diagnostic.Create(CpuArchitectureIncompatibility, location));
+                        }
+                        else
+                        {
+                            // Build up a complete error message.
+                            context.ReportDiagnostic(Diagnostic.Create(InternalError, location, AssembleFullExceptionMessage(ex)));
+                        }
                     }
                 }
             }

@@ -474,4 +474,22 @@ public class BasicTests
         h = new(new IntPtr(-1), ownsHandle: false);
         Assert.True(h.IsInvalid);
     }
+
+    /// <summary>
+    /// Verifies that structs with explicit field placement where managed and unmanaged values overlap do not cause a TypeLoadException.
+    /// </summary>
+    /// <remarks>
+    /// This demonstrates the problem tracked by <see href="https://github.com/microsoft/CsWin32/issues/292">this bug</see>.
+    /// </remarks>
+    [Fact(Skip = "Failure tracked by #292")]
+    public void LoadProblematicTypes()
+    {
+        Windows.Win32.System.Com.VARDESC d = new()
+        {
+            Anonymous =
+            {
+                oInst = 3,
+            },
+        };
+    }
 }

@@ -15,13 +15,14 @@ IPersistFile
 KEY_EVENT_RECORD
 LoadLibrary
 MainAVIHeader
+MAX_PATH
 NTSTATUS
+PathParseIconLocation
 RegLoadAppKey
 RM_PROCESS_INFO
 ShellLink
+VARDESC
 WER_REPORT_INFORMATION
 wglGetProcAddress
 WPARAM
 WriteFile
-PathParseIconLocation
-MAX_PATH

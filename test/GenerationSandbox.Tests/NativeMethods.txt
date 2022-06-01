@@ -21,6 +21,7 @@ PathParseIconLocation
 RegLoadAppKey
 RM_PROCESS_INFO
 ShellLink
+VARDESC
 WER_REPORT_INFORMATION
 wglGetProcAddress
 WPARAM

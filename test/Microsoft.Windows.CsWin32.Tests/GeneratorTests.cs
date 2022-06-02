@@ -35,7 +35,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 [assembly: global::System.Reflection.AssemblyMetadata(""Microsoft.Windows.CsWin32"",""{ThisAssembly.AssemblyInformationalVersion}"")]
 ".Replace("\r\n", "\n");
 
@@ -1406,7 +1406,7 @@ i++)						if (p0[i] != default(uint))							return false;
         this.AssertNoDiagnostics();
     }
 
-    [Fact]
+    [Fact, Trait("Verbatim", "true")]
     public async Task TestSimpleStructure()
     {
         await new VerifyTest
@@ -1433,7 +1433,7 @@ i++)						if (p0[i] != default(uint))							return false;
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
 {
 	using global::System;
@@ -1468,7 +1468,7 @@ namespace Windows.Win32
         }.RunAsync();
     }
 
-    [Fact]
+    [Fact, Trait("Verbatim", "true")]
     public async Task TestSimpleEnum()
     {
         await new VerifyTest
@@ -1496,7 +1496,7 @@ namespace Windows.Win32
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
 {
 	using global::System;
@@ -1534,7 +1534,7 @@ namespace Windows.Win32
         }.RunAsync();
     }
 
-    [Fact]
+    [Fact, Trait("Verbatim", "true")]
     public async Task TestSimpleEnumWithoutDocs()
     {
         await new VerifyTest
@@ -1562,7 +1562,7 @@ namespace Windows.Win32
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
 {
 	using global::System;
@@ -1590,7 +1590,7 @@ namespace Windows.Win32
         }.RunAsync();
     }
 
-    [Fact]
+    [Fact, Trait("Verbatim", "true")]
     public async Task TestFlagsEnum()
     {
         await new VerifyTest
@@ -1618,7 +1618,7 @@ namespace Windows.Win32
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
 {
 	using global::System;
@@ -1667,7 +1667,7 @@ namespace Windows.Win32
         }.RunAsync();
     }
 
-    [Fact]
+    [Fact, Trait("Verbatim", "true")]
     public async Task TestSimpleDelegate()
     {
         await new VerifyTest
@@ -1694,7 +1694,7 @@ namespace Windows.Win32
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
 {
 	using global::System;
@@ -1733,7 +1733,7 @@ namespace Windows.Win32
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
 {
 	using global::System;
@@ -1758,7 +1758,7 @@ namespace Windows.Win32
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
 {
 	using global::System;
@@ -1798,7 +1798,7 @@ namespace Windows.Win32
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
 {
 	using global::System;
@@ -1834,7 +1834,7 @@ namespace Windows.Win32
         }.RunAsync();
     }
 
-    [Fact]
+    [Fact, Trait("Verbatim", "true")]
     public async Task TestSimpleMethod()
     {
         await new VerifyTest
@@ -1862,7 +1862,7 @@ namespace Windows.Win32
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
 {
 	using global::System;
@@ -1904,7 +1904,7 @@ namespace Windows.Win32
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
 {
 	using global::System;
@@ -1944,7 +1944,7 @@ namespace Windows.Win32
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
 {
 	using global::System;
@@ -1979,7 +1979,7 @@ namespace Windows.Win32
         }.RunAsync();
     }
 
-    [Fact]
+    [Fact, Trait("Verbatim", "true")]
     public async Task TestMethodWithOverloads()
     {
         await new VerifyTest
@@ -2006,7 +2006,7 @@ namespace Windows.Win32
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
 {
 	using global::System;
@@ -2045,7 +2045,7 @@ namespace Windows.Win32
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
 {
 	using global::System;
@@ -2098,7 +2098,7 @@ namespace Windows.Win32
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
 {
 	using global::System;
@@ -2129,7 +2129,7 @@ namespace Windows.Win32
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
 {
 	using global::System;
@@ -2201,7 +2201,7 @@ namespace Windows.Win32
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
 {
 	using global::System;
@@ -2232,7 +2232,7 @@ namespace Windows.Win32
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
 {
 	using global::System;
@@ -2274,7 +2274,7 @@ namespace Windows.Win32
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
 {
 	using global::System;
@@ -2351,7 +2351,7 @@ namespace Windows.Win32
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
 {
 	using global::System;
@@ -2457,7 +2457,7 @@ namespace Windows.Win32
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
 {
 	using global::System;
@@ -2517,7 +2517,7 @@ namespace Windows.Win32
 // </auto-generated>
 // ------------------------------------------------------------------------------
 
-#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
 {
 	using global::System;

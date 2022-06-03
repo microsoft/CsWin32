@@ -427,6 +427,11 @@ public class Generator : IDisposable
 
     internal LanguageVersion LanguageVersion => this.parseOptions?.LanguageVersion ?? LanguageVersion.CSharp9;
 
+    /// <summary>
+    /// Gets the default generation context to use.
+    /// </summary>
+    internal Context DefaultContext => new() { AllowMarshaling = this.options.AllowMarshaling };
+
     private bool WideCharOnly => this.options.WideCharOnly;
 
     private string Namespace => this.InputAssemblyName;
@@ -630,7 +635,7 @@ public class Generator : IDisposable
 
                 foreach (KeyValuePair<string, TypeDefinitionHandle> type in metadata.Types)
                 {
-                    this.RequestInteropType(type.Value);
+                    this.RequestInteropType(type.Value, this.DefaultContext);
                 }
 
                 foreach (KeyValuePair<string, FieldDefinitionHandle> field in metadata.Fields)
@@ -899,7 +904,7 @@ public class Generator : IDisposable
         {
             this.volatileCode.GenerationTransaction(delegate
             {
-                this.RequestInteropType(matchingTypeHandles[0]);
+                this.RequestInteropType(matchingTypeHandles[0], this.DefaultContext);
             });
 
             TypeDefinition td = this.Reader.GetTypeDefinition(matchingTypeHandles[0]);
@@ -1315,7 +1320,7 @@ public class Generator : IDisposable
                 {
                     this.volatileCode.GenerationTransaction(delegate
                     {
-                        this.RequestInteropType(typeDefinitionHandle);
+                        this.RequestInteropType(typeDefinitionHandle, this.DefaultContext);
                     });
                 }
                 catch (GenerationFailedException ex) when (IsPlatformCompatibleException(ex))
@@ -1392,7 +1397,7 @@ public class Generator : IDisposable
         return false;
     }
 
-    internal void RequestInteropType(string @namespace, string name)
+    internal void RequestInteropType(string @namespace, string name, Context context)
     {
         // PERF: Skip this search if this namespace/name has already been generated (committed, or still in volatileCode).
         foreach (TypeDefinitionHandle tdh in this.Reader.TypeDefinitions)
@@ -1402,7 +1407,7 @@ public class Generator : IDisposable
             {
                 this.volatileCode.GenerationTransaction(delegate
                 {
-                    this.RequestInteropType(tdh);
+                    this.RequestInteropType(tdh, context);
                 });
 
                 return;
@@ -1412,13 +1417,13 @@ public class Generator : IDisposable
         throw new GenerationFailedException($"Referenced type \"{@namespace}.{name}\" not found in \"{this.InputAssemblyName}\".");
     }
 
-    internal void RequestInteropType(TypeDefinitionHandle typeDefHandle)
+    internal void RequestInteropType(TypeDefinitionHandle typeDefHandle, Context context)
     {
         TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefHandle);
         if (typeDef.GetDeclaringType() is { IsNil: false } nestingParentHandle)
         {
             // We should only generate this type into its parent type.
-            this.RequestInteropType(nestingParentHandle);
+            this.RequestInteropType(nestingParentHandle, context);
             return;
         }
 
@@ -1438,7 +1443,7 @@ public class Generator : IDisposable
 
         this.volatileCode.GenerateType(typeDefHandle, delegate
         {
-            if (this.RequestInteropType(typeDefHandle, null) is MemberDeclarationSyntax typeDeclaration)
+            if (this.RequestInteropTypeHelper(typeDefHandle, context) is MemberDeclarationSyntax typeDeclaration)
             {
                 if (!this.TryStripCommonNamespace(ns, out string? shortNamespace))
                 {
@@ -1459,18 +1464,18 @@ public class Generator : IDisposable
         });
     }
 
-    internal void RequestInteropType(TypeReferenceHandle typeRefHandle)
+    internal void RequestInteropType(TypeReferenceHandle typeRefHandle, Context context)
     {
         if (this.TryGetTypeDefHandle(typeRefHandle, out TypeDefinitionHandle typeDefHandle))
         {
-            this.RequestInteropType(typeDefHandle);
+            this.RequestInteropType(typeDefHandle, context);
         }
         else
         {
             TypeReference typeRef = this.Reader.GetTypeReference(typeRefHandle);
             if (typeRef.ResolutionScope.Kind == HandleKind.AssemblyReference)
             {
-                if (this.SuperGenerator?.TryRequestInteropType(new(this, typeRef)) is not true)
+                if (this.SuperGenerator?.TryRequestInteropType(new(this, typeRef), context) is not true)
                 {
                     // We can't find the interop among our metadata inputs.
                     // Before we give up and report an error, search for the required type among the compilation's referenced assemblies.
@@ -2773,7 +2778,7 @@ public class Generator : IDisposable
         return null;
     }
 
-    private MemberDeclarationSyntax? RequestInteropType(TypeDefinitionHandle typeDefHandle, NameSyntax? declaringType)
+    private MemberDeclarationSyntax? RequestInteropTypeHelper(TypeDefinitionHandle typeDefHandle, Context context)
     {
         TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefHandle);
         if (this.IsCompilerGenerated(typeDef))
@@ -2800,7 +2805,7 @@ public class Generator : IDisposable
 
             if ((typeDef.Attributes & TypeAttributes.Interface) == TypeAttributes.Interface)
             {
-                typeDeclaration = this.DeclareInterface(typeDef);
+                typeDeclaration = this.DeclareInterface(typeDefHandle, context);
             }
             else if (this.Reader.StringComparer.Equals(baseTypeName, nameof(ValueType)) && this.Reader.StringComparer.Equals(baseTypeNamespace, nameof(System)))
             {
@@ -2815,13 +2820,12 @@ public class Generator : IDisposable
                 }
                 else
                 {
-                    StructDeclarationSyntax structDeclaration = this.DeclareStruct(typeDef);
+                    StructDeclarationSyntax structDeclaration = this.DeclareStruct(typeDefHandle, context);
 
                     // Proactively generate all nested types as well.
-                    NameSyntax nestedDeclaringType = declaringType is null ? IdentifierName(name) : QualifiedName(declaringType, IdentifierName(name));
                     foreach (TypeDefinitionHandle nestedHandle in typeDef.GetNestedTypes())
                     {
-                        if (this.RequestInteropType(nestedHandle, nestedDeclaringType) is { } nestedType)
+                        if (this.RequestInteropTypeHelper(nestedHandle, context) is { } nestedType)
                         {
                             structDeclaration = structDeclaration.AddMembers(nestedType);
                         }
@@ -3142,14 +3146,16 @@ public class Generator : IDisposable
     /// <summary>
     /// Generates a type to represent a COM interface.
     /// </summary>
-    /// <param name="typeDef">The type definition of the interface.</param>
+    /// <param name="typeDefHandle">The type definition handle of the interface.</param>
+    /// <param name="context">The generation context.</param>
     /// <returns>The type declaration.</returns>
     /// <remarks>
     /// COM interfaces are represented as structs in order to maintain the "unmanaged type" trait
     /// so that all structs are blittable.
     /// </remarks>
-    private TypeDeclarationSyntax? DeclareInterface(TypeDefinition typeDef)
+    private TypeDeclarationSyntax? DeclareInterface(TypeDefinitionHandle typeDefHandle, Context context)
     {
+        TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefHandle);
         var baseTypes = new Stack<QualifiedTypeDefinitionHandle>();
         (Generator Generator, InterfaceImplementationHandle Handle) baseTypeHandle = (this, typeDef.GetInterfaceImplementations().SingleOrDefault());
         while (!baseTypeHandle.Handle.IsNil)
@@ -3166,12 +3172,13 @@ public class Generator : IDisposable
         }
 
         return !this.options.AllowMarshaling || this.IsNonCOMInterface(typeDef)
-            ? this.DeclareInterfaceAsStruct(typeDef, baseTypes)
+            ? this.DeclareInterfaceAsStruct(typeDefHandle, baseTypes, context)
             : this.DeclareInterfaceAsInterface(typeDef, baseTypes);
     }
 
-    private TypeDeclarationSyntax DeclareInterfaceAsStruct(TypeDefinition typeDef, Stack<QualifiedTypeDefinitionHandle> baseTypes)
+    private TypeDeclarationSyntax DeclareInterfaceAsStruct(TypeDefinitionHandle typeDefHandle, Stack<QualifiedTypeDefinitionHandle> baseTypes, Context context)
     {
+        TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefHandle);
         IdentifierNameSyntax ifaceName = IdentifierName(this.Reader.GetString(typeDef.Name));
         IdentifierNameSyntax vtblFieldName = IdentifierName("lpVtbl");
         var members = new List<MemberDeclarationSyntax>();
@@ -3328,7 +3335,7 @@ public class Generator : IDisposable
                 }
                 else
                 {
-                    baseTypeHandle.Generator.RequestInteropType(baseTypeHandle.DefinitionHandle);
+                    baseTypeHandle.Generator.RequestInteropType(baseTypeHandle.DefinitionHandle, this.DefaultContext);
                     baseTypeSyntaxList.Add(SimpleBaseType(new HandleTypeHandleInfo(baseTypeHandle.Reader, baseTypeHandle.DefinitionHandle).ToTypeSyntax(this.comSignatureTypeSettings, null).Type));
                     allMethods.AddRange(baseType.GetMethods());
                 }
@@ -3561,8 +3568,9 @@ public class Generator : IDisposable
         returnTypeAttributes = this.GetReturnTypeCustomAttributes(invokeMethodDef);
     }
 
-    private StructDeclarationSyntax DeclareStruct(TypeDefinition typeDef)
+    private StructDeclarationSyntax DeclareStruct(TypeDefinitionHandle typeDefHandle, Context context)
     {
+        TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefHandle);
         IdentifierNameSyntax name = IdentifierName(this.Reader.GetString(typeDef.Name));
         TypeSyntaxSettings typeSettings = this.fieldTypeSettings;
 
@@ -3607,7 +3615,7 @@ public class Generator : IDisposable
                     TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null);
                     hasUtf16CharField |= fieldTypeInfo is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.Char };
                     TypeSyntaxAndMarshaling fieldTypeSyntax = fieldTypeInfo.ToTypeSyntax(typeSettings, fieldAttributes);
-                    (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? MarshalAsAttribute) fieldInfo = this.ReinterpretFieldType(fieldDef, fieldTypeSyntax.Type, fieldAttributes);
+                    (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? MarshalAsAttribute) fieldInfo = this.ReinterpretFieldType(fieldDef, fieldTypeSyntax.Type, fieldAttributes, context);
                     additionalMembers = additionalMembers.AddRange(fieldInfo.AdditionalMembers);
 
                     field = FieldDeclaration(VariableDeclaration(fieldInfo.FieldType).AddVariables(fieldDeclarator))
@@ -3730,7 +3738,7 @@ public class Generator : IDisposable
         CustomAttributeHandleCollection fieldAttributes = fieldDef.GetCustomAttributes();
         TypeSyntaxAndMarshaling fieldType = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null).ToTypeSyntax(typeSettings, fieldAttributes);
         (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? _) fieldInfo =
-            this.ReinterpretFieldType(fieldDef, fieldType.Type, fieldAttributes);
+            this.ReinterpretFieldType(fieldDef, fieldType.Type, fieldAttributes, this.DefaultContext);
         SyntaxList<MemberDeclarationSyntax> members = List<MemberDeclarationSyntax>();
 
         FieldDeclarationSyntax fieldSyntax = FieldDeclaration(
@@ -4087,7 +4095,7 @@ public class Generator : IDisposable
         IdentifierNameSyntax fieldName = IdentifierName("value");
         VariableDeclaratorSyntax fieldDeclarator = VariableDeclarator(fieldName.Identifier);
         (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? MarshalAs) fieldInfo =
-            this.ReinterpretFieldType(fieldDef, fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null).ToTypeSyntax(this.fieldTypeSettings, fieldAttributes).Type, fieldAttributes);
+            this.ReinterpretFieldType(fieldDef, fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null).ToTypeSyntax(this.fieldTypeSettings, fieldAttributes).Type, fieldAttributes, this.DefaultContext);
         SyntaxList<MemberDeclarationSyntax> members = List<MemberDeclarationSyntax>();
 
         FieldDeclarationSyntax fieldSyntax = FieldDeclaration(
@@ -4840,7 +4848,7 @@ public class Generator : IDisposable
         }
     }
 
-    private (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? MarshalAsAttribute) ReinterpretFieldType(FieldDefinition fieldDef, TypeSyntax originalType, CustomAttributeHandleCollection customAttributes)
+    private (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? MarshalAsAttribute) ReinterpretFieldType(FieldDefinition fieldDef, TypeSyntax originalType, CustomAttributeHandleCollection customAttributes, Context context)
     {
         TypeSyntaxSettings typeSettings = this.fieldTypeSettings;
         TypeHandleInfo fieldTypeHandleInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null);
@@ -4849,7 +4857,7 @@ public class Generator : IDisposable
         // If the field is a fixed length array, we have to work some code gen magic since C# does not allow those.
         if (originalType is ArrayTypeSyntax arrayType && arrayType.RankSpecifiers.Count > 0 && arrayType.RankSpecifiers[0].Sizes.Count == 1)
         {
-            return this.DeclareFixedLengthArrayStruct(fieldDef, customAttributes, fieldTypeHandleInfo, arrayType);
+            return this.DeclareFixedLengthArrayStruct(fieldDef, customAttributes, fieldTypeHandleInfo, arrayType, context);
         }
 
         // If the field is a delegate type, we have to replace that with a native function pointer to avoid the struct becoming a 'managed type'.
@@ -4868,7 +4876,7 @@ public class Generator : IDisposable
         return (originalType, default(SyntaxList<MemberDeclarationSyntax>), marshalAs);
     }
 
-    private (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? MarshalAsAttribute) DeclareFixedLengthArrayStruct(FieldDefinition fieldDef, CustomAttributeHandleCollection customAttributes, TypeHandleInfo fieldTypeHandleInfo, ArrayTypeSyntax arrayType)
+    private (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? MarshalAsAttribute) DeclareFixedLengthArrayStruct(FieldDefinition fieldDef, CustomAttributeHandleCollection customAttributes, TypeHandleInfo fieldTypeHandleInfo, ArrayTypeSyntax arrayType, Context context)
     {
         if (this.options.AllowMarshaling && this.IsManagedType(fieldTypeHandleInfo))
         {
@@ -5591,6 +5599,15 @@ public class Generator : IDisposable
         {
             return this.MetadataIndex.MetadataByNamespace.Values;
         }
+    }
+
+    internal record struct Context
+    {
+        /// <summary>
+        /// Gets a value indicating whether the context permits marshaling.
+        /// This may be more constrained than <see cref="GeneratorOptions.AllowMarshaling"/> when within the context of a union struct.
+        /// </summary>
+        internal bool AllowMarshaling { get; init; }
     }
 
     internal struct NativeArrayInfo

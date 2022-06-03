@@ -104,8 +104,9 @@ public class SuperGenerator
     /// Requests generation of a type referenced across metadata files.
     /// </summary>
     /// <param name="typeRef">The referenced type, with generator.</param>
+    /// <param name="context">The generation context.</param>
     /// <returns><see langword="true" /> if a matching generator was found; <see langword="false" /> otherwise.</returns>
-    internal bool TryRequestInteropType(QualifiedTypeReference typeRef)
+    internal bool TryRequestInteropType(QualifiedTypeReference typeRef, Generator.Context context)
     {
         if (typeRef.Reference.ResolutionScope.Kind != HandleKind.AssemblyReference)
         {
@@ -116,7 +117,7 @@ public class SuperGenerator
         {
             string ns = typeRef.Generator.Reader.GetString(typeRef.Reference.Namespace);
             string name = typeRef.Generator.Reader.GetString(typeRef.Reference.Name);
-            generator.RequestInteropType(ns, name);
+            generator.RequestInteropType(ns, name, context);
             return true;
         }
 

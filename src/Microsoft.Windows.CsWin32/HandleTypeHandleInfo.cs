@@ -97,7 +97,7 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
         }
         else
         {
-            this.RequestTypeGeneration(inputs.Generator);
+            this.RequestTypeGeneration(inputs.Generator, this.GetContext(inputs));
         }
 
         TypeSyntax syntax = isInterface && (!inputs.AllowMarshaling || isNonCOMConformingInterface)
@@ -210,15 +210,15 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
         return false;
     }
 
-    private void RequestTypeGeneration(Generator? generator)
+    private void RequestTypeGeneration(Generator? generator, Generator.Context context)
     {
         if (this.Handle.Kind == HandleKind.TypeDefinition)
         {
-            generator?.RequestInteropType((TypeDefinitionHandle)this.Handle);
+            generator?.RequestInteropType((TypeDefinitionHandle)this.Handle, context);
         }
         else if (this.Handle.Kind == HandleKind.TypeReference)
         {
-            generator?.RequestInteropType((TypeReferenceHandle)this.Handle);
+            generator?.RequestInteropType((TypeReferenceHandle)this.Handle, context);
         }
     }
 }

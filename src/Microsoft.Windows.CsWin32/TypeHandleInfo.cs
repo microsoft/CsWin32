@@ -36,4 +36,8 @@ internal abstract record TypeHandleInfo
     }
 
     protected TypeSyntax ToTypeSyntaxForDisplay() => this.ToTypeSyntax(DebuggerDisplaySettings, null).Type;
+
+    protected Generator.Context GetContext(TypeSyntaxSettings inputs) => inputs.Generator is not null
+        ? inputs.Generator.DefaultContext with { AllowMarshaling = inputs.AllowMarshaling }
+        : new() { AllowMarshaling = inputs.AllowMarshaling };
 }

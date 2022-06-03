@@ -61,8 +61,9 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         new object[][]
         {
             new object[] { "net35" },
+            new object[] { "net472" },
             new object[] { "netstandard2.0" },
-            new object[] { "net5.0" },
+            new object[] { "net6.0" },
         };
 
     public static Platform[] SpecificCpuArchitectures =>
@@ -85,10 +86,11 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public async Task InitializeAsync()
     {
         this.starterCompilations.Add("net35", await this.CreateCompilationAsync(MyReferenceAssemblies.NetFramework.Net35));
+        this.starterCompilations.Add("net472", await this.CreateCompilationAsync(MyReferenceAssemblies.NetFramework.Net472));
         this.starterCompilations.Add("netstandard2.0", await this.CreateCompilationAsync(MyReferenceAssemblies.NetStandard20));
-        this.starterCompilations.Add("net5.0", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net50));
-        this.starterCompilations.Add("net5.0-x86", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net50, Platform.X86));
-        this.starterCompilations.Add("net5.0-x64", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net50, Platform.X64));
+        this.starterCompilations.Add("net6.0", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net60));
+        this.starterCompilations.Add("net6.0-x86", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net60, Platform.X86));
+        this.starterCompilations.Add("net6.0-x64", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net60, Platform.X64));
 
         this.compilation = this.starterCompilations["netstandard2.0"];
     }
@@ -150,7 +152,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.AssertNoDiagnostics();
 
         var generatedMethod = this.FindGeneratedMethod(methodName).Single();
-        if (tfm == "net5.0")
+        if (tfm == "net6.0")
         {
             Assert.Contains(generatedMethod.AttributeLists, al => IsAttributePresent(al, "SupportedOSPlatform"));
         }
@@ -208,7 +210,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public void SupportedOSPlatform_AppearsOnFriendlyOverloads()
     {
         const string methodName = "GetStagedPackagePathByFullName2";
-        this.compilation = this.starterCompilations["net5.0"];
+        this.compilation = this.starterCompilations["net6.0"];
         this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate(methodName, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
@@ -217,9 +219,9 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     }
 
     [Theory, PairwiseData]
-    public void COMInterfaceWithSupportedOSPlatform(bool net50, bool allowMarshaling)
+    public void COMInterfaceWithSupportedOSPlatform(bool net60, bool allowMarshaling)
     {
-        this.compilation = this.starterCompilations[net50 ? "net5.0" : "netstandard2.0"];
+        this.compilation = this.starterCompilations[net60 ? "net6.0" : "netstandard2.0"];
         const string typeName = "IInkCursors";
         this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling });
         Assert.True(this.generator.TryGenerateType(typeName));
@@ -228,7 +230,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
 
         var iface = this.FindGeneratedType(typeName).Single();
 
-        if (net50 && !allowMarshaling)
+        if (net60)
         {
             Assert.Contains(iface.AttributeLists, al => IsAttributePresent(al, "SupportedOSPlatform"));
         }
@@ -853,7 +855,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [InlineData("MEMORY_BASIC_INFORMATION")]
     public void StructsArePartial(string structName)
     {
-        this.compilation = this.starterCompilations["net5.0-x64"]; // MEMORY_BASIC_INFORMATION is arch-specific
+        this.compilation = this.starterCompilations["net6.0-x64"]; // MEMORY_BASIC_INFORMATION is arch-specific
         this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate(structName, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
@@ -1326,7 +1328,7 @@ i++)						if (p0[i] != default(uint))							return false;
 	}
 ";
 
-        this.compilation = this.starterCompilations["net5.0"];
+        this.compilation = this.starterCompilations["net6.0"];
         this.AssertGeneratedType("MainAVIHeader", expected, expectedIndexer);
     }
 
@@ -2913,11 +2915,12 @@ namespace Windows.Win32
         internal static class NetFramework
         {
             internal static readonly ReferenceAssemblies Net35 = ReferenceAssemblies.NetFramework.Net35.Default.AddPackages(AdditionalPackages);
+            internal static readonly ReferenceAssemblies Net472 = ReferenceAssemblies.NetFramework.Net472.Default.AddPackages(AdditionalPackages);
         }
 
         internal static class Net
         {
-            internal static readonly ReferenceAssemblies Net50 = ReferenceAssemblies.Net.Net50.AddPackages(AdditionalPackages);
+            internal static readonly ReferenceAssemblies Net60 = ReferenceAssemblies.Net.Net60.AddPackages(AdditionalPackages);
         }
 #pragma warning restore SA1202 // Elements should be ordered by access
     }

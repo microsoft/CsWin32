@@ -2039,7 +2039,7 @@ public class Generator : IDisposable
             }
         }
 
-        throw new GenerationFailedException("Unrecognized type.");
+        throw new GenerationFailedException("Unrecognized type: " + elementType.GetType().Name);
     }
 
     /// <summary>

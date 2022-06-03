@@ -1380,7 +1380,7 @@ i++)						if (p0[i] != default(uint))							return false;
         this.generator = this.CreateGenerator(generatorOptions);
         this.generator.GenerateAll(CancellationToken.None);
         this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics(logGeneratedCode: false);
+        this.AssertNoDiagnostics(logAllGeneratedCode: false);
     }
 
     [Theory, PairwiseData]
@@ -2771,7 +2771,7 @@ namespace Windows.Win32
 
     private bool IsMethodGenerated(string name) => this.FindGeneratedMethod(name).Any();
 
-    private void AssertNoDiagnostics(bool logGeneratedCode = true) => this.AssertNoDiagnostics(this.compilation, logGeneratedCode);
+    private void AssertNoDiagnostics(bool logAllGeneratedCode = true) => this.AssertNoDiagnostics(this.compilation, logAllGeneratedCode);
 
     private void AssertNoDiagnostics(CSharpCompilation compilation, bool logAllGeneratedCode = true)
     {

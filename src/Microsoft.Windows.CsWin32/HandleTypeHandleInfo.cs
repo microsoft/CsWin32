@@ -114,7 +114,7 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
                 // We only want to marshal WinRT objects, not interfaces. We don't have a good way of knowing
                 // whether it's an interface or an object. "isInterface" comes back as false for a WinRT interface,
                 // so that doesn't help. Looking at the name should be good enough, but if we needed to, the
-                // Win32 projection could give us an attribute to make sure
+                // Win32 projection could give us an attribute to make sure.
                 string? objName = qualifiedName.Right.ToString();
                 bool isInterfaceName = InterfaceNameMatcher.IsMatch(objName);
                 if (!isInterfaceName)

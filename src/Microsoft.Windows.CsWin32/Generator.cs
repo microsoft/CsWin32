@@ -391,7 +391,7 @@ public class Generator : IDisposable
         this.comSignatureTypeSettings = this.generalTypeSettings with { QualifyNames = true };
         this.extensionMethodSignatureTypeSettings = this.generalTypeSettings with { QualifyNames = true };
         this.functionPointerTypeSettings = this.generalTypeSettings with { QualifyNames = true };
-        this.errorMessageTypeSettings = this.generalTypeSettings with { QualifyNames = true };
+        this.errorMessageTypeSettings = this.generalTypeSettings with { QualifyNames = true, Generator = null }; // Avoid risk of infinite recursion from errors in ToTypeSyntax
 
         this.methodsAndConstantsClassName = IdentifierName(options.ClassName);
     }

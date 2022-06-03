@@ -17,8 +17,15 @@ internal record ArrayTypeHandleInfo(TypeHandleInfo ElementType, ArrayShape Shape
     internal override TypeSyntaxAndMarshaling ToTypeSyntax(TypeSyntaxSettings inputs, CustomAttributeHandleCollection? customAttributes, ParameterAttributes parameterAttributes)
     {
         TypeSyntaxAndMarshaling element = this.ElementType.ToTypeSyntax(inputs, customAttributes);
-        ArrayTypeSyntax arrayType = ArrayType(element.Type, SingletonList(ArrayRankSpecifier().AddSizes(this.Shape.Sizes.Select(size => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(size))).ToArray<ExpressionSyntax>())));
-        MarshalAsAttribute? marshalAs = element.MarshalAsAttribute is object ? new MarshalAsAttribute(UnmanagedType.LPArray) { ArraySubType = element.MarshalAsAttribute.Value } : null;
-        return new TypeSyntaxAndMarshaling(arrayType, marshalAs, element.NativeArrayInfo);
+        if (inputs.AllowMarshaling)
+        {
+            ArrayTypeSyntax arrayType = ArrayType(element.Type, SingletonList(ArrayRankSpecifier().AddSizes(this.Shape.Sizes.Select(size => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(size))).ToArray<ExpressionSyntax>())));
+            MarshalAsAttribute? marshalAs = element.MarshalAsAttribute is object ? new MarshalAsAttribute(UnmanagedType.LPArray) { ArraySubType = element.MarshalAsAttribute.Value } : null;
+            return new TypeSyntaxAndMarshaling(arrayType, marshalAs, element.NativeArrayInfo);
+        }
+        else
+        {
+            return new TypeSyntaxAndMarshaling(PointerType(element.Type));
+        }
     }
 }

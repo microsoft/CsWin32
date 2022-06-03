@@ -5504,7 +5504,8 @@ public class Generator : IDisposable
                 else if (this.Reader.StringComparer.Equals(baseName, nameof(MulticastDelegate)) && this.Reader.StringComparer.Equals(baseNamespace, nameof(System)))
                 {
                     // Delegates appear as unmanaged function pointers when using structs instead of COM interfaces.
-                    return this.options.AllowMarshaling;
+                    // But certain delegates are never declared as delegates.
+                    return this.options.AllowMarshaling && !this.IsUntypedDelegate(typeDef);
                 }
 
                 throw new NotSupportedException();

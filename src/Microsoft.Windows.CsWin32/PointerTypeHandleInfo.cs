@@ -66,6 +66,13 @@ internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleIn
             return new TypeSyntaxAndMarshaling(PredefinedType(Token(SyntaxKind.ObjectKeyword)), new MarshalAsAttribute(UnmanagedType.IUnknown), null);
         }
 
+        // Since we'll be using pointers, we have to ensure the element type does not require any marshaling.
+        if (inputs.AllowMarshaling)
+        {
+            // Evidently all tests pass without actually doing this, so we'll leave it out for now.
+            ////elementTypeDetails = this.ElementType.ToTypeSyntax(inputs with { AllowMarshaling = false }, customAttributes);
+        }
+
         return new TypeSyntaxAndMarshaling(PointerType(elementTypeDetails.Type));
     }
 

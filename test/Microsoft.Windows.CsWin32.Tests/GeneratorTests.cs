@@ -247,6 +247,10 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             "CreateFile", // built-in SafeHandle use
             "CreateCursor", // 0 or -1 invalid SafeHandle generated
             "PlaySound", // 0 invalid SafeHandle generated
+            "SLIST_HEADER", // Union struct that defined uniquely for each CPU architecture
+            "PROFILER_HEAP_OBJECT_OPTIONAL_INFO",
+            "MI_Instance", // recursive type where managed testing gets particularly tricky
+            "CertFreeCertificateChainList", // double pointer extern method
             "D3DGetTraceInstructionOffsets", // SizeParamIndex
             "PlgBlt", // SizeConst
             "ENABLE_TRACE_PARAMETERS_V1", // bad xml created at some point.
@@ -352,6 +356,31 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.generator = this.CreateGenerator();
         Assert.False(this.generator.TryGenerate("IDONTEXIST*", out IReadOnlyList<string> preciseApi, CancellationToken.None));
         Assert.Empty(preciseApi);
+    }
+
+    [Theory, PairwiseData]
+    public void UnionWithRefAndValueTypeFields(
+        [CombinatorialValues("VARDESC", "VARIANT")] string typeName,
+        [CombinatorialValues("net6.0", "net472", "netstandard2.0")] string tfm)
+    {
+        this.compilation = this.starterCompilations[tfm];
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate(typeName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+    }
+
+    /// <summary>
+    /// Generate APIs that depend on common APIs but in both marshalable and non-marshalable contexts.
+    /// </summary>
+    [Fact]
+    public void UnionWithRefAndValueTypeFields2()
+    {
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate("MI_MethodDecl", CancellationToken.None));
+        Assert.True(this.generator.TryGenerate("MI_Value", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
     }
 
     [Fact]

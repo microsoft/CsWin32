@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Reflection;
 using System.Reflection.Metadata;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.CodeAnalysis;
@@ -1437,6 +1438,97 @@ i++)						if (p0[i] != default(uint))							return false;
         this.AssertNoDiagnostics();
     }
 
+    /// <summary>
+    /// Tests that a generating project that references two other generating projects will generate its own types if a unique type isn't available from the referenced projects.
+    /// In particular, if a type is generated in <em>both</em> of the referenced projects, that creates an ambiguity problem that <em>may</em> be resolved with <c>extern alias</c>
+    /// or perhaps by simply generating types a third time in the local compilation.
+    /// </summary>
+    /// <param name="internalsVisibleTo">Whether to generate internal APIs and use the <see cref="InternalsVisibleToAttribute"/>.</param>
+    /// <param name="externAlias">Whether to specify extern aliases for the references.</param>
+    [Theory, PairwiseData]
+    public void ProjectReferenceBetweenThreeGeneratingProjects(bool internalsVisibleTo, bool externAlias)
+    {
+        CSharpCompilation templateCompilation = this.compilation;
+        for (int i = 1; i <= 2; i++)
+        {
+            CSharpCompilation referencedProject = templateCompilation.WithAssemblyName("refdProj" + i);
+            LogProject(referencedProject.AssemblyName!);
+            if (internalsVisibleTo)
+            {
+                var ivtSource = CSharpSyntaxTree.ParseText($@"[assembly: System.Runtime.CompilerServices.InternalsVisibleToAttribute(""{this.compilation.AssemblyName}"")]", this.parseOptions);
+                referencedProject = referencedProject.AddSyntaxTrees(ivtSource);
+            }
+
+            using var referencedGenerator = this.CreateGenerator(new GeneratorOptions { Public = !internalsVisibleTo }, referencedProject);
+
+            // Both will declare HRESULT
+            Assert.True(referencedGenerator.TryGenerate("HANDLE", CancellationToken.None));
+
+            // One will declare FILE_SHARE_MODE
+            if (i % 2 == 0)
+            {
+                Assert.True(referencedGenerator.TryGenerate("FILE_SHARE_MODE", CancellationToken.None));
+            }
+
+            referencedProject = this.AddGeneratedCode(referencedProject, referencedGenerator);
+            this.AssertNoDiagnostics(referencedProject);
+            Assert.Single(this.FindGeneratedType("HANDLE", referencedProject));
+
+            ImmutableArray<string> aliases = externAlias ? ImmutableArray.Create("ref" + i) : ImmutableArray<string>.Empty;
+            this.compilation = this.compilation.AddReferences(referencedProject.ToMetadataReference(aliases));
+        }
+
+        LogProject(this.compilation.AssemblyName!);
+
+        // Now produce more code in a referencing project that needs HANDLE, which is found *twice*, once in each referenced project.
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate("CreateFile", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+
+        // Consume the API to verify the user experience isn't broken.
+        string programCsSource = @"
+#pragma warning disable CS0436
+
+using Windows.Win32;
+using Windows.Win32.Foundation;
+using Windows.Win32.Storage.FileSystem;
+
+class Program
+{
+    static unsafe void Main()
+    {
+        HANDLE h = PInvoke.CreateFile(
+            default(PCWSTR),
+            FILE_ACCESS_FLAGS.FILE_ADD_FILE,
+            FILE_SHARE_MODE.FILE_SHARE_READ,
+            null,
+            FILE_CREATION_DISPOSITION.CREATE_NEW,
+            FILE_FLAGS_AND_ATTRIBUTES.FILE_ATTRIBUTE_ARCHIVE,
+            default(HANDLE));
+    }
+}
+";
+        this.compilation = this.compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(programCsSource, path: "Program.cs"));
+
+        this.AssertNoDiagnostics();
+
+        // The CreateFile should of course be declared locally.
+        Assert.NotEmpty(this.FindGeneratedMethod("CreateFile"));
+
+        // We expect HANDLE to be declared locally, to resolve the ambiguity of it coming from *two* references.
+        Assert.Single(this.FindGeneratedType("HANDLE"));
+
+        // We expect FILE_SHARE_MODE to be declared locally only if not using extern aliases, since it can be retrieved from *one* of the references.
+        Assert.Equal(externAlias, this.FindGeneratedType("FILE_SHARE_MODE").Any());
+
+        void LogProject(string name)
+        {
+            this.logger.WriteLine("≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡");
+            this.logger.WriteLine("Generating {0}", name);
+            this.logger.WriteLine("≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡");
+        }
+    }
+
     [Fact, Trait("Verbatim", "true")]
     public async Task TestSimpleStructure()
     {
@@ -2776,11 +2868,11 @@ namespace Windows.Win32
 
     private void CollectGeneratedCode(Generator generator) => this.compilation = this.AddGeneratedCode(this.compilation, generator);
 
-    private IEnumerable<MethodDeclarationSyntax> FindGeneratedMethod(string name) => this.compilation.SyntaxTrees.SelectMany(st => st.GetRoot().DescendantNodes().OfType<MethodDeclarationSyntax>()).Where(md => md.Identifier.ValueText == name);
+    private IEnumerable<MethodDeclarationSyntax> FindGeneratedMethod(string name, Compilation? compilation = null) => (compilation ?? this.compilation).SyntaxTrees.SelectMany(st => st.GetRoot().DescendantNodes().OfType<MethodDeclarationSyntax>()).Where(md => md.Identifier.ValueText == name);
 
-    private IEnumerable<BaseTypeDeclarationSyntax> FindGeneratedType(string name) => this.compilation.SyntaxTrees.SelectMany(st => st.GetRoot().DescendantNodes().OfType<BaseTypeDeclarationSyntax>()).Where(btd => btd.Identifier.ValueText == name);
+    private IEnumerable<BaseTypeDeclarationSyntax> FindGeneratedType(string name, Compilation? compilation = null) => (compilation ?? this.compilation).SyntaxTrees.SelectMany(st => st.GetRoot().DescendantNodes().OfType<BaseTypeDeclarationSyntax>()).Where(btd => btd.Identifier.ValueText == name);
 
-    private IEnumerable<FieldDeclarationSyntax> FindGeneratedConstant(string name) => this.compilation.SyntaxTrees.SelectMany(st => st.GetRoot().DescendantNodes().OfType<FieldDeclarationSyntax>()).Where(fd => (fd.Modifiers.Any(SyntaxKind.StaticKeyword) || fd.Modifiers.Any(SyntaxKind.ConstKeyword)) && fd.Declaration.Variables.Any(vd => vd.Identifier.ValueText == name));
+    private IEnumerable<FieldDeclarationSyntax> FindGeneratedConstant(string name, Compilation? compilation = null) => (compilation ?? this.compilation).SyntaxTrees.SelectMany(st => st.GetRoot().DescendantNodes().OfType<FieldDeclarationSyntax>()).Where(fd => (fd.Modifiers.Any(SyntaxKind.StaticKeyword) || fd.Modifiers.Any(SyntaxKind.ConstKeyword)) && fd.Declaration.Variables.Any(vd => vd.Identifier.ValueText == name));
 
     private (FieldDeclarationSyntax Field, VariableDeclaratorSyntax Variable)? FindFieldDeclaration(TypeDeclarationSyntax type, string fieldName)
     {

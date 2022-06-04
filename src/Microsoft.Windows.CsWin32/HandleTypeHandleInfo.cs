@@ -39,18 +39,21 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
         NameSyntax? nameSyntax;
         bool isInterface;
         bool isNonCOMConformingInterface;
+        bool isManagedType = inputs.Generator?.IsManagedType(this) ?? false;
+        bool hasUnmanagedSuffix = inputs.Generator?.HasUnmanagedSuffix(inputs.AllowMarshaling, isManagedType) ?? false;
+        string simpleNameSuffix = hasUnmanagedSuffix ? Generator.UnmanagedInteropSuffix : string.Empty;
         switch (this.Handle.Kind)
         {
             case HandleKind.TypeDefinition:
                 TypeDefinition td = this.reader.GetTypeDefinition((TypeDefinitionHandle)this.Handle);
-                nameSyntax = inputs.QualifyNames ? GetNestingQualifiedName(inputs.Generator, this.reader, td) : IdentifierName(this.reader.GetString(td.Name));
+                nameSyntax = inputs.QualifyNames ? GetNestingQualifiedName(inputs.Generator, this.reader, td, hasUnmanagedSuffix) : IdentifierName(this.reader.GetString(td.Name) + simpleNameSuffix);
                 isInterface = (td.Attributes & TypeAttributes.Interface) == TypeAttributes.Interface;
                 isNonCOMConformingInterface = isInterface && inputs.Generator?.IsNonCOMInterface(td) is true;
                 break;
             case HandleKind.TypeReference:
                 var trh = (TypeReferenceHandle)this.Handle;
                 TypeReference tr = this.reader.GetTypeReference(trh);
-                nameSyntax = inputs.QualifyNames ? GetNestingQualifiedName(inputs.Generator, this.reader, tr) : IdentifierName(this.reader.GetString(tr.Name));
+                nameSyntax = inputs.QualifyNames ? GetNestingQualifiedName(inputs.Generator, this.reader, tr, hasUnmanagedSuffix) : IdentifierName(this.reader.GetString(tr.Name) + simpleNameSuffix);
                 isInterface = inputs.Generator?.IsInterface(trh) is true;
                 isNonCOMConformingInterface = isInterface && inputs.Generator?.IsNonCOMInterface(trh) is true;
                 break;
@@ -97,7 +100,7 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
         }
         else
         {
-            this.RequestTypeGeneration(inputs.Generator);
+            this.RequestTypeGeneration(inputs.Generator, this.GetContext(inputs));
         }
 
         TypeSyntax syntax = isInterface && (!inputs.AllowMarshaling || isNonCOMConformingInterface)
@@ -114,7 +117,7 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
                 // We only want to marshal WinRT objects, not interfaces. We don't have a good way of knowing
                 // whether it's an interface or an object. "isInterface" comes back as false for a WinRT interface,
                 // so that doesn't help. Looking at the name should be good enough, but if we needed to, the
-                // Win32 projection could give us an attribute to make sure
+                // Win32 projection could give us an attribute to make sure.
                 string? objName = qualifiedName.Right.ToString();
                 bool isInterfaceName = InterfaceNameMatcher.IsMatch(objName);
                 if (!isInterfaceName)
@@ -155,23 +158,35 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
         return false;
     }
 
-    private static NameSyntax GetNestingQualifiedName(Generator? generator, MetadataReader reader, TypeDefinitionHandle handle) => GetNestingQualifiedName(generator, reader, reader.GetTypeDefinition(handle));
+    private static NameSyntax GetNestingQualifiedName(Generator? generator, MetadataReader reader, TypeDefinitionHandle handle, bool hasUnmanagedSuffix) => GetNestingQualifiedName(generator, reader, reader.GetTypeDefinition(handle), hasUnmanagedSuffix);
 
-    internal static NameSyntax GetNestingQualifiedName(Generator? generator, MetadataReader reader, TypeDefinition td)
+    internal static NameSyntax GetNestingQualifiedName(Generator? generator, MetadataReader reader, TypeDefinition td, bool hasUnmanagedSuffix)
     {
-        IdentifierNameSyntax name = IdentifierName(reader.GetString(td.Name));
+        string simpleName = reader.GetString(td.Name);
+        if (hasUnmanagedSuffix)
+        {
+            simpleName += Generator.UnmanagedInteropSuffix;
+        }
+
+        IdentifierNameSyntax name = IdentifierName(simpleName);
         return td.GetDeclaringType() is { IsNil: false } nestingType
-            ? QualifiedName(GetNestingQualifiedName(generator, reader, nestingType), name)
+            ? QualifiedName(GetNestingQualifiedName(generator, reader, nestingType, hasUnmanagedSuffix), name)
             : QualifiedName(ParseName(Generator.ReplaceCommonNamespaceWithAlias(generator, reader.GetString(td.Namespace))), name);
     }
 
-    private static NameSyntax GetNestingQualifiedName(Generator? generator, MetadataReader reader, TypeReferenceHandle handle) => GetNestingQualifiedName(generator, reader, reader.GetTypeReference(handle));
+    private static NameSyntax GetNestingQualifiedName(Generator? generator, MetadataReader reader, TypeReferenceHandle handle, bool hasUnmanagedSuffix) => GetNestingQualifiedName(generator, reader, reader.GetTypeReference(handle), hasUnmanagedSuffix);
 
-    private static NameSyntax GetNestingQualifiedName(Generator? generator, MetadataReader reader, TypeReference tr)
+    private static NameSyntax GetNestingQualifiedName(Generator? generator, MetadataReader reader, TypeReference tr, bool hasUnmanagedSuffix)
     {
-        SimpleNameSyntax typeName = IdentifierName(reader.GetString(tr.Name));
+        string simpleName = reader.GetString(tr.Name);
+        if (hasUnmanagedSuffix)
+        {
+            simpleName += Generator.UnmanagedInteropSuffix;
+        }
+
+        SimpleNameSyntax typeName = IdentifierName(simpleName);
         return tr.ResolutionScope.Kind == HandleKind.TypeReference
-            ? QualifiedName(GetNestingQualifiedName(generator, reader, (TypeReferenceHandle)tr.ResolutionScope), typeName)
+            ? QualifiedName(GetNestingQualifiedName(generator, reader, (TypeReferenceHandle)tr.ResolutionScope, hasUnmanagedSuffix), typeName)
             : QualifiedName(ParseName(Generator.ReplaceCommonNamespaceWithAlias(generator, reader.GetString(tr.Namespace))), typeName);
     }
 
@@ -210,15 +225,15 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
         return false;
     }
 
-    private void RequestTypeGeneration(Generator? generator)
+    private void RequestTypeGeneration(Generator? generator, Generator.Context context)
     {
         if (this.Handle.Kind == HandleKind.TypeDefinition)
         {
-            generator?.RequestInteropType((TypeDefinitionHandle)this.Handle);
+            generator?.RequestInteropType((TypeDefinitionHandle)this.Handle, context);
         }
         else if (this.Handle.Kind == HandleKind.TypeReference)
         {
-            generator?.RequestInteropType((TypeReferenceHandle)this.Handle);
+            generator?.RequestInteropType((TypeReferenceHandle)this.Handle, context);
         }
     }
 }

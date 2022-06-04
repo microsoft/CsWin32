@@ -12,6 +12,7 @@ using Windows.Win32.System.Com;
 using Windows.Win32.System.Console;
 using Windows.Win32.System.ErrorReporting;
 using Windows.Win32.UI.Shell;
+using VARDESC = Windows.Win32.System.Com.VARDESC;
 
 [Trait("WindowsOnly", "true")]
 public class BasicTests
@@ -481,10 +482,10 @@ public class BasicTests
     /// <remarks>
     /// This demonstrates the problem tracked by <see href="https://github.com/microsoft/CsWin32/issues/292">this bug</see>.
     /// </remarks>
-    [Fact(Skip = "Failure tracked by #292")]
-    public void LoadProblematicTypes()
+    [Fact]
+    public void LoadTypeWithOverlappedRefAndValueTypes_VARDESC()
     {
-        Windows.Win32.System.Com.VARDESC d = new()
+        VARDESC d = new()
         {
             Anonymous =
             {

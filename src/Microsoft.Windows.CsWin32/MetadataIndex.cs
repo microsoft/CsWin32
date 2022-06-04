@@ -279,15 +279,30 @@ internal class MetadataIndex
         TypeReference typeRef = reader.GetTypeReference(typeRefHandle);
         if (typeRef.ResolutionScope.Kind != HandleKind.AssemblyReference)
         {
+            TypeDefinitionHandle expectedNestingTypeDef = default;
+            bool foundNestingTypeDef = false;
+            if (typeRef.ResolutionScope.Kind == HandleKind.TypeReference)
+            {
+                foundNestingTypeDef = this.TryGetTypeDefHandle(reader, (TypeReferenceHandle)typeRef.ResolutionScope, out expectedNestingTypeDef);
+            }
+
+            bool foundPlatformIncompatibleMatch = false;
             foreach (TypeDefinitionHandle tdh in reader.TypeDefinitions)
             {
                 TypeDefinition typeDef = reader.GetTypeDefinition(tdh);
                 if (typeDef.Name == typeRef.Name && typeDef.Namespace == typeRef.Namespace)
                 {
+                    if (!MetadataUtilities.IsCompatibleWithPlatform(reader, this, this.platform, typeDef.GetCustomAttributes()))
+                    {
+                        foundPlatformIncompatibleMatch = true;
+                        continue;
+                    }
+
                     if (typeRef.ResolutionScope.Kind == HandleKind.TypeReference)
                     {
                         // The ref is nested. Verify that the type we found is nested in the same type as well.
-                        if (this.TryGetTypeDefHandle(reader, (TypeReferenceHandle)typeRef.ResolutionScope, out TypeDefinitionHandle nestingTypeDef) && nestingTypeDef == typeDef.GetDeclaringType())
+                        TypeDefinitionHandle actualNestingType = typeDef.GetDeclaringType();
+                        if (foundNestingTypeDef && expectedNestingTypeDef == actualNestingType)
                         {
                             typeDefHandle = tdh;
                             break;
@@ -303,6 +318,13 @@ internal class MetadataIndex
                         throw new NotSupportedException("Unrecognized ResolutionScope: " + typeRef.ResolutionScope);
                     }
                 }
+            }
+
+            if (foundPlatformIncompatibleMatch && typeDefHandle.IsNil)
+            {
+                string ns = reader.GetString(typeRef.Namespace);
+                string name = reader.GetString(typeRef.Name);
+                throw new PlatformIncompatibleException($"{ns}.{name} is not declared for this platform.");
             }
         }
 

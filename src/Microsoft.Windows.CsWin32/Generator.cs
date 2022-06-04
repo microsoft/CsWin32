@@ -2780,6 +2780,7 @@ public class Generator : IDisposable
 
     private ISymbol? FindTypeSymbolIfAlreadyAvailable(string fullyQualifiedMetadataName)
     {
+        ISymbol? result = null;
         if (this.compilation is object)
         {
             if (this.compilation.Assembly.GetTypeByMetadataName(fullyQualifiedMetadataName) is { } ownSymbol)
@@ -2793,6 +2794,12 @@ public class Generator : IDisposable
 
             foreach (MetadataReference? reference in this.compilation.References)
             {
+                if (!reference.Properties.Aliases.IsEmpty)
+                {
+                    // We don't (yet) generate code to leverage aliases, so we skip any symbols defined in aliased references.
+                    continue;
+                }
+
                 if (this.compilation.GetAssemblyOrModuleSymbol(reference) is IAssemblySymbol referencedAssembly)
                 {
                     if (referencedAssembly.GetTypeByMetadataName(fullyQualifiedMetadataName) is { } externalSymbol)
@@ -2800,14 +2807,21 @@ public class Generator : IDisposable
                         if (this.compilation.IsSymbolAccessibleWithin(externalSymbol, this.compilation.Assembly))
                         {
                             // A referenced assembly declares this symbol and it is accessible to our own.
-                            return externalSymbol;
+                            // If we already found a match, then we have multiple matches now and the compiler won't be able to resolve our type references.
+                            // In such a case, we'll prefer to just declare our own local symbol.
+                            if (result is not null)
+                            {
+                                return null;
+                            }
+
+                            result = externalSymbol;
                         }
                     }
                 }
             }
         }
 
-        return null;
+        return result;
     }
 
     private MemberDeclarationSyntax? RequestInteropTypeHelper(TypeDefinitionHandle typeDefHandle, Context context)

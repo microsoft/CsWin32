@@ -67,6 +67,14 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             new object[] { "net6.0" },
         };
 
+    public static IEnumerable<object[]> TFMDataNoNetFx35 =>
+        new object[][]
+        {
+            new object[] { "net472" },
+            new object[] { "netstandard2.0" },
+            new object[] { "net6.0" },
+        };
+
     public static Platform[] SpecificCpuArchitectures =>
         new Platform[]
         {
@@ -2724,10 +2732,12 @@ namespace Windows.Win32
         Assert.True(this.generator.TryGenerate("CreateFile", CancellationToken.None));
     }
 
-    [Fact]
-    public void MiniDumpWriteDump_AllOptionalPointerParametersAreOptional()
+    [Theory]
+    [MemberData(nameof(TFMDataNoNetFx35))]
+    public void MiniDumpWriteDump_AllOptionalPointerParametersAreOptional(string tfm)
     {
-        this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(Platform.X64));
+        // We split on TFMs because the generated code is slightly different depending on TFM.
+        this.compilation = this.starterCompilations[tfm].WithOptions(this.compilation.Options.WithPlatform(Platform.X64));
         this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate("MiniDumpWriteDump", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
@@ -3043,6 +3053,7 @@ namespace Windows.Win32
 #pragma warning disable SA1202 // Elements should be ordered by access
         private static readonly ImmutableArray<PackageIdentity> AdditionalPackages = ImmutableArray.Create(
             new PackageIdentity("Microsoft.Windows.SDK.Contracts", "10.0.19041.1"),
+            new PackageIdentity("System.Memory", "4.5.4"),
             new PackageIdentity("Microsoft.Win32.Registry", "5.0.0"));
 
         internal static readonly ReferenceAssemblies NetStandard20 = ReferenceAssemblies.NetStandard.NetStandard20.AddPackages(AdditionalPackages.Add(new PackageIdentity("System.Memory", "4.5.4")));

@@ -321,6 +321,8 @@ public class Generator : IDisposable
     private readonly CSharpParseOptions? parseOptions;
     private readonly bool canUseSpan;
     private readonly bool canCallCreateSpan;
+    private readonly bool canUseUnsafeAsRef;
+    private readonly bool canUseUnsafeNullRef;
     private readonly bool getDelegateForFunctionPointerGenericExists;
     private readonly bool generateSupportedOSPlatformAttributes;
     private readonly bool generateSupportedOSPlatformAttributesOnInterfaces; // only supported on net6.0 (https://github.com/dotnet/runtime/pull/48838)
@@ -367,6 +369,8 @@ public class Generator : IDisposable
 
         this.canUseSpan = this.compilation?.GetTypeByMetadataName(typeof(Span<>).FullName) is not null;
         this.canCallCreateSpan = this.compilation?.GetTypeByMetadataName(typeof(MemoryMarshal).FullName)?.GetMembers("CreateSpan").Any() is true;
+        this.canUseUnsafeAsRef = this.compilation?.GetTypeByMetadataName(typeof(Unsafe).FullName)?.GetMembers("AsRef").Any() is true;
+        this.canUseUnsafeNullRef = this.compilation?.GetTypeByMetadataName(typeof(Unsafe).FullName)?.GetMembers("NullRef").Any() is true;
         this.getDelegateForFunctionPointerGenericExists = this.compilation?.GetTypeByMetadataName(typeof(Marshal).FullName)?.GetMembers(nameof(Marshal.GetDelegateForFunctionPointer)).Any(m => m is IMethodSymbol { IsGenericMethod: true }) is true;
         this.generateDefaultDllImportSearchPathsAttribute = this.compilation?.GetTypeByMetadataName(typeof(DefaultDllImportSearchPathsAttribute).FullName) is object;
         if (this.compilation?.GetTypeByMetadataName("System.Runtime.Versioning.SupportedOSPlatformAttribute") is { } attribute
@@ -4694,7 +4698,7 @@ public class Generator : IDisposable
                             Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))),
                             Argument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, localWstrName, IdentifierName("Length"))))))));
             }
-            else if (isIn && isOptional && !isOut && isManagedParameterType && parameterTypeInfo is PointerTypeHandleInfo ptrInfo && ptrInfo.ElementType.IsValueType(parameterTypeSyntaxSettings) is true)
+            else if (isIn && isOptional && !isOut && isManagedParameterType && parameterTypeInfo is PointerTypeHandleInfo ptrInfo && ptrInfo.ElementType.IsValueType(parameterTypeSyntaxSettings) is true && this.canUseUnsafeAsRef)
             {
                 // The extern method couldn't have exposed the parameter as a pointer because the type is managed.
                 // It would have exposed as an `in` modifier, and non-optional. But we can expose as optional anyway.
@@ -4712,10 +4716,14 @@ public class Generator : IDisposable
                                 DefaultExpression(externParam.Type)))))));
 
                 // We can't pass in null, but we can be fancy to achieve the same effect.
-                // Unsafe.AsRef<TParamType>(null)
-                ExpressionSyntax nullRef = InvocationExpression(
-                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Unsafe)), GenericName(nameof(Unsafe.AsRef), TypeArgumentList().AddArguments(externParam.Type))),
-                    ArgumentList().AddArguments(Argument(LiteralExpression(SyntaxKind.NullLiteralExpression))));
+                // Unsafe.NullRef<TParamType>() or Unsafe.AsRef<TParamType>(null), depending on what's available.
+                ExpressionSyntax nullRef = this.canUseUnsafeNullRef
+                    ? InvocationExpression(
+                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Unsafe)), GenericName("NullRef", TypeArgumentList().AddArguments(externParam.Type))),
+                        ArgumentList())
+                    : InvocationExpression(
+                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Unsafe)), GenericName(nameof(Unsafe.AsRef), TypeArgumentList().AddArguments(externParam.Type))),
+                        ArgumentList().AddArguments(Argument(LiteralExpression(SyntaxKind.NullLiteralExpression))));
                 arguments[param.SequenceNumber - 1] = Argument(ConditionalExpression(
                     MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName("HasValue")),
                     localName,

@@ -136,6 +136,53 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
         return new TypeSyntaxAndMarshaling(syntax);
     }
 
+    internal override bool? IsValueType(TypeSyntaxSettings inputs)
+    {
+        Generator generator = inputs.Generator ?? throw new ArgumentException("Generator required.");
+        TypeDefinitionHandle typeDefHandle = default;
+        switch (this.Handle.Kind)
+        {
+            case HandleKind.TypeDefinition:
+                typeDefHandle = (TypeDefinitionHandle)this.Handle;
+                break;
+            case HandleKind.TypeReference:
+                if (generator.TryGetTypeDefHandle((TypeReferenceHandle)this.Handle, out QualifiedTypeDefinitionHandle qualifiedTypeDefHandle))
+                {
+                    generator = qualifiedTypeDefHandle.Generator;
+                    typeDefHandle = qualifiedTypeDefHandle.DefinitionHandle;
+                }
+
+                break;
+            default:
+                return null;
+        }
+
+        if (typeDefHandle.IsNil)
+        {
+            return null;
+        }
+
+        TypeDefinition typeDef = generator.Reader.GetTypeDefinition(typeDefHandle);
+        generator.GetBaseTypeInfo(typeDef, out StringHandle baseName, out StringHandle baseNamespace);
+        if (generator.Reader.StringComparer.Equals(baseName, nameof(ValueType)) && generator.Reader.StringComparer.Equals(baseNamespace, nameof(System)))
+        {
+            // When marshaling, the VARIANT struct becomes object, which is *not* a value type.
+            if (inputs.AllowMarshaling && generator.Reader.StringComparer.Equals(typeDef.Name, "VARIANT"))
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        if (generator.Reader.StringComparer.Equals(baseName, nameof(Enum)) && generator.Reader.StringComparer.Equals(baseNamespace, nameof(System)))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
     private static bool TryMarshalAsObject(TypeSyntaxSettings inputs, string name, [NotNullWhen(true)] out MarshalAsAttribute? marshalAs)
     {
         if (inputs.AllowMarshaling)

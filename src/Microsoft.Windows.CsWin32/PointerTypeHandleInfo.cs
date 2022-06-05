@@ -76,6 +76,8 @@ internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleIn
         return new TypeSyntaxAndMarshaling(PointerType(elementTypeDetails.Type));
     }
 
+    internal override bool? IsValueType(TypeSyntaxSettings inputs) => false;
+
     private bool TryGetElementTypeDefinition(Generator generator, out TypeDefinition typeDef)
     {
         if (this.ElementType is HandleTypeHandleInfo handleElement)

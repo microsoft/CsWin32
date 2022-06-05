@@ -28,4 +28,6 @@ internal record ArrayTypeHandleInfo(TypeHandleInfo ElementType, ArrayShape Shape
             return new TypeSyntaxAndMarshaling(PointerType(element.Type));
         }
     }
+
+    internal override bool? IsValueType(TypeSyntaxSettings inputs) => false;
 }

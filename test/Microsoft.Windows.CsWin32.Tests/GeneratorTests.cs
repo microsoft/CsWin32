@@ -254,6 +254,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             "CertFreeCertificateChainList", // double pointer extern method
             "D3DGetTraceInstructionOffsets", // SizeParamIndex
             "PlgBlt", // SizeConst
+            "IWebBrowser", // Navigate method has an [In, Optional] object parameter
             "ENABLE_TRACE_PARAMETERS_V1", // bad xml created at some point.
             "JsRuntimeVersion", // An enum that has an extra member in a separate header file.
             "ReportEvent", // Failed at one point
@@ -2721,6 +2722,19 @@ namespace Windows.Win32
         using FileStream competingReader = File.OpenRead(MetadataPath);
         this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate("CreateFile", CancellationToken.None));
+    }
+
+    [Fact]
+    public void MiniDumpWriteDump_AllOptionalPointerParametersAreOptional()
+    {
+        this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(Platform.X64));
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate("MiniDumpWriteDump", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        MethodDeclarationSyntax externMethod = Assert.Single(this.FindGeneratedMethod("MiniDumpWriteDump"), m => !m.Modifiers.Any(SyntaxKind.ExternKeyword));
+        Assert.All(externMethod.ParameterList.Parameters.Reverse().Take(3), p => Assert.IsType<NullableTypeSyntax>(p.Type));
     }
 
     [Fact]

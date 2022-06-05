@@ -16,6 +16,8 @@ internal abstract record TypeHandleInfo
 
     internal abstract TypeSyntaxAndMarshaling ToTypeSyntax(TypeSyntaxSettings inputs, CustomAttributeHandleCollection? customAttributes, ParameterAttributes parameterAttributes = default);
 
+    internal abstract bool? IsValueType(TypeSyntaxSettings inputs);
+
     protected static bool TryGetSimpleName(TypeSyntax nameSyntax, [NotNullWhen(true)] out string? simpleName)
     {
         if (nameSyntax is QualifiedNameSyntax qname)

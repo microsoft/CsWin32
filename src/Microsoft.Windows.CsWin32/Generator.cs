@@ -321,6 +321,8 @@ public class Generator : IDisposable
     private readonly CSharpParseOptions? parseOptions;
     private readonly bool canUseSpan;
     private readonly bool canCallCreateSpan;
+    private readonly bool canUseUnsafeAsRef;
+    private readonly bool canUseUnsafeNullRef;
     private readonly bool getDelegateForFunctionPointerGenericExists;
     private readonly bool generateSupportedOSPlatformAttributes;
     private readonly bool generateSupportedOSPlatformAttributesOnInterfaces; // only supported on net6.0 (https://github.com/dotnet/runtime/pull/48838)
@@ -367,6 +369,8 @@ public class Generator : IDisposable
 
         this.canUseSpan = this.compilation?.GetTypeByMetadataName(typeof(Span<>).FullName) is not null;
         this.canCallCreateSpan = this.compilation?.GetTypeByMetadataName(typeof(MemoryMarshal).FullName)?.GetMembers("CreateSpan").Any() is true;
+        this.canUseUnsafeAsRef = this.compilation?.GetTypeByMetadataName(typeof(Unsafe).FullName)?.GetMembers("AsRef").Any() is true;
+        this.canUseUnsafeNullRef = this.compilation?.GetTypeByMetadataName(typeof(Unsafe).FullName)?.GetMembers("NullRef").Any() is true;
         this.getDelegateForFunctionPointerGenericExists = this.compilation?.GetTypeByMetadataName(typeof(Marshal).FullName)?.GetMembers(nameof(Marshal.GetDelegateForFunctionPointer)).Any(m => m is IMethodSymbol { IsGenericMethod: true }) is true;
         this.generateDefaultDllImportSearchPathsAttribute = this.compilation?.GetTypeByMetadataName(typeof(DefaultDllImportSearchPathsAttribute).FullName) is object;
         if (this.compilation?.GetTypeByMetadataName("System.Runtime.Versioning.SupportedOSPlatformAttribute") is { } attribute
@@ -4315,6 +4319,14 @@ public class Generator : IDisposable
         static ExpressionSyntax GetSpanLength(ExpressionSyntax span) => MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, span, IdentifierName(nameof(Span<int>.Length)));
         bool isReleaseMethod = this.MetadataIndex.ReleaseMethods.Contains(externMethodDeclaration.Identifier.ValueText);
 
+        TypeSyntaxSettings parameterTypeSyntaxSettings = overloadOf switch
+        {
+            FriendlyOverloadOf.ExternMethod => this.externSignatureTypeSettings,
+            FriendlyOverloadOf.StructMethod => this.extensionMethodSignatureTypeSettings,
+            FriendlyOverloadOf.InterfaceMethod => this.extensionMethodSignatureTypeSettings,
+            _ => throw new NotSupportedException(overloadOf.ToString()),
+        };
+
         MethodSignature<TypeHandleInfo> originalSignature = methodDefinition.DecodeSignature(SignatureHandleProvider.Instance, null);
         var parameters = externMethodDeclaration.ParameterList.Parameters.Select(StripAttributes).ToList();
         var lengthParamUsedBy = new Dictionary<int, int>();
@@ -4350,7 +4362,10 @@ public class Generator : IDisposable
             }
 
             TypeHandleInfo parameterTypeInfo = originalSignature.ParameterTypes[param.SequenceNumber - 1];
-            if (this.IsManagedType(parameterTypeInfo) && (externParam.Modifiers.Any(SyntaxKind.OutKeyword) || externParam.Modifiers.Any(SyntaxKind.RefKeyword)))
+            bool isManagedParameterType = this.IsManagedType(parameterTypeInfo);
+            IdentifierNameSyntax origName = IdentifierName(externParam.Identifier.ValueText);
+
+            if (isManagedParameterType && (externParam.Modifiers.Any(SyntaxKind.OutKeyword) || externParam.Modifiers.Any(SyntaxKind.RefKeyword)))
             {
                 bool hasOut = externParam.Modifiers.Any(SyntaxKind.OutKeyword);
                 arguments[param.SequenceNumber - 1] = arguments[param.SequenceNumber - 1].WithRefKindKeyword(TokenWithSpace(hasOut ? SyntaxKind.OutKeyword : SyntaxKind.RefKeyword));
@@ -4361,7 +4376,6 @@ public class Generator : IDisposable
                 {
                     signatureChanged = true;
 
-                    IdentifierNameSyntax origName = IdentifierName(externParam.Identifier.ValueText);
                     IdentifierNameSyntax typeDefHandleName = IdentifierName(externParam.Identifier.ValueText + "Local");
 
                     // out SafeHandle
@@ -4370,7 +4384,7 @@ public class Generator : IDisposable
                         .WithModifiers(TokenList(TokenWithSpace(SyntaxKind.OutKeyword)));
 
                     // HANDLE SomeLocal;
-                    leadingStatements.Add(LocalDeclarationStatement(VariableDeclaration(pointedElementInfo.ToTypeSyntax(this.externSignatureTypeSettings, null).Type).AddVariables(
+                    leadingStatements.Add(LocalDeclarationStatement(VariableDeclaration(pointedElementInfo.ToTypeSyntax(parameterTypeSyntaxSettings, null).Type).AddVariables(
                         VariableDeclarator(typeDefHandleName.Identifier))));
 
                     // Argument: &SomeLocal
@@ -4387,7 +4401,6 @@ public class Generator : IDisposable
             }
             else if (isIn && !isOut && !isReleaseMethod && parameterTypeInfo is HandleTypeHandleInfo parameterHandleTypeInfo && this.TryGetHandleReleaseMethod(parameterHandleTypeInfo.Handle, out string? releaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, releaseMethod))
             {
-                IdentifierNameSyntax origName = IdentifierName(externParam.Identifier.ValueText);
                 IdentifierNameSyntax typeDefHandleName = IdentifierName(externParam.Identifier.ValueText + "Local");
                 signatureChanged = true;
 
@@ -4480,7 +4493,6 @@ public class Generator : IDisposable
                     }
                 }
 
-                IdentifierNameSyntax origName = IdentifierName(parameters[param.SequenceNumber - 1].Identifier.ValueText);
                 IdentifierNameSyntax localName = IdentifierName(origName + "Local");
                 if (isArray)
                 {
@@ -4612,7 +4624,6 @@ public class Generator : IDisposable
             }
             else if (isIn && !isOut && isConst && externParam.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "PCWSTR" } } })
             {
-                IdentifierNameSyntax origName = IdentifierName(externParam.Identifier.ValueText);
                 IdentifierNameSyntax localName = IdentifierName(origName + "Local");
                 signatureChanged = true;
                 parameters[param.SequenceNumber - 1] = externParam
@@ -4623,7 +4634,6 @@ public class Generator : IDisposable
             }
             else if (isIn && !isOut && isConst && externParam.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "PCSTR" } } })
             {
-                IdentifierNameSyntax origName = IdentifierName(externParam.Identifier.ValueText);
                 IdentifierNameSyntax localName = IdentifierName(origName + "Local");
                 signatureChanged = true;
                 parameters[param.SequenceNumber - 1] = externParam
@@ -4649,7 +4659,6 @@ public class Generator : IDisposable
             }
             else if (isIn && isOut && this.canUseSpan && externParam.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "PWSTR" } } })
             {
-                IdentifierNameSyntax origName = IdentifierName(externParam.Identifier.ValueText);
                 IdentifierNameSyntax localName = IdentifierName("p" + origName);
                 IdentifierNameSyntax localWstrName = IdentifierName("wstr" + origName);
                 signatureChanged = true;
@@ -4688,6 +4697,37 @@ public class Generator : IDisposable
                         ArgumentList().AddArguments(
                             Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))),
                             Argument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, localWstrName, IdentifierName("Length"))))))));
+            }
+            else if (isIn && isOptional && !isOut && isManagedParameterType && parameterTypeInfo is PointerTypeHandleInfo ptrInfo && ptrInfo.ElementType.IsValueType(parameterTypeSyntaxSettings) is true && this.canUseUnsafeAsRef)
+            {
+                // The extern method couldn't have exposed the parameter as a pointer because the type is managed.
+                // It would have exposed as an `in` modifier, and non-optional. But we can expose as optional anyway.
+                signatureChanged = true;
+                IdentifierNameSyntax localName = IdentifierName(origName + "Local");
+                parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
+                    .WithType(NullableType(externParam.Type).WithTrailingTrivia(TriviaList(Space)))
+                    .WithModifiers(TokenList()); // drop the `in` modifier.
+                leadingStatements.Add(
+                    LocalDeclarationStatement(VariableDeclaration(externParam.Type)
+                        .AddVariables(VariableDeclarator(localName.Identifier).WithInitializer(
+                            EqualsValueClause(ConditionalExpression(
+                                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName("HasValue")),
+                                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName("Value")),
+                                DefaultExpression(externParam.Type)))))));
+
+                // We can't pass in null, but we can be fancy to achieve the same effect.
+                // Unsafe.NullRef<TParamType>() or Unsafe.AsRef<TParamType>(null), depending on what's available.
+                ExpressionSyntax nullRef = this.canUseUnsafeNullRef
+                    ? InvocationExpression(
+                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Unsafe)), GenericName("NullRef", TypeArgumentList().AddArguments(externParam.Type))),
+                        ArgumentList())
+                    : InvocationExpression(
+                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Unsafe)), GenericName(nameof(Unsafe.AsRef), TypeArgumentList().AddArguments(externParam.Type))),
+                        ArgumentList().AddArguments(Argument(LiteralExpression(SyntaxKind.NullLiteralExpression))));
+                arguments[param.SequenceNumber - 1] = Argument(ConditionalExpression(
+                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName("HasValue")),
+                    localName,
+                    nullRef));
             }
         }
 

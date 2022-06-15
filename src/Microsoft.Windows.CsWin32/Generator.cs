@@ -3870,6 +3870,7 @@ public class Generator : IDisposable
                 break;
             case "HRESULT":
             case "NTSTATUS":
+            case "BOOLEAN":
                 members = members.AddRange(this.ExtractMembersFromTemplate(name.Identifier.ValueText));
                 break;
             default:

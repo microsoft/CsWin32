@@ -3763,11 +3763,6 @@ public class Generator : IDisposable
     private StructDeclarationSyntax DeclareTypeDefStruct(TypeDefinition typeDef, TypeDefinitionHandle typeDefHandle)
     {
         IdentifierNameSyntax name = IdentifierName(this.Reader.GetString(typeDef.Name));
-        if (name.Identifier.ValueText == "BOOL")
-        {
-            return this.DeclareTypeDefBOOLStruct(typeDef);
-        }
-
         bool isHandle = name.Identifier.ValueText == "HGDIOBJ";
         foreach (CustomAttributeHandle attHandle in typeDef.GetCustomAttributes())
         {
@@ -3870,6 +3865,8 @@ public class Generator : IDisposable
                 break;
             case "HRESULT":
             case "NTSTATUS":
+            case "BOOL":
+            case "BOOLEAN":
                 members = members.AddRange(this.ExtractMembersFromTemplate(name.Identifier.ValueText));
                 break;
             default:
@@ -4143,91 +4140,6 @@ public class Generator : IDisposable
                 whenFalse: ObjectCreationExpression(spanType).AddArgumentListArguments(Argument(thisValue), Argument(thisLength)))))
             .WithSemicolonToken(SemicolonWithLineFeed)
             .WithLeadingTrivia(StrAsSpanComment);
-    }
-
-    private StructDeclarationSyntax DeclareTypeDefBOOLStruct(TypeDefinition typeDef)
-    {
-        IdentifierNameSyntax name = IdentifierName("BOOL");
-
-        FieldDefinition fieldDef = this.Reader.GetFieldDefinition(typeDef.GetFields().Single());
-        CustomAttributeHandleCollection fieldAttributes = fieldDef.GetCustomAttributes();
-        IdentifierNameSyntax fieldName = IdentifierName("value");
-        VariableDeclaratorSyntax fieldDeclarator = VariableDeclarator(fieldName.Identifier);
-        (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? MarshalAs) fieldInfo =
-            this.ReinterpretFieldType(fieldDef, fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null).ToTypeSyntax(this.fieldTypeSettings, fieldAttributes).Type, fieldAttributes, this.DefaultContext);
-        SyntaxList<MemberDeclarationSyntax> members = List<MemberDeclarationSyntax>();
-
-        FieldDeclarationSyntax fieldSyntax = FieldDeclaration(
-            VariableDeclaration(fieldInfo.FieldType).AddVariables(fieldDeclarator))
-            .AddModifiers(TokenWithSpace(SyntaxKind.PrivateKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword));
-        members = members.Add(fieldSyntax);
-        MemberAccessExpressionSyntax fieldAccessExpression = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("value"));
-
-        // Add property accessor
-        members = members.Add(PropertyDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), "Value")
-            .WithExpressionBody(ArrowExpressionClause(fieldAccessExpression)).WithSemicolonToken(SemicolonWithLineFeed)
-            .AddModifiers(TokenWithSpace(this.Visibility)));
-
-        // unsafe BOOL(bool value) => this.value = *(sbyte*)&value;
-        IdentifierNameSyntax valueParameter = IdentifierName("value");
-        ExpressionSyntax boolToSByte = PrefixUnaryExpression(
-            SyntaxKind.PointerIndirectionExpression,
-            CastExpression(
-                PointerType(PredefinedType(TokenWithNoSpace(SyntaxKind.SByteKeyword))),
-                PrefixUnaryExpression(SyntaxKind.AddressOfExpression, valueParameter)));
-        members = members.Add(ConstructorDeclaration(name.Identifier)
-            .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword))
-            .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword))))
-            .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, boolToSByte).WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken))))
-            .WithSemicolonToken(SemicolonWithLineFeed));
-
-        // BOOL(int value) => this.value = value;
-        members = members.Add(ConstructorDeclaration(name.Identifier)
-            .AddModifiers(TokenWithSpace(this.Visibility))
-            .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))))
-            .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, valueParameter).WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken))))
-            .WithSemicolonToken(SemicolonWithLineFeed));
-
-        // public unsafe static implicit operator bool(BOOL value)
-        // {
-        //     sbyte v = checked((sbyte)value.value);
-        //     return *(bool*)&v;
-        // }
-        IdentifierNameSyntax localVarName = IdentifierName("v");
-        ExpressionSyntax sbyteToBool = PrefixUnaryExpression(
-            SyntaxKind.PointerIndirectionExpression,
-            CastExpression(
-                PointerType(PredefinedType(TokenWithNoSpace(SyntaxKind.BoolKeyword))),
-                PrefixUnaryExpression(SyntaxKind.AddressOfExpression, localVarName)));
-        BlockSyntax? implicitBOOLtoBoolBody = Block().AddStatements(
-            LocalDeclarationStatement(VariableDeclaration(PredefinedType(Token(SyntaxKind.SByteKeyword)))).AddDeclarationVariables(
-                VariableDeclarator(localVarName.Identifier).WithInitializer(EqualsValueClause(CheckedExpression(SyntaxKind.CheckedExpression, CastExpression(PredefinedType(Token(SyntaxKind.SByteKeyword)), MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, fieldName)))))),
-            ReturnStatement(sbyteToBool));
-        members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), PredefinedType(Token(SyntaxKind.BoolKeyword)))
-            .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))))
-            .WithBody(implicitBOOLtoBoolBody)
-            .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword))); // operators MUST be public
-
-        // public static implicit operator BOOL(bool value) => new BOOL(value);
-        members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), name)
-            .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword))))
-            .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(Argument(valueParameter))))
-            .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
-            .WithSemicolonToken(SemicolonWithLineFeed));
-
-        // public static explicit operator BOOL(int value) => new BOOL(value);
-        members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
-            .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))))
-            .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(Argument(valueParameter))))
-            .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
-            .WithSemicolonToken(SemicolonWithLineFeed));
-
-        StructDeclarationSyntax result = StructDeclaration(name.Identifier)
-            .WithMembers(members)
-            .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.ReadOnlyKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)));
-
-        result = this.AddApiDocumentation(name.Identifier.ValueText, result);
-        return result;
     }
 
     private EnumDeclarationSyntax DeclareEnum(TypeDefinition typeDef)

@@ -1576,20 +1576,31 @@ namespace Windows.Win32
 
 	namespace Foundation
 	{
+		[DebuggerDisplay(""{Value}"")]
 		internal readonly partial struct BOOL
+			: IEquatable<BOOL>
 		{
-			private readonly int value;
+			internal readonly int Value;
+			internal BOOL(int value) => this.Value = value;
+			public static implicit operator int(BOOL value) => value.Value;
+			public static explicit operator BOOL(int value) => new BOOL(value);
+			public static bool operator ==(BOOL left, BOOL right) => left.Value == right.Value;
+			public static bool operator !=(BOOL left, BOOL right) => !(left == right);
 
-			internal int Value => this.value;
-			internal unsafe BOOL(bool value) => this.value = *(sbyte*)&value;
-			internal BOOL(int value) => this.value = value;
+			public bool Equals(BOOL other) => this.Value == other.Value;
+
+			public override bool Equals(object obj) => obj is BOOL other && this.Equals(other);
+
+			public override int GetHashCode() => this.Value.GetHashCode();
+			internal unsafe BOOL(bool value) => this.Value = *(sbyte*)&value;
 			public static unsafe implicit operator bool(BOOL value)
+
 			{
-				sbyte v = checked((sbyte)value.value);
+				sbyte v = checked((sbyte)value.Value);
 				return *(bool*)&v;
 			}
+
 			public static implicit operator BOOL(bool value) => new BOOL(value);
-			public static explicit operator BOOL(int value) => new BOOL(value);
 		}
 	}
 }
@@ -1837,20 +1848,31 @@ namespace Windows.Win32
 
 	namespace Foundation
 	{
+		[DebuggerDisplay(""{Value}"")]
 		internal readonly partial struct BOOL
+			: IEquatable<BOOL>
 		{
-			private readonly int value;
+			internal readonly int Value;
+			internal BOOL(int value) => this.Value = value;
+			public static implicit operator int(BOOL value) => value.Value;
+			public static explicit operator BOOL(int value) => new BOOL(value);
+			public static bool operator ==(BOOL left, BOOL right) => left.Value == right.Value;
+			public static bool operator !=(BOOL left, BOOL right) => !(left == right);
 
-			internal int Value => this.value;
-			internal unsafe BOOL(bool value) => this.value = *(sbyte*)&value;
-			internal BOOL(int value) => this.value = value;
+			public bool Equals(BOOL other) => this.Value == other.Value;
+
+			public override bool Equals(object obj) => obj is BOOL other && this.Equals(other);
+
+			public override int GetHashCode() => this.Value.GetHashCode();
+			internal unsafe BOOL(bool value) => this.Value = *(sbyte*)&value;
 			public static unsafe implicit operator bool(BOOL value)
+
 			{
-				sbyte v = checked((sbyte)value.value);
+				sbyte v = checked((sbyte)value.Value);
 				return *(bool*)&v;
 			}
+
 			public static implicit operator BOOL(bool value) => new BOOL(value);
-			public static explicit operator BOOL(int value) => new BOOL(value);
 		}
 	}
 }
@@ -2149,20 +2171,31 @@ namespace Windows.Win32
 
 	namespace Foundation
 	{
+		[DebuggerDisplay(""{Value}"")]
 		internal readonly partial struct BOOL
+			: IEquatable<BOOL>
 		{
-			private readonly int value;
+			internal readonly int Value;
+			internal BOOL(int value) => this.Value = value;
+			public static implicit operator int(BOOL value) => value.Value;
+			public static explicit operator BOOL(int value) => new BOOL(value);
+			public static bool operator ==(BOOL left, BOOL right) => left.Value == right.Value;
+			public static bool operator !=(BOOL left, BOOL right) => !(left == right);
 
-			internal int Value => this.value;
-			internal unsafe BOOL(bool value) => this.value = *(sbyte*)&value;
-			internal BOOL(int value) => this.value = value;
+			public bool Equals(BOOL other) => this.Value == other.Value;
+
+			public override bool Equals(object obj) => obj is BOOL other && this.Equals(other);
+
+			public override int GetHashCode() => this.Value.GetHashCode();
+			internal unsafe BOOL(bool value) => this.Value = *(sbyte*)&value;
 			public static unsafe implicit operator bool(BOOL value)
+
 			{
-				sbyte v = checked((sbyte)value.value);
+				sbyte v = checked((sbyte)value.Value);
 				return *(bool*)&v;
 			}
+
 			public static implicit operator BOOL(bool value) => new BOOL(value);
-			public static explicit operator BOOL(int value) => new BOOL(value);
 		}
 	}
 }

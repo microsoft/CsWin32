@@ -52,48 +52,6 @@ public class BasicTests
     ////}
 
     [Fact]
-    public void Bool()
-    {
-        BOOL b = true;
-        bool b2 = b;
-        Assert.True(b);
-        Assert.True(b2);
-
-        Assert.False(default(BOOL));
-    }
-
-    [Theory]
-    [InlineData(3)]
-    [InlineData(-1)]
-    public void NotLossyConversionBetweenBoolAndBOOL(int ordinal)
-    {
-        BOOL nativeBool = new BOOL(ordinal);
-        bool managedBool = nativeBool;
-        BOOL roundtrippedNativeBool = managedBool;
-        Assert.Equal(nativeBool, roundtrippedNativeBool);
-    }
-
-    [Theory]
-    [InlineData(3)]
-    [InlineData(-1)]
-    public void NotLossyConversionBetweenBoolAndBOOL_Ctors(int ordinal)
-    {
-        BOOL nativeBool = new BOOL(ordinal);
-        bool managedBool = nativeBool;
-        BOOL roundtrippedNativeBool = new BOOL(managedBool);
-        Assert.Equal(nativeBool, roundtrippedNativeBool);
-    }
-
-    [Fact]
-    public void BOOLEqualsComparesExactValue()
-    {
-        BOOL b1 = new BOOL(1);
-        BOOL b2 = new BOOL(2);
-        Assert.Equal(b1, b1);
-        Assert.NotEqual(b1, b2);
-    }
-
-    [Fact]
     public void BSTR_ToString()
     {
         BSTR bstr = (BSTR)Marshal.StringToBSTR("hi");
@@ -181,17 +139,6 @@ public class BasicTests
         Assert.False(handle5 != handle5b);
         Assert.True(handle5 != handle8);
         Assert.False(handle5 == handle8);
-    }
-
-    [Fact]
-    public void BOOL_OverridesEqualityOperator()
-    {
-        var @true = new BOOL(true);
-        var @false = new BOOL(false);
-        Assert.True(@true == new BOOL(true));
-        Assert.False(@true != new BOOL(true));
-        Assert.True(@true != @false);
-        Assert.False(@true == @false);
     }
 
     [Fact]

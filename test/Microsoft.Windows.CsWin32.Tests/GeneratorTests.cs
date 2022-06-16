@@ -533,6 +533,17 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
+    public void ComOutPtrTypedAsIntPtr()
+    {
+        const string methodName = "CoCreateInstance";
+        this.generator = this.CreateGenerator(new GeneratorOptions { ComInterop = new() { UseIntPtrForComOutPointers = true } });
+        Assert.True(this.generator.TryGenerate(methodName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        Assert.Contains(this.FindGeneratedMethod(methodName), m => m.ParameterList.Parameters.Last() is { } last && last.Modifiers.Any(SyntaxKind.OutKeyword) && last.Type is IdentifierNameSyntax { Identifier: { ValueText: "IntPtr" } });
+    }
+
+    [Fact]
     public void AmbiguousApiName()
     {
         this.generator = this.CreateGenerator();
@@ -1412,9 +1423,9 @@ i++)						if (p0[i] != default(uint))							return false;
     }
 
     [Theory, PairwiseData]
-    public void FullGeneration(bool allowMarshaling, [CombinatorialMemberData(nameof(AnyCpuArchitectures))] Platform platform)
+    public void FullGeneration(bool allowMarshaling, bool useIntPtrForComOutPtr, [CombinatorialMemberData(nameof(AnyCpuArchitectures))] Platform platform)
     {
-        var generatorOptions = new GeneratorOptions { AllowMarshaling = allowMarshaling };
+        var generatorOptions = new GeneratorOptions { AllowMarshaling = allowMarshaling, ComInterop = new() { UseIntPtrForComOutPointers = useIntPtrForComOutPtr } };
         this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(platform));
         this.generator = this.CreateGenerator(generatorOptions);
         this.generator.GenerateAll(CancellationToken.None);

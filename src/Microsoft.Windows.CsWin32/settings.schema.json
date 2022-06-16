@@ -24,6 +24,11 @@
             "uniqueItems": true,
             "pattern": "^[\\w_]+(?:\\.[\\w_]+)?$"
           }
+        },
+        "useIntPtrForComOutPointers": {
+          "description": "Emits methods that return COM objects via output parameters using IntPtr as the parameter type instead of the COM interface. This may be useful on .NET when using ComWrappers. See https://github.com/microsoft/CsWin32/issues/328 for more details.",
+          "type": "boolean",
+          "default": false
         }
       }
     },

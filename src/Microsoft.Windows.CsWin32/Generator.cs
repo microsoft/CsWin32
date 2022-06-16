@@ -3121,7 +3121,7 @@ public class Generator : IDisposable
             bool requiresUnsafe = false;
             if (fieldType.Type is not PredefinedTypeSyntax && value is not ObjectCreationExpressionSyntax)
             {
-                if (fieldTypeInfo is HandleTypeHandleInfo handleFieldTypeInfo && this.TryGetHandleReleaseMethod(handleFieldTypeInfo.Handle, out _))
+                if (fieldTypeInfo is HandleTypeHandleInfo handleFieldTypeInfo && this.IsHandle(handleFieldTypeInfo.Handle, out _))
                 {
                     // Cast to IntPtr first, then the actual handle struct.
                     value = CastExpression(fieldType.Type, CastExpression(IntPtrTypeSyntax, ParenthesizedExpression(value)));
@@ -3757,30 +3757,44 @@ public class Generator : IDisposable
         return result;
     }
 
+    private bool IsHandle(EntityHandle typeDefOrRefHandle, out string? releaseMethodName)
+    {
+        switch (typeDefOrRefHandle.Kind)
+        {
+            case HandleKind.TypeReference when this.TryGetTypeDefHandle((TypeReferenceHandle)typeDefOrRefHandle, out TypeDefinitionHandle typeDefHandle):
+                return this.IsHandle(typeDefHandle, out releaseMethodName);
+            case HandleKind.TypeDefinition:
+                return this.IsHandle((TypeDefinitionHandle)typeDefOrRefHandle, out releaseMethodName);
+        }
+
+        releaseMethodName = null;
+        return false;
+    }
+
+    private bool IsHandle(TypeDefinitionHandle typeDefHandle, out string? releaseMethodName)
+    {
+        if (this.MetadataIndex.HandleTypeReleaseMethod.TryGetValue(typeDefHandle, out releaseMethodName))
+        {
+            return true;
+        }
+
+        // Special case handles that do not carry RAIIFree attributes.
+        releaseMethodName = null;
+        TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefHandle);
+        return this.Reader.StringComparer.Equals(typeDef.Name, "HGDIOBJ")
+            || this.Reader.StringComparer.Equals(typeDef.Name, "HWND");
+    }
+
     /// <summary>
     /// Creates a struct that emulates a typedef in the C language headers.
     /// </summary>
     private StructDeclarationSyntax DeclareTypeDefStruct(TypeDefinition typeDef, TypeDefinitionHandle typeDefHandle)
     {
         IdentifierNameSyntax name = IdentifierName(this.Reader.GetString(typeDef.Name));
-        bool isHandle = name.Identifier.ValueText == "HGDIOBJ";
-        foreach (CustomAttributeHandle attHandle in typeDef.GetCustomAttributes())
+        bool isHandle = this.IsHandle(typeDefHandle, out string? freeMethodName);
+        if (freeMethodName is not null)
         {
-            CustomAttribute att = this.Reader.GetCustomAttribute(attHandle);
-
-            // If this struct represents a handle, generate the SafeHandle-equivalent.
-            if (this.IsAttribute(att, InteropDecorationNamespace, RAIIFreeAttribute))
-            {
-                CustomAttributeValue<TypeSyntax> args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
-                if (args.FixedArguments[0].Value is string freeMethodName)
-                {
-                    ////this.GenerateSafeHandle(freeMethodName);
-                    this.TryGenerateExternMethod(freeMethodName, out _);
-                    isHandle = true;
-                }
-
-                break;
-            }
+            this.TryGenerateExternMethod(freeMethodName, out _);
         }
 
         TypeSyntaxSettings typeSettings = isHandle ? this.fieldOfHandleTypeDefTypeSettings : this.fieldTypeSettings;

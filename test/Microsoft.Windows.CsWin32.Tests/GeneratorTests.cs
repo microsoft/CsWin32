@@ -576,6 +576,21 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.AssertGeneratedMember(handleName, "IsNull", "internal bool IsNull => Value == default;");
     }
 
+    [Theory]
+    [InlineData("HANDLE")]
+    [InlineData("HGDIOBJ")]
+    [InlineData("HWND")]
+    public void HandleTypeDefsUseIntPtrAsFieldType(string handleType)
+    {
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate(handleType, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        StructDeclarationSyntax hwnd = Assert.IsType<StructDeclarationSyntax>(this.FindGeneratedType(handleType).Single());
+        FieldDeclarationSyntax field = hwnd.Members.OfType<FieldDeclarationSyntax>().Single();
+        Assert.Equal(nameof(IntPtr), Assert.IsType<IdentifierNameSyntax>(field.Declaration.Type).Identifier.ValueText);
+    }
+
     [Fact]
     public void NamespaceHandleGetsNoSafeHandle()
     {
@@ -1927,10 +1942,12 @@ namespace Windows.Win32
 		internal readonly partial struct HWND
 			: IEquatable<HWND>
 		{
-			internal readonly nint Value;
-			internal HWND(nint value) => this.Value = value;
-			public static implicit operator nint(HWND value) => value.Value;
-			public static explicit operator HWND(nint value) => new HWND(value);
+			internal readonly IntPtr Value;
+			internal HWND(IntPtr value) => this.Value = value;
+
+			internal bool IsNull => Value == default;
+			public static implicit operator IntPtr(HWND value) => value.Value;
+			public static explicit operator HWND(IntPtr value) => new HWND(value);
 			public static bool operator ==(HWND left, HWND right) => left.Value == right.Value;
 			public static bool operator !=(HWND left, HWND right) => !(left == right);
 
@@ -2073,10 +2090,12 @@ namespace Windows.Win32
 		internal readonly partial struct HWND
 			: IEquatable<HWND>
 		{
-			internal readonly nint Value;
-			internal HWND(nint value) => this.Value = value;
-			public static implicit operator nint(HWND value) => value.Value;
-			public static explicit operator HWND(nint value) => new HWND(value);
+			internal readonly IntPtr Value;
+			internal HWND(IntPtr value) => this.Value = value;
+
+			internal bool IsNull => Value == default;
+			public static implicit operator IntPtr(HWND value) => value.Value;
+			public static explicit operator HWND(IntPtr value) => new HWND(value);
 			public static bool operator ==(HWND left, HWND right) => left.Value == right.Value;
 			public static bool operator !=(HWND left, HWND right) => !(left == right);
 

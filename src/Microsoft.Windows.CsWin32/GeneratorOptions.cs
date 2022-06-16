@@ -65,5 +65,13 @@ public record GeneratorOptions
         /// Gets an array of "interface.method" or "interface" strings that identify methods and interfaces that should be generated with <see cref="PreserveSigAttribute"/>.
         /// </summary>
         public ImmutableArray<string> PreserveSigMethods { get; init; } = ImmutableArray.Create<string>();
+
+        /// <summary>
+        /// Gets a value indicating whether to emit methods that return COM objects via output parameters using <see cref="IntPtr"/> as the parameter type instead of the COM interface.
+        /// </summary>
+        /// <remarks>
+        /// This may be useful on .NET when using ComWrappers. See <see href="https://github.com/microsoft/CsWin32/issues/328">this issue</see> for more details.
+        /// </remarks>
+        public bool UseIntPtrForComOutPointers { get; init; }
     }
 }

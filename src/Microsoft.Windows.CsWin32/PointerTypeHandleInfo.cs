@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Reflection.Metadata;
 using System.Runtime.InteropServices;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using static Microsoft.Windows.CsWin32.FastSyntaxFactory;
 
 namespace Microsoft.Windows.CsWin32;
@@ -35,6 +36,15 @@ internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleIn
             }
             else if (xIn || xOut)
             {
+                if (elementTypeDetails.Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.ObjectKeyword } } && inputs.Generator is not null && inputs.Generator.Options.ComInterop.UseIntPtrForComOutPointers)
+                {
+                    bool isComOutPtr = inputs.Generator?.Reader is not null && customAttributes is not null && customAttributes.Value.Any(ah => inputs.Generator.IsAttribute(inputs.Generator.Reader.GetCustomAttribute(ah), Generator.InteropDecorationNamespace, "ComOutPtrAttribute"));
+                    return new TypeSyntaxAndMarshaling(IdentifierName(nameof(IntPtr)))
+                    {
+                        ParameterModifier = Token(SyntaxKind.OutKeyword),
+                    };
+                }
+
                 // But we can use a modifier to emulate a pointer and thereby enable marshaling.
                 return new TypeSyntaxAndMarshaling(elementTypeDetails.Type, elementTypeDetails.MarshalAsAttribute, elementTypeDetails.NativeArrayInfo)
                 {

@@ -424,6 +424,8 @@ public class Generator : IDisposable
 
     internal SuperGenerator? SuperGenerator { get; set; }
 
+    internal GeneratorOptions Options => this.options;
+
     internal string InputAssemblyName { get; }
 
     internal MetadataIndex MetadataIndex { get; }
@@ -4230,14 +4232,17 @@ public class Generator : IDisposable
             yield return (MethodDeclarationSyntax)templateFriendlyOverload;
         }
 
-        if (this.options.AllowMarshaling && this.TryFetchTemplate("marshaling/" + externMethodDeclaration.Identifier.ValueText, out templateFriendlyOverload))
+        if (externMethodDeclaration.Identifier.ValueText != "CoCreateInstance" || !this.options.ComInterop.UseIntPtrForComOutPointers)
         {
-            yield return (MethodDeclarationSyntax)templateFriendlyOverload;
-        }
+            if (this.options.AllowMarshaling && this.TryFetchTemplate("marshaling/" + externMethodDeclaration.Identifier.ValueText, out templateFriendlyOverload))
+            {
+                yield return (MethodDeclarationSyntax)templateFriendlyOverload;
+            }
 
-        if (!this.options.AllowMarshaling && this.TryFetchTemplate("no_marshaling/" + externMethodDeclaration.Identifier.ValueText, out templateFriendlyOverload))
-        {
-            yield return (MethodDeclarationSyntax)templateFriendlyOverload;
+            if (!this.options.AllowMarshaling && this.TryFetchTemplate("no_marshaling/" + externMethodDeclaration.Identifier.ValueText, out templateFriendlyOverload))
+            {
+                yield return (MethodDeclarationSyntax)templateFriendlyOverload;
+            }
         }
 
 #pragma warning disable SA1114 // Parameter list should follow declaration

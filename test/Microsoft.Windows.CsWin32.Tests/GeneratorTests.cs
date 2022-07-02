@@ -1397,6 +1397,20 @@ i++)						if (p0[i] != default(uint))							return false;
         this.AssertGeneratedType("MainAVIHeader", expected, expectedIndexer);
     }
 
+    [Theory, PairwiseData]
+    public void FixedLengthInlineArrayIn_MODULEENTRY32(bool allowMarshaling)
+    {
+        this.generator = this.CreateGenerator(new GeneratorOptions { AllowMarshaling = allowMarshaling });
+        Assert.True(this.generator.TryGenerate("MODULEENTRY32", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        var decl = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("MODULEENTRY32"));
+        var field = this.FindFieldDeclaration(decl, "szModule");
+        Assert.True(field.HasValue);
+        var fieldType = Assert.IsType<IdentifierNameSyntax>(field!.Value.Field.Declaration.Type);
+        Assert.IsType<StructDeclarationSyntax>(Assert.Single(this.FindGeneratedType(fieldType.Identifier.ValueText)));
+    }
+
     [Fact]
     public void InOutPWSTRGetsRefSpanCharFriendlyOverload()
     {

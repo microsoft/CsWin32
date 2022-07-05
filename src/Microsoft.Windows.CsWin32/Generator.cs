@@ -389,7 +389,7 @@ public class Generator : IDisposable
             PreferMarshaledTypes: false,
             AllowMarshaling: options.AllowMarshaling,
             QualifyNames: false);
-        this.fieldTypeSettings = this.generalTypeSettings with { QualifyNames = true };
+        this.fieldTypeSettings = this.generalTypeSettings with { QualifyNames = true, IsField = true };
         this.delegateSignatureTypeSettings = this.generalTypeSettings with { QualifyNames = true };
         this.enumTypeSettings = this.generalTypeSettings;
         this.fieldOfHandleTypeDefTypeSettings = this.generalTypeSettings with { PreferNativeInt = false };
@@ -5324,7 +5324,21 @@ public class Generator : IDisposable
         IdentifierNameSyntax indexParamName = IdentifierName("index");
         IdentifierNameSyntax p0 = IdentifierName("p0");
         IdentifierNameSyntax atThis = IdentifierName("@this");
-        TypeSyntax qualifiedElementType = elementType == IntPtrTypeSyntax ? elementType : ((ArrayTypeSyntax)fieldTypeHandleInfo.ToTypeSyntax(this.extensionMethodSignatureTypeSettings, customAttributes).Type).ElementType;
+        TypeSyntax qualifiedElementType;
+        if (elementType == IntPtrTypeSyntax)
+        {
+            qualifiedElementType = elementType;
+        }
+        else
+        {
+            qualifiedElementType = fieldTypeHandleInfo.ToTypeSyntax(this.extensionMethodSignatureTypeSettings, customAttributes).Type switch
+            {
+                ArrayTypeSyntax at => at.ElementType,
+                PointerTypeSyntax ptrType => ptrType.ElementType,
+                _ => throw new GenerationFailedException($"Unexpected runtime type."),
+            };
+        }
+
         TypeSyntaxSettings extensionMethodSignatureTypeSettings = context.Filter(this.extensionMethodSignatureTypeSettings);
 
         ////internal static unsafe ref readonly uint ReadOnlyItemRef(this in MainAVIHeader.__dwReserved_4 @this, int index)

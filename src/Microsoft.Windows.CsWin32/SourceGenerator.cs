@@ -125,6 +125,7 @@ public class SourceGenerator : ISourceGenerator
 
     private const string NativeMethodsTxtAdditionalFileName = "NativeMethods.txt";
     private const string NativeMethodsJsonAdditionalFileName = "NativeMethods.json";
+    private static readonly char[] ZeroWhiteSpace = new char[] { '\uFEFF', '\u200B' };
 
     /// <inheritdoc/>
     public void Initialize(GeneratorInitializationContext context)
@@ -201,7 +202,7 @@ public class SourceGenerator : ISourceGenerator
                         continue;
                     }
 
-                    name = name.Trim();
+                    name = name.Trim().Trim(ZeroWhiteSpace);
                     var location = Location.Create(nativeMethodsTxtFile.Path, line.Span, nativeMethodsTxt.Lines.GetLinePositionSpan(line.Span));
                     try
                     {

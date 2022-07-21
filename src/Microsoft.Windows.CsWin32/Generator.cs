@@ -7,7 +7,6 @@ using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Reflection;
 using System.Reflection.Metadata;
-using System.Reflection.PortableExecutable;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -315,7 +314,7 @@ public class Generator : IDisposable
     private readonly TypeSyntaxSettings functionPointerTypeSettings;
     private readonly TypeSyntaxSettings errorMessageTypeSettings;
 
-    private readonly PEReader peReader;
+    private readonly Rental<MetadataReader> metadataReader;
     private readonly GeneratorOptions options;
     private readonly CSharpCompilation? compilation;
     private readonly CSharpParseOptions? parseOptions;
@@ -358,8 +357,7 @@ public class Generator : IDisposable
         this.InputAssemblyName = Path.GetFileNameWithoutExtension(metadataLibraryPath);
         this.MetadataIndex = MetadataIndex.Get(metadataLibraryPath, compilation?.Options.Platform);
         this.ApiDocs = docs;
-        this.peReader = new PEReader(MetadataIndex.CreateFileView(metadataLibraryPath));
-        this.Reader = this.peReader.GetMetadataReader();
+        this.metadataReader = MetadataIndex.GetMetadataReader(metadataLibraryPath);
 
         this.options = options;
         this.options.Validate();
@@ -432,7 +430,7 @@ public class Generator : IDisposable
 
     internal Docs? ApiDocs { get; }
 
-    internal MetadataReader Reader { get; }
+    internal MetadataReader Reader => this.metadataReader.Value;
 
     internal LanguageVersion LanguageVersion => this.parseOptions?.LanguageVersion ?? LanguageVersion.CSharp9;
 
@@ -661,67 +659,8 @@ public class Generator : IDisposable
         return false;
     }
 
-    /// <summary>
-    /// Gets the name of the declaring enum if a supplied value matches the name of an enum's value.
-    /// </summary>
-    /// <param name="enumValueName">A string that may match an enum value name.</param>
-    /// <param name="declaringEnum">Receives the name of the declaring enum if a match is found.</param>
-    /// <returns><see langword="true"/> if a match was found; otherwise <see langword="false"/>.</returns>
-    public bool TryGetEnumName(string enumValueName, [NotNullWhen(true)] out string? declaringEnum)
-    {
-        // First find the type reference for System.Enum
-        TypeReferenceHandle? enumTypeRefHandle = null;
-        foreach (TypeReferenceHandle typeRefHandle in this.Reader.TypeReferences)
-        {
-            TypeReference typeRef = this.Reader.GetTypeReference(typeRefHandle);
-            if (this.Reader.StringComparer.Equals(typeRef.Name, nameof(Enum)) && this.Reader.StringComparer.Equals(typeRef.Namespace, nameof(System)))
-            {
-                enumTypeRefHandle = typeRefHandle;
-                break;
-            }
-        }
-
-        Debug.Assert(enumTypeRefHandle.HasValue, "We always expect at least one enum.");
-        if (enumTypeRefHandle is null)
-        {
-            // No enums -> it couldn't be what the caller is looking for.
-            declaringEnum = null;
-            return false;
-        }
-
-        foreach (TypeDefinitionHandle typeDefHandle in this.Reader.TypeDefinitions)
-        {
-            TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefHandle);
-            if (typeDef.BaseType.IsNil)
-            {
-                continue;
-            }
-
-            if (typeDef.BaseType.Kind != HandleKind.TypeReference)
-            {
-                continue;
-            }
-
-            var baseTypeHandle = (TypeReferenceHandle)typeDef.BaseType;
-            if (!baseTypeHandle.Equals(enumTypeRefHandle.Value))
-            {
-                continue;
-            }
-
-            foreach (FieldDefinitionHandle fieldDefHandle in typeDef.GetFields())
-            {
-                FieldDefinition fieldDef = this.Reader.GetFieldDefinition(fieldDefHandle);
-                if (this.Reader.StringComparer.Equals(fieldDef.Name, enumValueName))
-                {
-                    declaringEnum = this.Reader.GetString(typeDef.Name);
-                    return true;
-                }
-            }
-        }
-
-        declaringEnum = null;
-        return false;
-    }
+    /// <inheritdoc cref="MetadataIndex.TryGetEnumName(MetadataReader, string, out string?)"/>
+    public bool TryGetEnumName(string enumValueName, [NotNullWhen(true)] out string? declaringEnum) => this.MetadataIndex.TryGetEnumName(this.Reader, enumValueName, out declaringEnum);
 
     /// <summary>
     /// Generates a projection of all extern methods and their supporting types.
@@ -2093,7 +2032,7 @@ public class Generator : IDisposable
     {
         if (disposing)
         {
-            this.peReader.Dispose();
+            this.metadataReader.Dispose();
         }
     }
 

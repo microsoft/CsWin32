@@ -4,6 +4,7 @@
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO.MemoryMappedFiles;
 using System.Reflection;
 using System.Reflection.Metadata;
@@ -28,6 +29,10 @@ namespace Microsoft.Windows.CsWin32;
 [DebuggerDisplay("{" + nameof(DebuggerDisplay) + ",nq}")]
 internal class MetadataIndex
 {
+    private static readonly int MaxPooledObjectCount = Math.Max(Environment.ProcessorCount, 4);
+
+    private static readonly Action<MetadataReader, object?> ReaderRecycleDelegate = Recycle;
+
     private static readonly Dictionary<CacheKey, MetadataIndex> Cache = new();
 
     /// <summary>
@@ -35,6 +40,8 @@ internal class MetadataIndex
     /// All access to this should be within a <see cref="Cache"/> lock.
     /// </summary>
     private static readonly Dictionary<string, MemoryMappedFile> MetadataFiles = new(StringComparer.OrdinalIgnoreCase);
+
+    private static readonly ConcurrentDictionary<string, ConcurrentBag<(PEReader, MetadataReader)>> PooledPEReaders = new(StringComparer.OrdinalIgnoreCase);
 
     private readonly string metadataPath;
 
@@ -58,6 +65,17 @@ internal class MetadataIndex
     private readonly Dictionary<TypeDefinitionHandle, string> handleTypeReleaseMethod = new();
 
     /// <summary>
+    /// A cache kept by the <see cref="TryGetEnumName"/> method.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, string?> enumValueLookupCache = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// A lazily computed reference to System.Enum, as defined by this metadata.
+    /// Should be retrieved by <see cref="FindEnumTypeReference(MetadataReader)"/>.
+    /// </summary>
+    private TypeReferenceHandle? enumTypeReference;
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="MetadataIndex"/> class.
     /// </summary>
     /// <param name="metadataPath">The path to the metadata that this index will represent.</param>
@@ -67,8 +85,8 @@ internal class MetadataIndex
         this.metadataPath = metadataPath;
         this.platform = platform;
 
-        using PEReader peReader = new PEReader(CreateFileView(metadataPath));
-        MetadataReader mr = peReader.GetMetadataReader();
+        using Rental<MetadataReader> mrRental = GetMetadataReader(metadataPath);
+        MetadataReader mr = mrRental.Value;
 
         foreach (MemberReferenceHandle memberRefHandle in mr.MemberReferences)
         {
@@ -245,6 +263,17 @@ internal class MetadataIndex
         }
     }
 
+    internal static Rental<MetadataReader> GetMetadataReader(string metadataPath)
+    {
+        if (PooledPEReaders.TryGetValue(metadataPath, out ConcurrentBag<(PEReader, MetadataReader)>? pool) && pool.TryTake(out (PEReader, MetadataReader) readers))
+        {
+            return new(readers.Item2, ReaderRecycleDelegate, (readers.Item1, metadataPath));
+        }
+
+        PEReader peReader = new PEReader(CreateFileView(metadataPath));
+        return new(peReader.GetMetadataReader(), ReaderRecycleDelegate, (peReader, metadataPath));
+    }
+
     internal static MemoryMappedViewStream CreateFileView(string metadataPath)
     {
         lock (Cache)
@@ -332,6 +361,83 @@ internal class MetadataIndex
         return !typeDefHandle.IsNil;
     }
 
+    /// <summary>
+    /// Gets the name of the declaring enum if a supplied value matches the name of an enum's value.
+    /// </summary>
+    /// <param name="reader">A metadata reader that can be used to fulfill this query.</param>
+    /// <param name="enumValueName">A string that may match an enum value name.</param>
+    /// <param name="declaringEnum">Receives the name of the declaring enum if a match is found.</param>
+    /// <returns><see langword="true"/> if a match was found; otherwise <see langword="false"/>.</returns>
+    internal bool TryGetEnumName(MetadataReader reader, string enumValueName, [NotNullWhen(true)] out string? declaringEnum)
+    {
+        if (this.enumValueLookupCache.TryGetValue(enumValueName, out declaringEnum))
+        {
+            return declaringEnum is not null;
+        }
+
+        // First find the type reference for System.Enum
+        TypeReferenceHandle? enumTypeRefHandle = this.FindEnumTypeReference(reader);
+        if (enumTypeRefHandle is null)
+        {
+            // No enums -> it couldn't be what the caller is looking for.
+            // This is a quick enough check that we don't need to cache individual inputs/outputs when nothing will produce results for this metadata.
+            declaringEnum = null;
+            return false;
+        }
+
+        foreach (TypeDefinitionHandle typeDefHandle in reader.TypeDefinitions)
+        {
+            TypeDefinition typeDef = reader.GetTypeDefinition(typeDefHandle);
+            if (typeDef.BaseType.IsNil)
+            {
+                continue;
+            }
+
+            if (typeDef.BaseType.Kind != HandleKind.TypeReference)
+            {
+                continue;
+            }
+
+            var baseTypeHandle = (TypeReferenceHandle)typeDef.BaseType;
+            if (!baseTypeHandle.Equals(enumTypeRefHandle.Value))
+            {
+                continue;
+            }
+
+            foreach (FieldDefinitionHandle fieldDefHandle in typeDef.GetFields())
+            {
+                FieldDefinition fieldDef = reader.GetFieldDefinition(fieldDefHandle);
+                if (reader.StringComparer.Equals(fieldDef.Name, enumValueName))
+                {
+                    declaringEnum = reader.GetString(typeDef.Name);
+
+                    this.enumValueLookupCache[enumValueName] = declaringEnum;
+
+                    return true;
+                }
+            }
+        }
+
+        this.enumValueLookupCache[enumValueName] = null;
+        declaringEnum = null;
+        return false;
+    }
+
+    private static void Recycle(MetadataReader metadataReader, object? state)
+    {
+        (PEReader peReader, string metadataPath) = ((PEReader, string))state!;
+        ConcurrentBag<(PEReader, MetadataReader)> pool = PooledPEReaders.GetOrAdd(metadataPath, _ => new());
+        if (pool.Count < MaxPooledObjectCount)
+        {
+            pool.Add((peReader, metadataReader));
+        }
+        else
+        {
+            // The pool is full. Dispose of this rather than recycle it.
+            peReader.Dispose();
+        }
+    }
+
     private static string CommonPrefix(IReadOnlyList<string> ss)
     {
         if (ss.Count == 0)
@@ -360,6 +466,36 @@ internal class MetadataIndex
         }
 
         return ss[0]; // all strings identical up to length of ss[0]
+    }
+
+    /// <summary>
+    /// Gets the <see cref="TypeReferenceHandle"/> by which the <see cref="Enum"/> class in referenced by this metadata.
+    /// </summary>
+    /// <param name="reader">The reader to use.</param>
+    /// <returns>The <see cref="TypeReferenceHandle"/> if a reference to <see cref="Enum"/> was found; otherwise <see langword="null" />.</returns>
+    private TypeReferenceHandle? FindEnumTypeReference(MetadataReader reader)
+    {
+        if (!this.enumTypeReference.HasValue)
+        {
+            foreach (TypeReferenceHandle typeRefHandle in reader.TypeReferences)
+            {
+                TypeReference typeRef = reader.GetTypeReference(typeRefHandle);
+                if (reader.StringComparer.Equals(typeRef.Name, nameof(Enum)) && reader.StringComparer.Equals(typeRef.Namespace, nameof(System)))
+                {
+                    this.enumTypeReference = typeRefHandle;
+                    break;
+                }
+            }
+
+            if (!this.enumTypeReference.HasValue)
+            {
+                // Record that there isn't one.
+                this.enumTypeReference = default(TypeReferenceHandle);
+            }
+        }
+
+        // Return null if the value was determined to be missing.
+        return this.enumTypeReference.HasValue && !this.enumTypeReference.Value.IsNil ? this.enumTypeReference.Value : null;
     }
 
     [DebuggerDisplay("{" + nameof(DebuggerDisplay) + ",nq}")]

@@ -7,7 +7,6 @@ using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Reflection;
 using System.Reflection.Metadata;
-using System.Reflection.PortableExecutable;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -315,7 +314,7 @@ public class Generator : IDisposable
     private readonly TypeSyntaxSettings functionPointerTypeSettings;
     private readonly TypeSyntaxSettings errorMessageTypeSettings;
 
-    private readonly PEReader peReader;
+    private readonly Rental<MetadataReader> metadataReader;
     private readonly GeneratorOptions options;
     private readonly CSharpCompilation? compilation;
     private readonly CSharpParseOptions? parseOptions;
@@ -358,8 +357,7 @@ public class Generator : IDisposable
         this.InputAssemblyName = Path.GetFileNameWithoutExtension(metadataLibraryPath);
         this.MetadataIndex = MetadataIndex.Get(metadataLibraryPath, compilation?.Options.Platform);
         this.ApiDocs = docs;
-        this.peReader = new PEReader(MetadataIndex.CreateFileView(metadataLibraryPath));
-        this.Reader = this.peReader.GetMetadataReader();
+        this.metadataReader = MetadataIndex.GetMetadataReader(metadataLibraryPath);
 
         this.options = options;
         this.options.Validate();
@@ -432,7 +430,7 @@ public class Generator : IDisposable
 
     internal Docs? ApiDocs { get; }
 
-    internal MetadataReader Reader { get; }
+    internal MetadataReader Reader => this.metadataReader.Value;
 
     internal LanguageVersion LanguageVersion => this.parseOptions?.LanguageVersion ?? LanguageVersion.CSharp9;
 
@@ -2034,7 +2032,7 @@ public class Generator : IDisposable
     {
         if (disposing)
         {
-            this.peReader.Dispose();
+            this.metadataReader.Dispose();
         }
     }
 

@@ -29,6 +29,10 @@ namespace Microsoft.Windows.CsWin32;
 [DebuggerDisplay("{" + nameof(DebuggerDisplay) + ",nq}")]
 internal class MetadataIndex
 {
+    private static readonly int MaxPooledObjectCount = Math.Max(Environment.ProcessorCount, 4);
+
+    private static readonly Action<MetadataReader, object?> ReaderRecycleDelegate = Recycle;
+
     private static readonly Dictionary<CacheKey, MetadataIndex> Cache = new();
 
     /// <summary>
@@ -36,6 +40,8 @@ internal class MetadataIndex
     /// All access to this should be within a <see cref="Cache"/> lock.
     /// </summary>
     private static readonly Dictionary<string, MemoryMappedFile> MetadataFiles = new(StringComparer.OrdinalIgnoreCase);
+
+    private static readonly ConcurrentDictionary<string, ConcurrentBag<(PEReader, MetadataReader)>> PooledPEReaders = new(StringComparer.OrdinalIgnoreCase);
 
     private readonly string metadataPath;
 
@@ -79,8 +85,8 @@ internal class MetadataIndex
         this.metadataPath = metadataPath;
         this.platform = platform;
 
-        using PEReader peReader = new PEReader(CreateFileView(metadataPath));
-        MetadataReader mr = peReader.GetMetadataReader();
+        using Rental<MetadataReader> mrRental = GetMetadataReader(metadataPath);
+        MetadataReader mr = mrRental.Value;
 
         foreach (MemberReferenceHandle memberRefHandle in mr.MemberReferences)
         {
@@ -257,6 +263,17 @@ internal class MetadataIndex
         }
     }
 
+    internal static Rental<MetadataReader> GetMetadataReader(string metadataPath)
+    {
+        if (PooledPEReaders.TryGetValue(metadataPath, out ConcurrentBag<(PEReader, MetadataReader)>? pool) && pool.TryTake(out (PEReader, MetadataReader) readers))
+        {
+            return new(readers.Item2, ReaderRecycleDelegate, (readers.Item1, metadataPath));
+        }
+
+        PEReader peReader = new PEReader(CreateFileView(metadataPath));
+        return new(peReader.GetMetadataReader(), ReaderRecycleDelegate, (peReader, metadataPath));
+    }
+
     internal static MemoryMappedViewStream CreateFileView(string metadataPath)
     {
         lock (Cache)
@@ -404,6 +421,21 @@ internal class MetadataIndex
         this.enumValueLookupCache[enumValueName] = null;
         declaringEnum = null;
         return false;
+    }
+
+    private static void Recycle(MetadataReader metadataReader, object? state)
+    {
+        (PEReader peReader, string metadataPath) = ((PEReader, string))state!;
+        ConcurrentBag<(PEReader, MetadataReader)> pool = PooledPEReaders.GetOrAdd(metadataPath, _ => new());
+        if (pool.Count < MaxPooledObjectCount)
+        {
+            pool.Add((peReader, metadataReader));
+        }
+        else
+        {
+            // The pool is full. Dispose of this rather than recycle it.
+            peReader.Dispose();
+        }
     }
 
     private static string CommonPrefix(IReadOnlyList<string> ss)

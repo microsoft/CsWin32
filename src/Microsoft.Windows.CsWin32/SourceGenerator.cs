@@ -125,7 +125,11 @@ public class SourceGenerator : ISourceGenerator
 
     private const string NativeMethodsTxtAdditionalFileName = "NativeMethods.txt";
     private const string NativeMethodsJsonAdditionalFileName = "NativeMethods.json";
-    private static readonly char[] ZeroWhiteSpace = new char[] { '\uFEFF', '\u200B' };
+    private static readonly char[] ZeroWhiteSpace = new char[]
+    {
+        '\uFEFF', // ZERO WIDTH NO-BREAK SPACE (U+FEFF)
+        '\u200B', // ZERO WIDTH SPACE (U+200B)
+    };
 
     /// <inheritdoc/>
     public void Initialize(GeneratorInitializationContext context)

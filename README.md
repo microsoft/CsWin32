@@ -76,9 +76,14 @@ Constants are defined on the same class as the p/invoke methods (by default, the
 Other supporting types are defined within or under the `Windows.Win32` namespace.
 Discovery of the namespace for a given type can be done with the Go To All feature (Ctrl+T) in Visual Studio with the type name as the search query.
 
-A project may include many NativeMethods.txt files. CsWin32 will read them all to generate APIs, provided these files are included as `AdditionalFiles` in the project.
+A project may include many NativeMethods.txt files (each one necessarily in its own directory).
+CsWin32 will read them all to generate APIs, provided these files are included as `AdditionalFiles` in the project.
 A `NativeMethods.txt` file directly in the project directory is added automatically to `AdditionalFiles`.
 Files in other directories must be added to the project file manually.
+
+Whether API requests are all in a single NativeMethods.txt file or split across many makes no difference to the generated result.
+We recommend using just one NativeMethods.txt file and keeping it sorted for easy bookkeeping.
+Multiple files perhaps makes the most sense in a Shared Project scenario where several API requests will be common across many projects, so sharing a NativeMethods.txt file with those same projects that contain all the necessary APIs for the set of shared source files make maintenance easier.
 
 ### Customizing generated code
 
@@ -92,7 +97,7 @@ Several aspects of the generated code can be customized, including:
 * Force generation of blittable structs, COM structs instead of interfaces (for super high performance with 0 GC pressure), etc.
 
 To configure these settings, create a `NativeMethods.json` file in your project directory.
-Specifying the `$schema` property adds completions, descriptions and validation in many JSON editors.
+Specifying the `$schema` property adds completions, descriptions and validation in many JSON editors, and in fact is where all the documentation for the available settings is found.
 
 ```json
 {

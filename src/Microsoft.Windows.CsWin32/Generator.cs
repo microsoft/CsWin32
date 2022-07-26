@@ -147,6 +147,11 @@ public class Generator : IDisposable
         .WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken))
         .AddAttributes(Attribute(IdentifierName("DefaultDllImportSearchPaths")).AddArgumentListArguments(AttributeArgument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(DllImportSearchPath)), IdentifierName(nameof(DllImportSearchPath.System32))))));
 
+    private static readonly AttributeSyntax GeneratedCodeAttribute = Attribute(IdentifierName("global::System.CodeDom.Compiler.GeneratedCode"))
+        .WithArgumentList(FixTrivia(AttributeArgumentList().AddArguments(
+            AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(ThisAssembly.AssemblyName))),
+            AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(ThisAssembly.AssemblyInformationalVersion))))));
+
     private static readonly HashSet<string> ImplicitConversionTypeDefs = new HashSet<string>(StringComparer.Ordinal)
     {
         "PWSTR",
@@ -465,13 +470,36 @@ public class Generator : IDisposable
     {
         get
         {
-            IEnumerable<MemberDeclarationSyntax> result =
-                from entry in this.committedCode.MembersByModule
-                select ClassDeclaration(Identifier(this.options.ClassName))
-                    .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword))
-                    .AddMembers(entry.ToArray())
-                    .WithLeadingTrivia(ParseLeadingTrivia(string.Format(CultureInfo.InvariantCulture, PartialPInvokeContentComment, entry.Key)))
-                    .WithAdditionalAnnotations(new SyntaxAnnotation(SimpleFileNameAnnotation, $"{this.options.ClassName}.{entry.Key}"));
+            IEnumerable<IGrouping<string, MemberDeclarationSyntax>> members = this.committedCode.MembersByModule;
+            IEnumerable<MemberDeclarationSyntax> result = Enumerable.Empty<MemberDeclarationSyntax>();
+            for (int i = 0; i < members.Count(); i++)
+            {
+                IGrouping<string, MemberDeclarationSyntax> entry = members.ElementAt(i);
+                if (i == 0)
+                {
+                    result = result.Concat(new MemberDeclarationSyntax[]
+                    {
+                        ClassDeclaration(Identifier(this.options.ClassName))
+                        .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword))
+                        .AddMembers(entry.ToArray())
+                        .AddAttributeLists(AttributeList().AddAttributes(GeneratedCodeAttribute))
+                        .WithLeadingTrivia(ParseLeadingTrivia(string.Format(CultureInfo.InvariantCulture, PartialPInvokeContentComment, entry.Key)))
+                        .WithAdditionalAnnotations(new SyntaxAnnotation(SimpleFileNameAnnotation, $"{this.options.ClassName}.{entry.Key}")),
+                    });
+                }
+                else
+                {
+                    result = result.Concat(new MemberDeclarationSyntax[]
+                    {
+                        ClassDeclaration(Identifier(this.options.ClassName))
+                        .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword))
+                        .AddMembers(entry.ToArray())
+                        .WithLeadingTrivia(ParseLeadingTrivia(string.Format(CultureInfo.InvariantCulture, PartialPInvokeContentComment, entry.Key)))
+                        .WithAdditionalAnnotations(new SyntaxAnnotation(SimpleFileNameAnnotation, $"{this.options.ClassName}.{entry.Key}")),
+                    });
+                }
+            }
+
             result = result.Concat(this.committedCode.GeneratedTypes);
 
             ClassDeclarationSyntax inlineArrayIndexerExtensionsClass = this.DeclareInlineArrayIndexerExtensionsClass();
@@ -1673,10 +1701,11 @@ public class Generator : IDisposable
                 .AddModifiers(TokenWithSpace(this.Visibility))
                 .WithBaseList(BaseList(SingletonSeparatedList<BaseTypeSyntax>(SimpleBaseType(SafeHandleTypeSyntax))))
                 .AddMembers(members.ToArray())
+                .AddAttributeLists(AttributeList().AddAttributes(GeneratedCodeAttribute))
                 .WithLeadingTrivia(ParseLeadingTrivia($@"
-        /// <summary>
-        /// Represents a Win32 handle that can be closed with <see cref=""{this.options.ClassName}.{renamedReleaseMethod ?? releaseMethod}""/>.
-        /// </summary>
+/// <summary>
+/// Represents a Win32 handle that can be closed with <see cref=""{this.options.ClassName}.{renamedReleaseMethod ?? releaseMethod}""/>.
+/// </summary>
 "));
 
             this.volatileCode.AddSafeHandleType(safeHandleDeclaration);
@@ -2861,6 +2890,15 @@ public class Generator : IDisposable
                 return null;
             }
 
+            // add generated code attribute.
+            if (typeDeclaration is not null)
+            {
+                typeDeclaration = typeDeclaration
+                    .WithLeadingTrivia()
+                    .AddAttributeLists(AttributeList().AddAttributes(GeneratedCodeAttribute))
+                    .WithLeadingTrivia(typeDeclaration.GetLeadingTrivia());
+            }
+
             return typeDeclaration;
         }
         catch (Exception ex)
@@ -3142,14 +3180,16 @@ public class Generator : IDisposable
     {
         return ClassDeclaration(InlineArrayIndexerExtensionsClassName.Identifier)
             .AddMembers(this.committedCode.InlineArrayIndexerExtensions.ToArray())
-            .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)));
+            .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)))
+            .AddAttributeLists(AttributeList().AddAttributes(GeneratedCodeAttribute));
     }
 
     private ClassDeclarationSyntax DeclareComInterfaceFriendlyExtensionsClass()
     {
         return ClassDeclaration(ComInterfaceFriendlyExtensionsClassName.Identifier)
             .AddMembers(this.committedCode.ComInterfaceExtensions.ToArray())
-            .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)));
+            .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)))
+            .AddAttributeLists(AttributeList().AddAttributes(GeneratedCodeAttribute));
     }
 
     /// <summary>

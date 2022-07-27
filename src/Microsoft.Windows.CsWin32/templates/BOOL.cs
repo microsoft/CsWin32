@@ -1,6 +1,6 @@
 ﻿partial struct BOOL
 {
-	internal unsafe BOOL(bool value) => this.Value = *(sbyte*)&value;
+	internal unsafe BOOL(bool value) => this.Value = value ? 1 : 0;
 	public static unsafe implicit operator bool(BOOL value)
 	{
 		sbyte v = checked((sbyte)value.Value);

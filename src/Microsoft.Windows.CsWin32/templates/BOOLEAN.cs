@@ -1,6 +1,6 @@
 ﻿partial struct BOOLEAN
 {
-	internal unsafe BOOLEAN(bool value) => this.Value = *(byte*)&value;
+	internal unsafe BOOLEAN(bool value) => this.Value = value ? 1 : 0;
 	public static unsafe implicit operator bool(BOOLEAN value)
 	{
 		byte v = checked((byte)value.Value);

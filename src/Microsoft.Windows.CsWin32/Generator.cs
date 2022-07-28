@@ -3659,6 +3659,20 @@ public class Generator : IDisposable
         // Add the additional members, taking care to not introduce redundant declarations.
         members.AddRange(additionalMembers.Where(c => c is not StructDeclarationSyntax cs || !members.OfType<StructDeclarationSyntax>().Any(m => m.Identifier.ValueText == cs.Identifier.ValueText)));
 
+        switch (name.Identifier.ValueText)
+        {
+            case "POINTF":
+            case "POINT":
+            case "RECT":
+            case "RECTF":
+            case "SIZE":
+            case "SIZEF":
+                members.AddRange(this.ExtractMembersFromTemplate(name.Identifier.ValueText));
+                break;
+            default:
+                break;
+        }
+
         StructDeclarationSyntax result = StructDeclaration(name.Identifier)
             .AddMembers(members.ToArray())
             .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.PartialKeyword)));

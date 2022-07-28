@@ -602,6 +602,21 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         Assert.Equal(nameof(IntPtr), Assert.IsType<IdentifierNameSyntax>(field.Declaration.Type).Identifier.ValueText);
     }
 
+    [Theory]
+    [InlineData("POINT")]
+    [InlineData("POINTF")]
+    [InlineData("RECT")]
+    [InlineData("SIZE")]
+    public void DrawingStructsGenerate(string handleType)
+    {
+        this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(Platform.X64));
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate(handleType, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        StructDeclarationSyntax paintStruct = Assert.IsType<StructDeclarationSyntax>(this.FindGeneratedType(handleType).Single());
+    }
+
     [Fact]
     public void NamespaceHandleGetsNoSafeHandle()
     {

@@ -1,5 +1,9 @@
 ﻿BOOL
 BOOLEAN
+POINT
+POINTF
+RECT
+SIZE
 CHAR
 CreateCursor
 CreateFile

@@ -1,14 +1,15 @@
 ﻿partial struct SIZE
 {
-	internal SIZE(global::System.Drawing.Size value)
+	internal SIZE(global::System.Drawing.Size value) : this(value.Width, value.Height) { }
+	internal SIZE(int width, int height)
 	{
-		this.cx = value.Width;
-		this.cy = value.Height;
+		this.cx = width;
+		this.cy = height;
 	}
 
-	public int Width => this.cx;
-	public int Height => this.cy;
-	public bool IsEmpty => this.cx == 0 && this.cy == 0;
+	internal readonly int Width => this.cx;
+	internal readonly int Height => this.cy;
+	internal readonly bool IsEmpty => this.cx == 0 && this.cy == 0;
 	public static implicit operator global::System.Drawing.Size(SIZE value) => new global::System.Drawing.Size(value.cx, value.cy);
 	public static implicit operator SIZE(global::System.Drawing.Size value) => new SIZE(value);
 }

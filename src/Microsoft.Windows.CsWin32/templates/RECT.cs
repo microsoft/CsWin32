@@ -12,15 +12,15 @@
 		this.bottom = bottom;
 	}
 
-	public static RECT FromXYWH(int x, int y, int width, int height) =>
+	internal static RECT FromXYWH(int x, int y, int width, int height) =>
 		new RECT(x, y, unchecked(x + width), unchecked(y + height));
-	public readonly int Width => unchecked(this.right - this.left);
-	public readonly int Height => unchecked(this.bottom - this.top);
-	public readonly bool IsEmpty => this.left == 0 && this.top == 0 && this.right == 0 && this.bottom == 0;
-	public readonly int X => this.left;
-	public readonly int Y => this.top;
-	public readonly global::System.Drawing.Size Size => new global::System.Drawing.Size(this.Width, this.Height);
-	public static implicit operator global::System.Drawing.Rectangle(RECT value) => new global::System.Drawing.Rectangle(value.left, value.top, value.right, value.bottom);
-	public static implicit operator global::System.Drawing.RectangleF(RECT value) => new global::System.Drawing.RectangleF(value.left, value.top, value.right, value.bottom);
+	internal readonly int Width => unchecked(this.right - this.left);
+	internal readonly int Height => unchecked(this.bottom - this.top);
+	internal readonly bool IsEmpty => this.left == 0 && this.top == 0 && this.right == 0 && this.bottom == 0;
+	internal readonly int X => this.left;
+	internal readonly int Y => this.top;
+	internal readonly global::System.Drawing.Size Size => new global::System.Drawing.Size(this.Width, this.Height);
+	public static implicit operator global::System.Drawing.Rectangle(RECT value) => new global::System.Drawing.Rectangle(value.left, value.top, value.Width, value.Height);
+	public static implicit operator global::System.Drawing.RectangleF(RECT value) => new global::System.Drawing.RectangleF(value.left, value.top, value.Width, value.Height);
 	public static implicit operator RECT(global::System.Drawing.Rectangle value) => new RECT(value);
 }

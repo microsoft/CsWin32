@@ -50,15 +50,14 @@ public class Generator : IDisposable
         { "LARGE_INTEGER", PredefinedType(Token(SyntaxKind.LongKeyword)) },
         { "ULARGE_INTEGER", PredefinedType(Token(SyntaxKind.ULongKeyword)) },
         { "OVERLAPPED", ParseTypeName("global::System.Threading.NativeOverlapped") },
-        { "POINT", ParseTypeName("global::System.Drawing.Point") },
-        { "POINTF", ParseTypeName("global::System.Drawing.PointF") },
-        { "SIZE", ParseTypeName("global::System.Drawing.Size") },
     };
 
     internal static readonly Dictionary<string, TypeSyntax> AdditionalBclInteropStructsMarshaled = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)
     {
         { nameof(System.Runtime.InteropServices.ComTypes.IDataObject), ParseTypeName("global::System.Runtime.InteropServices.ComTypes.IDataObject") },
-        ////{ "BOOL", PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)) },
+        { "POINT", ParseTypeName("global::System.Drawing.Point") },
+        { "POINTF", ParseTypeName("global::System.Drawing.PointF") },
+        { "SIZE", ParseTypeName("global::System.Drawing.Size") },
     };
 
     internal static readonly Dictionary<string, TypeSyntax> BclInteropSafeHandles = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)

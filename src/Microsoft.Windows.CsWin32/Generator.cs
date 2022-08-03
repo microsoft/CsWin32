@@ -50,12 +50,20 @@ public class Generator : IDisposable
         { "LARGE_INTEGER", PredefinedType(Token(SyntaxKind.LongKeyword)) },
         { "ULARGE_INTEGER", PredefinedType(Token(SyntaxKind.ULongKeyword)) },
         { "OVERLAPPED", ParseTypeName("global::System.Threading.NativeOverlapped") },
+        { "POINT", ParseTypeName("global::System.Drawing.Point") },
+        { "POINTF", ParseTypeName("global::System.Drawing.PointF") },
     };
 
+    /// <summary>
+    /// A map of .NET interop structs to use, keyed by the native structs that should <em>not</em> be generated <em>when marshaling is enabled.</em>
+    /// That is, these interop types should only be generated when marshaling is disabled.
+    /// </summary>
+    /// <devremarks>
+    /// When adding to this dictionary, consider also adding to <see cref="BannedAPIsWithMarshaling"/>.
+    /// </devremarks>
     internal static readonly Dictionary<string, TypeSyntax> AdditionalBclInteropStructsMarshaled = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)
     {
         { nameof(System.Runtime.InteropServices.ComTypes.IDataObject), ParseTypeName("global::System.Runtime.InteropServices.ComTypes.IDataObject") },
-        ////{ "BOOL", PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)) },
     };
 
     internal static readonly Dictionary<string, TypeSyntax> BclInteropSafeHandles = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)
@@ -408,13 +416,21 @@ public class Generator : IDisposable
         InterfaceMethod,
     }
 
+    /// <summary>
+    /// Gets a map of interop APIs that should never be generated, whether marshaling is allowed or not, and messages to emit in diagnostics if these APIs are ever directly requested.
+    /// </summary>
     internal static ImmutableDictionary<string, string> BannedAPIsWithoutMarshaling { get; } = ImmutableDictionary<string, string>.Empty
         .Add("GetLastError", "Do not generate GetLastError. Call Marshal.GetLastWin32Error() instead. Learn more from https://docs.microsoft.com/dotnet/api/system.runtime.interopservices.marshal.getlastwin32error")
         .Add("OLD_LARGE_INTEGER", "Use the C# long keyword instead.")
         .Add("LARGE_INTEGER", "Use the C# long keyword instead.")
         .Add("ULARGE_INTEGER", "Use the C# ulong keyword instead.")
-        .Add("OVERLAPPED", "Use System.Threading.NativeOverlapped instead.");
+        .Add("OVERLAPPED", "Use System.Threading.NativeOverlapped instead.")
+        .Add("POINT", "Use System.Drawing.Point instead.")
+        .Add("POINTF", "Use System.Drawing.PointF instead.");
 
+    /// <summary>
+    /// Gets a map of interop APIs that should not be generated when marshaling is allowed, and messages to emit in diagnostics if these APIs are ever directly requested.
+    /// </summary>
     internal static ImmutableDictionary<string, string> BannedAPIsWithMarshaling { get; } = BannedAPIsWithoutMarshaling
         .Add("VARIANT", "Use `object` instead of VARIANT when in COM interface mode. VARIANT can only be emitted when emitting COM interfaces as structs.");
 
@@ -3658,6 +3674,16 @@ public class Generator : IDisposable
 
         // Add the additional members, taking care to not introduce redundant declarations.
         members.AddRange(additionalMembers.Where(c => c is not StructDeclarationSyntax cs || !members.OfType<StructDeclarationSyntax>().Any(m => m.Identifier.ValueText == cs.Identifier.ValueText)));
+
+        switch (name.Identifier.ValueText)
+        {
+            case "RECT":
+            case "SIZE":
+                members.AddRange(this.ExtractMembersFromTemplate(name.Identifier.ValueText));
+                break;
+            default:
+                break;
+        }
 
         StructDeclarationSyntax result = StructDeclaration(name.Identifier)
             .AddMembers(members.ToArray())

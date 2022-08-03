@@ -1,5 +1,7 @@
 ﻿BOOL
 BOOLEAN
+RECT
+SIZE
 CHAR
 CreateCursor
 CreateFile

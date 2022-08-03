@@ -50,14 +50,13 @@ public class Generator : IDisposable
         { "LARGE_INTEGER", PredefinedType(Token(SyntaxKind.LongKeyword)) },
         { "ULARGE_INTEGER", PredefinedType(Token(SyntaxKind.ULongKeyword)) },
         { "OVERLAPPED", ParseTypeName("global::System.Threading.NativeOverlapped") },
+        { "POINT", ParseTypeName("global::System.Drawing.Point") },
+        { "POINTF", ParseTypeName("global::System.Drawing.PointF") },
     };
 
     internal static readonly Dictionary<string, TypeSyntax> AdditionalBclInteropStructsMarshaled = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)
     {
         { nameof(System.Runtime.InteropServices.ComTypes.IDataObject), ParseTypeName("global::System.Runtime.InteropServices.ComTypes.IDataObject") },
-        { "POINT", ParseTypeName("global::System.Drawing.Point") },
-        { "POINTF", ParseTypeName("global::System.Drawing.PointF") },
-        { "SIZE", ParseTypeName("global::System.Drawing.Size") },
     };
 
     internal static readonly Dictionary<string, TypeSyntax> BclInteropSafeHandles = new Dictionary<string, TypeSyntax>(StringComparer.Ordinal)
@@ -415,7 +414,9 @@ public class Generator : IDisposable
         .Add("OLD_LARGE_INTEGER", "Use the C# long keyword instead.")
         .Add("LARGE_INTEGER", "Use the C# long keyword instead.")
         .Add("ULARGE_INTEGER", "Use the C# ulong keyword instead.")
-        .Add("OVERLAPPED", "Use System.Threading.NativeOverlapped instead.");
+        .Add("OVERLAPPED", "Use System.Threading.NativeOverlapped instead.")
+        .Add("POINT", "Use System.Drawing.Point instead.")
+        .Add("POINTF", "Use System.Drawing.PointF instead.");
 
     internal static ImmutableDictionary<string, string> BannedAPIsWithMarshaling { get; } = BannedAPIsWithoutMarshaling
         .Add("VARIANT", "Use `object` instead of VARIANT when in COM interface mode. VARIANT can only be emitted when emitting COM interfaces as structs.");
@@ -3663,8 +3664,6 @@ public class Generator : IDisposable
 
         switch (name.Identifier.ValueText)
         {
-            case "POINTF":
-            case "POINT":
             case "RECT":
             case "SIZE":
                 members.AddRange(this.ExtractMembersFromTemplate(name.Identifier.ValueText));

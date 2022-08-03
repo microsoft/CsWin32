@@ -3,68 +3,9 @@
 
 using System.Drawing;
 using Windows.Win32.Foundation;
-using Windows.Win32.System.Ole;
 
 public class SystemDrawingStructTests
 {
-    [Fact]
-    public void Point()
-    {
-        POINT p = new POINT(1, 1);
-        Point p2 = p;
-        Assert.False(p.IsEmpty);
-        Assert.False(p2.IsEmpty);
-
-        Assert.True(default(POINT).IsEmpty);
-    }
-
-    [Fact]
-    public void NotLossyConversionBetweenPointAndPOINT()
-    {
-        POINT nativePoint = new POINT(1, 1);
-        Point managedPoint = nativePoint;
-        POINT roundtrippedNativePoint = managedPoint;
-        Assert.Equal(nativePoint, roundtrippedNativePoint);
-    }
-
-    [Fact]
-    public void NotLossyConversionBetweenPointAndPOINT_Ctors()
-    {
-        POINT nativePoint = new POINT(1, 1);
-        Point managedPoint = nativePoint;
-        POINT roundtrippedNativePoint = new POINT(managedPoint);
-        Assert.Equal(nativePoint, roundtrippedNativePoint);
-    }
-
-    [Fact]
-    public void PointF()
-    {
-        POINTF p = new POINTF(1, 1);
-        PointF p2 = p;
-        Assert.False(p.IsEmpty);
-        Assert.False(p2.IsEmpty);
-
-        Assert.True(default(POINTF).IsEmpty);
-    }
-
-    [Fact]
-    public void NotLossyConversionBetweenPointFAndPOINTF()
-    {
-        POINTF nativePoint = new POINTF(1, 1);
-        PointF managedPoint = nativePoint;
-        POINTF roundtrippedNativePoint = managedPoint;
-        Assert.Equal(nativePoint, roundtrippedNativePoint);
-    }
-
-    [Fact]
-    public void NotLossyConversionBetweenPointFAndPOINTF_Ctors()
-    {
-        POINTF nativePoint = new POINTF(1, 1);
-        PointF managedPoint = nativePoint;
-        POINTF roundtrippedNativePoint = new POINTF(managedPoint);
-        Assert.Equal(nativePoint, roundtrippedNativePoint);
-    }
-
     [Fact]
     public void Size()
     {

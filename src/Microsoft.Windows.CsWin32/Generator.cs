@@ -6240,15 +6240,15 @@ public class Generator : IDisposable
         {
             if (node.Parent is ParameterSyntax)
             {
-                return base.VisitAttributeList(node.WithCloseBracketToken(TokenWithSpace(SyntaxKind.CloseBracketToken)));
+                return node.WithCloseBracketToken(TokenWithSpace(SyntaxKind.CloseBracketToken));
             }
             else if (node.Parent is BaseTypeDeclarationSyntax)
             {
-                return base.VisitAttributeList(this.WithOuterIndentingTrivia(node));
+                return this.WithOuterIndentingTrivia(node);
             }
             else
             {
-                return base.VisitAttributeList(this.WithIndentingTrivia(node));
+                return this.WithIndentingTrivia(node);
             }
         }
 
@@ -6371,7 +6371,7 @@ public class Generator : IDisposable
             {
                 if (list[i].GetStructure() is DocumentationCommentTriviaSyntax trivia)
                 {
-                    indent ??= list[i].Token.Parent is BaseTypeDeclarationSyntax ? this.OuterIndentTrivia.ToString() : this.IndentTrivia.ToString();
+                    indent ??= list[i].Token.Parent is BaseTypeDeclarationSyntax or AttributeListSyntax { Parent: BaseTypeDeclarationSyntax } ? this.OuterIndentTrivia.ToString() : this.IndentTrivia.ToString();
                     var comment = new StringBuilder(trivia.Content.ToFullString());
                     comment.Insert(0, indent);
                     comment.Replace("\n", "\n" + indent);
@@ -6408,7 +6408,7 @@ public class Generator : IDisposable
             return members;
         }
 
-        private static TSyntax WithIndentingTrivia<TSyntax>(TSyntax node, SyntaxTrivia indentTrivia)
+        private TSyntax WithIndentingTrivia<TSyntax>(TSyntax node, SyntaxTrivia indentTrivia)
             where TSyntax : SyntaxNode
         {
             if (node is MemberDeclarationSyntax memberDeclaration)
@@ -6418,7 +6418,7 @@ public class Generator : IDisposable
             }
 
             // Take care to preserve xml doc comments, pragmas, etc.
-            return node.WithLeadingTrivia(node.HasLeadingTrivia ? node.GetLeadingTrivia().Add(indentTrivia) : TriviaList(indentTrivia));
+            return node.WithLeadingTrivia(node.HasLeadingTrivia ? this.VisitList(node.GetLeadingTrivia()).Add(indentTrivia) : TriviaList(indentTrivia));
 
             static SyntaxToken GetFirstToken(MemberDeclarationSyntax memberDeclaration)
             {
@@ -6440,13 +6440,13 @@ public class Generator : IDisposable
         private TSyntax WithIndentingTrivia<TSyntax>(TSyntax node)
             where TSyntax : SyntaxNode
         {
-            return WithIndentingTrivia(node, this.IndentTrivia);
+            return this.WithIndentingTrivia(node, this.IndentTrivia);
         }
 
         private TSyntax WithOuterIndentingTrivia<TSyntax>(TSyntax node)
             where TSyntax : SyntaxNode
         {
-            return WithIndentingTrivia(node, this.OuterIndentTrivia);
+            return this.WithIndentingTrivia(node, this.OuterIndentTrivia);
         }
 
         private struct Indent : IDisposable

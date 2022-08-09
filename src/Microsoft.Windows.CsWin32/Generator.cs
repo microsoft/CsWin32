@@ -3885,6 +3885,12 @@ public class Generator : IDisposable
         // If this typedef struct represents a pointer, add an IsNull property.
         if (fieldType is IdentifierNameSyntax { Identifier: { Value: nameof(IntPtr) or nameof(UIntPtr) } })
         {
+            // internal static HWND Null => default;
+            yield return PropertyDeclaration(structName.WithTrailingTrivia(TriviaList(Space)), "Null")
+                .WithExpressionBody(ArrowExpressionClause(LiteralExpression(SyntaxKind.DefaultLiteralExpression)))
+                .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword))
+                .WithSemicolonToken(SemicolonWithLineFeed);
+
             // internal static bool IsNull => value == default;
             yield return PropertyDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), "IsNull")
                 .AddModifiers(TokenWithSpace(this.Visibility))

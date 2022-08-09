@@ -1643,14 +1643,8 @@ namespace Windows.Win32
 			public override bool Equals(object obj) => obj is BOOL other && this.Equals(other);
 
 			public override int GetHashCode() => this.Value.GetHashCode();
-			internal unsafe BOOL(bool value) => this.Value = *(sbyte*)&value;
-			public static unsafe implicit operator bool(BOOL value)
-
-			{
-				sbyte v = checked((sbyte)value.Value);
-				return *(bool*)&v;
-			}
-
+			internal BOOL(bool value) => this.Value = value ? 1 : 0;
+			public static implicit operator bool(BOOL value) => value.Value != 0;
 			public static implicit operator BOOL(bool value) => new BOOL(value);
 		}
 	}
@@ -1915,14 +1909,8 @@ namespace Windows.Win32
 			public override bool Equals(object obj) => obj is BOOL other && this.Equals(other);
 
 			public override int GetHashCode() => this.Value.GetHashCode();
-			internal unsafe BOOL(bool value) => this.Value = *(sbyte*)&value;
-			public static unsafe implicit operator bool(BOOL value)
-
-			{
-				sbyte v = checked((sbyte)value.Value);
-				return *(bool*)&v;
-			}
-
+			internal BOOL(bool value) => this.Value = value ? 1 : 0;
+			public static implicit operator bool(BOOL value) => value.Value != 0;
 			public static implicit operator BOOL(bool value) => new BOOL(value);
 		}
 	}
@@ -2248,14 +2236,8 @@ namespace Windows.Win32
 			public override bool Equals(object obj) => obj is BOOL other && this.Equals(other);
 
 			public override int GetHashCode() => this.Value.GetHashCode();
-			internal unsafe BOOL(bool value) => this.Value = *(sbyte*)&value;
-			public static unsafe implicit operator bool(BOOL value)
-
-			{
-				sbyte v = checked((sbyte)value.Value);
-				return *(bool*)&v;
-			}
-
+			internal BOOL(bool value) => this.Value = value ? 1 : 0;
+			public static implicit operator bool(BOOL value) => value.Value != 0;
 			public static implicit operator BOOL(bool value) => new BOOL(value);
 		}
 	}

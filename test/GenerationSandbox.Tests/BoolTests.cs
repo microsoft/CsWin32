@@ -6,7 +6,7 @@ using Windows.Win32.Foundation;
 public class BoolTests
 {
     [Fact]
-    public void Bool()
+    public void Ctor_bool()
     {
         BOOL b = true;
         bool b2 = b;
@@ -16,26 +16,31 @@ public class BoolTests
         Assert.False(default(BOOL));
     }
 
-    [Theory]
-    [InlineData(3)]
-    [InlineData(-1)]
-    public void NotLossyConversionBetweenBoolAndBOOL(int ordinal)
+    [Fact]
+    public void Ctor_int()
     {
-        BOOL nativeBool = new BOOL(ordinal);
-        bool managedBool = nativeBool;
-        BOOL roundtrippedNativeBool = managedBool;
-        Assert.Equal(nativeBool, roundtrippedNativeBool);
+        Assert.Equal(2, new BOOL(2).Value);
+    }
+
+    [Fact]
+    public void ExplicitCast()
+    {
+        Assert.Equal(2, ((BOOL)2).Value);
     }
 
     [Theory]
     [InlineData(3)]
     [InlineData(-1)]
-    public void NotLossyConversionBetweenBoolAndBOOL_Ctors(int ordinal)
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(0xfffff)]
+    public void LossyConversionFromBOOLtoBool(int ordinal)
     {
         BOOL nativeBool = new BOOL(ordinal);
         bool managedBool = nativeBool;
-        BOOL roundtrippedNativeBool = new BOOL(managedBool);
-        Assert.Equal(nativeBool, roundtrippedNativeBool);
+        Assert.Equal(ordinal != 0, managedBool);
+        BOOLEAN roundtrippedNativeBool = managedBool;
+        Assert.Equal(managedBool ? 1 : 0, roundtrippedNativeBool);
     }
 
     [Fact]
@@ -56,5 +61,27 @@ public class BoolTests
         Assert.False(@true != new BOOL(true));
         Assert.True(@true != @false);
         Assert.False(@true == @false);
+
+        var two = new BOOL(2);
+        Assert.False(two == @true);
+        Assert.True(two != @true);
+    }
+
+    [Fact]
+    public void LogicalOperators_And()
+    {
+        BOOL @true = true, @false = false;
+        Assert.False(@false && @false);
+        Assert.False(@true && @false);
+        Assert.True(@true && @true);
+    }
+
+    [Fact]
+    public void LogicalOperators_Or()
+    {
+        BOOL @true = true, @false = false;
+        Assert.True(@true || @false);
+        Assert.False(@false || @false);
+        Assert.True(@true || @true);
     }
 }

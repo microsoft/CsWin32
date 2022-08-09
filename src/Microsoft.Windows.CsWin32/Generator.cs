@@ -6191,6 +6191,21 @@ public class Generator : IDisposable
             return result;
         }
 
+        public override SyntaxNode? VisitInterfaceDeclaration(InterfaceDeclarationSyntax node)
+        {
+            node = this.WithIndentingTrivia(node)
+                .WithOpenBraceToken(node.OpenBraceToken.WithLeadingTrivia(TriviaList(this.IndentTrivia)))
+                .WithCloseBraceToken(node.CloseBraceToken.WithLeadingTrivia(TriviaList(this.IndentTrivia)));
+            using var indent = new Indent(this);
+            SyntaxNode? result = base.VisitInterfaceDeclaration(node);
+            if (result is InterfaceDeclarationSyntax c)
+            {
+                result = c.WithMembers(AddSpacingBetweenMembers(c.Members));
+            }
+
+            return result;
+        }
+
         public override SyntaxNode? VisitEnumDeclaration(EnumDeclarationSyntax node)
         {
             node = this.WithIndentingTrivia(node)
@@ -6342,6 +6357,34 @@ public class Generator : IDisposable
             {
                 using var indent = new Indent(this);
                 return base.VisitFixedStatement(node);
+            }
+        }
+
+        public override SyntaxNode? VisitForStatement(ForStatementSyntax node)
+        {
+            node = this.WithIndentingTrivia(node);
+            if (node.Statement is BlockSyntax)
+            {
+                return base.VisitForStatement(node);
+            }
+            else
+            {
+                using var indent = new Indent(this);
+                return base.VisitForStatement(node);
+            }
+        }
+
+        public override SyntaxNode? VisitForEachStatement(ForEachStatementSyntax node)
+        {
+            node = this.WithIndentingTrivia(node);
+            if (node.Statement is BlockSyntax)
+            {
+                return base.VisitForEachStatement(node);
+            }
+            else
+            {
+                using var indent = new Indent(this);
+                return base.VisitForEachStatement(node);
             }
         }
 

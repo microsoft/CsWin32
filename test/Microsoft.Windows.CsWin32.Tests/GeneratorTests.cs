@@ -591,11 +591,11 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [InlineData("HANDLE")]
     [InlineData("HGDIOBJ")]
     [InlineData("HINSTANCE")]
-    public void HandleStructsHaveStaticNullField(string handleName)
+    public void HandleStructsHaveStaticNullMember(string handleName)
     {
         // A null HGDIOBJ has a specific meaning beyond just the concept of an invalid handle:
         // https://docs.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-selectobject#return-value
-        this.AssertGeneratedMember(handleName, "Null", "Null");
+        this.AssertGeneratedMember(handleName, "Null", $"internal static {handleName} Null => default;");
     }
 
     [Theory]
@@ -609,7 +609,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
         StructDeclarationSyntax hwnd = Assert.IsType<StructDeclarationSyntax>(this.FindGeneratedType(handleType).Single());
-        FieldDeclarationSyntax field = hwnd.Members.OfType<FieldDeclarationSyntax>().First();
+        FieldDeclarationSyntax field = hwnd.Members.OfType<FieldDeclarationSyntax>().Single();
         Assert.Equal(nameof(IntPtr), Assert.IsType<IdentifierNameSyntax>(field.Declaration.Type).Identifier.ValueText);
     }
 
@@ -1980,7 +1980,8 @@ namespace Windows.Win32
 		{
 			internal readonly IntPtr Value;
 			internal HWND(IntPtr value) => this.Value = value;
-			internal static readonly HWND Null;
+
+			internal static HWND Null => default;
 
 			internal bool IsNull => Value == default;
 			public static implicit operator IntPtr(HWND value) => value.Value;
@@ -2087,7 +2088,8 @@ namespace Windows.Win32
 		{
 			internal readonly IntPtr Value;
 			internal HDC(IntPtr value) => this.Value = value;
-			internal static readonly HDC Null;
+
+			internal static HDC Null => default;
 
 			internal bool IsNull => Value == default;
 			public static implicit operator IntPtr(HDC value) => value.Value;
@@ -2130,7 +2132,8 @@ namespace Windows.Win32
 		{
 			internal readonly IntPtr Value;
 			internal HWND(IntPtr value) => this.Value = value;
-			internal static readonly HWND Null;
+
+			internal static HWND Null => default;
 
 			internal bool IsNull => Value == default;
 			public static implicit operator IntPtr(HWND value) => value.Value;
@@ -2472,7 +2475,8 @@ namespace Windows.Win32
 		{
 			internal readonly IntPtr Value;
 			internal HANDLE(IntPtr value) => this.Value = value;
-			internal static readonly HANDLE Null;
+
+			internal static HANDLE Null => default;
 
 			internal bool IsNull => Value == default;
 			public static implicit operator IntPtr(HANDLE value) => value.Value;

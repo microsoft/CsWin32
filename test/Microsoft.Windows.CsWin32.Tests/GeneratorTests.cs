@@ -1247,21 +1247,22 @@ pCh++);
 		}}
 ";
 
-        const string expectedIndexer = @"
+        const string expectedIndexer = $@"
+	[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
 	internal static partial class InlineArrayIndexerExtensions
-	{
+	{{
 		internal static unsafe ref readonly char ReadOnlyItemRef(this in winmdroot.Graphics.Gdi.LOGFONTW.__char_32 @this, int index)
-		{
+		{{
 			fixed (char* p0 = &@this._0)
 				return ref p0[index];
-		}
+		}}
 
 		internal static unsafe ref char ItemRef(this ref winmdroot.Graphics.Gdi.LOGFONTW.__char_32 @this, int index)
-		{
+		{{
 			fixed (char* p0 = &@this._0)
 				return ref p0[index];
-		}
-	}
+		}}
+	}}
 ";
 
         this.compilation = this.starterCompilations["net35"];
@@ -1429,21 +1430,22 @@ i++)						if (p0[i] != default(uint))							return false;
 		}}
 ";
 
-        const string expectedIndexer = @"
+        const string expectedIndexer = $@"
+	[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
 	internal static partial class InlineArrayIndexerExtensions
-	{
+	{{
 		internal static unsafe ref readonly uint ReadOnlyItemRef(this in winmdroot.Media.DirectShow.MainAVIHeader.__uint_4 @this, int index)
-		{
+		{{
 			fixed (uint* p0 = &@this._0)
 				return ref p0[index];
-		}
+		}}
 
 		internal static unsafe ref uint ItemRef(this ref winmdroot.Media.DirectShow.MainAVIHeader.__uint_4 @this, int index)
-		{
+		{{
 			fixed (uint* p0 = &@this._0)
 				return ref p0[index];
-		}
-	}
+		}}
+	}}
 ";
 
         this.compilation = this.starterCompilations["net6.0"];
@@ -1985,6 +1987,7 @@ namespace Windows.Win32
 	namespace UI.WindowsAndMessaging
 	{{
 		[UnmanagedFunctionPointerAttribute(CallingConvention.Winapi)]
+		[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
 		internal unsafe delegate winmdroot.Foundation.BOOL WNDENUMPROC(winmdroot.Foundation.HWND param0, winmdroot.Foundation.LPARAM param1);
 	}}
 }}
@@ -2629,9 +2632,9 @@ namespace Windows.Win32
 	using winmdroot = global::Windows.Win32;
 
 
-		/// <content>
-		/// Contains extern methods from ""Kernel32.dll"".
-		/// </content>
+	/// <content>
+	/// Contains extern methods from ""Kernel32.dll"".
+	/// </content>
 	[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
 	internal static partial class PInvoke
 	{{

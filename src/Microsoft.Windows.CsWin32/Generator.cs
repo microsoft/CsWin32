@@ -2099,33 +2099,32 @@ public class Generator : IDisposable
     private static AttributeSyntax StructLayout(TypeAttributes typeAttributes, TypeLayout layout = default, CharSet charSet = CharSet.Ansi)
     {
         LayoutKind layoutKind = (typeAttributes & TypeAttributes.ExplicitLayout) == TypeAttributes.ExplicitLayout ? LayoutKind.Explicit : LayoutKind.Sequential;
-        AttributeSyntax? structLayoutAttribute = Attribute(IdentifierName("StructLayout")).AddArgumentListArguments(
-            AttributeArgument(MemberAccessExpression(
-                SyntaxKind.SimpleMemberAccessExpression,
-                IdentifierName(nameof(LayoutKind)),
-                IdentifierName(Enum.GetName(typeof(LayoutKind), layoutKind)!))));
+        List<AttributeArgumentSyntax> args = new();
+        AttributeSyntax? structLayoutAttribute = Attribute(IdentifierName("StructLayout"));
+        args.Add(AttributeArgument(MemberAccessExpression(
+                 SyntaxKind.SimpleMemberAccessExpression,
+                 IdentifierName(nameof(LayoutKind)),
+                 IdentifierName(Enum.GetName(typeof(LayoutKind), layoutKind)!))));
 
         if (layout.PackingSize > 0)
         {
-            structLayoutAttribute = structLayoutAttribute.AddArgumentListArguments(
-                AttributeArgument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(layout.PackingSize)))
+            args.Add(AttributeArgument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(layout.PackingSize)))
                     .WithNameEquals(NameEquals(nameof(StructLayoutAttribute.Pack))));
         }
 
         if (layout.Size > 0)
         {
-            structLayoutAttribute = structLayoutAttribute.AddArgumentListArguments(
-                AttributeArgument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(layout.Size)))
+            args.Add(AttributeArgument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(layout.Size)))
                     .WithNameEquals(NameEquals(nameof(StructLayoutAttribute.Size))));
         }
 
         if (charSet != CharSet.Ansi)
         {
-            structLayoutAttribute = structLayoutAttribute.AddArgumentListArguments(
-                AttributeArgument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(CharSet)), IdentifierName(Enum.GetName(typeof(CharSet), charSet)!)))
+            args.Add(AttributeArgument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(CharSet)), IdentifierName(Enum.GetName(typeof(CharSet), charSet)!)))
                 .WithNameEquals(NameEquals(IdentifierName(nameof(StructLayoutAttribute.CharSet)))));
         }
 
+        structLayoutAttribute = structLayoutAttribute.WithArgumentList(FixTrivia(AttributeArgumentList().AddArguments(args.ToArray())));
         return structLayoutAttribute;
     }
 
@@ -2146,25 +2145,24 @@ public class Generator : IDisposable
 
     private static AttributeSyntax DllImport(MethodImport import, string moduleName, string? entrypoint)
     {
-        AttributeSyntax? dllImportAttribute = Attribute(IdentifierName("DllImport"))
-            .WithArgumentList(FixTrivia(AttributeArgumentList().AddArguments(
-                AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(moduleName))),
-                AttributeArgument(LiteralExpression(SyntaxKind.TrueLiteralExpression)).WithNameEquals(NameEquals(nameof(DllImportAttribute.ExactSpelling))))));
+        List<AttributeArgumentSyntax> args = new();
+        AttributeSyntax? dllImportAttribute = Attribute(IdentifierName("DllImport"));
+        args.Add(AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(moduleName))));
+        args.Add(AttributeArgument(LiteralExpression(SyntaxKind.TrueLiteralExpression)).WithNameEquals(NameEquals(nameof(DllImportAttribute.ExactSpelling))));
 
-        if (entrypoint is object)
+        if (entrypoint is not null)
         {
-            dllImportAttribute = dllImportAttribute.AddArgumentListArguments(
-                AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(entrypoint)))
+            args.Add(AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(entrypoint)))
                     .WithNameEquals(NameEquals(nameof(DllImportAttribute.EntryPoint))));
         }
 
         if ((import.Attributes & MethodImportAttributes.SetLastError) == MethodImportAttributes.SetLastError)
         {
-            dllImportAttribute = dllImportAttribute.AddArgumentListArguments(
-                AttributeArgument(LiteralExpression(SyntaxKind.TrueLiteralExpression))
+            args.Add(AttributeArgument(LiteralExpression(SyntaxKind.TrueLiteralExpression))
                     .WithNameEquals(NameEquals(nameof(DllImportAttribute.SetLastError))));
         }
 
+        dllImportAttribute = dllImportAttribute.WithArgumentList(FixTrivia(AttributeArgumentList().AddArguments(args.ToArray())));
         return dllImportAttribute;
     }
 
@@ -6357,34 +6355,6 @@ public class Generator : IDisposable
             {
                 using var indent = new Indent(this);
                 return base.VisitFixedStatement(node);
-            }
-        }
-
-        public override SyntaxNode? VisitForStatement(ForStatementSyntax node)
-        {
-            node = this.WithIndentingTrivia(node);
-            if (node.Statement is BlockSyntax)
-            {
-                return base.VisitForStatement(node);
-            }
-            else
-            {
-                using var indent = new Indent(this);
-                return base.VisitForStatement(node);
-            }
-        }
-
-        public override SyntaxNode? VisitForEachStatement(ForEachStatementSyntax node)
-        {
-            node = this.WithIndentingTrivia(node);
-            if (node.Statement is BlockSyntax)
-            {
-                return base.VisitForEachStatement(node);
-            }
-            else
-            {
-                using var indent = new Indent(this);
-                return base.VisitForEachStatement(node);
             }
         }
 

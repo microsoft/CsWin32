@@ -147,6 +147,11 @@ public class Generator : IDisposable
         .WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken))
         .AddAttributes(Attribute(IdentifierName("DefaultDllImportSearchPaths")).AddArgumentListArguments(AttributeArgument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(DllImportSearchPath)), IdentifierName(nameof(DllImportSearchPath.System32))))));
 
+    private static readonly AttributeSyntax GeneratedCodeAttribute = Attribute(IdentifierName("global::System.CodeDom.Compiler.GeneratedCode"))
+        .WithArgumentList(FixTrivia(AttributeArgumentList().AddArguments(
+            AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(ThisAssembly.AssemblyName))),
+            AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(ThisAssembly.AssemblyInformationalVersion))))));
+
     private static readonly HashSet<string> ImplicitConversionTypeDefs = new HashSet<string>(StringComparer.Ordinal)
     {
         "PWSTR",
@@ -465,13 +470,36 @@ public class Generator : IDisposable
     {
         get
         {
-            IEnumerable<MemberDeclarationSyntax> result =
-                from entry in this.committedCode.MembersByModule
-                select ClassDeclaration(Identifier(this.options.ClassName))
-                    .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword))
-                    .AddMembers(entry.ToArray())
-                    .WithLeadingTrivia(ParseLeadingTrivia(string.Format(CultureInfo.InvariantCulture, PartialPInvokeContentComment, entry.Key)))
-                    .WithAdditionalAnnotations(new SyntaxAnnotation(SimpleFileNameAnnotation, $"{this.options.ClassName}.{entry.Key}"));
+            IEnumerable<IGrouping<string, MemberDeclarationSyntax>> members = this.committedCode.MembersByModule;
+            IEnumerable<MemberDeclarationSyntax> result = Enumerable.Empty<MemberDeclarationSyntax>();
+            for (int i = 0; i < members.Count(); i++)
+            {
+                IGrouping<string, MemberDeclarationSyntax> entry = members.ElementAt(i);
+                if (i == 0)
+                {
+                    result = result.Concat(new MemberDeclarationSyntax[]
+                    {
+                        ClassDeclaration(Identifier(this.options.ClassName))
+                        .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword))
+                        .AddMembers(entry.ToArray())
+                        .AddAttributeLists(AttributeList().AddAttributes(GeneratedCodeAttribute))
+                        .WithLeadingTrivia(ParseLeadingTrivia(string.Format(CultureInfo.InvariantCulture, PartialPInvokeContentComment, entry.Key)))
+                        .WithAdditionalAnnotations(new SyntaxAnnotation(SimpleFileNameAnnotation, $"{this.options.ClassName}.{entry.Key}")),
+                    });
+                }
+                else
+                {
+                    result = result.Concat(new MemberDeclarationSyntax[]
+                    {
+                        ClassDeclaration(Identifier(this.options.ClassName))
+                        .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword))
+                        .AddMembers(entry.ToArray())
+                        .WithLeadingTrivia(ParseLeadingTrivia(string.Format(CultureInfo.InvariantCulture, PartialPInvokeContentComment, entry.Key)))
+                        .WithAdditionalAnnotations(new SyntaxAnnotation(SimpleFileNameAnnotation, $"{this.options.ClassName}.{entry.Key}")),
+                    });
+                }
+            }
+
             result = result.Concat(this.committedCode.GeneratedTypes);
 
             ClassDeclarationSyntax inlineArrayIndexerExtensionsClass = this.DeclareInlineArrayIndexerExtensionsClass();
@@ -1673,10 +1701,11 @@ public class Generator : IDisposable
                 .AddModifiers(TokenWithSpace(this.Visibility))
                 .WithBaseList(BaseList(SingletonSeparatedList<BaseTypeSyntax>(SimpleBaseType(SafeHandleTypeSyntax))))
                 .AddMembers(members.ToArray())
+                .AddAttributeLists(AttributeList().AddAttributes(GeneratedCodeAttribute))
                 .WithLeadingTrivia(ParseLeadingTrivia($@"
-        /// <summary>
-        /// Represents a Win32 handle that can be closed with <see cref=""{this.options.ClassName}.{renamedReleaseMethod ?? releaseMethod}""/>.
-        /// </summary>
+/// <summary>
+/// Represents a Win32 handle that can be closed with <see cref=""{this.options.ClassName}.{renamedReleaseMethod ?? releaseMethod}""/>.
+/// </summary>
 "));
 
             this.volatileCode.AddSafeHandleType(safeHandleDeclaration);
@@ -2070,33 +2099,32 @@ public class Generator : IDisposable
     private static AttributeSyntax StructLayout(TypeAttributes typeAttributes, TypeLayout layout = default, CharSet charSet = CharSet.Ansi)
     {
         LayoutKind layoutKind = (typeAttributes & TypeAttributes.ExplicitLayout) == TypeAttributes.ExplicitLayout ? LayoutKind.Explicit : LayoutKind.Sequential;
-        AttributeSyntax? structLayoutAttribute = Attribute(IdentifierName("StructLayout")).AddArgumentListArguments(
-            AttributeArgument(MemberAccessExpression(
-                SyntaxKind.SimpleMemberAccessExpression,
-                IdentifierName(nameof(LayoutKind)),
-                IdentifierName(Enum.GetName(typeof(LayoutKind), layoutKind)!))));
+        List<AttributeArgumentSyntax> args = new();
+        AttributeSyntax? structLayoutAttribute = Attribute(IdentifierName("StructLayout"));
+        args.Add(AttributeArgument(MemberAccessExpression(
+                 SyntaxKind.SimpleMemberAccessExpression,
+                 IdentifierName(nameof(LayoutKind)),
+                 IdentifierName(Enum.GetName(typeof(LayoutKind), layoutKind)!))));
 
         if (layout.PackingSize > 0)
         {
-            structLayoutAttribute = structLayoutAttribute.AddArgumentListArguments(
-                AttributeArgument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(layout.PackingSize)))
+            args.Add(AttributeArgument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(layout.PackingSize)))
                     .WithNameEquals(NameEquals(nameof(StructLayoutAttribute.Pack))));
         }
 
         if (layout.Size > 0)
         {
-            structLayoutAttribute = structLayoutAttribute.AddArgumentListArguments(
-                AttributeArgument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(layout.Size)))
+            args.Add(AttributeArgument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(layout.Size)))
                     .WithNameEquals(NameEquals(nameof(StructLayoutAttribute.Size))));
         }
 
         if (charSet != CharSet.Ansi)
         {
-            structLayoutAttribute = structLayoutAttribute.AddArgumentListArguments(
-                AttributeArgument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(CharSet)), IdentifierName(Enum.GetName(typeof(CharSet), charSet)!)))
+            args.Add(AttributeArgument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(CharSet)), IdentifierName(Enum.GetName(typeof(CharSet), charSet)!)))
                 .WithNameEquals(NameEquals(IdentifierName(nameof(StructLayoutAttribute.CharSet)))));
         }
 
+        structLayoutAttribute = structLayoutAttribute.WithArgumentList(FixTrivia(AttributeArgumentList().AddArguments(args.ToArray())));
         return structLayoutAttribute;
     }
 
@@ -2117,25 +2145,24 @@ public class Generator : IDisposable
 
     private static AttributeSyntax DllImport(MethodImport import, string moduleName, string? entrypoint)
     {
-        AttributeSyntax? dllImportAttribute = Attribute(IdentifierName("DllImport"))
-            .WithArgumentList(FixTrivia(AttributeArgumentList().AddArguments(
-                AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(moduleName))),
-                AttributeArgument(LiteralExpression(SyntaxKind.TrueLiteralExpression)).WithNameEquals(NameEquals(nameof(DllImportAttribute.ExactSpelling))))));
+        List<AttributeArgumentSyntax> args = new();
+        AttributeSyntax? dllImportAttribute = Attribute(IdentifierName("DllImport"));
+        args.Add(AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(moduleName))));
+        args.Add(AttributeArgument(LiteralExpression(SyntaxKind.TrueLiteralExpression)).WithNameEquals(NameEquals(nameof(DllImportAttribute.ExactSpelling))));
 
-        if (entrypoint is object)
+        if (entrypoint is not null)
         {
-            dllImportAttribute = dllImportAttribute.AddArgumentListArguments(
-                AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(entrypoint)))
+            args.Add(AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(entrypoint)))
                     .WithNameEquals(NameEquals(nameof(DllImportAttribute.EntryPoint))));
         }
 
         if ((import.Attributes & MethodImportAttributes.SetLastError) == MethodImportAttributes.SetLastError)
         {
-            dllImportAttribute = dllImportAttribute.AddArgumentListArguments(
-                AttributeArgument(LiteralExpression(SyntaxKind.TrueLiteralExpression))
+            args.Add(AttributeArgument(LiteralExpression(SyntaxKind.TrueLiteralExpression))
                     .WithNameEquals(NameEquals(nameof(DllImportAttribute.SetLastError))));
         }
 
+        dllImportAttribute = dllImportAttribute.WithArgumentList(FixTrivia(AttributeArgumentList().AddArguments(args.ToArray())));
         return dllImportAttribute;
     }
 
@@ -2861,6 +2888,15 @@ public class Generator : IDisposable
                 return null;
             }
 
+            // add generated code attribute.
+            if (typeDeclaration is not null)
+            {
+                typeDeclaration = typeDeclaration
+                    .WithLeadingTrivia()
+                    .AddAttributeLists(AttributeList().AddAttributes(GeneratedCodeAttribute))
+                    .WithLeadingTrivia(typeDeclaration.GetLeadingTrivia());
+            }
+
             return typeDeclaration;
         }
         catch (Exception ex)
@@ -3142,14 +3178,16 @@ public class Generator : IDisposable
     {
         return ClassDeclaration(InlineArrayIndexerExtensionsClassName.Identifier)
             .AddMembers(this.committedCode.InlineArrayIndexerExtensions.ToArray())
-            .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)));
+            .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)))
+            .AddAttributeLists(AttributeList().AddAttributes(GeneratedCodeAttribute));
     }
 
     private ClassDeclarationSyntax DeclareComInterfaceFriendlyExtensionsClass()
     {
         return ClassDeclaration(ComInterfaceFriendlyExtensionsClassName.Identifier)
             .AddMembers(this.committedCode.ComInterfaceExtensions.ToArray())
-            .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)));
+            .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)))
+            .AddAttributeLists(AttributeList().AddAttributes(GeneratedCodeAttribute));
     }
 
     /// <summary>
@@ -6151,6 +6189,21 @@ public class Generator : IDisposable
             return result;
         }
 
+        public override SyntaxNode? VisitInterfaceDeclaration(InterfaceDeclarationSyntax node)
+        {
+            node = this.WithIndentingTrivia(node)
+                .WithOpenBraceToken(node.OpenBraceToken.WithLeadingTrivia(TriviaList(this.IndentTrivia)))
+                .WithCloseBraceToken(node.CloseBraceToken.WithLeadingTrivia(TriviaList(this.IndentTrivia)));
+            using var indent = new Indent(this);
+            SyntaxNode? result = base.VisitInterfaceDeclaration(node);
+            if (result is InterfaceDeclarationSyntax c)
+            {
+                result = c.WithMembers(AddSpacingBetweenMembers(c.Members));
+            }
+
+            return result;
+        }
+
         public override SyntaxNode? VisitEnumDeclaration(EnumDeclarationSyntax node)
         {
             node = this.WithIndentingTrivia(node)
@@ -6200,15 +6253,15 @@ public class Generator : IDisposable
         {
             if (node.Parent is ParameterSyntax)
             {
-                return base.VisitAttributeList(node.WithCloseBracketToken(TokenWithSpace(SyntaxKind.CloseBracketToken)));
+                return node.WithCloseBracketToken(TokenWithSpace(SyntaxKind.CloseBracketToken));
             }
             else if (node.Parent is BaseTypeDeclarationSyntax)
             {
-                return base.VisitAttributeList(this.WithOuterIndentingTrivia(node));
+                return this.WithOuterIndentingTrivia(node);
             }
             else
             {
-                return base.VisitAttributeList(this.WithIndentingTrivia(node));
+                return this.WithIndentingTrivia(node);
             }
         }
 
@@ -6331,7 +6384,7 @@ public class Generator : IDisposable
             {
                 if (list[i].GetStructure() is DocumentationCommentTriviaSyntax trivia)
                 {
-                    indent ??= list[i].Token.Parent is BaseTypeDeclarationSyntax ? this.OuterIndentTrivia.ToString() : this.IndentTrivia.ToString();
+                    indent ??= list[i].Token.Parent is BaseTypeDeclarationSyntax or AttributeListSyntax { Parent: BaseTypeDeclarationSyntax } ? this.OuterIndentTrivia.ToString() : this.IndentTrivia.ToString();
                     var comment = new StringBuilder(trivia.Content.ToFullString());
                     comment.Insert(0, indent);
                     comment.Replace("\n", "\n" + indent);
@@ -6368,7 +6421,7 @@ public class Generator : IDisposable
             return members;
         }
 
-        private static TSyntax WithIndentingTrivia<TSyntax>(TSyntax node, SyntaxTrivia indentTrivia)
+        private TSyntax WithIndentingTrivia<TSyntax>(TSyntax node, SyntaxTrivia indentTrivia)
             where TSyntax : SyntaxNode
         {
             if (node is MemberDeclarationSyntax memberDeclaration)
@@ -6378,7 +6431,7 @@ public class Generator : IDisposable
             }
 
             // Take care to preserve xml doc comments, pragmas, etc.
-            return node.WithLeadingTrivia(node.HasLeadingTrivia ? node.GetLeadingTrivia().Add(indentTrivia) : TriviaList(indentTrivia));
+            return node.WithLeadingTrivia(node.HasLeadingTrivia ? this.VisitList(node.GetLeadingTrivia()).Add(indentTrivia) : TriviaList(indentTrivia));
 
             static SyntaxToken GetFirstToken(MemberDeclarationSyntax memberDeclaration)
             {
@@ -6400,13 +6453,13 @@ public class Generator : IDisposable
         private TSyntax WithIndentingTrivia<TSyntax>(TSyntax node)
             where TSyntax : SyntaxNode
         {
-            return WithIndentingTrivia(node, this.IndentTrivia);
+            return this.WithIndentingTrivia(node, this.IndentTrivia);
         }
 
         private TSyntax WithOuterIndentingTrivia<TSyntax>(TSyntax node)
             where TSyntax : SyntaxNode
         {
-            return WithIndentingTrivia(node, this.OuterIndentTrivia);
+            return this.WithIndentingTrivia(node, this.OuterIndentTrivia);
         }
 
         private struct Indent : IDisposable

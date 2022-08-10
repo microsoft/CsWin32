@@ -614,6 +614,44 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     }
 
     [Fact]
+    public void HasGeneratedCodeAttribute()
+    {
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate("IDebugDocumentInfo", CancellationToken.None));
+        Assert.True(this.generator.TryGenerate("HANDLE", CancellationToken.None));
+        Assert.True(this.generator.TryGenerate("INPUT_RECORD", CancellationToken.None));
+        Assert.True(this.generator.TryGenerate("GetTickCount", CancellationToken.None));
+        Assert.True(this.generator.TryGenerate("ACTIVATE_KEYBOARD_LAYOUT_FLAGS", CancellationToken.None));
+        Assert.True(this.generator.TryGenerate("PAINTSTRUCT", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        InterfaceDeclarationSyntax interfaceDecl = Assert.IsType<InterfaceDeclarationSyntax>(this.FindGeneratedType("IDebugDocumentInfo").Single());
+        Assert.Contains(interfaceDecl.AttributeLists, al => al.Attributes.Any(a => a.Name.ToString().Contains("GeneratedCode")));
+
+        StructDeclarationSyntax handle = Assert.IsType<StructDeclarationSyntax>(this.FindGeneratedType("HANDLE").Single());
+        Assert.Contains(handle.AttributeLists, al => al.Attributes.Any(a => a.Name.ToString().Contains("GeneratedCode")));
+
+        StructDeclarationSyntax structDecl = Assert.IsType<StructDeclarationSyntax>(this.FindGeneratedType("INPUT_RECORD").Single());
+        Assert.Contains(structDecl.AttributeLists, al => al.Attributes.Any(a => a.Name.ToString().Contains("GeneratedCode")));
+
+        IEnumerable<ClassDeclarationSyntax> pInvokeClass = this.FindGeneratedType("PInvoke").OfType<ClassDeclarationSyntax>();
+        Assert.Contains(pInvokeClass, c => c.AttributeLists.Any(al => al.Attributes.Any(a => a.Name.ToString().Contains("GeneratedCode"))));
+
+        EnumDeclarationSyntax enumDecl = Assert.IsType<EnumDeclarationSyntax>(this.FindGeneratedType("ACTIVATE_KEYBOARD_LAYOUT_FLAGS").Single());
+        Assert.Contains(enumDecl.AttributeLists, al => al.Attributes.Any(a => a.Name.ToString().Contains("GeneratedCode")));
+
+        ClassDeclarationSyntax arrayExtensions = Assert.IsType<ClassDeclarationSyntax>(this.FindGeneratedType("InlineArrayIndexerExtensions").Single());
+        Assert.Contains(arrayExtensions.AttributeLists, al => al.Attributes.Any(a => a.Name.ToString().Contains("GeneratedCode")));
+
+        ClassDeclarationSyntax overloadsExtensions = Assert.IsType<ClassDeclarationSyntax>(this.FindGeneratedType("FriendlyOverloadExtensions").Single());
+        Assert.Contains(overloadsExtensions.AttributeLists, al => al.Attributes.Any(a => a.Name.ToString().Contains("GeneratedCode")));
+
+        ClassDeclarationSyntax sysFreeStringSafeHandleClass = Assert.IsType<ClassDeclarationSyntax>(this.FindGeneratedType("SysFreeStringSafeHandle").Single());
+        Assert.Contains(overloadsExtensions.AttributeLists, al => al.Attributes.Any(a => a.Name.ToString().Contains("GeneratedCode")));
+    }
+
+    [Fact]
     public void NamespaceHandleGetsNoSafeHandle()
     {
         this.generator = this.CreateGenerator();
@@ -1096,14 +1134,15 @@ namespace Microsoft.Windows.Sdk
     [Fact]
     public void FixedLengthInlineCharArraysWorkInNet35()
     {
-        const string expected = @"		/// <summary>Defines the attributes of a font.</summary>
+        const string expected = $@"		/// <summary>Defines the attributes of a font.</summary>
 		/// <remarks>
 		/// <para>The following situations do not support ClearType antialiasing: </para>
 		/// <para>This doc was truncated.</para>
 		/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#"">Read more on docs.microsoft.com</see>.</para>
 		/// </remarks>
+		[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
 		internal partial struct LOGFONTW
-		{
+		{{
 			/// <summary>
 			/// <para>Type: <b>LONG</b> Specifies the height, in logical units, of the font's character cell or character. The character height value (also known as the em height) is the character cell height value minus the internal-leading value. The font mapper interprets the value specified in <b>lfHeight</b> in the following manner. </para>
 			/// <para>This doc was truncated.</para>
@@ -1168,7 +1207,7 @@ namespace Microsoft.Windows.Sdk
 
 			[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
 			internal partial struct __char_32
-			{
+			{{
 				internal char _0,_1,_2,_3,_4,_5,_6,_7,_8,_9,_10,_11,_12,_13,_14,_15,_16,_17,_18,_19,_20,_21,_22,_23,_24,_25,_26,_27,_28,_29,_30,_31;
 
 				/// <summary>Always <c>32</c>.</summary>
@@ -1181,48 +1220,49 @@ namespace Microsoft.Windows.Sdk
 				/// Thrown when <paramref name=""length""/> is less than <c>0</c> or greater than <see cref=""Length""/>.
 				/// </exception>
 				internal unsafe readonly string ToString(int length)
-				{
+				{{
 					if (length < 0 || length > Length)throw new ArgumentOutOfRangeException(nameof(length), length, ""Length must be between 0 and the fixed array length."");
 					fixed (char* p0 = &_0)
 						return new string(p0, 0, length);
-				}
+				}}
 
 				/// <summary>
 				/// Copies the fixed array to a new string, stopping before the first null terminator character or at the end of the fixed array (whichever is shorter).
 				/// </summary>
 				public override readonly unsafe string ToString()
-				{
+				{{
 					int length;
 					fixed (char* p = &_0)
-					{
+					{{
 						char* pLastExclusive = p + Length;
 						char* pCh = p;
 for(;
 pCh < pLastExclusive && *pCh != '\0';
 pCh++);
 						length= checked((int)(pCh - p));
-					}
+					}}
 					return ToString(length);
-				}
-			}
-		}
+				}}
+			}}
+		}}
 ";
 
-        const string expectedIndexer = @"
+        const string expectedIndexer = $@"
+	[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
 	internal static partial class InlineArrayIndexerExtensions
-	{
+	{{
 		internal static unsafe ref readonly char ReadOnlyItemRef(this in winmdroot.Graphics.Gdi.LOGFONTW.__char_32 @this, int index)
-		{
+		{{
 			fixed (char* p0 = &@this._0)
 				return ref p0[index];
-		}
+		}}
 
 		internal static unsafe ref char ItemRef(this ref winmdroot.Graphics.Gdi.LOGFONTW.__char_32 @this, int index)
-		{
+		{{
 			fixed (char* p0 = &@this._0)
 				return ref p0[index];
-		}
-	}
+		}}
+	}}
 ";
 
         this.compilation = this.starterCompilations["net35"];
@@ -1235,8 +1275,9 @@ pCh++);
     [Fact]
     public void FixedLengthInlineArraysOfferExtensionIndexerWhereNoSpanPossible()
     {
-        const string expected = @"		internal partial struct MainAVIHeader
-		{
+        const string expected = $@"		[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
+		internal partial struct MainAVIHeader
+		{{
 			internal uint dwMicroSecPerFrame;
 			internal uint dwMaxBytesPerSec;
 			internal uint dwPaddingGranularity;
@@ -1250,33 +1291,33 @@ pCh++);
 			internal __uint_4 dwReserved;
 
 			internal partial struct __uint_4
-			{
+			{{
 				internal uint _0,_1,_2,_3;
 
 				/// <summary>Always <c>4</c>.</summary>
 				internal readonly int Length => 4;
 
 				internal unsafe readonly void CopyTo(Span<uint> target, int length = 4)
-				{
+				{{
 					if (length > 4)throw new ArgumentOutOfRangeException(""length"");
 					fixed (uint* p0 = &_0)
 for(int i = 0;
 i < length;
 i++)						target[i]= p0[i];
-				}
+				}}
 
 				internal readonly uint[] ToArray(int length = 4)
-				{
+				{{
 					if (length > 4)throw new ArgumentOutOfRangeException(""length"");
 					uint[] target = new uint[length];
 					CopyTo(target, length);
 					return target;
-				}
+				}}
 
 				internal unsafe readonly bool Equals(ReadOnlySpan<uint> value)
-				{
+				{{
 					fixed (uint* p0 = &_0)
-					{
+					{{
  						int commonLength = Math.Min(value.Length, 4);
 for(int i = 0;
 i < commonLength;
@@ -1284,28 +1325,29 @@ i++)						if (p0[i] != value[i])							return false;
 for(int i = commonLength;
 i < 4;
 i++)						if (p0[i] != default(uint))							return false;
-					}
+					}}
 					return true;
-				}
-			}
-		}
+				}}
+			}}
+		}}
 ";
 
-        const string expectedIndexer = @"
+        const string expectedIndexer = $@"
+	[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
 	internal static partial class InlineArrayIndexerExtensions
-	{
+	{{
 		internal static unsafe ref readonly uint ReadOnlyItemRef(this in winmdroot.Media.DirectShow.MainAVIHeader.__uint_4 @this, int index)
-		{
+		{{
 			fixed (uint* p0 = &@this._0)
 				return ref p0[index];
-		}
+		}}
 
 		internal static unsafe ref uint ItemRef(this ref winmdroot.Media.DirectShow.MainAVIHeader.__uint_4 @this, int index)
-		{
+		{{
 			fixed (uint* p0 = &@this._0)
 				return ref p0[index];
-		}
-	}
+		}}
+	}}
 ";
 
         this.AssertGeneratedType("MainAVIHeader", expected, expectedIndexer);
@@ -1317,8 +1359,9 @@ i++)						if (p0[i] != default(uint))							return false;
     [Fact]
     public void FixedLengthInlineArraysGetSpanWherePossible()
     {
-        const string expected = @"		internal partial struct MainAVIHeader
-		{
+        const string expected = $@"		[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
+		internal partial struct MainAVIHeader
+		{{
 			internal uint dwMicroSecPerFrame;
 			internal uint dwMaxBytesPerSec;
 			internal uint dwPaddingGranularity;
@@ -1332,7 +1375,7 @@ i++)						if (p0[i] != default(uint))							return false;
 			internal __uint_4 dwReserved;
 
 			internal partial struct __uint_4
-			{
+			{{
 				internal uint _0,_1,_2,_3;
 
 				/// <summary>Always <c>4</c>.</summary>
@@ -1353,26 +1396,26 @@ i++)						if (p0[i] != default(uint))							return false;
 				internal Span<uint> AsSpan() => MemoryMarshal.CreateSpan(ref _0, 4);
 
 				internal unsafe readonly void CopyTo(Span<uint> target, int length = 4)
-				{
+				{{
 					if (length > 4)throw new ArgumentOutOfRangeException(""length"");
 					fixed (uint* p0 = &_0)
 for(int i = 0;
 i < length;
 i++)						target[i]= p0[i];
-				}
+				}}
 
 				internal readonly uint[] ToArray(int length = 4)
-				{
+				{{
 					if (length > 4)throw new ArgumentOutOfRangeException(""length"");
 					uint[] target = new uint[length];
 					CopyTo(target, length);
 					return target;
-				}
+				}}
 
 				internal unsafe readonly bool Equals(ReadOnlySpan<uint> value)
-				{
+				{{
 					fixed (uint* p0 = &_0)
-					{
+					{{
  						int commonLength = Math.Min(value.Length, 4);
 for(int i = 0;
 i < commonLength;
@@ -1380,28 +1423,29 @@ i++)						if (p0[i] != value[i])							return false;
 for(int i = commonLength;
 i < 4;
 i++)						if (p0[i] != default(uint))							return false;
-					}
+					}}
 					return true;
-				}
-			}
-		}
+				}}
+			}}
+		}}
 ";
 
-        const string expectedIndexer = @"
+        const string expectedIndexer = $@"
+	[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
 	internal static partial class InlineArrayIndexerExtensions
-	{
+	{{
 		internal static unsafe ref readonly uint ReadOnlyItemRef(this in winmdroot.Media.DirectShow.MainAVIHeader.__uint_4 @this, int index)
-		{
+		{{
 			fixed (uint* p0 = &@this._0)
 				return ref p0[index];
-		}
+		}}
 
 		internal static unsafe ref uint ItemRef(this ref winmdroot.Media.DirectShow.MainAVIHeader.__uint_4 @this, int index)
-		{
+		{{
 			fixed (uint* p0 = &@this._0)
 				return ref p0[index];
-		}
-	}
+		}}
+	}}
 ";
 
         this.compilation = this.starterCompilations["net6.0"];
@@ -1607,7 +1651,7 @@ class Program
                 },
                 GeneratedSources =
                 {
-                    (typeof(SourceGenerator), "Windows.Win32.BOOL.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.BOOL.g.cs", $@"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -1618,7 +1662,7 @@ class Program
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
-{
+{{
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
@@ -1626,11 +1670,12 @@ namespace Windows.Win32
 	using winmdroot = global::Windows.Win32;
 
 	namespace Foundation
-	{
-		[DebuggerDisplay(""{Value}"")]
+	{{
+		[DebuggerDisplay(""{{Value}}"")]
+		[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
 		internal readonly partial struct BOOL
 			: IEquatable<BOOL>
-		{
+		{{
 			internal readonly int Value;
 			internal BOOL(int value) => this.Value = value;
 			public static implicit operator int(BOOL value) => value.Value;
@@ -1646,9 +1691,9 @@ namespace Windows.Win32
 			internal BOOL(bool value) => this.Value = value ? 1 : 0;
 			public static implicit operator bool(BOOL value) => value.Value != 0;
 			public static implicit operator BOOL(bool value) => new BOOL(value);
-		}
-	}
-}
+		}}
+	}}
+}}
 ".Replace("\r\n", "\n")),
                     (typeof(SourceGenerator), "Windows.Win32.CsWin32Stamp.g.cs", CsWin32StampContent),
                 },
@@ -1675,7 +1720,7 @@ namespace Windows.Win32
                 GeneratedSources =
                 {
                     (typeof(SourceGenerator), "Windows.Win32.CsWin32Stamp.g.cs", CsWin32StampContent),
-                    (typeof(SourceGenerator), "Windows.Win32.DISPLAYCONFIG_SCANLINE_ORDERING.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.DISPLAYCONFIG_SCANLINE_ORDERING.g.cs", $@"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -1686,7 +1731,7 @@ namespace Windows.Win32
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
-{
+{{
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
@@ -1694,13 +1739,14 @@ namespace Windows.Win32
 	using winmdroot = global::Windows.Win32;
 
 	namespace Devices.Display
-	{
+	{{
 		/// <summary>The DISPLAYCONFIG_SCANLINE_ORDERING enumeration specifies the method that the display uses to create an image on a screen.</summary>
 		/// <remarks>
 		/// <para><see href=""https://docs.microsoft.com/windows/win32/api//wingdi/ne-wingdi-displayconfig_scanline_ordering"">Learn more about this API from docs.microsoft.com</see>.</para>
 		/// </remarks>
+		[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
 		internal enum DISPLAYCONFIG_SCANLINE_ORDERING
-		{
+		{{
 			/// <summary>Indicates that scan-line ordering of the output is unspecified. The caller can only set the <b>scanLineOrdering</b> member of the <a href=""https://docs.microsoft.com/windows/desktop/api/wingdi/ns-wingdi-displayconfig_path_target_info"">DISPLAYCONFIG_PATH_TARGET_INFO</a> structure in a call to the <a href=""https://docs.microsoft.com/windows/desktop/api/winuser/nf-winuser-setdisplayconfig"">SetDisplayConfig</a> function to DISPLAYCONFIG_SCANLINE_ORDERING_UNSPECIFIED if the caller also set the refresh rate denominator and numerator of the <b>refreshRate</b> member both to zero. In this case, <b>SetDisplayConfig</b> uses the best refresh rate it can find.</summary>
 			DISPLAYCONFIG_SCANLINE_ORDERING_UNSPECIFIED = 0,
 			/// <summary>Indicates that the output is a progressive image.</summary>
@@ -1713,9 +1759,9 @@ namespace Windows.Win32
 			DISPLAYCONFIG_SCANLINE_ORDERING_INTERLACED_LOWERFIELDFIRST = 3,
 			/// <summary>Forces this enumeration to compile to 32 bits in size. Without this value, some compilers would allow this enumeration to compile to a size other than 32 bits. You should not use this value.</summary>
 			DISPLAYCONFIG_SCANLINE_ORDERING_FORCE_UINT32 = -1,
-		}
-	}
-}
+		}}
+	}}
+}}
 ".Replace("\r\n", "\n")),
                 },
             },
@@ -1741,7 +1787,7 @@ namespace Windows.Win32
                 GeneratedSources =
                 {
                     (typeof(SourceGenerator), "Windows.Win32.CsWin32Stamp.g.cs", CsWin32StampContent),
-                    (typeof(SourceGenerator), "Windows.Win32.DISPLAYCONFIG_SCANLINE_ORDERING.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.DISPLAYCONFIG_SCANLINE_ORDERING.g.cs", $@"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -1752,7 +1798,7 @@ namespace Windows.Win32
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
-{
+{{
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
@@ -1760,18 +1806,19 @@ namespace Windows.Win32
 	using winmdroot = global::Windows.Win32;
 
 	namespace Devices.Display
-	{
+	{{
+		[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
 		internal enum DISPLAYCONFIG_SCANLINE_ORDERING
-		{
+		{{
 			DISPLAYCONFIG_SCANLINE_ORDERING_UNSPECIFIED = 0,
 			DISPLAYCONFIG_SCANLINE_ORDERING_PROGRESSIVE = 1,
 			DISPLAYCONFIG_SCANLINE_ORDERING_INTERLACED = 2,
 			DISPLAYCONFIG_SCANLINE_ORDERING_INTERLACED_UPPERFIELDFIRST = 2,
 			DISPLAYCONFIG_SCANLINE_ORDERING_INTERLACED_LOWERFIELDFIRST = 3,
 			DISPLAYCONFIG_SCANLINE_ORDERING_FORCE_UINT32 = -1,
-		}
-	}
-}
+		}}
+	}}
+}}
 ".Replace("\r\n", "\n")),
                 },
             },
@@ -1797,7 +1844,7 @@ namespace Windows.Win32
                 GeneratedSources =
                 {
                     (typeof(SourceGenerator), "Windows.Win32.CsWin32Stamp.g.cs", CsWin32StampContent),
-                    (typeof(SourceGenerator), "Windows.Win32.FILE_ACCESS_FLAGS.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.FILE_ACCESS_FLAGS.g.cs", $@"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -1808,7 +1855,7 @@ namespace Windows.Win32
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
-{
+{{
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
@@ -1816,10 +1863,11 @@ namespace Windows.Win32
 	using winmdroot = global::Windows.Win32;
 
 	namespace Storage.FileSystem
-	{
+	{{
 		[Flags]
+		[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
 		internal enum FILE_ACCESS_FLAGS : uint
-		{
+		{{
 			FILE_READ_DATA = 0x00000001,
 			FILE_LIST_DIRECTORY = 0x00000001,
 			FILE_WRITE_DATA = 0x00000002,
@@ -1846,9 +1894,9 @@ namespace Windows.Win32
 			FILE_GENERIC_READ = 0x00120089,
 			FILE_GENERIC_WRITE = 0x00120116,
 			FILE_GENERIC_EXECUTE = 0x001200A0,
-		}
-	}
-}
+		}}
+	}}
+}}
 ".Replace("\r\n", "\n")),
                 },
             },
@@ -1873,7 +1921,7 @@ namespace Windows.Win32
                 },
                 GeneratedSources =
                 {
-                    (typeof(SourceGenerator), "Windows.Win32.BOOL.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.BOOL.g.cs", $@"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -1884,7 +1932,7 @@ namespace Windows.Win32
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
-{
+{{
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
@@ -1892,11 +1940,12 @@ namespace Windows.Win32
 	using winmdroot = global::Windows.Win32;
 
 	namespace Foundation
-	{
-		[DebuggerDisplay(""{Value}"")]
+	{{
+		[DebuggerDisplay(""{{Value}}"")]
+		[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
 		internal readonly partial struct BOOL
 			: IEquatable<BOOL>
-		{
+		{{
 			internal readonly int Value;
 			internal BOOL(int value) => this.Value = value;
 			public static implicit operator int(BOOL value) => value.Value;
@@ -1912,12 +1961,12 @@ namespace Windows.Win32
 			internal BOOL(bool value) => this.Value = value ? 1 : 0;
 			public static implicit operator bool(BOOL value) => value.Value != 0;
 			public static implicit operator BOOL(bool value) => new BOOL(value);
-		}
-	}
-}
+		}}
+	}}
+}}
 ".Replace("\r\n", "\n")),
                     (typeof(SourceGenerator), "Windows.Win32.CsWin32Stamp.g.cs", CsWin32StampContent),
-                    (typeof(SourceGenerator), "Windows.Win32.Delegates.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.Delegates.g.cs", $@"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -1928,7 +1977,7 @@ namespace Windows.Win32
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
-{
+{{
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
@@ -1936,13 +1985,14 @@ namespace Windows.Win32
 	using winmdroot = global::Windows.Win32;
 
 	namespace UI.WindowsAndMessaging
-	{
+	{{
 		[UnmanagedFunctionPointerAttribute(CallingConvention.Winapi)]
+		[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
 		internal unsafe delegate winmdroot.Foundation.BOOL WNDENUMPROC(winmdroot.Foundation.HWND param0, winmdroot.Foundation.LPARAM param1);
-	}
-}
+	}}
+}}
 ".Replace("\r\n", "\n")),
-                    (typeof(SourceGenerator), "Windows.Win32.HWND.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.HWND.g.cs", $@"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -1953,7 +2003,7 @@ namespace Windows.Win32
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
-{
+{{
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
@@ -1961,11 +2011,12 @@ namespace Windows.Win32
 	using winmdroot = global::Windows.Win32;
 
 	namespace Foundation
-	{
-		[DebuggerDisplay(""{Value}"")]
+	{{
+		[DebuggerDisplay(""{{Value}}"")]
+		[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
 		internal readonly partial struct HWND
 			: IEquatable<HWND>
-		{
+		{{
 			internal readonly IntPtr Value;
 			internal HWND(IntPtr value) => this.Value = value;
 
@@ -1982,11 +2033,11 @@ namespace Windows.Win32
 			public override bool Equals(object obj) => obj is HWND other && this.Equals(other);
 
 			public override int GetHashCode() => this.Value.GetHashCode();
-		}
-	}
-}
+		}}
+	}}
+}}
 ".Replace("\r\n", "\n")),
-                    (typeof(SourceGenerator), "Windows.Win32.LPARAM.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.LPARAM.g.cs", $@"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -1997,7 +2048,7 @@ namespace Windows.Win32
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
-{
+{{
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
@@ -2005,11 +2056,12 @@ namespace Windows.Win32
 	using winmdroot = global::Windows.Win32;
 
 	namespace Foundation
-	{
-		[DebuggerDisplay(""{Value}"")]
+	{{
+		[DebuggerDisplay(""{{Value}}"")]
+		[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
 		internal readonly partial struct LPARAM
 			: IEquatable<LPARAM>
-		{
+		{{
 			internal readonly nint Value;
 			internal LPARAM(nint value) => this.Value = value;
 			public static implicit operator nint(LPARAM value) => value.Value;
@@ -2022,9 +2074,9 @@ namespace Windows.Win32
 			public override bool Equals(object obj) => obj is LPARAM other && this.Equals(other);
 
 			public override int GetHashCode() => this.Value.GetHashCode();
-		}
-	}
-}
+		}}
+	}}
+}}
 ".Replace("\r\n", "\n")),
                 },
             },
@@ -2050,7 +2102,7 @@ namespace Windows.Win32
                 GeneratedSources =
                 {
                     (typeof(SourceGenerator), "Windows.Win32.CsWin32Stamp.g.cs", CsWin32StampContent),
-                    (typeof(SourceGenerator), "Windows.Win32.HDC.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.HDC.g.cs", $@"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -2061,7 +2113,7 @@ namespace Windows.Win32
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
-{
+{{
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
@@ -2069,11 +2121,12 @@ namespace Windows.Win32
 	using winmdroot = global::Windows.Win32;
 
 	namespace Graphics.Gdi
-	{
-		[DebuggerDisplay(""{Value}"")]
+	{{
+		[DebuggerDisplay(""{{Value}}"")]
+		[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
 		internal readonly partial struct HDC
 			: IEquatable<HDC>
-		{
+		{{
 			internal readonly IntPtr Value;
 			internal HDC(IntPtr value) => this.Value = value;
 
@@ -2090,11 +2143,11 @@ namespace Windows.Win32
 			public override bool Equals(object obj) => obj is HDC other && this.Equals(other);
 
 			public override int GetHashCode() => this.Value.GetHashCode();
-		}
-	}
-}
+		}}
+	}}
+}}
 ".Replace("\r\n", "\n")),
-                    (typeof(SourceGenerator), "Windows.Win32.HWND.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.HWND.g.cs", $@"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -2105,7 +2158,7 @@ namespace Windows.Win32
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
-{
+{{
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
@@ -2113,11 +2166,12 @@ namespace Windows.Win32
 	using winmdroot = global::Windows.Win32;
 
 	namespace Foundation
-	{
-		[DebuggerDisplay(""{Value}"")]
+	{{
+		[DebuggerDisplay(""{{Value}}"")]
+		[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
 		internal readonly partial struct HWND
 			: IEquatable<HWND>
-		{
+		{{
 			internal readonly IntPtr Value;
 			internal HWND(IntPtr value) => this.Value = value;
 
@@ -2134,11 +2188,11 @@ namespace Windows.Win32
 			public override bool Equals(object obj) => obj is HWND other && this.Equals(other);
 
 			public override int GetHashCode() => this.Value.GetHashCode();
-		}
-	}
-}
+		}}
+	}}
+}}
 ".Replace("\r\n", "\n")),
-                    (typeof(SourceGenerator), "Windows.Win32.PInvoke.User32.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.PInvoke.User32.g.cs", $@"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -2149,7 +2203,7 @@ namespace Windows.Win32
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
-{
+{{
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
@@ -2160,8 +2214,9 @@ namespace Windows.Win32
 	/// <content>
 	/// Contains extern methods from ""User32.dll"".
 	/// </content>
+	[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
 	internal static partial class PInvoke
-	{
+	{{
 		/// <summary>The ReleaseDC function releases a device context (DC), freeing it for use by other applications. The effect of the ReleaseDC function depends on the type of DC. It frees only common and window DCs. It has no effect on class or private DCs.</summary>
 		/// <param name=""hWnd"">A handle to the window whose DC is to be released.</param>
 		/// <param name=""hDC"">A handle to the DC to be released.</param>
@@ -2174,8 +2229,8 @@ namespace Windows.Win32
 		[DllImport(""User32"", ExactSpelling = true)]
 		[DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
 		internal static extern int ReleaseDC(winmdroot.Foundation.HWND hWnd, winmdroot.Graphics.Gdi.HDC hDC);
-	}
-}
+	}}
+}}
 ".Replace("\r\n", "\n")),
                 },
             },
@@ -2200,7 +2255,7 @@ namespace Windows.Win32
                 },
                 GeneratedSources =
                 {
-                    (typeof(SourceGenerator), "Windows.Win32.BOOL.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.BOOL.g.cs", $@"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -2211,7 +2266,7 @@ namespace Windows.Win32
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
-{
+{{
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
@@ -2219,11 +2274,12 @@ namespace Windows.Win32
 	using winmdroot = global::Windows.Win32;
 
 	namespace Foundation
-	{
-		[DebuggerDisplay(""{Value}"")]
+	{{
+		[DebuggerDisplay(""{{Value}}"")]
+		[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
 		internal readonly partial struct BOOL
 			: IEquatable<BOOL>
-		{
+		{{
 			internal readonly int Value;
 			internal BOOL(int value) => this.Value = value;
 			public static implicit operator int(BOOL value) => value.Value;
@@ -2239,12 +2295,12 @@ namespace Windows.Win32
 			internal BOOL(bool value) => this.Value = value ? 1 : 0;
 			public static implicit operator bool(BOOL value) => value.Value != 0;
 			public static implicit operator BOOL(bool value) => new BOOL(value);
-		}
-	}
-}
+		}}
+	}}
+}}
 ".Replace("\r\n", "\n")),
                     (typeof(SourceGenerator), "Windows.Win32.CsWin32Stamp.g.cs", CsWin32StampContent),
-                    (typeof(SourceGenerator), "Windows.Win32.FILE_ACCESS_FLAGS.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.FILE_ACCESS_FLAGS.g.cs", $@"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -2255,7 +2311,7 @@ namespace Windows.Win32
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
-{
+{{
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
@@ -2263,10 +2319,11 @@ namespace Windows.Win32
 	using winmdroot = global::Windows.Win32;
 
 	namespace Storage.FileSystem
-	{
+	{{
 		[Flags]
+		[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
 		internal enum FILE_ACCESS_FLAGS : uint
-		{
+		{{
 			FILE_READ_DATA = 0x00000001,
 			FILE_LIST_DIRECTORY = 0x00000001,
 			FILE_WRITE_DATA = 0x00000002,
@@ -2293,11 +2350,11 @@ namespace Windows.Win32
 			FILE_GENERIC_READ = 0x00120089,
 			FILE_GENERIC_WRITE = 0x00120116,
 			FILE_GENERIC_EXECUTE = 0x001200A0,
-		}
-	}
-}
+		}}
+	}}
+}}
 ".Replace("\r\n", "\n")),
-                    (typeof(SourceGenerator), "Windows.Win32.FILE_CREATION_DISPOSITION.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.FILE_CREATION_DISPOSITION.g.cs", $@"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -2308,7 +2365,7 @@ namespace Windows.Win32
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
-{
+{{
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
@@ -2316,19 +2373,20 @@ namespace Windows.Win32
 	using winmdroot = global::Windows.Win32;
 
 	namespace Storage.FileSystem
-	{
+	{{
+		[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
 		internal enum FILE_CREATION_DISPOSITION : uint
-		{
+		{{
 			CREATE_NEW = 1U,
 			CREATE_ALWAYS = 2U,
 			OPEN_EXISTING = 3U,
 			OPEN_ALWAYS = 4U,
 			TRUNCATE_EXISTING = 5U,
-		}
-	}
-}
+		}}
+	}}
+}}
 ".Replace("\r\n", "\n")),
-                    (typeof(SourceGenerator), "Windows.Win32.FILE_FLAGS_AND_ATTRIBUTES.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.FILE_FLAGS_AND_ATTRIBUTES.g.cs", $@"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -2339,7 +2397,7 @@ namespace Windows.Win32
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
-{
+{{
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
@@ -2347,10 +2405,11 @@ namespace Windows.Win32
 	using winmdroot = global::Windows.Win32;
 
 	namespace Storage.FileSystem
-	{
+	{{
 		[Flags]
+		[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
 		internal enum FILE_FLAGS_AND_ATTRIBUTES : uint
-		{
+		{{
 			FILE_ATTRIBUTE_READONLY = 0x00000001,
 			FILE_ATTRIBUTE_HIDDEN = 0x00000002,
 			FILE_ATTRIBUTE_SYSTEM = 0x00000004,
@@ -2396,11 +2455,11 @@ namespace Windows.Win32
 			SECURITY_EFFECTIVE_ONLY = 0x00080000,
 			SECURITY_SQOS_PRESENT = 0x00100000,
 			SECURITY_VALID_SQOS_FLAGS = 0x001F0000,
-		}
-	}
-}
+		}}
+	}}
+}}
 ".Replace("\r\n", "\n")),
-                    (typeof(SourceGenerator), "Windows.Win32.FILE_SHARE_MODE.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.FILE_SHARE_MODE.g.cs", $@"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -2411,7 +2470,7 @@ namespace Windows.Win32
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
-{
+{{
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
@@ -2419,19 +2478,20 @@ namespace Windows.Win32
 	using winmdroot = global::Windows.Win32;
 
 	namespace Storage.FileSystem
-	{
+	{{
 		[Flags]
+		[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
 		internal enum FILE_SHARE_MODE : uint
-		{
+		{{
 			FILE_SHARE_NONE = 0x00000000,
 			FILE_SHARE_DELETE = 0x00000004,
 			FILE_SHARE_READ = 0x00000001,
 			FILE_SHARE_WRITE = 0x00000002,
-		}
-	}
-}
+		}}
+	}}
+}}
 ".Replace("\r\n", "\n")),
-                    (typeof(SourceGenerator), "Windows.Win32.HANDLE.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.HANDLE.g.cs", $@"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -2442,7 +2502,7 @@ namespace Windows.Win32
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
-{
+{{
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
@@ -2450,11 +2510,12 @@ namespace Windows.Win32
 	using winmdroot = global::Windows.Win32;
 
 	namespace Foundation
-	{
-		[DebuggerDisplay(""{Value}"")]
+	{{
+		[DebuggerDisplay(""{{Value}}"")]
+		[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
 		internal readonly partial struct HANDLE
 			: IEquatable<HANDLE>
-		{
+		{{
 			internal readonly IntPtr Value;
 			internal HANDLE(IntPtr value) => this.Value = value;
 
@@ -2471,11 +2532,11 @@ namespace Windows.Win32
 			public override bool Equals(object obj) => obj is HANDLE other && this.Equals(other);
 
 			public override int GetHashCode() => this.Value.GetHashCode();
-		}
-	}
-}
+		}}
+	}}
+}}
 ".Replace("\r\n", "\n")),
-                    (typeof(SourceGenerator), "Windows.Win32.PCWSTR.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.PCWSTR.g.cs", $@"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -2486,7 +2547,7 @@ namespace Windows.Win32
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
-{
+{{
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
@@ -2494,14 +2555,14 @@ namespace Windows.Win32
 	using winmdroot = global::Windows.Win32;
 
 	namespace Foundation
-	{
-			/// <summary>
-			/// A pointer to a constant character string.
-			/// </summary>
-		[DebuggerDisplay(""{"" + nameof(DebuggerDisplay) + ""}"")]
+	{{
+		/// <summary>
+		/// A pointer to a constant character string.
+		/// </summary>
+		[DebuggerDisplay(""{{"" + nameof(DebuggerDisplay) + ""}}"")]
 		internal unsafe readonly partial struct PCWSTR
 			: IEquatable<PCWSTR>
-		{
+		{{
 			/// <summary>
 			/// A pointer to the first character in the string. The content should be considered readonly, as it was typed as constant in the SDK.
 			/// </summary>
@@ -2522,17 +2583,17 @@ namespace Windows.Win32
 			/// Gets the number of characters up to the first null character (exclusive).
 			/// </summary>
 			internal int Length
-			{
+			{{
 				get
-				{
+				{{
 					char* p = this.Value;
 					if (p is null)
 						return 0;
 					while (*p != '\0')
 						p++;
 					return checked((int)(p - this.Value));
-				}
-			}
+				}}
+			}}
 
 
 			/// <summary>
@@ -2548,11 +2609,11 @@ namespace Windows.Win32
 			/// Returns a span of the characters in this string.
 			/// </summary>
 			internal ReadOnlySpan<char> AsSpan() => this.Value is null ? default(ReadOnlySpan<char>) : new ReadOnlySpan<char>(this.Value, this.Length);
-		}
-	}
-}
+		}}
+	}}
+}}
 ".Replace("\r\n", "\n")),
-                    (typeof(SourceGenerator), "Windows.Win32.PInvoke.Kernel32.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.PInvoke.Kernel32.g.cs", $@"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -2563,7 +2624,7 @@ namespace Windows.Win32
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
-{
+{{
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
@@ -2574,8 +2635,9 @@ namespace Windows.Win32
 	/// <content>
 	/// Contains extern methods from ""Kernel32.dll"".
 	/// </content>
+	[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
 	internal static partial class PInvoke
-	{
+	{{
 		/// <summary>Closes an open object handle.</summary>
 		/// <param name=""hObject"">A valid handle to an open object.</param>
 		/// <returns>
@@ -2590,31 +2652,31 @@ namespace Windows.Win32
 
 		/// <inheritdoc cref=""CreateFile(winmdroot.Foundation.PCWSTR, winmdroot.Storage.FileSystem.FILE_ACCESS_FLAGS, winmdroot.Storage.FileSystem.FILE_SHARE_MODE, winmdroot.Security.SECURITY_ATTRIBUTES*, winmdroot.Storage.FileSystem.FILE_CREATION_DISPOSITION, winmdroot.Storage.FileSystem.FILE_FLAGS_AND_ATTRIBUTES, winmdroot.Foundation.HANDLE)""/>
 		internal static unsafe Microsoft.Win32.SafeHandles.SafeFileHandle CreateFile(string lpFileName, winmdroot.Storage.FileSystem.FILE_ACCESS_FLAGS dwDesiredAccess, winmdroot.Storage.FileSystem.FILE_SHARE_MODE dwShareMode, winmdroot.Security.SECURITY_ATTRIBUTES? lpSecurityAttributes, winmdroot.Storage.FileSystem.FILE_CREATION_DISPOSITION dwCreationDisposition, winmdroot.Storage.FileSystem.FILE_FLAGS_AND_ATTRIBUTES dwFlagsAndAttributes, SafeHandle hTemplateFile)
-		{
+		{{
 			bool hTemplateFileAddRef = false;
 			try
-			{
+			{{
 				fixed (char* lpFileNameLocal = lpFileName)
-				{
+				{{
 					winmdroot.Security.SECURITY_ATTRIBUTES lpSecurityAttributesLocal = lpSecurityAttributes.HasValue ? lpSecurityAttributes.Value : default(winmdroot.Security.SECURITY_ATTRIBUTES);
 					winmdroot.Foundation.HANDLE hTemplateFileLocal;
 					if (hTemplateFile is object)
-					{
+					{{
 						hTemplateFile.DangerousAddRef(ref hTemplateFileAddRef);
 						hTemplateFileLocal = (winmdroot.Foundation.HANDLE)hTemplateFile.DangerousGetHandle();
-					}
+					}}
 					else
 						hTemplateFileLocal = default(winmdroot.Foundation.HANDLE);
 					winmdroot.Foundation.HANDLE __result = PInvoke.CreateFile(lpFileNameLocal, dwDesiredAccess, dwShareMode, lpSecurityAttributes.HasValue ? &lpSecurityAttributesLocal : null, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFileLocal);
 					return new Microsoft.Win32.SafeHandles.SafeFileHandle(__result, ownsHandle: true);
-				}
-			}
+				}}
+			}}
 			finally
-			{
+			{{
 				if (hTemplateFileAddRef)
 					hTemplateFile.DangerousRelease();
-			}
-		}
+			}}
+		}}
 
 		/// <summary>Creates or opens a file or I/O device. The most commonly used I/O devices are as follows:\_file, file stream, directory, physical disk, volume, console buffer, tape drive, communications resource, mailslot, and pipe.</summary>
 		/// <param name=""lpFileName"">
@@ -2655,10 +2717,10 @@ namespace Windows.Win32
 		[DllImport(""Kernel32"", ExactSpelling = true, EntryPoint = ""CreateFileW"", SetLastError = true)]
 		[DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
 		internal static extern unsafe winmdroot.Foundation.HANDLE CreateFile(winmdroot.Foundation.PCWSTR lpFileName, winmdroot.Storage.FileSystem.FILE_ACCESS_FLAGS dwDesiredAccess, winmdroot.Storage.FileSystem.FILE_SHARE_MODE dwShareMode, [Optional] winmdroot.Security.SECURITY_ATTRIBUTES* lpSecurityAttributes, winmdroot.Storage.FileSystem.FILE_CREATION_DISPOSITION dwCreationDisposition, winmdroot.Storage.FileSystem.FILE_FLAGS_AND_ATTRIBUTES dwFlagsAndAttributes, winmdroot.Foundation.HANDLE hTemplateFile);
-	}
-}
+	}}
+}}
 ".Replace("\r\n", "\n")),
-                    (typeof(SourceGenerator), "Windows.Win32.PWSTR.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.PWSTR.g.cs", $@"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -2669,7 +2731,7 @@ namespace Windows.Win32
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
-{
+{{
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
@@ -2677,11 +2739,12 @@ namespace Windows.Win32
 	using winmdroot = global::Windows.Win32;
 
 	namespace Foundation
-	{
-		[DebuggerDisplay(""{Value}"")]
+	{{
+		[DebuggerDisplay(""{{Value}}"")]
+		[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
 		internal unsafe readonly partial struct PWSTR
 			: IEquatable<PWSTR>
-		{
+		{{
 			internal readonly char* Value;
 			internal PWSTR(char* value) => this.Value = value;
 			public static implicit operator char*(PWSTR value) => value.Value;
@@ -2696,17 +2759,17 @@ namespace Windows.Win32
 			public override int GetHashCode() => checked((int)this.Value);
 
 			internal int Length
-			{
+			{{
 				get
-				{
+				{{
 					char* p = this.Value;
 					if (p is null)
 						return 0;
 					while (*p != '\0')
 						p++;
 					return checked((int)(p - this.Value));
-				}
-			}
+				}}
+			}}
 
 			public override string ToString() => this.Value is null ? null : new string(this.Value);
 
@@ -2714,11 +2777,11 @@ namespace Windows.Win32
 			/// Returns a span of the characters in this string.
 			/// </summary>
 			internal Span<char> AsSpan() => this.Value is null ? default(Span<char>) : new Span<char>(this.Value, this.Length);
-		}
-	}
-}
+		}}
+	}}
+}}
 ".Replace("\r\n", "\n")),
-                    (typeof(SourceGenerator), "Windows.Win32.SECURITY_ATTRIBUTES.g.cs", @"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.SECURITY_ATTRIBUTES.g.cs", $@"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -2729,7 +2792,7 @@ namespace Windows.Win32
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
 namespace Windows.Win32
-{
+{{
 	using global::System;
 	using global::System.Diagnostics;
 	using global::System.Runtime.CompilerServices;
@@ -2737,13 +2800,14 @@ namespace Windows.Win32
 	using winmdroot = global::Windows.Win32;
 
 	namespace Security
-	{
+	{{
 		/// <summary>The SECURITY_ATTRIBUTES structure contains the security descriptor for an object and specifies whether the handle retrieved by specifying this structure is inheritable.</summary>
 		/// <remarks>
 		/// <para><see href=""https://docs.microsoft.com/windows/win32/api//wtypesbase/ns-wtypesbase-security_attributes#"">Read more on docs.microsoft.com</see>.</para>
 		/// </remarks>
+		[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
 		internal partial struct SECURITY_ATTRIBUTES
-		{
+		{{
 			/// <summary>The size, in bytes, of this structure. Set this value to the size of the **SECURITY\_ATTRIBUTES** structure.</summary>
 			internal uint nLength;
 			/// <summary>
@@ -2753,9 +2817,9 @@ namespace Windows.Win32
 			internal unsafe void* lpSecurityDescriptor;
 			/// <summary>A Boolean value that specifies whether the returned handle is inherited when a new process is created. If this member is **TRUE**, the new process inherits the handle.</summary>
 			internal winmdroot.Foundation.BOOL bInheritHandle;
-		}
-	}
-}
+		}}
+	}}
+}}
 ".Replace("\r\n", "\n")),
                 },
             },

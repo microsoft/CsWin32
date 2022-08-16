@@ -58,6 +58,13 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.compilation = null!;
     }
 
+    public enum MarshalingOptions
+    {
+        NoMarshaling,
+        MarshalingWithoutSafeHandles,
+        FullMarshaling,
+    }
+
     public static IEnumerable<object[]> TFMData =>
         new object[][]
         {
@@ -1507,9 +1514,14 @@ i++)						if (p0[i] != default(uint))							return false;
     }
 
     [Theory, PairwiseData]
-    public void FullGeneration(bool allowMarshaling, bool useIntPtrForComOutPtr, [CombinatorialMemberData(nameof(AnyCpuArchitectures))] Platform platform)
+    public void FullGeneration(MarshalingOptions marshaling, bool useIntPtrForComOutPtr, [CombinatorialMemberData(nameof(AnyCpuArchitectures))] Platform platform)
     {
-        var generatorOptions = new GeneratorOptions { AllowMarshaling = allowMarshaling, ComInterop = new() { UseIntPtrForComOutPointers = useIntPtrForComOutPtr } };
+        var generatorOptions = new GeneratorOptions
+        {
+            AllowMarshaling = marshaling >= MarshalingOptions.MarshalingWithoutSafeHandles,
+            UseSafeHandles = marshaling == MarshalingOptions.FullMarshaling,
+            ComInterop = new() { UseIntPtrForComOutPointers = useIntPtrForComOutPtr },
+        };
         this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(platform));
         this.generator = this.CreateGenerator(generatorOptions);
         this.generator.GenerateAll(CancellationToken.None);
@@ -2944,6 +2956,17 @@ namespace Windows.Win32
             string fieldName = metadataReader.GetString(fieldDef.Name);
             Assert.False(Generator.ContainsIllegalCharactersForAPIName(fieldName), fieldName);
         }
+    }
+
+    [Fact]
+    public void AvoidSafeHandles()
+    {
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { UseSafeHandles = false });
+        Assert.True(this.generator.TryGenerate("GetExitCodeThread", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        MethodDeclarationSyntax friendlyOverload = Assert.Single(this.FindGeneratedMethod("GetExitCodeThread"), m => m.ParameterList.Parameters[^1].Modifiers.Any(SyntaxKind.OutKeyword));
+        Assert.Equal("HANDLE", Assert.IsType<QualifiedNameSyntax>(friendlyOverload.ParameterList.Parameters[0].Type).Right.Identifier.ValueText);
     }
 
     [Fact]

@@ -37,6 +37,11 @@
       "type": "boolean",
       "default": true
     },
+    "useSafeHandles": {
+      "description": "A value indicating whether friendly overloads should use safe handles.",
+      "type": "boolean",
+      "default": true
+    },
     "wideCharOnly": {
       "description": "Omit ANSI functions and remove `W` suffix from UTF-16 functions.",
       "type": "boolean",

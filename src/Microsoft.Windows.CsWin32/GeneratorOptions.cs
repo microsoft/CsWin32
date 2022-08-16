@@ -45,6 +45,12 @@ public record GeneratorOptions
     public bool AllowMarshaling { get; init; } = true;
 
     /// <summary>
+    /// Gets a value indicating whether friendly overloads should use safe handles.
+    /// </summary>
+    /// <value>The default value is <see langword="true"/>.</value>
+    public bool UseSafeHandles { get; init; } = true;
+
+    /// <summary>
     /// Throws an exception when this instance is not initialized with a valid set of values.
     /// </summary>
     /// <exception cref="InvalidOperationException">Thrown when some setting is invalid.</exception>

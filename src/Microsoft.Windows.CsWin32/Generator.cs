@@ -3807,7 +3807,7 @@ public class Generator : IDisposable
             this.TryGenerateExternMethod(freeMethodName, out _);
         }
 
-        TypeSyntaxSettings typeSettings = isHandle ? this.fieldOfHandleTypeDefTypeSettings : this.fieldTypeSettings;
+        TypeSyntaxSettings typeSettings = this.fieldOfHandleTypeDefTypeSettings;
 
         FieldDefinition fieldDef = this.Reader.GetFieldDefinition(typeDef.GetFields().Single());
         string fieldName = this.Reader.GetString(fieldDef.Name);

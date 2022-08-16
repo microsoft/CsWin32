@@ -11,7 +11,7 @@ namespace WinRTInteropTest;
 
 internal class Program
 {
-    private const int AddButtonId = 1000;
+    private const nint AddButtonId = 1000;
     private const string WindowClassName = "WinRTInteropWindow";
 
     private static readonly Random Rnd = new();
@@ -103,7 +103,7 @@ internal class Program
                 break;
 
             case WM_COMMAND:
-                int cmdid = (int)(wparam.Value & 0xFFFF);
+                nint cmdid = (nint)(wparam.Value & (nuint)0xFFFF);
                 switch (cmdid)
                 {
                     case AddButtonId:
@@ -138,12 +138,12 @@ internal class Program
                 return DefWindowProc(hwnd, message, wparam, lparam);
         }
 
-        return new LRESULT(0);
+        return new LRESULT((nint)0);
     }
 
     private class NoReleaseSafeHandle : SafeHandle
     {
-        public NoReleaseSafeHandle(int value)
+        public NoReleaseSafeHandle(nint value)
             : base(IntPtr.Zero, true)
         {
             this.SetHandle(new IntPtr(value));

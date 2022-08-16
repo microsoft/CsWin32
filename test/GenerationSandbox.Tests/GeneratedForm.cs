@@ -22,14 +22,14 @@ internal static unsafe class GeneratedForm
         info.Clone(out IEnumDebugPropertyInfo ppepi);
     }
 
-    private static void LPARAM_From_NInt()
+    private static void LPARAM_From_IntPtr()
     {
-        LPARAM p = 1;
+        LPARAM p = (IntPtr)1;
     }
 
-    private static void WPARAM_From_NInt()
+    private static void WPARAM_From_UIntPtr()
     {
-        WPARAM p = 1;
+        WPARAM p = (UIntPtr)1;
     }
 
     private static void FARPROC_InSignatureChangedToIntPtr()

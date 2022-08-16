@@ -587,6 +587,8 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [Theory]
     [InlineData("HANDLE")]
     [InlineData("HGDIOBJ")]
+    [InlineData("HKL")]
+    [InlineData("HWND")]
     public void HandleStructsHaveIsNullProperty(string handleName)
     {
         // A null HGDIOBJ has a specific meaning beyond just the concept of an invalid handle:
@@ -2074,10 +2076,14 @@ namespace Windows.Win32
 		internal readonly partial struct LPARAM
 			: IEquatable<LPARAM>
 		{{
-			internal readonly nint Value;
-			internal LPARAM(nint value) => this.Value = value;
-			public static implicit operator nint(LPARAM value) => value.Value;
-			public static implicit operator LPARAM(nint value) => new LPARAM(value);
+			internal readonly IntPtr Value;
+			internal LPARAM(IntPtr value) => this.Value = value;
+
+			internal static LPARAM Null => default;
+
+			internal bool IsNull => Value == default;
+			public static implicit operator IntPtr(LPARAM value) => value.Value;
+			public static implicit operator LPARAM(IntPtr value) => new LPARAM(value);
 			public static bool operator ==(LPARAM left, LPARAM right) => left.Value == right.Value;
 			public static bool operator !=(LPARAM left, LPARAM right) => !(left == right);
 

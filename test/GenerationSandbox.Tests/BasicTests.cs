@@ -236,7 +236,7 @@ public class BasicTests
                     return true;
                 }
             },
-            (LPARAM)0);
+            (IntPtr)0);
     }
 
     [Fact]

@@ -7,6 +7,7 @@ parameters:
 
 jobs:
 - job: Windows
+  timeoutInMinutes: 120
   pool: ${{ parameters.windowsPool }}
   variables:
     TestFilter: ""
@@ -23,6 +24,7 @@ jobs:
   - template: dotnet.yml
 
 - job: Linux
+  timeoutInMinutes: 120
   pool:
     vmImage: Ubuntu 20.04
   variables:
@@ -37,6 +39,7 @@ jobs:
 
 - job: macOS
   condition: ${{ parameters.includeMacOS }}
+  timeoutInMinutes: 120
   pool:
     vmImage: macOS-10.15
   variables:

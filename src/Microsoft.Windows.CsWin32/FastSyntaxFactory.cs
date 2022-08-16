@@ -79,7 +79,11 @@ internal static class FastSyntaxFactory
 
     internal static BlockSyntax Block(params StatementSyntax[] statements) => SyntaxFactory.Block(OpenBrace, List(statements), CloseBrace);
 
-    internal static ForStatementSyntax ForStatement(VariableDeclarationSyntax? declaration, ExpressionSyntax condition, SeparatedSyntaxList<ExpressionSyntax> incrementors, StatementSyntax statement) => SyntaxFactory.ForStatement(Token(SyntaxKind.ForKeyword), Token(SyntaxKind.OpenParenToken), declaration!, default, Token(SyntaxKind.SemicolonToken), condition, Token(SyntaxKind.SemicolonToken), incrementors, Token(SyntaxKind.CloseParenToken), statement);
+    internal static ForStatementSyntax ForStatement(VariableDeclarationSyntax? declaration, ExpressionSyntax condition, SeparatedSyntaxList<ExpressionSyntax> incrementors, StatementSyntax statement)
+    {
+        SyntaxToken semicolonToken = SyntaxFactory.Token(TriviaList(), SyntaxKind.SemicolonToken, TriviaList(Space));
+        return SyntaxFactory.ForStatement(Token(SyntaxKind.ForKeyword), Token(SyntaxKind.OpenParenToken), declaration!, default, semicolonToken, condition, semicolonToken, incrementors, Token(SyntaxKind.CloseParenToken), statement);
+    }
 
     internal static StatementSyntax EmptyStatement() => SyntaxFactory.EmptyStatement(Token(SyntaxKind.SemicolonToken));
 

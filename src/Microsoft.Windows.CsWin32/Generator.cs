@@ -1509,6 +1509,11 @@ public class Generator : IDisposable
 
     internal TypeSyntax? RequestSafeHandle(string releaseMethod)
     {
+        if (!this.options.UseSafeHandles)
+        {
+            return null;
+        }
+
         try
         {
             if (this.volatileCode.TryGetSafeHandleForReleaseMethod(releaseMethod, out TypeSyntax? safeHandleType))
@@ -4339,7 +4344,7 @@ public class Generator : IDisposable
                             Argument(LiteralExpression(SyntaxKind.TrueLiteralExpression)).WithNameColon(NameColon(IdentifierName("ownsHandle")))))));
                 }
             }
-            else if (isIn && !isOut && !isReleaseMethod && parameterTypeInfo is HandleTypeHandleInfo parameterHandleTypeInfo && this.TryGetHandleReleaseMethod(parameterHandleTypeInfo.Handle, out string? releaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, releaseMethod))
+            else if (this.options.UseSafeHandles && isIn && !isOut && !isReleaseMethod && parameterTypeInfo is HandleTypeHandleInfo parameterHandleTypeInfo && this.TryGetHandleReleaseMethod(parameterHandleTypeInfo.Handle, out string? releaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, releaseMethod))
             {
                 IdentifierNameSyntax typeDefHandleName = IdentifierName(externParam.Identifier.ValueText + "Local");
                 signatureChanged = true;

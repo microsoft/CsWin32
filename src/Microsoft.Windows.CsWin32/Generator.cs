@@ -3903,9 +3903,51 @@ public class Generator : IDisposable
             structModifiers = structModifiers.Add(TokenWithSpace(SyntaxKind.UnsafeKeyword));
         }
 
+        List<BaseTypeSyntax> interfaces = new List<BaseTypeSyntax>
+        {
+            SimpleBaseType(GenericName(nameof(IEquatable<int>), TypeArgumentList().WithGreaterThanToken(TokenWithLineFeed(SyntaxKind.GreaterThanToken))).AddTypeArgumentListArguments(name)),
+        };
+        if (isHandle && freeMethodName is not null)
+        {
+            // public void Dispose() => ReleaseMethod((struct)this.handle);
+            MethodDefinitionHandle? releaseMethodHandle = this.GetMethodByName(freeMethodName);
+            if (!releaseMethodHandle.HasValue)
+            {
+                throw new GenerationFailedException("Unable to find release method named: " + freeMethodName);
+            }
+
+            MethodDefinition releaseMethodDef = this.Reader.GetMethodDefinition(releaseMethodHandle.Value);
+            MethodSignature<TypeHandleInfo> releaseMethodSignature = releaseMethodDef.DecodeSignature(SignatureHandleProvider.Instance, null);
+            TypeHandleInfo releaseMethodParameterTypeHandleInfo = releaseMethodSignature.ParameterTypes[0];
+            TypeSyntaxAndMarshaling releaseMethodParameterType = releaseMethodParameterTypeHandleInfo.ToTypeSyntax(this.externSignatureTypeSettings, default);
+
+            // If the release method takes more than one parameter, we can't generate a dispose for it.
+            if (releaseMethodSignature.RequiredParameterCount == 1)
+            {
+                // (struct)this.value or (struct)(nuint)(nint)this.value, as appropriate.
+                MemberAccessExpressionSyntax thisHandle = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Value"));
+                bool isUIntPtr = this.TryGetTypeDefFieldType(releaseMethodParameterTypeHandleInfo, out TypeHandleInfo? typeDefStructFieldType) && typeDefStructFieldType is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.UIntPtr };
+                ArgumentSyntax releaseHandleArgument = Argument(CastExpression(
+                    releaseMethodParameterType.Type,
+                    isUIntPtr ? CastExpression(IdentifierName("nuint"), CastExpression(IdentifierName("nint"), thisHandle)) : thisHandle));
+                ExpressionSyntax releaseInvocation = InvocationExpression(
+                    MemberAccessExpression(
+                        SyntaxKind.SimpleMemberAccessExpression,
+                        IdentifierName(this.options.ClassName),
+                        IdentifierName(freeMethodName)),
+                    ArgumentList().AddArguments(releaseHandleArgument));
+
+                members = members.Add(MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.VoidKeyword)), Identifier(nameof(IDisposable.Dispose)))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword))
+                .WithExpressionBody(ArrowExpressionClause(releaseInvocation))
+                .WithSemicolonToken(SemicolonWithLineFeed));
+                interfaces.Add(SimpleBaseType(IdentifierName(nameof(IDisposable))));
+            }
+        }
+
         structModifiers = structModifiers.Add(TokenWithSpace(SyntaxKind.ReadOnlyKeyword)).Add(TokenWithSpace(SyntaxKind.PartialKeyword));
         StructDeclarationSyntax result = StructDeclaration(name.Identifier)
-            .WithBaseList(BaseList(SingletonSeparatedList<BaseTypeSyntax>(SimpleBaseType(GenericName(nameof(IEquatable<int>), TypeArgumentList().WithGreaterThanToken(TokenWithLineFeed(SyntaxKind.GreaterThanToken))).AddTypeArgumentListArguments(name)))).WithColonToken(TokenWithSpace(SyntaxKind.ColonToken)))
+            .WithBaseList(BaseList(SeparatedList(interfaces)).WithColonToken(TokenWithSpace(SyntaxKind.ColonToken)))
             .WithMembers(members)
             .WithModifiers(structModifiers)
             .AddAttributeLists(AttributeList().WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken)).AddAttributes(DebuggerDisplay("{" + fieldName + "}")));

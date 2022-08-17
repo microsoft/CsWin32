@@ -5021,16 +5021,18 @@ public class Generator : IDisposable
                             VariableDeclaration(PointerType(elementType)).AddVariables(
                                 VariableDeclarator(Identifier("p0")).WithInitializer(EqualsValueClause(
                                     PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName("_0"))))),
+                            Block().AddStatements(
                             // for (int i = 0; i < length; i++)
                             ForStatement(
                                 VariableDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))).AddVariables(VariableDeclarator(Identifier("i")).WithInitializer(EqualsValueClause(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))))),
                                 BinaryExpression(SyntaxKind.LessThanExpression, IdentifierName("i"), lengthParameterName),
                                 SingletonSeparatedList<ExpressionSyntax>(PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, IdentifierName("i"))),
+                                Block().AddStatements(
                                 // target[i] = p0[i];
                                 ExpressionStatement(AssignmentExpression(
                                     SyntaxKind.SimpleAssignmentExpression,
                                     ElementAccessExpression(targetParameterName).AddArgumentListArguments(Argument(IdentifierName("i"))),
-                                    ElementAccessExpression(IdentifierName("p0")).AddArgumentListArguments(Argument(IdentifierName("i"))))))))));
+                                    ElementAccessExpression(IdentifierName("p0")).AddArgumentListArguments(Argument(IdentifierName("i"))))))))))));
 
             // internal readonly T[] ToArray(int length = 4)
             fixedLengthStruct = fixedLengthStruct.AddMembers(
@@ -5078,27 +5080,31 @@ public class Generator : IDisposable
                                     VariableDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))).AddVariables(VariableDeclarator(Identifier("i")).WithInitializer(EqualsValueClause(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))))),
                                     BinaryExpression(SyntaxKind.LessThanExpression, IdentifierName("i"), commonLengthLocal),
                                     SingletonSeparatedList<ExpressionSyntax>(PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, IdentifierName("i"))),
+                                    Block().AddStatements(
                                     // if (p0[i] != value[i])
                                     IfStatement(
                                         BinaryExpression(
                                             SyntaxKind.NotEqualsExpression,
                                             ElementAccessExpression(IdentifierName("p0")).AddArgumentListArguments(Argument(IdentifierName("i"))),
                                             ElementAccessExpression(valueParameterName).AddArgumentListArguments(Argument(IdentifierName("i")))),
+                                        Block().AddStatements(
                                         // return false;
-                                        ReturnStatement(LiteralExpression(SyntaxKind.FalseLiteralExpression)))),
+                                        ReturnStatement(LiteralExpression(SyntaxKind.FalseLiteralExpression)))))),
                                 // for (int i = commonLength; i < 4; i++)
                                 ForStatement(
                                     VariableDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))).AddVariables(VariableDeclarator(Identifier("i")).WithInitializer(EqualsValueClause(commonLengthLocal))),
                                     BinaryExpression(SyntaxKind.LessThanExpression, IdentifierName("i"), lengthLiteralSyntax),
                                     SingletonSeparatedList<ExpressionSyntax>(PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, IdentifierName("i"))),
+                                    Block().AddStatements(
                                     // if (p0[i] != default)
                                     IfStatement(
                                         BinaryExpression(
                                             SyntaxKind.NotEqualsExpression,
                                             ElementAccessExpression(IdentifierName("p0")).AddArgumentListArguments(Argument(IdentifierName("i"))),
                                             DefaultExpression(elementType)),
+                                        Block().AddStatements(
                                         // return false;
-                                        ReturnStatement(LiteralExpression(SyntaxKind.FalseLiteralExpression)))))),
+                                        ReturnStatement(LiteralExpression(SyntaxKind.FalseLiteralExpression)))))))),
                         ReturnStatement(LiteralExpression(SyntaxKind.TrueLiteralExpression)))));
         }
 
@@ -5299,10 +5305,11 @@ public class Generator : IDisposable
                                 VariableDeclarator(i.Identifier).WithInitializer(EqualsValueClause(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))))),
                             BinaryExpression(SyntaxKind.LessThanExpression, i, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParam, IdentifierName(nameof(ReadOnlySpan<char>.Length)))),
                             SingletonSeparatedList<ExpressionSyntax>(PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, i)),
+                            Block().AddStatements(
                             ExpressionStatement(AssignmentExpression(
                                 SyntaxKind.SimpleAssignmentExpression,
                                 PrefixUnaryExpression(SyntaxKind.PointerIndirectionExpression, PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, p)),
-                                ElementAccessExpression(valueParam).AddArgumentListArguments(Argument(i))))),
+                                ElementAccessExpression(valueParam).AddArgumentListArguments(Argument(i)))))),
                 };
             }
 
@@ -6360,6 +6367,20 @@ public class Generator : IDisposable
             {
                 using var indent = new Indent(this);
                 return base.VisitFixedStatement(node);
+            }
+        }
+
+        public override SyntaxNode? VisitForStatement(ForStatementSyntax node)
+        {
+            node = this.WithIndentingTrivia(node);
+            if (node.Statement is BlockSyntax)
+            {
+                return base.VisitForStatement(node);
+            }
+            else
+            {
+                using var indent = new Indent(this);
+                return base.VisitForStatement(node);
             }
         }
 

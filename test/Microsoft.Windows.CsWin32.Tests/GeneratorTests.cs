@@ -1243,9 +1243,7 @@ namespace Microsoft.Windows.Sdk
 					{{
 						char* pLastExclusive = p + Length;
 						char* pCh = p;
-for(;
-pCh < pLastExclusive && *pCh != '\0';
-pCh++);
+						for(; pCh < pLastExclusive && *pCh != '\0'; pCh++);
 						length= checked((int)(pCh - p));
 					}}
 					return ToString(length);
@@ -1308,9 +1306,12 @@ pCh++);
 				{{
 					if (length > 4)throw new ArgumentOutOfRangeException(""length"");
 					fixed (uint* p0 = &_0)
-for(int i = 0;
-i < length;
-i++)						target[i]= p0[i];
+					{{
+						for(int i = 0; i < length; i++)
+						{{
+							target[i]= p0[i];
+						}}
+					}}
 				}}
 
 				internal readonly uint[] ToArray(int length = 4)
@@ -1326,12 +1327,20 @@ i++)						target[i]= p0[i];
 					fixed (uint* p0 = &_0)
 					{{
  						int commonLength = Math.Min(value.Length, 4);
-for(int i = 0;
-i < commonLength;
-i++)						if (p0[i] != value[i])							return false;
-for(int i = commonLength;
-i < 4;
-i++)						if (p0[i] != default(uint))							return false;
+						for(int i = 0; i < commonLength; i++)
+						{{
+							if (p0[i] != value[i])
+							{{
+								return false;
+							}}
+						}}
+						for(int i = commonLength; i < 4; i++)
+						{{
+							if (p0[i] != default(uint))
+							{{
+								return false;
+							}}
+						}}
 					}}
 					return true;
 				}}
@@ -1406,9 +1415,12 @@ i++)						if (p0[i] != default(uint))							return false;
 				{{
 					if (length > 4)throw new ArgumentOutOfRangeException(""length"");
 					fixed (uint* p0 = &_0)
-for(int i = 0;
-i < length;
-i++)						target[i]= p0[i];
+					{{
+						for(int i = 0; i < length; i++)
+						{{
+							target[i]= p0[i];
+						}}
+					}}
 				}}
 
 				internal readonly uint[] ToArray(int length = 4)
@@ -1424,12 +1436,20 @@ i++)						target[i]= p0[i];
 					fixed (uint* p0 = &_0)
 					{{
  						int commonLength = Math.Min(value.Length, 4);
-for(int i = 0;
-i < commonLength;
-i++)						if (p0[i] != value[i])							return false;
-for(int i = commonLength;
-i < 4;
-i++)						if (p0[i] != default(uint))							return false;
+						for(int i = 0; i < commonLength; i++)
+						{{
+							if (p0[i] != value[i])
+							{{
+								return false;
+							}}
+						}}
+						for(int i = commonLength; i < 4; i++)
+						{{
+							if (p0[i] != default(uint))
+							{{
+								return false;
+							}}
+						}}
 					}}
 					return true;
 				}}

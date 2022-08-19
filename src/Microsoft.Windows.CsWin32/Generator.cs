@@ -27,6 +27,7 @@ public class Generator : IDisposable
     internal const string InteropDecorationNamespace = "Windows.Win32.Interop";
     internal const string NativeArrayInfoAttribute = "NativeArrayInfoAttribute";
     internal const string RAIIFreeAttribute = "RAIIFreeAttribute";
+    internal const string DoNotReleaseAttribute = "DoNotReleaseAttribute";
     internal const string GlobalNamespacePrefix = "global::";
     internal const string GlobalWinmdRootNamespaceAlias = "winmdroot";
     internal const string WinRTCustomMarshalerClass = "WinRTCustomMarshaler";
@@ -1870,14 +1871,17 @@ public class Generator : IDisposable
         return null;
     }
 
-    internal CustomAttribute? FindInteropDecorativeAttribute(CustomAttributeHandleCollection customAttributeHandles, string attributeName)
+    internal CustomAttribute? FindInteropDecorativeAttribute(CustomAttributeHandleCollection? customAttributeHandles, string attributeName)
     {
-        foreach (CustomAttributeHandle handle in customAttributeHandles)
+        if (customAttributeHandles is not null)
         {
-            CustomAttribute att = this.Reader.GetCustomAttribute(handle);
-            if (this.IsAttribute(att, InteropDecorationNamespace, attributeName))
+            foreach (CustomAttributeHandle handle in customAttributeHandles)
             {
-                return att;
+                CustomAttribute att = this.Reader.GetCustomAttribute(handle);
+                if (this.IsAttribute(att, InteropDecorationNamespace, attributeName))
+                {
+                    return att;
+                }
             }
         }
 
@@ -4263,6 +4267,7 @@ public class Generator : IDisposable
         static ParameterSyntax StripAttributes(ParameterSyntax parameter) => parameter.WithAttributeLists(List<AttributeListSyntax>());
         static ExpressionSyntax GetSpanLength(ExpressionSyntax span) => MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, span, IdentifierName(nameof(Span<int>.Length)));
         bool isReleaseMethod = this.MetadataIndex.ReleaseMethods.Contains(externMethodDeclaration.Identifier.ValueText);
+        bool doNotRelease = this.FindInteropDecorativeAttribute(this.GetReturnTypeCustomAttributes(methodDefinition), DoNotReleaseAttribute) is not null;
 
         TypeSyntaxSettings parameterTypeSyntaxSettings = overloadOf switch
         {
@@ -4341,7 +4346,7 @@ public class Generator : IDisposable
                         origName,
                         ObjectCreationExpression(safeHandleType).AddArgumentListArguments(
                             Argument(typeDefHandleName),
-                            Argument(LiteralExpression(SyntaxKind.TrueLiteralExpression)).WithNameColon(NameColon(IdentifierName("ownsHandle")))))));
+                            Argument(LiteralExpression(doNotRelease ? SyntaxKind.FalseLiteralExpression : SyntaxKind.TrueLiteralExpression)).WithNameColon(NameColon(IdentifierName("ownsHandle")))))));
                 }
             }
             else if (this.options.UseSafeHandles && isIn && !isOut && !isReleaseMethod && parameterTypeInfo is HandleTypeHandleInfo parameterHandleTypeInfo && this.TryGetHandleReleaseMethod(parameterHandleTypeInfo.Handle, out string? releaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, releaseMethod))
@@ -4733,7 +4738,7 @@ public class Generator : IDisposable
                 //// return new SafeHandle(result, ownsHandle: true);
                 body = body.AddStatements(ReturnStatement(ObjectCreationExpression(returnSafeHandleType).AddArgumentListArguments(
                     Argument(resultLocal),
-                    Argument(LiteralExpression(SyntaxKind.TrueLiteralExpression)).WithNameColon(NameColon(IdentifierName("ownsHandle"))))));
+                    Argument(LiteralExpression(doNotRelease ? SyntaxKind.FalseLiteralExpression : SyntaxKind.TrueLiteralExpression)).WithNameColon(NameColon(IdentifierName("ownsHandle"))))));
             }
             else if (hasVoidReturn)
             {

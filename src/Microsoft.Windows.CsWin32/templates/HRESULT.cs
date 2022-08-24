@@ -61,7 +61,9 @@ partial struct HRESULT
         return this;
     }
 
-    public override string ToString() => this.Value.ToString();
+	internal static HRESULT HRESULT_FROM_WIN32(WIN32_ERROR error) => new(((int)error & 0x0000FFFF) | unchecked((int)0x80070000));
 
-    internal string ToString(string format, IFormatProvider formatProvider) => ((uint)this.Value).ToString(format, formatProvider);
+	public override string ToString() => $"0x{this.Value:X8}";
+
+	internal string ToString(string format, IFormatProvider formatProvider) => ((uint)this.Value).ToString(format, formatProvider);
 }

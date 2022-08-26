@@ -3726,6 +3726,7 @@ public class Generator : IDisposable
         {
             case "RECT":
             case "SIZE":
+            case "SYSTEMTIME":
                 members.AddRange(this.ExtractMembersFromTemplate(name.Identifier.ValueText));
                 break;
             default:
@@ -6315,6 +6316,28 @@ public class Generator : IDisposable
 
         public override SyntaxNode? VisitExpressionStatement(ExpressionStatementSyntax node) => base.VisitExpressionStatement(this.WithIndentingTrivia(node));
 
+        public override SyntaxNode? VisitInitializerExpression(InitializerExpressionSyntax node)
+        {
+            node = node
+                .WithOpenBraceToken(Token(TriviaList(this.IndentTrivia), SyntaxKind.OpenBraceToken, TriviaList(LineFeed)))
+                .WithCloseBraceToken(Token(TriviaList(this.IndentTrivia), SyntaxKind.CloseBraceToken, TriviaList(LineFeed)))
+                .WithTrailingTrivia(TriviaList());
+            using var indent = new Indent(this);
+            return base.VisitInitializerExpression(node);
+        }
+
+        public override SyntaxNode? VisitAssignmentExpression(AssignmentExpressionSyntax node)
+        {
+            if (node.Parent is InitializerExpressionSyntax)
+            {
+                return base.VisitAssignmentExpression(this.WithIndentingTrivia(node));
+            }
+            else
+            {
+                return base.VisitAssignmentExpression(node);
+            }
+        }
+
         public override SyntaxNode? VisitTryStatement(TryStatementSyntax node) => base.VisitTryStatement(this.WithIndentingTrivia(node));
 
         public override SyntaxNode? VisitFinallyClause(FinallyClauseSyntax node) => base.VisitFinallyClause(this.WithIndentingTrivia(node));
@@ -6389,7 +6412,10 @@ public class Generator : IDisposable
             }
         }
 
-        public override SyntaxNode? VisitReturnStatement(ReturnStatementSyntax node) => base.VisitReturnStatement(node.WithLeadingTrivia(this.IndentTrivia));
+        public override SyntaxNode? VisitReturnStatement(ReturnStatementSyntax node)
+        {
+            return base.VisitReturnStatement(this.WithIndentingTrivia(node));
+        }
 
         public override SyntaxToken VisitToken(SyntaxToken token)
         {

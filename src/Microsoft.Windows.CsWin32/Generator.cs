@@ -1740,7 +1740,7 @@ public class Generator : IDisposable
         }
     }
 
-    internal bool TryGetTypeDefFieldType(TypeHandleInfo typeDef, [NotNullWhen(true)] out TypeHandleInfo? fieldType)
+    internal bool TryGetTypeDefFieldType(TypeHandleInfo? typeDef, [NotNullWhen(true)] out TypeHandleInfo? fieldType)
     {
         if (typeDef is HandleTypeHandleInfo handle)
         {
@@ -3816,6 +3816,11 @@ public class Generator : IDisposable
             || this.Reader.StringComparer.Equals(typeDef.Name, "HWND");
     }
 
+    private bool IsSafeHandleCompatibleTypeDef(TypeHandleInfo? typeDef)
+    {
+        return this.TryGetTypeDefFieldType(typeDef, out TypeHandleInfo? fieldType) && this.IsSafeHandleCompatibleTypeDefFieldType(fieldType);
+    }
+
     private bool IsSafeHandleCompatibleTypeDefFieldType(TypeHandleInfo? fieldType)
     {
         return fieldType is PointerTypeHandleInfo
@@ -4382,7 +4387,8 @@ public class Generator : IDisposable
                             Argument(LiteralExpression(doNotRelease ? SyntaxKind.FalseLiteralExpression : SyntaxKind.TrueLiteralExpression)).WithNameColon(NameColon(IdentifierName("ownsHandle")))))));
                 }
             }
-            else if (this.options.UseSafeHandles && isIn && !isOut && !isReleaseMethod && parameterTypeInfo is HandleTypeHandleInfo parameterHandleTypeInfo && this.TryGetHandleReleaseMethod(parameterHandleTypeInfo.Handle, out string? releaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, releaseMethod))
+            else if (this.options.UseSafeHandles && isIn && !isOut && !isReleaseMethod && parameterTypeInfo is HandleTypeHandleInfo parameterHandleTypeInfo && this.TryGetHandleReleaseMethod(parameterHandleTypeInfo.Handle, out string? releaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, releaseMethod)
+                && !(this.TryGetTypeDefFieldType(parameterHandleTypeInfo, out TypeHandleInfo? fieldType) && !this.IsSafeHandleCompatibleTypeDefFieldType(fieldType)))
             {
                 IdentifierNameSyntax typeDefHandleName = IdentifierName(externParam.Identifier.ValueText + "Local");
                 signatureChanged = true;

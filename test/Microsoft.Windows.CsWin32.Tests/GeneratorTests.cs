@@ -325,6 +325,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             "CIDLData_CreateFromIDArray", // Method with out parameter of a possibly marshaled interop type shared with the BCL,
             "ID3D12Resource", // COM interface with base types
             "OpenTrace", // the CloseTrace method called by the SafeHandle returns WIN32_ERROR. The handle is ALWAYS 64-bits.
+            "QueryTraceProcessingHandle", // uses a handle that is always 64-bits, even in 32-bit processes
             "ID2D1RectangleGeometry")] // COM interface with base types
         string api,
         bool allowMarshaling)

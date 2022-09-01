@@ -51,7 +51,7 @@ internal static unsafe class GeneratedForm
     private static void PreserveSigBasedOnMetadata()
     {
         IDirectorySearch ds = null!;
-        HRESULT hr = ds.GetNextRow(0);
+        HRESULT hr = ds.GetNextRow(default(ADS_SEARCH_HANDLE));
     }
 
     private static unsafe void OverlappedAPIs()

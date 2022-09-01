@@ -25,9 +25,10 @@ parameters:
   displayName: Build on macOS
   type: boolean
   default: false # macOS is often bogged down in Azure Pipelines
-
-variables:
-  NugetSecurityAnalysisWarningLevel: none # nuget.config requires signed packages by trusted owners
+- name: RunTests
+  displayName: Run tests
+  type: boolean
+  default: true
 
 stages:
 
@@ -37,40 +38,35 @@ stages:
     DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
     BuildConfiguration: Release
     BuildPlatform: Any CPU
-    push_to_ci: true
-    ci_feed: https://pkgs.dev.azure.com/microsoft/_packaging/MSFTNuget/nuget/v3/index.json
-    NUGET_PACKAGES: $(Agent.TempDirectory)/.nuget/packages
+    NUGET_PACKAGES: $(Agent.TempDirectory)/.nuget/packages/
     SignSelection: ${{ parameters.SignSelection }}
 
   jobs:
   - template: build.yml
     parameters:
       includeMacOS: ${{ parameters.includeMacOS }}
+      RunTests: ${{ parameters.RunTests }}
 
 - stage: azure_public_winsdk_feed
   displayName: azure-public/winsdk feed
   condition: and(succeeded(), eq(dependencies.Build.outputs['Windows.SetPipelineVariables.IsSigned'], 'true'))
   jobs:
-  - deployment: push
+  - job: push
     pool:
       vmImage: ubuntu-latest
-    environment: No-Approval
-    strategy:
-      runOnce:
-        deploy:
-          steps:
-          - download: current
-            artifact: deployables-Windows
-            displayName: Download deployables-Windows artifact
-          - task: NuGetToolInstaller@1
-            displayName: Use NuGet 5.x
-            inputs:
-              versionSpec: 5.x
-          - task: 333b11bd-d341-40d9-afcf-b32d5ce6f23b@2 # NuGetCommand
-            displayName: NuGet push
-            inputs:
-              command: push
-              packagesToPush: $(Pipeline.Workspace)/deployables-Windows/*.nupkg
-              nuGetFeedType: external
-              publishFeedCredentials: azure-public/winsdk
-            continueOnError: true # until "skip on conflict" is offered as a task input.
+    steps:
+    - checkout: none
+    - download: current
+      artifact: deployables-Windows
+      displayName: Download deployables-Windows artifact
+    - task: UseDotNet@2
+      displayName: Install .NET SDK
+      inputs:
+        packageType: sdk
+        version: 6.x
+    - task: NuGetAuthenticate@0
+      displayName: Authenticate NuGet feeds
+      inputs:
+        nuGetServiceConnections: azure-public/winsdk
+        forceReinstallCredentialProvider: true
+    - script: dotnet nuget push $(Pipeline.Workspace)/deployables-Windows/*.nupkg -s https://pkgs.dev.azure.com/azure-public/winsdk/_packaging/CI/nuget/v3/index.json --api-key azdo --skip-duplicate

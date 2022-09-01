@@ -399,7 +399,9 @@ internal static class FastSyntaxFactory
 
     internal static SyntaxTrivia Trivia(StructuredTriviaSyntax node) => SyntaxFactory.Trivia(node);
 
-    internal static CheckedExpressionSyntax CheckedExpression(SyntaxKind kind, ExpressionSyntax expression) => SyntaxFactory.CheckedExpression(kind, Token(SyntaxKind.CheckedKeyword), Token(SyntaxKind.OpenParenToken), expression, Token(SyntaxKind.CloseParenToken));
+    internal static CheckedExpressionSyntax CheckedExpression(ExpressionSyntax expression) => SyntaxFactory.CheckedExpression(SyntaxKind.CheckedExpression, Token(SyntaxKind.CheckedKeyword), Token(SyntaxKind.OpenParenToken), expression, Token(SyntaxKind.CloseParenToken));
+
+    internal static CheckedExpressionSyntax UncheckedExpression(ExpressionSyntax expression) => SyntaxFactory.CheckedExpression(SyntaxKind.CheckedExpression, Token(SyntaxKind.UncheckedKeyword), Token(SyntaxKind.OpenParenToken), expression, Token(SyntaxKind.CloseParenToken));
 
     internal static FixedStatementSyntax FixedStatement(VariableDeclarationSyntax declaration, StatementSyntax statement) => SyntaxFactory.FixedStatement(TokenWithSpace(SyntaxKind.FixedKeyword), Token(SyntaxKind.OpenParenToken), declaration, TokenWithLineFeed(SyntaxKind.CloseParenToken), statement);
 

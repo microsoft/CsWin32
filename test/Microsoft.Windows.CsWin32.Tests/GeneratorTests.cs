@@ -1404,6 +1404,7 @@ namespace Microsoft.Windows.Sdk
 				/// Gets a ref to an individual element of the inline array.
 				/// ⚠ Important ⚠: When this struct is on the stack, do not let the returned reference outlive the stack frame that defines it.
 				/// </summary>
+				[UnscopedRef]
 				internal ref uint this[int index] => ref AsSpan()[index];
 
 				/// <summary>
@@ -1412,6 +1413,7 @@ namespace Microsoft.Windows.Sdk
 				/// <remarks>
 				/// ⚠ Important ⚠: When this struct is on the stack, do not let the returned span outlive the stack frame that defines it.
 				/// </remarks>
+				[UnscopedRef]
 				internal Span<uint> AsSpan() => MemoryMarshal.CreateSpan(ref _0, 4);
 
 				internal unsafe readonly void CopyTo(Span<uint> target, int length = 4)
@@ -1696,14 +1698,14 @@ class Program
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace Foundation
 	{{
 		[DebuggerDisplay(""{{Value}}"")]
@@ -1765,14 +1767,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace Devices.Display
 	{{
 		/// <summary>The DISPLAYCONFIG_SCANLINE_ORDERING enumeration specifies the method that the display uses to create an image on a screen.</summary>
@@ -1832,14 +1834,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace Devices.Display
 	{{
 		[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
@@ -1889,14 +1891,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace Storage.FileSystem
 	{{
 		[Flags]
@@ -1969,14 +1971,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace Foundation
 	{{
 		[DebuggerDisplay(""{{Value}}"")]
@@ -2014,14 +2016,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace UI.WindowsAndMessaging
 	{{
 		[UnmanagedFunctionPointerAttribute(CallingConvention.Winapi)]
@@ -2040,14 +2042,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace Foundation
 	{{
 		[DebuggerDisplay(""{{Value}}"")]
@@ -2085,14 +2087,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace Foundation
 	{{
 		[DebuggerDisplay(""{{Value}}"")]
@@ -2150,14 +2152,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace Graphics.Gdi
 	{{
 		[DebuggerDisplay(""{{Value}}"")]
@@ -2195,14 +2197,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace Foundation
 	{{
 		[DebuggerDisplay(""{{Value}}"")]
@@ -2240,14 +2242,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 
 	/// <content>
 	/// Contains extern methods from ""USER32.dll"".
@@ -2303,14 +2305,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace Foundation
 	{{
 		[DebuggerDisplay(""{{Value}}"")]
@@ -2348,14 +2350,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace Storage.FileSystem
 	{{
 		[Flags]
@@ -2405,14 +2407,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace Storage.FileSystem
 	{{
 		[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
@@ -2437,14 +2439,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace Storage.FileSystem
 	{{
 		[Flags]
@@ -2510,14 +2512,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace Storage.FileSystem
 	{{
 		[Flags]
@@ -2542,14 +2544,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace Foundation
 	{{
 		[DebuggerDisplay(""{{Value}}"")]
@@ -2587,14 +2589,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace Foundation
 	{{
 		/// <summary>
@@ -2664,14 +2666,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 
 	/// <content>
 	/// Contains extern methods from ""KERNEL32.dll"".
@@ -2771,14 +2773,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace Foundation
 	{{
 		[DebuggerDisplay(""{{Value}}"")]
@@ -2832,14 +2834,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace Security
 	{{
 		/// <summary>The SECURITY_ATTRIBUTES structure contains the security descriptor for an object and specifies whether the handle retrieved by specifying this structure is inheritable.</summary>

@@ -90,7 +90,6 @@ Multiple files perhaps makes the most sense in a Shared Project scenario where s
 Several aspects of the generated code can be customized, including:
 
 * The name of the class(es) that declare p/invoke methods
-* The namespace that declares all interop types
 * Whether to emit interop types as `public` or `internal`
 * Whether to emit ANSI functions as well where Wide character functions also exist
 * Set `PreserveSig` for COM interfaces or individual members

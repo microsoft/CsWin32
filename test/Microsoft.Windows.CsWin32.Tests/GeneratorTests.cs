@@ -206,20 +206,20 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
 
-        StructDeclarationSyntax? pcstrType = (StructDeclarationSyntax?)this.FindGeneratedType("PCSTR").Single();
+        StructDeclarationSyntax pcstrType = (StructDeclarationSyntax)this.FindGeneratedType("PCSTR").Single();
         SyntaxKind expectedVisibility = generatePublic ? SyntaxKind.PublicKeyword : SyntaxKind.InternalKeyword;
 
         // Assert fields
-        Assert.Contains(pcstrType?.Members.OfType<FieldDeclarationSyntax>(), f => f.Declaration.Variables.Any(v => v.Identifier.ValueText == "Value") && f.Modifiers.Any(expectedVisibility));
+        Assert.Contains(pcstrType.Members.OfType<FieldDeclarationSyntax>(), f => f.Declaration.Variables.Any(v => v.Identifier.ValueText == "Value") && f.Modifiers.Any(expectedVisibility));
 
         // Assert properties
-        Assert.Contains(pcstrType?.Members.OfType<PropertyDeclarationSyntax>(), p => p.Identifier.ValueText == "Length" && p.Modifiers.Any(expectedVisibility));
+        Assert.Contains(pcstrType.Members.OfType<PropertyDeclarationSyntax>(), p => p.Identifier.ValueText == "Length" && p.Modifiers.Any(expectedVisibility));
 
         // Assert constructors
-        Assert.All(pcstrType?.Members.OfType<ConstructorDeclarationSyntax>(), c => c.Modifiers.Any(expectedVisibility));
+        Assert.All(pcstrType.Members.OfType<ConstructorDeclarationSyntax>(), c => c.Modifiers.Any(expectedVisibility));
 
         // Assert that private members remain private.
-        Assert.Contains(pcstrType?.Members.OfType<PropertyDeclarationSyntax>(), p => p.Identifier.ValueText == "DebuggerDisplay" && p.Modifiers.Any(SyntaxKind.PrivateKeyword));
+        Assert.Contains(pcstrType.Members.OfType<PropertyDeclarationSyntax>(), p => p.Identifier.ValueText == "DebuggerDisplay" && p.Modifiers.Any(SyntaxKind.PrivateKeyword));
     }
 
     [Fact]
@@ -523,8 +523,8 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         AttributeSyntax marshalAsAttr = Assert.Single(FindAttribute(lastParam.AttributeLists, "MarshalAs"));
 
         Assert.True(marshalAsAttr.ArgumentList?.Arguments[0].ToString() == "UnmanagedType.CustomMarshaler");
-        Assert.Single(marshalAsAttr.ArgumentList?.Arguments.Where(arg => arg.ToString() == $"MarshalCookie = \"{WinRTClassName}\""));
-        Assert.Single(marshalAsAttr.ArgumentList?.Arguments.Where(arg => arg.ToString() == $"MarshalType = \"{WinRTCustomMarshalerFullName}\""));
+        Assert.Single(marshalAsAttr.ArgumentList.Arguments.Where(arg => arg.ToString() == $"MarshalCookie = \"{WinRTClassName}\""));
+        Assert.Single(marshalAsAttr.ArgumentList.Arguments.Where(arg => arg.ToString() == $"MarshalType = \"{WinRTCustomMarshalerFullName}\""));
 
         // Make sure the WinRT marshaler was brought in
         Assert.Single(this.FindGeneratedType(WinRTCustomMarshalerClass));

@@ -206,20 +206,20 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
 
-        StructDeclarationSyntax? pcstrType = (StructDeclarationSyntax?)this.FindGeneratedType("PCSTR").Single();
+        StructDeclarationSyntax pcstrType = (StructDeclarationSyntax)this.FindGeneratedType("PCSTR").Single();
         SyntaxKind expectedVisibility = generatePublic ? SyntaxKind.PublicKeyword : SyntaxKind.InternalKeyword;
 
         // Assert fields
-        Assert.Contains(pcstrType?.Members.OfType<FieldDeclarationSyntax>(), f => f.Declaration.Variables.Any(v => v.Identifier.ValueText == "Value") && f.Modifiers.Any(expectedVisibility));
+        Assert.Contains(pcstrType.Members.OfType<FieldDeclarationSyntax>(), f => f.Declaration.Variables.Any(v => v.Identifier.ValueText == "Value") && f.Modifiers.Any(expectedVisibility));
 
         // Assert properties
-        Assert.Contains(pcstrType?.Members.OfType<PropertyDeclarationSyntax>(), p => p.Identifier.ValueText == "Length" && p.Modifiers.Any(expectedVisibility));
+        Assert.Contains(pcstrType.Members.OfType<PropertyDeclarationSyntax>(), p => p.Identifier.ValueText == "Length" && p.Modifiers.Any(expectedVisibility));
 
         // Assert constructors
-        Assert.All(pcstrType?.Members.OfType<ConstructorDeclarationSyntax>(), c => c.Modifiers.Any(expectedVisibility));
+        Assert.All(pcstrType.Members.OfType<ConstructorDeclarationSyntax>(), c => c.Modifiers.Any(expectedVisibility));
 
         // Assert that private members remain private.
-        Assert.Contains(pcstrType?.Members.OfType<PropertyDeclarationSyntax>(), p => p.Identifier.ValueText == "DebuggerDisplay" && p.Modifiers.Any(SyntaxKind.PrivateKeyword));
+        Assert.Contains(pcstrType.Members.OfType<PropertyDeclarationSyntax>(), p => p.Identifier.ValueText == "DebuggerDisplay" && p.Modifiers.Any(SyntaxKind.PrivateKeyword));
     }
 
     [Fact]
@@ -324,6 +324,8 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             "X509_CERT", // A constant defined as PCSTR
             "CIDLData_CreateFromIDArray", // Method with out parameter of a possibly marshaled interop type shared with the BCL,
             "ID3D12Resource", // COM interface with base types
+            "OpenTrace", // the CloseTrace method called by the SafeHandle returns WIN32_ERROR. The handle is ALWAYS 64-bits.
+            "QueryTraceProcessingHandle", // uses a handle that is always 64-bits, even in 32-bit processes
             "ID2D1RectangleGeometry")] // COM interface with base types
         string api,
         bool allowMarshaling)
@@ -521,8 +523,8 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         AttributeSyntax marshalAsAttr = Assert.Single(FindAttribute(lastParam.AttributeLists, "MarshalAs"));
 
         Assert.True(marshalAsAttr.ArgumentList?.Arguments[0].ToString() == "UnmanagedType.CustomMarshaler");
-        Assert.Single(marshalAsAttr.ArgumentList?.Arguments.Where(arg => arg.ToString() == $"MarshalCookie = \"{WinRTClassName}\""));
-        Assert.Single(marshalAsAttr.ArgumentList?.Arguments.Where(arg => arg.ToString() == $"MarshalType = \"{WinRTCustomMarshalerFullName}\""));
+        Assert.Single(marshalAsAttr.ArgumentList.Arguments.Where(arg => arg.ToString() == $"MarshalCookie = \"{WinRTClassName}\""));
+        Assert.Single(marshalAsAttr.ArgumentList.Arguments.Where(arg => arg.ToString() == $"MarshalType = \"{WinRTCustomMarshalerFullName}\""));
 
         // Make sure the WinRT marshaler was brought in
         Assert.Single(this.FindGeneratedType(WinRTCustomMarshalerClass));
@@ -614,6 +616,24 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
         Assert.Single(this.FindGeneratedMethod(macro));
+    }
+
+    [Theory]
+    [InlineData("BOOL")]
+    [InlineData("BOOLEAN")]
+    [InlineData("HRESULT")]
+    [InlineData("NTSTATUS")]
+    [InlineData("PCSTR")]
+    [InlineData("PCWSTR")]
+    [InlineData("RECT")]
+    [InlineData("SIZE")]
+    [InlineData("SYSTEMTIME")]
+    public void TemplateAPIsGenerate(string handleType)
+    {
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate(handleType, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
     }
 
     [Theory]
@@ -1152,7 +1172,8 @@ namespace Microsoft.Windows.Sdk
     [Fact]
     public void FixedLengthInlineCharArraysWorkInNet35()
     {
-        const string expected = $@"		/// <summary>Defines the attributes of a font.</summary>
+        const string expected = $@"
+		/// <summary>Defines the attributes of a font.</summary>
 		/// <remarks>
 		/// <para>The following situations do not support ClearType antialiasing: </para>
 		/// <para>This doc was truncated.</para>
@@ -1187,7 +1208,7 @@ namespace Microsoft.Windows.Sdk
 			/// <para>This doc was truncated.</para>
 			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>
 			/// </summary>
-			internal int lfWeight;
+			internal winmdroot.Graphics.Gdi.FONT_WEIGHT lfWeight;
 			/// <summary>
 			/// <para>Type: <b>BYTE</b> <b>TRUE</b> to specify an italic font.</para>
 			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>
@@ -1208,15 +1229,15 @@ namespace Microsoft.Windows.Sdk
 			/// <para>This doc was truncated.</para>
 			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>
 			/// </summary>
-			internal byte lfCharSet;
+			internal winmdroot.Graphics.Gdi.FONT_CHARSET lfCharSet;
 			/// <summary>Type: <b>BYTE</b></summary>
-			internal byte lfOutPrecision;
+			internal winmdroot.Graphics.Gdi.FONT_OUTPUT_PRECISION lfOutPrecision;
 			/// <summary>Type: <b>BYTE</b></summary>
-			internal byte lfClipPrecision;
+			internal winmdroot.Graphics.Gdi.FONT_CLIP_PRECISION lfClipPrecision;
 			/// <summary>Type: <b>BYTE</b></summary>
-			internal byte lfQuality;
+			internal winmdroot.Graphics.Gdi.FONT_QUALITY lfQuality;
 			/// <summary>Type: <b>BYTE</b></summary>
-			internal byte lfPitchAndFamily;
+			internal winmdroot.Graphics.Gdi.FONT_PITCH_AND_FAMILY lfPitchAndFamily;
 			/// <summary>
 			/// <para>Type: <b>TCHAR[LF_FACESIZE]</b> Specifies a null-terminated string that specifies the typeface name of the font. The length of this string must not exceed 32 characters, including the terminating null character. The <a href=""https://docs.microsoft.com/windows/desktop/api/wingdi/nf-wingdi-enumfontfamiliesa"">EnumFontFamilies</a> function can be used to enumerate the typeface names of all currently available fonts. If <b>lfFaceName</b> is an empty string, GDI uses the first font that matches the other specified attributes.</para>
 			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>
@@ -1254,9 +1275,7 @@ namespace Microsoft.Windows.Sdk
 					{{
 						char* pLastExclusive = p + Length;
 						char* pCh = p;
-for(;
-pCh < pLastExclusive && *pCh != '\0';
-pCh++);
+						for(; pCh < pLastExclusive && *pCh != '\0'; pCh++);
 						length= checked((int)(pCh - p));
 					}}
 					return ToString(length);
@@ -1319,9 +1338,12 @@ pCh++);
 				{{
 					if (length > 4)throw new ArgumentOutOfRangeException(""length"");
 					fixed (uint* p0 = &_0)
-for(int i = 0;
-i < length;
-i++)						target[i]= p0[i];
+					{{
+						for(int i = 0; i < length; i++)
+						{{
+							target[i]= p0[i];
+						}}
+					}}
 				}}
 
 				internal readonly uint[] ToArray(int length = 4)
@@ -1337,12 +1359,20 @@ i++)						target[i]= p0[i];
 					fixed (uint* p0 = &_0)
 					{{
  						int commonLength = Math.Min(value.Length, 4);
-for(int i = 0;
-i < commonLength;
-i++)						if (p0[i] != value[i])							return false;
-for(int i = commonLength;
-i < 4;
-i++)						if (p0[i] != default(uint))							return false;
+						for(int i = 0; i < commonLength; i++)
+						{{
+							if (p0[i] != value[i])
+							{{
+								return false;
+							}}
+						}}
+						for(int i = commonLength; i < 4; i++)
+						{{
+							if (p0[i] != default(uint))
+							{{
+								return false;
+							}}
+						}}
 					}}
 					return true;
 				}}
@@ -1403,6 +1433,7 @@ i++)						if (p0[i] != default(uint))							return false;
 				/// Gets a ref to an individual element of the inline array.
 				/// ⚠ Important ⚠: When this struct is on the stack, do not let the returned reference outlive the stack frame that defines it.
 				/// </summary>
+				[UnscopedRef]
 				internal ref uint this[int index] => ref AsSpan()[index];
 
 				/// <summary>
@@ -1411,15 +1442,19 @@ i++)						if (p0[i] != default(uint))							return false;
 				/// <remarks>
 				/// ⚠ Important ⚠: When this struct is on the stack, do not let the returned span outlive the stack frame that defines it.
 				/// </remarks>
+				[UnscopedRef]
 				internal Span<uint> AsSpan() => MemoryMarshal.CreateSpan(ref _0, 4);
 
 				internal unsafe readonly void CopyTo(Span<uint> target, int length = 4)
 				{{
 					if (length > 4)throw new ArgumentOutOfRangeException(""length"");
 					fixed (uint* p0 = &_0)
-for(int i = 0;
-i < length;
-i++)						target[i]= p0[i];
+					{{
+						for(int i = 0; i < length; i++)
+						{{
+							target[i]= p0[i];
+						}}
+					}}
 				}}
 
 				internal readonly uint[] ToArray(int length = 4)
@@ -1435,12 +1470,20 @@ i++)						target[i]= p0[i];
 					fixed (uint* p0 = &_0)
 					{{
  						int commonLength = Math.Min(value.Length, 4);
-for(int i = 0;
-i < commonLength;
-i++)						if (p0[i] != value[i])							return false;
-for(int i = commonLength;
-i < 4;
-i++)						if (p0[i] != default(uint))							return false;
+						for(int i = 0; i < commonLength; i++)
+						{{
+							if (p0[i] != value[i])
+							{{
+								return false;
+							}}
+						}}
+						for(int i = commonLength; i < 4; i++)
+						{{
+							if (p0[i] != default(uint))
+							{{
+								return false;
+							}}
+						}}
 					}}
 					return true;
 				}}
@@ -1684,14 +1727,14 @@ class Program
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace Foundation
 	{{
 		[DebuggerDisplay(""{{Value}}"")]
@@ -1753,14 +1796,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace Devices.Display
 	{{
 		/// <summary>The DISPLAYCONFIG_SCANLINE_ORDERING enumeration specifies the method that the display uses to create an image on a screen.</summary>
@@ -1820,14 +1863,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace Devices.Display
 	{{
 		[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
@@ -1877,14 +1920,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace Storage.FileSystem
 	{{
 		[Flags]
@@ -1905,7 +1948,10 @@ namespace Windows.Win32
 			FILE_DELETE_CHILD = 0x00000040,
 			FILE_READ_ATTRIBUTES = 0x00000080,
 			FILE_WRITE_ATTRIBUTES = 0x00000100,
+			DELETE = 0x00010000,
 			READ_CONTROL = 0x00020000,
+			WRITE_DAC = 0x00040000,
+			WRITE_OWNER = 0x00080000,
 			SYNCHRONIZE = 0x00100000,
 			STANDARD_RIGHTS_REQUIRED = 0x000F0000,
 			STANDARD_RIGHTS_READ = 0x00020000,
@@ -1954,14 +2000,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace Foundation
 	{{
 		[DebuggerDisplay(""{{Value}}"")]
@@ -1999,14 +2045,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace UI.WindowsAndMessaging
 	{{
 		[UnmanagedFunctionPointerAttribute(CallingConvention.Winapi)]
@@ -2025,14 +2071,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace Foundation
 	{{
 		[DebuggerDisplay(""{{Value}}"")]
@@ -2070,14 +2116,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace Foundation
 	{{
 		[DebuggerDisplay(""{{Value}}"")]
@@ -2135,14 +2181,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace Graphics.Gdi
 	{{
 		[DebuggerDisplay(""{{Value}}"")]
@@ -2180,14 +2226,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace Foundation
 	{{
 		[DebuggerDisplay(""{{Value}}"")]
@@ -2215,7 +2261,7 @@ namespace Windows.Win32
 	}}
 }}
 ".Replace("\r\n", "\n")),
-                    (typeof(SourceGenerator), "Windows.Win32.PInvoke.User32.g.cs", $@"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.PInvoke.USER32.dll.g.cs", $@"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -2225,17 +2271,17 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 
 	/// <content>
-	/// Contains extern methods from ""User32.dll"".
+	/// Contains extern methods from ""USER32.dll"".
 	/// </content>
 	[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
 	internal static partial class PInvoke
@@ -2249,7 +2295,7 @@ namespace Windows.Win32
 		/// <remarks>
 		/// <para><see href=""https://docs.microsoft.com/windows/win32/api//winuser/nf-winuser-releasedc"">Learn more about this API from docs.microsoft.com</see>.</para>
 		/// </remarks>
-		[DllImport(""User32"", ExactSpelling = true)]
+		[DllImport(""USER32.dll"", ExactSpelling = true)]
 		[DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
 		internal static extern int ReleaseDC(winmdroot.Foundation.HWND hWnd, winmdroot.Graphics.Gdi.HDC hDC);
 	}}
@@ -2288,14 +2334,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace Foundation
 	{{
 		[DebuggerDisplay(""{{Value}}"")]
@@ -2333,14 +2379,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace Storage.FileSystem
 	{{
 		[Flags]
@@ -2361,7 +2407,10 @@ namespace Windows.Win32
 			FILE_DELETE_CHILD = 0x00000040,
 			FILE_READ_ATTRIBUTES = 0x00000080,
 			FILE_WRITE_ATTRIBUTES = 0x00000100,
+			DELETE = 0x00010000,
 			READ_CONTROL = 0x00020000,
+			WRITE_DAC = 0x00040000,
+			WRITE_OWNER = 0x00080000,
 			SYNCHRONIZE = 0x00100000,
 			STANDARD_RIGHTS_REQUIRED = 0x000F0000,
 			STANDARD_RIGHTS_READ = 0x00020000,
@@ -2387,14 +2436,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace Storage.FileSystem
 	{{
 		[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
@@ -2419,14 +2468,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace Storage.FileSystem
 	{{
 		[Flags]
@@ -2492,14 +2541,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace Storage.FileSystem
 	{{
 		[Flags]
@@ -2524,14 +2573,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace Foundation
 	{{
 		[DebuggerDisplay(""{{Value}}"")]
@@ -2569,14 +2618,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace Foundation
 	{{
 		/// <summary>
@@ -2636,7 +2685,7 @@ namespace Windows.Win32
 	}}
 }}
 ".Replace("\r\n", "\n")),
-                    (typeof(SourceGenerator), "Windows.Win32.PInvoke.Kernel32.g.cs", $@"// ------------------------------------------------------------------------------
+                    (typeof(SourceGenerator), "Windows.Win32.PInvoke.KERNEL32.dll.g.cs", $@"// ------------------------------------------------------------------------------
 // <auto-generated>
 //     This code was generated by a tool.
 //
@@ -2646,17 +2695,17 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 
 	/// <content>
-	/// Contains extern methods from ""Kernel32.dll"".
+	/// Contains extern methods from ""KERNEL32.dll"".
 	/// </content>
 	[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
 	internal static partial class PInvoke
@@ -2669,7 +2718,7 @@ namespace Windows.Win32
 		/// <remarks>
 		/// <para><see href=""https://docs.microsoft.com/windows/win32/api//handleapi/nf-handleapi-closehandle"">Learn more about this API from docs.microsoft.com</see>.</para>
 		/// </remarks>
-		[DllImport(""Kernel32"", ExactSpelling = true, SetLastError = true)]
+		[DllImport(""KERNEL32.dll"", ExactSpelling = true, SetLastError = true)]
 		[DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
 		internal static extern winmdroot.Foundation.BOOL CloseHandle(winmdroot.Foundation.HANDLE hObject);
 
@@ -2737,7 +2786,7 @@ namespace Windows.Win32
 		/// <remarks>
 		/// <para><see href=""https://docs.microsoft.com/windows/win32/api//fileapi/nf-fileapi-createfilew"">Learn more about this API from docs.microsoft.com</see>.</para>
 		/// </remarks>
-		[DllImport(""Kernel32"", ExactSpelling = true, EntryPoint = ""CreateFileW"", SetLastError = true)]
+		[DllImport(""KERNEL32.dll"", ExactSpelling = true, EntryPoint = ""CreateFileW"", SetLastError = true)]
 		[DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
 		internal static extern unsafe winmdroot.Foundation.HANDLE CreateFile(winmdroot.Foundation.PCWSTR lpFileName, winmdroot.Storage.FileSystem.FILE_ACCESS_FLAGS dwDesiredAccess, winmdroot.Storage.FileSystem.FILE_SHARE_MODE dwShareMode, [Optional] winmdroot.Security.SECURITY_ATTRIBUTES* lpSecurityAttributes, winmdroot.Storage.FileSystem.FILE_CREATION_DISPOSITION dwCreationDisposition, winmdroot.Storage.FileSystem.FILE_FLAGS_AND_ATTRIBUTES dwFlagsAndAttributes, winmdroot.Foundation.HANDLE hTemplateFile);
 	}}
@@ -2753,14 +2802,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace Foundation
 	{{
 		[DebuggerDisplay(""{{Value}}"")]
@@ -2779,7 +2828,7 @@ namespace Windows.Win32
 
 			public override bool Equals(object obj) => obj is PWSTR other && this.Equals(other);
 
-			public override int GetHashCode() => checked((int)this.Value);
+			public override int GetHashCode() => unchecked((int)this.Value);
 
 			internal int Length
 			{{
@@ -2814,14 +2863,14 @@ namespace Windows.Win32
 // ------------------------------------------------------------------------------
 
 #pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using winmdroot = global::Windows.Win32;
 namespace Windows.Win32
 {{
-	using global::System;
-	using global::System.Diagnostics;
-	using global::System.Runtime.CompilerServices;
-	using global::System.Runtime.InteropServices;
-	using winmdroot = global::Windows.Win32;
-
 	namespace Security
 	{{
 		/// <summary>The SECURITY_ATTRIBUTES structure contains the security descriptor for an object and specifies whether the handle retrieved by specifying this structure is inheritable.</summary>

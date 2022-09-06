@@ -27,6 +27,7 @@ public class Generator : IDisposable
     internal const string InteropDecorationNamespace = "Windows.Win32.Interop";
     internal const string NativeArrayInfoAttribute = "NativeArrayInfoAttribute";
     internal const string RAIIFreeAttribute = "RAIIFreeAttribute";
+    internal const string DoNotReleaseAttribute = "DoNotReleaseAttribute";
     internal const string GlobalNamespacePrefix = "global::";
     internal const string GlobalWinmdRootNamespaceAlias = "winmdroot";
     internal const string WinRTCustomMarshalerClass = "WinRTCustomMarshaler";
@@ -96,7 +97,7 @@ public class Generator : IDisposable
 
     private static readonly string PartialPInvokeContentComment = @"
 /// <content>
-/// Contains extern methods from ""{0}.dll"".
+/// Contains extern methods from ""{0}"".
 /// </content>
 ".Replace("\r\n", "\n");
 
@@ -146,10 +147,12 @@ public class Generator : IDisposable
     private static readonly IdentifierNameSyntax ComInterfaceFriendlyExtensionsClassName = IdentifierName("FriendlyOverloadExtensions");
     private static readonly TypeSyntax SafeHandleTypeSyntax = IdentifierName("SafeHandle");
     private static readonly IdentifierNameSyntax IntPtrTypeSyntax = IdentifierName(nameof(IntPtr));
+    private static readonly IdentifierNameSyntax UIntPtrTypeSyntax = IdentifierName(nameof(UIntPtr));
     private static readonly AttributeSyntax ComImportAttribute = Attribute(IdentifierName("ComImport"));
     private static readonly AttributeSyntax PreserveSigAttribute = Attribute(IdentifierName("PreserveSig"));
     private static readonly AttributeSyntax ObsoleteAttribute = Attribute(IdentifierName("Obsolete")).WithArgumentList(null);
     private static readonly AttributeSyntax SupportedOSPlatformAttribute = Attribute(IdentifierName("SupportedOSPlatform"));
+    private static readonly AttributeSyntax UnscopedRefAttribute = Attribute(ParseName("UnscopedRef")).WithArgumentList(null);
     private static readonly AttributeListSyntax DefaultDllImportSearchPathsAttributeList = AttributeList()
         .WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken))
         .AddAttributes(Attribute(IdentifierName("DefaultDllImportSearchPaths")).AddArgumentListArguments(AttributeArgument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(DllImportSearchPath)), IdentifierName(nameof(DllImportSearchPath.System32))))));
@@ -342,6 +345,7 @@ public class Generator : IDisposable
     private readonly bool canCallCreateSpan;
     private readonly bool canUseUnsafeAsRef;
     private readonly bool canUseUnsafeNullRef;
+    private readonly bool unscopedRefAttributePredefined;
     private readonly bool getDelegateForFunctionPointerGenericExists;
     private readonly bool generateSupportedOSPlatformAttributes;
     private readonly bool generateSupportedOSPlatformAttributesOnInterfaces; // only supported on net6.0 (https://github.com/dotnet/runtime/pull/48838)
@@ -397,6 +401,7 @@ public class Generator : IDisposable
         this.canCallCreateSpan = this.compilation?.GetTypeByMetadataName(typeof(MemoryMarshal).FullName)?.GetMembers("CreateSpan").Any() is true;
         this.canUseUnsafeAsRef = this.compilation?.GetTypeByMetadataName(typeof(Unsafe).FullName)?.GetMembers("AsRef").Any() is true;
         this.canUseUnsafeNullRef = this.compilation?.GetTypeByMetadataName(typeof(Unsafe).FullName)?.GetMembers("NullRef").Any() is true;
+        this.unscopedRefAttributePredefined = this.compilation?.GetTypeByMetadataName("System.Diagnostics.CodeAnalysis.UnscopedRefAttribute") is not null;
         this.getDelegateForFunctionPointerGenericExists = this.compilation?.GetTypeByMetadataName(typeof(Marshal).FullName)?.GetMembers(nameof(Marshal.GetDelegateForFunctionPointer)).Any(m => m is IMethodSymbol { IsGenericMethod: true }) is true;
         this.generateDefaultDllImportSearchPathsAttribute = this.compilation?.GetTypeByMetadataName(typeof(DefaultDllImportSearchPathsAttribute).FullName) is object;
         if (this.compilation?.GetTypeByMetadataName("System.Runtime.Versioning.SupportedOSPlatformAttribute") is { } attribute
@@ -831,7 +836,7 @@ public class Generator : IDisposable
             }
 
             ModuleReference module = this.Reader.GetModuleReference(moduleHandle);
-            if (this.Reader.StringComparer.Equals(module.Name, moduleName, ignoreCase: true))
+            if (this.Reader.StringComparer.Equals(module.Name, moduleName + ".dll", ignoreCase: true))
             {
                 string? bannedReason = null;
                 foreach (KeyValuePair<string, string> bannedApi in this.BannedAPIs)
@@ -1160,7 +1165,7 @@ public class Generator : IDisposable
 
         // .g.cs because the resulting files are not user-created.
         const string FilenamePattern = "{0}.g.cs";
-        var results = new Dictionary<string, NamespaceDeclarationSyntax>(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, CompilationUnitSyntax> results = new(StringComparer.OrdinalIgnoreCase);
 
         IEnumerable<MemberDeclarationSyntax> GroupMembersByNamespace(IEnumerable<MemberDeclarationSyntax> members)
         {
@@ -1174,12 +1179,23 @@ public class Generator : IDisposable
 
         if (this.options.EmitSingleFile)
         {
+            CompilationUnitSyntax file = CompilationUnit()
+                .AddMembers(starterNamespace.AddMembers(GroupMembersByNamespace(this.NamespaceMembers).ToArray()))
+                .AddMembers(this.committedCode.GeneratedTopLevelTypes.ToArray());
             results.Add(
                 string.Format(CultureInfo.InvariantCulture, FilenamePattern, "NativeMethods"),
-                starterNamespace.AddMembers(GroupMembersByNamespace(this.NamespaceMembers).ToArray()));
+                file);
         }
         else
         {
+            foreach (MemberDeclarationSyntax topLevelType in this.committedCode.GeneratedTopLevelTypes)
+            {
+                string typeName = topLevelType.DescendantNodesAndSelf().OfType<BaseTypeDeclarationSyntax>().First().Identifier.ValueText;
+                results.Add(
+                    string.Format(CultureInfo.InvariantCulture, FilenamePattern, typeName),
+                    CompilationUnit().AddMembers(topLevelType));
+            }
+
             IEnumerable<IGrouping<string?, MemberDeclarationSyntax>>? membersByFile = this.NamespaceMembers.GroupBy(
                 member => member.HasAnnotations(SimpleFileNameAnnotation)
                         ? member.GetAnnotations(SimpleFileNameAnnotation).Single().Data
@@ -1198,9 +1214,11 @@ public class Generator : IDisposable
             {
                 try
                 {
+                    CompilationUnitSyntax file = CompilationUnit()
+                        .AddMembers(starterNamespace.AddMembers(GroupMembersByNamespace(fileSimpleName).ToArray()));
                     results.Add(
                         string.Format(CultureInfo.InvariantCulture, FilenamePattern, fileSimpleName.Key),
-                        starterNamespace.AddMembers(GroupMembersByNamespace(fileSimpleName).ToArray()));
+                        file);
                 }
                 catch (ArgumentException ex)
                 {
@@ -1213,6 +1231,7 @@ public class Generator : IDisposable
         {
             UsingDirective(AliasQualifiedName(IdentifierName(Token(SyntaxKind.GlobalKeyword)), IdentifierName(nameof(System)))),
             UsingDirective(AliasQualifiedName(IdentifierName(Token(SyntaxKind.GlobalKeyword)), IdentifierName(nameof(System) + "." + nameof(System.Diagnostics)))),
+            UsingDirective(AliasQualifiedName(IdentifierName(Token(SyntaxKind.GlobalKeyword)), IdentifierName(nameof(System) + "." + nameof(System.Diagnostics) + "." + nameof(System.Diagnostics.CodeAnalysis)))),
             UsingDirective(ParseName(GlobalNamespacePrefix + SystemRuntimeCompilerServices)),
             UsingDirective(ParseName(GlobalNamespacePrefix + SystemRuntimeInteropServices)),
         };
@@ -1227,9 +1246,8 @@ public class Generator : IDisposable
         var normalizedResults = new Dictionary<string, CompilationUnitSyntax>(StringComparer.OrdinalIgnoreCase);
         results.AsParallel().WithCancellation(cancellationToken).ForAll(kv =>
         {
-            CompilationUnitSyntax? compilationUnit = ((CompilationUnitSyntax)CompilationUnit()
-                .AddMembers(
-                    kv.Value.AddUsings(usingDirectives.ToArray()))
+            CompilationUnitSyntax? compilationUnit = ((CompilationUnitSyntax)kv.Value
+                .AddUsings(usingDirectives.ToArray())
                 .Accept(new WhitespaceRewriter())!)
                 .WithLeadingTrivia(FileHeader);
 
@@ -1644,6 +1662,18 @@ public class Generator : IDisposable
                 safeHandleType = null;
             }
 
+            // If the handle type is *always* 64-bits, even in 32-bit processes, SafeHandle cannot represent it, since it's based on IntPtr.
+            // We could theoretically do this for x64-specific compilations though if required.
+            if (!this.TryGetTypeDefFieldType(releaseMethodParameterTypeHandleInfo, out TypeHandleInfo? typeDefStructFieldType))
+            {
+                safeHandleType = null;
+            }
+
+            if (!this.IsSafeHandleCompatibleTypeDefFieldType(typeDefStructFieldType))
+            {
+                safeHandleType = null;
+            }
+
             this.volatileCode.AddSafeHandleNameForReleaseMethod(releaseMethod, safeHandleType);
 
             if (safeHandleType is null)
@@ -1715,11 +1745,11 @@ public class Generator : IDisposable
                 .WithExpressionBody(ArrowExpressionClause(overallTest))
                 .WithSemicolonToken(SemicolonWithLineFeed));
 
-            // (struct)this.handle or (struct)(nuint)(nint)this.handle, as appropriate.
-            bool isUIntPtr = this.TryGetTypeDefFieldType(releaseMethodParameterTypeHandleInfo, out TypeHandleInfo? typeDefStructFieldType) && typeDefStructFieldType is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.UIntPtr };
+            // (struct)this.handle or (struct)checked((fieldType)(nint))this.handle, as appropriate.
+            bool implicitConversion = typeDefStructFieldType is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.IntPtr } or PointerTypeHandleInfo;
             ArgumentSyntax releaseHandleArgument = Argument(CastExpression(
                 releaseMethodParameterType.Type,
-                isUIntPtr ? CastExpression(IdentifierName("nuint"), CastExpression(IdentifierName("nint"), thisHandle)) : thisHandle));
+                implicitConversion ? thisHandle : CheckedExpression(CastExpression(typeDefStructFieldType!.ToTypeSyntax(this.fieldTypeSettings, null).Type, CastExpression(IdentifierName("nint"), thisHandle)))));
 
             // protected override bool ReleaseHandle() => ReleaseMethod((struct)this.handle);
             // Special case release functions based on their return type as follows: (https://github.com/microsoft/win32metadata/issues/25)
@@ -1778,6 +1808,10 @@ public class Generator : IDisposable
                                 ExpressionSyntax ok = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseName("winmdroot.Foundation.HRESULT"), IdentifierName("S_OK"));
                                 releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, ok);
                                 break;
+                            case "WIN32_ERROR":
+                                ExpressionSyntax noerror = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseName("winmdroot.Foundation.WIN32_ERROR"), IdentifierName("NO_ERROR"));
+                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, noerror);
+                                break;
                             default:
                                 throw new NotSupportedException($"Return type {identifierName.Identifier.ValueText} on release method {releaseMethod} not supported.");
                         }
@@ -1816,7 +1850,7 @@ public class Generator : IDisposable
         }
     }
 
-    internal bool TryGetTypeDefFieldType(TypeHandleInfo typeDef, [NotNullWhen(true)] out TypeHandleInfo? fieldType)
+    internal bool TryGetTypeDefFieldType(TypeHandleInfo? typeDef, [NotNullWhen(true)] out TypeHandleInfo? fieldType)
     {
         if (typeDef is HandleTypeHandleInfo handle)
         {
@@ -1964,14 +1998,17 @@ public class Generator : IDisposable
         return null;
     }
 
-    internal CustomAttribute? FindInteropDecorativeAttribute(CustomAttributeHandleCollection customAttributeHandles, string attributeName)
+    internal CustomAttribute? FindInteropDecorativeAttribute(CustomAttributeHandleCollection? customAttributeHandles, string attributeName)
     {
-        foreach (CustomAttributeHandle handle in customAttributeHandles)
+        if (customAttributeHandles is not null)
         {
-            CustomAttribute att = this.Reader.GetCustomAttribute(handle);
-            if (this.IsAttribute(att, InteropDecorationNamespace, attributeName))
+            foreach (CustomAttributeHandle handle in customAttributeHandles)
             {
-                return att;
+                CustomAttribute att = this.Reader.GetCustomAttribute(handle);
+                if (this.IsAttribute(att, InteropDecorationNamespace, attributeName))
+                {
+                    return att;
+                }
             }
         }
 
@@ -3816,6 +3853,7 @@ public class Generator : IDisposable
         {
             case "RECT":
             case "SIZE":
+            case "SYSTEMTIME":
                 members.AddRange(this.ExtractMembersFromTemplate(name.Identifier.ValueText));
                 break;
             default:
@@ -3889,6 +3927,17 @@ public class Generator : IDisposable
             || this.Reader.StringComparer.Equals(typeDef.Name, "HWND");
     }
 
+    private bool IsSafeHandleCompatibleTypeDef(TypeHandleInfo? typeDef)
+    {
+        return this.TryGetTypeDefFieldType(typeDef, out TypeHandleInfo? fieldType) && this.IsSafeHandleCompatibleTypeDefFieldType(fieldType);
+    }
+
+    private bool IsSafeHandleCompatibleTypeDefFieldType(TypeHandleInfo? fieldType)
+    {
+        return fieldType is PointerTypeHandleInfo
+            || fieldType is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.Int32 or PrimitiveTypeCode.UInt32 or PrimitiveTypeCode.IntPtr or PrimitiveTypeCode.UIntPtr };
+    }
+
     /// <summary>
     /// Creates a struct that emulates a typedef in the C language headers.
     /// </summary>
@@ -3908,7 +3957,8 @@ public class Generator : IDisposable
         IdentifierNameSyntax fieldIdentifierName = SafeIdentifierName(fieldName);
         VariableDeclaratorSyntax fieldDeclarator = VariableDeclarator(fieldIdentifierName.Identifier);
         CustomAttributeHandleCollection fieldAttributes = fieldDef.GetCustomAttributes();
-        TypeSyntaxAndMarshaling fieldType = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null).ToTypeSyntax(typeSettings, fieldAttributes);
+        TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null);
+        TypeSyntaxAndMarshaling fieldType = fieldTypeInfo.ToTypeSyntax(typeSettings, fieldAttributes);
         (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? _) fieldInfo =
             this.ReinterpretFieldType(fieldDef, fieldType.Type, fieldAttributes, this.DefaultContext);
         SyntaxList<MemberDeclarationSyntax> members = List<MemberDeclarationSyntax>();
@@ -3923,23 +3973,34 @@ public class Generator : IDisposable
         IdentifierNameSyntax valueParameter = IdentifierName("value");
         MemberAccessExpressionSyntax fieldAccessExpression = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), fieldIdentifierName);
 
-        if (isHandle && fieldInfo.FieldType is not IdentifierNameSyntax { Identifier: { ValueText: nameof(IntPtr) } })
+        if (isHandle && this.IsSafeHandleCompatibleTypeDefFieldType(fieldTypeInfo) && fieldTypeInfo is not PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.IntPtr })
         {
             // Handle types must interop with IntPtr for SafeHandle support, so if IntPtr isn't the field type,
             // we need to create new conversion operators.
             ExpressionSyntax valueValueArg = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, fieldIdentifierName);
-            if (fieldInfo.FieldType is IdentifierNameSyntax { Identifier: { ValueText: nameof(UIntPtr) } })
+            if (fieldTypeInfo is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.UIntPtr })
             {
-                valueValueArg = CastExpression(PredefinedType(TokenWithSpace(SyntaxKind.LongKeyword)), valueValueArg);
-            }
+                valueValueArg = CastExpression(PredefinedType(TokenWithSpace(SyntaxKind.ULongKeyword)), valueValueArg);
 
-            // public static implicit operator IntPtr(MSIHANDLE value) => new IntPtr(value.Value);
-            members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), IntPtrTypeSyntax)
-                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))))
-                .WithExpressionBody(ArrowExpressionClause(
-                    ObjectCreationExpression(IntPtrTypeSyntax).AddArgumentListArguments(Argument(valueValueArg))))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
-                .WithSemicolonToken(SemicolonWithLineFeed));
+                // We still need to make conversion from an IntPtr simple since so much code relies on it.
+                // public static explicit operator SOCKET(IntPtr value) => new SOCKET((UIntPtr)unchecked((ulong)value.ToInt64()));
+                members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
+                    .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))))
+                    .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(
+                        Argument(CastExpression(fieldInfo.FieldType, UncheckedExpression(CastExpression(PredefinedType(Token(SyntaxKind.ULongKeyword)), InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToInt64)))))))))))
+                    .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
+                    .WithSemicolonToken(SemicolonWithLineFeed));
+            }
+            else
+            {
+                // public static implicit operator IntPtr(MSIHANDLE value) => new IntPtr(value.Value);
+                members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), IntPtrTypeSyntax)
+                    .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))))
+                    .WithExpressionBody(ArrowExpressionClause(
+                        ObjectCreationExpression(IntPtrTypeSyntax).AddArgumentListArguments(Argument(valueValueArg))))
+                    .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
+                    .WithSemicolonToken(SemicolonWithLineFeed));
+            }
 
             if (fieldInfo.FieldType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.UIntKeyword } })
             {
@@ -3951,7 +4012,8 @@ public class Generator : IDisposable
                     .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
                     .WithSemicolonToken(SemicolonWithLineFeed));
             }
-            else if (fieldInfo.FieldType is PointerTypeSyntax)
+
+            if (fieldInfo.FieldType is PointerTypeSyntax)
             {
                 // public static explicit operator MSIHANDLE(IntPtr value) => new MSIHANDLE(value.ToPointer());
                 members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
@@ -3960,14 +4022,12 @@ public class Generator : IDisposable
                         Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToPointer)))))))))
                     .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
                     .WithSemicolonToken(SemicolonWithLineFeed));
-            }
-            else if (fieldInfo.FieldType is IdentifierNameSyntax { Identifier: { ValueText: nameof(UIntPtr) } })
-            {
-                // public static explicit operator SOCKET(IntPtr value) => new SOCKET((UIntPtr)value.ToInt64());
+
+                // public static explicit operator MSIHANDLE(UIntPtr value) => new MSIHANDLE(value.ToPointer());
                 members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
-                    .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))))
+                    .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(UIntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))))
                     .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(
-                        Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToInt64)))))))))
+                        Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToPointer)))))))))
                     .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
                     .WithSemicolonToken(SemicolonWithLineFeed));
             }
@@ -4108,7 +4168,7 @@ public class Generator : IDisposable
         // public override int GetHashCode() => unchecked((int)this.Value); // if Value is a pointer
         // public override int GetHashCode() => this.Value.GetHashCode(); // if Value is not a pointer
         ExpressionSyntax hashExpr = fieldType is PointerTypeSyntax ?
-            CheckedExpression(SyntaxKind.UncheckedExpression, CastExpression(PredefinedType(TokenWithNoSpace(SyntaxKind.IntKeyword)), fieldAccessExpression)) :
+            UncheckedExpression(CastExpression(PredefinedType(TokenWithNoSpace(SyntaxKind.IntKeyword)), fieldAccessExpression)) :
             InvocationExpression(
                 MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, fieldAccessExpression, IdentifierName(nameof(object.GetHashCode))),
                 ArgumentList());
@@ -4226,7 +4286,6 @@ public class Generator : IDisposable
                     //// return checked((int)(p - this.Value));
                     ReturnStatement(
                         CheckedExpression(
-                            SyntaxKind.CheckedExpression,
                             CastExpression(
                                 PredefinedType(TokenWithNoSpace(SyntaxKind.IntKeyword)),
                                 ParenthesizedExpression(BinaryExpression(SyntaxKind.SubtractExpression, localPointer, thisValue))))))).WithKeyword(TokenWithLineFeed(SyntaxKind.GetKeyword))));
@@ -4357,6 +4416,7 @@ public class Generator : IDisposable
         static ParameterSyntax StripAttributes(ParameterSyntax parameter) => parameter.WithAttributeLists(List<AttributeListSyntax>());
         static ExpressionSyntax GetSpanLength(ExpressionSyntax span) => MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, span, IdentifierName(nameof(Span<int>.Length)));
         bool isReleaseMethod = this.MetadataIndex.ReleaseMethods.Contains(externMethodDeclaration.Identifier.ValueText);
+        bool doNotRelease = this.FindInteropDecorativeAttribute(this.GetReturnTypeCustomAttributes(methodDefinition), DoNotReleaseAttribute) is not null;
 
         TypeSyntaxSettings parameterTypeSyntaxSettings = overloadOf switch
         {
@@ -4434,11 +4494,12 @@ public class Generator : IDisposable
                         SyntaxKind.SimpleAssignmentExpression,
                         origName,
                         ObjectCreationExpression(safeHandleType).AddArgumentListArguments(
-                            Argument(typeDefHandleName),
-                            Argument(LiteralExpression(SyntaxKind.TrueLiteralExpression)).WithNameColon(NameColon(IdentifierName("ownsHandle")))))));
+                            Argument(GetIntPtrFromTypeDef(typeDefHandleName, pointedElementInfo)),
+                            Argument(LiteralExpression(doNotRelease ? SyntaxKind.FalseLiteralExpression : SyntaxKind.TrueLiteralExpression)).WithNameColon(NameColon(IdentifierName("ownsHandle")))))));
                 }
             }
-            else if (this.options.UseSafeHandles && isIn && !isOut && !isReleaseMethod && parameterTypeInfo is HandleTypeHandleInfo parameterHandleTypeInfo && this.TryGetHandleReleaseMethod(parameterHandleTypeInfo.Handle, out string? releaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, releaseMethod))
+            else if (this.options.UseSafeHandles && isIn && !isOut && !isReleaseMethod && parameterTypeInfo is HandleTypeHandleInfo parameterHandleTypeInfo && this.TryGetHandleReleaseMethod(parameterHandleTypeInfo.Handle, out string? releaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, releaseMethod)
+                && !(this.TryGetTypeDefFieldType(parameterHandleTypeInfo, out TypeHandleInfo? fieldType) && !this.IsSafeHandleCompatibleTypeDefFieldType(fieldType)))
             {
                 IdentifierNameSyntax typeDefHandleName = IdentifierName(externParam.Identifier.ValueText + "Local");
                 signatureChanged = true;
@@ -4826,8 +4887,8 @@ public class Generator : IDisposable
 
                 //// return new SafeHandle(result, ownsHandle: true);
                 body = body.AddStatements(ReturnStatement(ObjectCreationExpression(returnSafeHandleType).AddArgumentListArguments(
-                    Argument(resultLocal),
-                    Argument(LiteralExpression(SyntaxKind.TrueLiteralExpression)).WithNameColon(NameColon(IdentifierName("ownsHandle"))))));
+                    Argument(GetIntPtrFromTypeDef(resultLocal, originalSignature.ReturnType)),
+                    Argument(LiteralExpression(doNotRelease ? SyntaxKind.FalseLiteralExpression : SyntaxKind.TrueLiteralExpression)).WithNameColon(NameColon(IdentifierName("ownsHandle"))))));
             }
             else if (hasVoidReturn)
             {
@@ -4900,6 +4961,34 @@ public class Generator : IDisposable
                 .WithLeadingTrivia(leadingTrivia);
 
             yield return friendlyDeclaration;
+        }
+
+        ExpressionSyntax GetIntPtrFromTypeDef(ExpressionSyntax typedefValue, TypeHandleInfo typeDefTypeInfo)
+        {
+            ExpressionSyntax intPtrValue = typedefValue;
+            if (this.TryGetTypeDefFieldType(typeDefTypeInfo, out TypeHandleInfo? returnTypeField) && returnTypeField is PrimitiveTypeHandleInfo primitiveReturnField)
+            {
+                switch (primitiveReturnField.PrimitiveTypeCode)
+                {
+                    case PrimitiveTypeCode.UInt32:
+                        // (IntPtr)result.Value;
+                        intPtrValue = CastExpression(IntPtrTypeSyntax, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, typedefValue, IdentifierName("Value")));
+                        break;
+                    case PrimitiveTypeCode.UIntPtr:
+                        // unchecked((IntPtr)(long)(ulong)result.Value)
+                        intPtrValue = UncheckedExpression(
+                            CastExpression(
+                                IntPtrTypeSyntax,
+                                CastExpression(
+                                    PredefinedType(Token(SyntaxKind.LongKeyword)),
+                                    CastExpression(
+                                        PredefinedType(Token(SyntaxKind.ULongKeyword)),
+                                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, typedefValue, IdentifierName("Value"))))));
+                        break;
+                }
+            }
+
+            return intPtrValue;
         }
 #pragma warning restore SA1114 // Parameter list should follow declaration
     }
@@ -5019,6 +5108,7 @@ public class Generator : IDisposable
             return (ranklessArray, default(SyntaxList<MemberDeclarationSyntax>), marshalAs);
         }
 
+        SyntaxList<MemberDeclarationSyntax> additionalMembers = default;
         int length = int.Parse(((LiteralExpressionSyntax)arrayType.RankSpecifiers[0].Sizes[0]).Token.ValueText, CultureInfo.InvariantCulture);
         TypeSyntax elementType = arrayType.ElementType;
 
@@ -5068,8 +5158,8 @@ public class Generator : IDisposable
         if (this.canCallCreateSpan)
         {
             // ...
-            //     internal ref TheStruct this[int index] => ref AsSpan()[index];
-            //     internal Span<TheStruct> AsSpan() => MemoryMarshal.CreateSpan(ref _0, 4);
+            //     [UnscopedRef] internal ref TheStruct this[int index] => ref AsSpan()[index];
+            //     [UnscopedRef] internal Span<TheStruct> AsSpan() => MemoryMarshal.CreateSpan(ref _0, 4);
             fixedLengthStruct = fixedLengthStruct
                 .AddMembers(
                     IndexerDeclaration(RefType(elementType).WithTrailingTrivia(TriviaList(Space)))
@@ -5079,6 +5169,7 @@ public class Generator : IDisposable
                             ElementAccessExpression(InvocationExpression(IdentifierName("AsSpan")))
                                 .AddArgumentListArguments(Argument(IdentifierName("index"))))))
                         .WithSemicolonToken(SemicolonWithLineFeed)
+                        .AddAttributeLists(AttributeList().AddAttributes(UnscopedRefAttribute))
                         .WithLeadingTrivia(InlineArrayUnsafeIndexerComment),
                     MethodDeclaration(MakeSpanOfT(elementType).WithTrailingTrivia(TriviaList(Space)), Identifier("AsSpan"))
                         .AddModifiers(TokenWithSpace(this.Visibility))
@@ -5088,7 +5179,9 @@ public class Generator : IDisposable
                                     Argument(nameColon: null, TokenWithSpace(SyntaxKind.RefKeyword), firstElementFieldName),
                                     Argument(lengthLiteralSyntax))))))
                         .WithSemicolonToken(SemicolonWithLineFeed)
+                        .AddAttributeLists(AttributeList().AddAttributes(UnscopedRefAttribute))
                         .WithLeadingTrivia(InlineArrayUnsafeAsSpanComment));
+            this.DeclareUnscopedRefAttributeIfNecessary();
         }
 
 #pragma warning disable SA1515 // Single-line comment should be preceded by blank line
@@ -5115,16 +5208,18 @@ public class Generator : IDisposable
                             VariableDeclaration(PointerType(elementType)).AddVariables(
                                 VariableDeclarator(Identifier("p0")).WithInitializer(EqualsValueClause(
                                     PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName("_0"))))),
+                            Block().AddStatements(
                             // for (int i = 0; i < length; i++)
                             ForStatement(
                                 VariableDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))).AddVariables(VariableDeclarator(Identifier("i")).WithInitializer(EqualsValueClause(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))))),
                                 BinaryExpression(SyntaxKind.LessThanExpression, IdentifierName("i"), lengthParameterName),
                                 SingletonSeparatedList<ExpressionSyntax>(PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, IdentifierName("i"))),
+                                Block().AddStatements(
                                 // target[i] = p0[i];
                                 ExpressionStatement(AssignmentExpression(
                                     SyntaxKind.SimpleAssignmentExpression,
                                     ElementAccessExpression(targetParameterName).AddArgumentListArguments(Argument(IdentifierName("i"))),
-                                    ElementAccessExpression(IdentifierName("p0")).AddArgumentListArguments(Argument(IdentifierName("i"))))))))));
+                                    ElementAccessExpression(IdentifierName("p0")).AddArgumentListArguments(Argument(IdentifierName("i"))))))))))));
 
             // internal readonly T[] ToArray(int length = 4)
             fixedLengthStruct = fixedLengthStruct.AddMembers(
@@ -5172,27 +5267,31 @@ public class Generator : IDisposable
                                     VariableDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))).AddVariables(VariableDeclarator(Identifier("i")).WithInitializer(EqualsValueClause(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))))),
                                     BinaryExpression(SyntaxKind.LessThanExpression, IdentifierName("i"), commonLengthLocal),
                                     SingletonSeparatedList<ExpressionSyntax>(PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, IdentifierName("i"))),
+                                    Block().AddStatements(
                                     // if (p0[i] != value[i])
                                     IfStatement(
                                         BinaryExpression(
                                             SyntaxKind.NotEqualsExpression,
                                             ElementAccessExpression(IdentifierName("p0")).AddArgumentListArguments(Argument(IdentifierName("i"))),
                                             ElementAccessExpression(valueParameterName).AddArgumentListArguments(Argument(IdentifierName("i")))),
+                                        Block().AddStatements(
                                         // return false;
-                                        ReturnStatement(LiteralExpression(SyntaxKind.FalseLiteralExpression)))),
+                                        ReturnStatement(LiteralExpression(SyntaxKind.FalseLiteralExpression)))))),
                                 // for (int i = commonLength; i < 4; i++)
                                 ForStatement(
                                     VariableDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))).AddVariables(VariableDeclarator(Identifier("i")).WithInitializer(EqualsValueClause(commonLengthLocal))),
                                     BinaryExpression(SyntaxKind.LessThanExpression, IdentifierName("i"), lengthLiteralSyntax),
                                     SingletonSeparatedList<ExpressionSyntax>(PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, IdentifierName("i"))),
+                                    Block().AddStatements(
                                     // if (p0[i] != default)
                                     IfStatement(
                                         BinaryExpression(
                                             SyntaxKind.NotEqualsExpression,
                                             ElementAccessExpression(IdentifierName("p0")).AddArgumentListArguments(Argument(IdentifierName("i"))),
                                             DefaultExpression(elementType)),
+                                        Block().AddStatements(
                                         // return false;
-                                        ReturnStatement(LiteralExpression(SyntaxKind.FalseLiteralExpression)))))),
+                                        ReturnStatement(LiteralExpression(SyntaxKind.FalseLiteralExpression)))))))),
                         ReturnStatement(LiteralExpression(SyntaxKind.TrueLiteralExpression)))));
         }
 
@@ -5296,7 +5395,7 @@ public class Generator : IDisposable
                             ExpressionStatement(AssignmentExpression(
                                 SyntaxKind.SimpleAssignmentExpression,
                                 lengthLocalVar,
-                                CheckedExpression(SyntaxKind.CheckedExpression, CastExpression(
+                                CheckedExpression(CastExpression(
                                     PredefinedType(Token(SyntaxKind.IntKeyword)),
                                     ParenthesizedExpression(BinaryExpression(SyntaxKind.SubtractExpression, pCh, p)))))))),
             };
@@ -5393,10 +5492,11 @@ public class Generator : IDisposable
                                 VariableDeclarator(i.Identifier).WithInitializer(EqualsValueClause(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))))),
                             BinaryExpression(SyntaxKind.LessThanExpression, i, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParam, IdentifierName(nameof(ReadOnlySpan<char>.Length)))),
                             SingletonSeparatedList<ExpressionSyntax>(PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, i)),
+                            Block().AddStatements(
                             ExpressionStatement(AssignmentExpression(
                                 SyntaxKind.SimpleAssignmentExpression,
                                 PrefixUnaryExpression(SyntaxKind.PointerIndirectionExpression, PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, p)),
-                                ElementAccessExpression(valueParam).AddArgumentListArguments(Argument(i))))),
+                                ElementAccessExpression(valueParam).AddArgumentListArguments(Argument(i)))))),
                 };
             }
 
@@ -5501,7 +5601,41 @@ public class Generator : IDisposable
             .WithBody(body);
         this.volatileCode.AddInlineArrayIndexerExtension(getOrSetAtMethod);
 
-        return (fixedLengthStructName, List<MemberDeclarationSyntax>().Add(fixedLengthStruct), null);
+        additionalMembers = additionalMembers.Add(fixedLengthStruct);
+        return (fixedLengthStructName, additionalMembers, null);
+    }
+
+    private void DeclareUnscopedRefAttributeIfNecessary()
+    {
+        if (this.unscopedRefAttributePredefined)
+        {
+            return;
+        }
+
+        const string name = "UnscopedRefAttribute";
+        this.volatileCode.GenerateSpecialType(name, delegate
+        {
+            ExpressionSyntax[] uses = new[]
+            {
+                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(AttributeTargets)), IdentifierName(nameof(AttributeTargets.Method))),
+                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(AttributeTargets)), IdentifierName(nameof(AttributeTargets.Property))),
+                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(AttributeTargets)), IdentifierName(nameof(AttributeTargets.Parameter))),
+            };
+            AttributeListSyntax usageAttr = AttributeList().AddAttributes(
+                Attribute(IdentifierName(nameof(AttributeUsageAttribute))).AddArgumentListArguments(
+                    AttributeArgument(
+                        uses.Aggregate((left, right) => BinaryExpression(SyntaxKind.BitwiseOrExpression, left, right))),
+                    AttributeArgument(LiteralExpression(SyntaxKind.FalseLiteralExpression)).WithNameEquals(NameEquals(IdentifierName("AllowMultiple"))),
+                    AttributeArgument(LiteralExpression(SyntaxKind.FalseLiteralExpression)).WithNameEquals(NameEquals(IdentifierName("Inherited")))));
+            ClassDeclarationSyntax attrDecl = ClassDeclaration(Identifier("UnscopedRefAttribute"))
+                .WithBaseList(BaseList(SingletonSeparatedList<BaseTypeSyntax>(SimpleBaseType(IdentifierName("Attribute")))))
+                .AddModifiers(Token(SyntaxKind.InternalKeyword), TokenWithSpace(SyntaxKind.SealedKeyword))
+                .AddAttributeLists(usageAttr);
+            NamespaceDeclarationSyntax nsDeclaration = NamespaceDeclaration(ParseName("System.Diagnostics.CodeAnalysis"))
+                .AddMembers(attrDecl);
+
+            this.volatileCode.AddSpecialType(name, nsDeclaration, topLevel: true);
+        });
     }
 
     private bool IsTypeDefStruct(TypeHandleInfo? typeHandleInfo)
@@ -5859,7 +5993,7 @@ public class Generator : IDisposable
 
         private readonly List<ClassDeclarationSyntax> safeHandleTypes = new();
 
-        private readonly Dictionary<string, MemberDeclarationSyntax> specialTypes = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, (MemberDeclarationSyntax Type, bool TopLevel)> specialTypes = new(StringComparer.Ordinal);
 
         private readonly Dictionary<string, MethodDeclarationSyntax> macros = new(StringComparer.Ordinal);
 
@@ -5898,7 +6032,11 @@ public class Generator : IDisposable
         internal bool IsEmpty => this.modulesAndMembers.Count == 0 && this.types.Count == 0 && this.fieldsToSyntax.Count == 0 && this.safeHandleTypes.Count == 0 && this.specialTypes.Count == 0
             && this.inlineArrayIndexerExtensionsMembers.Count == 0 && this.comInterfaceFriendlyExtensionsMembers.Count == 0 && this.macros.Count == 0;
 
-        internal IEnumerable<MemberDeclarationSyntax> GeneratedTypes => this.GetTypesWithInjectedFields().Concat(this.specialTypes.Values).Concat(this.safeHandleTypes);
+        internal IEnumerable<MemberDeclarationSyntax> GeneratedTypes => this.GetTypesWithInjectedFields()
+            .Concat(this.specialTypes.Values.Where(st => !st.TopLevel).Select(st => st.Type))
+            .Concat(this.safeHandleTypes);
+
+        internal IEnumerable<MemberDeclarationSyntax> GeneratedTopLevelTypes => this.specialTypes.Values.Where(st => st.TopLevel).Select(st => st.Type);
 
         internal IEnumerable<MethodDeclarationSyntax> ComInterfaceExtensions => this.comInterfaceFriendlyExtensionsMembers;
 
@@ -5987,10 +6125,16 @@ public class Generator : IDisposable
             this.comInterfaceFriendlyExtensionsMembers.AddRange(extension);
         }
 
-        internal void AddSpecialType(string specialName, MemberDeclarationSyntax specialDeclaration)
+        /// <summary>
+        /// Adds a declaration to the generated code.
+        /// </summary>
+        /// <param name="specialName">The same constant provided to <see cref="GenerateSpecialType(string, Action)"/>. This serves to avoid repeat declarations.</param>
+        /// <param name="specialDeclaration">The declaration.</param>
+        /// <param name="topLevel"><see langword="true" /> if this declaration should <em>not</em> be nested within the top-level namespace for generated code.</param>
+        internal void AddSpecialType(string specialName, MemberDeclarationSyntax specialDeclaration, bool topLevel = false)
         {
             this.ThrowIfNotGenerating();
-            this.specialTypes.Add(specialName, specialDeclaration);
+            this.specialTypes.Add(specialName, (specialDeclaration, topLevel));
         }
 
         internal void AddInteropType(TypeDefinitionHandle typeDefinitionHandle, bool hasUnmanagedName, MemberDeclarationSyntax typeDeclaration)
@@ -6420,6 +6564,28 @@ public class Generator : IDisposable
 
         public override SyntaxNode? VisitExpressionStatement(ExpressionStatementSyntax node) => base.VisitExpressionStatement(this.WithIndentingTrivia(node));
 
+        public override SyntaxNode? VisitInitializerExpression(InitializerExpressionSyntax node)
+        {
+            node = node
+                .WithOpenBraceToken(Token(TriviaList(this.IndentTrivia), SyntaxKind.OpenBraceToken, TriviaList(LineFeed)))
+                .WithCloseBraceToken(Token(TriviaList(this.IndentTrivia), SyntaxKind.CloseBraceToken, TriviaList(LineFeed)))
+                .WithTrailingTrivia(TriviaList());
+            using var indent = new Indent(this);
+            return base.VisitInitializerExpression(node);
+        }
+
+        public override SyntaxNode? VisitAssignmentExpression(AssignmentExpressionSyntax node)
+        {
+            if (node.Parent is InitializerExpressionSyntax)
+            {
+                return base.VisitAssignmentExpression(this.WithIndentingTrivia(node));
+            }
+            else
+            {
+                return base.VisitAssignmentExpression(node);
+            }
+        }
+
         public override SyntaxNode? VisitTryStatement(TryStatementSyntax node) => base.VisitTryStatement(this.WithIndentingTrivia(node));
 
         public override SyntaxNode? VisitFinallyClause(FinallyClauseSyntax node) => base.VisitFinallyClause(this.WithIndentingTrivia(node));
@@ -6480,7 +6646,24 @@ public class Generator : IDisposable
             }
         }
 
-        public override SyntaxNode? VisitReturnStatement(ReturnStatementSyntax node) => base.VisitReturnStatement(node.WithLeadingTrivia(this.IndentTrivia));
+        public override SyntaxNode? VisitForStatement(ForStatementSyntax node)
+        {
+            node = this.WithIndentingTrivia(node);
+            if (node.Statement is BlockSyntax)
+            {
+                return base.VisitForStatement(node);
+            }
+            else
+            {
+                using var indent = new Indent(this);
+                return base.VisitForStatement(node);
+            }
+        }
+
+        public override SyntaxNode? VisitReturnStatement(ReturnStatementSyntax node)
+        {
+            return base.VisitReturnStatement(this.WithIndentingTrivia(node));
+        }
 
         public override SyntaxToken VisitToken(SyntaxToken token)
         {

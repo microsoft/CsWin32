@@ -46,11 +46,12 @@ jobs:
       title: v$(resources.pipeline.CI.runName)
       isDraft: true # After running this step, visit the new draft release, edit, and publish.
       isPreRelease: $(IsPrerelease)
-      assets: $(Pipeline.Workspace)/CI/deployables-Windows/*.nupkg
+      assets: $(Pipeline.Workspace)/CI/deployables-Windows/NuGet/*.nupkg
       changeLogCompareToRelease: lastNonDraftRelease
       changeLogType: issueBased
       changeLogLabels: |
         [
+          { "label" : "breaking change", "displayName" : "Breaking changes", "state" : "closed" },
           { "label" : "bug", "displayName" : "Fixes", "state" : "closed" },
           { "label" : "enhancement", "displayName": "Enhancements", "state" : "closed" }
         ]

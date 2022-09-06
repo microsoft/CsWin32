@@ -3888,6 +3888,9 @@ public class Generator : IDisposable
                 members = members.AddRange(this.CreateAdditionalTypeDefPWSTRMembers());
                 break;
             case "HRESULT":
+                members = members.AddRange(this.ExtractMembersFromTemplate(name.Identifier.ValueText));
+                this.TryGenerateType("WIN32_ERROR");
+                break;
             case "NTSTATUS":
             case "BOOL":
             case "BOOLEAN":

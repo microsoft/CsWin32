@@ -1605,7 +1605,7 @@ public class Generator : IDisposable
     {
         this.volatileCode.GenerateMacro(macro.Identifier.ValueText, delegate
         {
-            this.volatileCode.AddMacro(macro.Identifier.ValueText, macro);
+            this.volatileCode.AddMacro(macro.Identifier.ValueText, (MethodDeclarationSyntax)this.ElevateVisibility(macro));
 
             // Generate any additional types that this macro relies on.
             foreach (QualifiedNameSyntax identifier in macro.DescendantNodes().OfType<QualifiedNameSyntax>())

@@ -607,6 +607,18 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.AssertGeneratedMember(handleName, "Null", $"internal static {handleName} Null => default;");
     }
 
+    [Theory, PairwiseData]
+    public void MacroAPIsGenerateWithAppropriateVisibility(bool publicVisibility)
+    {
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { Public = publicVisibility });
+        Assert.True(this.generator.TryGenerate("HRESULT_FROM_WIN32", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        var method = Assert.Single(this.FindGeneratedMethod("HRESULT_FROM_WIN32"));
+
+        Assert.True(method.Modifiers.Any(publicVisibility ? SyntaxKind.PublicKeyword : SyntaxKind.InternalKeyword));
+    }
+
     [Theory]
     [InlineData("HRESULT_FROM_WIN32")]
     public void MacroAPIsGenerate(string macro)

@@ -608,6 +608,24 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     }
 
     [Theory]
+    [InlineData("BOOL")]
+    [InlineData("BOOLEAN")]
+    [InlineData("HRESULT")]
+    [InlineData("NTSTATUS")]
+    [InlineData("PCSTR")]
+    [InlineData("PCWSTR")]
+    [InlineData("RECT")]
+    [InlineData("SIZE")]
+    [InlineData("SYSTEMTIME")]
+    public void TemplateAPIsGenerate(string handleType)
+    {
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate(handleType, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+    }
+
+    [Theory]
     [InlineData("HANDLE")]
     [InlineData("HGDIOBJ")]
     [InlineData("HWND")]

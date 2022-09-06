@@ -37,8 +37,6 @@
 /// </remarks>
 partial struct HRESULT
 {
-    private const uint FACILITY_WIN32 = 7;
-
     public static implicit operator uint(HRESULT value) => (uint)value.Value;
     public static explicit operator HRESULT(uint value) => new HRESULT((int)value);
 
@@ -62,8 +60,6 @@ partial struct HRESULT
         Marshal.ThrowExceptionForHR(this.Value, errorInfo);
         return this;
     }
-
-    internal static HRESULT HRESULT_FROM_WIN32(WIN32_ERROR error) => new HRESULT(unchecked(error <= 0 ? (int)error : (int)(((uint)error & 0x0000FFFF) | (FACILITY_WIN32 << 16) | 0x8000_0000)));
 
     public override string ToString() => string.Format(global::System.Globalization.CultureInfo.InvariantCulture, "0x{0:X8}", this.Value);
 

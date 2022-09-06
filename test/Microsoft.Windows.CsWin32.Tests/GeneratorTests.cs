@@ -606,6 +606,17 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     }
 
     [Theory]
+    [InlineData("HRESULT_FROM_WIN32")]
+    public void MacroAPIsGenerate(string macro)
+    {
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate(macro, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        Assert.Single(this.FindGeneratedMethod(macro));
+    }
+
+    [Theory]
     [InlineData("HANDLE")]
     [InlineData("HGDIOBJ")]
     [InlineData("HWND")]

@@ -61,7 +61,7 @@ partial struct HRESULT
         return this;
     }
 
-    public override string ToString() => this.Value.ToString();
+    public override string ToString() => string.Format(global::System.Globalization.CultureInfo.InvariantCulture, "0x{0:X8}", this.Value);
 
     internal string ToString(string format, IFormatProvider formatProvider) => ((uint)this.Value).ToString(format, formatProvider);
 }

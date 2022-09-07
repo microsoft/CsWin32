@@ -37,31 +37,31 @@
 /// </remarks>
 partial struct HRESULT
 {
-    public static implicit operator uint(HRESULT value) => (uint)value.Value;
-    public static explicit operator HRESULT(uint value) => new HRESULT((int)value);
+	public static implicit operator uint(HRESULT value) => (uint)value.Value;
+	public static explicit operator HRESULT(uint value) => new HRESULT((int)value);
 
-    [DebuggerBrowsable(DebuggerBrowsableState.Never)]
-    internal bool Succeeded => this.Value >= 0;
+	[DebuggerBrowsable(DebuggerBrowsableState.Never)]
+	internal bool Succeeded => this.Value >= 0;
 
-    [DebuggerBrowsable(DebuggerBrowsableState.Never)]
-    internal bool Failed => this.Value < 0;
+	[DebuggerBrowsable(DebuggerBrowsableState.Never)]
+	internal bool Failed => this.Value < 0;
 
-    /// <inheritdoc cref="Marshal.ThrowExceptionForHR(int, IntPtr)" />
-    /// <param name="errorInfo">
-    /// A pointer to the IErrorInfo interface that provides more information about the
-    /// error. You can specify <see cref="IntPtr.Zero"/> to use the current IErrorInfo interface, or
-    /// <c>new IntPtr(-1)</c> to ignore the current IErrorInfo interface and construct the exception
-    /// just from the error code.
-    /// </param>
-    /// <returns><see langword="this"/> <see cref="HRESULT"/>, if it does not reflect an error.</returns>
-    /// <seealso cref="Marshal.ThrowExceptionForHR(int, IntPtr)"/>
-    internal HRESULT ThrowOnFailure(IntPtr errorInfo = default)
-    {
-        Marshal.ThrowExceptionForHR(this.Value, errorInfo);
-        return this;
-    }
+	/// <inheritdoc cref="Marshal.ThrowExceptionForHR(int, IntPtr)" />
+	/// <param name="errorInfo">
+	/// A pointer to the IErrorInfo interface that provides more information about the
+	/// error. You can specify <see cref="IntPtr.Zero"/> to use the current IErrorInfo interface, or
+	/// <c>new IntPtr(-1)</c> to ignore the current IErrorInfo interface and construct the exception
+	/// just from the error code.
+	/// </param>
+	/// <returns><see langword="this"/> <see cref="HRESULT"/>, if it does not reflect an error.</returns>
+	/// <seealso cref="Marshal.ThrowExceptionForHR(int, IntPtr)"/>
+	internal HRESULT ThrowOnFailure(IntPtr errorInfo = default)
+	{
+		Marshal.ThrowExceptionForHR(this.Value, errorInfo);
+		return this;
+	}
 
-    public override string ToString() => string.Format(global::System.Globalization.CultureInfo.InvariantCulture, "0x{0:X8}", this.Value);
+	public override string ToString() => string.Format(global::System.Globalization.CultureInfo.InvariantCulture, "0x{0:X8}", this.Value);
 
-    internal string ToString(string format, IFormatProvider formatProvider) => ((uint)this.Value).ToString(format, formatProvider);
+	internal string ToString(string format, IFormatProvider formatProvider) => ((uint)this.Value).ToString(format, formatProvider);
 }

@@ -442,6 +442,11 @@ public class Generator : IDisposable
     }
 
     /// <summary>
+    /// Gets the set of macros that can be generated.
+    /// </summary>
+    public static IEnumerable<string> AvailableMacros => PInvokeMacros.Keys;
+
+    /// <summary>
     /// Gets a map of interop APIs that should never be generated, whether marshaling is allowed or not, and messages to emit in diagnostics if these APIs are ever directly requested.
     /// </summary>
     internal static ImmutableDictionary<string, string> BannedAPIsWithoutMarshaling { get; } = ImmutableDictionary<string, string>.Empty

@@ -99,6 +99,8 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             Platform.Arm64,
         };
 
+    public static IEnumerable<object[]> AvailableMacros => Generator.AvailableMacros.Select(name => new object[] { name });
+
     public async Task InitializeAsync()
     {
         this.starterCompilations.Add("net35", await this.CreateCompilationAsync(MyReferenceAssemblies.NetFramework.Net35));
@@ -620,7 +622,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     }
 
     [Theory]
-    [InlineData("HRESULT_FROM_WIN32")]
+    [MemberData(nameof(AvailableMacros))]
     public void MacroAPIsGenerate(string macro)
     {
         this.generator = this.CreateGenerator();

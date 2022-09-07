@@ -153,9 +153,32 @@ public class Generator : IDisposable
     private static readonly AttributeSyntax ObsoleteAttribute = Attribute(IdentifierName("Obsolete")).WithArgumentList(null);
     private static readonly AttributeSyntax SupportedOSPlatformAttribute = Attribute(IdentifierName("SupportedOSPlatform"));
     private static readonly AttributeSyntax UnscopedRefAttribute = Attribute(ParseName("UnscopedRef")).WithArgumentList(null);
+
+    /// <summary>
+    /// The set of libraries that are expected to be allowed next to an application instead of being required to load from System32.
+    /// </summary>
+    /// <see href="https://docs.microsoft.com/en-us/windows/win32/debug/dbghelp-versions" />
+    private static readonly string[] AppLocalLibraries = new[] { "DbgHelp.dll", "SymSrv.dll", "SrcSrv.dll" };
+
+    // [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     private static readonly AttributeListSyntax DefaultDllImportSearchPathsAttributeList = AttributeList()
         .WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken))
-        .AddAttributes(Attribute(IdentifierName("DefaultDllImportSearchPaths")).AddArgumentListArguments(AttributeArgument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(DllImportSearchPath)), IdentifierName(nameof(DllImportSearchPath.System32))))));
+        .AddAttributes(Attribute(IdentifierName("DefaultDllImportSearchPaths")).AddArgumentListArguments(
+            AttributeArgument(CompoundExpression(
+                SyntaxKind.BitwiseOrExpression,
+                IdentifierName(nameof(DllImportSearchPath)),
+                nameof(DllImportSearchPath.System32)))));
+
+    // [DefaultDllImportSearchPaths(DllImportSearchPath.System32 | ...)]
+    private static readonly AttributeListSyntax DefaultDllImportSearchPathsAllowAppDirAttributeList = AttributeList()
+        .WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken))
+        .AddAttributes(Attribute(IdentifierName("DefaultDllImportSearchPaths")).AddArgumentListArguments(
+            AttributeArgument(CompoundExpression(
+                SyntaxKind.BitwiseOrExpression,
+                IdentifierName(nameof(DllImportSearchPath)),
+                nameof(DllImportSearchPath.System32),
+                nameof(DllImportSearchPath.ApplicationDirectory),
+                nameof(DllImportSearchPath.AssemblyDirectory)))));
 
     private static readonly AttributeSyntax GeneratedCodeAttribute = Attribute(IdentifierName("global::System.CodeDom.Compiler.GeneratedCode"))
         .WithArgumentList(FixTrivia(AttributeArgumentList().AddArguments(
@@ -1744,8 +1767,7 @@ public class Generator : IDisposable
             ExpressionSyntax thisHandleToInt64 = InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, thisHandle, IdentifierName(nameof(IntPtr.ToInt64))), ArgumentList());
             ExpressionSyntax overallTest = invalidHandleValues.Count == 0
                 ? LiteralExpression(SyntaxKind.FalseLiteralExpression)
-                : invalidHandleValues.Select(v => BinaryExpression(SyntaxKind.EqualsExpression, thisHandleToInt64, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(v.ToInt64()))))
-                    .Aggregate((left, right) => BinaryExpression(SyntaxKind.LogicalOrExpression, left, right));
+                : CompoundExpression(SyntaxKind.LogicalOrExpression, invalidHandleValues.Select(v => BinaryExpression(SyntaxKind.EqualsExpression, thisHandleToInt64, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(v.ToInt64())))));
             members.Add(PropertyDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), nameof(SafeHandle.IsInvalid))
                 .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
                 .WithExpressionBody(ArrowExpressionClause(overallTest))
@@ -2550,6 +2572,28 @@ public class Generator : IDisposable
         return true;
     }
 
+    private static ExpressionSyntax CompoundExpression(SyntaxKind @operator, params ExpressionSyntax[] elements) =>
+        elements.Aggregate((left, right) => BinaryExpression(@operator, left, right));
+
+    private static ExpressionSyntax CompoundExpression(SyntaxKind @operator, IEnumerable<ExpressionSyntax> elements) =>
+        elements.Aggregate((left, right) => BinaryExpression(@operator, left, right));
+
+    private static ExpressionSyntax CompoundExpression(SyntaxKind @operator, ExpressionSyntax memberOf, params string[] memberNames) =>
+        CompoundExpression(@operator, memberNames.Select(n => MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, memberOf, IdentifierName(n))));
+
+    private static bool IsLibraryAllowedAppLocal(string libraryName)
+    {
+        for (int i = 0; i < AppLocalLibraries.Length; i++)
+        {
+            if (string.Equals(libraryName, AppLocalLibraries[i], StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private T AddApiDocumentation<T>(string api, T memberDeclaration)
         where T : MemberDeclarationSyntax
     {
@@ -3110,7 +3154,8 @@ public class Generator : IDisposable
 
             if (this.generateDefaultDllImportSearchPathsAttribute)
             {
-                methodDeclaration = methodDeclaration.AddAttributeLists(DefaultDllImportSearchPathsAttributeList);
+                methodDeclaration = methodDeclaration.AddAttributeLists(
+                    IsLibraryAllowedAppLocal(moduleName) ? DefaultDllImportSearchPathsAllowAppDirAttributeList : DefaultDllImportSearchPathsAttributeList);
             }
 
             if (this.GetSupportedOSPlatformAttribute(methodDefinition.GetCustomAttributes()) is AttributeSyntax supportedOSPlatformAttribute)
@@ -5629,8 +5674,7 @@ public class Generator : IDisposable
             };
             AttributeListSyntax usageAttr = AttributeList().AddAttributes(
                 Attribute(IdentifierName(nameof(AttributeUsageAttribute))).AddArgumentListArguments(
-                    AttributeArgument(
-                        uses.Aggregate((left, right) => BinaryExpression(SyntaxKind.BitwiseOrExpression, left, right))),
+                    AttributeArgument(CompoundExpression(SyntaxKind.BitwiseOrExpression, uses)),
                     AttributeArgument(LiteralExpression(SyntaxKind.FalseLiteralExpression)).WithNameEquals(NameEquals(IdentifierName("AllowMultiple"))),
                     AttributeArgument(LiteralExpression(SyntaxKind.FalseLiteralExpression)).WithNameEquals(NameEquals(IdentifierName("Inherited")))));
             ClassDeclarationSyntax attrDecl = ClassDeclaration(Identifier("UnscopedRefAttribute"))

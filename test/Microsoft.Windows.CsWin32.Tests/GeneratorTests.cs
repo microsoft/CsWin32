@@ -185,6 +185,20 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         }
     }
 
+    [Fact]
+    public void DbgHelpExternMethodsCanLoadAppLocal()
+    {
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerateExternMethod("DbgHelpCreateUserDump", out _));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        MethodDeclarationSyntax method = Assert.Single(this.FindGeneratedMethod("DbgHelpCreateUserDump"), m => m.Modifiers.Any(SyntaxKind.ExternKeyword));
+        AttributeSyntax searchPathsAttribute = Assert.Single(method.AttributeLists.SelectMany(al => al.Attributes), a => a.Name is IdentifierNameSyntax { Identifier: { ValueText: "DefaultDllImportSearchPaths" } });
+        Assert.NotNull(searchPathsAttribute.ArgumentList);
+        Assert.Single(searchPathsAttribute.ArgumentList.DescendantNodes().OfType<IdentifierNameSyntax>(), id => id.Identifier.ValueText == nameof(DllImportSearchPath.ApplicationDirectory));
+    }
+
     [Theory]
     [PairwiseData]
     public void TemplateProvidedMembersMatchVisibilityWithContainingType_Methods(bool generatePublic)

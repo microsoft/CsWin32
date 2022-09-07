@@ -3058,6 +3058,19 @@ namespace Windows.Win32
         Assert.Equal("0", ((LiteralExpressionSyntax)sizeParamIndex!.Expression).Token.ValueText);
     }
 
+    [Fact]
+    public void SeekOriginEnumPreferred()
+    {
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerateType("IStream"));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        MethodDeclarationSyntax seekMethod = Assert.Single(this.FindGeneratedMethod("Seek"));
+        QualifiedNameSyntax seekParamType = Assert.IsType<QualifiedNameSyntax>(seekMethod.ParameterList.Parameters[1].Type);
+        Assert.Equal(nameof(SeekOrigin), seekParamType.Right.Identifier.ValueText);
+    }
+
     private static string ConstructGlobalConfigString(bool omitDocs = false)
     {
         StringBuilder globalConfigBuilder = new();

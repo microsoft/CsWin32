@@ -53,6 +53,7 @@ public class Generator : IDisposable
         { "OVERLAPPED", ParseTypeName("global::System.Threading.NativeOverlapped") },
         { "POINT", ParseTypeName("global::System.Drawing.Point") },
         { "POINTF", ParseTypeName("global::System.Drawing.PointF") },
+        { "STREAM_SEEK", ParseTypeName("global::System.IO.SeekOrigin") },
     };
 
     /// <summary>

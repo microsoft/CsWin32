@@ -503,7 +503,7 @@ public class Generator : IDisposable
                 ClassDeclarationSyntax partialClass = DeclarePInvokeClass(entry.Key)
                     .AddMembers(entry.ToArray())
                     .WithLeadingTrivia(ParseLeadingTrivia(string.Format(CultureInfo.InvariantCulture, PartialPInvokeContentComment, entry.Key)));
-                if (i++ == 0)
+                if (i == 0)
                 {
                     partialClass = partialClass
                         .WithoutLeadingTrivia()
@@ -512,6 +512,7 @@ public class Generator : IDisposable
                 }
 
                 result = result.Concat(new MemberDeclarationSyntax[] { partialClass });
+                i++;
             }
 
             ClassDeclarationSyntax macrosPartialClass = DeclarePInvokeClass("Macros")

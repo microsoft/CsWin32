@@ -320,6 +320,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             "D3D11_BLEND_DESC1", // nested structs with inline arrays with element that is NOT nested
             "RTM_DEST_INFO", // nested structs with inline arrays with element whose name collides with another
             "DISPPARAMS",
+            "PICTYPE", // An enum with -1 as an enum value
             "CoCreateInstance", // a hand-written friendly overload
             "JsVariantToValue",
             "D2D1_DEFAULT_FLATTENING_TOLERANCE", // a float constant

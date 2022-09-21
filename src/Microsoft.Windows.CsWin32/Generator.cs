@@ -4403,8 +4403,9 @@ public class Generator : IDisposable
                 continue;
             }
 
+            bool enumBaseTypeIsSigned = enumBaseType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.LongKeyword or (int)SyntaxKind.IntKeyword or (int)SyntaxKind.ShortKeyword or (int)SyntaxKind.SByteKeyword } };
             Constant value = this.Reader.GetConstant(valueHandle);
-            ExpressionSyntax enumValue = flagsEnum ? this.ToHexExpressionSyntax(value) : this.ToExpressionSyntax(value);
+            ExpressionSyntax enumValue = flagsEnum ? this.ToHexExpressionSyntax(value, enumBaseTypeIsSigned) : this.ToExpressionSyntax(value);
             EnumMemberDeclarationSyntax enumMember = EnumMemberDeclaration(SafeIdentifier(enumValueName))
                 .WithEqualsValue(EqualsValueClause(enumValue));
             enumValues.Add(enumMember);
@@ -5971,22 +5972,30 @@ public class Generator : IDisposable
         }
     }
 
-    private ExpressionSyntax ToHexExpressionSyntax(Constant constant)
+    private ExpressionSyntax ToHexExpressionSyntax(Constant constant, bool assignableToSignedInteger)
     {
         BlobReader blobReader = this.Reader.GetBlobReader(constant.Value);
         BlobReader blobReader2 = this.Reader.GetBlobReader(constant.Value);
+        BlobReader blobReader3 = this.Reader.GetBlobReader(constant.Value);
         return constant.TypeCode switch
         {
-            ConstantTypeCode.SByte => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadSByte()), blobReader2.ReadSByte())),
+            ConstantTypeCode.SByte => UncheckedSignedWrapper(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadSByte()), blobReader2.ReadSByte())), SyntaxKind.SByteKeyword),
             ConstantTypeCode.Byte => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadByte()), blobReader2.ReadByte())),
-            ConstantTypeCode.Int16 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadInt16()), blobReader2.ReadInt16())),
+            ConstantTypeCode.Int16 => UncheckedSignedWrapper(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadInt16()), blobReader2.ReadInt16())), SyntaxKind.ShortKeyword),
             ConstantTypeCode.UInt16 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadUInt16()), blobReader2.ReadUInt16())),
-            ConstantTypeCode.Int32 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadInt32()), blobReader2.ReadInt32())),
+            ConstantTypeCode.Int32 => UncheckedSignedWrapper(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadInt32()), blobReader2.ReadInt32())), SyntaxKind.IntKeyword),
             ConstantTypeCode.UInt32 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadUInt32()), blobReader2.ReadUInt32())),
-            ConstantTypeCode.Int64 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadInt64()), blobReader2.ReadInt64())),
+            ConstantTypeCode.Int64 => UncheckedSignedWrapper(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadInt64()), blobReader2.ReadInt64())), SyntaxKind.LongKeyword),
             ConstantTypeCode.UInt64 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadUInt64()), blobReader2.ReadUInt64())),
             _ => throw new NotSupportedException("ConstantTypeCode not supported: " + constant.TypeCode),
         };
+
+        ExpressionSyntax UncheckedSignedWrapper(LiteralExpressionSyntax value, SyntaxKind signedType)
+        {
+            return assignableToSignedInteger && value.Token.Text.StartsWith("0xF", StringComparison.OrdinalIgnoreCase)
+                ? UncheckedExpression(CastExpression(PredefinedType(Token(signedType)), value))
+                : value;
+        }
     }
 
     private IEnumerable<NamespaceMetadata> GetNamespacesToSearch(string? @namespace)

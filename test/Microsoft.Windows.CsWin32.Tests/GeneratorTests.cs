@@ -314,12 +314,13 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             "HBITMAP_UserMarshal", // in+out handle pointer
             "GetDiskFreeSpaceExW", // ULARGE_INTEGER replaced with keyword: ulong.
             "MsiGetProductPropertyW", // MSIHANDLE (a 32-bit handle)
-            "tcp_opt_sack", // nested structs with inline arrays with nested struct elements
+            "TCP_OPT_SACK", // nested structs with inline arrays with nested struct elements
             "HANDLETABLE", // nested structs with inline arrays with nint element
             "SYSTEM_POLICY_INFORMATION", // nested structs with inline arrays with IntPtr element
             "D3D11_BLEND_DESC1", // nested structs with inline arrays with element that is NOT nested
             "RTM_DEST_INFO", // nested structs with inline arrays with element whose name collides with another
             "DISPPARAMS",
+            "PICTYPE", // An enum with -1 as an enum value
             "CoCreateInstance", // a hand-written friendly overload
             "JsVariantToValue",
             "D2D1_DEFAULT_FLATTENING_TOLERANCE", // a float constant
@@ -1236,7 +1237,7 @@ namespace Microsoft.Windows.Sdk
 			/// <para>This doc was truncated.</para>
 			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>
 			/// </summary>
-			internal winmdroot.Graphics.Gdi.FONT_WEIGHT lfWeight;
+			internal int lfWeight;
 			/// <summary>
 			/// <para>Type: <b>BYTE</b> <b>TRUE</b> to specify an italic font.</para>
 			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>
@@ -1265,7 +1266,7 @@ namespace Microsoft.Windows.Sdk
 			/// <summary>Type: <b>BYTE</b></summary>
 			internal winmdroot.Graphics.Gdi.FONT_QUALITY lfQuality;
 			/// <summary>Type: <b>BYTE</b></summary>
-			internal winmdroot.Graphics.Gdi.FONT_PITCH_AND_FAMILY lfPitchAndFamily;
+			internal byte lfPitchAndFamily;
 			/// <summary>
 			/// <para>Type: <b>TCHAR[LF_FACESIZE]</b> Specifies a null-terminated string that specifies the typeface name of the font. The length of this string must not exceed 32 characters, including the terminating null character. The <a href=""https://docs.microsoft.com/windows/desktop/api/wingdi/nf-wingdi-enumfontfamiliesa"">EnumFontFamilies</a> function can be used to enumerate the typeface names of all currently available fonts. If <b>lfFaceName</b> is an empty string, GDI uses the first font that matches the other specified attributes.</para>
 			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>

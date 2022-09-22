@@ -36,7 +36,7 @@
     <IncludeSymbols Condition=" '$(DebugType)' != 'embedded' ">true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
 
-    <MetadataVersion>31.0.4-preview</MetadataVersion>
+    <MetadataVersion>33.0.18-preview</MetadataVersion>
     <!-- <DiaMetadataVersion>0.2.185-preview-g7e1e6a442c</DiaMetadataVersion> -->
     <ApiDocsVersion>0.1.7-alpha</ApiDocsVersion>
   </PropertyGroup>

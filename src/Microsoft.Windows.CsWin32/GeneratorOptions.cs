@@ -45,6 +45,12 @@ public record GeneratorOptions
     public bool AllowMarshaling { get; init; } = true;
 
     /// <summary>
+    /// Gets a value indicating whether to generate APIs judged to be unnecessary or redundant given the target framework
+    /// because the project multi-targets to frameworks that need the APIs consistently for easier coding.
+    /// </summary>
+    public bool MultiTargetingFriendlyAPIs { get; init; }
+
+    /// <summary>
     /// Gets a value indicating whether friendly overloads should use safe handles.
     /// </summary>
     /// <value>The default value is <see langword="true"/>.</value>

@@ -37,6 +37,11 @@
       "type": "boolean",
       "default": true
     },
+    "multiTargetingFriendlyAPIs": {
+      "description": "A value indicating whether to generate APIs judged to be unnecessary or redundant given the target framework. This is useful for multi-targeting projects that need a consistent set of APIs across target frameworks to avoid too many conditional compilation regions.",
+      "type": "boolean",
+      "default": false
+    },
     "useSafeHandles": {
       "description": "A value indicating whether friendly overloads should use safe handles.",
       "type": "boolean",

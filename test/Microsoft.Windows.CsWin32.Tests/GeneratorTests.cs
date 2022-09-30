@@ -329,7 +329,6 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             "PKEY_AudioEndpoint_FormFactor", // PROPERTYKEY constant
             "RT_CURSOR", // PCWSTR constant
             "IOleUILinkContainerW", // An IUnknown-derived interface with no GUID
-            "RTM_ENTITY_EXPORT_METHODS",
             "FILE_TYPE_NOTIFICATION_INPUT",
             "DS_SELECTION_LIST", // A struct with a fixed-length inline array of potentially managed structs
             "ISpellCheckerFactory", // COM interface that includes `ref` parameters
@@ -1198,348 +1197,53 @@ namespace Microsoft.Windows.Sdk
         Assert.Single(this.FindGeneratedMethod("EvtNext"));
     }
 
-    [Fact]
-    public void FixedLengthInlineCharArraysWorkInNet35()
+    [Theory, PairwiseData]
+    public void FixedLengthInlineArray(
+        bool allowMarshaling,
+        bool multitargetingAPIs,
+        [CombinatorialValues("net35", "net472", "net6.0")] string tfm,
+        [CombinatorialValues(/*char*/"RM_PROCESS_INFO", /*custom unmanaged*/"ARRAYDESC")] string api,
+        [CombinatorialValues(LanguageVersion.CSharp8, LanguageVersion.CSharp9)] LanguageVersion langVersion)
     {
-        const string expected = $@"
-		/// <summary>Defines the attributes of a font.</summary>
-		/// <remarks>
-		/// <para>The following situations do not support ClearType antialiasing: </para>
-		/// <para>This doc was truncated.</para>
-		/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#"">Read more on docs.microsoft.com</see>.</para>
-		/// </remarks>
-		[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
-		internal partial struct LOGFONTW
-		{{
-			/// <summary>
-			/// <para>Type: <b>LONG</b> Specifies the height, in logical units, of the font's character cell or character. The character height value (also known as the em height) is the character cell height value minus the internal-leading value. The font mapper interprets the value specified in <b>lfHeight</b> in the following manner. </para>
-			/// <para>This doc was truncated.</para>
-			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>
-			/// </summary>
-			internal int lfHeight;
-			/// <summary>
-			/// <para>Type: <b>LONG</b> Specifies the average width, in logical units, of characters in the font. If <b>lfWidth</b> is not zero, the aspect ratio of the device is matched against the digitization aspect ratio of the available fonts to find the closest match, determined by the absolute value of the difference.</para>
-			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>
-			/// </summary>
-			internal int lfWidth;
-			/// <summary>
-			/// <para>Type: <b>LONG</b> Specifies the angle, in tenths of degrees, between the escapement vector and the x-axis of the device. The escapement vector is parallel to the base line of a row of text. The <b>lfEscapement</b> member specifies both the escapement and orientation. You should set <b>lfEscapement</b> and <b>lfOrientation</b> to the same value.</para>
-			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>
-			/// </summary>
-			internal int lfEscapement;
-			/// <summary>
-			/// <para>Type: <b>LONG</b> Specifies the angle, in tenths of degrees, between each character's base line and the x-axis of the device.</para>
-			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>
-			/// </summary>
-			internal int lfOrientation;
-			/// <summary>
-			/// <para>Type: <b>LONG</b> Specifies the weight of the font in the range 0 through 1000. For example, 400 is normal and 700 is bold. If this value is zero, a default weight is used. The following values are defined in Wingdi.h for convenience. </para>
-			/// <para>This doc was truncated.</para>
-			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>
-			/// </summary>
-			internal int lfWeight;
-			/// <summary>
-			/// <para>Type: <b>BYTE</b> <b>TRUE</b> to specify an italic font.</para>
-			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>
-			/// </summary>
-			internal byte lfItalic;
-			/// <summary>
-			/// <para>Type: <b>BYTE</b> <b>TRUE</b> to specify an underlined font.</para>
-			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>
-			/// </summary>
-			internal byte lfUnderline;
-			/// <summary>
-			/// <para>Type: <b>BYTE</b> <b>TRUE</b> to specify a strikeout font.</para>
-			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>
-			/// </summary>
-			internal byte lfStrikeOut;
-			/// <summary>
-			/// <para>Type: <b>BYTE</b> Specifies the character set. The following values are predefined: </para>
-			/// <para>This doc was truncated.</para>
-			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>
-			/// </summary>
-			internal winmdroot.Graphics.Gdi.FONT_CHARSET lfCharSet;
-			/// <summary>Type: <b>BYTE</b></summary>
-			internal winmdroot.Graphics.Gdi.FONT_OUTPUT_PRECISION lfOutPrecision;
-			/// <summary>Type: <b>BYTE</b></summary>
-			internal winmdroot.Graphics.Gdi.FONT_CLIP_PRECISION lfClipPrecision;
-			/// <summary>Type: <b>BYTE</b></summary>
-			internal winmdroot.Graphics.Gdi.FONT_QUALITY lfQuality;
-			/// <summary>Type: <b>BYTE</b></summary>
-			internal byte lfPitchAndFamily;
-			/// <summary>
-			/// <para>Type: <b>TCHAR[LF_FACESIZE]</b> Specifies a null-terminated string that specifies the typeface name of the font. The length of this string must not exceed 32 characters, including the terminating null character. The <a href=""https://docs.microsoft.com/windows/desktop/api/wingdi/nf-wingdi-enumfontfamiliesa"">EnumFontFamilies</a> function can be used to enumerate the typeface names of all currently available fonts. If <b>lfFaceName</b> is an empty string, GDI uses the first font that matches the other specified attributes.</para>
-			/// <para><see href=""https://docs.microsoft.com/windows/win32/api//dimm/ns-dimm-logfontw#members"">Read more on docs.microsoft.com</see>.</para>
-			/// </summary>
-			internal __char_32 lfFaceName;
+        this.compilation = this.starterCompilations[tfm];
+        this.parseOptions = this.parseOptions.WithLanguageVersion(langVersion);
+        this.generator = this.CreateGenerator(new GeneratorOptions { AllowMarshaling = allowMarshaling, MultiTargetingFriendlyAPIs = multitargetingAPIs });
 
-			[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-			internal partial struct __char_32
-			{{
-				internal char _0,_1,_2,_3,_4,_5,_6,_7,_8,_9,_10,_11,_12,_13,_14,_15,_16,_17,_18,_19,_20,_21,_22,_23,_24,_25,_26,_27,_28,_29,_30,_31;
+        // TODO we need to test
+        // another IEquatable primitive,
+        // a non-IEquatable primitive (e.g. IntPtr before .NET 5),
+        // and a custom managed.
+        //// TODO: code here
 
-				/// <summary>Always <c>32</c>.</summary>
-				internal readonly int Length => 32;
-
-				/// <summary>
-				/// Copies the fixed array to a new string up to the specified length regardless of whether there are null terminating characters.
-				/// </summary>
-				/// <exception cref=""ArgumentOutOfRangeException"">
-				/// Thrown when <paramref name=""length""/> is less than <c>0</c> or greater than <see cref=""Length""/>.
-				/// </exception>
-				internal unsafe readonly string ToString(int length)
-				{{
-					if (length < 0 || length > Length)throw new ArgumentOutOfRangeException(nameof(length), length, ""Length must be between 0 and the fixed array length."");
-					fixed (char* p0 = &_0)
-						return new string(p0, 0, length);
-				}}
-
-				/// <summary>
-				/// Copies the fixed array to a new string, stopping before the first null terminator character or at the end of the fixed array (whichever is shorter).
-				/// </summary>
-				public override readonly unsafe string ToString()
-				{{
-					int length;
-					fixed (char* p = &_0)
-					{{
-						char* pLastExclusive = p + Length;
-						char* pCh = p;
-						for(; pCh < pLastExclusive && *pCh != '\0'; pCh++);
-						length= checked((int)(pCh - p));
-					}}
-					return ToString(length);
-				}}
-			}}
-		}}
-";
-
-        const string expectedIndexer = $@"
-	[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
-	internal static partial class InlineArrayIndexerExtensions
-	{{
-		internal static unsafe ref readonly char ReadOnlyItemRef(this in winmdroot.Graphics.Gdi.LOGFONTW.__char_32 @this, int index)
-		{{
-			fixed (char* p0 = &@this._0)
-				return ref p0[index];
-		}}
-
-		internal static unsafe ref char ItemRef(this ref winmdroot.Graphics.Gdi.LOGFONTW.__char_32 @this, int index)
-		{{
-			fixed (char* p0 = &@this._0)
-				return ref p0[index];
-		}}
-	}}
-";
-
-        this.compilation = this.starterCompilations["net35"];
-        this.AssertGeneratedType("LOGFONTW", expected, expectedIndexer);
+        Assert.True(this.generator.TryGenerate(api, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
     }
 
-    /// <summary>
-    /// Validates that where MemoryMarshal.CreateSpan isn't available, a substitute indexer is offered.
-    /// </summary>
-    [Fact]
-    public void FixedLengthInlineArraysOfferExtensionIndexerWhereNoSpanPossible()
+    [Theory, PairwiseData]
+    public void FixedLengthInlineArray_Pointers(
+        bool allowMarshaling,
+        bool multitargetingAPIs,
+        [CombinatorialValues("net35", "net472", "net6.0")] string tfm)
     {
-        const string expected = $@"		[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
-		internal partial struct MainAVIHeader
-		{{
-			internal uint dwMicroSecPerFrame;
-			internal uint dwMaxBytesPerSec;
-			internal uint dwPaddingGranularity;
-			internal uint dwFlags;
-			internal uint dwTotalFrames;
-			internal uint dwInitialFrames;
-			internal uint dwStreams;
-			internal uint dwSuggestedBufferSize;
-			internal uint dwWidth;
-			internal uint dwHeight;
-			internal __uint_4 dwReserved;
-
-			internal partial struct __uint_4
-			{{
-				internal uint _0,_1,_2,_3;
-
-				/// <summary>Always <c>4</c>.</summary>
-				internal readonly int Length => 4;
-
-				internal unsafe readonly void CopyTo(Span<uint> target, int length = 4)
-				{{
-					if (length > 4)throw new ArgumentOutOfRangeException(""length"");
-					fixed (uint* p0 = &_0)
-					{{
-						for(int i = 0; i < length; i++)
-						{{
-							target[i]= p0[i];
-						}}
-					}}
-				}}
-
-				internal readonly uint[] ToArray(int length = 4)
-				{{
-					if (length > 4)throw new ArgumentOutOfRangeException(""length"");
-					uint[] target = new uint[length];
-					CopyTo(target, length);
-					return target;
-				}}
-
-				internal unsafe readonly bool Equals(ReadOnlySpan<uint> value)
-				{{
-					fixed (uint* p0 = &_0)
-					{{
- 						int commonLength = Math.Min(value.Length, 4);
-						for(int i = 0; i < commonLength; i++)
-						{{
-							if (p0[i] != value[i])
-							{{
-								return false;
-							}}
-						}}
-						for(int i = commonLength; i < 4; i++)
-						{{
-							if (p0[i] != default(uint))
-							{{
-								return false;
-							}}
-						}}
-					}}
-					return true;
-				}}
-			}}
-		}}
-";
-
-        const string expectedIndexer = $@"
-	[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
-	internal static partial class InlineArrayIndexerExtensions
-	{{
-		internal static unsafe ref readonly uint ReadOnlyItemRef(this in winmdroot.Media.DirectShow.MainAVIHeader.__uint_4 @this, int index)
-		{{
-			fixed (uint* p0 = &@this._0)
-				return ref p0[index];
-		}}
-
-		internal static unsafe ref uint ItemRef(this ref winmdroot.Media.DirectShow.MainAVIHeader.__uint_4 @this, int index)
-		{{
-			fixed (uint* p0 = &@this._0)
-				return ref p0[index];
-		}}
-	}}
-";
-
-        this.AssertGeneratedType("MainAVIHeader", expected, expectedIndexer);
+        this.compilation = this.starterCompilations[tfm];
+        this.generator = this.CreateGenerator(new GeneratorOptions { AllowMarshaling = allowMarshaling, MultiTargetingFriendlyAPIs = multitargetingAPIs });
+        Assert.True(this.generator.TryGenerate("RTM_ENTITY_EXPORT_METHODS", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
     }
 
-    /// <summary>
-    /// Validates that where MemoryMarshal.CreateSpan is available, a <see cref="Span{T}"/> method and proper indexer is offered.
-    /// </summary>
     [Fact]
-    public void FixedLengthInlineArraysGetSpanWherePossible()
+    public void FixedLengthInlineArray_TwoRequested()
     {
-        const string expected = $@"		[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
-		internal partial struct MainAVIHeader
-		{{
-			internal uint dwMicroSecPerFrame;
-			internal uint dwMaxBytesPerSec;
-			internal uint dwPaddingGranularity;
-			internal uint dwFlags;
-			internal uint dwTotalFrames;
-			internal uint dwInitialFrames;
-			internal uint dwStreams;
-			internal uint dwSuggestedBufferSize;
-			internal uint dwWidth;
-			internal uint dwHeight;
-			internal __uint_4 dwReserved;
+        this.generator = this.CreateGenerator();
 
-			internal partial struct __uint_4
-			{{
-				internal uint _0,_1,_2,_3;
+        // These two APIs are specially selected because they are both char arrays, and thus would both request the SliceAtNull extension method's generation.
+        Assert.True(this.generator.TryGenerate("RM_PROCESS_INFO", CancellationToken.None));
+        Assert.True(this.generator.TryGenerate("WER_REPORT_INFORMATION", CancellationToken.None));
 
-				/// <summary>Always <c>4</c>.</summary>
-				internal readonly int Length => 4;
-
-				/// <summary>
-				/// Gets a ref to an individual element of the inline array.
-				/// ⚠ Important ⚠: When this struct is on the stack, do not let the returned reference outlive the stack frame that defines it.
-				/// </summary>
-				[UnscopedRef]
-				internal ref uint this[int index] => ref AsSpan()[index];
-
-				/// <summary>
-				/// Gets this inline array as a span.
-				/// </summary>
-				/// <remarks>
-				/// ⚠ Important ⚠: When this struct is on the stack, do not let the returned span outlive the stack frame that defines it.
-				/// </remarks>
-				[UnscopedRef]
-				internal Span<uint> AsSpan() => MemoryMarshal.CreateSpan(ref _0, 4);
-
-				internal unsafe readonly void CopyTo(Span<uint> target, int length = 4)
-				{{
-					if (length > 4)throw new ArgumentOutOfRangeException(""length"");
-					fixed (uint* p0 = &_0)
-					{{
-						for(int i = 0; i < length; i++)
-						{{
-							target[i]= p0[i];
-						}}
-					}}
-				}}
-
-				internal readonly uint[] ToArray(int length = 4)
-				{{
-					if (length > 4)throw new ArgumentOutOfRangeException(""length"");
-					uint[] target = new uint[length];
-					CopyTo(target, length);
-					return target;
-				}}
-
-				internal unsafe readonly bool Equals(ReadOnlySpan<uint> value)
-				{{
-					fixed (uint* p0 = &_0)
-					{{
- 						int commonLength = Math.Min(value.Length, 4);
-						for(int i = 0; i < commonLength; i++)
-						{{
-							if (p0[i] != value[i])
-							{{
-								return false;
-							}}
-						}}
-						for(int i = commonLength; i < 4; i++)
-						{{
-							if (p0[i] != default(uint))
-							{{
-								return false;
-							}}
-						}}
-					}}
-					return true;
-				}}
-			}}
-		}}
-";
-
-        const string expectedIndexer = $@"
-	[global::System.CodeDom.Compiler.GeneratedCode(""Microsoft.Windows.CsWin32"", ""{ThisAssembly.AssemblyInformationalVersion}"")]
-	internal static partial class InlineArrayIndexerExtensions
-	{{
-		internal static unsafe ref readonly uint ReadOnlyItemRef(this in winmdroot.Media.DirectShow.MainAVIHeader.__uint_4 @this, int index)
-		{{
-			fixed (uint* p0 = &@this._0)
-				return ref p0[index];
-		}}
-
-		internal static unsafe ref uint ItemRef(this ref winmdroot.Media.DirectShow.MainAVIHeader.__uint_4 @this, int index)
-		{{
-			fixed (uint* p0 = &@this._0)
-				return ref p0[index];
-		}}
-	}}
-";
-
-        this.compilation = this.starterCompilations["net6.0"];
-        this.AssertGeneratedType("MainAVIHeader", expected, expectedIndexer);
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
     }
 
     [Theory, PairwiseData]
@@ -3154,6 +2858,11 @@ namespace Windows.Win32
             syntaxTrees.Add(CSharpSyntaxTree.ParseText(unit.Value.ToFullString(), this.parseOptions, path: unit.Key));
         }
 
+        // Add namespaces that projects may define to ensure we prefix types with "global::" everywhere.
+        compilation = compilation.AddSyntaxTrees(
+            CSharpSyntaxTree.ParseText("namespace Microsoft.System { }", this.parseOptions, path: "Microsoft.System.cs"),
+            CSharpSyntaxTree.ParseText("namespace Windows.Win32.System { }", this.parseOptions, path: "Windows.Win32.System.cs"));
+
         return compilation.AddSyntaxTrees(syntaxTrees);
     }
 
@@ -3303,11 +3012,6 @@ namespace Windows.Win32
             references: metadataReferences,
             options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, platform: platform, allowUnsafe: true));
 
-        // Add namespaces that projects may define to ensure we prefix types with "global::" everywhere.
-        compilation = compilation.AddSyntaxTrees(
-            CSharpSyntaxTree.ParseText("namespace Microsoft.System { }", this.parseOptions, path: "Microsoft.System.cs"),
-            CSharpSyntaxTree.ParseText("namespace Windows.Win32.System { }", this.parseOptions, path: "Windows.Win32.System.cs"));
-
         return compilation;
     }
 
@@ -3318,22 +3022,25 @@ namespace Windows.Win32
     private static class MyReferenceAssemblies
     {
 #pragma warning disable SA1202 // Elements should be ordered by access
-        private static readonly ImmutableArray<PackageIdentity> AdditionalPackages = ImmutableArray.Create(
-            new PackageIdentity("Microsoft.Windows.SDK.Contracts", "10.0.19041.1"),
-            new PackageIdentity("System.Memory", "4.5.4"),
-            new PackageIdentity("Microsoft.Win32.Registry", "5.0.0"));
+        private static readonly ImmutableArray<PackageIdentity> AdditionalLegacyPackages = ImmutableArray.Create(
+            new PackageIdentity("Microsoft.Windows.SDK.Contracts", "10.0.19041.1"));
 
-        internal static readonly ReferenceAssemblies NetStandard20 = ReferenceAssemblies.NetStandard.NetStandard20.AddPackages(AdditionalPackages.Add(new PackageIdentity("System.Memory", "4.5.4")));
+        private static readonly ImmutableArray<PackageIdentity> AdditionalModernPackages = AdditionalLegacyPackages.AddRange(ImmutableArray.Create(
+            new PackageIdentity("System.Runtime.CompilerServices.Unsafe", "6.0.0"),
+            new PackageIdentity("System.Memory", "4.5.5"),
+            new PackageIdentity("Microsoft.Win32.Registry", "5.0.0")));
+
+        internal static readonly ReferenceAssemblies NetStandard20 = ReferenceAssemblies.NetStandard.NetStandard20.AddPackages(AdditionalModernPackages);
 
         internal static class NetFramework
         {
-            internal static readonly ReferenceAssemblies Net35 = ReferenceAssemblies.NetFramework.Net35.Default.AddPackages(AdditionalPackages);
-            internal static readonly ReferenceAssemblies Net472 = ReferenceAssemblies.NetFramework.Net472.Default.AddPackages(AdditionalPackages);
+            internal static readonly ReferenceAssemblies Net35 = ReferenceAssemblies.NetFramework.Net35.Default.AddPackages(AdditionalLegacyPackages);
+            internal static readonly ReferenceAssemblies Net472 = ReferenceAssemblies.NetFramework.Net472.Default.AddPackages(AdditionalModernPackages);
         }
 
         internal static class Net
         {
-            internal static readonly ReferenceAssemblies Net60 = ReferenceAssemblies.Net.Net60.AddPackages(AdditionalPackages);
+            internal static readonly ReferenceAssemblies Net60 = ReferenceAssemblies.Net.Net60.AddPackages(AdditionalModernPackages);
         }
 #pragma warning restore SA1202 // Elements should be ordered by access
     }

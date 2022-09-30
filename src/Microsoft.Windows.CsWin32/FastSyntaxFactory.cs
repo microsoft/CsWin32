@@ -99,6 +99,8 @@ internal static class FastSyntaxFactory
 
     internal static LocalDeclarationStatementSyntax LocalDeclarationStatement(VariableDeclarationSyntax declaration) => SyntaxFactory.LocalDeclarationStatement(TokenList(), declaration, Semicolon);
 
+    internal static DeclarationExpressionSyntax DeclarationExpression(TypeSyntax type, VariableDesignationSyntax designation) => SyntaxFactory.DeclarationExpression(type, designation);
+
     internal static VariableDeclaratorSyntax VariableDeclarator(SyntaxToken identifier) => SyntaxFactory.VariableDeclarator(identifier);
 
     internal static VariableDeclarationSyntax VariableDeclaration(TypeSyntax type) => SyntaxFactory.VariableDeclaration(type.WithTrailingTrivia(TriviaList(Space)));

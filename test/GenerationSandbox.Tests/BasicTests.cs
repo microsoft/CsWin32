@@ -199,12 +199,12 @@ public class BasicTests
         header.dwReserved.AsSpan()[1] = 3;
         Assert.Equal(3u, header.dwReserved.AsSpan()[1]);
         Assert.Equal(3u, header.dwReserved[1]);
-        Assert.Equal(3u, header.dwReserved._1);
+        Assert.Equal(3u, header.dwReserved[1]);
 #endif
 
-        header.dwReserved.ItemRef(2) = 4;
+        header.dwReserved[2] = 4;
         Assert.Equal(4u, header.dwReserved.ReadOnlyItemRef(2));
-        Assert.Equal(4u, header.dwReserved._2);
+        Assert.Equal(4u, header.dwReserved[2]);
     }
 
     [Fact]
@@ -243,26 +243,25 @@ public class BasicTests
     public void FixedCharArrayToString_Length()
     {
         Windows.Win32.System.RestartManager.RM_PROCESS_INFO info = default;
-        info.strServiceShortName._0 = 'H';
-        info.strServiceShortName._1 = 'i';
+        info.strServiceShortName[0] = 'H';
+        info.strServiceShortName[1] = 'i';
         Assert.Equal("Hi", info.strServiceShortName.ToString(2));
         Assert.Equal("Hi\0\0", info.strServiceShortName.ToString(4));
     }
 
     [Fact]
-    public unsafe void FixedCharArray_ToString()
+    public void FixedCharArray_ToString()
     {
         Windows.Win32.System.RestartManager.RM_PROCESS_INFO.__char_64 fixedCharArray = default;
         Assert.Equal(string.Empty, fixedCharArray.ToString());
-        fixedCharArray._0 = 'H';
+        fixedCharArray[0] = 'H';
         Assert.Equal("H", fixedCharArray.ToString());
-        fixedCharArray._1 = 'i';
+        fixedCharArray[1] = 'i';
         Assert.Equal("Hi", fixedCharArray.ToString());
 
-        char* p = &fixedCharArray._0;
         for (int i = 0; i < fixedCharArray.Length; i++)
         {
-            *(p + i) = 'x';
+            fixedCharArray[i] = 'x';
         }
 
         Assert.Equal(new string('x', fixedCharArray.Length), fixedCharArray.ToString());
@@ -274,8 +273,8 @@ public class BasicTests
         Windows.Win32.System.RestartManager.RM_PROCESS_INFO.__char_64 fixedCharArray = default;
         fixedCharArray = "hi";
         char[] expected = new char[fixedCharArray.Length];
-        expected[0] = fixedCharArray._0;
-        expected[1] = fixedCharArray._1;
+        expected[0] = fixedCharArray[0];
+        expected[1] = fixedCharArray[1];
         char[] actual = fixedCharArray.ToArray();
         Assert.Equal<char>(expected, actual);
 
@@ -319,7 +318,9 @@ public class BasicTests
         buffer[1] = 'i';
         Assert.True(fixedCharArray.Equals(buffer));
         Assert.True(fixedCharArray.Equals(buffer.AsSpan(0, 2)));
-        Assert.True(fixedCharArray.Equals(buffer.AsSpan(0, 3)));
+        Assert.False(fixedCharArray.Equals(buffer.AsSpan(0, 3)));
+
+        Assert.True(fixedCharArray.Equals(fixedCharArray.ToArray()));
 
         // This should be false because the remainder of the fixed length array is non-default.
         Assert.False(fixedCharArray.Equals(buffer.AsSpan(0, 1)));

@@ -16,6 +16,7 @@ jobs:
     TestFilter: ""
   steps:
   - checkout: self
+    fetchDepth: 0 # avoid shallow clone so nbgv can do its work.
     clean: true
     submodules: true
 
@@ -37,6 +38,7 @@ jobs:
     Platform: NonWindows
   steps:
   - checkout: self
+    fetchDepth: 0 # avoid shallow clone so nbgv can do its work.
     clean: true
     submodules: true
   - template: install-dependencies.yml
@@ -48,12 +50,13 @@ jobs:
   condition: ${{ parameters.includeMacOS }}
   timeoutInMinutes: 120
   pool:
-    vmImage: macOS-10.15
+    vmImage: macOS-12
   variables:
     TestFilter: "&WindowsOnly!=true"
     Platform: NonWindows
   steps:
   - checkout: self
+    fetchDepth: 0 # avoid shallow clone so nbgv can do its work.
     clean: true
     submodules: true
   - template: install-dependencies.yml
@@ -70,6 +73,7 @@ jobs:
   condition: succeededOrFailed()
   steps:
   - checkout: self
+    fetchDepth: 0 # avoid shallow clone so nbgv can do its work.
     clean: true
   - template: install-dependencies.yml
     parameters:

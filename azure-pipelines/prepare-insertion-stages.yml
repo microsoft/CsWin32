@@ -1,0 +1,25 @@
+stages:
+
+- stage: azure_public_winsdk_feed
+  displayName: azure-public/winsdk feed
+  condition: and(succeeded(), eq(dependencies.Build.outputs['Windows.SetPipelineVariables.IsSigned'], 'true'))
+  jobs:
+  - job: push
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+    - checkout: none
+    - download: current
+      artifact: deployables-Windows
+      displayName: Download deployables-Windows artifact
+    - task: UseDotNet@2
+      displayName: Install .NET SDK
+      inputs:
+        packageType: sdk
+        version: 6.x
+    - task: NuGetAuthenticate@0
+      displayName: Authenticate NuGet feeds
+      inputs:
+        nuGetServiceConnections: azure-public/winsdk
+        forceReinstallCredentialProvider: true
+    - script: dotnet nuget push $(Pipeline.Workspace)/deployables-Windows/*.nupkg -s https://pkgs.dev.azure.com/azure-public/winsdk/_packaging/CI/nuget/v3/index.json --api-key azdo --skip-duplicate

@@ -3,9 +3,11 @@ parameters:
 
 steps:
 
-- task: NuGetAuthenticate@0
+- task: NuGetAuthenticate@1
   displayName: 🔏 Authenticate NuGet feeds
   inputs:
+    ${{ if eq(variables['system.collectionId'], 'cb55739e-4afe-46a3-970f-1b49d8ee7564') }}:
+      nuGetServiceConnections: azure-public/msft_consumption
     forceReinstallCredentialProvider: true
 
 - powershell: |

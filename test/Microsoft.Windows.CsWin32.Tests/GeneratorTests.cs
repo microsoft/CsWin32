@@ -1244,6 +1244,9 @@ namespace Microsoft.Windows.Sdk
 
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
+
+        // Verify that inline arrays that share the same length and type are only declared once and shared with all users.
+        Assert.Single(this.FindGeneratedType("__char_64"));
     }
 
     [Theory, PairwiseData]

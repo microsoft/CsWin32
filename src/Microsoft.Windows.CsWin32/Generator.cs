@@ -5174,20 +5174,46 @@ public class Generator : IDisposable
 
         int length = int.Parse(((LiteralExpressionSyntax)arrayType.RankSpecifiers[0].Sizes[0]).Token.ValueText, CultureInfo.InvariantCulture);
         TypeSyntax elementType = arrayType.ElementType;
-        string structNamespace = "Windows.Win32";
-        string fixedLengthStructNameString = $"__{elementType.ToString().Replace(' ', '_').Replace('.', '_').Replace(':', '_').Replace('*', '_').Replace('<', '_').Replace('>', '_').Replace('[', '_').Replace(']', '_').Replace(',', '_')}_{length}";
+
+        static string SanitizeTypeName(string typeName) => typeName.Replace(' ', '_').Replace('.', '_').Replace(':', '_').Replace('*', '_').Replace('<', '_').Replace('>', '_').Replace('[', '_').Replace(']', '_').Replace(',', '_');
+        static void DetermineNames(TypeSyntax elementType, int length, out string structNamespace, out string fixedLengthStructNameString, out string fileNamePrefix)
+        {
+            if (elementType is QualifiedNameSyntax qualifiedElementType)
+            {
+                structNamespace = qualifiedElementType.Left.ToString();
+                fileNamePrefix = SanitizeTypeName(qualifiedElementType.Right.Identifier.ValueText);
+                fixedLengthStructNameString = $"__{fileNamePrefix}_{length}";
+            }
+            else if (elementType is PredefinedTypeSyntax predefined)
+            {
+                structNamespace = GlobalWinmdRootNamespaceAlias;
+                fileNamePrefix = predefined.Keyword.ValueText;
+                fixedLengthStructNameString = $"__{fileNamePrefix}_{length}";
+            }
+            else if (elementType is FunctionPointerTypeSyntax functionPtr)
+            {
+                structNamespace = GlobalWinmdRootNamespaceAlias;
+                fileNamePrefix = "FunctionPointer";
+                fixedLengthStructNameString = $"__{SanitizeTypeName(functionPtr.ToString())}_{length}";
+            }
+            else if (elementType is PointerTypeSyntax elementPointerType)
+            {
+                DetermineNames(elementPointerType.ElementType, length, out structNamespace, out fixedLengthStructNameString, out fileNamePrefix);
+                fixedLengthStructNameString = $"P{fixedLengthStructNameString}";
+            }
+            else
+            {
+                throw new NotSupportedException("Unrecognized type kind: " + elementType.GetType());
+            }
+        }
+
+        DetermineNames(elementType, length, out string structNamespace, out string fixedLengthStructNameString, out string fileNamePrefix);
         IdentifierNameSyntax fixedLengthStructName = IdentifierName(fixedLengthStructNameString);
         TypeSyntax qualifiedFixedLengthStructName = ParseTypeName($"{structNamespace}.{fixedLengthStructNameString}");
 
         if (this.volatileCode.IsInlineArrayStructGenerated(structNamespace, fixedLengthStructNameString))
         {
             return (qualifiedFixedLengthStructName, default, default);
-        }
-
-        // C# does not allow Span<T> where T is a pointer type.
-        if (elementType is PointerTypeSyntax ptr)
-        {
-            elementType = IntPtrTypeSyntax;
         }
 
         // IntPtr/UIntPtr began implementing IEquatable<T> in .NET 5. We may want to actually resolve the type in the compilation to see if it implements this.
@@ -5847,7 +5873,7 @@ public class Generator : IDisposable
 
             // internal static unsafe ref readonly TheStruct ReadOnlyItemRef(this in MainAVIHeader.__dwReserved_4 @this, int index) => ref @this.Value[index]
             ParameterSyntax thisParameter = Parameter(atThis.Identifier)
-                .WithType(qualifiedFixedLengthStructName.WithTrailingTrivia(TriviaList(Space)))
+                .WithType(qualifiedFixedLengthStructName.WithTrailingTrivia(Space))
                 .AddModifiers(TokenWithSpace(SyntaxKind.ThisKeyword), TokenWithSpace(SyntaxKind.InKeyword));
             ParameterSyntax indexParameter = Parameter(indexParamName.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)));
             MethodDeclarationSyntax getAtMethod = MethodDeclaration(RefType(qualifiedElementType.WithTrailingTrivia(TriviaList(Space))).WithReadOnlyKeyword(TokenWithSpace(SyntaxKind.ReadOnlyKeyword)), Identifier("ReadOnlyItemRef"))
@@ -5859,7 +5885,23 @@ public class Generator : IDisposable
             this.volatileCode.AddInlineArrayIndexerExtension(getAtMethod);
         }
 
-        this.volatileCode.AddInlineArrayStruct(structNamespace, fixedLengthStructNameString, fixedLengthStruct);
+        // Wrap with any additional namespaces.
+        MemberDeclarationSyntax fixedLengthStructInNamespace = fixedLengthStruct;
+        if (structNamespace != GlobalWinmdRootNamespaceAlias)
+        {
+            if (!structNamespace.StartsWith(GlobalWinmdRootNamespaceAlias + ".", StringComparison.Ordinal))
+            {
+                throw new NotSupportedException("The struct must be under the metadata's common namespace, but was: " + structNamespace);
+            }
+
+            fixedLengthStructInNamespace = NamespaceDeclaration(ParseName(structNamespace.Substring(GlobalWinmdRootNamespaceAlias.Length + 1)))
+                .AddMembers(fixedLengthStruct);
+        }
+
+        fixedLengthStructInNamespace = fixedLengthStructInNamespace
+                .WithAdditionalAnnotations(new SyntaxAnnotation(SimpleFileNameAnnotation, $"{fileNamePrefix}.InlineArrays"));
+
+        this.volatileCode.AddInlineArrayStruct(structNamespace, fixedLengthStructNameString, fixedLengthStructInNamespace);
 
         return (qualifiedFixedLengthStructName, default, null);
     }
@@ -6312,7 +6354,7 @@ public class Generator : IDisposable
         /// </summary>
         private readonly Dictionary<string, Exception?> specialTypesGenerating = new(StringComparer.Ordinal);
 
-        private readonly Dictionary<(string Namespace, string Name), StructDeclarationSyntax> inlineArrays = new();
+        private readonly Dictionary<(string Namespace, string Name), MemberDeclarationSyntax> inlineArrays = new();
 
         private readonly Dictionary<string, TypeSyntax?> releaseMethodsWithSafeHandleTypesGenerating = new();
 
@@ -6332,7 +6374,7 @@ public class Generator : IDisposable
         }
 
         internal bool IsEmpty => this.modulesAndMembers.Count == 0 && this.types.Count == 0 && this.fieldsToSyntax.Count == 0 && this.safeHandleTypes.Count == 0 && this.specialTypes.Count == 0
-            && this.inlineArrayIndexerExtensionsMembers.Count == 0 && this.comInterfaceFriendlyExtensionsMembers.Count == 0 && this.macros.Count == 0;
+            && this.inlineArrayIndexerExtensionsMembers.Count == 0 && this.comInterfaceFriendlyExtensionsMembers.Count == 0 && this.macros.Count == 0 && this.inlineArrays.Count == 0;
 
         internal IEnumerable<MemberDeclarationSyntax> GeneratedTypes => this.GetTypesWithInjectedFields()
             .Concat(this.specialTypes.Values.Where(st => !st.TopLevel).Select(st => st.Type))
@@ -6538,7 +6580,7 @@ public class Generator : IDisposable
 
         internal bool IsInlineArrayStructGenerated(string @namespace, string name) => this.parent?.inlineArrays.ContainsKey((@namespace, name)) is true || this.inlineArrays.ContainsKey((@namespace, name));
 
-        internal void AddInlineArrayStruct(string @namespace, string name, StructDeclarationSyntax inlineArrayStructDeclaration)
+        internal void AddInlineArrayStruct(string @namespace, string name, MemberDeclarationSyntax inlineArrayStructDeclaration)
         {
             this.ThrowIfNotGenerating();
 

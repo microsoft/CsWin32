@@ -5176,11 +5176,17 @@ public class Generator : IDisposable
         TypeSyntax elementType = arrayType.ElementType;
 
         static string SanitizeTypeName(string typeName) => typeName.Replace(' ', '_').Replace('.', '_').Replace(':', '_').Replace('*', '_').Replace('<', '_').Replace('>', '_').Replace('[', '_').Replace(']', '_').Replace(',', '_');
-        static void DetermineNames(TypeSyntax elementType, int length, out string structNamespace, out string fixedLengthStructNameString, out string fileNamePrefix)
+        void DetermineNames(TypeSyntax elementType, out string? structNamespace, out string fixedLengthStructNameString, out string? fileNamePrefix)
         {
             if (elementType is QualifiedNameSyntax qualifiedElementType)
             {
                 structNamespace = qualifiedElementType.Left.ToString();
+                if (!structNamespace.StartsWith(GlobalWinmdRootNamespaceAlias))
+                {
+                    // Force structs to be under the root namespace.
+                    structNamespace = GlobalWinmdRootNamespaceAlias;
+                }
+
                 fileNamePrefix = SanitizeTypeName(qualifiedElementType.Right.Identifier.ValueText);
                 fixedLengthStructNameString = $"__{fileNamePrefix}_{length}";
             }
@@ -5188,6 +5194,12 @@ public class Generator : IDisposable
             {
                 structNamespace = GlobalWinmdRootNamespaceAlias;
                 fileNamePrefix = predefined.Keyword.ValueText;
+                fixedLengthStructNameString = $"__{fileNamePrefix}_{length}";
+            }
+            else if (elementType is IdentifierNameSyntax identifier)
+            {
+                structNamespace = GlobalWinmdRootNamespaceAlias;
+                fileNamePrefix = identifier.Identifier.ValueText;
                 fixedLengthStructNameString = $"__{fileNamePrefix}_{length}";
             }
             else if (elementType is FunctionPointerTypeSyntax functionPtr)
@@ -5198,20 +5210,27 @@ public class Generator : IDisposable
             }
             else if (elementType is PointerTypeSyntax elementPointerType)
             {
-                DetermineNames(elementPointerType.ElementType, length, out structNamespace, out fixedLengthStructNameString, out fileNamePrefix);
+                DetermineNames(elementPointerType.ElementType, out structNamespace, out fixedLengthStructNameString, out fileNamePrefix);
                 fixedLengthStructNameString = $"P{fixedLengthStructNameString}";
             }
             else
             {
-                throw new NotSupportedException("Unrecognized type kind: " + elementType.GetType());
+                throw new NotSupportedException($"Type {elementType} had unexpected kind: {elementType.GetType().Name}");
+            }
+
+            // Generate inline array as a nested struct if the element type is itself a nested type.
+            if (fieldTypeHandleInfo is ArrayTypeHandleInfo { ElementType: HandleTypeHandleInfo fieldHandleTypeInfo } && this.IsNestedType(fieldHandleTypeInfo.Handle))
+            {
+                structNamespace = null;
+                fileNamePrefix = null;
             }
         }
 
-        DetermineNames(elementType, length, out string structNamespace, out string fixedLengthStructNameString, out string fileNamePrefix);
+        DetermineNames(elementType, out string? structNamespace, out string fixedLengthStructNameString, out string? fileNamePrefix);
         IdentifierNameSyntax fixedLengthStructName = IdentifierName(fixedLengthStructNameString);
         TypeSyntax qualifiedFixedLengthStructName = ParseTypeName($"{structNamespace}.{fixedLengthStructNameString}");
 
-        if (this.volatileCode.IsInlineArrayStructGenerated(structNamespace, fixedLengthStructNameString))
+        if (structNamespace is not null && this.volatileCode.IsInlineArrayStructGenerated(structNamespace, fixedLengthStructNameString))
         {
             return (qualifiedFixedLengthStructName, default, default);
         }
@@ -5885,25 +5904,33 @@ public class Generator : IDisposable
             this.volatileCode.AddInlineArrayIndexerExtension(getAtMethod);
         }
 
-        // Wrap with any additional namespaces.
-        MemberDeclarationSyntax fixedLengthStructInNamespace = fixedLengthStruct;
-        if (structNamespace != GlobalWinmdRootNamespaceAlias)
+        if (structNamespace is not null)
         {
-            if (!structNamespace.StartsWith(GlobalWinmdRootNamespaceAlias + ".", StringComparison.Ordinal))
+            // Wrap with any additional namespaces.
+            MemberDeclarationSyntax fixedLengthStructInNamespace = fixedLengthStruct;
+            if (structNamespace != GlobalWinmdRootNamespaceAlias)
             {
-                throw new NotSupportedException("The struct must be under the metadata's common namespace, but was: " + structNamespace);
+                if (!structNamespace.StartsWith(GlobalWinmdRootNamespaceAlias + ".", StringComparison.Ordinal))
+                {
+                    throw new NotSupportedException($"The {structNamespace}.{fixedLengthStructNameString} struct must be under the metadata's common namespace.");
+                }
+
+                fixedLengthStructInNamespace = NamespaceDeclaration(ParseName(structNamespace.Substring(GlobalWinmdRootNamespaceAlias.Length + 1)))
+                    .AddMembers(fixedLengthStruct);
             }
 
-            fixedLengthStructInNamespace = NamespaceDeclaration(ParseName(structNamespace.Substring(GlobalWinmdRootNamespaceAlias.Length + 1)))
-                .AddMembers(fixedLengthStruct);
+            fixedLengthStructInNamespace = fixedLengthStructInNamespace
+                    .WithAdditionalAnnotations(new SyntaxAnnotation(SimpleFileNameAnnotation, $"{fileNamePrefix}.InlineArrays"));
+
+            this.volatileCode.AddInlineArrayStruct(structNamespace, fixedLengthStructNameString, fixedLengthStructInNamespace);
+
+            return (qualifiedFixedLengthStructName, default, null);
         }
-
-        fixedLengthStructInNamespace = fixedLengthStructInNamespace
-                .WithAdditionalAnnotations(new SyntaxAnnotation(SimpleFileNameAnnotation, $"{fileNamePrefix}.InlineArrays"));
-
-        this.volatileCode.AddInlineArrayStruct(structNamespace, fixedLengthStructNameString, fixedLengthStructInNamespace);
-
-        return (qualifiedFixedLengthStructName, default, null);
+        else
+        {
+            // This struct will be injected as a nested type, to match the element type.
+            return (fixedLengthStructName, List<MemberDeclarationSyntax>().Add(fixedLengthStruct), null);
+        }
     }
 
     private void DeclareSliceAtNullExtensionMethodIfNecessary()
@@ -6045,6 +6072,20 @@ public class Generator : IDisposable
         }
 
         delegateTypeDef = default;
+        return false;
+    }
+
+    private bool IsNestedType(EntityHandle typeHandle)
+    {
+        switch (typeHandle.Kind)
+        {
+            case HandleKind.TypeDefinition:
+                TypeDefinition typeDef = this.Reader.GetTypeDefinition((TypeDefinitionHandle)typeHandle);
+                return typeDef.IsNested;
+            case HandleKind.TypeReference:
+                return this.TryGetTypeDefHandle((TypeReferenceHandle)typeHandle, out TypeDefinitionHandle typeDefHandle) && this.IsNestedType(typeDefHandle);
+        }
+
         return false;
     }
 

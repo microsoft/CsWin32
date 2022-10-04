@@ -3441,6 +3441,7 @@ public class Generator : IDisposable
             QualifiedMethodDefinition methodDefinition = methodDefHandle.Resolve();
             string methodName = methodDefinition.Reader.GetString(methodDefinition.Method.Name);
             IdentifierNameSyntax innerMethodName = IdentifierName($"{methodName}_{methodCounter}");
+            LiteralExpressionSyntax methodOffset = LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(methodCounter - 1));
 
             MethodSignature<TypeHandleInfo> signature = methodDefinition.Method.DecodeSignature(SignatureHandleProvider.Instance, null);
             CustomAttributeHandleCollection? returnTypeAttributes = methodDefinition.Generator.GetReturnTypeCustomAttributes(methodDefinition.Method);
@@ -3452,18 +3453,24 @@ public class Generator : IDisposable
                 .AddParameters(parameterList.Parameters.Select(p => FunctionPointerParameter(p.Type!).WithModifiers(p.Modifiers)).ToArray())
                 .AddParameters(FunctionPointerParameter(returnType.Type));
 
+            TypeSyntax unmanagedDelegateType = FunctionPointerType().WithCallingConvention(
+                FunctionPointerCallingConvention(TokenWithSpace(SyntaxKind.UnmanagedKeyword))
+                    .WithUnmanagedCallingConventionList(FunctionPointerUnmanagedCallingConventionList(
+                        SingletonSeparatedList(FunctionPointerUnmanagedCallingConvention(Identifier("Stdcall"))))))
+                .WithParameterList(funcPtrParameters);
             FieldDeclarationSyntax vtblFunctionPtr = FieldDeclaration(
-                VariableDeclaration(
-                    FunctionPointerType().WithCallingConvention(FunctionPointerCallingConvention(TokenWithSpace(SyntaxKind.UnmanagedKeyword))
-                        .WithUnmanagedCallingConventionList(FunctionPointerUnmanagedCallingConventionList(
-                            SingletonSeparatedList(FunctionPointerUnmanagedCallingConvention(Identifier("Stdcall"))))))
-                    .WithParameterList(funcPtrParameters))
+                VariableDeclaration(unmanagedDelegateType)
                 .WithVariables(SingletonSeparatedList(VariableDeclarator(innerMethodName.Identifier))))
                 .WithModifiers(TokenList(TokenWithSpace(SyntaxKind.InternalKeyword)));
             vtblMembers.Add(vtblFunctionPtr);
 
+            // Build up an unmanaged delegate cast directly from the vtbl pointer and invoke it.
+            // By doing this, we make the emitted code more trimmable by not referencing the full virtual method table and its full set of types
+            // when the app may only invoke a subset of the methods.
             IdentifierNameSyntax pThisLocal = IdentifierName("pThis");
-            InvocationExpressionSyntax vtblInvocation = InvocationExpression(MemberAccessExpression(SyntaxKind.PointerMemberAccessExpression, vtblFieldName, innerMethodName))
+            ExpressionSyntax vtblIndexingExpression = ParenthesizedExpression(
+                CastExpression(unmanagedDelegateType, ElementAccessExpression(vtblFieldName).AddArgumentListArguments(Argument(methodOffset))));
+            InvocationExpressionSyntax vtblInvocation = InvocationExpression(vtblIndexingExpression)
                 .WithArgumentList(FixTrivia(ArgumentList()
                     .AddArguments(Argument(pThisLocal))
                     .AddArguments(parameterList.Parameters.Select(p => Argument(IdentifierName(p.Identifier.ValueText)).WithRefKindKeyword(p.Modifiers.Count > 0 ? p.Modifiers[0] : default)).ToArray())));
@@ -3512,8 +3519,8 @@ public class Generator : IDisposable
             .AddModifiers(TokenWithSpace(this.Visibility));
         members.Add(vtblStruct);
 
-        // private Vtbl* lpVtbl;
-        members.Add(FieldDeclaration(VariableDeclaration(PointerType(IdentifierName(vtblStruct.Identifier))).AddVariables(VariableDeclarator(vtblFieldName.Identifier))).AddModifiers(TokenWithSpace(SyntaxKind.PrivateKeyword)));
+        // private void** lpVtbl; // Vtbl* (but we avoid strong typing to enable trimming the entire vtbl struct away)
+        members.Add(FieldDeclaration(VariableDeclaration(PointerType(PointerType(PredefinedType(Token(SyntaxKind.VoidKeyword))))).AddVariables(VariableDeclarator(vtblFieldName.Identifier))).AddModifiers(TokenWithSpace(SyntaxKind.PrivateKeyword)));
 
         StructDeclarationSyntax iface = StructDeclaration(ifaceName.Identifier)
             .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword))

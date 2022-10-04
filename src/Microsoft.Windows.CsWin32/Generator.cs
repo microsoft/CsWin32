@@ -5172,9 +5172,17 @@ public class Generator : IDisposable
             return (ranklessArray, default(SyntaxList<MemberDeclarationSyntax>), marshalAs);
         }
 
-        SyntaxList<MemberDeclarationSyntax> additionalMembers = default;
         int length = int.Parse(((LiteralExpressionSyntax)arrayType.RankSpecifiers[0].Sizes[0]).Token.ValueText, CultureInfo.InvariantCulture);
         TypeSyntax elementType = arrayType.ElementType;
+        string structNamespace = "Windows.Win32";
+        string fixedLengthStructNameString = $"__{elementType.ToString().Replace(' ', '_').Replace('.', '_').Replace(':', '_').Replace('*', '_').Replace('<', '_').Replace('>', '_').Replace('[', '_').Replace(']', '_').Replace(',', '_')}_{length}";
+        IdentifierNameSyntax fixedLengthStructName = IdentifierName(fixedLengthStructNameString);
+        TypeSyntax qualifiedFixedLengthStructName = ParseTypeName($"{structNamespace}.{fixedLengthStructNameString}");
+
+        if (this.volatileCode.IsInlineArrayStructGenerated(structNamespace, fixedLengthStructNameString))
+        {
+            return (qualifiedFixedLengthStructName, default, default);
+        }
 
         // C# does not allow Span<T> where T is a pointer type.
         if (elementType is PointerTypeSyntax ptr)
@@ -5192,7 +5200,6 @@ public class Generator : IDisposable
         //     /// <summary>The length of the inline array.</summary>
         //     internal const int Length = LENGTH;
         // ...
-        IdentifierNameSyntax fixedLengthStructName = IdentifierName($"__{elementType.ToString().Replace(' ', '_').Replace('.', '_').Replace(':', '_').Replace('*', '_').Replace('<', '_').Replace('>', '_').Replace('[', '_').Replace(']', '_').Replace(',', '_')}_{length}");
         IdentifierNameSyntax lengthConstant = IdentifierName("SpanLength");
         IdentifierNameSyntax lengthInstanceProperty = IdentifierName("Length");
 
@@ -5840,7 +5847,7 @@ public class Generator : IDisposable
 
             // internal static unsafe ref readonly TheStruct ReadOnlyItemRef(this in MainAVIHeader.__dwReserved_4 @this, int index) => ref @this.Value[index]
             ParameterSyntax thisParameter = Parameter(atThis.Identifier)
-                .WithType(QualifiedName((NameSyntax)new HandleTypeHandleInfo(this.Reader, fieldDef.GetDeclaringType()).ToTypeSyntax(extensionMethodSignatureTypeSettings, customAttributes).Type, fixedLengthStructName).WithTrailingTrivia(TriviaList(Space)))
+                .WithType(qualifiedFixedLengthStructName.WithTrailingTrivia(TriviaList(Space)))
                 .AddModifiers(TokenWithSpace(SyntaxKind.ThisKeyword), TokenWithSpace(SyntaxKind.InKeyword));
             ParameterSyntax indexParameter = Parameter(indexParamName.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)));
             MethodDeclarationSyntax getAtMethod = MethodDeclaration(RefType(qualifiedElementType.WithTrailingTrivia(TriviaList(Space))).WithReadOnlyKeyword(TokenWithSpace(SyntaxKind.ReadOnlyKeyword)), Identifier("ReadOnlyItemRef"))
@@ -5852,8 +5859,9 @@ public class Generator : IDisposable
             this.volatileCode.AddInlineArrayIndexerExtension(getAtMethod);
         }
 
-        additionalMembers = additionalMembers.Add(fixedLengthStruct);
-        return (fixedLengthStructName, additionalMembers, null);
+        this.volatileCode.AddInlineArrayStruct(structNamespace, fixedLengthStructNameString, fixedLengthStruct);
+
+        return (qualifiedFixedLengthStructName, default, null);
     }
 
     private void DeclareSliceAtNullExtensionMethodIfNecessary()
@@ -6304,6 +6312,8 @@ public class Generator : IDisposable
         /// </summary>
         private readonly Dictionary<string, Exception?> specialTypesGenerating = new(StringComparer.Ordinal);
 
+        private readonly Dictionary<(string Namespace, string Name), StructDeclarationSyntax> inlineArrays = new();
+
         private readonly Dictionary<string, TypeSyntax?> releaseMethodsWithSafeHandleTypesGenerating = new();
 
         private readonly List<MethodDeclarationSyntax> inlineArrayIndexerExtensionsMembers = new();
@@ -6326,7 +6336,8 @@ public class Generator : IDisposable
 
         internal IEnumerable<MemberDeclarationSyntax> GeneratedTypes => this.GetTypesWithInjectedFields()
             .Concat(this.specialTypes.Values.Where(st => !st.TopLevel).Select(st => st.Type))
-            .Concat(this.safeHandleTypes);
+            .Concat(this.safeHandleTypes)
+            .Concat(this.inlineArrays.Values);
 
         internal IEnumerable<MemberDeclarationSyntax> GeneratedTopLevelTypes => this.specialTypes.Values.Where(st => st.TopLevel).Select(st => st.Type);
 
@@ -6525,6 +6536,15 @@ public class Generator : IDisposable
             }
         }
 
+        internal bool IsInlineArrayStructGenerated(string @namespace, string name) => this.parent?.inlineArrays.ContainsKey((@namespace, name)) is true || this.inlineArrays.ContainsKey((@namespace, name));
+
+        internal void AddInlineArrayStruct(string @namespace, string name, StructDeclarationSyntax inlineArrayStructDeclaration)
+        {
+            this.ThrowIfNotGenerating();
+
+            this.inlineArrays.Add((@namespace, name), inlineArrayStructDeclaration);
+        }
+
         internal void GenerateType(TypeDefinitionHandle typeDefinitionHandle, bool hasUnmanagedName, Action generator)
         {
             this.ThrowIfNotGenerating();
@@ -6637,6 +6657,7 @@ public class Generator : IDisposable
             Commit(this.macros, parent?.macros);
             Commit(this.methodsGenerating, parent?.methodsGenerating);
             Commit(this.specialTypesGenerating, parent?.specialTypesGenerating);
+            Commit(this.inlineArrays, parent?.inlineArrays);
             Commit(this.releaseMethodsWithSafeHandleTypesGenerating, parent?.releaseMethodsWithSafeHandleTypesGenerating);
             Commit(this.inlineArrayIndexerExtensionsMembers, parent?.inlineArrayIndexerExtensionsMembers);
             Commit(this.comInterfaceFriendlyExtensionsMembers, parent?.comInterfaceFriendlyExtensionsMembers);

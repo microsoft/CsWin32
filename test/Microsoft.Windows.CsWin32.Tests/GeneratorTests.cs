@@ -1244,6 +1244,9 @@ namespace Microsoft.Windows.Sdk
 
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
+
+        // Verify that inline arrays that share the same length and type are only declared once and shared with all users.
+        Assert.Single(this.FindGeneratedType("__char_64"));
     }
 
     [Theory, PairwiseData]
@@ -1256,8 +1259,8 @@ namespace Microsoft.Windows.Sdk
         var decl = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("MODULEENTRY32"));
         var field = this.FindFieldDeclaration(decl, "szModule");
         Assert.True(field.HasValue);
-        var fieldType = Assert.IsType<IdentifierNameSyntax>(field!.Value.Field.Declaration.Type);
-        Assert.IsType<StructDeclarationSyntax>(Assert.Single(this.FindGeneratedType(fieldType.Identifier.ValueText)));
+        var fieldType = Assert.IsType<QualifiedNameSyntax>(field!.Value.Field.Declaration.Type);
+        Assert.IsType<StructDeclarationSyntax>(Assert.Single(this.FindGeneratedType(fieldType.Right.Identifier.ValueText)));
     }
 
     [Fact]

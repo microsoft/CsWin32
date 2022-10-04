@@ -10,7 +10,6 @@ using Windows.Win32.Media.DirectShow;
 using Windows.Win32.Storage.FileSystem;
 using Windows.Win32.System.Com;
 using Windows.Win32.System.Console;
-using Windows.Win32.System.ErrorReporting;
 using Windows.Win32.UI.Shell;
 using VARDESC = Windows.Win32.System.Com.VARDESC;
 
@@ -252,7 +251,7 @@ public class BasicTests
     [Fact]
     public void FixedCharArray_ToString()
     {
-        Windows.Win32.System.RestartManager.RM_PROCESS_INFO.__char_64 fixedCharArray = default;
+        __char_64 fixedCharArray = default;
         Assert.Equal(string.Empty, fixedCharArray.ToString());
         fixedCharArray[0] = 'H';
         Assert.Equal("H", fixedCharArray.ToString());
@@ -270,7 +269,7 @@ public class BasicTests
     [Fact]
     public void FixedLengthArray_ToArray()
     {
-        Windows.Win32.System.RestartManager.RM_PROCESS_INFO.__char_64 fixedCharArray = default;
+        __char_64 fixedCharArray = default;
         fixedCharArray = "hi";
         char[] expected = new char[fixedCharArray.Length];
         expected[0] = fixedCharArray[0];
@@ -285,7 +284,7 @@ public class BasicTests
     [Fact]
     public void FixedLengthArray_CopyTo()
     {
-        Windows.Win32.System.RestartManager.RM_PROCESS_INFO.__char_64 fixedCharArray = default;
+        __char_64 fixedCharArray = default;
         fixedCharArray = "hi";
         Span<char> span = new char[fixedCharArray.Length];
         fixedCharArray.CopyTo(span);
@@ -302,7 +301,7 @@ public class BasicTests
     [Fact]
     public void FixedLengthArray_Equals()
     {
-        Windows.Win32.System.RestartManager.RM_PROCESS_INFO.__char_64 fixedCharArray = default;
+        __char_64 fixedCharArray = default;
         fixedCharArray = "hi";
 
         Assert.True(fixedCharArray.Equals("hi"));
@@ -330,7 +329,7 @@ public class BasicTests
     [Fact]
     public void FixedCharArraySetWithString()
     {
-        Windows.Win32.System.RestartManager.RM_PROCESS_INFO.__char_64 fixedCharArray = default;
+        __char_64 fixedCharArray = default;
 
         fixedCharArray = null;
         Assert.Equal(string.Empty, fixedCharArray.ToString());
@@ -365,7 +364,7 @@ public class BasicTests
     [Fact]
     public void StructCharFieldsMarshaledAsUtf16()
     {
-        Assert.Equal(128 * sizeof(char), Marshal.SizeOf<WER_REPORT_INFORMATION.__char_128>());
+        Assert.Equal(128 * sizeof(char), Marshal.SizeOf<__char_128>());
         Assert.Equal(sizeof(char), Marshal.SizeOf<KEY_EVENT_RECORD._uChar_e__Union>());
     }
 

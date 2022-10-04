@@ -3506,9 +3506,10 @@ public class Generator : IDisposable
             members.Add(methodDeclaration);
         }
 
+        // We expose the vtbl struct, not because we expect folks to use it directly, but because some folks may use it to manually generate CCWs.
         StructDeclarationSyntax? vtblStruct = StructDeclaration(Identifier("Vtbl"))
             .AddMembers(vtblMembers.ToArray())
-            .AddModifiers(TokenWithSpace(SyntaxKind.PrivateKeyword));
+            .AddModifiers(TokenWithSpace(this.Visibility));
         members.Add(vtblStruct);
 
         // private Vtbl* lpVtbl;

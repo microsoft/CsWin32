@@ -2755,6 +2755,18 @@ namespace Windows.Win32
     }
 
     [Fact]
+    public void UsePointersNotNintForPointers()
+    {
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { UseSafeHandles = false });
+        Assert.True(this.generator.TryGenerate("LocalFree", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        MethodDeclarationSyntax friendlyOverload = Assert.Single(this.FindGeneratedMethod("LocalFree"));
+        Assert.True(friendlyOverload.ParameterList.Parameters[0].Type is PointerTypeSyntax { ElementType: PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.VoidKeyword } } });
+        Assert.True(friendlyOverload.ReturnType is PointerTypeSyntax { ElementType: PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.VoidKeyword } } });
+    }
+
+    [Fact]
     public void AvoidSafeHandles()
     {
         this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { UseSafeHandles = false });

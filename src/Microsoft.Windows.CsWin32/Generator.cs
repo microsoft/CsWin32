@@ -2598,6 +2598,23 @@ public class Generator : IDisposable
         return false;
     }
 
+    private static Guid DecodeGuidFromAttribute(CustomAttribute guidAttribute)
+    {
+        CustomAttributeValue<TypeSyntax> args = guidAttribute.DecodeValue(CustomAttributeTypeProvider.Instance);
+        return new Guid(
+            (uint)args.FixedArguments[0].Value!,
+            (ushort)args.FixedArguments[1].Value!,
+            (ushort)args.FixedArguments[2].Value!,
+            (byte)args.FixedArguments[3].Value!,
+            (byte)args.FixedArguments[4].Value!,
+            (byte)args.FixedArguments[5].Value!,
+            (byte)args.FixedArguments[6].Value!,
+            (byte)args.FixedArguments[7].Value!,
+            (byte)args.FixedArguments[8].Value!,
+            (byte)args.FixedArguments[9].Value!,
+            (byte)args.FixedArguments[10].Value!);
+    }
+
     private T AddApiDocumentation<T>(string api, T memberDeclaration)
         where T : MemberDeclarationSyntax
     {
@@ -3522,13 +3539,27 @@ public class Generator : IDisposable
         // private void** lpVtbl; // Vtbl* (but we avoid strong typing to enable trimming the entire vtbl struct away)
         members.Add(FieldDeclaration(VariableDeclaration(PointerType(PointerType(PredefinedType(Token(SyntaxKind.VoidKeyword))))).AddVariables(VariableDeclarator(vtblFieldName.Identifier))).AddModifiers(TokenWithSpace(SyntaxKind.PrivateKeyword)));
 
+        CustomAttribute? guidAttribute = this.FindGuidAttribute(typeDef.GetCustomAttributes());
+        Guid? guidAttributeValue = guidAttribute.HasValue ? DecodeGuidFromAttribute(guidAttribute.Value) : null;
+        if (guidAttribute.HasValue)
+        {
+            // internal static readonly Guid Guid = new Guid(0x1234, ...);
+            TypeSyntax guidTypeSyntax = IdentifierName(nameof(Guid));
+            members.Add(FieldDeclaration(
+                VariableDeclaration(guidTypeSyntax)
+                .AddVariables(VariableDeclarator(Identifier("Guid")).WithInitializer(EqualsValueClause(
+                    GuidValue(guidAttribute.Value)))))
+                .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
+                .WithLeadingTrivia(ParseLeadingTrivia($"/// <summary>The IID guid for this interface.</summary>\n/// <value>{guidAttributeValue!.Value:B}</value>\n")));
+        }
+
         StructDeclarationSyntax iface = StructDeclaration(ifaceName.Identifier)
             .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword))
             .AddMembers(members.ToArray());
 
-        if (this.FindGuidFromAttribute(typeDef) is Guid guid)
+        if (guidAttribute.HasValue)
         {
-            iface = iface.AddAttributeLists(AttributeList().AddAttributes(GUID(guid)));
+            iface = iface.AddAttributeLists(AttributeList().AddAttributes(GUID(DecodeGuidFromAttribute(guidAttribute.Value))));
         }
 
         if (this.GetSupportedOSPlatformAttribute(typeDef.GetCustomAttributes()) is AttributeSyntax supportedOSPlatformAttribute)
@@ -3704,30 +3735,11 @@ public class Generator : IDisposable
         return ifaceDeclaration;
     }
 
+    private CustomAttribute? FindGuidAttribute(CustomAttributeHandleCollection attributes) => this.FindInteropDecorativeAttribute(attributes, nameof(GuidAttribute));
+
     private Guid? FindGuidFromAttribute(TypeDefinition typeDef) => this.FindGuidFromAttribute(typeDef.GetCustomAttributes());
 
-    private Guid? FindGuidFromAttribute(CustomAttributeHandleCollection attributes)
-    {
-        Guid? guid = null;
-        if (this.FindInteropDecorativeAttribute(attributes, nameof(GuidAttribute)) is CustomAttribute att)
-        {
-            CustomAttributeValue<TypeSyntax> args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
-            guid = new Guid(
-                (uint)args.FixedArguments[0].Value!,
-                (ushort)args.FixedArguments[1].Value!,
-                (ushort)args.FixedArguments[2].Value!,
-                (byte)args.FixedArguments[3].Value!,
-                (byte)args.FixedArguments[4].Value!,
-                (byte)args.FixedArguments[5].Value!,
-                (byte)args.FixedArguments[6].Value!,
-                (byte)args.FixedArguments[7].Value!,
-                (byte)args.FixedArguments[8].Value!,
-                (byte)args.FixedArguments[9].Value!,
-                (byte)args.FixedArguments[10].Value!);
-        }
-
-        return guid;
-    }
+    private Guid? FindGuidFromAttribute(CustomAttributeHandleCollection attributes) => this.FindGuidAttribute(attributes) is CustomAttribute att ? (Guid?)DecodeGuidFromAttribute(att) : null;
 
     private DelegateDeclarationSyntax DeclareDelegate(TypeDefinition typeDef)
     {

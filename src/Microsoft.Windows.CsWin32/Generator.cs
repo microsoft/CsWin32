@@ -3523,7 +3523,7 @@ public class Generator : IDisposable
         members.Add(FieldDeclaration(VariableDeclaration(PointerType(PointerType(PredefinedType(Token(SyntaxKind.VoidKeyword))))).AddVariables(VariableDeclarator(vtblFieldName.Identifier))).AddModifiers(TokenWithSpace(SyntaxKind.PrivateKeyword)));
 
         StructDeclarationSyntax iface = StructDeclaration(ifaceName.Identifier)
-            .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword))
+            .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword), TokenWithSpace(SyntaxKind.PartialKeyword))
             .AddMembers(members.ToArray());
 
         if (this.FindGuidFromAttribute(typeDef) is Guid guid)

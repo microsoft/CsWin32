@@ -46,7 +46,7 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
         {
             case HandleKind.TypeDefinition:
                 TypeDefinition td = this.reader.GetTypeDefinition((TypeDefinitionHandle)this.Handle);
-                nameSyntax = inputs.QualifyNames ? GetNestingQualifiedName(inputs.Generator, this.reader, td, hasUnmanagedSuffix) : IdentifierName(this.reader.GetString(td.Name) + simpleNameSuffix);
+                nameSyntax = inputs.QualifyNames ? GetNestingQualifiedName(inputs.Generator, this.reader, td, hasUnmanagedSuffix, isInterfaceNestedInStruct: false) : IdentifierName(this.reader.GetString(td.Name) + simpleNameSuffix);
                 isInterface = (td.Attributes & TypeAttributes.Interface) == TypeAttributes.Interface;
                 isNonCOMConformingInterface = isInterface && inputs.Generator?.IsNonCOMInterface(td) is true;
                 break;
@@ -205,9 +205,9 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
         return false;
     }
 
-    private static NameSyntax GetNestingQualifiedName(Generator? generator, MetadataReader reader, TypeDefinitionHandle handle, bool hasUnmanagedSuffix) => GetNestingQualifiedName(generator, reader, reader.GetTypeDefinition(handle), hasUnmanagedSuffix);
+    private static NameSyntax GetNestingQualifiedName(Generator? generator, MetadataReader reader, TypeDefinitionHandle handle, bool hasUnmanagedSuffix, bool isInterfaceNestedInStruct) => GetNestingQualifiedName(generator, reader, reader.GetTypeDefinition(handle), hasUnmanagedSuffix, isInterfaceNestedInStruct);
 
-    internal static NameSyntax GetNestingQualifiedName(Generator? generator, MetadataReader reader, TypeDefinition td, bool hasUnmanagedSuffix)
+    internal static NameSyntax GetNestingQualifiedName(Generator? generator, MetadataReader reader, TypeDefinition td, bool hasUnmanagedSuffix, bool isInterfaceNestedInStruct)
     {
         string simpleName = reader.GetString(td.Name);
         if (hasUnmanagedSuffix)
@@ -216,9 +216,24 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
         }
 
         IdentifierNameSyntax name = IdentifierName(simpleName);
-        return td.GetDeclaringType() is { IsNil: false } nestingType
-            ? QualifiedName(GetNestingQualifiedName(generator, reader, nestingType, hasUnmanagedSuffix), name)
-            : QualifiedName(ParseName(Generator.ReplaceCommonNamespaceWithAlias(generator, reader.GetString(td.Namespace))), name);
+        if (td.GetDeclaringType() is { IsNil: false } nestingType)
+        {
+            // This type is nested in another, so it is qualified by the parent type rather than by its own namespace.
+            return QualifiedName(GetNestingQualifiedName(generator, reader, nestingType, hasUnmanagedSuffix, isInterfaceNestedInStruct), name);
+        }
+        else
+        {
+            // This is not a nested type.
+            NameSyntax result = QualifiedName(ParseName(Generator.ReplaceCommonNamespaceWithAlias(generator, reader.GetString(td.Namespace))), name);
+
+            if (isInterfaceNestedInStruct)
+            {
+                // Such an interface has a special name, under the original one.
+                result = QualifiedName(result, Generator.NestedCOMInterfaceName);
+            }
+
+            return result;
+        }
     }
 
     private static NameSyntax GetNestingQualifiedName(Generator? generator, MetadataReader reader, TypeReferenceHandle handle, bool hasUnmanagedSuffix) => GetNestingQualifiedName(generator, reader, reader.GetTypeReference(handle), hasUnmanagedSuffix);

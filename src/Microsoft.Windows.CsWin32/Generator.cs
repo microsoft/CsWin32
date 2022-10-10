@@ -37,6 +37,7 @@ public class Generator : IDisposable
     internal const string UnmanagedInteropSuffix = "_unmanaged";
 
     internal static readonly SyntaxAnnotation IsRetValAnnotation = new SyntaxAnnotation("RetVal");
+    internal static readonly IdentifierNameSyntax NestedCOMInterfaceName = IdentifierName("Interface");
 
     /// <summary>
     /// A map of .NET interop structs to use, keyed by the native structs that should <em>not</em> be generated.
@@ -3411,7 +3412,7 @@ public class Generator : IDisposable
     private TypeDeclarationSyntax? DeclareInterface(TypeDefinitionHandle typeDefHandle, Context context)
     {
         TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefHandle);
-        var baseTypes = new Stack<QualifiedTypeDefinitionHandle>();
+        var baseTypes = ImmutableStack.Create<QualifiedTypeDefinitionHandle>();
         (Generator Generator, InterfaceImplementationHandle Handle) baseTypeHandle = (this, typeDef.GetInterfaceImplementations().SingleOrDefault());
         while (!baseTypeHandle.Handle.IsNil)
         {
@@ -3421,17 +3422,40 @@ public class Generator : IDisposable
                 throw new GenerationFailedException("Failed to find base type.");
             }
 
-            baseTypes.Push(baseTypeDefHandle);
+            baseTypes = baseTypes.Push(baseTypeDefHandle);
             TypeDefinition baseType = baseTypeDefHandle.Reader.GetTypeDefinition(baseTypeDefHandle.DefinitionHandle);
             baseTypeHandle = (baseTypeHandle.Generator, baseType.GetInterfaceImplementations().SingleOrDefault());
         }
 
-        return !context.AllowMarshaling || this.IsNonCOMInterface(typeDef)
-            ? this.DeclareInterfaceAsStruct(typeDefHandle, baseTypes, context)
-            : this.DeclareInterfaceAsInterface(typeDef, baseTypes);
+        if (this.IsNonCOMInterface(typeDef))
+        {
+            // We cannot declare an interface that is not COM-compliant.
+            return this.DeclareInterfaceAsStruct(typeDefHandle, baseTypes, context);
+        }
+
+        if (context.AllowMarshaling)
+        {
+            // Marshaling is allowed here, and generally. Just emit the interface.
+            return this.DeclareInterfaceAsInterface(typeDef, baseTypes, context);
+        }
+
+        // Marshaling of this interface is not allowed here. Emit the struct.
+        TypeDeclarationSyntax structDecl = this.DeclareInterfaceAsStruct(typeDefHandle, baseTypes, context);
+        if (!this.options.AllowMarshaling)
+        {
+            // Marshaling isn't allowed over the entire compilation, so emit the interface nested under the struct so
+            // it can be implemented and enable CCW scenarios.
+            TypeDeclarationSyntax? ifaceDecl = this.DeclareInterfaceAsInterface(typeDef, baseTypes, context, interfaceAsSubtype: true);
+            if (ifaceDecl is not null)
+            {
+                structDecl = structDecl.AddMembers(ifaceDecl);
+            }
+        }
+
+        return structDecl;
     }
 
-    private TypeDeclarationSyntax DeclareInterfaceAsStruct(TypeDefinitionHandle typeDefHandle, Stack<QualifiedTypeDefinitionHandle> baseTypes, Context context)
+    private TypeDeclarationSyntax DeclareInterfaceAsStruct(TypeDefinitionHandle typeDefHandle, ImmutableStack<QualifiedTypeDefinitionHandle> baseTypes, Context context)
     {
         TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefHandle);
         IdentifierNameSyntax ifaceName = IdentifierName(this.GetMangledIdentifier(this.Reader.GetString(typeDef.Name), context.AllowMarshaling, isManagedType: true));
@@ -3442,9 +3466,10 @@ public class Generator : IDisposable
 
         // It is imperative that we generate methods for all base interfaces as well, ahead of any implemented by *this* interface.
         var allMethods = new List<QualifiedMethodDefinitionHandle>();
-        while (baseTypes.Count > 0)
+        while (!baseTypes.IsEmpty)
         {
-            QualifiedTypeDefinitionHandle qualifiedBaseType = baseTypes.Pop();
+            QualifiedTypeDefinitionHandle qualifiedBaseType = baseTypes.Peek();
+            baseTypes = baseTypes.Pop();
             TypeDefinition baseType = qualifiedBaseType.Generator.Reader.GetTypeDefinition(qualifiedBaseType.DefinitionHandle);
             allMethods.AddRange(baseType.GetMethods().Select(m => new QualifiedMethodDefinitionHandle(qualifiedBaseType.Generator, m)));
         }
@@ -3570,7 +3595,7 @@ public class Generator : IDisposable
         return iface;
     }
 
-    private TypeDeclarationSyntax? DeclareInterfaceAsInterface(TypeDefinition typeDef, Stack<QualifiedTypeDefinitionHandle> baseTypes)
+    private TypeDeclarationSyntax? DeclareInterfaceAsInterface(TypeDefinition typeDef, ImmutableStack<QualifiedTypeDefinitionHandle> baseTypes, Context context, bool interfaceAsSubtype = false)
     {
         if (this.Reader.StringComparer.Equals(typeDef.Name, "IUnknown") || this.Reader.StringComparer.Equals(typeDef.Name, "IDispatch"))
         {
@@ -3578,7 +3603,9 @@ public class Generator : IDisposable
             return null;
         }
 
-        IdentifierNameSyntax ifaceName = IdentifierName(this.Reader.GetString(typeDef.Name));
+        IdentifierNameSyntax ifaceName = interfaceAsSubtype
+            ? NestedCOMInterfaceName
+            : IdentifierName(this.Reader.GetString(typeDef.Name));
         TypeSyntaxSettings typeSettings = this.comSignatureTypeSettings;
 
         // It is imperative that we generate methods for all base interfaces as well, ahead of any implemented by *this* interface.
@@ -3587,9 +3614,10 @@ public class Generator : IDisposable
         bool foundIDispatch = false;
         bool foundIInspectable = false;
         var baseTypeSyntaxList = new List<BaseTypeSyntax>();
-        while (baseTypes.Count > 0)
+        while (!baseTypes.IsEmpty)
         {
-            QualifiedTypeDefinitionHandle baseTypeHandle = baseTypes.Pop();
+            QualifiedTypeDefinitionHandle baseTypeHandle = baseTypes.Peek();
+            baseTypes = baseTypes.Pop();
             TypeDefinition baseType = baseTypeHandle.Reader.GetTypeDefinition(baseTypeHandle.DefinitionHandle);
             if (!foundIUnknown)
             {
@@ -3612,8 +3640,16 @@ public class Generator : IDisposable
                 }
                 else
                 {
-                    baseTypeHandle.Generator.RequestInteropType(baseTypeHandle.DefinitionHandle, this.DefaultContext);
-                    baseTypeSyntaxList.Add(SimpleBaseType(new HandleTypeHandleInfo(baseTypeHandle.Reader, baseTypeHandle.DefinitionHandle).ToTypeSyntax(this.comSignatureTypeSettings, null).Type));
+                    baseTypeHandle.Generator.RequestInteropType(baseTypeHandle.DefinitionHandle, context);
+                    TypeSyntax baseTypeSyntax = new HandleTypeHandleInfo(baseTypeHandle.Reader, baseTypeHandle.DefinitionHandle).ToTypeSyntax(this.comSignatureTypeSettings, null).Type;
+                    if (interfaceAsSubtype)
+                    {
+                        baseTypeSyntax = QualifiedName(
+                            baseTypeSyntax is PointerTypeSyntax baseTypePtr ? (NameSyntax)baseTypePtr.ElementType : (NameSyntax)baseTypeSyntax,
+                            NestedCOMInterfaceName);
+                    }
+
+                    baseTypeSyntaxList.Add(SimpleBaseType(baseTypeSyntax));
                     allMethods.AddRange(baseType.GetMethods());
                 }
             }
@@ -3645,7 +3681,8 @@ public class Generator : IDisposable
                 TypeSyntax returnType = returnTypeDetails.Type;
                 AttributeSyntax? returnsAttribute = MarshalAs(returnTypeDetails.MarshalAsAttribute, returnTypeDetails.NativeArrayInfo);
 
-                bool preserveSig = returnType is not QualifiedNameSyntax { Right: { Identifier: { ValueText: "HRESULT" } } }
+                bool preserveSig = interfaceAsSubtype
+                    || returnType is not QualifiedNameSyntax { Right: { Identifier: { ValueText: "HRESULT" } } }
                     || (methodDefinition.ImplAttributes & MethodImplAttributes.PreserveSig) == MethodImplAttributes.PreserveSig
                     || this.options.ComInterop.PreserveSigMethods.Contains($"{ifaceName}.{methodName}")
                     || this.options.ComInterop.PreserveSigMethods.Contains(ifaceName.ToString());
@@ -3697,7 +3734,7 @@ public class Generator : IDisposable
                 methodDeclaration = this.AddApiDocumentation($"{ifaceName}.{methodName}", methodDeclaration);
                 members.Add(methodDeclaration);
 
-                NameSyntax declaringTypeName = HandleTypeHandleInfo.GetNestingQualifiedName(this, this.Reader, typeDef, hasUnmanagedSuffix: false);
+                NameSyntax declaringTypeName = HandleTypeHandleInfo.GetNestingQualifiedName(this, this.Reader, typeDef, hasUnmanagedSuffix: false, isInterfaceNestedInStruct: interfaceAsSubtype);
                 friendlyOverloads.AddRange(
                     this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, declaringTypeName, FriendlyOverloadOf.InterfaceMethod, this.injectedPInvokeHelperMethodsToFriendlyOverloadsExtensions));
             }

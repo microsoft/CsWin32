@@ -86,6 +86,9 @@ Whether API requests are all in a single NativeMethods.txt file or split across 
 We recommend using just one NativeMethods.txt file and keeping it sorted for easy bookkeeping.
 Multiple files perhaps makes the most sense in a Shared Project scenario where several API requests will be common across many projects, so sharing a NativeMethods.txt file with those same projects that contain all the necessary APIs for the set of shared source files make maintenance easier.
 
+Some APIs require targeting a specific architecture and are not available when your C# project compiles as "Any CPU".
+Learn more about [how this manifests and what your options are](doc/ArchSpecificAPIs.md).
+
 ### Customizing generated code
 
 Several aspects of the generated code can be customized, including:

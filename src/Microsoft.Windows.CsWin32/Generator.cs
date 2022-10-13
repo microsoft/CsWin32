@@ -2563,7 +2563,7 @@ public class Generator : IDisposable
         return sr.ReadToEnd().Replace("\r\n", "\n").Replace("\t", string.Empty);
     }
 
-    private static bool TryFetchTemplate(string name, Generator? visibilityModifier, [NotNullWhen(true)] out MemberDeclarationSyntax? member)
+    private static bool TryFetchTemplate(string name, Generator? generator, [NotNullWhen(true)] out MemberDeclarationSyntax? member)
     {
         string? template = FetchTemplateText(name);
         if (template == null)
@@ -2572,8 +2572,15 @@ public class Generator : IDisposable
             return false;
         }
 
-        member = ParseMemberDeclaration(template) ?? throw new GenerationFailedException($"Unable to parse a type from a template: {name}");
-        member = visibilityModifier?.ElevateVisibility(member) ?? member;
+        member = ParseMemberDeclaration(template, generator?.parseOptions) ?? throw new GenerationFailedException($"Unable to parse a type from a template: {name}");
+
+        // Strip out #if/#else/#endif trivia, which was already evaluated with the parse options we passed in.
+        if (generator?.parseOptions is not null)
+        {
+            member = (MemberDeclarationSyntax)member.Accept(DirectiveTriviaRemover.Instance)!;
+        }
+
+        member = generator?.ElevateVisibility(member) ?? member;
         return true;
     }
 
@@ -3966,6 +3973,7 @@ public class Generator : IDisposable
             case "RECT":
             case "SIZE":
             case "SYSTEMTIME":
+            case "DECIMAL":
                 members.AddRange(this.ExtractMembersFromTemplate(name.Identifier.ValueText));
                 break;
             default:
@@ -6850,6 +6858,22 @@ public class Generator : IDisposable
 
             System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => this.GetEnumerator();
         }
+    }
+
+    private class DirectiveTriviaRemover : CSharpSyntaxRewriter
+    {
+        internal static readonly DirectiveTriviaRemover Instance = new();
+
+        private DirectiveTriviaRemover()
+        {
+        }
+
+        public override SyntaxTrivia VisitTrivia(SyntaxTrivia trivia) =>
+            trivia.IsKind(SyntaxKind.IfDirectiveTrivia) ||
+            trivia.IsKind(SyntaxKind.ElseDirectiveTrivia) ||
+            trivia.IsKind(SyntaxKind.EndIfDirectiveTrivia) ||
+            trivia.IsKind(SyntaxKind.DisabledTextTrivia)
+            ? default : trivia;
     }
 
     private class WhitespaceRewriter : CSharpSyntaxRewriter

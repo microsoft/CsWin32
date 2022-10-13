@@ -3527,7 +3527,7 @@ public class Generator : IDisposable
 
             MethodDeclarationSyntax methodDeclaration = MethodDeclaration(
                 List<AttributeListSyntax>(),
-                modifiers: TokenList(TokenWithSpace(this.Visibility)),
+                modifiers: TokenList(TokenWithSpace(SyntaxKind.PublicKeyword)), // always use public so struct can implement the COM interface
                 returnType.Type.WithTrailingTrivia(TriviaList(Space)),
                 explicitInterfaceSpecifier: null!,
                 SafeIdentifier(methodName),

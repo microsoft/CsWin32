@@ -80,6 +80,29 @@ public class BasicTests
         Assert.Null(bstr.ToString());
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("h")]
+    [InlineData("hello")]
+    public void BSTR_Length(string value)
+    {
+        BSTR bstr = (BSTR)Marshal.StringToBSTR(value);
+        try
+        {
+            Assert.Equal(value.Length, bstr.Length);
+        }
+        finally
+        {
+            Marshal.FreeBSTR(bstr);
+        }
+    }
+
+    [Fact]
+    public void BSTR_Length_Null()
+    {
+        Assert.Equal(0, default(BSTR).Length);
+    }
+
     [Fact]
     public unsafe void BSTR_ImplicitConversionTo_ReadOnlySpan()
     {

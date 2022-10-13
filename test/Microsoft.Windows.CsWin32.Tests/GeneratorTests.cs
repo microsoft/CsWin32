@@ -12,9 +12,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Testing;
 using Microsoft.CodeAnalysis.Text;
-using VerifyTest = Microsoft.CodeAnalysis.CSharp.Testing.CSharpSourceGeneratorTest<
-    Microsoft.Windows.CsWin32.SourceGenerator,
-    Microsoft.CodeAnalysis.Testing.Verifiers.XUnitVerifier>;
+using VerifyTest = Microsoft.CodeAnalysis.CSharp.Testing.CSharpSourceGeneratorTest<Microsoft.Windows.CsWin32.SourceGenerator, Microsoft.CodeAnalysis.Testing.Verifiers.XUnitVerifier>;
 
 public class GeneratorTests : IDisposable, IAsyncLifetime
 {
@@ -42,6 +40,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
 
     private readonly ITestOutputHelper logger;
     private readonly Dictionary<string, CSharpCompilation> starterCompilations = new();
+    private readonly Dictionary<string, string[]> preprocessorSymbolsByTfm = new();
     private CSharpCompilation compilation;
     private CSharpParseOptions parseOptions;
     private Generator? generator;
@@ -109,6 +108,20 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.starterCompilations.Add("net6.0", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net60));
         this.starterCompilations.Add("net6.0-x86", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net60, Platform.X86));
         this.starterCompilations.Add("net6.0-x64", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net60, Platform.X64));
+
+        foreach (string tfm in this.starterCompilations.Keys)
+        {
+            if (tfm.StartsWith("net6"))
+            {
+                AddSymbols("NET5_0_OR_GREATER", "NET6_0_OR_GREATER", "NET6_0");
+            }
+            else
+            {
+                AddSymbols();
+            }
+
+            void AddSymbols(params string[] symbols) => this.preprocessorSymbolsByTfm.Add(tfm, symbols);
+        }
 
         this.compilation = this.starterCompilations["netstandard2.0"];
     }
@@ -555,6 +568,17 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
         Assert.Contains(this.FindGeneratedMethod(methodName), m => m.ParameterList.Parameters.Last() is { } last && last.Modifiers.Any(SyntaxKind.OutKeyword) && last.Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.ObjectKeyword } });
+    }
+
+    [Theory, CombinatorialData]
+    public void Decimal([CombinatorialValues("net472", "net6.0")] string tfm)
+    {
+        this.compilation = this.starterCompilations[tfm];
+        this.parseOptions = this.parseOptions.WithPreprocessorSymbols(this.preprocessorSymbolsByTfm[tfm]);
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate("DECIMAL", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
     }
 
     [Fact]

@@ -26,6 +26,15 @@ public class BasicTests
 
     internal delegate uint GetTickCountDelegate();
 
+    public static object[][] InterestingDecimalValue => new object[][]
+    {
+        new object[] { 0.0m },
+        new object[] { 1.2m },
+        new object[] { -1.2m },
+        new object[] { decimal.MinValue },
+        new object[] { decimal.MaxValue },
+    };
+
     [Fact]
     public void GetTickCount_Nonzero()
     {
@@ -96,6 +105,21 @@ public class BasicTests
         {
             PInvoke.SysFreeString(bstr);
         }
+    }
+
+    [Theory]
+    [MemberData(nameof(InterestingDecimalValue))]
+    public void DecimalConversion(decimal value)
+    {
+        DECIMAL nativeDecimal = new(value);
+        decimal valueRoundTripped = nativeDecimal;
+        Assert.Equal(value, valueRoundTripped);
+
+#if NET5_0_OR_GREATER
+        nativeDecimal = value;
+        valueRoundTripped = nativeDecimal;
+        Assert.Equal(value, valueRoundTripped);
+#endif
     }
 
     [Fact]

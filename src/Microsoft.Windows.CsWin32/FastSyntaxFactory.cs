@@ -260,7 +260,7 @@ internal static class FastSyntaxFactory
 
     internal static MethodDeclarationSyntax MethodDeclaration(SyntaxList<AttributeListSyntax> attributeLists, SyntaxTokenList modifiers, TypeSyntax returnType, ExplicitInterfaceSpecifierSyntax explicitInterfaceSpecifier, SyntaxToken identifier, TypeParameterListSyntax typeParameterList, ParameterListSyntax parameterList, SyntaxList<TypeParameterConstraintClauseSyntax> constraintClauses, BlockSyntax body, SyntaxToken semicolonToken) => SyntaxFactory.MethodDeclaration(attributeLists, modifiers, returnType.WithTrailingTrivia(TriviaList(Space)), explicitInterfaceSpecifier, identifier, typeParameterList, parameterList, constraintClauses, body, semicolonToken);
 
-    internal static MemberDeclarationSyntax? ParseMemberDeclaration(string text) => SyntaxFactory.ParseMemberDeclaration(text);
+    internal static MemberDeclarationSyntax? ParseMemberDeclaration(string text, ParseOptions? options) => SyntaxFactory.ParseMemberDeclaration(text, options: options);
 
     internal static SingleVariableDesignationSyntax SingleVariableDesignation(SyntaxToken identifier) => SyntaxFactory.SingleVariableDesignation(identifier);
 

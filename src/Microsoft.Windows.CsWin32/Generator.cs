@@ -4325,16 +4325,21 @@ public class Generator : IDisposable
     {
         ExpressionSyntax thisValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Value"));
 
-        // public override string ToString() => Marshal.PtrToStringBSTR(new IntPtr(this.Value));
+        // Marshal.PtrToStringBSTR(new IntPtr(this.Value))
+        InvocationExpressionSyntax ptrToStringBstr = InvocationExpression(
+            MemberAccessExpression(
+                SyntaxKind.SimpleMemberAccessExpression,
+                IdentifierName(nameof(Marshal)),
+                IdentifierName(nameof(Marshal.PtrToStringBSTR))))
+            .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(ObjectCreationExpression(IntPtrTypeSyntax).WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(thisValue))))))));
+
+        // this.Value != null
+        ExpressionSyntax valueIsNotNull = BinaryExpression(SyntaxKind.NotEqualsExpression, thisValue, LiteralExpression(SyntaxKind.NullLiteralExpression));
+
+        // public override string ToString() => this.Value != null ? Marshal.PtrToStringBSTR(new IntPtr(this.Value)) : null;
         yield return MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword)), Identifier(nameof(this.ToString)))
             .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
-            .WithExpressionBody(ArrowExpressionClause(
-                InvocationExpression(
-                    MemberAccessExpression(
-                        SyntaxKind.SimpleMemberAccessExpression,
-                        IdentifierName(nameof(Marshal)),
-                        IdentifierName(nameof(Marshal.PtrToStringBSTR))))
-            .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(ObjectCreationExpression(IntPtrTypeSyntax).WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(thisValue))))))))))
+            .WithExpressionBody(ArrowExpressionClause(ConditionalExpression(valueIsNotNull, ptrToStringBstr, LiteralExpression(SyntaxKind.NullLiteralExpression))))
             .WithSemicolonToken(SemicolonWithLineFeed);
 
         if (this.canUseSpan)

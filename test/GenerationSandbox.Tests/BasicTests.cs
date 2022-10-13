@@ -65,6 +65,13 @@ public class BasicTests
     }
 
     [Fact]
+    public void BSTR_ToString_Null()
+    {
+        BSTR bstr = default;
+        Assert.Null(bstr.ToString());
+    }
+
+    [Fact]
     public unsafe void BSTR_ImplicitConversionTo_ReadOnlySpan()
     {
         BSTR bstr = (BSTR)Marshal.StringToBSTR("hi");

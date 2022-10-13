@@ -4157,6 +4157,7 @@ public class Generator : IDisposable
         {
             case "BSTR":
                 members = members.AddRange(this.CreateAdditionalTypeDefBSTRMembers());
+                members = members.AddRange(this.ExtractMembersFromTemplate(name.Identifier.ValueText));
                 break;
             case "PWSTR":
                 members = members.AddRange(this.CreateAdditionalTypeDefPWSTRMembers());

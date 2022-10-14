@@ -2603,7 +2603,9 @@ namespace Windows.Win32
 				}}
 			}}
 
+
 			public override string ToString() => this.Value is null ? null : new string(this.Value);
+
 
 			/// <summary>
 			/// Returns a span of the characters in this string.

@@ -441,6 +441,29 @@ public class Generator : IDisposable
             this.generateSupportedOSPlatformAttributesOnInterfaces = (targets & AttributeTargets.Interface) == AttributeTargets.Interface;
         }
 
+        // Convert some of our CanUse fields to preprocessor symbols so our templates can use them.
+        if (this.parseOptions is not null)
+        {
+            List<string> extraSymbols = new();
+            AddSymbolIf(this.canUseSpan, "canUseSpan");
+            AddSymbolIf(this.canCallCreateSpan, "canCallCreateSpan");
+            AddSymbolIf(this.canUseUnsafeAsRef, "canUseUnsafeAsRef");
+            AddSymbolIf(this.canUseUnsafeNullRef, "canUseUnsafeNullRef");
+
+            if (extraSymbols.Count > 0)
+            {
+                this.parseOptions = this.parseOptions.WithPreprocessorSymbols(this.parseOptions.PreprocessorSymbolNames.Concat(extraSymbols));
+            }
+
+            void AddSymbolIf(bool condition, string symbol)
+            {
+                if (condition)
+                {
+                    extraSymbols.Add(symbol);
+                }
+            }
+        }
+
         bool useComInterfaces = options.AllowMarshaling;
         this.generalTypeSettings = new TypeSyntaxSettings(
             this,
@@ -4156,12 +4179,7 @@ public class Generator : IDisposable
         switch (name.Identifier.ValueText)
         {
             case "BSTR":
-                members = members.AddRange(this.CreateAdditionalTypeDefBSTRMembers());
-                members = members.AddRange(this.ExtractMembersFromTemplate(name.Identifier.ValueText));
-                break;
             case "PWSTR":
-                members = members.AddRange(this.CreateAdditionalTypeDefPWSTRMembers());
-                break;
             case "HRESULT":
             case "NTSTATUS":
             case "BOOL":
@@ -4328,111 +4346,6 @@ public class Generator : IDisposable
         }
 
         return member;
-    }
-
-    private IEnumerable<MemberDeclarationSyntax> CreateAdditionalTypeDefBSTRMembers()
-    {
-        ExpressionSyntax thisValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Value"));
-
-        // Marshal.PtrToStringBSTR(new IntPtr(this.Value))
-        InvocationExpressionSyntax ptrToStringBstr = InvocationExpression(
-            MemberAccessExpression(
-                SyntaxKind.SimpleMemberAccessExpression,
-                IdentifierName(nameof(Marshal)),
-                IdentifierName(nameof(Marshal.PtrToStringBSTR))))
-            .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(ObjectCreationExpression(IntPtrTypeSyntax).WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(thisValue))))))));
-
-        // this.Value != null
-        ExpressionSyntax valueIsNotNull = BinaryExpression(SyntaxKind.NotEqualsExpression, thisValue, LiteralExpression(SyntaxKind.NullLiteralExpression));
-
-        // public override string ToString() => this.Value != null ? Marshal.PtrToStringBSTR(new IntPtr(this.Value)) : null;
-        yield return MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword)), Identifier(nameof(this.ToString)))
-            .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
-            .WithExpressionBody(ArrowExpressionClause(ConditionalExpression(valueIsNotNull, ptrToStringBstr, LiteralExpression(SyntaxKind.NullLiteralExpression))))
-            .WithSemicolonToken(SemicolonWithLineFeed);
-
-        if (this.canUseSpan)
-        {
-            // public static implicit operator ReadOnlySpan<char>(BSTR bstr) => bstr.Value != null ? new ReadOnlySpan<char>(bstr.Value, *((int*)bstr.Value - 1) / 2) : default;
-            TypeSyntax rosChar = MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword)));
-            IdentifierNameSyntax bstrParam = IdentifierName("bstr");
-            ExpressionSyntax bstrValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, bstrParam, IdentifierName("Value"));
-            ExpressionSyntax length = BinaryExpression(
-                SyntaxKind.DivideExpression,
-                PrefixUnaryExpression(
-                    SyntaxKind.PointerIndirectionExpression,
-                    ParenthesizedExpression(
-                        BinaryExpression(
-                            SyntaxKind.SubtractExpression,
-                            CastExpression(PointerType(PredefinedType(TokenWithNoSpace(SyntaxKind.IntKeyword))), bstrValue),
-                            LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(1))))),
-                LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(2)));
-            ExpressionSyntax rosCreation = ObjectCreationExpression(rosChar).AddArgumentListArguments(Argument(bstrValue), Argument(length));
-            ExpressionSyntax bstrNotNull = BinaryExpression(SyntaxKind.NotEqualsExpression, bstrValue, LiteralExpression(SyntaxKind.NullLiteralExpression));
-            ExpressionSyntax conditional = ConditionalExpression(bstrNotNull, rosCreation, DefaultExpression(rosChar));
-            yield return ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), rosChar)
-                .AddParameterListParameters(Parameter(bstrParam.Identifier).WithType(IdentifierName("BSTR").WithTrailingTrivia(TriviaList(Space))))
-                .WithExpressionBody(ArrowExpressionClause(conditional))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword)) // operators MUST be public
-                .WithSemicolonToken(SemicolonWithLineFeed);
-
-            // internal ReadOnlySpan<char> AsSpan() => this;
-            yield return MethodDeclaration(rosChar, Identifier("AsSpan"))
-                .AddModifiers(TokenWithSpace(this.Visibility))
-                .WithExpressionBody(ArrowExpressionClause(ThisExpression()))
-                .WithSemicolonToken(SemicolonWithLineFeed);
-        }
-    }
-
-    private IEnumerable<MemberDeclarationSyntax> CreateAdditionalTypeDefPWSTRMembers()
-    {
-#pragma warning disable SA1114 // Parameter list should follow declaration
-        ExpressionSyntax thisValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Value"));
-        ExpressionSyntax thisValueIsNull = IsPatternExpression(thisValue, ConstantPattern(LiteralExpression(SyntaxKind.NullLiteralExpression)));
-
-        // internal int Length { get; }
-        IdentifierNameSyntax localPointer = IdentifierName("p");
-        yield return PropertyDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), Identifier("Length").WithTrailingTrivia(LineFeed))
-            .AddModifiers(TokenWithSpace(this.Visibility))
-            .WithAccessorList(AccessorList().AddAccessors(AccessorDeclaration(
-                SyntaxKind.GetAccessorDeclaration,
-                Block().AddStatements(
-                    //// char* p = this.Value;
-                    LocalDeclarationStatement(
-                        VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword))))
-                            .AddVariables(VariableDeclarator(localPointer.Identifier).WithInitializer(EqualsValueClause(thisValue)))),
-                    //// if (p is null) return 0;
-                    IfStatement(
-                        IsPatternExpression(localPointer, ConstantPattern(LiteralExpression(SyntaxKind.NullLiteralExpression))),
-                        ReturnStatement(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)))).WithCloseParenToken(TokenWithLineFeed(SyntaxKind.CloseParenToken)),
-                    //// while (*p != '\0') p++;
-                    WhileStatement(
-                        BinaryExpression(SyntaxKind.NotEqualsExpression, PrefixUnaryExpression(SyntaxKind.PointerIndirectionExpression, localPointer), LiteralExpression(SyntaxKind.CharacterLiteralExpression, Literal('\0'))),
-                        ExpressionStatement(PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, localPointer))),
-                    //// return checked((int)(p - this.Value));
-                    ReturnStatement(
-                        CheckedExpression(
-                            CastExpression(
-                                PredefinedType(TokenWithNoSpace(SyntaxKind.IntKeyword)),
-                                ParenthesizedExpression(BinaryExpression(SyntaxKind.SubtractExpression, localPointer, thisValue))))))).WithKeyword(TokenWithLineFeed(SyntaxKind.GetKeyword))));
-
-        // public override string? ToString() => this.Value is null ? null : new string(this.Value);
-        yield return MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword)), Identifier(nameof(this.ToString)))
-            .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
-            .WithExpressionBody(ArrowExpressionClause(
-                ConditionalExpression(
-                    thisValueIsNull,
-                    LiteralExpression(SyntaxKind.NullLiteralExpression),
-                    ObjectCreationExpression(PredefinedType(Token(SyntaxKind.StringKeyword)))
-                        .AddArgumentListArguments(Argument(thisValue)))))
-            .WithSemicolonToken(SemicolonWithLineFeed);
-
-        if (this.canUseSpan)
-        {
-            // internal Span<char> AsSpan() => this.Value is null ? default : new Span<char>(this.Value, this.Length);
-            yield return this.CreateAsSpanMethodOverValueAndLength(MakeSpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword))));
-        }
-#pragma warning restore SA1114 // Parameter list should follow declaration
     }
 
     private MethodDeclarationSyntax CreateAsSpanMethodOverValueAndLength(TypeSyntax spanType)

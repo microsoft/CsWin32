@@ -1,7 +1,5 @@
 ﻿BOOL
 BOOLEAN
-RECT
-SIZE
 CHAR
 CreateCursor
 CreateFile
@@ -21,9 +19,14 @@ MainAVIHeader
 MAX_PATH
 NTSTATUS
 PathParseIconLocation
+PZZSTR
+PZZWSTR
+RECT
 RegLoadAppKey
 RM_PROCESS_INFO
 ShellLink
+SHFILEOPSTRUCTW
+SIZE
 VARDESC
 WER_REPORT_INFORMATION
 wglGetProcAddress

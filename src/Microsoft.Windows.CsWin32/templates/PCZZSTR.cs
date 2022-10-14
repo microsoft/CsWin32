@@ -1,34 +1,43 @@
 ﻿/// <summary>
-/// A pointer to a constant character string.
+/// A pointer to a constant, empty-string terminated list of null-terminated strings with 1-byte characters (often UTF-8).
 /// </summary>
 [DebuggerDisplay("{" + nameof(DebuggerDisplay) + "}")]
-internal unsafe readonly partial struct PCSTR
-	: IEquatable<PCSTR>
+internal unsafe readonly partial struct PCZZSTR
+	: IEquatable<PCZZSTR>
 {
 	/// <summary>
 	/// A pointer to the first character in the string. The content should be considered readonly, as it was typed as constant in the SDK.
 	/// </summary>
 	internal readonly byte* Value;
-	internal PCSTR(byte* value) => this.Value = value;
-	public static implicit operator byte*(PCSTR value) => value.Value;
-	public static explicit operator PCSTR(byte* value) => new PCSTR(value);
-	public bool Equals(PCSTR other) => this.Value == other.Value;
-	public override bool Equals(object obj) => obj is PCSTR other && this.Equals(other);
+	internal PCZZSTR(byte* value) => this.Value = value;
+	public static implicit operator byte*(PCZZSTR value) => value.Value;
+	public static explicit operator PCZZSTR(byte* value) => new PCZZSTR(value);
+	public bool Equals(PCZZSTR other) => this.Value == other.Value;
+	public override bool Equals(object obj) => obj is PCZZSTR other && this.Equals(other);
 	public override int GetHashCode() => unchecked((int)this.Value);
 
 	/// <summary>
-	/// Gets the number of characters up to the first null character (exclusive).
+	/// Gets the number of characters in this null-terminated string list, excluding the final null terminator.
 	/// </summary>
 	internal int Length
 	{
 		get
 		{
-			byte* p = this.Value;
-			if (p is null)
-				return 0;
-			while (*p != 0)
-				p++;
-			return checked((int)(p - this.Value));
+			PCSTR str = new PCSTR(this.Value);
+			while (true)
+			{
+				int len = str.Length;
+				if (len > 0)
+				{
+					str = new PCSTR(str.Value + len + 1);
+				}
+				else
+				{
+					break;
+				}
+			}
+
+			return checked((int)(str.Value - this.Value));
 		}
 	}
 

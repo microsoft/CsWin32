@@ -38,7 +38,7 @@ internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleIn
             {
                 if (elementTypeDetails.Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.ObjectKeyword } } && inputs.Generator is not null && inputs.Generator.Options.ComInterop.UseIntPtrForComOutPointers)
                 {
-                    bool isComOutPtr = inputs.Generator?.Reader is not null && customAttributes is not null && customAttributes.Value.Any(ah => inputs.Generator.IsAttribute(inputs.Generator.Reader.GetCustomAttribute(ah), Generator.InteropDecorationNamespace, "ComOutPtrAttribute"));
+                    bool isComOutPtr = inputs.Generator.FindInteropDecorativeAttribute(customAttributes, "ComOutPtrAttribute").HasValue;
                     return new TypeSyntaxAndMarshaling(IdentifierName(nameof(IntPtr)))
                     {
                         ParameterModifier = Token(SyntaxKind.OutKeyword),
@@ -70,8 +70,7 @@ internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleIn
                     elementTypeDetails.NativeArrayInfo);
             }
         }
-        else if (inputs.AllowMarshaling && inputs.Generator is object
-            && customAttributes?.Any(ah => MetadataUtilities.IsAttribute(inputs.Generator.Reader, inputs.Generator!.Reader.GetCustomAttribute(ah), Generator.InteropDecorationNamespace, "ComOutPtrAttribute")) is true)
+        else if (inputs.AllowMarshaling && inputs.Generator?.FindInteropDecorativeAttribute(customAttributes, "ComOutPtrAttribute") is not null)
         {
             return new TypeSyntaxAndMarshaling(PredefinedType(Token(SyntaxKind.ObjectKeyword)), new MarshalAsAttribute(UnmanagedType.IUnknown), null);
         }

@@ -12,7 +12,6 @@ internal unsafe readonly partial struct PCWSTR
 	internal PCWSTR(char* value) => this.Value = value;
 	public static explicit operator char*(PCWSTR value) => value.Value;
 	public static implicit operator PCWSTR(char* value) => new PCWSTR(value);
-	public static implicit operator PCWSTR(PWSTR value) => new PCWSTR(value.Value);
 	public bool Equals(PCWSTR other) => this.Value == other.Value;
 	public override bool Equals(object obj) => obj is PCWSTR other && this.Equals(other);
 	public override int GetHashCode() => unchecked((int)this.Value);
@@ -38,6 +37,13 @@ internal unsafe readonly partial struct PCWSTR
 	/// </summary>
 	/// <returns>A <see langword="string"/>, or <see langword="null"/> if <see cref="Value"/> is <see langword="null"/>.</returns>
 	public override string ToString() => this.Value is null ? null : new string(this.Value);
+
+#if canUseSpan
+	/// <summary>
+	/// Returns a span of the characters in this string.
+	/// </summary>
+	internal ReadOnlySpan<char> AsSpan() => this.Value is null ? default(ReadOnlySpan<char>) : new ReadOnlySpan<char>(this.Value, this.Length);
+#endif
 
 	private string DebuggerDisplay => this.ToString();
 }

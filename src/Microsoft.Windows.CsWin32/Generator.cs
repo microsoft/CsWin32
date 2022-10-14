@@ -76,6 +76,16 @@ public class Generator : IDisposable
         { "RegCloseKey", ParseTypeName("Microsoft.Win32.SafeHandles.SafeRegistryHandle") },
     };
 
+    internal static readonly HashSet<string> SpecialTypeDefNames = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "PCSTR",
+        "PCWSTR",
+        "PCZZSTR",
+        "PCZZWSTR",
+        "PZZSTR",
+        "PZZWSTR",
+    };
+
     private const string SystemRuntimeCompilerServices = "System.Runtime.CompilerServices";
     private const string SystemRuntimeInteropServices = "System.Runtime.InteropServices";
     private const string NativeTypedefAttribute = "NativeTypedefAttribute";
@@ -197,15 +207,10 @@ public class Generator : IDisposable
         "WPARAM",
     };
 
-    private static readonly HashSet<string> SpecialTypeDefNames = new HashSet<string>(StringComparer.Ordinal)
-    {
-        "PCWSTR",
-        "PCSTR",
-    };
-
     private static readonly HashSet<string> TypeDefsThatDoNotNestTheirConstants = new HashSet<string>(SpecialTypeDefNames, StringComparer.Ordinal)
     {
         "PWSTR",
+        "PSTR",
     };
 
     /// <summary>
@@ -439,6 +444,29 @@ public class Generator : IDisposable
             AttributeData usageAttribute = attribute.GetAttributes().Single(att => att.AttributeClass?.Name == nameof(AttributeUsageAttribute));
             var targets = (AttributeTargets)usageAttribute.ConstructorArguments[0].Value!;
             this.generateSupportedOSPlatformAttributesOnInterfaces = (targets & AttributeTargets.Interface) == AttributeTargets.Interface;
+        }
+
+        // Convert some of our CanUse fields to preprocessor symbols so our templates can use them.
+        if (this.parseOptions is not null)
+        {
+            List<string> extraSymbols = new();
+            AddSymbolIf(this.canUseSpan, "canUseSpan");
+            AddSymbolIf(this.canCallCreateSpan, "canCallCreateSpan");
+            AddSymbolIf(this.canUseUnsafeAsRef, "canUseUnsafeAsRef");
+            AddSymbolIf(this.canUseUnsafeNullRef, "canUseUnsafeNullRef");
+
+            if (extraSymbols.Count > 0)
+            {
+                this.parseOptions = this.parseOptions.WithPreprocessorSymbols(this.parseOptions.PreprocessorSymbolNames.Concat(extraSymbols));
+            }
+
+            void AddSymbolIf(bool condition, string symbol)
+            {
+                if (condition)
+                {
+                    extraSymbols.Add(symbol);
+                }
+            }
         }
 
         bool useComInterfaces = options.AllowMarshaling;
@@ -1967,28 +1995,21 @@ public class Generator : IDisposable
                 switch (specialName)
                 {
                     case "PCWSTR":
-                        specialDeclaration = this.FetchTemplate($"{specialName}");
-
-                        if (this.canUseSpan)
-                        {
-                            // internal ReadOnlySpan<char> AsSpan() => this.Value is null ? default(ReadOnlySpan<char>) : new ReadOnlySpan<char>(this.Value, this.Length);
-                            specialDeclaration = ((TypeDeclarationSyntax)specialDeclaration).AddMembers(
-                                    this.CreateAsSpanMethodOverValueAndLength(MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword)))));
-                        }
-
-                        this.TryGenerateType("Windows.Win32.Foundation.PWSTR"); // the template references this type
-                        break;
                     case "PCSTR":
+                    case "PCZZSTR":
+                    case "PCZZWSTR":
+                    case "PZZSTR":
+                    case "PZZWSTR":
                         specialDeclaration = this.FetchTemplate($"{specialName}");
-
-                        if (this.canUseSpan)
+                        if (!specialName.StartsWith("PC", StringComparison.Ordinal))
                         {
-                            // internal ReadOnlySpan<byte> AsSpan() => this.Value is null ? default(ReadOnlySpan<byte>) : new ReadOnlySpan<byte>(this.Value, this.Length);
-                            specialDeclaration = ((TypeDeclarationSyntax)specialDeclaration).AddMembers(
-                                    this.CreateAsSpanMethodOverValueAndLength(MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.ByteKeyword)))));
+                            this.TryGenerateType("Windows.Win32.Foundation.PC" + specialName.Substring(1)); // the template references its constant version
+                        }
+                        else if (specialName.StartsWith("PCZZ", StringComparison.Ordinal))
+                        {
+                            this.TryGenerateType("Windows.Win32.Foundation.PC" + specialName.Substring(4)); // the template references its single string version
                         }
 
-                        this.TryGenerateType("Windows.Win32.Foundation.PSTR"); // the template references this type
                         break;
                     default:
                         throw new ArgumentException($"This special name is not recognized: \"{specialName}\".", nameof(specialName));
@@ -2019,34 +2040,16 @@ public class Generator : IDisposable
 
     internal NativeArrayInfo? FindNativeArrayInfoAttribute(CustomAttributeHandleCollection customAttributeHandles)
     {
-        foreach (CustomAttributeHandle handle in customAttributeHandles)
-        {
-            CustomAttribute att = this.Reader.GetCustomAttribute(handle);
-            if (this.IsAttribute(att, InteropDecorationNamespace, NativeArrayInfoAttribute))
-            {
-                return DecodeNativeArrayInfoAttribute(att);
-            }
-        }
-
-        return null;
+        return this.FindInteropDecorativeAttribute(customAttributeHandles, NativeArrayInfoAttribute) is CustomAttribute att
+            ? DecodeNativeArrayInfoAttribute(att)
+            : null;
     }
 
     internal CustomAttribute? FindInteropDecorativeAttribute(CustomAttributeHandleCollection? customAttributeHandles, string attributeName)
-    {
-        if (customAttributeHandles is not null)
-        {
-            foreach (CustomAttributeHandle handle in customAttributeHandles)
-            {
-                CustomAttribute att = this.Reader.GetCustomAttribute(handle);
-                if (this.IsAttribute(att, InteropDecorationNamespace, attributeName))
-                {
-                    return att;
-                }
-            }
-        }
+        => this.FindAttribute(customAttributeHandles, InteropDecorationNamespace, attributeName);
 
-        return null;
-    }
+    internal CustomAttribute? FindAttribute(CustomAttributeHandleCollection? customAttributeHandles, string attributeNamespace, string attributeName)
+        => MetadataUtilities.FindAttribute(this.Reader, customAttributeHandles, attributeNamespace, attributeName);
 
     internal bool TryGetTypeDefHandle(TypeReferenceHandle typeRefHandle, out QualifiedTypeDefinitionHandle typeDefHandle)
     {
@@ -2140,29 +2143,14 @@ public class Generator : IDisposable
 
     internal bool IsNonCOMInterface(TypeReferenceHandle interfaceTypeRefHandle) => this.TryGetTypeDefHandle(interfaceTypeRefHandle, out TypeDefinitionHandle tdh) && this.IsNonCOMInterface(this.Reader.GetTypeDefinition(tdh));
 
-    internal bool TryFindCustomAttribute(CustomAttributeHandleCollection customAttributes, string @namespace, string name, out CustomAttribute customAttribute)
-    {
-        foreach (CustomAttributeHandle attHandle in customAttributes)
-        {
-            customAttribute = this.Reader.GetCustomAttribute(attHandle);
-            if (this.IsAttribute(customAttribute, @namespace, name))
-            {
-                return true;
-            }
-        }
-
-        customAttribute = default;
-        return false;
-    }
-
     internal FunctionPointerTypeSyntax FunctionPointer(TypeDefinition delegateType)
     {
-        CustomAttribute ufpAtt = delegateType.GetCustomAttributes().Select(ah => this.Reader.GetCustomAttribute(ah)).Single(a => this.IsAttribute(a, SystemRuntimeInteropServices, nameof(UnmanagedFunctionPointerAttribute)));
+        CustomAttribute ufpAtt = this.FindAttribute(delegateType.GetCustomAttributes(), SystemRuntimeInteropServices, nameof(UnmanagedFunctionPointerAttribute))!.Value;
         CustomAttributeValue<TypeSyntax> attArgs = ufpAtt.DecodeValue(CustomAttributeTypeProvider.Instance);
         var callingConvention = (CallingConvention)attArgs.FixedArguments[0].Value!;
 
         this.GetSignatureForDelegate(delegateType, out MethodDefinition invokeMethodDef, out MethodSignature<TypeHandleInfo> signature, out CustomAttributeHandleCollection? returnTypeAttributes);
-        if (returnTypeAttributes?.Any(h => this.IsAttribute(this.Reader.GetCustomAttribute(h), SystemRuntimeInteropServices, nameof(MarshalAsAttribute))) is true)
+        if (this.FindAttribute(returnTypeAttributes, SystemRuntimeInteropServices, nameof(MarshalAsAttribute)).HasValue)
         {
             throw new NotSupportedException("Marshaling is not supported for function pointers.");
         }
@@ -2951,35 +2939,9 @@ public class Generator : IDisposable
         return returnTypeAttributes;
     }
 
-    private bool IsCompilerGenerated(TypeDefinition typeDef)
-    {
-        bool isCompilerGenerated = false;
-        foreach (CustomAttributeHandle attHandle in typeDef.GetCustomAttributes())
-        {
-            CustomAttribute att = this.Reader.GetCustomAttribute(attHandle);
-            if (this.IsAttribute(att, SystemRuntimeCompilerServices, nameof(CompilerGeneratedAttribute)))
-            {
-                isCompilerGenerated = true;
-                break;
-            }
-        }
+    private bool IsCompilerGenerated(TypeDefinition typeDef) => this.FindAttribute(typeDef.GetCustomAttributes(), SystemRuntimeCompilerServices, nameof(CompilerGeneratedAttribute)).HasValue;
 
-        return isCompilerGenerated;
-    }
-
-    private bool HasObsoleteAttribute(CustomAttributeHandleCollection attributes)
-    {
-        foreach (CustomAttributeHandle attHandle in attributes)
-        {
-            CustomAttribute att = this.Reader.GetCustomAttribute(attHandle);
-            if (this.IsAttribute(att, nameof(System), nameof(ObsoleteAttribute)))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+    private bool HasObsoleteAttribute(CustomAttributeHandleCollection attributes) => this.FindAttribute(attributes, nameof(System), nameof(ObsoleteAttribute)).HasValue;
 
     private ISymbol? FindTypeSymbolIfAlreadyAvailable(string fullyQualifiedMetadataName)
     {
@@ -3122,11 +3084,11 @@ public class Generator : IDisposable
 
     private bool IsUntypedDelegate(TypeDefinition typeDef) => IsUntypedDelegate(this.Reader, typeDef);
 
-    private bool IsTypeDefStruct(TypeDefinition typeDef) => typeDef.GetCustomAttributes().Any(att => this.IsAttribute(this.Reader.GetCustomAttribute(att), InteropDecorationNamespace, NativeTypedefAttribute));
+    private bool IsTypeDefStruct(TypeDefinition typeDef) => this.FindInteropDecorativeAttribute(typeDef.GetCustomAttributes(), NativeTypedefAttribute).HasValue;
 
     private bool IsEmptyStructWithGuid(TypeDefinition typeDef)
     {
-        return typeDef.GetCustomAttributes().Any(att => this.IsAttribute(this.Reader.GetCustomAttribute(att), InteropDecorationNamespace, nameof(GuidAttribute)))
+        return this.FindInteropDecorativeAttribute(typeDef.GetCustomAttributes(), nameof(GuidAttribute)).HasValue
             && typeDef.GetFields().Count == 0;
     }
 
@@ -3796,14 +3758,10 @@ public class Generator : IDisposable
         TypeSyntaxSettings typeSettings = this.delegateSignatureTypeSettings;
 
         CallingConvention? callingConvention = null;
-        foreach (CustomAttributeHandle handle in typeDef.GetCustomAttributes())
+        if (this.FindAttribute(typeDef.GetCustomAttributes(), SystemRuntimeInteropServices, nameof(UnmanagedFunctionPointerAttribute)) is CustomAttribute att)
         {
-            CustomAttribute att = this.Reader.GetCustomAttribute(handle);
-            if (this.IsAttribute(att, SystemRuntimeInteropServices, nameof(UnmanagedFunctionPointerAttribute)))
-            {
-                CustomAttributeValue<TypeSyntax> args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
-                callingConvention = (CallingConvention)(int)args.FixedArguments[0].Value!;
-            }
+            CustomAttributeValue<TypeSyntax> args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
+            callingConvention = (CallingConvention)(int)args.FixedArguments[0].Value!;
         }
 
         this.GetSignatureForDelegate(typeDef, out MethodDefinition invokeMethodDef, out MethodSignature<TypeHandleInfo> signature, out CustomAttributeHandleCollection? returnTypeAttributes);
@@ -3893,16 +3851,7 @@ public class Generator : IDisposable
 
             try
             {
-                CustomAttribute? fixedBufferAttribute = null;
-                foreach (CustomAttributeHandle attHandle in fieldDef.GetCustomAttributes())
-                {
-                    CustomAttribute att = this.Reader.GetCustomAttribute(attHandle);
-                    if (this.IsAttribute(att, SystemRuntimeCompilerServices, nameof(FixedBufferAttribute)))
-                    {
-                        fixedBufferAttribute = att;
-                        break;
-                    }
-                }
+                CustomAttribute? fixedBufferAttribute = this.FindAttribute(fieldDef.GetCustomAttributes(), SystemRuntimeCompilerServices, nameof(FixedBufferAttribute));
 
                 FieldDeclarationSyntax field;
                 VariableDeclaratorSyntax fieldDeclarator = VariableDeclarator(SafeIdentifier(fieldName));
@@ -4155,13 +4104,12 @@ public class Generator : IDisposable
 
         switch (name.Identifier.ValueText)
         {
-            case "BSTR":
-                members = members.AddRange(this.CreateAdditionalTypeDefBSTRMembers());
-                members = members.AddRange(this.ExtractMembersFromTemplate(name.Identifier.ValueText));
-                break;
             case "PWSTR":
-                members = members.AddRange(this.CreateAdditionalTypeDefPWSTRMembers());
+            case "PSTR":
+                members = members.AddRange(this.ExtractMembersFromTemplate(name.Identifier.ValueText));
+                this.TryGenerateType("Windows.Win32.Foundation.PC" + name.Identifier.ValueText.Substring(1)); // the template references its constant version
                 break;
+            case "BSTR":
             case "HRESULT":
             case "NTSTATUS":
             case "BOOL":
@@ -4330,111 +4278,6 @@ public class Generator : IDisposable
         return member;
     }
 
-    private IEnumerable<MemberDeclarationSyntax> CreateAdditionalTypeDefBSTRMembers()
-    {
-        ExpressionSyntax thisValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Value"));
-
-        // Marshal.PtrToStringBSTR(new IntPtr(this.Value))
-        InvocationExpressionSyntax ptrToStringBstr = InvocationExpression(
-            MemberAccessExpression(
-                SyntaxKind.SimpleMemberAccessExpression,
-                IdentifierName(nameof(Marshal)),
-                IdentifierName(nameof(Marshal.PtrToStringBSTR))))
-            .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(ObjectCreationExpression(IntPtrTypeSyntax).WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(thisValue))))))));
-
-        // this.Value != null
-        ExpressionSyntax valueIsNotNull = BinaryExpression(SyntaxKind.NotEqualsExpression, thisValue, LiteralExpression(SyntaxKind.NullLiteralExpression));
-
-        // public override string ToString() => this.Value != null ? Marshal.PtrToStringBSTR(new IntPtr(this.Value)) : null;
-        yield return MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword)), Identifier(nameof(this.ToString)))
-            .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
-            .WithExpressionBody(ArrowExpressionClause(ConditionalExpression(valueIsNotNull, ptrToStringBstr, LiteralExpression(SyntaxKind.NullLiteralExpression))))
-            .WithSemicolonToken(SemicolonWithLineFeed);
-
-        if (this.canUseSpan)
-        {
-            // public static implicit operator ReadOnlySpan<char>(BSTR bstr) => bstr.Value != null ? new ReadOnlySpan<char>(bstr.Value, *((int*)bstr.Value - 1) / 2) : default;
-            TypeSyntax rosChar = MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword)));
-            IdentifierNameSyntax bstrParam = IdentifierName("bstr");
-            ExpressionSyntax bstrValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, bstrParam, IdentifierName("Value"));
-            ExpressionSyntax length = BinaryExpression(
-                SyntaxKind.DivideExpression,
-                PrefixUnaryExpression(
-                    SyntaxKind.PointerIndirectionExpression,
-                    ParenthesizedExpression(
-                        BinaryExpression(
-                            SyntaxKind.SubtractExpression,
-                            CastExpression(PointerType(PredefinedType(TokenWithNoSpace(SyntaxKind.IntKeyword))), bstrValue),
-                            LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(1))))),
-                LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(2)));
-            ExpressionSyntax rosCreation = ObjectCreationExpression(rosChar).AddArgumentListArguments(Argument(bstrValue), Argument(length));
-            ExpressionSyntax bstrNotNull = BinaryExpression(SyntaxKind.NotEqualsExpression, bstrValue, LiteralExpression(SyntaxKind.NullLiteralExpression));
-            ExpressionSyntax conditional = ConditionalExpression(bstrNotNull, rosCreation, DefaultExpression(rosChar));
-            yield return ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), rosChar)
-                .AddParameterListParameters(Parameter(bstrParam.Identifier).WithType(IdentifierName("BSTR").WithTrailingTrivia(TriviaList(Space))))
-                .WithExpressionBody(ArrowExpressionClause(conditional))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword)) // operators MUST be public
-                .WithSemicolonToken(SemicolonWithLineFeed);
-
-            // internal ReadOnlySpan<char> AsSpan() => this;
-            yield return MethodDeclaration(rosChar, Identifier("AsSpan"))
-                .AddModifiers(TokenWithSpace(this.Visibility))
-                .WithExpressionBody(ArrowExpressionClause(ThisExpression()))
-                .WithSemicolonToken(SemicolonWithLineFeed);
-        }
-    }
-
-    private IEnumerable<MemberDeclarationSyntax> CreateAdditionalTypeDefPWSTRMembers()
-    {
-#pragma warning disable SA1114 // Parameter list should follow declaration
-        ExpressionSyntax thisValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Value"));
-        ExpressionSyntax thisValueIsNull = IsPatternExpression(thisValue, ConstantPattern(LiteralExpression(SyntaxKind.NullLiteralExpression)));
-
-        // internal int Length { get; }
-        IdentifierNameSyntax localPointer = IdentifierName("p");
-        yield return PropertyDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), Identifier("Length").WithTrailingTrivia(LineFeed))
-            .AddModifiers(TokenWithSpace(this.Visibility))
-            .WithAccessorList(AccessorList().AddAccessors(AccessorDeclaration(
-                SyntaxKind.GetAccessorDeclaration,
-                Block().AddStatements(
-                    //// char* p = this.Value;
-                    LocalDeclarationStatement(
-                        VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword))))
-                            .AddVariables(VariableDeclarator(localPointer.Identifier).WithInitializer(EqualsValueClause(thisValue)))),
-                    //// if (p is null) return 0;
-                    IfStatement(
-                        IsPatternExpression(localPointer, ConstantPattern(LiteralExpression(SyntaxKind.NullLiteralExpression))),
-                        ReturnStatement(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)))).WithCloseParenToken(TokenWithLineFeed(SyntaxKind.CloseParenToken)),
-                    //// while (*p != '\0') p++;
-                    WhileStatement(
-                        BinaryExpression(SyntaxKind.NotEqualsExpression, PrefixUnaryExpression(SyntaxKind.PointerIndirectionExpression, localPointer), LiteralExpression(SyntaxKind.CharacterLiteralExpression, Literal('\0'))),
-                        ExpressionStatement(PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, localPointer))),
-                    //// return checked((int)(p - this.Value));
-                    ReturnStatement(
-                        CheckedExpression(
-                            CastExpression(
-                                PredefinedType(TokenWithNoSpace(SyntaxKind.IntKeyword)),
-                                ParenthesizedExpression(BinaryExpression(SyntaxKind.SubtractExpression, localPointer, thisValue))))))).WithKeyword(TokenWithLineFeed(SyntaxKind.GetKeyword))));
-
-        // public override string? ToString() => this.Value is null ? null : new string(this.Value);
-        yield return MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword)), Identifier(nameof(this.ToString)))
-            .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
-            .WithExpressionBody(ArrowExpressionClause(
-                ConditionalExpression(
-                    thisValueIsNull,
-                    LiteralExpression(SyntaxKind.NullLiteralExpression),
-                    ObjectCreationExpression(PredefinedType(Token(SyntaxKind.StringKeyword)))
-                        .AddArgumentListArguments(Argument(thisValue)))))
-            .WithSemicolonToken(SemicolonWithLineFeed);
-
-        if (this.canUseSpan)
-        {
-            // internal Span<char> AsSpan() => this.Value is null ? default : new Span<char>(this.Value, this.Length);
-            yield return this.CreateAsSpanMethodOverValueAndLength(MakeSpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword))));
-        }
-#pragma warning restore SA1114 // Parameter list should follow declaration
-    }
-
     private MethodDeclarationSyntax CreateAsSpanMethodOverValueAndLength(TypeSyntax spanType)
     {
         ExpressionSyntax thisValue = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Value"));
@@ -4453,16 +4296,7 @@ public class Generator : IDisposable
 
     private EnumDeclarationSyntax DeclareEnum(TypeDefinition typeDef)
     {
-        bool flagsEnum = false;
-        foreach (CustomAttributeHandle attributeHandle in typeDef.GetCustomAttributes())
-        {
-            CustomAttribute attribute = this.Reader.GetCustomAttribute(attributeHandle);
-            if (this.IsAttribute(attribute, nameof(System), "FlagsAttribute"))
-            {
-                flagsEnum = true;
-                break;
-            }
-        }
+        bool flagsEnum = this.FindAttribute(typeDef.GetCustomAttributes(), nameof(System), nameof(FlagsAttribute)) is not null;
 
         var enumValues = new List<SyntaxNodeOrToken>();
         TypeSyntax? enumBaseType = null;
@@ -4574,8 +4408,8 @@ public class Generator : IDisposable
 
             bool isOptional = (param.Attributes & ParameterAttributes.Optional) == ParameterAttributes.Optional;
             bool isIn = (param.Attributes & ParameterAttributes.In) == ParameterAttributes.In;
-            bool isConst = param.GetCustomAttributes().Any(ah => this.IsAttribute(this.Reader.GetCustomAttribute(ah), InteropDecorationNamespace, "ConstAttribute"));
-            bool isComOutPtr = param.GetCustomAttributes().Any(ah => this.IsAttribute(this.Reader.GetCustomAttribute(ah), InteropDecorationNamespace, "ComOutPtrAttribute"));
+            bool isConst = this.FindInteropDecorativeAttribute(param.GetCustomAttributes(), "ConstAttribute") is not null;
+            bool isComOutPtr = this.FindInteropDecorativeAttribute(param.GetCustomAttributes(), "ComOutPtrAttribute") is not null;
             bool isOut = isComOutPtr || (param.Attributes & ParameterAttributes.Out) == ParameterAttributes.Out;
 
             // TODO:
@@ -4707,17 +4541,12 @@ public class Generator : IDisposable
                 bool isNullTerminated = false; // TODO
                 short? sizeParamIndex = null;
                 int? sizeConst = null;
-                foreach (CustomAttributeHandle attHandle in param.GetCustomAttributes())
+                if (this.FindInteropDecorativeAttribute(param.GetCustomAttributes(), NativeArrayInfoAttribute) is CustomAttribute att)
                 {
-                    CustomAttribute att = this.Reader.GetCustomAttribute(attHandle);
-                    if (this.IsAttribute(att, InteropDecorationNamespace, NativeArrayInfoAttribute))
-                    {
-                        isArray = true;
-                        NativeArrayInfo nativeArrayInfo = DecodeNativeArrayInfoAttribute(att);
-                        sizeParamIndex = nativeArrayInfo.CountParamIndex;
-                        sizeConst = nativeArrayInfo.CountConst;
-                        break;
-                    }
+                    isArray = true;
+                    NativeArrayInfo nativeArrayInfo = DecodeNativeArrayInfoAttribute(att);
+                    sizeParamIndex = nativeArrayInfo.CountParamIndex;
+                    sizeConst = nativeArrayInfo.CountConst;
                 }
 
                 IdentifierNameSyntax localName = IdentifierName(origName + "Local");
@@ -5185,7 +5014,7 @@ public class Generator : IDisposable
                 @default: null);
             parameterSyntax = parameterTypeSyntax.AddMarshalAs(parameterSyntax);
 
-            if (parameter.GetCustomAttributes().Any(h => this.IsAttribute(this.Reader.GetCustomAttribute(h), InteropDecorationNamespace, "RetValAttribute")))
+            if (this.FindInteropDecorativeAttribute(parameter.GetCustomAttributes(), "RetValAttribute") is not null)
             {
                 parameterSyntax = parameterSyntax.WithAdditionalAnnotations(IsRetValAnnotation);
             }

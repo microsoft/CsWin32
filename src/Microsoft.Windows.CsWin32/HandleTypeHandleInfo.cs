@@ -5,7 +5,6 @@ using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Reflection.Metadata;
 using System.Runtime.InteropServices;
-using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using static Microsoft.Windows.CsWin32.FastSyntaxFactory;
@@ -77,7 +76,7 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
             return new TypeSyntaxAndMarshaling(bclType);
         }
 
-        if (simpleName is "PWSTR" or "PSTR" && (this.IsConstantField || customAttributes?.Any(ah => MetadataUtilities.IsAttribute(this.reader, this.reader.GetCustomAttribute(ah), Generator.InteropDecorationNamespace, "ConstAttribute")) is true))
+        if (simpleName is "PWSTR" or "PSTR" && (this.IsConstantField || MetadataUtilities.FindAttribute(this.reader, customAttributes, Generator.InteropDecorationNamespace, "ConstAttribute").HasValue))
         {
             string specialName = "PC" + simpleName.Substring(1);
             if (inputs.Generator is object)

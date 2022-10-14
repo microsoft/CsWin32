@@ -2023,34 +2023,16 @@ public class Generator : IDisposable
 
     internal NativeArrayInfo? FindNativeArrayInfoAttribute(CustomAttributeHandleCollection customAttributeHandles)
     {
-        foreach (CustomAttributeHandle handle in customAttributeHandles)
-        {
-            CustomAttribute att = this.Reader.GetCustomAttribute(handle);
-            if (this.IsAttribute(att, InteropDecorationNamespace, NativeArrayInfoAttribute))
-            {
-                return DecodeNativeArrayInfoAttribute(att);
+        return this.FindInteropDecorativeAttribute(customAttributeHandles, NativeArrayInfoAttribute) is CustomAttribute att
+            ? DecodeNativeArrayInfoAttribute(att)
+            : null;
             }
-        }
-
-        return null;
-    }
 
     internal CustomAttribute? FindInteropDecorativeAttribute(CustomAttributeHandleCollection? customAttributeHandles, string attributeName)
-    {
-        if (customAttributeHandles is not null)
-        {
-            foreach (CustomAttributeHandle handle in customAttributeHandles)
-            {
-                CustomAttribute att = this.Reader.GetCustomAttribute(handle);
-                if (this.IsAttribute(att, InteropDecorationNamespace, attributeName))
-                {
-                    return att;
-                }
-            }
-        }
+        => this.FindAttribute(customAttributeHandles, InteropDecorationNamespace, attributeName);
 
-        return null;
-    }
+    internal CustomAttribute? FindAttribute(CustomAttributeHandleCollection? customAttributeHandles, string attributeNamespace, string attributeName)
+        => MetadataUtilities.FindAttribute(this.Reader, customAttributeHandles, attributeNamespace, attributeName);
 
     internal bool TryGetTypeDefHandle(TypeReferenceHandle typeRefHandle, out QualifiedTypeDefinitionHandle typeDefHandle)
     {
@@ -2144,29 +2126,14 @@ public class Generator : IDisposable
 
     internal bool IsNonCOMInterface(TypeReferenceHandle interfaceTypeRefHandle) => this.TryGetTypeDefHandle(interfaceTypeRefHandle, out TypeDefinitionHandle tdh) && this.IsNonCOMInterface(this.Reader.GetTypeDefinition(tdh));
 
-    internal bool TryFindCustomAttribute(CustomAttributeHandleCollection customAttributes, string @namespace, string name, out CustomAttribute customAttribute)
-    {
-        foreach (CustomAttributeHandle attHandle in customAttributes)
-        {
-            customAttribute = this.Reader.GetCustomAttribute(attHandle);
-            if (this.IsAttribute(customAttribute, @namespace, name))
-            {
-                return true;
-            }
-        }
-
-        customAttribute = default;
-        return false;
-    }
-
     internal FunctionPointerTypeSyntax FunctionPointer(TypeDefinition delegateType)
     {
-        CustomAttribute ufpAtt = delegateType.GetCustomAttributes().Select(ah => this.Reader.GetCustomAttribute(ah)).Single(a => this.IsAttribute(a, SystemRuntimeInteropServices, nameof(UnmanagedFunctionPointerAttribute)));
+        CustomAttribute ufpAtt = this.FindAttribute(delegateType.GetCustomAttributes(), SystemRuntimeInteropServices, nameof(UnmanagedFunctionPointerAttribute))!.Value;
         CustomAttributeValue<TypeSyntax> attArgs = ufpAtt.DecodeValue(CustomAttributeTypeProvider.Instance);
         var callingConvention = (CallingConvention)attArgs.FixedArguments[0].Value!;
 
         this.GetSignatureForDelegate(delegateType, out MethodDefinition invokeMethodDef, out MethodSignature<TypeHandleInfo> signature, out CustomAttributeHandleCollection? returnTypeAttributes);
-        if (returnTypeAttributes?.Any(h => this.IsAttribute(this.Reader.GetCustomAttribute(h), SystemRuntimeInteropServices, nameof(MarshalAsAttribute))) is true)
+        if (this.FindAttribute(returnTypeAttributes, SystemRuntimeInteropServices, nameof(MarshalAsAttribute)).HasValue)
         {
             throw new NotSupportedException("Marshaling is not supported for function pointers.");
         }
@@ -2955,35 +2922,9 @@ public class Generator : IDisposable
         return returnTypeAttributes;
     }
 
-    private bool IsCompilerGenerated(TypeDefinition typeDef)
-    {
-        bool isCompilerGenerated = false;
-        foreach (CustomAttributeHandle attHandle in typeDef.GetCustomAttributes())
-        {
-            CustomAttribute att = this.Reader.GetCustomAttribute(attHandle);
-            if (this.IsAttribute(att, SystemRuntimeCompilerServices, nameof(CompilerGeneratedAttribute)))
-            {
-                isCompilerGenerated = true;
-                break;
-            }
-        }
+    private bool IsCompilerGenerated(TypeDefinition typeDef) => this.FindAttribute(typeDef.GetCustomAttributes(), SystemRuntimeCompilerServices, nameof(CompilerGeneratedAttribute)).HasValue;
 
-        return isCompilerGenerated;
-    }
-
-    private bool HasObsoleteAttribute(CustomAttributeHandleCollection attributes)
-    {
-        foreach (CustomAttributeHandle attHandle in attributes)
-        {
-            CustomAttribute att = this.Reader.GetCustomAttribute(attHandle);
-            if (this.IsAttribute(att, nameof(System), nameof(ObsoleteAttribute)))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+    private bool HasObsoleteAttribute(CustomAttributeHandleCollection attributes) => this.FindAttribute(attributes, nameof(System), nameof(ObsoleteAttribute)).HasValue;
 
     private ISymbol? FindTypeSymbolIfAlreadyAvailable(string fullyQualifiedMetadataName)
     {
@@ -3126,11 +3067,11 @@ public class Generator : IDisposable
 
     private bool IsUntypedDelegate(TypeDefinition typeDef) => IsUntypedDelegate(this.Reader, typeDef);
 
-    private bool IsTypeDefStruct(TypeDefinition typeDef) => typeDef.GetCustomAttributes().Any(att => this.IsAttribute(this.Reader.GetCustomAttribute(att), InteropDecorationNamespace, NativeTypedefAttribute));
+    private bool IsTypeDefStruct(TypeDefinition typeDef) => this.FindInteropDecorativeAttribute(typeDef.GetCustomAttributes(), NativeTypedefAttribute).HasValue;
 
     private bool IsEmptyStructWithGuid(TypeDefinition typeDef)
     {
-        return typeDef.GetCustomAttributes().Any(att => this.IsAttribute(this.Reader.GetCustomAttribute(att), InteropDecorationNamespace, nameof(GuidAttribute)))
+        return this.FindInteropDecorativeAttribute(typeDef.GetCustomAttributes(), nameof(GuidAttribute)).HasValue
             && typeDef.GetFields().Count == 0;
     }
 
@@ -3800,15 +3741,11 @@ public class Generator : IDisposable
         TypeSyntaxSettings typeSettings = this.delegateSignatureTypeSettings;
 
         CallingConvention? callingConvention = null;
-        foreach (CustomAttributeHandle handle in typeDef.GetCustomAttributes())
+        if (this.FindAttribute(typeDef.GetCustomAttributes(), SystemRuntimeInteropServices, nameof(UnmanagedFunctionPointerAttribute)) is CustomAttribute att)
         {
-            CustomAttribute att = this.Reader.GetCustomAttribute(handle);
-            if (this.IsAttribute(att, SystemRuntimeInteropServices, nameof(UnmanagedFunctionPointerAttribute)))
-            {
                 CustomAttributeValue<TypeSyntax> args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
                 callingConvention = (CallingConvention)(int)args.FixedArguments[0].Value!;
             }
-        }
 
         this.GetSignatureForDelegate(typeDef, out MethodDefinition invokeMethodDef, out MethodSignature<TypeHandleInfo> signature, out CustomAttributeHandleCollection? returnTypeAttributes);
         TypeSyntaxAndMarshaling returnValue = signature.ReturnType.ToTypeSyntax(typeSettings, returnTypeAttributes);
@@ -3897,16 +3834,7 @@ public class Generator : IDisposable
 
             try
             {
-                CustomAttribute? fixedBufferAttribute = null;
-                foreach (CustomAttributeHandle attHandle in fieldDef.GetCustomAttributes())
-                {
-                    CustomAttribute att = this.Reader.GetCustomAttribute(attHandle);
-                    if (this.IsAttribute(att, SystemRuntimeCompilerServices, nameof(FixedBufferAttribute)))
-                    {
-                        fixedBufferAttribute = att;
-                        break;
-                    }
-                }
+                CustomAttribute? fixedBufferAttribute = this.FindAttribute(fieldDef.GetCustomAttributes(), SystemRuntimeCompilerServices, nameof(FixedBufferAttribute));
 
                 FieldDeclarationSyntax field;
                 VariableDeclaratorSyntax fieldDeclarator = VariableDeclarator(SafeIdentifier(fieldName));
@@ -4351,16 +4279,7 @@ public class Generator : IDisposable
 
     private EnumDeclarationSyntax DeclareEnum(TypeDefinition typeDef)
     {
-        bool flagsEnum = false;
-        foreach (CustomAttributeHandle attributeHandle in typeDef.GetCustomAttributes())
-        {
-            CustomAttribute attribute = this.Reader.GetCustomAttribute(attributeHandle);
-            if (this.IsAttribute(attribute, nameof(System), "FlagsAttribute"))
-            {
-                flagsEnum = true;
-                break;
-            }
-        }
+        bool flagsEnum = this.FindAttribute(typeDef.GetCustomAttributes(), nameof(System), nameof(FlagsAttribute)) is not null;
 
         var enumValues = new List<SyntaxNodeOrToken>();
         TypeSyntax? enumBaseType = null;
@@ -4472,8 +4391,8 @@ public class Generator : IDisposable
 
             bool isOptional = (param.Attributes & ParameterAttributes.Optional) == ParameterAttributes.Optional;
             bool isIn = (param.Attributes & ParameterAttributes.In) == ParameterAttributes.In;
-            bool isConst = param.GetCustomAttributes().Any(ah => this.IsAttribute(this.Reader.GetCustomAttribute(ah), InteropDecorationNamespace, "ConstAttribute"));
-            bool isComOutPtr = param.GetCustomAttributes().Any(ah => this.IsAttribute(this.Reader.GetCustomAttribute(ah), InteropDecorationNamespace, "ComOutPtrAttribute"));
+            bool isConst = this.FindInteropDecorativeAttribute(param.GetCustomAttributes(), "ConstAttribute") is not null;
+            bool isComOutPtr = this.FindInteropDecorativeAttribute(param.GetCustomAttributes(), "ComOutPtrAttribute") is not null;
             bool isOut = isComOutPtr || (param.Attributes & ParameterAttributes.Out) == ParameterAttributes.Out;
 
             // TODO:
@@ -4605,17 +4524,12 @@ public class Generator : IDisposable
                 bool isNullTerminated = false; // TODO
                 short? sizeParamIndex = null;
                 int? sizeConst = null;
-                foreach (CustomAttributeHandle attHandle in param.GetCustomAttributes())
-                {
-                    CustomAttribute att = this.Reader.GetCustomAttribute(attHandle);
-                    if (this.IsAttribute(att, InteropDecorationNamespace, NativeArrayInfoAttribute))
+                if (this.FindInteropDecorativeAttribute(param.GetCustomAttributes(), NativeArrayInfoAttribute) is CustomAttribute att)
                     {
                         isArray = true;
                         NativeArrayInfo nativeArrayInfo = DecodeNativeArrayInfoAttribute(att);
                         sizeParamIndex = nativeArrayInfo.CountParamIndex;
                         sizeConst = nativeArrayInfo.CountConst;
-                        break;
-                    }
                 }
 
                 IdentifierNameSyntax localName = IdentifierName(origName + "Local");
@@ -5083,7 +4997,7 @@ public class Generator : IDisposable
                 @default: null);
             parameterSyntax = parameterTypeSyntax.AddMarshalAs(parameterSyntax);
 
-            if (parameter.GetCustomAttributes().Any(h => this.IsAttribute(this.Reader.GetCustomAttribute(h), InteropDecorationNamespace, "RetValAttribute")))
+            if (this.FindInteropDecorativeAttribute(parameter.GetCustomAttributes(), "RetValAttribute") is not null)
             {
                 parameterSyntax = parameterSyntax.WithAdditionalAnnotations(IsRetValAnnotation);
             }

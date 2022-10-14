@@ -162,28 +162,22 @@ internal class MetadataIndex
                         TypeReference baseType = mr.GetTypeReference((TypeReferenceHandle)td.BaseType);
                         if (mr.StringComparer.Equals(baseType.Name, nameof(ValueType)) && mr.StringComparer.Equals(baseType.Namespace, nameof(System)))
                         {
-                            foreach (CustomAttributeHandle h in td.GetCustomAttributes())
+                            if (MetadataUtilities.FindAttribute(mr, td.GetCustomAttributes(), Generator.InteropDecorationNamespace, Generator.RAIIFreeAttribute) is CustomAttribute att)
                             {
-                                CustomAttribute att = mr.GetCustomAttribute(h);
-                                if (MetadataUtilities.IsAttribute(mr, att, Generator.InteropDecorationNamespace, Generator.RAIIFreeAttribute))
+                                CustomAttributeValue<CodeAnalysis.CSharp.Syntax.TypeSyntax> args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
+                                if (args.FixedArguments[0].Value is string freeMethodName)
                                 {
-                                    CustomAttributeValue<CodeAnalysis.CSharp.Syntax.TypeSyntax> args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
-                                    if (args.FixedArguments[0].Value is string freeMethodName)
+                                    this.handleTypeReleaseMethod.Add(tdh, freeMethodName);
+                                    this.releaseMethods.Add(freeMethodName);
+
+                                    using FieldDefinitionHandleCollection.Enumerator fieldEnum = td.GetFields().GetEnumerator();
+                                    fieldEnum.MoveNext();
+                                    FieldDefinitionHandle fieldHandle = fieldEnum.Current;
+                                    FieldDefinition fieldDef = mr.GetFieldDefinition(fieldHandle);
+                                    if (fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null) is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.IntPtr or PrimitiveTypeCode.UIntPtr })
                                     {
-                                        this.handleTypeReleaseMethod.Add(tdh, freeMethodName);
-                                        this.releaseMethods.Add(freeMethodName);
-
-                                        using FieldDefinitionHandleCollection.Enumerator fieldEnum = td.GetFields().GetEnumerator();
-                                        fieldEnum.MoveNext();
-                                        FieldDefinitionHandle fieldHandle = fieldEnum.Current;
-                                        FieldDefinition fieldDef = mr.GetFieldDefinition(fieldHandle);
-                                        if (fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null) is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.IntPtr or PrimitiveTypeCode.UIntPtr })
-                                        {
-                                            this.handleTypeStructsWithIntPtrSizeFields.Add(typeName);
-                                        }
+                                        this.handleTypeStructsWithIntPtrSizeFields.Add(typeName);
                                     }
-
-                                    break;
                                 }
                             }
                         }

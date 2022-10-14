@@ -79,4 +79,21 @@ internal static class MetadataUtilities
 
         return reader.StringComparer.Equals(actualName, name) && reader.StringComparer.Equals(actualNamespace, ns);
     }
+
+    internal static CustomAttribute? FindAttribute(MetadataReader reader, CustomAttributeHandleCollection? customAttributeHandles, string attributeNamespace, string attributeName)
+    {
+        if (customAttributeHandles is not null)
+        {
+            foreach (CustomAttributeHandle handle in customAttributeHandles)
+            {
+                CustomAttribute att = reader.GetCustomAttribute(handle);
+                if (IsAttribute(reader, att, attributeNamespace, attributeName))
+                {
+                    return att;
+                }
+            }
+        }
+
+        return null;
+    }
 }

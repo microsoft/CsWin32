@@ -1,19 +1,12 @@
 ﻿partial struct PWSTR
 {
-	internal int Length
-	{
-		get
-		{
-			char* p = this.Value;
-			if (p is null)
-				return 0;
-			while (*p != '\0')
-				p++;
-			return checked((int)(p - this.Value));
-		}
-	}
+	public static implicit operator PCWSTR(PWSTR value) => new PCWSTR(value.Value);
 
-	public override string ToString() => this.Value is null ? null : new string(this.Value);
+	/// <inheritdoc cref="PCWSTR.Length"/>
+	internal int Length => new PCWSTR(this.Value).Length;
+
+	/// <inheritdoc cref="PCWSTR.ToString()"/>
+	public override string ToString() => new PCWSTR(this.Value).ToString();
 
 #if canUseSpan
 	/// <summary>

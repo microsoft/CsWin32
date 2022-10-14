@@ -12,7 +12,6 @@ internal unsafe readonly partial struct PCWSTR
 	internal PCWSTR(char* value) => this.Value = value;
 	public static explicit operator char*(PCWSTR value) => value.Value;
 	public static implicit operator PCWSTR(char* value) => new PCWSTR(value);
-	public static implicit operator PCWSTR(PWSTR value) => new PCWSTR(value.Value);
 	public bool Equals(PCWSTR other) => this.Value == other.Value;
 	public override bool Equals(object obj) => obj is PCWSTR other && this.Equals(other);
 	public override int GetHashCode() => unchecked((int)this.Value);

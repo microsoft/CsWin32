@@ -1991,12 +1991,8 @@ public class Generator : IDisposable
                 switch (specialName)
                 {
                     case "PCWSTR":
-                        specialDeclaration = this.FetchTemplate($"{specialName}");
-                        this.TryGenerateType("Windows.Win32.Foundation.PWSTR"); // the template references this type
-                        break;
                     case "PCSTR":
                         specialDeclaration = this.FetchTemplate($"{specialName}");
-                        this.TryGenerateType("Windows.Win32.Foundation.PSTR"); // the template references this type
                         break;
                     default:
                         throw new ArgumentException($"This special name is not recognized: \"{specialName}\".", nameof(specialName));
@@ -4163,8 +4159,12 @@ public class Generator : IDisposable
 
         switch (name.Identifier.ValueText)
         {
-            case "BSTR":
             case "PWSTR":
+            case "PSTR":
+                members = members.AddRange(this.ExtractMembersFromTemplate(name.Identifier.ValueText));
+                this.TryGenerateType("Windows.Win32.Foundation.PC" + name.Identifier.ValueText.Substring(1)); // the template references this its constant version
+                break;
+            case "BSTR":
             case "HRESULT":
             case "NTSTATUS":
             case "BOOL":

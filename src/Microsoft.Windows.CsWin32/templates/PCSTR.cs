@@ -12,7 +12,6 @@ internal unsafe readonly partial struct PCSTR
 	internal PCSTR(byte* value) => this.Value = value;
 	public static implicit operator byte*(PCSTR value) => value.Value;
 	public static explicit operator PCSTR(byte* value) => new PCSTR(value);
-	public static implicit operator PCSTR(PSTR value) => new PCSTR(value.Value);
 	public bool Equals(PCSTR other) => this.Value == other.Value;
 	public override bool Equals(object obj) => obj is PCSTR other && this.Equals(other);
 	public override int GetHashCode() => unchecked((int)this.Value);

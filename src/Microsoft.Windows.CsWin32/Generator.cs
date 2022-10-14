@@ -206,6 +206,7 @@ public class Generator : IDisposable
     private static readonly HashSet<string> TypeDefsThatDoNotNestTheirConstants = new HashSet<string>(SpecialTypeDefNames, StringComparer.Ordinal)
     {
         "PWSTR",
+        "PSTR",
     };
 
     /// <summary>
@@ -1991,26 +1992,10 @@ public class Generator : IDisposable
                 {
                     case "PCWSTR":
                         specialDeclaration = this.FetchTemplate($"{specialName}");
-
-                        if (this.canUseSpan)
-                        {
-                            // internal ReadOnlySpan<char> AsSpan() => this.Value is null ? default(ReadOnlySpan<char>) : new ReadOnlySpan<char>(this.Value, this.Length);
-                            specialDeclaration = ((TypeDeclarationSyntax)specialDeclaration).AddMembers(
-                                    this.CreateAsSpanMethodOverValueAndLength(MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword)))));
-                        }
-
                         this.TryGenerateType("Windows.Win32.Foundation.PWSTR"); // the template references this type
                         break;
                     case "PCSTR":
                         specialDeclaration = this.FetchTemplate($"{specialName}");
-
-                        if (this.canUseSpan)
-                        {
-                            // internal ReadOnlySpan<byte> AsSpan() => this.Value is null ? default(ReadOnlySpan<byte>) : new ReadOnlySpan<byte>(this.Value, this.Length);
-                            specialDeclaration = ((TypeDeclarationSyntax)specialDeclaration).AddMembers(
-                                    this.CreateAsSpanMethodOverValueAndLength(MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.ByteKeyword)))));
-                        }
-
                         this.TryGenerateType("Windows.Win32.Foundation.PSTR"); // the template references this type
                         break;
                     default:

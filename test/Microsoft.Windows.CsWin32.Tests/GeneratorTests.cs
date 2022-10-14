@@ -2435,12 +2435,13 @@ namespace Windows.Win32
 			public override string ToString() => this.Value is null ? null : new string(this.Value);
 
 
-			private string DebuggerDisplay => this.ToString();
-
 			/// <summary>
 			/// Returns a span of the characters in this string.
 			/// </summary>
 			internal ReadOnlySpan<char> AsSpan() => this.Value is null ? default(ReadOnlySpan<char>) : new ReadOnlySpan<char>(this.Value, this.Length);
+
+
+			private string DebuggerDisplay => this.ToString();
 		}}
 	}}
 }}

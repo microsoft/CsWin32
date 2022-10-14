@@ -59,4 +59,10 @@ internal static unsafe class GeneratedForm
         NativeOverlapped overlapped = default;
         PInvoke.WriteFile(default(HANDLE), null, 0, null, &overlapped);
     }
+
+    private static void ZZStringUsed()
+    {
+        Windows.Win32.UI.Shell.SHFILEOPSTRUCTW s = default;
+        PCZZWSTR from = s.pFrom;
+    }
 }

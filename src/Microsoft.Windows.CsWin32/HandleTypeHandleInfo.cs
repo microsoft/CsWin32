@@ -76,13 +76,25 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
             return new TypeSyntaxAndMarshaling(bclType);
         }
 
-        if (simpleName is "PWSTR" or "PSTR" && (this.IsConstantField || MetadataUtilities.FindAttribute(this.reader, customAttributes, Generator.InteropDecorationNamespace, "ConstAttribute").HasValue))
+        if (simpleName is "PWSTR" or "PSTR")
         {
-            string specialName = "PC" + simpleName.Substring(1);
+            bool isConst = this.IsConstantField || MetadataUtilities.FindAttribute(this.reader, customAttributes, Generator.InteropDecorationNamespace, "ConstAttribute").HasValue;
+            bool isEmptyStringTerminatedList = MetadataUtilities.FindAttribute(this.reader, customAttributes, Generator.InteropDecorationNamespace, "NullNullTerminatedAttribute").HasValue;
+            string constChar = isConst ? "C" : string.Empty;
+            string listChars = isEmptyStringTerminatedList ? "ZZ" : string.Empty;
+            string nameEnding = simpleName.Substring(1);
+            string specialName = $"P{constChar}{listChars}{nameEnding}";
             if (inputs.Generator is object)
             {
-                inputs.Generator.RequestSpecialTypeDefStruct(specialName, out string fullyQualifiedName);
-                return new TypeSyntaxAndMarshaling(ParseName(Generator.ReplaceCommonNamespaceWithAlias(inputs.Generator, fullyQualifiedName)));
+                if (Generator.SpecialTypeDefNames.Contains(specialName))
+                {
+                    inputs.Generator.RequestSpecialTypeDefStruct(specialName, out string fullyQualifiedName);
+                    return new TypeSyntaxAndMarshaling(ParseName(Generator.ReplaceCommonNamespaceWithAlias(inputs.Generator, fullyQualifiedName)));
+                }
+                else
+                {
+                    this.RequestTypeGeneration(inputs.Generator, this.GetContext(inputs));
+                }
             }
             else
             {

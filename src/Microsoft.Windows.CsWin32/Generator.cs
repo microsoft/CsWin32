@@ -76,6 +76,16 @@ public class Generator : IDisposable
         { "RegCloseKey", ParseTypeName("Microsoft.Win32.SafeHandles.SafeRegistryHandle") },
     };
 
+    internal static readonly HashSet<string> SpecialTypeDefNames = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "PCSTR",
+        "PCWSTR",
+        "PCZZSTR",
+        "PCZZWSTR",
+        "PZZSTR",
+        "PZZWSTR",
+    };
+
     private const string SystemRuntimeCompilerServices = "System.Runtime.CompilerServices";
     private const string SystemRuntimeInteropServices = "System.Runtime.InteropServices";
     private const string NativeTypedefAttribute = "NativeTypedefAttribute";
@@ -195,12 +205,6 @@ public class Generator : IDisposable
         "PSTR",
         "LPARAM",
         "WPARAM",
-    };
-
-    private static readonly HashSet<string> SpecialTypeDefNames = new HashSet<string>(StringComparer.Ordinal)
-    {
-        "PCWSTR",
-        "PCSTR",
     };
 
     private static readonly HashSet<string> TypeDefsThatDoNotNestTheirConstants = new HashSet<string>(SpecialTypeDefNames, StringComparer.Ordinal)
@@ -1992,7 +1996,20 @@ public class Generator : IDisposable
                 {
                     case "PCWSTR":
                     case "PCSTR":
+                    case "PCZZSTR":
+                    case "PCZZWSTR":
+                    case "PZZSTR":
+                    case "PZZWSTR":
                         specialDeclaration = this.FetchTemplate($"{specialName}");
+                        if (!specialName.StartsWith("PC", StringComparison.Ordinal))
+                        {
+                            this.TryGenerateType("Windows.Win32.Foundation.PC" + specialName.Substring(1)); // the template references its constant version
+                        }
+                        else if (specialName.StartsWith("PCZZ", StringComparison.Ordinal))
+                        {
+                            this.TryGenerateType("Windows.Win32.Foundation.PC" + specialName.Substring(4)); // the template references its single string version
+                        }
+
                         break;
                     default:
                         throw new ArgumentException($"This special name is not recognized: \"{specialName}\".", nameof(specialName));
@@ -2026,7 +2043,7 @@ public class Generator : IDisposable
         return this.FindInteropDecorativeAttribute(customAttributeHandles, NativeArrayInfoAttribute) is CustomAttribute att
             ? DecodeNativeArrayInfoAttribute(att)
             : null;
-            }
+    }
 
     internal CustomAttribute? FindInteropDecorativeAttribute(CustomAttributeHandleCollection? customAttributeHandles, string attributeName)
         => this.FindAttribute(customAttributeHandles, InteropDecorationNamespace, attributeName);
@@ -3743,9 +3760,9 @@ public class Generator : IDisposable
         CallingConvention? callingConvention = null;
         if (this.FindAttribute(typeDef.GetCustomAttributes(), SystemRuntimeInteropServices, nameof(UnmanagedFunctionPointerAttribute)) is CustomAttribute att)
         {
-                CustomAttributeValue<TypeSyntax> args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
-                callingConvention = (CallingConvention)(int)args.FixedArguments[0].Value!;
-            }
+            CustomAttributeValue<TypeSyntax> args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
+            callingConvention = (CallingConvention)(int)args.FixedArguments[0].Value!;
+        }
 
         this.GetSignatureForDelegate(typeDef, out MethodDefinition invokeMethodDef, out MethodSignature<TypeHandleInfo> signature, out CustomAttributeHandleCollection? returnTypeAttributes);
         TypeSyntaxAndMarshaling returnValue = signature.ReturnType.ToTypeSyntax(typeSettings, returnTypeAttributes);
@@ -4090,7 +4107,7 @@ public class Generator : IDisposable
             case "PWSTR":
             case "PSTR":
                 members = members.AddRange(this.ExtractMembersFromTemplate(name.Identifier.ValueText));
-                this.TryGenerateType("Windows.Win32.Foundation.PC" + name.Identifier.ValueText.Substring(1)); // the template references this its constant version
+                this.TryGenerateType("Windows.Win32.Foundation.PC" + name.Identifier.ValueText.Substring(1)); // the template references its constant version
                 break;
             case "BSTR":
             case "HRESULT":
@@ -4525,11 +4542,11 @@ public class Generator : IDisposable
                 short? sizeParamIndex = null;
                 int? sizeConst = null;
                 if (this.FindInteropDecorativeAttribute(param.GetCustomAttributes(), NativeArrayInfoAttribute) is CustomAttribute att)
-                    {
-                        isArray = true;
-                        NativeArrayInfo nativeArrayInfo = DecodeNativeArrayInfoAttribute(att);
-                        sizeParamIndex = nativeArrayInfo.CountParamIndex;
-                        sizeConst = nativeArrayInfo.CountConst;
+                {
+                    isArray = true;
+                    NativeArrayInfo nativeArrayInfo = DecodeNativeArrayInfoAttribute(att);
+                    sizeParamIndex = nativeArrayInfo.CountParamIndex;
+                    sizeConst = nativeArrayInfo.CountConst;
                 }
 
                 IdentifierNameSyntax localName = IdentifierName(origName + "Local");

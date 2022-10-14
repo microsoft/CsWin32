@@ -289,6 +289,14 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     [CombinatorialData]
     public void InterestingAPIs(
         [CombinatorialValues(
+            "PSTR",
+            "PWSTR",
+            "PCSTR",
+            "PCWSTR",
+            "PZZSTR",
+            "PZZWSTR",
+            "PCZZSTR",
+            "PCZZWSTR",
             "CreateFile", // built-in SafeHandle use
             "CreateCursor", // 0 or -1 invalid SafeHandle generated
             "PlaySound", // 0 invalid SafeHandle generated

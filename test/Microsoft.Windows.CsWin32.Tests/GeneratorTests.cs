@@ -1308,6 +1308,23 @@ namespace Microsoft.Windows.Sdk
     }
 
     [Fact]
+    public void UnicodeExtenMethodsGetCharSet()
+    {
+        const string MethodName = "VkKeyScan";
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate(MethodName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        MethodDeclarationSyntax generatedMethod = this.FindGeneratedMethod(MethodName).Single();
+        Assert.Contains(
+            generatedMethod.AttributeLists.SelectMany(al => al.Attributes),
+            a => a.Name.ToString() == "DllImport" &&
+            a.ArgumentList?.Arguments.Any(arg => arg is {
+                NameEquals.Name.Identifier.ValueText: nameof(DllImportAttribute.CharSet),
+                Expression: MemberAccessExpressionSyntax { Name: IdentifierNameSyntax { Identifier.ValueText: nameof(CharSet.Unicode) } } }) is true);
+    }
+
+    [Fact]
     public void NullMethodsClass()
     {
         Assert.Throws<InvalidOperationException>(() => this.CreateGenerator(new GeneratorOptions { ClassName = null! }));

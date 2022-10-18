@@ -2300,7 +2300,7 @@ public class Generator : IDisposable
                 IdentifierName(Enum.GetName(typeof(ComInterfaceType), interfaceType)!))));
     }
 
-    private static AttributeSyntax DllImport(MethodImport import, string moduleName, string? entrypoint)
+    private static AttributeSyntax DllImport(MethodImport import, string moduleName, string? entrypoint, CharSet charSet = CharSet.Ansi)
     {
         List<AttributeArgumentSyntax> args = new();
         AttributeSyntax? dllImportAttribute = Attribute(IdentifierName("DllImport"));
@@ -2317,6 +2317,12 @@ public class Generator : IDisposable
         {
             args.Add(AttributeArgument(LiteralExpression(SyntaxKind.TrueLiteralExpression))
                     .WithNameEquals(NameEquals(nameof(DllImportAttribute.SetLastError))));
+        }
+
+        if (charSet != CharSet.Ansi)
+        {
+            args.Add(AttributeArgument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(CharSet)), IdentifierName(Enum.GetName(typeof(CharSet), charSet)!)))
+                .WithNameEquals(NameEquals(IdentifierName(nameof(DllImportAttribute.CharSet)))));
         }
 
         dllImportAttribute = dllImportAttribute.WithArgumentList(FixTrivia(AttributeArgumentList().AddArguments(args.ToArray())));
@@ -3123,6 +3129,7 @@ public class Generator : IDisposable
             // If this method releases a handle, recreate the method signature such that we take the struct rather than the SafeHandle as a parameter.
             TypeSyntaxSettings typeSettings = this.MetadataIndex.ReleaseMethods.Contains(entrypoint ?? methodName) ? this.externReleaseSignatureTypeSettings : this.externSignatureTypeSettings;
             MethodSignature<TypeHandleInfo> signature = methodDefinition.DecodeSignature(SignatureHandleProvider.Instance, null);
+            bool requiresUnicodeCharSet = signature.ParameterTypes.Any(p => p is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.Char });
 
             CustomAttributeHandleCollection? returnTypeAttributes = this.GetReturnTypeCustomAttributes(methodDefinition);
             TypeSyntaxAndMarshaling returnType = signature.ReturnType.ToTypeSyntax(typeSettings, returnTypeAttributes, ParameterAttributes.Out);
@@ -3131,7 +3138,7 @@ public class Generator : IDisposable
                 List<AttributeListSyntax>()
                     .Add(AttributeList()
                         .WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken))
-                        .AddAttributes(DllImport(import, moduleName, entrypoint))),
+                        .AddAttributes(DllImport(import, moduleName, entrypoint, requiresUnicodeCharSet ? CharSet.Unicode : CharSet.Ansi))),
                 modifiers: TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.ExternKeyword)),
                 returnType.Type.WithTrailingTrivia(TriviaList(Space)),
                 explicitInterfaceSpecifier: null!,

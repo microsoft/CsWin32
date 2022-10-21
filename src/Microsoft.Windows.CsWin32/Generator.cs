@@ -4561,7 +4561,11 @@ public class Generator : IDisposable
                 {
                     // TODO: add support for in/out size parameters. (e.g. RSGetViewports)
                     // TODO: add support for lists of pointers via a generated pointer-wrapping struct (e.g. PSSetSamplers)
+
+                    // It is possible that sizeParamIndex points to a parameter that is not on the extern method
+                    // when the parameter is the last one and was moved to a return value.
                     if (sizeParamIndex.HasValue
+                        && externMethodDeclaration.ParameterList.Parameters.Count > sizeParamIndex.Value
                         && !(externMethodDeclaration.ParameterList.Parameters[sizeParamIndex.Value].Type is PointerTypeSyntax)
                         && !isPointerToPointer)
                     {

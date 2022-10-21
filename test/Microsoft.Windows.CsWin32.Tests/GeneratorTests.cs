@@ -297,6 +297,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             "PZZWSTR",
             "PCZZSTR",
             "PCZZWSTR",
+            "IUIAutomation", // non-preservesig retval COM method with a array size index parameter
             "CreateFile", // built-in SafeHandle use
             "CreateCursor", // 0 or -1 invalid SafeHandle generated
             "PlaySound", // 0 invalid SafeHandle generated

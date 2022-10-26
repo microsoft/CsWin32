@@ -357,6 +357,8 @@ public class Generator : IDisposable
             AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(ThisAssembly.AssemblyName))),
             AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(ThisAssembly.AssemblyInformationalVersion)))));
 
+    private static readonly TypeSyntax HresultTypeSyntax = IdentifierName("HRESULT");
+
     private readonly TypeSyntaxSettings generalTypeSettings;
     private readonly TypeSyntaxSettings fieldTypeSettings;
     private readonly TypeSyntaxSettings delegateSignatureTypeSettings;
@@ -2617,6 +2619,8 @@ public class Generator : IDisposable
             (byte)args.FixedArguments[10].Value!);
     }
 
+    private static bool IsHresult(TypeHandleInfo? typeHandleInfo) => typeHandleInfo is HandleTypeHandleInfo handleInfo && handleInfo.IsType("HRESULT");
+
     private T AddApiDocumentation<T>(string api, T memberDeclaration)
         where T : MemberDeclarationSyntax
     {
@@ -3453,6 +3457,9 @@ public class Generator : IDisposable
         allMethods.AddRange(typeDef.GetMethods().Select(m => new QualifiedMethodDefinitionHandle(this, m)));
         int methodCounter = 0;
         HashSet<string> helperMethodsInStruct = new();
+        ISet<string> declaredProperties = this.GetDeclarableProperties(
+            allMethods.Select(qh => qh.Reader.GetMethodDefinition(qh.MethodHandle)),
+            allowNonConsecutiveAccessors: true);
         foreach (QualifiedMethodDefinitionHandle methodDefHandle in allMethods)
         {
             methodCounter++;
@@ -3492,43 +3499,125 @@ public class Generator : IDisposable
                 .WithArgumentList(FixTrivia(ArgumentList()
                     .AddArguments(Argument(pThisLocal))
                     .AddArguments(parameterList.Parameters.Select(p => Argument(IdentifierName(p.Identifier.ValueText)).WithRefKindKeyword(p.Modifiers.Count > 0 ? p.Modifiers[0] : default)).ToArray())));
-            StatementSyntax vtblInvocationStatement = IsVoid(returnType.Type)
-                ? ExpressionStatement(vtblInvocation)
-                : ReturnStatement(vtblInvocation);
-            BlockSyntax? body = Block().AddStatements(
-                FixedStatement(
-                    VariableDeclaration(PointerType(ifaceName)).AddVariables(
-                        VariableDeclarator(pThisLocal.Identifier).WithInitializer(EqualsValueClause(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, ThisExpression())))),
-                    vtblInvocationStatement).WithFixedKeyword(TokenWithSpace(SyntaxKind.FixedKeyword)));
 
-            MethodDeclarationSyntax methodDeclaration = MethodDeclaration(
-                List<AttributeListSyntax>(),
-                modifiers: TokenList(TokenWithSpace(SyntaxKind.PublicKeyword)), // always use public so struct can implement the COM interface
-                returnType.Type.WithTrailingTrivia(TriviaList(Space)),
-                explicitInterfaceSpecifier: null!,
-                SafeIdentifier(methodName),
-                null!,
-                parameterList,
-                List<TypeParameterConstraintClauseSyntax>(),
-                body: body,
-                semicolonToken: default);
-            methodDeclaration = returnType.AddReturnMarshalAs(methodDeclaration);
+            MemberDeclarationSyntax propertyOrMethod;
+            MethodDeclarationSyntax? methodDeclaration = null;
 
-            if (methodName == nameof(object.GetType) && parameterList.Parameters.Count == 0)
+            // We can declare this method as a property accessor if it represents a property.
+            // We must also confirm that the property type is the same in both cases, because sometimes they aren't (e.g. IUIAutomationProxyFactoryEntry.ClassName).
+            if (this.TryGetPropertyAccessorInfo(methodDefinition.Method, out IdentifierNameSyntax? propertyName, out SyntaxKind? accessorKind, out TypeSyntax? propertyType) &&
+                declaredProperties.Contains(propertyName.Identifier.ValueText))
             {
-                methodDeclaration = methodDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.NewKeyword));
+                StatementSyntax ThrowOnHRFailure(ExpressionSyntax hrExpression) => ExpressionStatement(InvocationExpression(
+                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, hrExpression, IdentifierName("ThrowOnFailure")),
+                    ArgumentList()));
+
+                BlockSyntax? body;
+                switch (accessorKind)
+                {
+                    case SyntaxKind.GetAccessorDeclaration:
+                        // PropertyType __result;
+                        IdentifierNameSyntax resultLocal = IdentifierName("__result");
+                        LocalDeclarationStatementSyntax resultLocalDeclaration = LocalDeclarationStatement(VariableDeclaration(propertyType).AddVariables(VariableDeclarator(resultLocal.Identifier)));
+
+                        // vtblInvoke(pThis, &__result).ThrowOnFailure();
+                        // vtblInvoke(pThis, out __result).ThrowOnFailure();
+                        ArgumentSyntax resultArgument = funcPtrParameters.Parameters[1].Modifiers.Any(SyntaxKind.OutKeyword)
+                            ? Argument(resultLocal).WithRefKindKeyword(Token(SyntaxKind.OutKeyword))
+                            : Argument(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, resultLocal));
+                        StatementSyntax vtblInvocationStatement = ThrowOnHRFailure(vtblInvocation.WithArgumentList(ArgumentList().AddArguments(Argument(pThisLocal), resultArgument)));
+
+                        // return __result;
+                        StatementSyntax returnStatement = ReturnStatement(resultLocal);
+
+                        body = Block().AddStatements(
+                            FixedStatement(
+                                VariableDeclaration(PointerType(ifaceName)).AddVariables(
+                                    VariableDeclarator(pThisLocal.Identifier).WithInitializer(EqualsValueClause(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, ThisExpression())))),
+                                Block().AddStatements(
+                                    resultLocalDeclaration,
+                                    vtblInvocationStatement,
+                                    returnStatement)).WithFixedKeyword(TokenWithSpace(SyntaxKind.FixedKeyword)));
+                        break;
+                    case SyntaxKind.SetAccessorDeclaration:
+                        // vtblInvoke(pThis, value).ThrowOnFailure();
+                        vtblInvocationStatement = ThrowOnHRFailure(vtblInvocation.WithArgumentList(ArgumentList().AddArguments(Argument(pThisLocal), Argument(IdentifierName("value")))));
+                        body = Block().AddStatements(
+                            FixedStatement(
+                                VariableDeclaration(PointerType(ifaceName)).AddVariables(
+                                    VariableDeclarator(pThisLocal.Identifier).WithInitializer(EqualsValueClause(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, ThisExpression())))),
+                                vtblInvocationStatement).WithFixedKeyword(TokenWithSpace(SyntaxKind.FixedKeyword)));
+                        break;
+                    default:
+                        throw new NotSupportedException("Unsupported accessor kind: " + accessorKind);
+                }
+
+                AccessorDeclarationSyntax accessor = AccessorDeclaration(accessorKind.Value, body);
+
+                int priorPropertyDeclarationIndex = members.FindIndex(m => m is PropertyDeclarationSyntax prop && prop.Identifier.ValueText == propertyName.Identifier.ValueText);
+                if (priorPropertyDeclarationIndex >= 0)
+                {
+                    // Add the accessor to the existing property declaration.
+                    PropertyDeclarationSyntax priorDeclaration = (PropertyDeclarationSyntax)members[priorPropertyDeclarationIndex];
+                    members[priorPropertyDeclarationIndex] = priorDeclaration.WithAccessorList(priorDeclaration.AccessorList!.AddAccessors(accessor));
+                    continue;
+                }
+                else
+                {
+                    PropertyDeclarationSyntax propertyDeclaration = PropertyDeclaration(propertyType.WithTrailingTrivia(Space), propertyName.Identifier.WithTrailingTrivia(LineFeed));
+
+                    propertyDeclaration = propertyDeclaration.WithAccessorList(AccessorList().AddAccessors(accessor));
+
+                    if (propertyDeclaration.Type is PointerTypeSyntax)
+                    {
+                        propertyDeclaration = propertyDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));
+                    }
+
+                    propertyOrMethod = propertyDeclaration;
+                }
             }
-
-            if (methodDeclaration.ReturnType is PointerTypeSyntax || methodDeclaration.ParameterList.Parameters.Any(p => p.Type is PointerTypeSyntax))
+            else
             {
-                methodDeclaration = methodDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));
+                StatementSyntax vtblInvocationStatement = IsVoid(returnType.Type)
+                    ? ExpressionStatement(vtblInvocation)
+                    : ReturnStatement(vtblInvocation);
+                BlockSyntax? body = Block().AddStatements(
+                    FixedStatement(
+                        VariableDeclaration(PointerType(ifaceName)).AddVariables(
+                            VariableDeclarator(pThisLocal.Identifier).WithInitializer(EqualsValueClause(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, ThisExpression())))),
+                        vtblInvocationStatement).WithFixedKeyword(TokenWithSpace(SyntaxKind.FixedKeyword)));
+
+                methodDeclaration = MethodDeclaration(
+                    List<AttributeListSyntax>(),
+                    modifiers: TokenList(TokenWithSpace(SyntaxKind.PublicKeyword)), // always use public so struct can implement the COM interface
+                    returnType.Type.WithTrailingTrivia(TriviaList(Space)),
+                    explicitInterfaceSpecifier: null!,
+                    SafeIdentifier(methodName),
+                    null!,
+                    parameterList,
+                    List<TypeParameterConstraintClauseSyntax>(),
+                    body: body,
+                    semicolonToken: default);
+                methodDeclaration = returnType.AddReturnMarshalAs(methodDeclaration);
+
+                if (methodName == nameof(object.GetType) && parameterList.Parameters.Count == 0)
+                {
+                    methodDeclaration = methodDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.NewKeyword));
+                }
+
+                if (methodDeclaration.ReturnType is PointerTypeSyntax || methodDeclaration.ParameterList.Parameters.Any(p => p.Type is PointerTypeSyntax))
+                {
+                    methodDeclaration = methodDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));
+                }
+
+                propertyOrMethod = methodDeclaration;
+
+                members.AddRange(methodDefinition.Generator.DeclareFriendlyOverloads(methodDefinition.Method, methodDeclaration, IdentifierName(ifaceName.Identifier.ValueText), FriendlyOverloadOf.StructMethod, helperMethodsInStruct));
             }
 
             // Add documentation if we can find it.
-            methodDeclaration = this.AddApiDocumentation($"{ifaceName}.{methodName}", methodDeclaration);
-
-            members.AddRange(methodDefinition.Generator.DeclareFriendlyOverloads(methodDefinition.Method, methodDeclaration, IdentifierName(ifaceName.Identifier.ValueText), FriendlyOverloadOf.StructMethod, helperMethodsInStruct));
-            members.Add(methodDeclaration);
+            propertyOrMethod = this.AddApiDocumentation($"{ifaceName}.{methodName}", propertyOrMethod);
+            members.Add(propertyOrMethod);
         }
 
         // We expose the vtbl struct, not because we expect folks to use it directly, but because some folks may use it to manually generate CCWs.
@@ -3544,11 +3633,11 @@ public class Generator : IDisposable
         Guid? guidAttributeValue = guidAttribute.HasValue ? DecodeGuidFromAttribute(guidAttribute.Value) : null;
         if (guidAttribute.HasValue)
         {
-            // internal static readonly Guid Guid = new Guid(0x1234, ...);
+            // internal static readonly Guid IID_Guid = new Guid(0x1234, ...);
             TypeSyntax guidTypeSyntax = IdentifierName(nameof(Guid));
             members.Add(FieldDeclaration(
                 VariableDeclaration(guidTypeSyntax)
-                .AddVariables(VariableDeclarator(Identifier("Guid")).WithInitializer(EqualsValueClause(
+                .AddVariables(VariableDeclarator(Identifier("IID_Guid")).WithInitializer(EqualsValueClause(
                     GuidValue(guidAttribute.Value)))))
                 .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
                 .WithLeadingTrivia(ParseLeadingTrivia($"/// <summary>The IID guid for this interface.</summary>\n/// <value>{guidAttributeValue!.Value:B}</value>\n")));
@@ -3642,77 +3731,117 @@ public class Generator : IDisposable
 
         var members = new List<MemberDeclarationSyntax>();
         var friendlyOverloads = new List<MethodDeclarationSyntax>();
+        ISet<string> declaredProperties = this.GetDeclarableProperties(allMethods.Select(this.Reader.GetMethodDefinition), allowNonConsecutiveAccessors: false);
 
         foreach (MethodDefinitionHandle methodDefHandle in allMethods)
         {
             MethodDefinition methodDefinition = this.Reader.GetMethodDefinition(methodDefHandle);
             string methodName = this.Reader.GetString(methodDefinition.Name);
+            inheritedMethods--;
             try
             {
-                IdentifierNameSyntax innerMethodName = IdentifierName(methodName);
-                MethodSignature<TypeHandleInfo> signature = methodDefinition.DecodeSignature(SignatureHandleProvider.Instance, null);
+                MemberDeclarationSyntax propertyOrMethod;
+                MethodDeclarationSyntax? methodDeclaration = null;
 
-                CustomAttributeHandleCollection? returnTypeAttributes = this.GetReturnTypeCustomAttributes(methodDefinition);
-                TypeSyntaxAndMarshaling returnTypeDetails = signature.ReturnType.ToTypeSyntax(typeSettings, returnTypeAttributes);
-                TypeSyntax returnType = returnTypeDetails.Type;
-                AttributeSyntax? returnsAttribute = MarshalAs(returnTypeDetails.MarshalAsAttribute, returnTypeDetails.NativeArrayInfo);
-
-                bool preserveSig = interfaceAsSubtype
-                    || returnType is not QualifiedNameSyntax { Right: { Identifier: { ValueText: "HRESULT" } } }
-                    || (methodDefinition.ImplAttributes & MethodImplAttributes.PreserveSig) == MethodImplAttributes.PreserveSig
-                    || this.options.ComInterop.PreserveSigMethods.Contains($"{ifaceName}.{methodName}")
-                    || this.options.ComInterop.PreserveSigMethods.Contains(ifaceName.ToString());
-
-                ParameterListSyntax? parameterList = this.CreateParameterList(methodDefinition, signature, this.comSignatureTypeSettings);
-
-                if (!preserveSig)
+                // Consider whether we should declare this as a property.
+                // Even if it could be represented as a property accessor, we cannot do so if a property by the same name was already declared in anything other than the previous row.
+                // Adding an accessor to a property later than the very next row would screw up the virtual method table ordering.
+                // We must also confirm that the property type is the same in both cases, because sometimes they aren't (e.g. IUIAutomationProxyFactoryEntry.ClassName).
+                if (this.TryGetPropertyAccessorInfo(methodDefinition, out IdentifierNameSyntax? propertyName, out SyntaxKind? accessorKind, out TypeSyntax? propertyType) && declaredProperties.Contains(propertyName.Identifier.ValueText))
                 {
-                    ParameterSyntax? lastParameter = parameterList.Parameters.Count > 0 ? parameterList.Parameters[parameterList.Parameters.Count - 1] : null;
-                    if (lastParameter?.HasAnnotation(IsRetValAnnotation) is true)
+                    AccessorDeclarationSyntax accessor = AccessorDeclaration(accessorKind.Value).WithSemicolonToken(Semicolon);
+
+                    if (members.Count > 0 && members[members.Count - 1] is PropertyDeclarationSyntax lastProperty && lastProperty.Identifier.ValueText == propertyName.Identifier.ValueText)
                     {
-                        // Move the retval parameter to the return value position.
-                        parameterList = parameterList.WithParameters(parameterList.Parameters.RemoveAt(parameterList.Parameters.Count - 1));
-                        returnType = lastParameter.Modifiers.Any(SyntaxKind.OutKeyword) ? lastParameter.Type! : ((PointerTypeSyntax)lastParameter.Type!).ElementType;
-                        returnsAttribute = lastParameter.DescendantNodes().OfType<AttributeSyntax>().FirstOrDefault(att => att.Name.ToString() == "MarshalAs");
+                        // Add the accessor to the existing property declaration.
+                        members[members.Count - 1] = lastProperty.WithAccessorList(lastProperty.AccessorList!.AddAccessors(accessor));
+                        continue;
                     }
                     else
                     {
-                        // Remove the return type
-                        returnType = PredefinedType(Token(SyntaxKind.VoidKeyword));
+                        PropertyDeclarationSyntax propertyDeclaration = PropertyDeclaration(propertyType.WithTrailingTrivia(Space), propertyName.Identifier.WithTrailingTrivia(LineFeed));
+
+                        propertyDeclaration = propertyDeclaration.WithAccessorList(AccessorList().AddAccessors(accessor));
+
+                        if (propertyDeclaration.Type is PointerTypeSyntax)
+                        {
+                            propertyDeclaration = propertyDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));
+                        }
+
+                        propertyOrMethod = propertyDeclaration;
                     }
                 }
-
-                MethodDeclarationSyntax methodDeclaration = MethodDeclaration(returnType.WithTrailingTrivia(TriviaList(Space)), SafeIdentifier(methodName))
-                    .WithParameterList(FixTrivia(parameterList))
-                    .WithSemicolonToken(SemicolonWithLineFeed);
-                if (returnsAttribute is object)
+                else
                 {
-                    methodDeclaration = methodDeclaration.AddAttributeLists(
-                        AttributeList().WithTarget(AttributeTargetSpecifier(Token(SyntaxKind.ReturnKeyword))).AddAttributes(returnsAttribute));
+                    MethodSignature<TypeHandleInfo> signature = methodDefinition.DecodeSignature(SignatureHandleProvider.Instance, null);
+
+                    CustomAttributeHandleCollection? returnTypeAttributes = this.GetReturnTypeCustomAttributes(methodDefinition);
+                    TypeSyntaxAndMarshaling returnTypeDetails = signature.ReturnType.ToTypeSyntax(typeSettings, returnTypeAttributes);
+                    TypeSyntax returnType = returnTypeDetails.Type;
+                    AttributeSyntax? returnsAttribute = MarshalAs(returnTypeDetails.MarshalAsAttribute, returnTypeDetails.NativeArrayInfo);
+
+                    ParameterListSyntax? parameterList = this.CreateParameterList(methodDefinition, signature, this.comSignatureTypeSettings);
+
+                    bool preserveSig = interfaceAsSubtype
+                        || !IsHresult(signature.ReturnType)
+                        || (methodDefinition.ImplAttributes & MethodImplAttributes.PreserveSig) == MethodImplAttributes.PreserveSig
+                        || this.options.ComInterop.PreserveSigMethods.Contains($"{ifaceName}.{methodName}")
+                        || this.options.ComInterop.PreserveSigMethods.Contains(ifaceName.ToString());
+
+                    if (!preserveSig)
+                    {
+                        ParameterSyntax? lastParameter = parameterList.Parameters.Count > 0 ? parameterList.Parameters[parameterList.Parameters.Count - 1] : null;
+                        if (lastParameter?.HasAnnotation(IsRetValAnnotation) is true)
+                        {
+                            // Move the retval parameter to the return value position.
+                            parameterList = parameterList.WithParameters(parameterList.Parameters.RemoveAt(parameterList.Parameters.Count - 1));
+                            returnType = lastParameter.Modifiers.Any(SyntaxKind.OutKeyword) ? lastParameter.Type! : ((PointerTypeSyntax)lastParameter.Type!).ElementType;
+                            returnsAttribute = lastParameter.DescendantNodes().OfType<AttributeSyntax>().FirstOrDefault(att => att.Name.ToString() == "MarshalAs");
+                        }
+                        else
+                        {
+                            // Remove the return type
+                            returnType = PredefinedType(Token(SyntaxKind.VoidKeyword));
+                        }
+                    }
+
+                    methodDeclaration = MethodDeclaration(returnType.WithTrailingTrivia(TriviaList(Space)), SafeIdentifier(methodName))
+                        .WithParameterList(FixTrivia(parameterList))
+                        .WithSemicolonToken(SemicolonWithLineFeed);
+                    if (returnsAttribute is object)
+                    {
+                        methodDeclaration = methodDeclaration.AddAttributeLists(
+                            AttributeList().WithTarget(AttributeTargetSpecifier(Token(SyntaxKind.ReturnKeyword))).AddAttributes(returnsAttribute));
+                    }
+
+                    if (preserveSig)
+                    {
+                        methodDeclaration = methodDeclaration.AddAttributeLists(AttributeList().AddAttributes(PreserveSigAttribute));
+                    }
+
+                    if (methodDeclaration.ReturnType is PointerTypeSyntax || methodDeclaration.ParameterList.Parameters.Any(p => p.Type is PointerTypeSyntax))
+                    {
+                        methodDeclaration = methodDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));
+                    }
+
+                    propertyOrMethod = methodDeclaration;
                 }
 
-                if (preserveSig)
+                if (inheritedMethods >= 0)
                 {
-                    methodDeclaration = methodDeclaration.AddAttributeLists(AttributeList().AddAttributes(PreserveSigAttribute));
-                }
-
-                if (inheritedMethods-- > 0)
-                {
-                    methodDeclaration = methodDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.NewKeyword));
-                }
-
-                if (methodDeclaration.ReturnType is PointerTypeSyntax || methodDeclaration.ParameterList.Parameters.Any(p => p.Type is PointerTypeSyntax))
-                {
-                    methodDeclaration = methodDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));
+                    propertyOrMethod = propertyOrMethod.AddModifiers(TokenWithSpace(SyntaxKind.NewKeyword));
                 }
 
                 // Add documentation if we can find it.
-                methodDeclaration = this.AddApiDocumentation($"{ifaceName}.{methodName}", methodDeclaration);
-                members.Add(methodDeclaration);
+                propertyOrMethod = this.AddApiDocumentation($"{ifaceName}.{methodName}", propertyOrMethod);
+                members.Add(propertyOrMethod);
 
-                NameSyntax declaringTypeName = HandleTypeHandleInfo.GetNestingQualifiedName(this, this.Reader, typeDef, hasUnmanagedSuffix: false, isInterfaceNestedInStruct: interfaceAsSubtype);
-                friendlyOverloads.AddRange(
-                    this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, declaringTypeName, FriendlyOverloadOf.InterfaceMethod, this.injectedPInvokeHelperMethodsToFriendlyOverloadsExtensions));
+                if (methodDeclaration is not null)
+                {
+                    NameSyntax declaringTypeName = HandleTypeHandleInfo.GetNestingQualifiedName(this, this.Reader, typeDef, hasUnmanagedSuffix: false, isInterfaceNestedInStruct: interfaceAsSubtype);
+                    friendlyOverloads.AddRange(
+                        this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, declaringTypeName, FriendlyOverloadOf.InterfaceMethod, this.injectedPInvokeHelperMethodsToFriendlyOverloadsExtensions));
+                }
             }
             catch (Exception ex)
             {
@@ -3746,6 +3875,108 @@ public class Generator : IDisposable
         this.volatileCode.AddComInterfaceExtension(friendlyOverloads);
 
         return ifaceDeclaration;
+    }
+
+    private ISet<string> GetDeclarableProperties(IEnumerable<MethodDefinition> methods, bool allowNonConsecutiveAccessors)
+    {
+        Dictionary<string, (TypeSyntax Type, int Index)> goodProperties = new(StringComparer.Ordinal);
+        HashSet<string> badProperties = new(StringComparer.Ordinal);
+        int rowIndex = -1;
+        foreach (MethodDefinition methodDefinition in methods)
+        {
+            rowIndex++;
+            if (this.TryGetPropertyAccessorInfo(methodDefinition, out IdentifierNameSyntax? propertyName, out SyntaxKind? accessorKind, out TypeSyntax? propertyType))
+            {
+                if (badProperties.Contains(propertyName.Identifier.ValueText))
+                {
+                    continue;
+                }
+
+                if (goodProperties.TryGetValue(propertyName.Identifier.ValueText, out var priorPropertyData))
+                {
+                    bool badProperty = false;
+                    badProperty |= priorPropertyData.Type.ToString() != propertyType.ToString();
+                    badProperty |= !allowNonConsecutiveAccessors && priorPropertyData.Index != rowIndex - 1;
+                    if (badProperty)
+                    {
+                        badProperties.Add(propertyName.Identifier.ValueText);
+                        goodProperties.Remove(propertyName.Identifier.ValueText);
+                        continue;
+                    }
+                }
+
+                goodProperties[propertyName.Identifier.ValueText] = (propertyType, rowIndex);
+            }
+        }
+
+        return goodProperties.Count == 0 ? ImmutableHashSet<string>.Empty : new HashSet<string>(goodProperties.Keys, StringComparer.Ordinal);
+    }
+
+    private bool TryGetPropertyAccessorInfo(MethodDefinition methodDefinition, [NotNullWhen(true)] out IdentifierNameSyntax? propertyName, [NotNullWhen(true)] out SyntaxKind? accessorKind, [NotNullWhen(true)] out TypeSyntax? propertyType)
+    {
+        propertyName = null;
+        accessorKind = null;
+        propertyType = null;
+        if ((methodDefinition.Attributes & MethodAttributes.SpecialName) != MethodAttributes.SpecialName)
+        {
+            return false;
+        }
+
+        if ((methodDefinition.ImplAttributes & MethodImplAttributes.PreserveSig) == MethodImplAttributes.PreserveSig)
+        {
+            return false;
+        }
+
+        ParameterHandleCollection parameters = methodDefinition.GetParameters();
+        if (parameters.Count != 2)
+        {
+            return false;
+        }
+
+        string methodName = this.Reader.GetString(methodDefinition.Name);
+        const string getterPrefix = "get_";
+        const string setterPrefix = "put_";
+        bool isGetter = methodName.StartsWith(getterPrefix, StringComparison.Ordinal);
+        bool isSetter = methodName.StartsWith(setterPrefix, StringComparison.Ordinal);
+
+        if (isGetter || isSetter)
+        {
+            MethodSignature<TypeHandleInfo> signature = methodDefinition.DecodeSignature(SignatureHandleProvider.Instance, null);
+            if (!IsHresult(signature.ReturnType))
+            {
+                return false;
+            }
+
+            Parameter propertyTypeParameter = this.Reader.GetParameter(parameters.Skip(1).Single());
+            propertyType = signature.ParameterTypes[0].ToTypeSyntax(this.comSignatureTypeSettings, propertyTypeParameter.GetCustomAttributes(), propertyTypeParameter.Attributes).Type;
+
+            if (isGetter)
+            {
+                propertyName = SafeIdentifierName(methodName.Substring(getterPrefix.Length));
+                accessorKind = SyntaxKind.GetAccessorDeclaration;
+
+                if ((propertyTypeParameter.Attributes & ParameterAttributes.Out) != ParameterAttributes.Out)
+                {
+                    return false;
+                }
+
+                if (propertyType is PointerTypeSyntax propertyTypePointer)
+                {
+                    propertyType = propertyTypePointer.ElementType;
+                }
+
+                return true;
+            }
+
+            if (isSetter)
+            {
+                propertyName = SafeIdentifierName(methodName.Substring(setterPrefix.Length));
+                accessorKind = SyntaxKind.SetAccessorDeclaration;
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private CustomAttribute? FindGuidAttribute(CustomAttributeHandleCollection attributes) => this.FindInteropDecorativeAttribute(attributes, nameof(GuidAttribute));
@@ -6880,7 +7111,15 @@ public class Generator : IDisposable
             return base.VisitAccessorList(node);
         }
 
-        public override SyntaxNode? VisitAccessorDeclaration(AccessorDeclarationSyntax node) => base.VisitAccessorDeclaration(this.WithIndentingTrivia(node));
+        public override SyntaxNode? VisitAccessorDeclaration(AccessorDeclarationSyntax node)
+        {
+            if (node.Body is not null)
+            {
+                node = node.WithKeyword(node.Keyword.WithTrailingTrivia(LineFeed));
+            }
+
+            return base.VisitAccessorDeclaration(this.WithIndentingTrivia(node));
+        }
 
         public override SyntaxNode? VisitLocalDeclarationStatement(LocalDeclarationStatementSyntax node) => base.VisitLocalDeclarationStatement(this.WithIndentingTrivia(node));
 

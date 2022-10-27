@@ -38,12 +38,12 @@ unsafe
             break;
         }
 
-        uint startIndex = error.get_StartIndex();
-        uint length = error.get_Length();
+        uint startIndex = error.StartIndex;
+        uint length = error.Length;
 
         var word = text.Substring((int)startIndex, (int)length);
 
-        CORRECTIVE_ACTION action = error.get_CorrectiveAction();
+        CORRECTIVE_ACTION action = error.CorrectiveAction;
 
         switch (action)
         {
@@ -51,7 +51,7 @@ unsafe
                 Console.WriteLine(@"Delete ""{0}""", word);
                 break;
             case CORRECTIVE_ACTION.CORRECTIVE_ACTION_REPLACE:
-                PWSTR replacement = error.get_Replacement();
+                PWSTR replacement = error.Replacement;
                 Console.WriteLine(@"Replace ""{0}"" with ""{1}""", word, replacement);
                 CoTaskMemFree(replacement);
                 break;

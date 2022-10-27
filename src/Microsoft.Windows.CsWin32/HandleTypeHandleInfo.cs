@@ -33,6 +33,22 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
 
     public override string ToString() => this.ToTypeSyntaxForDisplay().ToString();
 
+    internal bool IsType(string leafName)
+    {
+        switch (this.Handle.Kind)
+        {
+            case HandleKind.TypeDefinition:
+                TypeDefinition td = this.reader.GetTypeDefinition((TypeDefinitionHandle)this.Handle);
+                return this.reader.StringComparer.Equals(td.Name, leafName);
+            case HandleKind.TypeReference:
+                var trh = (TypeReferenceHandle)this.Handle;
+                TypeReference tr = this.reader.GetTypeReference(trh);
+                return this.reader.StringComparer.Equals(tr.Name, leafName);
+            default:
+                throw new NotSupportedException("Unrecognized handle type.");
+        }
+    }
+
     internal override TypeSyntaxAndMarshaling ToTypeSyntax(TypeSyntaxSettings inputs, CustomAttributeHandleCollection? customAttributes, ParameterAttributes parameterAttributes = default)
     {
         NameSyntax? nameSyntax;

@@ -298,6 +298,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             "PCZZSTR",
             "PCZZWSTR",
             "IUIAutomation", // non-preservesig retval COM method with a array size index parameter
+            "IHTMLWindow2", // contains properties named with C# reserved keywords
             "CreateFile", // built-in SafeHandle use
             "CreateCursor", // 0 or -1 invalid SafeHandle generated
             "PlaySound", // 0 invalid SafeHandle generated
@@ -524,6 +525,131 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
 
         // Make sure the WinRT marshaler was not brought in
         Assert.Empty(this.FindGeneratedType(WinRTCustomMarshalerClass));
+    }
+
+    [Theory, PairwiseData]
+    public void COMPropertiesAreGeneratedAsInterfaceProperties(bool allowMarshaling)
+    {
+        const string ifaceName = "IADsClass";
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling });
+        Assert.True(this.generator.TryGenerate(ifaceName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        InterfaceDeclarationSyntax ifaceSyntax;
+        if (allowMarshaling)
+        {
+            ifaceSyntax = Assert.Single(this.FindGeneratedType(ifaceName).OfType<InterfaceDeclarationSyntax>());
+        }
+        else
+        {
+            StructDeclarationSyntax structSyntax = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType(ifaceName));
+            ifaceSyntax = Assert.Single(structSyntax.Members.OfType<InterfaceDeclarationSyntax>(), m => m.Identifier.ValueText == "Interface");
+        }
+
+        // Check a property where we expect just a getter.
+        Assert.NotNull(FindAccessor(ifaceSyntax, "PrimaryInterface", SyntaxKind.GetAccessorDeclaration));
+        Assert.Null(FindAccessor(ifaceSyntax, "PrimaryInterface", SyntaxKind.SetAccessorDeclaration));
+
+        // Check a property where we expect both a getter and setter.
+        Assert.NotNull(FindAccessor(ifaceSyntax, "CLSID", SyntaxKind.GetAccessorDeclaration));
+        Assert.NotNull(FindAccessor(ifaceSyntax, "CLSID", SyntaxKind.SetAccessorDeclaration));
+    }
+
+    [Theory, PairwiseData]
+    public void COMPropertiesAreGeneratedAsInterfaceProperties_NonConsecutiveAccessors(bool allowMarshaling)
+    {
+        const string ifaceName = "IUIAutomationProxyFactoryEntry";
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling });
+        Assert.True(this.generator.TryGenerate(ifaceName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        InterfaceDeclarationSyntax ifaceSyntax;
+        if (allowMarshaling)
+        {
+            ifaceSyntax = Assert.Single(this.FindGeneratedType(ifaceName).OfType<InterfaceDeclarationSyntax>());
+        }
+        else
+        {
+            StructDeclarationSyntax structSyntax = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType(ifaceName));
+            ifaceSyntax = Assert.Single(structSyntax.Members.OfType<InterfaceDeclarationSyntax>(), m => m.Identifier.ValueText == "Interface");
+        }
+
+        // Check for a property where the interface declares the getter and setter in non-consecutive rows of the VMT.
+        Assert.Null(FindAccessor(ifaceSyntax, "ClassName", SyntaxKind.GetAccessorDeclaration));
+        Assert.Null(FindAccessor(ifaceSyntax, "ClassName", SyntaxKind.SetAccessorDeclaration));
+    }
+
+    [Fact]
+    public void COMPropertiesAreGeneratedAsStructProperties()
+    {
+        const string ifaceName = "IADsClass";
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = false });
+        Assert.True(this.generator.TryGenerate(ifaceName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        StructDeclarationSyntax structSyntax = Assert.Single(this.FindGeneratedType(ifaceName).OfType<StructDeclarationSyntax>());
+
+        // Check a property where we expect just a getter.
+        Assert.NotNull(FindAccessor(structSyntax, "PrimaryInterface", SyntaxKind.GetAccessorDeclaration));
+        Assert.Null(FindAccessor(structSyntax, "PrimaryInterface", SyntaxKind.SetAccessorDeclaration));
+
+        // Check a property where we expect both a getter and setter.
+        Assert.NotNull(FindAccessor(structSyntax, "CLSID", SyntaxKind.GetAccessorDeclaration));
+        Assert.NotNull(FindAccessor(structSyntax, "CLSID", SyntaxKind.SetAccessorDeclaration));
+    }
+
+    [Fact]
+    public void COMPropertiesAreGeneratedAsStructProperties_NonConsecutiveAccessors()
+    {
+        const string ifaceName = "IUIAutomationProxyFactoryEntry";
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = false });
+        Assert.True(this.generator.TryGenerate(ifaceName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        StructDeclarationSyntax structSyntax = Assert.Single(this.FindGeneratedType(ifaceName).OfType<StructDeclarationSyntax>());
+
+        // Check for a property where the interface declares the getter and setter in non-consecutive rows of the VMT.
+        // For structs, we can still declare both as accessors because we implement them, provided they have the same type.
+        Assert.NotNull(FindAccessor(structSyntax, "CanCheckBaseClass", SyntaxKind.GetAccessorDeclaration));
+        Assert.NotNull(FindAccessor(structSyntax, "CanCheckBaseClass", SyntaxKind.SetAccessorDeclaration));
+
+        // And in some cases, the types are *not* the same, so don't generate any property.
+        Assert.Null(FindAccessor(structSyntax, "ClassName", SyntaxKind.GetAccessorDeclaration));
+        Assert.Null(FindAccessor(structSyntax, "ClassName", SyntaxKind.SetAccessorDeclaration));
+        Assert.NotEmpty(structSyntax.Members.OfType<MethodDeclarationSyntax>().Where(m => m.Identifier.ValueText == "get_ClassName"));
+        Assert.NotEmpty(structSyntax.Members.OfType<MethodDeclarationSyntax>().Where(m => m.Identifier.ValueText == "put_ClassName"));
+    }
+
+    [Theory, PairwiseData]
+    public void COMPropertiesAreGeneratedAsMethodsWhenTheirReturnTypesDiffer([CombinatorialValues(0, 1, 2)] int marshaling)
+    {
+        const string ifaceName = "IHTMLImgElement";
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = marshaling > 0, ComInterop = new GeneratorOptions.ComInteropOptions { UseIntPtrForComOutPointers = marshaling == 1 } });
+        Assert.True(this.generator.TryGenerate(ifaceName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        InterfaceDeclarationSyntax ifaceSyntax;
+        if (marshaling > 0)
+        {
+            ifaceSyntax = Assert.Single(this.FindGeneratedType(ifaceName).OfType<InterfaceDeclarationSyntax>());
+        }
+        else
+        {
+            StructDeclarationSyntax structSyntax = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType(ifaceName));
+            ifaceSyntax = Assert.Single(structSyntax.Members.OfType<InterfaceDeclarationSyntax>(), m => m.Identifier.ValueText == "Interface");
+        }
+
+        if (marshaling == 1)
+        {
+            Assert.Empty(ifaceSyntax.Members.OfType<PropertyDeclarationSyntax>().Where(m => m.Identifier.ValueText == "border"));
+            Assert.NotEmpty(ifaceSyntax.Members.OfType<MethodDeclarationSyntax>().Where(m => m.Identifier.ValueText == "put_border"));
+            Assert.NotEmpty(ifaceSyntax.Members.OfType<MethodDeclarationSyntax>().Where(m => m.Identifier.ValueText == "get_border"));
+        }
+        else
+        {
+            Assert.NotNull(FindAccessor(ifaceSyntax, "border", SyntaxKind.GetAccessorDeclaration));
+            Assert.NotNull(FindAccessor(ifaceSyntax, "border", SyntaxKind.SetAccessorDeclaration));
+        }
     }
 
     [Fact]
@@ -1320,9 +1446,11 @@ namespace Microsoft.Windows.Sdk
         Assert.Contains(
             generatedMethod.AttributeLists.SelectMany(al => al.Attributes),
             a => a.Name.ToString() == "DllImport" &&
-            a.ArgumentList?.Arguments.Any(arg => arg is {
+            a.ArgumentList?.Arguments.Any(arg => arg is
+            {
                 NameEquals.Name.Identifier.ValueText: nameof(DllImportAttribute.CharSet),
-                Expression: MemberAccessExpressionSyntax { Name: IdentifierNameSyntax { Identifier.ValueText: nameof(CharSet.Unicode) } } }) is true);
+                Expression: MemberAccessExpressionSyntax { Name: IdentifierNameSyntax { Identifier.ValueText: nameof(CharSet.Unicode) } }
+            }) is true);
     }
 
     [Fact]
@@ -2838,6 +2966,20 @@ namespace Windows.Win32
             lineCount++;
         }
     }
+
+    private static AccessorDeclarationSyntax? FindAccessor(BaseTypeDeclarationSyntax typeSyntax, string propertyName, SyntaxKind kind)
+    {
+        SyntaxList<MemberDeclarationSyntax> members = typeSyntax switch
+        {
+            InterfaceDeclarationSyntax iface => iface.Members,
+            StructDeclarationSyntax s => s.Members,
+            _ => throw new NotSupportedException(),
+        };
+        PropertyDeclarationSyntax? property = members.OfType<PropertyDeclarationSyntax>().SingleOrDefault(p => p.Identifier.ValueText == propertyName);
+        return FindAccessor(property, kind);
+    }
+
+    private static AccessorDeclarationSyntax? FindAccessor(PropertyDeclarationSyntax? property, SyntaxKind kind) => property?.AccessorList?.Accessors.SingleOrDefault(a => a.IsKind(kind));
 
     private CSharpCompilation AddGeneratedCode(CSharpCompilation compilation, Generator generator)
     {

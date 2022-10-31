@@ -1511,6 +1511,7 @@ namespace Microsoft.Windows.Sdk
         using var referencedGenerator = this.CreateGenerator(new GeneratorOptions { ClassName = "P1" }, referencedProject);
         Assert.True(referencedGenerator.TryGenerate("LockWorkStation", CancellationToken.None));
         Assert.True(referencedGenerator.TryGenerate("CreateFile", CancellationToken.None));
+        Assert.True(referencedGenerator.TryGenerate("RAWHID", CancellationToken.None));
         referencedProject = this.AddGeneratedCode(referencedProject, referencedGenerator);
         this.AssertNoDiagnostics(referencedProject);
 
@@ -1518,6 +1519,7 @@ namespace Microsoft.Windows.Sdk
         this.compilation = this.compilation.AddReferences(referencedProject.ToMetadataReference());
         this.generator = this.CreateGenerator(new GeneratorOptions { ClassName = "P2" });
         Assert.True(this.generator.TryGenerate("HidD_GetAttributes", CancellationToken.None));
+        Assert.True(this.generator.TryGenerate("RAWHID", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
     }

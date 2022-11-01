@@ -30,7 +30,7 @@
     <PackageReference Include="Microsoft.Win32.Registry" Version="5.0.0" />
     <PackageReference Include="Microsoft.Windows.SDK.Win32Metadata" Version="$(MetadataVersion)" GeneratePathProperty="true" PrivateAssets="none" />
     <!-- <PackageReference Include="Microsoft.Dia.Win32Metadata" Version="$(DiaMetadataVersion)" PrivateAssets="none" /> -->
-    <PackageReference Include="coverlet.msbuild" Version="3.1.2" />
+    <PackageReference Include="coverlet.msbuild" Version="3.2.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.3.2" />
     <PackageReference Include="System.Memory" Version="4.5.5" />
     <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.0.0" />

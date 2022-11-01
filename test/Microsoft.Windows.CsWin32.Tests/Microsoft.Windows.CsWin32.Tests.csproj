@@ -41,7 +41,7 @@
     <PackageReference Include="MessagePack" Version="2.2.85" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="3.10.0" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.SourceGenerators.Testing.XUnit" Version="1.1.1" />
-    <PackageReference Include="NuGet.Protocol" Version="5.9.3" />
+    <PackageReference Include="NuGet.Protocol" Version="6.3.1" />
     <!-- <PackageReference Include="Microsoft.Dia.Win32Metadata" Version="$(DiaMetadataVersion)" PrivateAssets="none" /> -->
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.3.2" />
     <PackageReference Include="System.Collections.Immutable" Version="5.0.0" />

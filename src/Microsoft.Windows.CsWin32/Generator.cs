@@ -5753,7 +5753,7 @@ public class Generator : IDisposable
                                  BinaryExpression(SyntaxKind.LessThanExpression, lengthParameterName, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))),
                                  BinaryExpression(SyntaxKind.GreaterThanExpression, lengthParameterName, lengthConstant)),
                              ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentOutOfRangeException))).AddArgumentListArguments(
-                                 Argument(InvocationExpression(IdentifierName("nameof"), ArgumentList().AddArguments(Argument(lengthParameterName)))),
+                                 Argument(NameOfExpression(lengthParameterName)),
                                  Argument(lengthParameterName),
                                  Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal("Length must be between 0 and the fixed array length, inclusive.")))))),
                          FixedBlock(

@@ -135,6 +135,10 @@ internal static class FastSyntaxFactory
 
     internal static ThrowStatementSyntax ThrowStatement(ExpressionSyntax expression) => SyntaxFactory.ThrowStatement(Token(TriviaList(), SyntaxKind.ThrowKeyword, TriviaList(Space)), expression, Semicolon);
 
+    internal static ThrowExpressionSyntax ThrowExpression(ExpressionSyntax expression) => SyntaxFactory.ThrowExpression(Token(TriviaList(), SyntaxKind.ThrowKeyword, TriviaList(Space)), expression);
+
+    internal static ExpressionSyntax NameOfExpression(IdentifierNameSyntax identifierName) => SyntaxFactory.InvocationExpression(IdentifierName("nameof"), ArgumentList(SingletonSeparatedList(Argument(identifierName))));
+
     internal static ReturnStatementSyntax ReturnStatement(ExpressionSyntax? expression) => SyntaxFactory.ReturnStatement(Token(TriviaList(), SyntaxKind.ReturnKeyword, TriviaList(Space)), expression!, Semicolon);
 
     internal static DelegateDeclarationSyntax DelegateDeclaration(TypeSyntax returnType, SyntaxToken identifier) => SyntaxFactory.DelegateDeclaration(default(SyntaxList<AttributeListSyntax>), default(SyntaxTokenList), Token(TriviaList(), SyntaxKind.DelegateKeyword, TriviaList(Space)), returnType.WithTrailingTrivia(TriviaList(Space)), identifier, null, ParameterList(), default, Semicolon);

@@ -3784,6 +3784,8 @@ public class Generator : IDisposable
                     bool preserveSig = interfaceAsSubtype
                         || !IsHresult(signature.ReturnType)
                         || (methodDefinition.ImplAttributes & MethodImplAttributes.PreserveSig) == MethodImplAttributes.PreserveSig
+                        || this.FindInteropDecorativeAttribute(methodDefinition.GetCustomAttributes(), "CanReturnMultipleSuccessValuesAttribute") is not null
+                        || this.FindInteropDecorativeAttribute(methodDefinition.GetCustomAttributes(), "CanReturnErrorsAsSuccessAttribute") is not null
                         || this.options.ComInterop.PreserveSigMethods.Contains($"{ifaceName}.{methodName}")
                         || this.options.ComInterop.PreserveSigMethods.Contains(ifaceName.ToString());
 

@@ -90,6 +90,8 @@ public class Generator : IDisposable
     private const string SystemRuntimeInteropServices = "System.Runtime.InteropServices";
     private const string NativeTypedefAttribute = "NativeTypedefAttribute";
     private const string InvalidHandleValueAttribute = "InvalidHandleValueAttribute";
+    private const string CanReturnMultipleSuccessValuesAttribute = "CanReturnMultipleSuccessValuesAttribute";
+    private const string CanReturnErrorsAsSuccessAttribute = "CanReturnErrorsAsSuccessAttribute";
     private const string SimpleFileNameAnnotation = "SimpleFileName";
     private const string NamespaceContainerAnnotation = "NamespaceContainer";
     private const string OriginalDelegateAnnotation = "OriginalDelegate";
@@ -1378,9 +1380,9 @@ public class Generator : IDisposable
             nativeArrayInfo?.CountParamIndex.HasValue is true ? LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(nativeArrayInfo.Value.CountParamIndex.Value)) : null);
     }
 
-    internal static TypeSyntax MakeSpanOfT(TypeSyntax typeArgument) => GenericName("Span").AddTypeArgumentListArguments(typeArgument);
+    internal static TypeSyntax MakeSpanOfT(TypeSyntax typeArgument) => GenericName(nameof(Span<int>)).AddTypeArgumentListArguments(typeArgument);
 
-    internal static TypeSyntax MakeReadOnlySpanOfT(TypeSyntax typeArgument) => GenericName("ReadOnlySpan").AddTypeArgumentListArguments(typeArgument);
+    internal static TypeSyntax MakeReadOnlySpanOfT(TypeSyntax typeArgument) => GenericName(nameof(ReadOnlySpan<int>)).AddTypeArgumentListArguments(typeArgument);
 
     /// <summary>
     /// Checks whether an exception was originally thrown because of a target platform incompatibility.
@@ -3784,8 +3786,8 @@ public class Generator : IDisposable
                     bool preserveSig = interfaceAsSubtype
                         || !IsHresult(signature.ReturnType)
                         || (methodDefinition.ImplAttributes & MethodImplAttributes.PreserveSig) == MethodImplAttributes.PreserveSig
-                        || this.FindInteropDecorativeAttribute(methodDefinition.GetCustomAttributes(), "CanReturnMultipleSuccessValuesAttribute") is not null
-                        || this.FindInteropDecorativeAttribute(methodDefinition.GetCustomAttributes(), "CanReturnErrorsAsSuccessAttribute") is not null
+                        || this.FindInteropDecorativeAttribute(methodDefinition.GetCustomAttributes(), CanReturnMultipleSuccessValuesAttribute) is not null
+                        || this.FindInteropDecorativeAttribute(methodDefinition.GetCustomAttributes(), CanReturnErrorsAsSuccessAttribute) is not null
                         || this.options.ComInterop.PreserveSigMethods.Contains($"{ifaceName}.{methodName}")
                         || this.options.ComInterop.PreserveSigMethods.Contains(ifaceName.ToString());
 

@@ -1353,7 +1353,6 @@ namespace Microsoft.Windows.Sdk
         Assert.True(this.generator.TryGenerate("EvtNext", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
-        Assert.Single(this.FindGeneratedMethod("EvtNext"));
     }
 
     [Theory, PairwiseData]

@@ -40,7 +40,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
 
     private readonly ITestOutputHelper logger;
     private readonly Dictionary<string, CSharpCompilation> starterCompilations = new();
-    private readonly Dictionary<string, string[]> preprocessorSymbolsByTfm = new();
+    private readonly Dictionary<string, ImmutableArray<string>> preprocessorSymbolsByTfm = new();
     private CSharpCompilation compilation;
     private CSharpParseOptions parseOptions;
     private Generator? generator;
@@ -108,19 +108,30 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         this.starterCompilations.Add("net6.0", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net60));
         this.starterCompilations.Add("net6.0-x86", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net60, Platform.X86));
         this.starterCompilations.Add("net6.0-x64", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net60, Platform.X64));
+        this.starterCompilations.Add("net7.0", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net70));
 
         foreach (string tfm in this.starterCompilations.Keys)
         {
-            if (tfm.StartsWith("net6"))
+            if (tfm.StartsWith("net6") || tfm.StartsWith("net7"))
             {
                 AddSymbols("NET5_0_OR_GREATER", "NET6_0_OR_GREATER", "NET6_0");
             }
-            else
+
+            if (tfm.StartsWith("net7"))
             {
-                AddSymbols();
+                AddSymbols("NET7_0_OR_GREATER", "NET7_0");
             }
 
-            void AddSymbols(params string[] symbols) => this.preprocessorSymbolsByTfm.Add(tfm, symbols);
+            // Guarantee we have at least an empty list of symbols for each TFM.
+            AddSymbols();
+
+            void AddSymbols(params string[] symbols)
+            {
+                if (!this.preprocessorSymbolsByTfm.TryAdd(tfm, symbols.ToImmutableArray()))
+                {
+                    this.preprocessorSymbolsByTfm[tfm] = this.preprocessorSymbolsByTfm[tfm].AddRange(symbols);
+                }
+            }
         }
 
         this.compilation = this.starterCompilations["netstandard2.0"];
@@ -1228,6 +1239,37 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         Assert.True(hasValueProperty, "Projected members not found.");
     }
 
+    [Theory]
+    [CombinatorialData]
+    public void COMInterfaceIIDInterfaceOnAppropriateTFMs(
+        bool allowMarshaling,
+        [CombinatorialValues(LanguageVersion.CSharp10, LanguageVersion.CSharp11)] LanguageVersion langVersion,
+        [CombinatorialValues("net6.0", "net7.0")] string tfm)
+    {
+        const string structName = "IEnumBstr";
+        this.compilation = this.starterCompilations[tfm];
+        this.parseOptions = this.parseOptions.WithLanguageVersion(langVersion);
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling });
+        Assert.True(this.generator.TryGenerate(structName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        BaseTypeDeclarationSyntax type = this.FindGeneratedType(structName).Single();
+        IEnumerable<BaseTypeSyntax> actual = type.BaseList?.Types ?? Enumerable.Empty<BaseTypeSyntax>();
+        Predicate<BaseTypeSyntax> predicate = t => t.Type.ToString().Contains("IComIID");
+
+        // Static interface members requires C# 11 and .NET 7.
+        // And COM *interfaces* are not allowed to have them, so assert we only generate them on structs.
+        if (tfm == "net7.0" && langVersion >= LanguageVersion.CSharp11 && type is StructDeclarationSyntax)
+        {
+            Assert.Contains(actual, predicate);
+        }
+        else
+        {
+            Assert.DoesNotContain(actual, predicate);
+        }
+    }
+
     [Fact]
     public void PROC_GeneratedAsStruct()
     {
@@ -1302,7 +1344,7 @@ namespace Microsoft.Windows.Sdk
     }
 }
 ";
-        this.compilation = this.compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(test, path: "test.cs"));
+        this.compilation = this.compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(test, this.parseOptions, "test.cs"));
         this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate("CreateFile", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
@@ -1594,7 +1636,7 @@ class Program
     }
 }
 ";
-        this.compilation = this.compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(programCsSource, path: "Program.cs"));
+        this.compilation = this.compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(programCsSource, this.parseOptions, "Program.cs"));
 
         this.AssertNoDiagnostics();
 
@@ -3177,6 +3219,7 @@ namespace Windows.Win32
         internal static class Net
         {
             internal static readonly ReferenceAssemblies Net60 = ReferenceAssemblies.Net.Net60.AddPackages(AdditionalModernPackages);
+            internal static readonly ReferenceAssemblies Net70 = ReferenceAssemblies.Net.Net70.AddPackages(AdditionalModernPackages);
         }
 #pragma warning restore SA1202 // Elements should be ordered by access
     }

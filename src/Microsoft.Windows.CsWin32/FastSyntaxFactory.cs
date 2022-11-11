@@ -411,6 +411,8 @@ internal static class FastSyntaxFactory
 
     internal static FixedStatementSyntax FixedStatement(VariableDeclarationSyntax declaration, StatementSyntax statement) => SyntaxFactory.FixedStatement(TokenWithSpace(SyntaxKind.FixedKeyword), Token(SyntaxKind.OpenParenToken), declaration, TokenWithLineFeed(SyntaxKind.CloseParenToken), statement);
 
+    internal static ExplicitInterfaceSpecifierSyntax ExplicitInterfaceSpecifier(NameSyntax name) => SyntaxFactory.ExplicitInterfaceSpecifier(name, Token(SyntaxKind.DotToken));
+
     internal static ThisExpressionSyntax ThisExpression() => SyntaxFactory.ThisExpression(Token(SyntaxKind.ThisKeyword));
 
     internal static DefaultExpressionSyntax DefaultExpression(TypeSyntax type) => SyntaxFactory.DefaultExpression(Token(SyntaxKind.DefaultKeyword), Token(SyntaxKind.OpenParenToken), type, Token(SyntaxKind.CloseParenToken));

@@ -2651,6 +2651,7 @@ namespace Windows.Win32
 					if (hTemplateFile is object)
 					{{
 						hTemplateFile.DangerousAddRef(ref hTemplateFileAddRef);
+						if (!hTemplateFileAddRef)throw new ArgumentException(""Already released."", nameof(hTemplateFile));
 						hTemplateFileLocal = (winmdroot.Foundation.HANDLE)hTemplateFile.DangerousGetHandle();
 					}}
 					else

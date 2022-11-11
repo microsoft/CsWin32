@@ -297,6 +297,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             "PZZWSTR",
             "PCZZSTR",
             "PCZZWSTR",
+            "NCryptImportKey", // friendly overload takes SafeHandle backed by a UIntPtr instead of IntPtr
             "IUIAutomation", // non-preservesig retval COM method with a array size index parameter
             "IHTMLWindow2", // contains properties named with C# reserved keywords
             "CreateFile", // built-in SafeHandle use
@@ -2653,7 +2654,7 @@ namespace Windows.Win32
 						hTemplateFileLocal = (winmdroot.Foundation.HANDLE)hTemplateFile.DangerousGetHandle();
 					}}
 					else
-						hTemplateFileLocal = default(winmdroot.Foundation.HANDLE);
+						hTemplateFileLocal= (winmdroot.Foundation.HANDLE )new IntPtr(-1L);
 					winmdroot.Foundation.HANDLE __result = PInvoke.CreateFile(lpFileNameLocal, dwDesiredAccess, dwShareMode, lpSecurityAttributes.HasValue ? &lpSecurityAttributesLocal : null, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFileLocal);
 					return new Microsoft.Win32.SafeHandles.SafeFileHandle(__result, ownsHandle: true);
 				}}

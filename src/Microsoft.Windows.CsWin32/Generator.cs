@@ -167,6 +167,8 @@ public class Generator : IDisposable
     private static readonly AttributeSyntax SupportedOSPlatformAttribute = Attribute(IdentifierName("SupportedOSPlatform"));
     private static readonly AttributeSyntax UnscopedRefAttribute = Attribute(ParseName("UnscopedRef")).WithArgumentList(null);
     private static readonly IdentifierNameSyntax SliceAtNullMethodName = IdentifierName("SliceAtNull");
+    private static readonly IdentifierNameSyntax IComIIDGuidInterfaceName = IdentifierName("IComIID");
+    private static readonly IdentifierNameSyntax ComIIDGuidPropertyName = IdentifierName("Guid");
 
     /// <summary>
     /// The set of libraries that are expected to be allowed next to an application instead of being required to load from System32.
@@ -380,6 +382,7 @@ public class Generator : IDisposable
     private readonly bool canUseUnsafeAsRef;
     private readonly bool canUseUnsafeNullRef;
     private readonly bool unscopedRefAttributePredefined;
+    private readonly bool comIIDInterfacePredefined;
     private readonly bool getDelegateForFunctionPointerGenericExists;
     private readonly bool generateSupportedOSPlatformAttributes;
     private readonly bool generateSupportedOSPlatformAttributesOnInterfaces; // only supported on net6.0 (https://github.com/dotnet/runtime/pull/48838)
@@ -437,6 +440,7 @@ public class Generator : IDisposable
         this.canUseUnsafeAsRef = this.compilation?.GetTypeByMetadataName(typeof(Unsafe).FullName)?.GetMembers("AsRef").Any() is true;
         this.canUseUnsafeNullRef = this.compilation?.GetTypeByMetadataName(typeof(Unsafe).FullName)?.GetMembers("NullRef").Any() is true;
         this.unscopedRefAttributePredefined = this.FindTypeSymbolIfAlreadyAvailable("System.Diagnostics.CodeAnalysis.UnscopedRefAttribute") is not null;
+        this.comIIDInterfacePredefined = this.FindTypeSymbolIfAlreadyAvailable($"{this.Namespace}.{IComIIDGuidInterfaceName}") is not null;
         this.getDelegateForFunctionPointerGenericExists = this.compilation?.GetTypeByMetadataName(typeof(Marshal).FullName)?.GetMembers(nameof(Marshal.GetDelegateForFunctionPointer)).Any(m => m is IMethodSymbol { IsGenericMethod: true }) is true;
         this.generateDefaultDllImportSearchPathsAttribute = this.compilation?.GetTypeByMetadataName(typeof(DefaultDllImportSearchPathsAttribute).FullName) is object;
         if (this.FindTypeSymbolIfAlreadyAvailable("System.Runtime.Versioning.SupportedOSPlatformAttribute") is { } attribute)
@@ -496,6 +500,11 @@ public class Generator : IDisposable
         ExternMethod,
         StructMethod,
         InterfaceMethod,
+    }
+
+    private enum Feature
+    {
+        InterfaceStaticMembers,
     }
 
     /// <summary>
@@ -3628,23 +3637,21 @@ public class Generator : IDisposable
         // private void** lpVtbl; // Vtbl* (but we avoid strong typing to enable trimming the entire vtbl struct away)
         members.Add(FieldDeclaration(VariableDeclaration(PointerType(PointerType(PredefinedType(Token(SyntaxKind.VoidKeyword))))).AddVariables(VariableDeclarator(vtblFieldName.Identifier))).AddModifiers(TokenWithSpace(SyntaxKind.PrivateKeyword)));
 
+        BaseListSyntax baseList = BaseList(SeparatedList<BaseTypeSyntax>());
+
         CustomAttribute? guidAttribute = this.FindGuidAttribute(typeDef.GetCustomAttributes());
-        Guid? guidAttributeValue = guidAttribute.HasValue ? DecodeGuidFromAttribute(guidAttribute.Value) : null;
-        if (guidAttribute.HasValue)
-        {
-            // internal static readonly Guid IID_Guid = new Guid(0x1234, ...);
-            TypeSyntax guidTypeSyntax = IdentifierName(nameof(Guid));
-            members.Add(FieldDeclaration(
-                VariableDeclaration(guidTypeSyntax)
-                .AddVariables(VariableDeclarator(Identifier("IID_Guid")).WithInitializer(EqualsValueClause(
-                    GuidValue(guidAttribute.Value)))))
-                .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
-                .WithLeadingTrivia(ParseLeadingTrivia($"/// <summary>The IID guid for this interface.</summary>\n/// <value>{guidAttributeValue!.Value:B}</value>\n")));
-        }
+        var staticMembers = this.DeclareStaticCOMInterfaceMembers(guidAttribute);
+        members.AddRange(staticMembers.Members);
+        baseList = baseList.AddTypes(staticMembers.BaseTypes.ToArray());
 
         StructDeclarationSyntax iface = StructDeclaration(ifaceName.Identifier)
             .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword), TokenWithSpace(SyntaxKind.PartialKeyword))
             .AddMembers(members.ToArray());
+
+        if (baseList.Types.Count > 0)
+        {
+            iface = iface.WithBaseList(baseList);
+        }
 
         if (guidAttribute.HasValue)
         {
@@ -3850,20 +3857,22 @@ public class Generator : IDisposable
             }
         }
 
+        CustomAttribute? guidAttribute = this.FindGuidAttribute(typeDef.GetCustomAttributes());
+
         InterfaceDeclarationSyntax ifaceDeclaration = InterfaceDeclaration(ifaceName.Identifier)
             .WithKeyword(TokenWithSpace(SyntaxKind.InterfaceKeyword))
             .AddModifiers(TokenWithSpace(this.Visibility))
             .AddMembers(members.ToArray());
 
-        if (this.FindGuidFromAttribute(typeDef) is Guid guid)
+        if (guidAttribute.HasValue)
         {
-            ifaceDeclaration = ifaceDeclaration.AddAttributeLists(AttributeList().AddAttributes(GUID(guid), ifaceType, ComImportAttribute));
+            ifaceDeclaration = ifaceDeclaration.AddAttributeLists(AttributeList().AddAttributes(GUID(DecodeGuidFromAttribute(guidAttribute.Value)), ifaceType, ComImportAttribute));
         }
 
         if (baseTypeSyntaxList.Count > 0)
         {
             ifaceDeclaration = ifaceDeclaration
-                .WithBaseList(BaseList(SeparatedList(baseTypeSyntaxList.ToArray())));
+                .WithBaseList(BaseList(SeparatedList(baseTypeSyntaxList)));
         }
 
         if (this.generateSupportedOSPlatformAttributesOnInterfaces && this.GetSupportedOSPlatformAttribute(typeDef.GetCustomAttributes()) is AttributeSyntax supportedOSPlatformAttribute)
@@ -3876,6 +3885,42 @@ public class Generator : IDisposable
         this.volatileCode.AddComInterfaceExtension(friendlyOverloads);
 
         return ifaceDeclaration;
+    }
+
+    private (List<MemberDeclarationSyntax> Members, List<BaseTypeSyntax> BaseTypes) DeclareStaticCOMInterfaceMembers(CustomAttribute? guidAttribute)
+    {
+        List<MemberDeclarationSyntax> members = new();
+        List<BaseTypeSyntax> baseTypes = new();
+
+        if (guidAttribute.HasValue)
+        {
+            Guid guidAttributeValue = DecodeGuidFromAttribute(guidAttribute.Value);
+
+            // internal static readonly Guid IID_Guid = new Guid(0x1234, ...);
+            IdentifierNameSyntax iidGuidFieldName = IdentifierName("IID_Guid");
+            TypeSyntax guidTypeSyntax = IdentifierName(nameof(Guid));
+            members.Add(FieldDeclaration(
+                VariableDeclaration(guidTypeSyntax)
+                .AddVariables(VariableDeclarator(iidGuidFieldName.Identifier).WithInitializer(EqualsValueClause(
+                    GuidValue(guidAttribute.Value)))))
+                .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
+                .WithLeadingTrivia(ParseLeadingTrivia($"/// <summary>The IID guid for this interface.</summary>\n/// <value>{guidAttributeValue:B}</value>\n")));
+
+            if (this.TryDeclareCOMGuidInterfaceIfNecessary())
+            {
+                baseTypes.Add(SimpleBaseType(IComIIDGuidInterfaceName));
+
+                // static ref readonly Guid IComIID.Guid => ref IID_Guid;
+                PropertyDeclarationSyntax guidProperty = PropertyDeclaration(IdentifierName(nameof(Guid)).WithTrailingTrivia(Space), ComIIDGuidPropertyName.Identifier)
+                    .WithExplicitInterfaceSpecifier(ExplicitInterfaceSpecifier(IComIIDGuidInterfaceName))
+                    .AddModifiers(TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.RefKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
+                    .WithExpressionBody(ArrowExpressionClause(RefExpression(iidGuidFieldName)))
+                    .WithSemicolonToken(Semicolon);
+                members.Add(guidProperty);
+            }
+        }
+
+        return (members, baseTypes);
     }
 
     private ISet<string> GetDeclarableProperties(IEnumerable<MethodDefinition> methods, bool allowNonConsecutiveAccessors)
@@ -6132,6 +6177,62 @@ public class Generator : IDisposable
 
             this.volatileCode.AddSpecialType(name, nsDeclaration, topLevel: true);
         });
+    }
+
+    private bool TryDeclareCOMGuidInterfaceIfNecessary()
+    {
+        // Static interface members require C# 11 and .NET 7 at minimum.
+        if (!this.IsFeatureAvailable(Feature.InterfaceStaticMembers))
+        {
+            return false;
+        }
+
+        if (this.comIIDInterfacePredefined)
+        {
+            return true;
+        }
+
+        this.volatileCode.GenerateSpecialType(IComIIDGuidInterfaceName.Identifier.ValueText, delegate
+        {
+            // internal static abstract ref readonly Guid Guid { get; }
+            PropertyDeclarationSyntax guidProperty = PropertyDeclaration(IdentifierName(nameof(Guid)).WithTrailingTrivia(Space), ComIIDGuidPropertyName.Identifier)
+                .AddModifiers(
+                    TokenWithSpace(this.Visibility),
+                    TokenWithSpace(SyntaxKind.StaticKeyword),
+                    TokenWithSpace(SyntaxKind.AbstractKeyword),
+                    TokenWithSpace(SyntaxKind.RefKeyword),
+                    TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
+                .WithAccessorList(AccessorList().AddAccessors(AccessorDeclaration(SyntaxKind.GetAccessorDeclaration).WithSemicolonToken(Semicolon)));
+
+            // internal interface IComIID { ... }
+            InterfaceDeclarationSyntax ifaceDecl = InterfaceDeclaration(IComIIDGuidInterfaceName.Identifier)
+                .AddModifiers(Token(this.Visibility))
+                .AddMembers(guidProperty);
+
+            this.volatileCode.AddSpecialType(IComIIDGuidInterfaceName.Identifier.ValueText, ifaceDecl);
+        });
+
+        return true;
+    }
+
+    private bool IsFeatureAvailable(Feature feature)
+    {
+        return feature switch
+        {
+            Feature.InterfaceStaticMembers => (int)this.LanguageVersion >= 1100 && this.IsTargetFrameworkAtLeastDotNetVersion(7),
+            _ => throw new NotImplementedException(),
+        };
+    }
+
+    private bool TryGetTargetDotNetVersion([NotNullWhen(true)] out Version? dotNetVersion)
+    {
+        dotNetVersion = this.compilation?.ReferencedAssemblyNames.FirstOrDefault(id => string.Equals(id.Name, "System.Runtime", StringComparison.OrdinalIgnoreCase))?.Version;
+        return dotNetVersion is not null;
+    }
+
+    private bool IsTargetFrameworkAtLeastDotNetVersion(int majorVersion)
+    {
+        return this.TryGetTargetDotNetVersion(out Version? actualVersion) && actualVersion.Major >= majorVersion;
     }
 
     private bool IsTypeDefStruct(TypeHandleInfo? typeHandleInfo)

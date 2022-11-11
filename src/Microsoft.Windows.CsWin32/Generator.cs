@@ -90,6 +90,8 @@ public class Generator : IDisposable
     private const string SystemRuntimeInteropServices = "System.Runtime.InteropServices";
     private const string NativeTypedefAttribute = "NativeTypedefAttribute";
     private const string InvalidHandleValueAttribute = "InvalidHandleValueAttribute";
+    private const string CanReturnMultipleSuccessValuesAttribute = "CanReturnMultipleSuccessValuesAttribute";
+    private const string CanReturnErrorsAsSuccessAttribute = "CanReturnErrorsAsSuccessAttribute";
     private const string SimpleFileNameAnnotation = "SimpleFileName";
     private const string NamespaceContainerAnnotation = "NamespaceContainer";
     private const string OriginalDelegateAnnotation = "OriginalDelegate";
@@ -1378,9 +1380,9 @@ public class Generator : IDisposable
             nativeArrayInfo?.CountParamIndex.HasValue is true ? LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(nativeArrayInfo.Value.CountParamIndex.Value)) : null);
     }
 
-    internal static TypeSyntax MakeSpanOfT(TypeSyntax typeArgument) => GenericName("Span").AddTypeArgumentListArguments(typeArgument);
+    internal static TypeSyntax MakeSpanOfT(TypeSyntax typeArgument) => GenericName(nameof(Span<int>)).AddTypeArgumentListArguments(typeArgument);
 
-    internal static TypeSyntax MakeReadOnlySpanOfT(TypeSyntax typeArgument) => GenericName("ReadOnlySpan").AddTypeArgumentListArguments(typeArgument);
+    internal static TypeSyntax MakeReadOnlySpanOfT(TypeSyntax typeArgument) => GenericName(nameof(ReadOnlySpan<int>)).AddTypeArgumentListArguments(typeArgument);
 
     /// <summary>
     /// Checks whether an exception was originally thrown because of a target platform incompatibility.
@@ -1754,7 +1756,7 @@ public class Generator : IDisposable
             // Collect all the known invalid values for this handle.
             // If no invalid values are given (e.g. BSTR), we'll just assume 0 is invalid.
             HashSet<IntPtr> invalidHandleValues = this.GetInvalidHandleValues(((HandleTypeHandleInfo)releaseMethodParameterTypeHandleInfo).Handle);
-            long preferredInvalidValue = invalidHandleValues.Contains(new IntPtr(-1)) ? -1 : invalidHandleValues.FirstOrDefault().ToInt64();
+            IntPtr preferredInvalidValue = GetPreferredInvalidHandleValue(invalidHandleValues);
 
             CustomAttributeHandleCollection? atts = this.GetReturnTypeCustomAttributes(releaseMethodDef);
             TypeSyntaxAndMarshaling releaseMethodReturnType = releaseMethodSignature.ReturnType.ToTypeSyntax(this.externSignatureTypeSettings, atts);
@@ -1765,7 +1767,7 @@ public class Generator : IDisposable
 
             MemberAccessExpressionSyntax thisHandle = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("handle"));
             ExpressionSyntax intptrZero = DefaultExpression(IntPtrTypeSyntax);
-            ExpressionSyntax invalidHandleIntPtr = ObjectCreationExpression(IntPtrTypeSyntax).AddArgumentListArguments(Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(preferredInvalidValue))));
+            ExpressionSyntax invalidHandleIntPtr = IntPtrExpr(preferredInvalidValue);
 
             // private static readonly IntPtr INVALID_HANDLE_VALUE = new IntPtr(-1);
             IdentifierNameSyntax invalidValueFieldName = IdentifierName("INVALID_HANDLE_VALUE");
@@ -2247,6 +2249,8 @@ public class Generator : IDisposable
 
     private static SyntaxToken TokenWithLineFeed(SyntaxKind syntaxKind) => SyntaxFactory.Token(TriviaList(), syntaxKind, TriviaList(LineFeed));
 
+    private static IntPtr GetPreferredInvalidHandleValue(HashSet<IntPtr> invalidHandleValues) => invalidHandleValues.Contains(new IntPtr(-1)) ? new IntPtr(-1) : invalidHandleValues.FirstOrDefault();
+
     private static bool RequiresUnsafe(TypeSyntax? typeSyntax) => typeSyntax is PointerTypeSyntax || typeSyntax is FunctionPointerTypeSyntax;
 
     private static string GetClassNameForModule(string moduleName) =>
@@ -2619,6 +2623,9 @@ public class Generator : IDisposable
     }
 
     private static bool IsHresult(TypeHandleInfo? typeHandleInfo) => typeHandleInfo is HandleTypeHandleInfo handleInfo && handleInfo.IsType("HRESULT");
+
+    private static ExpressionSyntax IntPtrExpr(IntPtr value) => ObjectCreationExpression(IntPtrTypeSyntax).AddArgumentListArguments(
+        Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(value.ToInt64()))));
 
     private T AddApiDocumentation<T>(string api, T memberDeclaration)
         where T : MemberDeclarationSyntax
@@ -3784,8 +3791,8 @@ public class Generator : IDisposable
                     bool preserveSig = interfaceAsSubtype
                         || !IsHresult(signature.ReturnType)
                         || (methodDefinition.ImplAttributes & MethodImplAttributes.PreserveSig) == MethodImplAttributes.PreserveSig
-                        || this.FindInteropDecorativeAttribute(methodDefinition.GetCustomAttributes(), "CanReturnMultipleSuccessValuesAttribute") is not null
-                        || this.FindInteropDecorativeAttribute(methodDefinition.GetCustomAttributes(), "CanReturnErrorsAsSuccessAttribute") is not null
+                        || this.FindInteropDecorativeAttribute(methodDefinition.GetCustomAttributes(), CanReturnMultipleSuccessValuesAttribute) is not null
+                        || this.FindInteropDecorativeAttribute(methodDefinition.GetCustomAttributes(), CanReturnErrorsAsSuccessAttribute) is not null
                         || this.options.ComInterop.PreserveSigMethods.Contains($"{ifaceName}.{methodName}")
                         || this.options.ComInterop.PreserveSigMethods.Contains(ifaceName.ToString());
 
@@ -4715,6 +4722,22 @@ public class Generator : IDisposable
                 leadingStatements.Add(LocalDeclarationStatement(VariableDeclaration(externParam.Type).AddVariables(
                     VariableDeclarator(typeDefHandleName.Identifier))));
 
+                // throw new ArgumentNullException(nameof(hTemplateFile));
+                StatementSyntax nullHandleStatement = ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentNullException))).WithArgumentList(ArgumentList().AddArguments(Argument(NameOfExpression(IdentifierName(externParam.Identifier.ValueText))))));
+                if (isOptional)
+                {
+                    HashSet<IntPtr> invalidValues = this.GetInvalidHandleValues(parameterHandleTypeInfo.Handle);
+                    if (invalidValues.Count > 0)
+                    {
+                        // (HANDLE)new IntPtr(-1);
+                        IntPtr invalidValue = GetPreferredInvalidHandleValue(invalidValues);
+                        ExpressionSyntax invalidExpression = CastExpression(externParam.Type, IntPtrExpr(invalidValue));
+
+                        // hTemplateFileLocal = invalid-handle-value;
+                        nullHandleStatement = ExpressionStatement(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, typeDefHandleName, invalidExpression));
+                    }
+                }
+
                 // if (hTemplateFile is object)
                 leadingStatements.Add(IfStatement(
                     BinaryExpression(SyntaxKind.IsExpression, origName, PredefinedType(Token(SyntaxKind.ObjectKeyword))),
@@ -4732,7 +4755,7 @@ public class Generator : IDisposable
                                 InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName(nameof(SafeHandle.DangerousGetHandle))), ArgumentList())))
                         .WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken)))),
                     //// else hTemplateFileLocal = default;
-                    ElseClause(ExpressionStatement(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, typeDefHandleName, DefaultExpression(externParam.Type.WithoutTrailingTrivia())).WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken))))));
+                    ElseClause(nullHandleStatement)));
 
                 // if (hTemplateFileAddRef)
                 //     hTemplateFile.DangerousRelease();
@@ -5753,7 +5776,7 @@ public class Generator : IDisposable
                                  BinaryExpression(SyntaxKind.LessThanExpression, lengthParameterName, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))),
                                  BinaryExpression(SyntaxKind.GreaterThanExpression, lengthParameterName, lengthConstant)),
                              ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentOutOfRangeException))).AddArgumentListArguments(
-                                 Argument(InvocationExpression(IdentifierName("nameof"), ArgumentList().AddArguments(Argument(lengthParameterName)))),
+                                 Argument(NameOfExpression(lengthParameterName)),
                                  Argument(lengthParameterName),
                                  Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal("Length must be between 0 and the fixed array length, inclusive.")))))),
                          FixedBlock(

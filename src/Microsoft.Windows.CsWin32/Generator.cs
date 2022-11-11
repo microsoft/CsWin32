@@ -2295,6 +2295,18 @@ public class Generator : IDisposable
         return structLayoutAttribute;
     }
 
+    private static AttributeSyntax MethodImpl(MethodImplOptions options)
+    {
+        if (options != MethodImplOptions.AggressiveInlining)
+        {
+            throw new NotImplementedException();
+        }
+
+        AttributeSyntax attribute = Attribute(IdentifierName("MethodImpl"))
+            .AddArgumentListArguments(AttributeArgument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(MethodImplOptions)), IdentifierName(nameof(MethodImplOptions.AggressiveInlining)))));
+        return attribute;
+    }
+
     private static AttributeSyntax GUID(Guid guid)
     {
         return Attribute(IdentifierName("Guid")).AddArgumentListArguments(
@@ -2467,6 +2479,25 @@ public class Generator : IDisposable
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Creates the syntax for creating a new byte array populated with the specified data.
+    /// e.g. <c>new byte[] { 0x01, 0x02 }</c>.
+    /// </summary>
+    /// <param name="bytes">The content of the array.</param>
+    /// <returns>The array creation syntax.</returns>
+    private static ArrayCreationExpressionSyntax NewByteArray(ReadOnlySpan<byte> bytes)
+    {
+        ExpressionSyntax[] elements = new ExpressionSyntax[bytes.Length];
+        for (int i = 0; i < bytes.Length; i++)
+        {
+            elements[i] = LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(bytes[i]), bytes[i]));
+        }
+
+        return ArrayCreationExpression(
+            ArrayType(PredefinedType(Token(SyntaxKind.ByteKeyword))).AddRankSpecifiers(ArrayRankSpecifier()),
+            InitializerExpression(SyntaxKind.ArrayInitializerExpression, SeparatedList(elements)));
     }
 
     private static unsafe string ToHex<T>(T value)
@@ -3887,7 +3918,7 @@ public class Generator : IDisposable
         return ifaceDeclaration;
     }
 
-    private (List<MemberDeclarationSyntax> Members, List<BaseTypeSyntax> BaseTypes) DeclareStaticCOMInterfaceMembers(CustomAttribute? guidAttribute)
+    private unsafe (List<MemberDeclarationSyntax> Members, List<BaseTypeSyntax> BaseTypes) DeclareStaticCOMInterfaceMembers(CustomAttribute? guidAttribute)
     {
         List<MemberDeclarationSyntax> members = new();
         List<BaseTypeSyntax> baseTypes = new();
@@ -3910,12 +3941,50 @@ public class Generator : IDisposable
             {
                 baseTypes.Add(SimpleBaseType(IComIIDGuidInterfaceName));
 
-                // static ref readonly Guid IComIID.Guid => ref IID_Guid;
+                IdentifierNameSyntax dataLocal = IdentifierName("data");
+
+                // Rather than just `return ref IID_Guid`, which returns a pointer to a 'movable' field,
+                // We leverage C# syntax that we know the modern C# compiler will turn into a pointer directly into the dll image,
+                // so that the pointer does not move.
+                // This does rely on at least the generated code running on a little endian machine, since we're laying raw bytes on top of integer fields.
+                // But at the moment, we also assume this source generator is running on little endian for convenience for the reverse operation.
+                if (!BitConverter.IsLittleEndian)
+                {
+                    throw new NotSupportedException("Conversion from big endian to little endian is not implemented.");
+                }
+
+                // ReadOnlySpan<byte> data = new byte[] { ... };
+                ReadOnlySpan<byte> guidBytes = new((byte*)&guidAttributeValue, sizeof(Guid));
+                LocalDeclarationStatementSyntax dataDecl = LocalDeclarationStatement(
+                    VariableDeclaration(MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.ByteKeyword)))).AddVariables(
+                        VariableDeclarator(dataLocal.Identifier).WithInitializer(EqualsValueClause(NewByteArray(guidBytes)))));
+
+                // return ref Unsafe.As<byte, Guid>(ref MemoryMarshal.GetReference(data));
+                ReturnStatementSyntax returnStatement = ReturnStatement(RefExpression(
+                    InvocationExpression(
+                        MemberAccessExpression(
+                            SyntaxKind.SimpleMemberAccessExpression,
+                            IdentifierName(nameof(Unsafe)),
+                            GenericName(nameof(Unsafe.As)).AddTypeArgumentListArguments(PredefinedType(Token(SyntaxKind.ByteKeyword)), IdentifierName(nameof(Guid)))),
+                        ArgumentList().AddArguments(
+                            Argument(
+                                InvocationExpression(
+                                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(MemoryMarshal)), IdentifierName(nameof(MemoryMarshal.GetReference))),
+                                    ArgumentList(SingletonSeparatedList(Argument(dataLocal)))))
+                            .WithRefOrOutKeyword(Token(SyntaxKind.RefKeyword))))));
+
+                // The native assembly code for this property getter is just a `mov` and a `ret.
+                // For our callers to also enjoy just the `mov` instruction, we have to attribute for aggressive inlining.
+                // [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                AttributeListSyntax methodImplAttr = AttributeList().AddAttributes(MethodImpl(MethodImplOptions.AggressiveInlining));
+
+                BlockSyntax getBody = Block(dataDecl, returnStatement);
+
+                // static ref readonly Guid IComIID.Guid { get { ... } }
                 PropertyDeclarationSyntax guidProperty = PropertyDeclaration(IdentifierName(nameof(Guid)).WithTrailingTrivia(Space), ComIIDGuidPropertyName.Identifier)
                     .WithExplicitInterfaceSpecifier(ExplicitInterfaceSpecifier(IComIIDGuidInterfaceName))
                     .AddModifiers(TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.RefKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
-                    .WithExpressionBody(ArrowExpressionClause(RefExpression(iidGuidFieldName)))
-                    .WithSemicolonToken(Semicolon);
+                    .WithAccessorList(AccessorList().AddAccessors(AccessorDeclaration(SyntaxKind.GetAccessorDeclaration, getBody).AddAttributeLists(methodImplAttr)));
                 members.Add(guidProperty);
             }
         }
@@ -6202,7 +6271,8 @@ public class Generator : IDisposable
                     TokenWithSpace(SyntaxKind.AbstractKeyword),
                     TokenWithSpace(SyntaxKind.RefKeyword),
                     TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
-                .WithAccessorList(AccessorList().AddAccessors(AccessorDeclaration(SyntaxKind.GetAccessorDeclaration).WithSemicolonToken(Semicolon)));
+                .WithAccessorList(AccessorList().AddAccessors(AccessorDeclaration(SyntaxKind.GetAccessorDeclaration).WithSemicolonToken(Semicolon)))
+                .WithLeadingTrivia(ParseLeadingTrivia($"/// <summary>The IID guid for this interface.</summary>\n/// <remarks>The <see cref=\"Guid\" /> reference that is returned comes from a permanent memory address, and is therefore safe to convert to a pointer and pass around or hold long-term.</remarks>\n"));
 
             // internal interface IComIID { ... }
             InterfaceDeclarationSyntax ifaceDecl = InterfaceDeclaration(IComIIDGuidInterfaceName.Identifier)

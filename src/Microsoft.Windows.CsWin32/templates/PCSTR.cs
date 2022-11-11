@@ -36,7 +36,7 @@ internal unsafe readonly partial struct PCSTR
 	/// Returns a <see langword="string"/> with a copy of this character array, decoding as UTF-8.
 	/// </summary>
 	/// <returns>A <see langword="string"/>, or <see langword="null"/> if <see cref="Value"/> is <see langword="null"/>.</returns>
-	public override string ToString() => this.Value is null ? null : new string((sbyte*)this.Value, 0, this.Length, global::System.Text.Encoding.UTF8);
+	public override string ToString() => this.Value is null ? null : new string((sbyte*)this.Value, 0, this.Length, global::System.Text.Encoding.Default);
 
 #if canUseSpan
 	/// <summary>

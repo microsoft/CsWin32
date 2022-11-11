@@ -4938,7 +4938,7 @@ public class Generator : IDisposable
                 parameters[param.SequenceNumber - 1] = externParam
                     .WithType(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword)));
 
-                // fixed (byte* someLocal = some is object ? System.Text.Encoding.UTF8.GetBytes(some) : null)
+                // fixed (byte* someLocal = some is object ? System.Text.Encoding.Default.GetBytes(some) : null)
                 fixedBlocks.Add(VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.ByteKeyword)))).AddVariables(
                     VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(
                         ConditionalExpression(
@@ -4946,7 +4946,7 @@ public class Generator : IDisposable
                             InvocationExpression(
                                 MemberAccessExpression(
                                     SyntaxKind.SimpleMemberAccessExpression,
-                                    ParseTypeName("global::System.Text.Encoding.UTF8"),
+                                    ParseTypeName("global::System.Text.Encoding.Default"),
                                     IdentifierName(nameof(Encoding.GetBytes))))
                             .WithArgumentList(
                                 ArgumentList(

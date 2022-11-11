@@ -4722,6 +4722,12 @@ public class Generator : IDisposable
                     //// hTemplateFile.DangerousAddRef(ref hTemplateFileAddRef);
                     ExpressionStatement(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName(nameof(SafeHandle.DangerousAddRef))))
                         .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(refAddedName).WithRefKindKeyword(TokenWithSpace(SyntaxKind.RefKeyword)))))),
+                    //// if (!hTemplateFileAddRef) throw new ArgumentException("Already released.", nameof(hTemplateFile));
+                    IfStatement(
+                        PrefixUnaryExpression(SyntaxKind.LogicalNotExpression, refAddedName),
+                        ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentException))).AddArgumentListArguments(
+                            Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal("Already released."))),
+                            Argument(NameOfExpression(origName))))),
                     //// hTemplateFileLocal = (HANDLE)hTemplateFile.DangerousGetHandle();
                     ExpressionStatement(
                         AssignmentExpression(

@@ -423,7 +423,7 @@ public class BasicTests
     }
 
     [Fact]
-    public void CHAR_MarshaledAsUtf8()
+    public void CHAR_MarshaledAsAnsi()
     {
         Assert.Equal(1, Marshal.SizeOf<CHAR>());
     }

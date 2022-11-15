@@ -632,6 +632,19 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         Assert.NotEmpty(structSyntax.Members.OfType<MethodDeclarationSyntax>().Where(m => m.Identifier.ValueText == "put_ClassName"));
     }
 
+    /// <summary>
+    /// Verifies that IPicture can be generated.
+    /// It is a special case because of <see href="https://github.com/microsoft/win32metadata/issues/1367">this metadata bug</see>.
+    /// </summary>
+    [Fact]
+    public void COMPropertiesAreGeneratedAsStructProperties_NonConsecutiveAccessors_IPicture()
+    {
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = false });
+        Assert.True(this.generator.TryGenerate("IPicture", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+    }
+
     [Theory, PairwiseData]
     public void COMPropertiesAreGeneratedAsMethodsWhenTheirReturnTypesDiffer([CombinatorialValues(0, 1, 2)] int marshaling)
     {

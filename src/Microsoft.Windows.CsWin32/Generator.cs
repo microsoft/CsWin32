@@ -4021,13 +4021,22 @@ public class Generator : IDisposable
                     badProperty |= !allowNonConsecutiveAccessors && priorPropertyData.Index != rowIndex - 1;
                     if (badProperty)
                     {
-                        badProperties.Add(propertyName.Identifier.ValueText);
-                        goodProperties.Remove(propertyName.Identifier.ValueText);
+                        ReportBadProperty();
                         continue;
                     }
                 }
 
                 goodProperties[propertyName.Identifier.ValueText] = (propertyType, rowIndex);
+            }
+            else if (propertyName is not null)
+            {
+                ReportBadProperty();
+            }
+
+            void ReportBadProperty()
+            {
+                badProperties.Add(propertyName.Identifier.ValueText);
+                goodProperties.Remove(propertyName.Identifier.ValueText);
             }
         }
 
@@ -4039,8 +4048,18 @@ public class Generator : IDisposable
         propertyName = null;
         accessorKind = null;
         propertyType = null;
+
         if ((methodDefinition.Attributes & MethodAttributes.SpecialName) != MethodAttributes.SpecialName)
         {
+            // Sometimes another method actually *does* qualify as a property accessor, which would have this method as another accessor if it qualified.
+            // But since this doesn't qualify, produce the property name that should be disqualified as a whole since C# doesn't like seeing property X and method set_X as seperate declarations.
+            string disqualifiedMethodName = this.Reader.GetString(methodDefinition.Name);
+            int index = disqualifiedMethodName.IndexOf('_');
+            if (index > 0)
+            {
+                propertyName = IdentifierName(disqualifiedMethodName.Substring(index + 1));
+            }
+
             return false;
         }
 

@@ -308,6 +308,8 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
             "PZZWSTR",
             "PCZZSTR",
             "PCZZWSTR",
+            "IRealTimeStylusSynchronization", // uses the `lock` C# keyword.
+            "IHTMLInputElement", // has a field named `checked`, a C# keyword.
             "NCryptImportKey", // friendly overload takes SafeHandle backed by a UIntPtr instead of IntPtr
             "IUIAutomation", // non-preservesig retval COM method with a array size index parameter
             "IHTMLWindow2", // contains properties named with C# reserved keywords

@@ -307,22 +307,25 @@ public class Generator : IDisposable
 
     private static readonly HashSet<string> CSharpKeywords = new HashSet<string>(StringComparer.Ordinal)
     {
-        "object",
+        "as",
+        "base",
+        "checked",
+        "decimal",
         "event",
+        "in",
+        "is",
+        "internal",
+        "lock",
+        "object",
+        "out",
         "override",
-        "public",
+        "params",
         "private",
         "protected",
-        "internal",
-        "virtual",
-        "string",
-        "base",
+        "public",
         "ref",
-        "in",
-        "out",
-        "decimal",
-        "as",
-        "params",
+        "string",
+        "virtual",
     };
 
     private static readonly HashSet<string> ObjectMembers = new HashSet<string>(StringComparer.Ordinal)

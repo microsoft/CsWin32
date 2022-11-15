@@ -37,19 +37,19 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="coverlet.msbuild" Version="3.2.0" />
-    <PackageReference Include="MessagePack" Version="2.2.85" />
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.4.0-4.final" />
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.SourceGenerators.Testing.XUnit" Version="1.1.2-beta1.22512.1" />
-    <PackageReference Include="NuGet.Protocol" Version="6.4.0" />
-    <!-- <PackageReference Include="Microsoft.Dia.Win32Metadata" Version="$(DiaMetadataVersion)" PrivateAssets="none" /> -->
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.4.0" />
-    <PackageReference Include="System.Collections.Immutable" Version="6.0.0" />
-    <PackageReference Include="System.Reflection.Metadata" Version="6.0.1" />
-    <PackageReference Include="System.Text.Json" Version="6.0.7" />
-    <PackageReference Include="xunit" Version="2.4.2" />
-    <PackageReference Include="Xunit.Combinatorial" Version="1.5.25" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="2.4.5" />
+    <PackageReference Include="Microsoft.CodeCoverage" />
+    <PackageReference Include="MessagePack" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.SourceGenerators.Testing.XUnit" />
+    <PackageReference Include="NuGet.Protocol" />
+    <!-- <PackageReference Include="Microsoft.Dia.Win32Metadata" PrivateAssets="none" /> -->
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="System.Collections.Immutable" />
+    <PackageReference Include="System.Reflection.Metadata" />
+    <PackageReference Include="System.Text.Json" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="Xunit.Combinatorial" />
+    <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
 
 </Project>

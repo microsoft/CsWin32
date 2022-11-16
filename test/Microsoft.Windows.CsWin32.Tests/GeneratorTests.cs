@@ -896,11 +896,12 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
         ClassDeclarationSyntax arrayExtensions = Assert.IsType<ClassDeclarationSyntax>(this.FindGeneratedType("InlineArrayIndexerExtensions").Single());
         Assert.Contains(arrayExtensions.AttributeLists, al => al.Attributes.Any(a => a.Name.ToString().Contains("GeneratedCode")));
 
-        ClassDeclarationSyntax overloadsExtensions = Assert.IsType<ClassDeclarationSyntax>(this.FindGeneratedType("FriendlyOverloadExtensions").Single());
-        Assert.Contains(overloadsExtensions.AttributeLists, al => al.Attributes.Any(a => a.Name.ToString().Contains("GeneratedCode")));
+        Assert.All(
+            this.compilation.SyntaxTrees.SelectMany(st => st.GetRoot().DescendantNodes().OfType<BaseTypeDeclarationSyntax>()).Where(btd => btd.Identifier.ValueText.EndsWith("_Extensions", StringComparison.Ordinal)),
+            e => Assert.Contains(e.AttributeLists, al => al.Attributes.Any(a => a.Name.ToString().Contains("GeneratedCode"))));
 
         ClassDeclarationSyntax sysFreeStringSafeHandleClass = Assert.IsType<ClassDeclarationSyntax>(this.FindGeneratedType("SysFreeStringSafeHandle").Single());
-        Assert.Contains(overloadsExtensions.AttributeLists, al => al.Attributes.Any(a => a.Name.ToString().Contains("GeneratedCode")));
+        Assert.Contains(sysFreeStringSafeHandleClass.AttributeLists, al => al.Attributes.Any(a => a.Name.ToString().Contains("GeneratedCode")));
     }
 
     [Fact]

@@ -10,7 +10,7 @@ parameters:
 
 jobs:
 - job: Windows
-  timeoutInMinutes: 120
+  timeoutInMinutes: 240
   pool: ${{ parameters.windowsPool }}
   variables:
     TestFilter: ""
@@ -30,7 +30,7 @@ jobs:
       RunTests: ${{ parameters.RunTests }}
 
 - job: Linux
-  timeoutInMinutes: 120
+  timeoutInMinutes: 240
   pool:
     vmImage: Ubuntu 20.04
   variables:
@@ -48,7 +48,7 @@ jobs:
 
 - job: macOS
   condition: ${{ parameters.includeMacOS }}
-  timeoutInMinutes: 120
+  timeoutInMinutes: 240
   pool:
     vmImage: macOS-12
   variables:

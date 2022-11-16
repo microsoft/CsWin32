@@ -1473,7 +1473,7 @@ public class Generator : IDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
             TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefinitionHandle);
-            if (typeDef.BaseType.IsNil)
+            if (typeDef.BaseType.IsNil && (typeDef.Attributes & TypeAttributes.Interface) != TypeAttributes.Interface)
             {
                 continue;
             }

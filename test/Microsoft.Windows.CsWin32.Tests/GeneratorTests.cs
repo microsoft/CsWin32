@@ -1538,21 +1538,41 @@ namespace Microsoft.Windows.Sdk
         this.AssertNoDiagnostics();
     }
 
-    [Theory, PairwiseData]
-    public void FullGeneration(MarshalingOptions marshaling, bool useIntPtrForComOutPtr, [CombinatorialMemberData(nameof(AnyCpuArchitectures))] Platform platform)
-    {
-        var generatorOptions = new GeneratorOptions
-        {
-            AllowMarshaling = marshaling >= MarshalingOptions.MarshalingWithoutSafeHandles,
-            UseSafeHandles = marshaling == MarshalingOptions.FullMarshaling,
-            ComInterop = new() { UseIntPtrForComOutPointers = useIntPtrForComOutPtr },
-        };
-        this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(platform));
-        this.generator = this.CreateGenerator(generatorOptions);
-        this.generator.GenerateAll(CancellationToken.None);
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics(logAllGeneratedCode: false);
-    }
+    [Fact]
+    public void FullGeneration_F_F_X86() => this.FullGeneration(MarshalingOptions.FullMarshaling, false, Platform.X86);
+
+    [Fact]
+    public void FullGeneration_F_F_AnyCpu() => this.FullGeneration(MarshalingOptions.FullMarshaling, true, Platform.AnyCpu);
+
+    [Fact]
+    public void FullGeneration_F_F_Arm64() => this.FullGeneration(MarshalingOptions.FullMarshaling, true, Platform.Arm64);
+
+    [Fact]
+    public void FullGeneration_F_F_X64() => this.FullGeneration(MarshalingOptions.FullMarshaling, true, Platform.X64);
+
+    [Fact]
+    public void FullGeneration_M_F_Arm64() => this.FullGeneration(MarshalingOptions.MarshalingWithoutSafeHandles, false, Platform.Arm64);
+
+    [Fact]
+    public void FullGeneration_M_F_X86() => this.FullGeneration(MarshalingOptions.MarshalingWithoutSafeHandles, false, Platform.X86);
+
+    [Fact]
+    public void FullGeneration_M_T_AnyCpu() => this.FullGeneration(MarshalingOptions.MarshalingWithoutSafeHandles, true, Platform.AnyCpu);
+
+    [Fact]
+    public void FullGeneration_M_T_X64() => this.FullGeneration(MarshalingOptions.MarshalingWithoutSafeHandles, true, Platform.X64);
+
+    [Fact]
+    public void FullGeneration_N_F_AnyCpu() => this.FullGeneration(MarshalingOptions.NoMarshaling, false, Platform.AnyCpu);
+
+    [Fact]
+    public void FullGeneration_N_F_X64() => this.FullGeneration(MarshalingOptions.NoMarshaling, false, Platform.X64);
+
+    [Fact]
+    public void FullGeneration_N_T_Arm64() => this.FullGeneration(MarshalingOptions.NoMarshaling, true, Platform.Arm64);
+
+    [Fact]
+    public void FullGeneration_N_T_X86() => this.FullGeneration(MarshalingOptions.NoMarshaling, true, Platform.X86);
 
     [Theory, PairwiseData]
     public void ProjectReferenceBetweenTwoGeneratingProjects(bool internalsVisibleTo)
@@ -1901,6 +1921,22 @@ class Program
     }
 
     private static AccessorDeclarationSyntax? FindAccessor(PropertyDeclarationSyntax? property, SyntaxKind kind) => property?.AccessorList?.Accessors.SingleOrDefault(a => a.IsKind(kind));
+
+    ////[Theory, PairwiseData]
+    private void FullGeneration(MarshalingOptions marshaling, bool useIntPtrForComOutPtr, [CombinatorialMemberData(nameof(AnyCpuArchitectures))] Platform platform)
+    {
+        var generatorOptions = new GeneratorOptions
+        {
+            AllowMarshaling = marshaling >= MarshalingOptions.MarshalingWithoutSafeHandles,
+            UseSafeHandles = marshaling == MarshalingOptions.FullMarshaling,
+            ComInterop = new() { UseIntPtrForComOutPointers = useIntPtrForComOutPtr },
+        };
+        this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(platform));
+        this.generator = this.CreateGenerator(generatorOptions);
+        this.generator.GenerateAll(CancellationToken.None);
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics(logAllGeneratedCode: false);
+    }
 
     private CSharpCompilation AddGeneratedCode(CSharpCompilation compilation, Generator generator)
     {

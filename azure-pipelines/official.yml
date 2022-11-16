@@ -21,10 +21,6 @@ parameters:
   displayName: Sign?
   type: boolean
   default: false
-- name: includeMacOS
-  displayName: Build on macOS
-  type: boolean
-  default: false # macOS is often bogged down in Azure Pipelines
 - name: RunTests
   displayName: Run tests
   type: boolean
@@ -44,7 +40,6 @@ stages:
   jobs:
   - template: build.yml
     parameters:
-      includeMacOS: ${{ parameters.includeMacOS }}
       RunTests: ${{ parameters.RunTests }}
 
 - template: prepare-insertion-stages.yml

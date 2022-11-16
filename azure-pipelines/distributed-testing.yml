@@ -1,8 +1,6 @@
 parameters:
 - name: windowsPool
   type: object
-  default:
-    vmImage: windows-2022
 
 jobs:
 - job: Testing
@@ -14,12 +12,13 @@ jobs:
   steps:
   - download: current
     artifact: tests-Windows
-    displayName:  Download tests
+    displayName: 🔻 Download tests
   - task: VSTest@2
+    displayName: 🧪 Testing
     inputs:
       testSelector: testAssemblies
       testAssemblyVer2: |
-        **\*test*.dll
+        **\*tests.dll
         !**\*TestAdapter.dll
       searchFolder: $(Pipeline.Workspace)/tests-Windows
       runSettingsFile: azure-pipelines/test.runsettings

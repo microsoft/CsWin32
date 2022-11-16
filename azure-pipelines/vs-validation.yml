@@ -20,7 +20,6 @@ stages:
       EnableCompliance: false
       EnableAPIScan: false
       windowsPool: VSEngSS-MicroBuild2022-1ES
-      includeMacOS: false
       RunTests: false
 
 - template: prepare-insertion-stages.yml

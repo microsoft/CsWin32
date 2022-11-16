@@ -187,7 +187,7 @@ public class GeneratorTests : IDisposable, IAsyncLifetime
     public void SimplestMethod(string tfm)
     {
         this.compilation = this.starterCompilations[tfm];
-        this.generator = this.CreateGenerator();
+        this.generator = this.CreateGenerator(includeDocs: true);
         const string methodName = "GetTickCount";
         Assert.True(this.generator.TryGenerateExternMethod(methodName, out _));
         this.CollectGeneratedCode(this.generator);
@@ -3208,9 +3208,9 @@ namespace Windows.Win32
         return compilation;
     }
 
-    private Generator CreateGenerator(GeneratorOptions? options = null, CSharpCompilation? compilation = null) => this.CreateGenerator(MetadataPath, options, compilation);
+    private Generator CreateGenerator(GeneratorOptions? options = null, CSharpCompilation? compilation = null, bool includeDocs = false) => this.CreateGenerator(MetadataPath, options, compilation, includeDocs);
 
-    private Generator CreateGenerator(string path, GeneratorOptions? options = null, CSharpCompilation? compilation = null) => new Generator(path, Docs.Get(ApiDocsPath), options ?? DefaultTestGeneratorOptions, compilation ?? this.compilation, this.parseOptions);
+    private Generator CreateGenerator(string path, GeneratorOptions? options = null, CSharpCompilation? compilation = null, bool includeDocs = false) => new Generator(path, includeDocs ? Docs.Get(ApiDocsPath) : null, options ?? DefaultTestGeneratorOptions, compilation ?? this.compilation, this.parseOptions);
 
     private static class MyReferenceAssemblies
     {

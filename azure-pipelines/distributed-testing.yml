@@ -1,0 +1,33 @@
+parameters:
+- name: windowsPool
+  type: object
+  default:
+    vmImage: windows-2022
+
+jobs:
+- job: Testing
+  dependsOn: Windows
+  timeoutInMinutes: 120
+  pool: ${{ parameters.windowsPool }}
+  strategy:
+    parallel: 4
+  steps:
+  - download: current
+    artifact: tests-Windows
+    displayName:  Download tests
+  - task: VSTest@2
+    inputs:
+      testSelector: testAssemblies
+      testAssemblyVer2: |
+        **\*test*.dll
+        !**\*TestAdapter.dll
+      searchFolder: $(Pipeline.Workspace)/tests-Windows
+      runSettingsFile: azure-pipelines/test.runsettings
+      runInParallel: true
+      distributionBatchType: basedOnExecutionTime
+      failOnMinTestsNotRun: true
+      diagnosticsEnabled: true
+
+  #- powershell: azure-pipelines/dotnet-test-cloud.ps1 -Configuration $(BuildConfiguration) -Agent $(Agent.JobName) -PublishResults
+  #  displayName: 🧪 dotnet test
+  #  condition: and(succeeded(), ${{ parameters.RunTests }})

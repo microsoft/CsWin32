@@ -64,6 +64,10 @@ jobs:
     parameters:
       RunTests: ${{ parameters.RunTests }}
 
+- template: distributed-testing.yml
+  parameters:
+    windowsPool: ${{ parameters.windowsPool }}
+
 - job: WrapUp
   dependsOn:
   - Windows

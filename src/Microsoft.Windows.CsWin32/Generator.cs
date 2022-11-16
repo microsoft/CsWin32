@@ -159,7 +159,6 @@ public class Generator : IDisposable
 
     private static readonly SyntaxToken SemicolonWithLineFeed = TokenWithLineFeed(SyntaxKind.SemicolonToken);
     private static readonly IdentifierNameSyntax InlineArrayIndexerExtensionsClassName = IdentifierName("InlineArrayIndexerExtensions");
-    private static readonly IdentifierNameSyntax ComInterfaceFriendlyExtensionsClassName = IdentifierName("FriendlyOverloadExtensions");
     private static readonly TypeSyntax SafeHandleTypeSyntax = IdentifierName("SafeHandle");
     private static readonly IdentifierNameSyntax IntPtrTypeSyntax = IdentifierName(nameof(IntPtr));
     private static readonly IdentifierNameSyntax UIntPtrTypeSyntax = IdentifierName(nameof(UIntPtr));
@@ -607,11 +606,7 @@ public class Generator : IDisposable
                 result = result.Concat(new MemberDeclarationSyntax[] { inlineArrayIndexerExtensionsClass });
             }
 
-            ClassDeclarationSyntax comInterfaceFriendlyExtensionsClass = this.DeclareComInterfaceFriendlyExtensionsClass();
-            if (comInterfaceFriendlyExtensionsClass.Members.Count > 0)
-            {
-                result = result.Concat(new MemberDeclarationSyntax[] { comInterfaceFriendlyExtensionsClass });
-            }
+            result = result.Concat(this.committedCode.ComInterfaceExtensions);
 
             if (this.committedCode.TopLevelFields.Any())
             {
@@ -3429,14 +3424,6 @@ public class Generator : IDisposable
             .AddAttributeLists(AttributeList().AddAttributes(GeneratedCodeAttribute));
     }
 
-    private ClassDeclarationSyntax DeclareComInterfaceFriendlyExtensionsClass()
-    {
-        return ClassDeclaration(ComInterfaceFriendlyExtensionsClassName.Identifier)
-            .AddMembers(this.committedCode.ComInterfaceExtensions.ToArray())
-            .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)))
-            .AddAttributeLists(AttributeList().AddAttributes(GeneratedCodeAttribute));
-    }
-
     /// <summary>
     /// Generates a type to represent a COM interface.
     /// </summary>
@@ -3724,9 +3711,8 @@ public class Generator : IDisposable
             return null;
         }
 
-        IdentifierNameSyntax ifaceName = interfaceAsSubtype
-            ? NestedCOMInterfaceName
-            : IdentifierName(this.Reader.GetString(typeDef.Name));
+        string actualIfaceName = this.Reader.GetString(typeDef.Name);
+        IdentifierNameSyntax ifaceName = interfaceAsSubtype ? NestedCOMInterfaceName : IdentifierName(actualIfaceName);
         TypeSyntaxSettings typeSettings = this.comSignatureTypeSettings;
 
         // It is imperative that we generate methods for all base interfaces as well, ahead of any implemented by *this* interface.
@@ -3932,7 +3918,20 @@ public class Generator : IDisposable
 
         // Only add overloads to instance collections after everything else is done,
         // so we don't leave extension methods behind if we fail to generate the target interface.
-        this.volatileCode.AddComInterfaceExtension(friendlyOverloads);
+        if (friendlyOverloads.Count > 0)
+        {
+            string ns = this.Reader.GetString(typeDef.Namespace);
+            if (this.TryStripCommonNamespace(ns, out string? strippedNamespace))
+            {
+                ns = strippedNamespace;
+            }
+
+            ClassDeclarationSyntax friendlyOverloadClass = ClassDeclaration(Identifier($"{ns.Replace('.', '_')}_{actualIfaceName}_Extensions"))
+                .WithMembers(List<MemberDeclarationSyntax>(friendlyOverloads))
+                .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)))
+                .AddAttributeLists(AttributeList().AddAttributes(GeneratedCodeAttribute));
+            this.volatileCode.AddComInterfaceExtension(friendlyOverloadClass);
+        }
 
         return ifaceDeclaration;
     }
@@ -6761,7 +6760,7 @@ public class Generator : IDisposable
 
         private readonly List<MethodDeclarationSyntax> inlineArrayIndexerExtensionsMembers = new();
 
-        private readonly List<MethodDeclarationSyntax> comInterfaceFriendlyExtensionsMembers = new();
+        private readonly List<ClassDeclarationSyntax> comInterfaceFriendlyExtensionsMembers = new();
 
         private bool generating;
 
@@ -6784,7 +6783,7 @@ public class Generator : IDisposable
 
         internal IEnumerable<MemberDeclarationSyntax> GeneratedTopLevelTypes => this.specialTypes.Values.Where(st => st.TopLevel).Select(st => st.Type);
 
-        internal IEnumerable<MethodDeclarationSyntax> ComInterfaceExtensions => this.comInterfaceFriendlyExtensionsMembers;
+        internal IReadOnlyCollection<ClassDeclarationSyntax> ComInterfaceExtensions => this.comInterfaceFriendlyExtensionsMembers;
 
         internal IEnumerable<MethodDeclarationSyntax> InlineArrayIndexerExtensions => this.inlineArrayIndexerExtensionsMembers;
 
@@ -6866,13 +6865,13 @@ public class Generator : IDisposable
             }
         }
 
-        internal void AddComInterfaceExtension(MethodDeclarationSyntax extension)
+        internal void AddComInterfaceExtension(ClassDeclarationSyntax extension)
         {
             this.ThrowIfNotGenerating();
             this.comInterfaceFriendlyExtensionsMembers.Add(extension);
         }
 
-        internal void AddComInterfaceExtension(IEnumerable<MethodDeclarationSyntax> extension)
+        internal void AddComInterfaceExtension(IEnumerable<ClassDeclarationSyntax> extension)
         {
             this.ThrowIfNotGenerating();
             this.comInterfaceFriendlyExtensionsMembers.AddRange(extension);

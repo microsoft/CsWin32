@@ -7490,9 +7490,10 @@ public class Generator : IDisposable
 
         private static SyntaxList<MemberDeclarationSyntax> AddSpacingBetweenMembers(SyntaxList<MemberDeclarationSyntax> members, bool insertLineAboveFirstMember = false)
         {
-            for (int i = members.Count - 1; i > 0; i--)
+            List<MemberDeclarationSyntax> mutableMembers = members.ToList();
+            for (int i = mutableMembers.Count - 1; i > 0; i--)
             {
-                if (members[i] is
+                if (mutableMembers[i] is
                     ClassDeclarationSyntax or
                     StructDeclarationSyntax or
                     NamespaceDeclarationSyntax or
@@ -7501,16 +7502,16 @@ public class Generator : IDisposable
                     IndexerDeclarationSyntax or
                     PropertyDeclarationSyntax)
                 {
-                    members = members.Replace(members[i], members[i].WithLeadingTrivia(members[i].GetLeadingTrivia().Insert(0, LineFeed)));
+                    mutableMembers[i] = mutableMembers[i].WithLeadingTrivia(mutableMembers[i].GetLeadingTrivia().Insert(0, LineFeed));
                 }
             }
 
-            if (insertLineAboveFirstMember && members.Count > 0)
+            if (insertLineAboveFirstMember && mutableMembers.Count > 0)
             {
-                members = members.Replace(members[0], members[0].WithLeadingTrivia(members[0].GetLeadingTrivia().Insert(0, LineFeed)));
+                mutableMembers[0] = mutableMembers[0].WithLeadingTrivia(mutableMembers[0].GetLeadingTrivia().Insert(0, LineFeed));
             }
 
-            return members;
+            return new SyntaxList<MemberDeclarationSyntax>(mutableMembers);
         }
 
         private TSyntax WithIndentingTrivia<TSyntax>(TSyntax node, SyntaxTrivia indentTrivia)

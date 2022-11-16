@@ -378,6 +378,7 @@ public class Generator : IDisposable
     private readonly TypeSyntaxSettings functionPointerTypeSettings;
     private readonly TypeSyntaxSettings errorMessageTypeSettings;
 
+    private readonly Dictionary<string, ISymbol?> findTypeSymbolIfAlreadyAvailableCache = new(StringComparer.Ordinal);
     private readonly Rental<MetadataReader> metadataReader;
     private readonly GeneratorOptions options;
     private readonly CSharpCompilation? compilation;
@@ -3004,16 +3005,22 @@ public class Generator : IDisposable
 
     private ISymbol? FindTypeSymbolIfAlreadyAvailable(string fullyQualifiedMetadataName)
     {
-        ISymbol? result = null;
+        if (this.findTypeSymbolIfAlreadyAvailableCache.TryGetValue(fullyQualifiedMetadataName, out ISymbol? result))
+        {
+            return result;
+        }
+
         if (this.compilation is object)
         {
             if (this.compilation.Assembly.GetTypeByMetadataName(fullyQualifiedMetadataName) is { } ownSymbol)
             {
                 // This assembly defines it.
                 // But if it defines it as a partial, we should not consider it as fully defined so we populate our side.
-                return ownSymbol.DeclaringSyntaxReferences.Any(sr => sr.GetSyntax() is BaseTypeDeclarationSyntax type && type.Modifiers.Any(SyntaxKind.PartialKeyword))
+                result = ownSymbol.DeclaringSyntaxReferences.Any(sr => sr.GetSyntax() is BaseTypeDeclarationSyntax type && type.Modifiers.Any(SyntaxKind.PartialKeyword))
                     ? null
                     : ownSymbol;
+                this.findTypeSymbolIfAlreadyAvailableCache.Add(fullyQualifiedMetadataName, result);
+                return result;
             }
 
             foreach (MetadataReference? reference in this.compilation.References)
@@ -3035,6 +3042,7 @@ public class Generator : IDisposable
                             // In such a case, we'll prefer to just declare our own local symbol.
                             if (result is not null)
                             {
+                                this.findTypeSymbolIfAlreadyAvailableCache.Add(fullyQualifiedMetadataName, null);
                                 return null;
                             }
 
@@ -3045,6 +3053,7 @@ public class Generator : IDisposable
             }
         }
 
+        this.findTypeSymbolIfAlreadyAvailableCache.Add(fullyQualifiedMetadataName, result);
         return result;
     }
 

@@ -3611,7 +3611,9 @@ public class Generator : IDisposable
                 {
                     PropertyDeclarationSyntax propertyDeclaration = PropertyDeclaration(propertyType.WithTrailingTrivia(Space), propertyName.Identifier.WithTrailingTrivia(LineFeed));
 
-                    propertyDeclaration = propertyDeclaration.WithAccessorList(AccessorList().AddAccessors(accessor));
+                    propertyDeclaration = propertyDeclaration
+                        .WithAccessorList(AccessorList().AddAccessors(accessor))
+                        .AddModifiers(Token(this.Visibility));
 
                     if (propertyDeclaration.Type is PointerTypeSyntax)
                     {

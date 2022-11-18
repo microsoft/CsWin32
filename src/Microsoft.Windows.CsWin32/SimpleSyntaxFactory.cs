@@ -17,7 +17,23 @@ namespace Microsoft.Windows.CsWin32;
 
 internal static class SimpleSyntaxFactory
 {
-    private static readonly AttributeSyntax FieldOffsetAttributeSyntax = Attribute(IdentifierName("FieldOffset"));
+    internal static readonly XmlTextSyntax DocCommentStart = XmlText(" ").WithLeadingTrivia(DocumentationCommentExterior("///"));
+    internal static readonly XmlTextSyntax DocCommentEnd = XmlText(XmlTextNewLine("\n", continueXmlDocumentationComment: false));
+
+    internal static readonly SyntaxToken SemicolonWithLineFeed = TokenWithLineFeed(SyntaxKind.SemicolonToken);
+    internal static readonly IdentifierNameSyntax InlineArrayIndexerExtensionsClassName = IdentifierName("InlineArrayIndexerExtensions");
+    internal static readonly TypeSyntax SafeHandleTypeSyntax = IdentifierName("SafeHandle");
+    internal static readonly IdentifierNameSyntax IntPtrTypeSyntax = IdentifierName(nameof(IntPtr));
+    internal static readonly IdentifierNameSyntax UIntPtrTypeSyntax = IdentifierName(nameof(UIntPtr));
+    internal static readonly AttributeSyntax ComImportAttributeSyntax = Attribute(IdentifierName("ComImport"));
+    internal static readonly AttributeSyntax PreserveSigAttributeSyntax = Attribute(IdentifierName("PreserveSig"));
+    internal static readonly AttributeSyntax ObsoleteAttributeSyntax = Attribute(IdentifierName("Obsolete")).WithArgumentList(null);
+    internal static readonly AttributeSyntax SupportedOSPlatformAttributeSyntax = Attribute(IdentifierName("SupportedOSPlatform"));
+    internal static readonly AttributeSyntax UnscopedRefAttributeSyntax = Attribute(ParseName("UnscopedRef")).WithArgumentList(null);
+    internal static readonly IdentifierNameSyntax SliceAtNullMethodName = IdentifierName("SliceAtNull");
+    internal static readonly IdentifierNameSyntax IComIIDGuidInterfaceName = IdentifierName("IComIID");
+    internal static readonly IdentifierNameSyntax ComIIDGuidPropertyName = IdentifierName("Guid");
+    internal static readonly AttributeSyntax FieldOffsetAttributeSyntax = Attribute(IdentifierName("FieldOffset"));
 
     [return: NotNullIfNotNull("marshalAs")]
     internal static AttributeSyntax? MarshalAs(MarshalAsAttribute? marshalAs, Generator.NativeArrayInfo? nativeArrayInfo)
@@ -293,4 +309,7 @@ internal static class SimpleSyntaxFactory
             Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(j), j))),
             Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(k), k))));
     }
+
+    internal static ExpressionSyntax IntPtrExpr(IntPtr value) => ObjectCreationExpression(IntPtrTypeSyntax).AddArgumentListArguments(
+        Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(value.ToInt64()))));
 }

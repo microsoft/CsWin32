@@ -142,23 +142,6 @@ public partial class Generator
 /// </summary>
 ");
 
-    private static readonly XmlTextSyntax DocCommentStart = XmlText(" ").WithLeadingTrivia(DocumentationCommentExterior("///"));
-    private static readonly XmlTextSyntax DocCommentEnd = XmlText(XmlTextNewLine("\n", continueXmlDocumentationComment: false));
-
-    private static readonly SyntaxToken SemicolonWithLineFeed = TokenWithLineFeed(SyntaxKind.SemicolonToken);
-    private static readonly IdentifierNameSyntax InlineArrayIndexerExtensionsClassName = IdentifierName("InlineArrayIndexerExtensions");
-    private static readonly TypeSyntax SafeHandleTypeSyntax = IdentifierName("SafeHandle");
-    private static readonly IdentifierNameSyntax IntPtrTypeSyntax = IdentifierName(nameof(IntPtr));
-    private static readonly IdentifierNameSyntax UIntPtrTypeSyntax = IdentifierName(nameof(UIntPtr));
-    private static readonly AttributeSyntax ComImportAttribute = Attribute(IdentifierName("ComImport"));
-    private static readonly AttributeSyntax PreserveSigAttribute = Attribute(IdentifierName("PreserveSig"));
-    private static readonly AttributeSyntax ObsoleteAttribute = Attribute(IdentifierName("Obsolete")).WithArgumentList(null);
-    private static readonly AttributeSyntax SupportedOSPlatformAttribute = Attribute(IdentifierName("SupportedOSPlatform"));
-    private static readonly AttributeSyntax UnscopedRefAttribute = Attribute(ParseName("UnscopedRef")).WithArgumentList(null);
-    private static readonly IdentifierNameSyntax SliceAtNullMethodName = IdentifierName("SliceAtNull");
-    private static readonly IdentifierNameSyntax IComIIDGuidInterfaceName = IdentifierName("IComIID");
-    private static readonly IdentifierNameSyntax ComIIDGuidPropertyName = IdentifierName("Guid");
-
     /// <summary>
     /// The set of libraries that are expected to be allowed next to an application instead of being required to load from System32.
     /// </summary>

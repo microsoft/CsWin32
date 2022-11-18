@@ -2018,9 +2018,6 @@ public partial class Generator : IDisposable
 
     private static bool IsHresult(TypeHandleInfo? typeHandleInfo) => typeHandleInfo is HandleTypeHandleInfo handleInfo && handleInfo.IsType("HRESULT");
 
-    private static ExpressionSyntax IntPtrExpr(IntPtr value) => ObjectCreationExpression(IntPtrTypeSyntax).AddArgumentListArguments(
-        Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(value.ToInt64()))));
-
     private T AddApiDocumentation<T>(string api, T memberDeclaration)
         where T : MemberDeclarationSyntax
     {
@@ -2598,7 +2595,7 @@ public partial class Generator : IDisposable
         if (this.generateSupportedOSPlatformAttributes && this.FindInteropDecorativeAttribute(attributes, "SupportedOSPlatformAttribute") is CustomAttribute templateOSPlatformAttribute)
         {
             CustomAttributeValue<TypeSyntax> args = templateOSPlatformAttribute.DecodeValue(CustomAttributeTypeProvider.Instance);
-            supportedOSPlatformAttribute = SupportedOSPlatformAttribute.AddArgumentListArguments(AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal((string)args.FixedArguments[0].Value!))));
+            supportedOSPlatformAttribute = SupportedOSPlatformAttributeSyntax.AddArgumentListArguments(AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal((string)args.FixedArguments[0].Value!))));
         }
 
         return supportedOSPlatformAttribute;
@@ -3217,7 +3214,7 @@ public partial class Generator : IDisposable
 
                     if (preserveSig)
                     {
-                        methodDeclaration = methodDeclaration.AddAttributeLists(AttributeList().AddAttributes(PreserveSigAttribute));
+                        methodDeclaration = methodDeclaration.AddAttributeLists(AttributeList().AddAttributes(PreserveSigAttributeSyntax));
                     }
 
                     if (methodDeclaration.ReturnType is PointerTypeSyntax || methodDeclaration.ParameterList.Parameters.Any(p => p.Type is PointerTypeSyntax))
@@ -3259,7 +3256,7 @@ public partial class Generator : IDisposable
 
         if (guidAttribute.HasValue)
         {
-            ifaceDeclaration = ifaceDeclaration.AddAttributeLists(AttributeList().AddAttributes(GUID(DecodeGuidFromAttribute(guidAttribute.Value)), ifaceType, ComImportAttribute));
+            ifaceDeclaration = ifaceDeclaration.AddAttributeLists(AttributeList().AddAttributes(GUID(DecodeGuidFromAttribute(guidAttribute.Value)), ifaceType, ComImportAttributeSyntax));
         }
 
         if (baseTypeSyntaxList.Count > 0)
@@ -3633,7 +3630,7 @@ public partial class Generator : IDisposable
 
                     if (this.HasObsoleteAttribute(fieldDef.GetCustomAttributes()))
                     {
-                        field = field.AddAttributeLists(AttributeList().AddAttributes(ObsoleteAttribute));
+                        field = field.AddAttributeLists(AttributeList().AddAttributes(ObsoleteAttributeSyntax));
                     }
 
                     if (fieldInfo.FieldType is PointerTypeSyntax || fieldInfo.FieldType is FunctionPointerTypeSyntax)
@@ -3709,7 +3706,7 @@ public partial class Generator : IDisposable
         classModifiers = classModifiers.Add(TokenWithSpace(SyntaxKind.PartialKeyword));
         ClassDeclarationSyntax result = ClassDeclaration(name.Identifier)
             .WithModifiers(classModifiers)
-            .AddAttributeLists(AttributeList().AddAttributes(GUID(guid), ComImportAttribute));
+            .AddAttributeLists(AttributeList().AddAttributes(GUID(guid), ComImportAttributeSyntax));
 
         result = this.AddApiDocumentation(name.Identifier.ValueText, result);
         return result;
@@ -4976,7 +4973,7 @@ public partial class Generator : IDisposable
                 .WithExpressionBody(ArrowExpressionClause(RefExpression(
                     ElementAccessExpression(valueFieldName).AddArgumentListArguments(Argument(IdentifierName("index"))))))
                 .WithSemicolonToken(SemicolonWithLineFeed)
-                .AddAttributeLists(AttributeList().AddAttributes(UnscopedRefAttribute))
+                .AddAttributeLists(AttributeList().AddAttributes(UnscopedRefAttributeSyntax))
                 .WithLeadingTrivia(InlineArrayUnsafeIndexerComment);
             fixedLengthStruct = fixedLengthStruct.AddMembers(indexer);
             this.DeclareUnscopedRefAttributeIfNecessary();
@@ -5020,7 +5017,7 @@ public partial class Generator : IDisposable
                 .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword))
                 .WithExpressionBody(ArrowExpressionClause(createSpanInvocation))
                 .WithSemicolonToken(SemicolonWithLineFeed)
-                .AddAttributeLists(AttributeList().AddAttributes(UnscopedRefAttribute))
+                .AddAttributeLists(AttributeList().AddAttributes(UnscopedRefAttributeSyntax))
                 .WithLeadingTrivia(InlineArrayUnsafeAsSpanComment);
             this.DeclareUnscopedRefAttributeIfNecessary();
 
@@ -5041,7 +5038,7 @@ public partial class Generator : IDisposable
                 .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
                 .WithExpressionBody(ArrowExpressionClause(createReadOnlySpanInvocation))
                 .WithSemicolonToken(SemicolonWithLineFeed)
-                .AddAttributeLists(AttributeList().AddAttributes(UnscopedRefAttribute))
+                .AddAttributeLists(AttributeList().AddAttributes(UnscopedRefAttributeSyntax))
                 .WithLeadingTrivia(InlineArrayUnsafeAsSpanComment);
 
             fixedLengthStruct = fixedLengthStruct.AddMembers(asSpanMethod, asReadOnlySpanMethod);

@@ -164,8 +164,11 @@ csharp_prefer_braces = true:silent
 # SA1130: Use lambda syntax
 dotnet_diagnostic.SA1130.severity = silent
 
-# SA1649 : Filenames must match first declared type
+# SA1649: Filenames must match first declared type
 dotnet_diagnostic.SA1649.severity = none  # Disabled because of https://github.com/DotNetAnalyzers/StyleCopAnalyzers/issues/3395
+
+# SA1601: Partial elements should be documented
+dotnet_diagnostic.SA1601.severity = silent
 
 # IDE0005: Using directive is unnecessary.
 dotnet_diagnostic.IDE0005.severity = warning

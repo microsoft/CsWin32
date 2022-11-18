@@ -34,7 +34,6 @@ jobs:
   - download: CI
     artifact: deployables-Windows
     displayName: 🔻 Download deployables-Windows artifact
-    patterns: 'deployables-Windows/NuGet/*'
   - task: GitHubRelease@1
     displayName: 📢 GitHub release (create)
     inputs:

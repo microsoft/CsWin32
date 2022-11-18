@@ -451,13 +451,13 @@ internal static class FastSyntaxFactory
 
     internal static ExpressionSyntax TypeOfExpression(TypeSyntax type) => SyntaxFactory.TypeOfExpression(Token(SyntaxKind.TypeOfKeyword), Token(SyntaxKind.OpenParenToken), type, Token(SyntaxKind.CloseParenToken));
 
-    private static SyntaxToken TokenWithNoSpace(SyntaxKind kind) => Token(TriviaList(), kind, TriviaList());
+    internal static SyntaxToken TokenWithNoSpace(SyntaxKind kind) => Token(TriviaList(), kind, TriviaList());
 
-    private static SyntaxToken TokenWithSpace(SyntaxKind kind) => Token(TriviaList(), kind, TriviaList(Space));
+    internal static SyntaxToken TokenWithSpace(SyntaxKind kind) => Token(TriviaList(), kind, TriviaList(Space));
 
-    private static SyntaxToken TokenWithSpaces(SyntaxKind kind) => Token(TriviaList(Space), kind, TriviaList(Space));
+    internal static SyntaxToken TokenWithSpaces(SyntaxKind kind) => Token(TriviaList(Space), kind, TriviaList(Space));
 
-    private static SyntaxToken TokenWithLineFeed(SyntaxKind kind) => Token(TriviaList(), kind, TriviaList(LineFeed));
+    internal static SyntaxToken TokenWithLineFeed(SyntaxKind kind) => Token(TriviaList(), kind, TriviaList(LineFeed));
 
     private static SyntaxKind GetBinaryExpressionOperatorTokenKind(SyntaxKind kind)
     {

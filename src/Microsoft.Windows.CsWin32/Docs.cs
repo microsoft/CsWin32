@@ -1,9 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-using System.Diagnostics.CodeAnalysis;
 using MessagePack;
-using Microsoft.Windows.SDK.Win32Docs;
 
 namespace Microsoft.Windows.CsWin32;
 

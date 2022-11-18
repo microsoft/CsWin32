@@ -3,14 +3,8 @@
 
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
-using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using System.IO.MemoryMappedFiles;
-using System.Reflection;
-using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
-using System.Runtime.InteropServices;
-using Microsoft.CodeAnalysis;
 
 namespace Microsoft.Windows.CsWin32;
 

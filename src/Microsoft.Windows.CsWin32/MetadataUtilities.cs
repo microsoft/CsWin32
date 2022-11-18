@@ -1,9 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-using System.Reflection.Metadata;
-using Microsoft.CodeAnalysis;
-
 namespace Microsoft.Windows.CsWin32;
 
 internal static class MetadataUtilities

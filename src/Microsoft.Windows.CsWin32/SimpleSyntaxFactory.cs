@@ -17,6 +17,29 @@ namespace Microsoft.Windows.CsWin32;
 
 internal static class SimpleSyntaxFactory
 {
+    internal static readonly HashSet<string> CSharpKeywords = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "as",
+        "base",
+        "checked",
+        "decimal",
+        "event",
+        "in",
+        "is",
+        "internal",
+        "lock",
+        "object",
+        "out",
+        "override",
+        "params",
+        "private",
+        "protected",
+        "public",
+        "ref",
+        "string",
+        "virtual",
+    };
+
     internal static readonly XmlTextSyntax DocCommentStart = XmlText(" ").WithLeadingTrivia(DocumentationCommentExterior("///"));
     internal static readonly XmlTextSyntax DocCommentEnd = XmlText(XmlTextNewLine("\n", continueXmlDocumentationComment: false));
 
@@ -312,4 +335,70 @@ internal static class SimpleSyntaxFactory
 
     internal static ExpressionSyntax IntPtrExpr(IntPtr value) => ObjectCreationExpression(IntPtrTypeSyntax).AddArgumentListArguments(
         Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(value.ToInt64()))));
+
+    internal static SyntaxToken SafeIdentifier(string name) => SafeIdentifierName(name).Identifier;
+
+    internal static IdentifierNameSyntax SafeIdentifierName(string name) => IdentifierName(CSharpKeywords.Contains(name) ? "@" + name : name);
+
+    internal static bool RequiresUnsafe(TypeSyntax? typeSyntax) => typeSyntax is PointerTypeSyntax || typeSyntax is FunctionPointerTypeSyntax;
+
+    internal static ExpressionSyntax ToHexExpressionSyntax(MetadataReader reader, ConstantHandle constantHandle, bool assignableToSignedInteger)
+    {
+        Constant constant = reader.GetConstant(constantHandle);
+        BlobReader blobReader = reader.GetBlobReader(constant.Value);
+        BlobReader blobReader2 = reader.GetBlobReader(constant.Value);
+        BlobReader blobReader3 = reader.GetBlobReader(constant.Value);
+        return constant.TypeCode switch
+        {
+            ConstantTypeCode.SByte => UncheckedSignedWrapper(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadSByte()), blobReader2.ReadSByte())), SyntaxKind.SByteKeyword),
+            ConstantTypeCode.Byte => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadByte()), blobReader2.ReadByte())),
+            ConstantTypeCode.Int16 => UncheckedSignedWrapper(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadInt16()), blobReader2.ReadInt16())), SyntaxKind.ShortKeyword),
+            ConstantTypeCode.UInt16 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadUInt16()), blobReader2.ReadUInt16())),
+            ConstantTypeCode.Int32 => UncheckedSignedWrapper(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadInt32()), blobReader2.ReadInt32())), SyntaxKind.IntKeyword),
+            ConstantTypeCode.UInt32 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadUInt32()), blobReader2.ReadUInt32())),
+            ConstantTypeCode.Int64 => UncheckedSignedWrapper(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadInt64()), blobReader2.ReadInt64())), SyntaxKind.LongKeyword),
+            ConstantTypeCode.UInt64 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(blobReader.ReadUInt64()), blobReader2.ReadUInt64())),
+            _ => throw new NotSupportedException("ConstantTypeCode not supported: " + constant.TypeCode),
+        };
+
+        ExpressionSyntax UncheckedSignedWrapper(LiteralExpressionSyntax value, SyntaxKind signedType)
+        {
+            return assignableToSignedInteger && value.Token.Text.StartsWith("0xF", StringComparison.OrdinalIgnoreCase)
+                ? UncheckedExpression(CastExpression(PredefinedType(Token(signedType)), value))
+                : value;
+        }
+    }
+
+    internal static ExpressionSyntax ToExpressionSyntax(MetadataReader reader, ConstantHandle constantHandle)
+    {
+        Constant constant = reader.GetConstant(constantHandle);
+        BlobReader blobReader = reader.GetBlobReader(constant.Value);
+        return constant.TypeCode switch
+        {
+            ConstantTypeCode.Boolean => blobReader.ReadBoolean() ? LiteralExpression(SyntaxKind.TrueLiteralExpression) : LiteralExpression(SyntaxKind.FalseLiteralExpression),
+            ConstantTypeCode.Char => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(blobReader.ReadChar())),
+            ConstantTypeCode.SByte => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(blobReader.ReadSByte())),
+            ConstantTypeCode.Byte => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(blobReader.ReadByte())),
+            ConstantTypeCode.Int16 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(blobReader.ReadInt16())),
+            ConstantTypeCode.UInt16 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(blobReader.ReadUInt16())),
+            ConstantTypeCode.Int32 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(blobReader.ReadInt32())),
+            ConstantTypeCode.UInt32 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(blobReader.ReadUInt32())),
+            ConstantTypeCode.Int64 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(blobReader.ReadInt64())),
+            ConstantTypeCode.UInt64 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(blobReader.ReadUInt64())),
+            ConstantTypeCode.Single => FloatExpression(blobReader.ReadSingle()),
+            ConstantTypeCode.Double => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(blobReader.ReadDouble())),
+            ConstantTypeCode.String => blobReader.ReadConstant(constant.TypeCode) is string value ? LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(value)) : LiteralExpression(SyntaxKind.NullLiteralExpression),
+            ConstantTypeCode.NullReference => LiteralExpression(SyntaxKind.NullLiteralExpression),
+            _ => throw new NotSupportedException("ConstantTypeCode not supported: " + constant.TypeCode),
+        };
+
+        static ExpressionSyntax FloatExpression(float value)
+        {
+            return
+                float.IsPositiveInfinity(value) ? MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, PredefinedType(Token(SyntaxKind.FloatKeyword)), IdentifierName(nameof(float.PositiveInfinity))) :
+                float.IsNegativeInfinity(value) ? MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, PredefinedType(Token(SyntaxKind.FloatKeyword)), IdentifierName(nameof(float.NegativeInfinity))) :
+                float.IsNaN(value) ? MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, PredefinedType(Token(SyntaxKind.FloatKeyword)), IdentifierName(nameof(float.NaN))) :
+                LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(value));
+        }
+    }
 }

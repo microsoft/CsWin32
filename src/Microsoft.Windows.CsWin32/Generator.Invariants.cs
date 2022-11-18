@@ -275,29 +275,6 @@ public partial class Generator
         "WldAp32",
         "WtsApi32");
 
-    private static readonly HashSet<string> CSharpKeywords = new HashSet<string>(StringComparer.Ordinal)
-    {
-        "as",
-        "base",
-        "checked",
-        "decimal",
-        "event",
-        "in",
-        "is",
-        "internal",
-        "lock",
-        "object",
-        "out",
-        "override",
-        "params",
-        "private",
-        "protected",
-        "public",
-        "ref",
-        "string",
-        "virtual",
-    };
-
     private static readonly HashSet<string> ObjectMembers = new HashSet<string>(StringComparer.Ordinal)
     {
         "GetType",

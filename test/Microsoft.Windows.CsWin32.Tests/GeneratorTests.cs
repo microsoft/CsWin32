@@ -152,6 +152,7 @@ public class GeneratorTests : GeneratorTestBase
             "PZZWSTR",
             "PCZZSTR",
             "PCZZWSTR",
+            "IEventSubscription",
             "IRealTimeStylusSynchronization", // uses the `lock` C# keyword.
             "IHTMLInputElement", // has a field named `checked`, a C# keyword.
             "NCryptImportKey", // friendly overload takes SafeHandle backed by a UIntPtr instead of IntPtr

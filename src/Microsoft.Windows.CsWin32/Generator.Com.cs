@@ -5,6 +5,7 @@ namespace Microsoft.Windows.CsWin32;
 
 public partial class Generator
 {
+    private static readonly IdentifierNameSyntax HRThrowOnFailureMethodName = IdentifierName("ThrowOnFailure");
     private readonly HashSet<string> injectedPInvokeHelperMethodsToFriendlyOverloadsExtensions = new();
 
     private static Guid DecodeGuidFromAttribute(CustomAttribute guidAttribute)
@@ -117,13 +118,13 @@ public partial class Generator
 
             MethodSignature<TypeHandleInfo> signature = methodDefinition.Method.DecodeSignature(SignatureHandleProvider.Instance, null);
             CustomAttributeHandleCollection? returnTypeAttributes = methodDefinition.Generator.GetReturnTypeCustomAttributes(methodDefinition.Method);
-            TypeSyntaxAndMarshaling returnType = signature.ReturnType.ToTypeSyntax(typeSettings, returnTypeAttributes);
+            TypeSyntax returnType = signature.ReturnType.ToTypeSyntax(typeSettings, returnTypeAttributes).Type;
 
             ParameterListSyntax parameterList = methodDefinition.Generator.CreateParameterList(methodDefinition.Method, signature, typeSettings);
             FunctionPointerParameterListSyntax funcPtrParameters = FunctionPointerParameterList()
                 .AddParameters(FunctionPointerParameter(PointerType(ifaceName)))
                 .AddParameters(parameterList.Parameters.Select(p => FunctionPointerParameter(p.Type!).WithModifiers(p.Modifiers)).ToArray())
-                .AddParameters(FunctionPointerParameter(returnType.Type));
+                .AddParameters(FunctionPointerParameter(returnType));
 
             TypeSyntax unmanagedDelegateType = FunctionPointerType().WithCallingConvention(
                 FunctionPointerCallingConvention(TokenWithSpace(SyntaxKind.UnmanagedKeyword))
@@ -139,6 +140,7 @@ public partial class Generator
             // Build up an unmanaged delegate cast directly from the vtbl pointer and invoke it.
             // By doing this, we make the emitted code more trimmable by not referencing the full virtual method table and its full set of types
             // when the app may only invoke a subset of the methods.
+            //// ((delegate *unmanaged [Stdcall]<IPersist*,global::System.Guid* ,winmdroot.Foundation.HRESULT>)lpVtbl[3])(pThis, pClassID)
             IdentifierNameSyntax pThisLocal = IdentifierName("pThis");
             ExpressionSyntax vtblIndexingExpression = ParenthesizedExpression(
                 CastExpression(unmanagedDelegateType, ElementAccessExpression(vtblFieldName).AddArgumentListArguments(Argument(methodOffset))));
@@ -156,7 +158,7 @@ public partial class Generator
                 declaredProperties.Contains(propertyName.Identifier.ValueText))
             {
                 StatementSyntax ThrowOnHRFailure(ExpressionSyntax hrExpression) => ExpressionStatement(InvocationExpression(
-                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, hrExpression, IdentifierName("ThrowOnFailure")),
+                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, hrExpression, HRThrowOnFailureMethodName),
                     ArgumentList()));
 
                 BlockSyntax? body;
@@ -227,19 +229,66 @@ public partial class Generator
             }
             else
             {
-                StatementSyntax vtblInvocationStatement = IsVoid(returnType.Type)
-                    ? ExpressionStatement(vtblInvocation)
-                    : ReturnStatement(vtblInvocation);
-                BlockSyntax? body = Block().AddStatements(
-                    FixedStatement(
-                        VariableDeclaration(PointerType(ifaceName)).AddVariables(
-                            VariableDeclarator(pThisLocal.Identifier).WithInitializer(EqualsValueClause(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, ThisExpression())))),
-                        vtblInvocationStatement).WithFixedKeyword(TokenWithSpace(SyntaxKind.FixedKeyword)));
+                StatementSyntax fixedBody;
+                bool preserveSig = this.UsePreserveSigForComMethod(methodDefinition.Method, signature, ifaceName.Identifier.ValueText, methodName);
+                if (preserveSig)
+                {
+                    // return ...
+                    fixedBody = IsVoid(returnType)
+                        ? ExpressionStatement(vtblInvocation)
+                        : ReturnStatement(vtblInvocation);
+                }
+                else
+                {
+                    // hrReturningInvocation().ThrowOnFailure();
+                    StatementSyntax InvokeVtblAndThrow() => ExpressionStatement(InvocationExpression(
+                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, vtblInvocation, HRThrowOnFailureMethodName),
+                        ArgumentList()));
+
+                    ParameterSyntax? lastParameter = parameterList.Parameters.Count > 0 ? parameterList.Parameters[parameterList.Parameters.Count - 1] : null;
+                    if (lastParameter?.HasAnnotation(IsRetValAnnotation) is true)
+                    {
+                        // Move the retval parameter to the return value position.
+                        parameterList = parameterList.WithParameters(parameterList.Parameters.RemoveAt(parameterList.Parameters.Count - 1));
+                        returnType = lastParameter.Modifiers.Any(SyntaxKind.OutKeyword) ? lastParameter.Type! : ((PointerTypeSyntax)lastParameter.Type!).ElementType;
+
+                        // Guid __retVal = default(Guid);
+                        IdentifierNameSyntax retValLocalName = IdentifierName("__retVal");
+                        LocalDeclarationStatementSyntax localRetValDecl = LocalDeclarationStatement(VariableDeclaration(returnType).AddVariables(
+                            VariableDeclarator(retValLocalName.Identifier).WithInitializer(EqualsValueClause(DefaultExpression(returnType)))));
+
+                        // Modify the vtbl invocation's last argument to point to our own local variable.
+                        ArgumentSyntax lastArgument = lastParameter.Modifiers.Any(SyntaxKind.OutKeyword)
+                            ? Argument(retValLocalName).WithRefKindKeyword(TokenWithSpace(SyntaxKind.OutKeyword))
+                            : Argument(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, retValLocalName));
+                        vtblInvocation = vtblInvocation.WithArgumentList(
+                            vtblInvocation.ArgumentList.WithArguments(vtblInvocation.ArgumentList.Arguments.Replace(vtblInvocation.ArgumentList.Arguments.Last(), lastArgument)));
+
+                        // return __retVal;
+                        ReturnStatementSyntax returnStatement = ReturnStatement(retValLocalName);
+
+                        fixedBody = Block().AddStatements(localRetValDecl, InvokeVtblAndThrow(), returnStatement);
+                    }
+                    else
+                    {
+                        // Remove the return type
+                        returnType = PredefinedType(Token(SyntaxKind.VoidKeyword));
+
+                        fixedBody = InvokeVtblAndThrow();
+                    }
+                }
+
+                // fixed (IPersist* pThis = &this)
+                FixedStatementSyntax fixedStatement = FixedStatement(
+                    VariableDeclaration(PointerType(ifaceName)).AddVariables(
+                        VariableDeclarator(pThisLocal.Identifier).WithInitializer(EqualsValueClause(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, ThisExpression())))),
+                    fixedBody).WithFixedKeyword(TokenWithSpace(SyntaxKind.FixedKeyword));
+                BlockSyntax body = Block().AddStatements(fixedStatement);
 
                 methodDeclaration = MethodDeclaration(
                     List<AttributeListSyntax>(),
                     modifiers: TokenList(TokenWithSpace(SyntaxKind.PublicKeyword)), // always use public so struct can implement the COM interface
-                    returnType.Type.WithTrailingTrivia(TriviaList(Space)),
+                    returnType.WithTrailingTrivia(TriviaList(Space)),
                     explicitInterfaceSpecifier: null!,
                     SafeIdentifier(methodName),
                     null!,
@@ -247,7 +296,6 @@ public partial class Generator
                     List<TypeParameterConstraintClauseSyntax>(),
                     body: body,
                     semicolonToken: default);
-                methodDeclaration = returnType.AddReturnMarshalAs(methodDeclaration);
 
                 if (methodName == nameof(object.GetType) && parameterList.Parameters.Count == 0)
                 {
@@ -428,14 +476,7 @@ public partial class Generator
 
                     ParameterListSyntax? parameterList = this.CreateParameterList(methodDefinition, signature, this.comSignatureTypeSettings);
 
-                    bool preserveSig = interfaceAsSubtype
-                        || !IsHresult(signature.ReturnType)
-                        || (methodDefinition.ImplAttributes & MethodImplAttributes.PreserveSig) == MethodImplAttributes.PreserveSig
-                        || this.FindInteropDecorativeAttribute(methodDefinition.GetCustomAttributes(), CanReturnMultipleSuccessValuesAttribute) is not null
-                        || this.FindInteropDecorativeAttribute(methodDefinition.GetCustomAttributes(), CanReturnErrorsAsSuccessAttribute) is not null
-                        || this.options.ComInterop.PreserveSigMethods.Contains($"{ifaceName}.{methodName}")
-                        || this.options.ComInterop.PreserveSigMethods.Contains(ifaceName.ToString());
-
+                    bool preserveSig = interfaceAsSubtype || this.UsePreserveSigForComMethod(methodDefinition, signature, actualIfaceName, methodName);
                     if (!preserveSig)
                     {
                         ParameterSyntax? lastParameter = parameterList.Parameters.Count > 0 ? parameterList.Parameters[parameterList.Parameters.Count - 1] : null;
@@ -612,6 +653,16 @@ public partial class Generator
         }
 
         return (members, baseTypes);
+    }
+
+    private bool UsePreserveSigForComMethod(MethodDefinition methodDefinition, MethodSignature<TypeHandleInfo> signature, string ifaceName, string methodName)
+    {
+        return !IsHresult(signature.ReturnType)
+            || (methodDefinition.ImplAttributes & MethodImplAttributes.PreserveSig) == MethodImplAttributes.PreserveSig
+            || this.FindInteropDecorativeAttribute(methodDefinition.GetCustomAttributes(), CanReturnMultipleSuccessValuesAttribute) is not null
+            || this.FindInteropDecorativeAttribute(methodDefinition.GetCustomAttributes(), CanReturnErrorsAsSuccessAttribute) is not null
+            || this.options.ComInterop.PreserveSigMethods.Contains($"{ifaceName}.{methodName}")
+            || this.options.ComInterop.PreserveSigMethods.Contains(ifaceName.ToString());
     }
 
     private ISet<string> GetDeclarableProperties(IEnumerable<MethodDefinition> methods, bool allowNonConsecutiveAccessors)

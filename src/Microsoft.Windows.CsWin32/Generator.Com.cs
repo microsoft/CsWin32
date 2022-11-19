@@ -661,6 +661,7 @@ public partial class Generator
     {
         return !IsHresult(signature.ReturnType)
             || (methodDefinition.ImplAttributes & MethodImplAttributes.PreserveSig) == MethodImplAttributes.PreserveSig
+            || this.options.ComInterop.PreserveSigMethods.Contains("*")
             || this.FindInteropDecorativeAttribute(methodDefinition.GetCustomAttributes(), CanReturnMultipleSuccessValuesAttribute) is not null
             || this.FindInteropDecorativeAttribute(methodDefinition.GetCustomAttributes(), CanReturnErrorsAsSuccessAttribute) is not null
             || this.options.ComInterop.PreserveSigMethods.Contains($"{ifaceName}.{methodName}")

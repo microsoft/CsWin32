@@ -17,12 +17,12 @@
       "type": "object",
       "properties": {
         "preserveSigMethods": {
-          "description": "Identifies methods or interfaces that should be generated as [PreserveSig].",
+          "description": "Identifies methods or interfaces that should be generated as [PreserveSig]. Use * to always generate PreserveSig methods.",
           "type": "array",
           "items": {
             "type": "string",
             "uniqueItems": true,
-            "pattern": "^[\\w_]+(?:\\.[\\w_]+)?$"
+            "pattern": "^[\\w_]+(?:\\.[\\w_]+)?$|^\\*$"
           }
         },
         "useIntPtrForComOutPointers": {

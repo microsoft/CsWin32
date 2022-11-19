@@ -3,6 +3,7 @@
 
 #pragma warning disable CA1812 // dead code
 
+using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.System.Com;
 using Windows.Win32.System.Com.Events;
@@ -18,8 +19,11 @@ internal static unsafe class GeneratedForm
 
         // Default is non-preservesig
         VARIANT v = o.GetPublisherProperty(null);
+        BSTR bstr = o.MethodName;
 
-        // NativeMethods.json opts into PreserveSig for this particular method.
+        // NativeMethods.json opts into PreserveSig for these particular methods.
         HRESULT hr = o.GetSubscriberProperty(null, out v);
+        hr = o.get_MachineName(out SysFreeStringSafeHandle sh);
+        o.MachineName = bstr;
     }
 }

@@ -5,7 +5,8 @@
   "allowMarshaling": false,
   "comInterop": {
     "preserveSigMethods": [
-      "IEventSubscription.GetSubscriberProperty"
+      "IEventSubscription.GetSubscriberProperty",
+      "IEventSubscription.get_MachineName"
     ]
   }
 }

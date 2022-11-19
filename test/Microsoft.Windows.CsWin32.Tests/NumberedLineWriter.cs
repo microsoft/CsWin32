@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-using System.Text;
-
 internal class NumberedLineWriter : TextWriter
 {
     private readonly ITestOutputHelper logger;

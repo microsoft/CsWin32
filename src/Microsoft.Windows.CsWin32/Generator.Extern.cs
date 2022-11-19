@@ -1,16 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-using System.Collections.Immutable;
-using System.Reflection;
-using System.Reflection.Metadata;
-using System.Runtime.InteropServices;
-using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
-using static Microsoft.Windows.CsWin32.FastSyntaxFactory;
-using static Microsoft.Windows.CsWin32.SimpleSyntaxFactory;
-
 namespace Microsoft.Windows.CsWin32;
 
 public partial class Generator

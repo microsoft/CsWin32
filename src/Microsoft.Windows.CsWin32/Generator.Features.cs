@@ -10,9 +10,11 @@ public partial class Generator
     private readonly bool canUseUnsafeAsRef;
     private readonly bool canUseUnsafeNullRef;
     private readonly bool unscopedRefAttributePredefined;
+    private readonly INamedTypeSymbol? runtimeFeatureClass;
     private readonly bool generateSupportedOSPlatformAttributes;
     private readonly bool generateSupportedOSPlatformAttributesOnInterfaces; // only supported on net6.0 (https://github.com/dotnet/runtime/pull/48838)
     private readonly bool generateDefaultDllImportSearchPathsAttribute;
+    private readonly Dictionary<Feature, bool> supportedFeatures = new();
 
     private void DeclareUnscopedRefAttributeIfNecessary()
     {
@@ -48,21 +50,21 @@ public partial class Generator
 
     private bool IsFeatureAvailable(Feature feature)
     {
-        return feature switch
+        if (this.supportedFeatures.TryGetValue(feature, out bool result))
         {
-            Feature.InterfaceStaticMembers => (int)this.LanguageVersion >= 1100 && this.IsTargetFrameworkAtLeastDotNetVersion(7),
+            return result;
+        }
+
+        // A feature requires a member on the class, and we ignore features that have the `[RequiresPreviewFeatures]` attribute on them.
+        bool IsRuntimeFeatureSupported(string name) => this.runtimeFeatureClass?.GetMembers(name).FirstOrDefault()?.GetAttributes().IsEmpty is true;
+
+        result = feature switch
+        {
+            Feature.InterfaceStaticMembers => (int)this.LanguageVersion >= 1100 && IsRuntimeFeatureSupported("VirtualStaticsInInterfaces"),
             _ => throw new NotImplementedException(),
         };
-    }
 
-    private bool TryGetTargetDotNetVersion([NotNullWhen(true)] out Version? dotNetVersion)
-    {
-        dotNetVersion = this.compilation?.ReferencedAssemblyNames.FirstOrDefault(id => string.Equals(id.Name, "System.Runtime", StringComparison.OrdinalIgnoreCase))?.Version;
-        return dotNetVersion is not null;
-    }
-
-    private bool IsTargetFrameworkAtLeastDotNetVersion(int majorVersion)
-    {
-        return this.TryGetTargetDotNetVersion(out Version? actualVersion) && actualVersion.Major >= majorVersion;
+        this.supportedFeatures.Add(feature, result);
+        return result;
     }
 }

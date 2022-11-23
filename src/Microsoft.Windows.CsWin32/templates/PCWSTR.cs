@@ -1,5 +1,5 @@
 ﻿/// <summary>
-/// A pointer to a constant character string.
+/// A pointer to a null-terminated, constant character string.
 /// </summary>
 [DebuggerDisplay("{" + nameof(DebuggerDisplay) + "}")]
 internal unsafe readonly partial struct PCWSTR
@@ -33,14 +33,14 @@ internal unsafe readonly partial struct PCWSTR
 	}
 
 	/// <summary>
-	/// Returns a <see langword="string"/> with a copy of this character array.
+	/// Returns a <see langword="string"/> with a copy of this character array, up to the first null character (exclusive).
 	/// </summary>
 	/// <returns>A <see langword="string"/>, or <see langword="null"/> if <see cref="Value"/> is <see langword="null"/>.</returns>
 	public override string ToString() => this.Value is null ? null : new string(this.Value);
 
 #if canUseSpan
 	/// <summary>
-	/// Returns a span of the characters in this string.
+	/// Returns a span of the characters in this string, up to the first null character (exclusive).
 	/// </summary>
 	internal ReadOnlySpan<char> AsSpan() => this.Value is null ? default(ReadOnlySpan<char>) : new ReadOnlySpan<char>(this.Value, this.Length);
 #endif

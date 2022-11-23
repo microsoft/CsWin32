@@ -143,6 +143,12 @@ public class StringTests
         {
             Assert.Equal(ExpectedString, new PCSTR(pStr).ToString());
         }
+
+        fixed (byte* pEmpty = NullUtf8)
+        {
+            Assert.Same(string.Empty, new PCSTR(pEmpty).ToString());
+            Assert.Null(new PCSTR(null).ToString());
+        }
     }
 
     [Fact]
@@ -151,6 +157,12 @@ public class StringTests
         fixed (char* pStr = NoisyStringUtf16)
         {
             Assert.Equal(ExpectedString, new PCWSTR(pStr).ToString());
+        }
+
+        fixed (char* pEmpty = NullUtf16)
+        {
+            Assert.Same(string.Empty, new PCWSTR(pEmpty).ToString());
+            Assert.Null(new PCWSTR(null).ToString());
         }
     }
 
@@ -179,6 +191,12 @@ public class StringTests
         {
             Assert.Equal(ExpectedString, new PSTR(pStr).ToString());
         }
+
+        fixed (byte* pEmpty = NullUtf8)
+        {
+            Assert.Same(string.Empty, new PSTR(pEmpty).ToString());
+            Assert.Null(new PSTR(null).ToString());
+        }
     }
 
     [Fact]
@@ -187,6 +205,12 @@ public class StringTests
         fixed (char* pStr = NoisyStringUtf16)
         {
             Assert.Equal(ExpectedString, new PWSTR(pStr).ToString());
+        }
+
+        fixed (char* pEmpty = NullUtf16)
+        {
+            Assert.Same(string.Empty, new PWSTR(pEmpty).ToString());
+            Assert.Null(new PWSTR(null).ToString());
         }
     }
 

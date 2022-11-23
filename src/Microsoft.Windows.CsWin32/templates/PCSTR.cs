@@ -1,5 +1,5 @@
 ﻿/// <summary>
-/// A pointer to a constant character string.
+/// A pointer to a null-terminated, constant, ANSI character string.
 /// </summary>
 [DebuggerDisplay("{" + nameof(DebuggerDisplay) + "}")]
 internal unsafe readonly partial struct PCSTR
@@ -40,7 +40,7 @@ internal unsafe readonly partial struct PCSTR
 
 #if canUseSpan
 	/// <summary>
-	/// Returns a span of the characters in this string.
+	/// Returns a span of the characters in this string, up to the first null character (exclusive).
 	/// </summary>
 	internal ReadOnlySpan<byte> AsSpan() => this.Value is null ? default(ReadOnlySpan<byte>) : new ReadOnlySpan<byte>(this.Value, this.Length);
 #endif

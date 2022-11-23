@@ -141,7 +141,7 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
         {
             // Our syntax trees aren't quite right. And anyway the source generator API only takes text anyway so it doesn't _really_ matter.
             // So render the trees as text and have C# re-parse them so we get the same compiler warnings/errors that the user would get.
-            syntaxTrees.Add(CSharpSyntaxTree.ParseText(unit.Value.ToFullString(), this.parseOptions, path: unit.Key));
+            syntaxTrees.Add(CSharpSyntaxTree.ParseText(unit.Value.GetText(Encoding.UTF8), this.parseOptions, path: unit.Key));
         }
 
         // Add namespaces that projects may define to ensure we prefix types with "global::" everywhere.

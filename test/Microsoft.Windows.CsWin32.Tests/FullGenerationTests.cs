@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+[Trait("TestCategory", "FailsInCloudTest")] // these take ~4GB of memory to run.
 public class FullGenerationTests : GeneratorTestBase
 {
     public FullGenerationTests(ITestOutputHelper logger)

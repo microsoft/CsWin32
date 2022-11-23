@@ -40,7 +40,7 @@ public partial class Generator
 
 #pragma warning disable SA1114 // Parameter list should follow declaration
         static ParameterSyntax StripAttributes(ParameterSyntax parameter) => parameter.WithAttributeLists(List<AttributeListSyntax>());
-        static ExpressionSyntax GetSpanLength(ExpressionSyntax span) => MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, span, IdentifierName(nameof(Span<int>.Length)));
+        static ExpressionSyntax GetSpanLength(ExpressionSyntax span) => MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, span, SyntaxRecycleBin.Common.IdentifierName.Length);
         bool isReleaseMethod = this.MetadataIndex.ReleaseMethods.Contains(externMethodDeclaration.Identifier.ValueText);
         bool doNotRelease = this.FindInteropDecorativeAttribute(this.GetReturnTypeCustomAttributes(methodDefinition), DoNotReleaseAttribute) is not null;
 
@@ -121,7 +121,7 @@ public partial class Generator
                         origName,
                         ObjectCreationExpression(safeHandleType).AddArgumentListArguments(
                             Argument(GetIntPtrFromTypeDef(typeDefHandleName, pointedElementInfo)),
-                            Argument(LiteralExpression(doNotRelease ? SyntaxKind.FalseLiteralExpression : SyntaxKind.TrueLiteralExpression)).WithNameColon(NameColon(IdentifierName("ownsHandle")))))));
+                            Argument(LiteralExpression(doNotRelease ? SyntaxKind.FalseLiteralExpression : SyntaxKind.TrueLiteralExpression)).WithNameColon(NameColon(SyntaxRecycleBin.Common.IdentifierName.ownsHandle))))));
                 }
             }
             else if (this.options.UseSafeHandles && isIn && !isOut && !isReleaseMethod && parameterTypeInfo is HandleTypeHandleInfo parameterHandleTypeInfo && this.TryGetHandleReleaseMethod(parameterHandleTypeInfo.Handle, out string? releaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, releaseMethod)
@@ -162,7 +162,7 @@ public partial class Generator
                     BinaryExpression(SyntaxKind.IsExpression, origName, PredefinedType(Token(SyntaxKind.ObjectKeyword))),
                     Block().AddStatements(
                     //// hTemplateFile.DangerousAddRef(ref hTemplateFileAddRef);
-                    ExpressionStatement(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName(nameof(SafeHandle.DangerousAddRef))))
+                    ExpressionStatement(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, SyntaxRecycleBin.Common.IdentifierName.DangerousAddRef))
                         .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(refAddedName).WithRefKindKeyword(TokenWithSpace(SyntaxKind.RefKeyword)))))),
                     //// hTemplateFileLocal = (HANDLE)hTemplateFile.DangerousGetHandle();
                     ExpressionStatement(
@@ -171,7 +171,7 @@ public partial class Generator
                             typeDefHandleName,
                             CastExpression(
                                 externParam.Type.WithoutTrailingTrivia(),
-                                InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName(nameof(SafeHandle.DangerousGetHandle))), ArgumentList())))
+                                InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, SyntaxRecycleBin.Common.IdentifierName.DangerousGetHandle), ArgumentList())))
                         .WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken)))),
                     //// else hTemplateFileLocal = default;
                     ElseClause(nullHandleStatement)));
@@ -181,12 +181,12 @@ public partial class Generator
                 finallyStatements.Add(
                     IfStatement(
                         refAddedName,
-                        ExpressionStatement(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName(nameof(SafeHandle.DangerousRelease))), ArgumentList())))
+                        ExpressionStatement(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, SyntaxRecycleBin.Common.IdentifierName.DangerousRelease), ArgumentList())))
                     .WithCloseParenToken(TokenWithLineFeed(SyntaxKind.CloseParenToken)));
 
                 // Accept the SafeHandle instead.
                 parameters[param.SequenceNumber - 1] = externParam
-                    .WithType(IdentifierName(nameof(SafeHandle)).WithTrailingTrivia(TriviaList(Space)));
+                    .WithType(SyntaxRecycleBin.Common.IdentifierName.SafeHandle.WithTrailingTrivia(TriviaList(Space)));
 
                 // hParamNameLocal;
                 arguments[param.SequenceNumber - 1] = Argument(typeDefHandleName);
@@ -256,7 +256,7 @@ public partial class Generator
                                     SyntaxKind.NotEqualsExpression,
                                     GetSpanLength(otherUserName),
                                     GetSpanLength(origName)),
-                                ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentException))).WithArgumentList(ArgumentList()))));
+                                ThrowStatement(ObjectCreationExpression(SyntaxRecycleBin.Common.IdentifierName.ArgumentException).WithArgumentList(ArgumentList()))));
                         }
                         else
                         {
@@ -298,7 +298,7 @@ public partial class Generator
                                 SyntaxKind.LessThanExpression,
                                 GetSpanLength(origName),
                                 LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(sizeConst.Value))),
-                            ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentException))).WithArgumentList(ArgumentList()))));
+                            ThrowStatement(ObjectCreationExpression(SyntaxRecycleBin.Common.IdentifierName.ArgumentException).WithArgumentList(ArgumentList()))));
                     }
                     else if (isNullTerminated && isConst && parameters[param.SequenceNumber - 1].Type is PointerTypeSyntax { ElementType: PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.CharKeyword } } })
                     {
@@ -320,11 +320,11 @@ public partial class Generator
                         LocalDeclarationStatement(VariableDeclaration(elementType)
                             .AddVariables(VariableDeclarator(localName.Identifier).WithInitializer(
                                 EqualsValueClause(ConditionalExpression(
-                                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName("HasValue")),
-                                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName("Value")),
+                                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, SyntaxRecycleBin.Common.IdentifierName.HasValue),
+                                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, SyntaxRecycleBin.Common.IdentifierName.Value),
                                     DefaultExpression(elementType)))))));
                     arguments[param.SequenceNumber - 1] = Argument(ConditionalExpression(
-                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName("HasValue")),
+                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, SyntaxRecycleBin.Common.IdentifierName.HasValue),
                         PrefixUnaryExpression(SyntaxKind.AddressOfExpression, localName),
                         LiteralExpression(SyntaxKind.NullLiteralExpression)));
                 }
@@ -389,7 +389,7 @@ public partial class Generator
                                 MemberAccessExpression(
                                     SyntaxKind.SimpleMemberAccessExpression,
                                     ParseTypeName("global::System.Text.Encoding.Default"),
-                                    IdentifierName(nameof(Encoding.GetBytes))))
+                                    SyntaxRecycleBin.Common.IdentifierName.GetBytes))
                             .WithArgumentList(
                                 ArgumentList(
                                     SingletonSeparatedList(Argument(origName)))),
@@ -417,11 +417,11 @@ public partial class Generator
 
                 // if (buffer.LastIndexOf('\0') == -1) throw new ArgumentException("Required null terminator is missing.", "Param1");
                 InvocationExpressionSyntax lastIndexOf = InvocationExpression(
-                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName(nameof(MemoryExtensions.LastIndexOf))),
+                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, SyntaxRecycleBin.Common.IdentifierName.LastIndexOf),
                     ArgumentList().AddArguments(Argument(LiteralExpression(SyntaxKind.CharacterLiteralExpression, Literal('\0')))));
                 leadingOutsideTryStatements.Add(IfStatement(
                     BinaryExpression(SyntaxKind.EqualsExpression, lastIndexOf, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(-1))),
-                    ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentException))).AddArgumentListArguments(
+                    ThrowStatement(ObjectCreationExpression(SyntaxRecycleBin.Common.IdentifierName.ArgumentException).AddArgumentListArguments(
                         Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal("Required null terminator missing."))),
                         Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(externParam.Identifier.ValueText)))))));
 
@@ -434,10 +434,10 @@ public partial class Generator
                     SyntaxKind.SimpleAssignmentExpression,
                     origName,
                     InvocationExpression(
-                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName(nameof(Span<char>.Slice))),
+                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, SyntaxRecycleBin.Common.IdentifierName.Slice),
                         ArgumentList().AddArguments(
                             Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))),
-                            Argument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, localWstrName, IdentifierName("Length"))))))));
+                            Argument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, localWstrName, SyntaxRecycleBin.Common.IdentifierName.Length)))))));
             }
             else if (isIn && isOptional && !isOut && isManagedParameterType && parameterTypeInfo is PointerTypeHandleInfo ptrInfo && ptrInfo.ElementType.IsValueType(parameterTypeSyntaxSettings) is true && this.canUseUnsafeAsRef)
             {
@@ -452,21 +452,21 @@ public partial class Generator
                     LocalDeclarationStatement(VariableDeclaration(externParam.Type)
                         .AddVariables(VariableDeclarator(localName.Identifier).WithInitializer(
                             EqualsValueClause(ConditionalExpression(
-                                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName("HasValue")),
-                                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName("Value")),
+                                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, SyntaxRecycleBin.Common.IdentifierName.HasValue),
+                                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, SyntaxRecycleBin.Common.IdentifierName.Value),
                                 DefaultExpression(externParam.Type)))))));
 
                 // We can't pass in null, but we can be fancy to achieve the same effect.
                 // Unsafe.NullRef<TParamType>() or Unsafe.AsRef<TParamType>(null), depending on what's available.
                 ExpressionSyntax nullRef = this.canUseUnsafeNullRef
                     ? InvocationExpression(
-                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Unsafe)), GenericName("NullRef", TypeArgumentList().AddArguments(externParam.Type))),
+                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, SyntaxRecycleBin.Common.IdentifierName.Unsafe, GenericName("NullRef", TypeArgumentList().AddArguments(externParam.Type))),
                         ArgumentList())
                     : InvocationExpression(
-                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Unsafe)), GenericName(nameof(Unsafe.AsRef), TypeArgumentList().AddArguments(externParam.Type))),
+                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, SyntaxRecycleBin.Common.IdentifierName.Unsafe, GenericName(nameof(Unsafe.AsRef), TypeArgumentList().AddArguments(externParam.Type))),
                         ArgumentList().AddArguments(Argument(LiteralExpression(SyntaxKind.NullLiteralExpression))));
                 arguments[param.SequenceNumber - 1] = Argument(ConditionalExpression(
-                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName("HasValue")),
+                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, SyntaxRecycleBin.Common.IdentifierName.HasValue),
                     localName,
                     nullRef));
             }
@@ -517,7 +517,7 @@ public partial class Generator
                 .WithArgumentList(FixTrivia(ArgumentList().AddArguments(arguments.ToArray())));
             bool hasVoidReturn = externMethodReturnType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.VoidKeyword } };
             BlockSyntax? body = Block().AddStatements(leadingStatements.ToArray());
-            IdentifierNameSyntax resultLocal = IdentifierName("__result");
+            IdentifierNameSyntax resultLocal = SyntaxRecycleBin.Common.IdentifierName.__result;
             if (returnSafeHandleType is object)
             {
                 //// HANDLE result = invocation();
@@ -529,7 +529,7 @@ public partial class Generator
                 //// return new SafeHandle(result, ownsHandle: true);
                 body = body.AddStatements(ReturnStatement(ObjectCreationExpression(returnSafeHandleType).AddArgumentListArguments(
                     Argument(GetIntPtrFromTypeDef(resultLocal, originalSignature.ReturnType)),
-                    Argument(LiteralExpression(doNotRelease ? SyntaxKind.FalseLiteralExpression : SyntaxKind.TrueLiteralExpression)).WithNameColon(NameColon(IdentifierName("ownsHandle"))))));
+                    Argument(LiteralExpression(doNotRelease ? SyntaxKind.FalseLiteralExpression : SyntaxKind.TrueLiteralExpression)).WithNameColon(NameColon(SyntaxRecycleBin.Common.IdentifierName.ownsHandle)))));
             }
             else if (hasVoidReturn)
             {
@@ -613,7 +613,7 @@ public partial class Generator
                 {
                     case PrimitiveTypeCode.UInt32:
                         // (IntPtr)result.Value;
-                        intPtrValue = CastExpression(IntPtrTypeSyntax, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, typedefValue, IdentifierName("Value")));
+                        intPtrValue = CastExpression(IntPtrTypeSyntax, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, typedefValue, SyntaxRecycleBin.Common.IdentifierName.Value));
                         break;
                     case PrimitiveTypeCode.UIntPtr:
                         // unchecked((IntPtr)(long)(ulong)result.Value)
@@ -624,7 +624,7 @@ public partial class Generator
                                     PredefinedType(Token(SyntaxKind.LongKeyword)),
                                     CastExpression(
                                         PredefinedType(Token(SyntaxKind.ULongKeyword)),
-                                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, typedefValue, IdentifierName("Value"))))));
+                                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, typedefValue, SyntaxRecycleBin.Common.IdentifierName.Value)))));
                         break;
                 }
             }

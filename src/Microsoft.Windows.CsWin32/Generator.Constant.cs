@@ -177,8 +177,8 @@ public partial class Generator
         return ObjectCreationExpression(type).WithInitializer(
             InitializerExpression(SyntaxKind.ObjectInitializerExpression, SeparatedList<ExpressionSyntax>(new[]
             {
-                AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, IdentifierName("fmtid"), GuidValue(propertyKeyAttribute)),
-                AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, IdentifierName("pid"), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(pid))),
+                AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, SyntaxRecycleBin.Common.IdentifierName.fmtid, GuidValue(propertyKeyAttribute)),
+                AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, SyntaxRecycleBin.Common.IdentifierName.pid, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(pid))),
             })));
     }
 

@@ -83,11 +83,11 @@ internal static class SimpleSyntaxFactory
     {
         LayoutKind layoutKind = (typeAttributes & TypeAttributes.ExplicitLayout) == TypeAttributes.ExplicitLayout ? LayoutKind.Explicit : LayoutKind.Sequential;
         List<AttributeArgumentSyntax> args = new();
-        AttributeSyntax? structLayoutAttribute = Attribute(IdentifierName("StructLayout"));
+        AttributeSyntax? structLayoutAttribute = Attribute(SyntaxRecycleBin.Common.IdentifierName.StructLayout);
         args.Add(AttributeArgument(MemberAccessExpression(
                  SyntaxKind.SimpleMemberAccessExpression,
-                 IdentifierName(nameof(LayoutKind)),
-                 IdentifierName(Enum.GetName(typeof(LayoutKind), layoutKind)!))));
+                 SyntaxRecycleBin.Common.IdentifierName.LayoutKind,
+                 SyntaxRecycleBin.Common.IdentifierName.GetFromLimitedSet(Enum.GetName(typeof(LayoutKind), layoutKind)!))));
 
         if (layout.PackingSize > 0)
         {
@@ -103,8 +103,8 @@ internal static class SimpleSyntaxFactory
 
         if (charSet != CharSet.Ansi)
         {
-            args.Add(AttributeArgument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(CharSet)), IdentifierName(Enum.GetName(typeof(CharSet), charSet)!)))
-                .WithNameEquals(NameEquals(IdentifierName(nameof(StructLayoutAttribute.CharSet)))));
+            args.Add(AttributeArgument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, SyntaxRecycleBin.Common.IdentifierName.CharSet, SyntaxRecycleBin.Common.IdentifierName.GetFromLimitedSet(Enum.GetName(typeof(CharSet), charSet)!)))
+                .WithNameEquals(NameEquals(SyntaxRecycleBin.Common.IdentifierName.CharSet)));
         }
 
         structLayoutAttribute = structLayoutAttribute.WithArgumentList(FixTrivia(AttributeArgumentList().AddArguments(args.ToArray())));
@@ -118,30 +118,30 @@ internal static class SimpleSyntaxFactory
             throw new NotImplementedException();
         }
 
-        AttributeSyntax attribute = Attribute(IdentifierName("MethodImpl"))
-            .AddArgumentListArguments(AttributeArgument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(MethodImplOptions)), IdentifierName(nameof(MethodImplOptions.AggressiveInlining)))));
+        AttributeSyntax attribute = Attribute(SyntaxRecycleBin.Common.IdentifierName.MethodImpl)
+            .AddArgumentListArguments(AttributeArgument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, SyntaxRecycleBin.Common.IdentifierName.MethodImplOptions, SyntaxRecycleBin.Common.IdentifierName.AggressiveInlining)));
         return attribute;
     }
 
     internal static AttributeSyntax GUID(Guid guid)
     {
-        return Attribute(IdentifierName("Guid")).AddArgumentListArguments(
+        return Attribute(SyntaxRecycleBin.Common.IdentifierName.Guid).AddArgumentListArguments(
             AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(guid.ToString().ToUpperInvariant()))));
     }
 
     internal static AttributeSyntax InterfaceType(ComInterfaceType interfaceType)
     {
-        return Attribute(IdentifierName("InterfaceType")).AddArgumentListArguments(
+        return Attribute(SyntaxRecycleBin.Common.IdentifierName.InterfaceType).AddArgumentListArguments(
             AttributeArgument(MemberAccessExpression(
                 SyntaxKind.SimpleMemberAccessExpression,
-                IdentifierName(nameof(ComInterfaceType)),
-                IdentifierName(Enum.GetName(typeof(ComInterfaceType), interfaceType)!))));
+                SyntaxRecycleBin.Common.IdentifierName.ComInterfaceType,
+                SyntaxRecycleBin.Common.IdentifierName.GetFromLimitedSet(Enum.GetName(typeof(ComInterfaceType), interfaceType)!))));
     }
 
     internal static AttributeSyntax DllImport(MethodImport import, string moduleName, string? entrypoint, CharSet charSet = CharSet.Ansi)
     {
         List<AttributeArgumentSyntax> args = new();
-        AttributeSyntax? dllImportAttribute = Attribute(IdentifierName("DllImport"));
+        AttributeSyntax? dllImportAttribute = Attribute(SyntaxRecycleBin.Common.IdentifierName.DllImport);
         args.Add(AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(moduleName))));
         args.Add(AttributeArgument(LiteralExpression(SyntaxKind.TrueLiteralExpression)).WithNameEquals(NameEquals(nameof(DllImportAttribute.ExactSpelling))));
 
@@ -159,8 +159,8 @@ internal static class SimpleSyntaxFactory
 
         if (charSet != CharSet.Ansi)
         {
-            args.Add(AttributeArgument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(CharSet)), IdentifierName(Enum.GetName(typeof(CharSet), charSet)!)))
-                .WithNameEquals(NameEquals(IdentifierName(nameof(DllImportAttribute.CharSet)))));
+            args.Add(AttributeArgument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, SyntaxRecycleBin.Common.IdentifierName.CharSet, SyntaxRecycleBin.Common.IdentifierName.GetFromLimitedSet(Enum.GetName(typeof(CharSet), charSet)!)))
+                .WithNameEquals(NameEquals(SyntaxRecycleBin.Common.IdentifierName.CharSet)));
         }
 
         dllImportAttribute = dllImportAttribute.WithArgumentList(FixTrivia(AttributeArgumentList().AddArguments(args.ToArray())));
@@ -169,22 +169,22 @@ internal static class SimpleSyntaxFactory
 
     internal static AttributeSyntax UnmanagedFunctionPointer(CallingConvention callingConvention)
     {
-        return Attribute(IdentifierName(nameof(UnmanagedFunctionPointerAttribute)))
+        return Attribute(SyntaxRecycleBin.Common.IdentifierName.UnmanagedFunctionPointerAttribute)
             .AddArgumentListArguments(AttributeArgument(MemberAccessExpression(
                 SyntaxKind.SimpleMemberAccessExpression,
-                IdentifierName(nameof(CallingConvention)),
-                IdentifierName(Enum.GetName(typeof(CallingConvention), callingConvention)!))));
+                SyntaxRecycleBin.Common.IdentifierName.CallingConvention,
+                SyntaxRecycleBin.Common.IdentifierName.GetFromLimitedSet(Enum.GetName(typeof(CallingConvention), callingConvention)!))));
     }
 
     internal static AttributeSyntax MarshalAs(UnmanagedType unmanagedType, UnmanagedType? arraySubType = null, string? marshalCookie = null, string? marshalType = null, ExpressionSyntax? sizeConst = null, ExpressionSyntax? sizeParamIndex = null)
     {
         AttributeSyntax? marshalAs =
-            Attribute(IdentifierName("MarshalAs"))
+            Attribute(SyntaxRecycleBin.Common.IdentifierName.MarshalAs)
                 .AddArgumentListArguments(AttributeArgument(
                     MemberAccessExpression(
                         SyntaxKind.SimpleMemberAccessExpression,
-                        IdentifierName(nameof(UnmanagedType)),
-                        IdentifierName(Enum.GetName(typeof(UnmanagedType), unmanagedType)!))));
+                        SyntaxRecycleBin.Common.IdentifierName.UnmanagedType,
+                        SyntaxRecycleBin.Common.IdentifierName.GetFromLimitedSet(Enum.GetName(typeof(UnmanagedType), unmanagedType)!))));
 
         if (arraySubType.HasValue && arraySubType.Value != 0 && unmanagedType is UnmanagedType.ByValArray or UnmanagedType.LPArray or UnmanagedType.SafeArray)
         {
@@ -192,8 +192,8 @@ internal static class SimpleSyntaxFactory
                 AttributeArgument(
                     MemberAccessExpression(
                         SyntaxKind.SimpleMemberAccessExpression,
-                        IdentifierName(nameof(UnmanagedType)),
-                        IdentifierName(Enum.GetName(typeof(UnmanagedType), arraySubType.Value)!)))
+                        SyntaxRecycleBin.Common.IdentifierName.UnmanagedType,
+                        SyntaxRecycleBin.Common.IdentifierName.GetFromLimitedSet(Enum.GetName(typeof(UnmanagedType), arraySubType.Value)!)))
                     .WithNameEquals(NameEquals(nameof(MarshalAsAttribute.ArraySubType))));
         }
 
@@ -228,17 +228,17 @@ internal static class SimpleSyntaxFactory
 
     internal static AttributeSyntax DebuggerBrowsable(DebuggerBrowsableState state)
     {
-        return Attribute(IdentifierName("DebuggerBrowsable"))
+        return Attribute(SyntaxRecycleBin.Common.IdentifierName.DebuggerBrowsable)
             .AddArgumentListArguments(
             AttributeArgument(MemberAccessExpression(
                 SyntaxKind.SimpleMemberAccessExpression,
-                IdentifierName(nameof(DebuggerBrowsableState)),
-                IdentifierName(Enum.GetName(typeof(DebuggerBrowsableState), state)!))));
+                SyntaxRecycleBin.Common.IdentifierName.DebuggerBrowsableState,
+                SyntaxRecycleBin.Common.IdentifierName.GetFromLimitedSet(Enum.GetName(typeof(DebuggerBrowsableState), state)!))));
     }
 
     internal static AttributeSyntax DebuggerDisplay(string format)
     {
-        return Attribute(IdentifierName("DebuggerDisplay"))
+        return Attribute(SyntaxRecycleBin.Common.IdentifierName.DebuggerDisplay)
             .AddArgumentListArguments(
             AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(format))));
     }
@@ -257,8 +257,8 @@ internal static class SimpleSyntaxFactory
     {
         return callingConvention switch
         {
-            CallingConvention.StdCall => FunctionPointerUnmanagedCallingConvention(Identifier("Stdcall")),
-            CallingConvention.Winapi => FunctionPointerUnmanagedCallingConvention(Identifier("Stdcall")), // Winapi isn't a valid string, and only .NET 5 supports runtime-determined calling conventions like Winapi does.
+            CallingConvention.StdCall => FunctionPointerUnmanagedCallingConvention(SyntaxRecycleBin.Common.IdentifierName.Stdcall.Identifier),
+            CallingConvention.Winapi => FunctionPointerUnmanagedCallingConvention(SyntaxRecycleBin.Common.IdentifierName.Stdcall.Identifier), // Winapi isn't a valid string, and only .NET 5 supports runtime-determined calling conventions like Winapi does.
             _ => throw new NotImplementedException(),
         };
     }
@@ -307,7 +307,7 @@ internal static class SimpleSyntaxFactory
         byte j = (byte)args.FixedArguments[9].Value!;
         byte k = (byte)args.FixedArguments[10].Value!;
 
-        return ObjectCreationExpression(IdentifierName(nameof(Guid))).AddArgumentListArguments(
+        return ObjectCreationExpression(SyntaxRecycleBin.Common.IdentifierName.Guid).AddArgumentListArguments(
             Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(a), a))),
             Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(b), b))),
             Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(c), c))),
@@ -383,9 +383,9 @@ internal static class SimpleSyntaxFactory
         static ExpressionSyntax FloatExpression(float value)
         {
             return
-                float.IsPositiveInfinity(value) ? MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, PredefinedType(Token(SyntaxKind.FloatKeyword)), IdentifierName(nameof(float.PositiveInfinity))) :
-                float.IsNegativeInfinity(value) ? MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, PredefinedType(Token(SyntaxKind.FloatKeyword)), IdentifierName(nameof(float.NegativeInfinity))) :
-                float.IsNaN(value) ? MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, PredefinedType(Token(SyntaxKind.FloatKeyword)), IdentifierName(nameof(float.NaN))) :
+                float.IsPositiveInfinity(value) ? MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, PredefinedType(Token(SyntaxKind.FloatKeyword)), SyntaxRecycleBin.Common.IdentifierName.PositiveInfinity) :
+                float.IsNegativeInfinity(value) ? MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, PredefinedType(Token(SyntaxKind.FloatKeyword)), SyntaxRecycleBin.Common.IdentifierName.NegativeInfinity) :
+                float.IsNaN(value) ? MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, PredefinedType(Token(SyntaxKind.FloatKeyword)), SyntaxRecycleBin.Common.IdentifierName.NaN) :
                 LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(value));
         }
     }

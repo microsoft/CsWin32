@@ -86,12 +86,12 @@ public partial class Generator
 
             var members = new List<MemberDeclarationSyntax>();
 
-            MemberAccessExpressionSyntax thisHandle = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("handle"));
+            MemberAccessExpressionSyntax thisHandle = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), SyntaxRecycleBin.Common.IdentifierName.handle);
             ExpressionSyntax intptrZero = DefaultExpression(IntPtrTypeSyntax);
             ExpressionSyntax invalidHandleIntPtr = IntPtrExpr(preferredInvalidValue);
 
             // private static readonly IntPtr INVALID_HANDLE_VALUE = new IntPtr(-1);
-            IdentifierNameSyntax invalidValueFieldName = IdentifierName("INVALID_HANDLE_VALUE");
+            IdentifierNameSyntax invalidValueFieldName = SyntaxRecycleBin.Common.IdentifierName.INVALID_HANDLE_VALUE;
             members.Add(FieldDeclaration(VariableDeclaration(IntPtrTypeSyntax).AddVariables(
                 VariableDeclarator(invalidValueFieldName.Identifier).WithInitializer(EqualsValueClause(invalidHandleIntPtr))))
                 .AddModifiers(TokenWithSpace(SyntaxKind.PrivateKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword)));
@@ -105,23 +105,21 @@ public partial class Generator
                 .WithBody(Block()));
 
             // public SafeHandle(IntPtr preexistingHandle, bool ownsHandle = true) : base(INVALID_HANDLE_VALUE, ownsHandle) { this.SetHandle(preexistingHandle); }
-            const string preexistingHandleName = "preexistingHandle";
-            const string ownsHandleName = "ownsHandle";
             members.Add(ConstructorDeclaration(safeHandleTypeIdentifier.Identifier)
                 .AddModifiers(TokenWithSpace(this.Visibility))
                 .AddParameterListParameters(
-                    Parameter(Identifier(preexistingHandleName)).WithType(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))),
-                    Parameter(Identifier(ownsHandleName)).WithType(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)))
+                    Parameter(SyntaxRecycleBin.Common.IdentifierName.preexistingHandle.Identifier).WithType(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))),
+                    Parameter(SyntaxRecycleBin.Common.IdentifierName.ownsHandle.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)))
                         .WithDefault(EqualsValueClause(LiteralExpression(SyntaxKind.TrueLiteralExpression))))
                 .WithInitializer(ConstructorInitializer(SyntaxKind.BaseConstructorInitializer, ArgumentList().AddArguments(
                     Argument(invalidValueFieldName),
-                    Argument(IdentifierName(ownsHandleName)))))
+                    Argument(SyntaxRecycleBin.Common.IdentifierName.ownsHandle))))
                 .WithBody(Block().AddStatements(
-                    ExpressionStatement(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("SetHandle")))
-                        .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(IdentifierName(preexistingHandleName)))))))));
+                    ExpressionStatement(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), SyntaxRecycleBin.Common.IdentifierName.SetHandle))
+                        .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(SyntaxRecycleBin.Common.IdentifierName.preexistingHandle))))))));
 
             // public override bool IsInvalid => this.handle.ToInt64() == 0 || this.handle.ToInt64() == -1;
-            ExpressionSyntax thisHandleToInt64 = InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, thisHandle, IdentifierName(nameof(IntPtr.ToInt64))), ArgumentList());
+            ExpressionSyntax thisHandleToInt64 = InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, thisHandle, SyntaxRecycleBin.Common.IdentifierName.ToInt64), ArgumentList());
             ExpressionSyntax overallTest = invalidHandleValues.Count == 0
                 ? LiteralExpression(SyntaxKind.FalseLiteralExpression)
                 : CompoundExpression(SyntaxKind.LogicalOrExpression, invalidHandleValues.Select(v => BinaryExpression(SyntaxKind.EqualsExpression, thisHandleToInt64, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(v.ToInt64())))));
@@ -134,7 +132,7 @@ public partial class Generator
             bool implicitConversion = typeDefStructFieldType is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.IntPtr } or PointerTypeHandleInfo;
             ArgumentSyntax releaseHandleArgument = Argument(CastExpression(
                 releaseMethodParameterType.Type,
-                implicitConversion ? thisHandle : CheckedExpression(CastExpression(typeDefStructFieldType!.ToTypeSyntax(this.fieldTypeSettings, null).Type, CastExpression(IdentifierName("nint"), thisHandle)))));
+                implicitConversion ? thisHandle : CheckedExpression(CastExpression(typeDefStructFieldType!.ToTypeSyntax(this.fieldTypeSettings, null).Type, CastExpression(SyntaxRecycleBin.Common.IdentifierName.nint, thisHandle)))));
 
             // protected override bool ReleaseHandle() => ReleaseMethod((struct)this.handle);
             // Special case release functions based on their return type as follows: (https://github.com/microsoft/win32metadata/issues/25)
@@ -185,16 +183,16 @@ public partial class Generator
                         {
                             case "NTSTATUS":
                                 this.TryGenerateConstantOrThrow("STATUS_SUCCESS");
-                                ExpressionSyntax statusSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseName("winmdroot.Foundation.NTSTATUS"), IdentifierName("STATUS_SUCCESS"));
+                                ExpressionSyntax statusSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseName("winmdroot.Foundation.NTSTATUS"), SyntaxRecycleBin.Common.IdentifierName.STATUS_SUCCESS);
                                 releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, statusSuccess);
                                 break;
                             case "HRESULT":
                                 this.TryGenerateConstantOrThrow("S_OK");
-                                ExpressionSyntax ok = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseName("winmdroot.Foundation.HRESULT"), IdentifierName("S_OK"));
+                                ExpressionSyntax ok = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseName("winmdroot.Foundation.HRESULT"), SyntaxRecycleBin.Common.IdentifierName.S_OK);
                                 releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, ok);
                                 break;
                             case "WIN32_ERROR":
-                                ExpressionSyntax noerror = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseName("winmdroot.Foundation.WIN32_ERROR"), IdentifierName("NO_ERROR"));
+                                ExpressionSyntax noerror = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseName("winmdroot.Foundation.WIN32_ERROR"), SyntaxRecycleBin.Common.IdentifierName.NO_ERROR);
                                 releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, noerror);
                                 break;
                             default:
@@ -205,7 +203,7 @@ public partial class Generator
                 }
             }
 
-            MethodDeclarationSyntax releaseHandleDeclaration = MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Identifier("ReleaseHandle"))
+            MethodDeclarationSyntax releaseHandleDeclaration = MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), SyntaxRecycleBin.Common.IdentifierName.ReleaseHandle.Identifier)
                 .AddModifiers(TokenWithSpace(SyntaxKind.ProtectedKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword));
             releaseHandleDeclaration = releaseBlock is null
                 ? releaseHandleDeclaration

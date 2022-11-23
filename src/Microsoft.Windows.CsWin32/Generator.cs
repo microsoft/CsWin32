@@ -646,11 +646,12 @@ public partial class Generator : IDisposable
             }
         }
 
+        IdentifierNameSyntax globalIdentifier = IdentifierName(Token(SyntaxKind.GlobalKeyword));
         var usingDirectives = new List<UsingDirectiveSyntax>
         {
-            UsingDirective(AliasQualifiedName(IdentifierName(Token(SyntaxKind.GlobalKeyword)), IdentifierName(nameof(System)))),
-            UsingDirective(AliasQualifiedName(IdentifierName(Token(SyntaxKind.GlobalKeyword)), IdentifierName(nameof(System) + "." + nameof(System.Diagnostics)))),
-            UsingDirective(AliasQualifiedName(IdentifierName(Token(SyntaxKind.GlobalKeyword)), IdentifierName(nameof(System) + "." + nameof(System.Diagnostics) + "." + nameof(System.Diagnostics.CodeAnalysis)))),
+            UsingDirective(AliasQualifiedName(globalIdentifier, IdentifierName(nameof(System)))),
+            UsingDirective(AliasQualifiedName(globalIdentifier, IdentifierName(nameof(System) + "." + nameof(System.Diagnostics)))),
+            UsingDirective(AliasQualifiedName(globalIdentifier, IdentifierName(nameof(System) + "." + nameof(System.Diagnostics) + "." + nameof(System.Diagnostics.CodeAnalysis)))),
             UsingDirective(ParseName(GlobalNamespacePrefix + SystemRuntimeCompilerServices)),
             UsingDirective(ParseName(GlobalNamespacePrefix + SystemRuntimeInteropServices)),
         };
@@ -1210,7 +1211,7 @@ public partial class Generator : IDisposable
         ExpressionSyntax thisLength = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("Length"));
 
         // internal X AsSpan() => this.Value is null ? default(X) : new X(this.Value, this.Length);
-        return MethodDeclaration(spanType, Identifier("AsSpan"))
+        return MethodDeclaration(spanType, SyntaxRecycleBin.Common.IdentifierName.AsSpan.Identifier)
             .AddModifiers(TokenWithSpace(this.Visibility))
             .WithExpressionBody(ArrowExpressionClause(ConditionalExpression(
                 condition: IsPatternExpression(thisValue, ConstantPattern(LiteralExpression(SyntaxKind.NullLiteralExpression))),
@@ -1311,7 +1312,7 @@ public partial class Generator : IDisposable
                 LocalDeclarationStatement(VariableDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))).AddVariables(
                     VariableDeclarator(lengthLocal.Identifier).WithInitializer(EqualsValueClause(
                         InvocationExpression(
-                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParam, IdentifierName(nameof(MemoryExtensions.IndexOf))),
+                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParam, SyntaxRecycleBin.Common.IdentifierName.IndexOf),
                             ArgumentList().AddArguments(Argument(LiteralExpression(SyntaxKind.CharacterLiteralExpression, Literal('\0')))))))));
 
             // static ReadOnlySpan<char> SliceAtNull(this ReadOnlySpan<char> value)
@@ -1325,7 +1326,7 @@ public partial class Generator : IDisposable
                         BinaryExpression(SyntaxKind.LessThanExpression, lengthLocal, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))),
                         valueParam,
                         InvocationExpression(
-                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParam, IdentifierName(nameof(ReadOnlySpan<char>.Slice))),
+                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParam, SyntaxRecycleBin.Common.IdentifierName.Slice),
                             ArgumentList().AddArguments(Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))), Argument(lengthLocal)))))));
         }
 

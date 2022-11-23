@@ -58,17 +58,17 @@ public partial class Generator
     private MemberDeclarationSyntax DeclareUntypedDelegate(TypeDefinition typeDef)
     {
         IdentifierNameSyntax name = IdentifierName(this.Reader.GetString(typeDef.Name));
-        IdentifierNameSyntax valueFieldName = IdentifierName("Value");
+        IdentifierNameSyntax valueFieldName = SyntaxRecycleBin.Common.IdentifierName.Value;
 
         // internal IntPtr Value;
         FieldDeclarationSyntax valueField = FieldDeclaration(VariableDeclaration(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space)))
             .AddVariables(VariableDeclarator(valueFieldName.Identifier))).AddModifiers(TokenWithSpace(this.Visibility));
 
         // internal T CreateDelegate<T>() => Marshal.GetDelegateForFunctionPointer<T>(this.Value);
-        IdentifierNameSyntax typeParameter = IdentifierName("TDelegate");
+        IdentifierNameSyntax typeParameter = SyntaxRecycleBin.Common.IdentifierName.TDelegate;
         MemberAccessExpressionSyntax methodToCall = this.getDelegateForFunctionPointerGenericExists
-            ? MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Marshal)), GenericName(nameof(Marshal.GetDelegateForFunctionPointer)).AddTypeArgumentListArguments(typeParameter))
-            : MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Marshal)), IdentifierName(nameof(Marshal.GetDelegateForFunctionPointer)));
+            ? MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, SyntaxRecycleBin.Common.IdentifierName.Marshal, GenericName(nameof(Marshal.GetDelegateForFunctionPointer)).AddTypeArgumentListArguments(typeParameter))
+            : MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, SyntaxRecycleBin.Common.IdentifierName.Marshal, SyntaxRecycleBin.Common.IdentifierName.GetDelegateForFunctionPointer);
         ArgumentListSyntax arguments = ArgumentList().AddArguments(Argument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), valueFieldName)));
         if (!this.getDelegateForFunctionPointerGenericExists)
         {
@@ -81,9 +81,9 @@ public partial class Generator
             bodyExpression = CastExpression(typeParameter, bodyExpression);
         }
 
-        MethodDeclarationSyntax createDelegateMethod = MethodDeclaration(typeParameter, Identifier("CreateDelegate"))
+        MethodDeclarationSyntax createDelegateMethod = MethodDeclaration(typeParameter, SyntaxRecycleBin.Common.IdentifierName.CreateDelegate.Identifier)
             .AddTypeParameterListParameters(TypeParameter(typeParameter.Identifier))
-            .AddConstraintClauses(TypeParameterConstraintClause(typeParameter, SingletonSeparatedList<TypeParameterConstraintSyntax>(TypeConstraint(IdentifierName("Delegate")))))
+            .AddConstraintClauses(TypeParameterConstraintClause(typeParameter, SingletonSeparatedList<TypeParameterConstraintSyntax>(TypeConstraint(SyntaxRecycleBin.Common.IdentifierName.Delegate))))
             .WithExpressionBody(ArrowExpressionClause(bodyExpression))
             .AddModifiers(TokenWithSpace(this.Visibility))
             .WithSemicolonToken(SemicolonWithLineFeed);

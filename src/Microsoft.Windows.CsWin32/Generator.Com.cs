@@ -88,7 +88,7 @@ public partial class Generator
         TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefHandle);
         string originalIfaceName = this.Reader.GetString(typeDef.Name);
         IdentifierNameSyntax ifaceName = IdentifierName(this.GetMangledIdentifier(originalIfaceName, context.AllowMarshaling, isManagedType: true));
-        IdentifierNameSyntax vtblFieldName = IdentifierName("lpVtbl");
+        IdentifierNameSyntax vtblFieldName = SyntaxRecycleBin.Common.IdentifierName.lpVtbl;
         var members = new List<MemberDeclarationSyntax>();
         var vtblMembers = new List<MemberDeclarationSyntax>();
         TypeSyntaxSettings typeSettings = this.comSignatureTypeSettings;
@@ -143,7 +143,7 @@ public partial class Generator
             // By doing this, we make the emitted code more trimmable by not referencing the full virtual method table and its full set of types
             // when the app may only invoke a subset of the methods.
             //// ((delegate *unmanaged [Stdcall]<IPersist*,global::System.Guid* ,winmdroot.Foundation.HRESULT>)lpVtbl[3])(pThis, pClassID)
-            IdentifierNameSyntax pThisLocal = IdentifierName("pThis");
+            IdentifierNameSyntax pThisLocal = SyntaxRecycleBin.Common.IdentifierName.pThis;
             ExpressionSyntax vtblIndexingExpression = ParenthesizedExpression(
                 CastExpression(unmanagedDelegateType, ElementAccessExpression(vtblFieldName).AddArgumentListArguments(Argument(methodOffset))));
             InvocationExpressionSyntax vtblInvocation = InvocationExpression(vtblIndexingExpression)
@@ -168,7 +168,7 @@ public partial class Generator
                 {
                     case SyntaxKind.GetAccessorDeclaration:
                         // PropertyType __result;
-                        IdentifierNameSyntax resultLocal = IdentifierName("__result");
+                        IdentifierNameSyntax resultLocal = SyntaxRecycleBin.Common.IdentifierName.__result;
                         LocalDeclarationStatementSyntax resultLocalDeclaration = LocalDeclarationStatement(VariableDeclaration(propertyType).AddVariables(VariableDeclarator(resultLocal.Identifier)));
 
                         // vtblInvoke(pThis, &__result).ThrowOnFailure();
@@ -192,7 +192,7 @@ public partial class Generator
                         break;
                     case SyntaxKind.SetAccessorDeclaration:
                         // vtblInvoke(pThis, value).ThrowOnFailure();
-                        vtblInvocationStatement = ThrowOnHRFailure(vtblInvocation.WithArgumentList(ArgumentList().AddArguments(Argument(pThisLocal), Argument(IdentifierName("value")))));
+                        vtblInvocationStatement = ThrowOnHRFailure(vtblInvocation.WithArgumentList(ArgumentList().AddArguments(Argument(pThisLocal), Argument(SyntaxRecycleBin.Common.IdentifierName.value))));
                         body = Block().AddStatements(
                             FixedStatement(
                                 VariableDeclaration(PointerType(ifaceName)).AddVariables(
@@ -255,7 +255,7 @@ public partial class Generator
                         returnType = lastParameter.Modifiers.Any(SyntaxKind.OutKeyword) ? lastParameter.Type! : ((PointerTypeSyntax)lastParameter.Type!).ElementType;
 
                         // Guid __retVal = default(Guid);
-                        IdentifierNameSyntax retValLocalName = IdentifierName("__retVal");
+                        IdentifierNameSyntax retValLocalName = SyntaxRecycleBin.Common.IdentifierName.__retVal;
                         LocalDeclarationStatementSyntax localRetValDecl = LocalDeclarationStatement(VariableDeclaration(returnType).AddVariables(
                             VariableDeclarator(retValLocalName.Identifier).WithInitializer(EqualsValueClause(DefaultExpression(returnType)))));
 
@@ -593,8 +593,8 @@ public partial class Generator
             Guid guidAttributeValue = DecodeGuidFromAttribute(guidAttribute.Value);
 
             // internal static readonly Guid IID_Guid = new Guid(0x1234, ...);
-            IdentifierNameSyntax iidGuidFieldName = IdentifierName("IID_Guid");
-            TypeSyntax guidTypeSyntax = IdentifierName(nameof(Guid));
+            IdentifierNameSyntax iidGuidFieldName = SyntaxRecycleBin.Common.IdentifierName.IID_Guid;
+            TypeSyntax guidTypeSyntax = SyntaxRecycleBin.Common.IdentifierName.Guid;
             members.Add(FieldDeclaration(
                 VariableDeclaration(guidTypeSyntax)
                 .AddVariables(VariableDeclarator(iidGuidFieldName.Identifier).WithInitializer(EqualsValueClause(
@@ -606,7 +606,7 @@ public partial class Generator
             {
                 baseTypes.Add(SimpleBaseType(IComIIDGuidInterfaceName));
 
-                IdentifierNameSyntax dataLocal = IdentifierName("data");
+                IdentifierNameSyntax dataLocal = SyntaxRecycleBin.Common.IdentifierName.data;
 
                 // Rather than just `return ref IID_Guid`, which returns a pointer to a 'movable' field,
                 // We leverage C# syntax that we know the modern C# compiler will turn into a pointer directly into the dll image,
@@ -629,12 +629,12 @@ public partial class Generator
                     InvocationExpression(
                         MemberAccessExpression(
                             SyntaxKind.SimpleMemberAccessExpression,
-                            IdentifierName(nameof(Unsafe)),
-                            GenericName(nameof(Unsafe.As)).AddTypeArgumentListArguments(PredefinedType(Token(SyntaxKind.ByteKeyword)), IdentifierName(nameof(Guid)))),
+                            SyntaxRecycleBin.Common.IdentifierName.Unsafe,
+                            GenericName(nameof(Unsafe.As)).AddTypeArgumentListArguments(SyntaxRecycleBin.Common.PredefinedType.Byte, SyntaxRecycleBin.Common.IdentifierName.Guid)),
                         ArgumentList().AddArguments(
                             Argument(
                                 InvocationExpression(
-                                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(MemoryMarshal)), IdentifierName(nameof(MemoryMarshal.GetReference))),
+                                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, SyntaxRecycleBin.Common.IdentifierName.MemoryMarshal, SyntaxRecycleBin.Common.IdentifierName.GetReference),
                                     ArgumentList(SingletonSeparatedList(Argument(dataLocal)))))
                             .WithRefOrOutKeyword(Token(SyntaxKind.RefKeyword))))));
 
@@ -646,7 +646,7 @@ public partial class Generator
                 BlockSyntax getBody = Block(dataDecl, returnStatement);
 
                 // static ref readonly Guid IComIID.Guid { get { ... } }
-                PropertyDeclarationSyntax guidProperty = PropertyDeclaration(IdentifierName(nameof(Guid)).WithTrailingTrivia(Space), ComIIDGuidPropertyName.Identifier)
+                PropertyDeclarationSyntax guidProperty = PropertyDeclaration(SyntaxRecycleBin.Common.IdentifierName.Guid.WithTrailingTrivia(Space), ComIIDGuidPropertyName.Identifier)
                     .WithExplicitInterfaceSpecifier(ExplicitInterfaceSpecifier(IComIIDGuidInterfaceName))
                     .AddModifiers(TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.RefKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
                     .WithAccessorList(AccessorList().AddAccessors(AccessorDeclaration(SyntaxKind.GetAccessorDeclaration, getBody).AddAttributeLists(methodImplAttr)));
@@ -811,7 +811,7 @@ public partial class Generator
         this.volatileCode.GenerateSpecialType(IComIIDGuidInterfaceName.Identifier.ValueText, delegate
         {
             // internal static abstract ref readonly Guid Guid { get; }
-            PropertyDeclarationSyntax guidProperty = PropertyDeclaration(IdentifierName(nameof(Guid)).WithTrailingTrivia(Space), ComIIDGuidPropertyName.Identifier)
+            PropertyDeclarationSyntax guidProperty = PropertyDeclaration(SyntaxRecycleBin.Common.IdentifierName.Guid.WithTrailingTrivia(Space), ComIIDGuidPropertyName.Identifier)
                 .AddModifiers(
                     TokenWithSpace(this.Visibility),
                     TokenWithSpace(SyntaxKind.StaticKeyword),

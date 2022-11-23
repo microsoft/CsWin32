@@ -149,7 +149,7 @@ public partial class Generator
                 members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
                     .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))))
                     .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(
-                        Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToInt32)))))))))
+                        Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, SyntaxRecycleBin.Common.IdentifierName.ToInt32)))))))
                     .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
                     .WithSemicolonToken(SemicolonWithLineFeed));
             }
@@ -160,7 +160,7 @@ public partial class Generator
                 members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
                     .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))))
                     .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(
-                        Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToPointer)))))))))
+                        Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, SyntaxRecycleBin.Common.IdentifierName.ToPointer)))))))
                     .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
                     .WithSemicolonToken(SemicolonWithLineFeed));
 
@@ -168,7 +168,7 @@ public partial class Generator
                 members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
                     .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(UIntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))))
                     .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(
-                        Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToPointer)))))))))
+                        Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, SyntaxRecycleBin.Common.IdentifierName.ToPointer)))))))
                     .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
                     .WithSemicolonToken(SemicolonWithLineFeed));
             }
@@ -212,7 +212,7 @@ public partial class Generator
     private IEnumerable<MemberDeclarationSyntax> CreateCommonTypeDefMembers(IdentifierNameSyntax structName, TypeSyntax fieldType, IdentifierNameSyntax fieldName)
     {
         // Add constructor
-        IdentifierNameSyntax valueParameter = IdentifierName("value");
+        IdentifierNameSyntax valueParameter = SyntaxRecycleBin.Common.IdentifierName.value;
         MemberAccessExpressionSyntax fieldAccessExpression = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), fieldName);
         yield return ConstructorDeclaration(structName.Identifier)
             .AddModifiers(TokenWithSpace(this.Visibility))
@@ -253,8 +253,8 @@ public partial class Generator
             .WithSemicolonToken(SemicolonWithLineFeed);
 
         // public static bool operator ==(HANDLE left, HANDLE right) => left.Value == right.Value;
-        IdentifierNameSyntax? leftParameter = IdentifierName("left");
-        IdentifierNameSyntax? rightParameter = IdentifierName("right");
+        IdentifierNameSyntax? leftParameter = SyntaxRecycleBin.Common.IdentifierName.left;
+        IdentifierNameSyntax? rightParameter = SyntaxRecycleBin.Common.IdentifierName.right;
         yield return OperatorDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), TokenWithNoSpace(SyntaxKind.EqualsEqualsToken))
             .WithOperatorKeyword(TokenWithSpace(SyntaxKind.OperatorKeyword))
             .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))
@@ -282,7 +282,7 @@ public partial class Generator
             .WithSemicolonToken(SemicolonWithLineFeed);
 
         // public bool Equals(HWND other) => this.Value == other.Value;
-        IdentifierNameSyntax other = IdentifierName("other");
+        IdentifierNameSyntax other = SyntaxRecycleBin.Common.IdentifierName.other;
         yield return MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Identifier(nameof(IEquatable<int>.Equals)))
             .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword))
             .AddParameterListParameters(Parameter(other.Identifier).WithType(structName.WithTrailingTrivia(TriviaList(Space))))
@@ -294,16 +294,16 @@ public partial class Generator
             .WithSemicolonToken(SemicolonWithLineFeed);
 
         // public override bool Equals(object obj) => obj is HWND other && this.Equals(other);
-        IdentifierNameSyntax objParam = IdentifierName("obj");
+        IdentifierNameSyntax objParam = SyntaxRecycleBin.Common.IdentifierName.obj;
         yield return MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Identifier(nameof(IEquatable<int>.Equals)))
             .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
             .AddParameterListParameters(Parameter(objParam.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.ObjectKeyword))))
             .WithExpressionBody(ArrowExpressionClause(
                 BinaryExpression(
                     SyntaxKind.LogicalAndExpression,
-                    IsPatternExpression(objParam, DeclarationPattern(structName, SingleVariableDesignation(Identifier("other")))),
-                    InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName(nameof(Equals))))
-                        .WithArgumentList(ArgumentList().AddArguments(Argument(IdentifierName("other")))))))
+                    IsPatternExpression(objParam, DeclarationPattern(structName, SingleVariableDesignation(SyntaxRecycleBin.Common.IdentifierName.other.Identifier))),
+                    InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), SyntaxRecycleBin.Common.IdentifierName.Equals))
+                        .WithArgumentList(ArgumentList().AddArguments(Argument(SyntaxRecycleBin.Common.IdentifierName.other))))))
             .WithSemicolonToken(SemicolonWithLineFeed);
 
         // public override int GetHashCode() => unchecked((int)this.Value); // if Value is a pointer
@@ -311,9 +311,9 @@ public partial class Generator
         ExpressionSyntax hashExpr = fieldType is PointerTypeSyntax ?
             UncheckedExpression(CastExpression(PredefinedType(TokenWithNoSpace(SyntaxKind.IntKeyword)), fieldAccessExpression)) :
             InvocationExpression(
-                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, fieldAccessExpression, IdentifierName(nameof(object.GetHashCode))),
+                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, fieldAccessExpression, SyntaxRecycleBin.Common.IdentifierName.GetHashCode),
                 ArgumentList());
-        yield return MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), Identifier(nameof(object.GetHashCode)))
+        yield return MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), SyntaxRecycleBin.Common.IdentifierName.GetHashCode.Identifier)
             .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
             .WithExpressionBody(ArrowExpressionClause(hashExpr))
             .WithSemicolonToken(SemicolonWithLineFeed);

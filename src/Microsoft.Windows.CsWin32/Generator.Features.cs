@@ -28,17 +28,17 @@ public partial class Generator
         {
             ExpressionSyntax[] uses = new[]
             {
-                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(AttributeTargets)), IdentifierName(nameof(AttributeTargets.Method))),
-                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(AttributeTargets)), IdentifierName(nameof(AttributeTargets.Property))),
-                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(AttributeTargets)), IdentifierName(nameof(AttributeTargets.Parameter))),
+                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, SyntaxRecycleBin.Common.IdentifierName.AttributeTargets, SyntaxRecycleBin.Common.IdentifierName.Method),
+                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, SyntaxRecycleBin.Common.IdentifierName.AttributeTargets, SyntaxRecycleBin.Common.IdentifierName.Property),
+                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, SyntaxRecycleBin.Common.IdentifierName.AttributeTargets, SyntaxRecycleBin.Common.IdentifierName.Parameter),
             };
             AttributeListSyntax usageAttr = AttributeList().AddAttributes(
-                Attribute(IdentifierName(nameof(AttributeUsageAttribute))).AddArgumentListArguments(
+                Attribute(SyntaxRecycleBin.Common.IdentifierName.AttributeUsageAttribute).AddArgumentListArguments(
                     AttributeArgument(CompoundExpression(SyntaxKind.BitwiseOrExpression, uses)),
-                    AttributeArgument(LiteralExpression(SyntaxKind.FalseLiteralExpression)).WithNameEquals(NameEquals(IdentifierName("AllowMultiple"))),
-                    AttributeArgument(LiteralExpression(SyntaxKind.FalseLiteralExpression)).WithNameEquals(NameEquals(IdentifierName("Inherited")))));
-            ClassDeclarationSyntax attrDecl = ClassDeclaration(Identifier("UnscopedRefAttribute"))
-                .WithBaseList(BaseList(SingletonSeparatedList<BaseTypeSyntax>(SimpleBaseType(IdentifierName("Attribute")))))
+                    AttributeArgument(LiteralExpression(SyntaxKind.FalseLiteralExpression)).WithNameEquals(NameEquals(SyntaxRecycleBin.Common.IdentifierName.AllowMultiple)),
+                    AttributeArgument(LiteralExpression(SyntaxKind.FalseLiteralExpression)).WithNameEquals(NameEquals(SyntaxRecycleBin.Common.IdentifierName.Inherited))));
+            ClassDeclarationSyntax attrDecl = ClassDeclaration(SyntaxRecycleBin.Common.IdentifierName.UnscopedRefAttribute.Identifier)
+                .WithBaseList(BaseList(SingletonSeparatedList<BaseTypeSyntax>(SimpleBaseType(SyntaxRecycleBin.Common.IdentifierName.Attribute))))
                 .AddModifiers(Token(SyntaxKind.InternalKeyword), TokenWithSpace(SyntaxKind.SealedKeyword))
                 .AddAttributeLists(usageAttr);
             NamespaceDeclarationSyntax nsDeclaration = NamespaceDeclaration(ParseName("System.Diagnostics.CodeAnalysis"))

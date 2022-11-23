@@ -264,7 +264,7 @@ public partial class Generator : IDisposable
 
         // Also generate all structs/enum types too, even if not referenced by a method,
         // since some methods use `void*` types and require structs at runtime.
-        this.RequestAllInteropTypes(cancellationToken);
+        this.GenerateAllInteropTypes(cancellationToken);
 
         this.GenerateAllConstants(cancellationToken);
 
@@ -429,6 +429,38 @@ public partial class Generator : IDisposable
             catch (GenerationFailedException ex) when (IsPlatformCompatibleException(ex))
             {
                 // Something transitively required for this field is not available for this platform, so skip this method.
+            }
+        }
+    }
+
+    /// <summary>
+    /// Generates a projection that includes all structs, interfaces, and other interop types.
+    /// </summary>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    public void GenerateAllInteropTypes(CancellationToken cancellationToken)
+    {
+        foreach (TypeDefinitionHandle typeDefinitionHandle in this.Reader.TypeDefinitions)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefinitionHandle);
+            if (typeDef.BaseType.IsNil && (typeDef.Attributes & TypeAttributes.Interface) != TypeAttributes.Interface)
+            {
+                continue;
+            }
+
+            if (this.IsCompatibleWithPlatform(typeDef.GetCustomAttributes()))
+            {
+                try
+                {
+                    this.volatileCode.GenerationTransaction(delegate
+                    {
+                        this.RequestInteropType(typeDefinitionHandle, this.DefaultContext);
+                    });
+                }
+                catch (GenerationFailedException ex) when (IsPlatformCompatibleException(ex))
+                {
+                    // Something transitively required for this type is not available for this platform, so skip this method.
+                }
             }
         }
     }
@@ -751,34 +783,6 @@ public partial class Generator : IDisposable
 
         strippedNamespace = null;
         return false;
-    }
-
-    internal void RequestAllInteropTypes(CancellationToken cancellationToken)
-    {
-        foreach (TypeDefinitionHandle typeDefinitionHandle in this.Reader.TypeDefinitions)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefinitionHandle);
-            if (typeDef.BaseType.IsNil && (typeDef.Attributes & TypeAttributes.Interface) != TypeAttributes.Interface)
-            {
-                continue;
-            }
-
-            if (this.IsCompatibleWithPlatform(typeDef.GetCustomAttributes()))
-            {
-                try
-                {
-                    this.volatileCode.GenerationTransaction(delegate
-                    {
-                        this.RequestInteropType(typeDefinitionHandle, this.DefaultContext);
-                    });
-                }
-                catch (GenerationFailedException ex) when (IsPlatformCompatibleException(ex))
-                {
-                    // Something transitively required for this type is not available for this platform, so skip this method.
-                }
-            }
-        }
     }
 
     internal void RequestInteropType(string @namespace, string name, Context context)

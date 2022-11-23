@@ -1,7 +1,16 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-[Trait("TestCategory", "FailsInCloudTest")] // these take ~4GB of memory to run.
+using System.Diagnostics;
+
+/// <summary>
+/// Tests that generate everything possible, or subsets of everything.
+/// </summary>
+/// <remarks>
+/// These tests tend to be slow, and some require 4GB of memory, and thus some cannot be run on Azure Pipelines
+/// as the test host process gets too large and gets terminated.
+/// The <see cref="Everything"/> test should be run in all its combinations manually prior to sending a pull request.
+/// </remarks>
 public class FullGenerationTests : GeneratorTestBase
 {
     public FullGenerationTests(ITestOutputHelper logger)
@@ -9,8 +18,38 @@ public class FullGenerationTests : GeneratorTestBase
     {
     }
 
+    [Trait("TestCategory", "FailsInCloudTest")] // these take ~4GB of memory to run.
     [Theory, PairwiseData]
-    public void FullGeneration(MarshalingOptions marshaling, bool useIntPtrForComOutPtr, [CombinatorialMemberData(nameof(AnyCpuArchitectures))] Platform platform)
+    public void Everything(MarshalingOptions marshaling, bool useIntPtrForComOutPtr, [CombinatorialMemberData(nameof(AnyCpuArchitectures))] Platform platform)
+    {
+        this.TestHelper(marshaling, useIntPtrForComOutPtr, platform, generator => generator.GenerateAll(CancellationToken.None));
+    }
+
+    [Theory, PairwiseData]
+    public void InteropTypes(MarshalingOptions marshaling, bool useIntPtrForComOutPtr)
+    {
+        this.TestHelper(marshaling, useIntPtrForComOutPtr, Platform.X64, generator => generator.GenerateAllInteropTypes(CancellationToken.None));
+    }
+
+    [Fact]
+    public void Constants()
+    {
+        this.TestHelper(marshaling: MarshalingOptions.FullMarshaling, useIntPtrForComOutPtr: false, Platform.X64, generator => generator.GenerateAllConstants(CancellationToken.None));
+    }
+
+    [Theory, PairwiseData]
+    public void ExternMethods(MarshalingOptions marshaling, bool useIntPtrForComOutPtr, [CombinatorialMemberData(nameof(SpecificCpuArchitectures))] Platform platform)
+    {
+        this.TestHelper(marshaling, useIntPtrForComOutPtr, platform, generator => generator.GenerateAllExternMethods(CancellationToken.None));
+    }
+
+    [Fact]
+    public void Macros()
+    {
+        this.TestHelper(marshaling: MarshalingOptions.FullMarshaling, useIntPtrForComOutPtr: false, Platform.X64, generator => generator.GenerateAllMacros(CancellationToken.None));
+    }
+
+    private void TestHelper(MarshalingOptions marshaling, bool useIntPtrForComOutPtr, Platform platform, Action<Generator> generationCommands)
     {
         var generatorOptions = new GeneratorOptions
         {
@@ -19,10 +58,43 @@ public class FullGenerationTests : GeneratorTestBase
             ComInterop = new() { UseIntPtrForComOutPointers = useIntPtrForComOutPtr },
         };
         this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(platform));
+
+        long? lastHeapSize = null;
+        Stopwatch timer = Stopwatch.StartNew();
+        LogStatus(null);
+
         this.generator = this.CreateGenerator(generatorOptions);
-        this.generator.GenerateAll(CancellationToken.None);
+        LogStatus("creating generator");
+
+        generationCommands(this.generator);
+        LogStatus("creating syntax");
+
         this.CollectGeneratedCode(this.generator);
         this.generator = null; // release memory
+        LogStatus("transferring syntax to compilation");
+
         this.AssertNoDiagnostics(logAllGeneratedCode: false);
+        LogStatus("emitting code and diagnostics");
+
+        void LogStatus(string? completedStep)
+        {
+            GC.Collect();
+            long heapSize = GC.GetGCMemoryInfo().HeapSizeBytes;
+            string result;
+            if (lastHeapSize.HasValue)
+            {
+                long diff = heapSize - lastHeapSize.Value;
+                string diffPrefix = diff >= 0 ? "+" : string.Empty;
+                result = $"{heapSize,13:n0} ({diffPrefix}{diff,13:n0})";
+            }
+            else
+            {
+                result = $"{heapSize,13:n0}";
+            }
+
+            lastHeapSize = heapSize;
+            this.logger.WriteLine($"Heap: {result}, Elapsed: {timer.Elapsed} {completedStep}");
+            timer.Restart();
+        }
     }
 }

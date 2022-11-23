@@ -149,6 +149,14 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
             CSharpSyntaxTree.ParseText("namespace Microsoft.System { }", this.parseOptions, path: "Microsoft.System.cs"),
             CSharpSyntaxTree.ParseText("namespace Windows.Win32.System { }", this.parseOptions, path: "Windows.Win32.System.cs"));
 
+        this.logger.WriteLine($"Emitted {syntaxTrees.Count:n0} syntax trees totalling {syntaxTrees.Sum(st => st.Length):n0} in size.");
+
+        this.logger.WriteLine("The largest syntax trees are:");
+        foreach (SyntaxTree st in syntaxTrees.OrderByDescending(st => st.Length).Take(5))
+        {
+            this.logger.WriteLine($"{st.Length,11:n0} {st.FilePath}");
+        }
+
         return compilation.AddSyntaxTrees(syntaxTrees);
     }
 

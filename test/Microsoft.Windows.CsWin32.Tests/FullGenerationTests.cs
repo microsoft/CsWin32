@@ -21,6 +21,7 @@ public class FullGenerationTests : GeneratorTestBase
         this.generator = this.CreateGenerator(generatorOptions);
         this.generator.GenerateAll(CancellationToken.None);
         this.CollectGeneratedCode(this.generator);
+        this.generator = null; // release memory
         this.AssertNoDiagnostics(logAllGeneratedCode: false);
     }
 }

@@ -3,7 +3,7 @@
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
 
-    <MetadataVersion>38.0.19-preview</MetadataVersion>
+    <MetadataVersion>39.0.18-preview</MetadataVersion>
     <!-- <DiaMetadataVersion>0.2.185-preview-g7e1e6a442c</DiaMetadataVersion> -->
     <ApiDocsVersion>0.1.12-alpha</ApiDocsVersion>
   </PropertyGroup>

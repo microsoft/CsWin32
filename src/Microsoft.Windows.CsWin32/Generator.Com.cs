@@ -746,11 +746,13 @@ public partial class Generator
         }
 
         const string getterPrefix = "get_";
-        const string setterPrefix = "put_";
+        const string putterPrefix = "put_";
+        const string setterPrefix = "set_";
         bool isGetter = methodName.StartsWith(getterPrefix, StringComparison.Ordinal);
+        bool isPutter = methodName.StartsWith(putterPrefix, StringComparison.Ordinal);
         bool isSetter = methodName.StartsWith(setterPrefix, StringComparison.Ordinal);
 
-        if (isGetter || isSetter)
+        if (isGetter || isPutter || isSetter)
         {
             if (!IsHresult(signature.ReturnType))
             {
@@ -778,8 +780,9 @@ public partial class Generator
                 return true;
             }
 
-            if (isSetter)
+            if (isSetter || isPutter)
             {
+                Debug.Assert(setterPrefix.Length == putterPrefix.Length, "If these lengths do not equal, our Substring math may be wrong.");
                 propertyName = SafeIdentifierName(methodName.Substring(setterPrefix.Length));
                 accessorKind = SyntaxKind.SetAccessorDeclaration;
                 return true;

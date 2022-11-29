@@ -5,7 +5,7 @@
 
     <MetadataVersion>38.0.19-preview</MetadataVersion>
     <!-- <DiaMetadataVersion>0.2.185-preview-g7e1e6a442c</DiaMetadataVersion> -->
-    <ApiDocsVersion>0.1.7-alpha</ApiDocsVersion>
+    <ApiDocsVersion>0.1.12-alpha</ApiDocsVersion>
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="coverlet.msbuild" Version="3.2.0" />

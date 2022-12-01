@@ -15,7 +15,7 @@
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.SourceGenerators.Testing.XUnit" Version="1.1.2-beta1.22512.1" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.4.0-4.final" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="3.8.0" />
-    <PackageVersion Include="Microsoft.CodeCoverage" Version="17.5.0-preview-20221109-01" />
+    <PackageVersion Include="Microsoft.CodeCoverage" Version="17.5.0-preview-20221201-02" />
     <!-- <PackageVersion Include="Microsoft.Dia.Win32Metadata" Version="0.2.185-preview-g7e1e6a442c" /> -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.4.0" />
     <PackageVersion Include="Microsoft.Win32.Registry" Version="5.0.0" />

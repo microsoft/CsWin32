@@ -77,7 +77,7 @@ public partial class Generator
             // Collect all the known invalid values for this handle.
             // If no invalid values are given (e.g. BSTR), we'll just assume 0 is invalid.
             HashSet<IntPtr> invalidHandleValues = this.GetInvalidHandleValues(((HandleTypeHandleInfo)releaseMethodParameterTypeHandleInfo).Handle);
-            IntPtr preferredInvalidValue = GetPreferredInvalidHandleValue(invalidHandleValues);
+            IntPtr preferredInvalidValue = GetPreferredInvalidHandleValue(invalidHandleValues, new IntPtr(-1));
 
             CustomAttributeHandleCollection? atts = this.GetReturnTypeCustomAttributes(releaseMethodDef);
             TypeSyntaxAndMarshaling releaseMethodReturnType = releaseMethodSignature.ReturnType.ToTypeSyntax(this.externSignatureTypeSettings, atts);
@@ -264,7 +264,7 @@ public partial class Generator
         return this.MetadataIndex.HandleTypeReleaseMethod.TryGetValue(handleStructDefHandle, out releaseMethod);
     }
 
-    private static IntPtr GetPreferredInvalidHandleValue(HashSet<IntPtr> invalidHandleValues) => invalidHandleValues.Contains(new IntPtr(-1)) ? new IntPtr(-1) : invalidHandleValues.FirstOrDefault();
+    private static IntPtr GetPreferredInvalidHandleValue(HashSet<IntPtr> invalidHandleValues, IntPtr preferredValue = default) => invalidHandleValues.Contains(preferredValue) ? preferredValue : invalidHandleValues.FirstOrDefault();
 
     private bool IsHandle(EntityHandle typeDefOrRefHandle, out string? releaseMethodName)
     {

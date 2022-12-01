@@ -12,7 +12,7 @@
     <PackageVersion Include="IsExternalInit" Version="1.0.3" />
     <PackageVersion Include="MessagePack" Version="2.2.85" />
     <PackageVersion Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="3.3.3" />
-    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.SourceGenerators.Testing.XUnit" Version="1.1.2-beta1.22512.1" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.SourceGenerators.Testing.XUnit" Version="1.1.2-beta1.22531.1" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.4.0-4.final" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="3.8.0" />
     <PackageVersion Include="Microsoft.CodeCoverage" Version="17.5.0-preview-20221109-01" />

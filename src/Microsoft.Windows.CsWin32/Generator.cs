@@ -52,6 +52,13 @@ public partial class Generator : IDisposable
         }
 
         PInvokeMacros = ((ClassDeclarationSyntax)member).Members.OfType<MethodDeclarationSyntax>().ToDictionary(m => m.Identifier.ValueText, m => m);
+
+        if (!TryFetchTemplate("ComHelpers", null, out member))
+        {
+            throw new GenerationFailedException("Missing embedded resource.");
+        }
+
+        ComHelperClass = (ClassDeclarationSyntax)member;
     }
 
     /// <summary>
@@ -79,6 +86,7 @@ public partial class Generator : IDisposable
         this.canCallCreateSpan = this.compilation?.GetTypeByMetadataName(typeof(MemoryMarshal).FullName)?.GetMembers("CreateSpan").Any() is true;
         this.canUseUnsafeAsRef = this.compilation?.GetTypeByMetadataName(typeof(Unsafe).FullName)?.GetMembers("AsRef").Any() is true;
         this.canUseUnsafeNullRef = this.compilation?.GetTypeByMetadataName(typeof(Unsafe).FullName)?.GetMembers("NullRef").Any() is true;
+        this.canUseUnmanagedCallersOnlyAttribute = this.compilation?.GetTypeByMetadataName("System.Runtime.InteropServices.UnmanagedCallersOnlyAttribute") is not null;
         this.unscopedRefAttributePredefined = this.FindTypeSymbolIfAlreadyAvailable("System.Diagnostics.CodeAnalysis.UnscopedRefAttribute") is not null;
         this.runtimeFeatureClass = (INamedTypeSymbol?)this.FindTypeSymbolIfAlreadyAvailable("System.Runtime.CompilerServices.RuntimeFeature");
         this.comIIDInterfacePredefined = this.FindTypeSymbolIfAlreadyAvailable($"{this.Namespace}.{IComIIDGuidInterfaceName}") is not null;
@@ -766,6 +774,13 @@ public partial class Generator : IDisposable
     internal static string ReplaceCommonNamespaceWithAlias(Generator? generator, string fullNamespace)
     {
         return generator is object && generator.TryStripCommonNamespace(fullNamespace, out string? stripped) ? (stripped.Length > 0 ? $"{GlobalWinmdRootNamespaceAlias}.{stripped}" : GlobalWinmdRootNamespaceAlias) : $"global::{fullNamespace}";
+    }
+
+    internal void RequestComHelpers(Context context)
+    {
+        const string specialType = "ComHelpers";
+        this.RequestInteropType("Windows.Win32.Foundation", "HRESULT", context);
+        this.volatileCode.GenerateSpecialType(specialType, () => this.volatileCode.AddSpecialType(specialType, ComHelperClass));
     }
 
     internal bool TryStripCommonNamespace(string fullNamespace, [NotNullWhen(true)] out string? strippedNamespace)

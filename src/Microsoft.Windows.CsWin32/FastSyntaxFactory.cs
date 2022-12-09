@@ -74,6 +74,8 @@ internal static class FastSyntaxFactory
 
     internal static BlockSyntax Block(params StatementSyntax[] statements) => SyntaxFactory.Block(OpenBrace, List(statements), CloseBrace);
 
+    internal static ImplicitArrayCreationExpressionSyntax ImplicitArrayCreationExpression(InitializerExpressionSyntax initializerExpression) => SyntaxFactory.ImplicitArrayCreationExpression(Token(SyntaxKind.NewKeyword), Token(SyntaxKind.OpenBracketToken), default, Token(SyntaxKind.CloseBracketToken), initializerExpression);
+
     internal static ForStatementSyntax ForStatement(VariableDeclarationSyntax? declaration, ExpressionSyntax condition, SeparatedSyntaxList<ExpressionSyntax> incrementors, StatementSyntax statement)
     {
         SyntaxToken semicolonToken = SyntaxFactory.Token(TriviaList(), SyntaxKind.SemicolonToken, TriviaList(Space));
@@ -112,7 +114,11 @@ internal static class FastSyntaxFactory
 
     internal static WhileStatementSyntax WhileStatement(ExpressionSyntax expression, StatementSyntax statement) => SyntaxFactory.WhileStatement(Token(TriviaList(), SyntaxKind.WhileKeyword, TriviaList(Space)), Token(SyntaxKind.OpenParenToken), expression, Token(TriviaList(), SyntaxKind.CloseParenToken, TriviaList(LineFeed)), statement);
 
-    internal static TryStatementSyntax TryStatement(BlockSyntax block, SyntaxList<CatchClauseSyntax> catches, FinallyClauseSyntax @finally) => SyntaxFactory.TryStatement(Token(TriviaList(), SyntaxKind.TryKeyword, TriviaList(LineFeed)), block, catches, @finally);
+    internal static TryStatementSyntax TryStatement(BlockSyntax block, SyntaxList<CatchClauseSyntax> catches, FinallyClauseSyntax? @finally) => SyntaxFactory.TryStatement(Token(TriviaList(), SyntaxKind.TryKeyword, TriviaList(LineFeed)), block, catches, @finally!);
+
+    internal static CatchClauseSyntax CatchClause(CatchDeclarationSyntax? catchDeclaration, CatchFilterClauseSyntax? filter, BlockSyntax block) => SyntaxFactory.CatchClause(TokenWithSpace(SyntaxKind.CatchKeyword), catchDeclaration, filter, block);
+
+    internal static CatchDeclarationSyntax CatchDeclaration(TypeSyntax type, SyntaxToken identifier) => SyntaxFactory.CatchDeclaration(Token(SyntaxKind.OpenParenToken), type, identifier, Token(SyntaxKind.CloseParenToken));
 
     internal static SwitchSectionSyntax SwitchSection() => SyntaxFactory.SwitchSection();
 
@@ -257,7 +263,7 @@ internal static class FastSyntaxFactory
 
     internal static MethodDeclarationSyntax MethodDeclaration(TypeSyntax returnType, SyntaxToken identifier) => SyntaxFactory.MethodDeclaration(default(SyntaxList<AttributeListSyntax>), default(SyntaxTokenList), returnType.WithTrailingTrivia(TriviaList(Space)), null, identifier, null, ParameterList(), default(SyntaxList<TypeParameterConstraintClauseSyntax>), null, null, default(SyntaxToken));
 
-    internal static MethodDeclarationSyntax MethodDeclaration(SyntaxList<AttributeListSyntax> attributeLists, SyntaxTokenList modifiers, TypeSyntax returnType, ExplicitInterfaceSpecifierSyntax explicitInterfaceSpecifier, SyntaxToken identifier, TypeParameterListSyntax typeParameterList, ParameterListSyntax parameterList, SyntaxList<TypeParameterConstraintClauseSyntax> constraintClauses, BlockSyntax body, SyntaxToken semicolonToken) => SyntaxFactory.MethodDeclaration(attributeLists, modifiers, returnType.WithTrailingTrivia(TriviaList(Space)), explicitInterfaceSpecifier, identifier, typeParameterList, parameterList, constraintClauses, body, semicolonToken);
+    internal static MethodDeclarationSyntax MethodDeclaration(SyntaxList<AttributeListSyntax> attributeLists, SyntaxTokenList modifiers, TypeSyntax returnType, ExplicitInterfaceSpecifierSyntax? explicitInterfaceSpecifier, SyntaxToken identifier, TypeParameterListSyntax? typeParameterList, ParameterListSyntax parameterList, SyntaxList<TypeParameterConstraintClauseSyntax> constraintClauses, BlockSyntax body, SyntaxToken semicolonToken) => SyntaxFactory.MethodDeclaration(attributeLists, modifiers, returnType.WithTrailingTrivia(TriviaList(Space)), explicitInterfaceSpecifier!, identifier, typeParameterList!, parameterList, constraintClauses, body, semicolonToken);
 
     internal static MemberDeclarationSyntax? ParseMemberDeclaration(string text, ParseOptions? options) => SyntaxFactory.ParseMemberDeclaration(text, options: options);
 
@@ -289,7 +295,7 @@ internal static class FastSyntaxFactory
 
     internal static ArgumentListSyntax ArgumentList(SeparatedSyntaxList<ArgumentSyntax> arguments = default) => SyntaxFactory.ArgumentList(Token(SyntaxKind.OpenParenToken), arguments, Token(SyntaxKind.CloseParenToken));
 
-    internal static AssignmentExpressionSyntax AssignmentExpression(SyntaxKind kind, ExpressionSyntax left, ExpressionSyntax right) => SyntaxFactory.AssignmentExpression(kind, left, Token(GetAssignmentExpressionOperatorTokenKind(kind)), right);
+    internal static AssignmentExpressionSyntax AssignmentExpression(SyntaxKind kind, ExpressionSyntax left, ExpressionSyntax right) => SyntaxFactory.AssignmentExpression(kind, left, Token(GetAssignmentExpressionOperatorTokenKind(kind)).WithLeadingTrivia(Space), right);
 
     internal static ArgumentSyntax Argument(ExpressionSyntax expression) => SyntaxFactory.Argument(expression);
 

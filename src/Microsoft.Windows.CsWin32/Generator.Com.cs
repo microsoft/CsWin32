@@ -6,6 +6,12 @@ namespace Microsoft.Windows.CsWin32;
 public partial class Generator
 {
     private static readonly IdentifierNameSyntax HRThrowOnFailureMethodName = IdentifierName("ThrowOnFailure");
+
+    // [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvStdcall) })]
+    private static readonly AttributeListSyntax CcwEntrypointAttributes = AttributeList().AddAttributes(Attribute(IdentifierName("UnmanagedCallersOnly")).AddArgumentListArguments(
+        AttributeArgument(ImplicitArrayCreationExpression(InitializerExpression(SyntaxKind.ArrayInitializerExpression, SingletonSeparatedList(TypeOfExpression(IdentifierName("CallConvStdcall"))))))
+            .WithNameEquals(NameEquals(IdentifierName("CallConvs")))));
+
     private readonly HashSet<string> injectedPInvokeHelperMethodsToFriendlyOverloadsExtensions = new();
 
     private static Guid DecodeGuidFromAttribute(CustomAttribute guidAttribute)
@@ -92,6 +98,14 @@ public partial class Generator
         var members = new List<MemberDeclarationSyntax>();
         var vtblMembers = new List<MemberDeclarationSyntax>();
         TypeSyntaxSettings typeSettings = this.comSignatureTypeSettings;
+        IdentifierNameSyntax pThisLocal = IdentifierName("pThis");
+        ParameterSyntax? ccwThisParameter = this.canUseUnmanagedCallersOnlyAttribute && !this.options.AllowMarshaling && originalIfaceName != "IUnknown" && originalIfaceName != "IDispatch" ? Parameter(pThisLocal.Identifier).WithType(PointerType(ifaceName).WithTrailingTrivia(Space)) : null;
+        List<QualifiedMethodDefinitionHandle> ccwMethodsToSkip = new();
+        IdentifierNameSyntax vtblParamName = IdentifierName("vtable");
+        BlockSyntax populateVTableBody = Block();
+        IdentifierNameSyntax objectLocal = IdentifierName("@object");
+        IdentifierNameSyntax hrLocal = IdentifierName("hr");
+        StatementSyntax returnSOK = ReturnStatement(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, HresultTypeSyntax, IdentifierName("S_OK")));
 
         // It is imperative that we generate methods for all base interfaces as well, ahead of any implemented by *this* interface.
         var allMethods = new List<QualifiedMethodDefinitionHandle>();
@@ -100,7 +114,15 @@ public partial class Generator
             QualifiedTypeDefinitionHandle qualifiedBaseType = baseTypes.Peek();
             baseTypes = baseTypes.Pop();
             TypeDefinition baseType = qualifiedBaseType.Generator.Reader.GetTypeDefinition(qualifiedBaseType.DefinitionHandle);
-            allMethods.AddRange(baseType.GetMethods().Select(m => new QualifiedMethodDefinitionHandle(qualifiedBaseType.Generator, m)));
+            IEnumerable<QualifiedMethodDefinitionHandle> methodsThisType = baseType.GetMethods().Select(m => new QualifiedMethodDefinitionHandle(qualifiedBaseType.Generator, m));
+            allMethods.AddRange(methodsThisType);
+
+            // We do *not* emit CCW methods for IUnknown, because those are provided by ComWrappers.
+            if (ccwThisParameter is not null &&
+                (qualifiedBaseType.Reader.StringComparer.Equals(baseType.Name, "IUnknown") || qualifiedBaseType.Reader.StringComparer.Equals(baseType.Name, "IDispatch")))
+            {
+                ccwMethodsToSkip.AddRange(methodsThisType);
+            }
         }
 
         allMethods.AddRange(typeDef.GetMethods().Select(m => new QualifiedMethodDefinitionHandle(this, m)));
@@ -121,8 +143,10 @@ public partial class Generator
             MethodSignature<TypeHandleInfo> signature = methodDefinition.Method.DecodeSignature(SignatureHandleProvider.Instance, null);
             CustomAttributeHandleCollection? returnTypeAttributes = methodDefinition.Generator.GetReturnTypeCustomAttributes(methodDefinition.Method);
             TypeSyntax returnType = signature.ReturnType.ToTypeSyntax(typeSettings, returnTypeAttributes).Type;
+            TypeSyntax returnTypePreserveSig = returnType;
 
             ParameterListSyntax parameterList = methodDefinition.Generator.CreateParameterList(methodDefinition.Method, signature, typeSettings);
+            ParameterListSyntax parameterListPreserveSig = parameterList; // preserve a copy that has no mutations.
             FunctionPointerParameterListSyntax funcPtrParameters = FunctionPointerParameterList()
                 .AddParameters(FunctionPointerParameter(PointerType(ifaceName)))
                 .AddParameters(parameterList.Parameters.Select(p => FunctionPointerParameter(p.Type!).WithModifiers(p.Modifiers)).ToArray())
@@ -143,7 +167,6 @@ public partial class Generator
             // By doing this, we make the emitted code more trimmable by not referencing the full virtual method table and its full set of types
             // when the app may only invoke a subset of the methods.
             //// ((delegate *unmanaged [Stdcall]<IPersist*,global::System.Guid* ,winmdroot.Foundation.HRESULT>)lpVtbl[3])(pThis, pClassID)
-            IdentifierNameSyntax pThisLocal = IdentifierName("pThis");
             ExpressionSyntax vtblIndexingExpression = ParenthesizedExpression(
                 CastExpression(unmanagedDelegateType, ElementAccessExpression(vtblFieldName).AddArgumentListArguments(Argument(methodOffset))));
             InvocationExpressionSyntax vtblInvocation = InvocationExpression(vtblIndexingExpression)
@@ -189,6 +212,18 @@ public partial class Generator
                                     resultLocalDeclaration,
                                     vtblInvocationStatement,
                                     returnStatement)).WithFixedKeyword(TokenWithSpace(SyntaxKind.FixedKeyword)));
+
+                        if (ccwThisParameter is not null && !ccwMethodsToSkip.Contains(methodDefHandle))
+                        {
+                            //// *inputArg = @object.Property;
+                            StatementSyntax propertyGet = ExpressionStatement(AssignmentExpression(
+                                SyntaxKind.SimpleAssignmentExpression,
+                                PrefixUnaryExpression(SyntaxKind.PointerIndirectionExpression, IdentifierName(parameterListPreserveSig.Parameters.Last().Identifier.ValueText)),
+                                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, objectLocal, propertyName)));
+                            this.TryGenerateConstantOrThrow("S_OK");
+                            AddCcwThunk(propertyGet, returnSOK);
+                        }
+
                         break;
                     case SyntaxKind.SetAccessorDeclaration:
                         // vtblInvoke(pThis, value).ThrowOnFailure();
@@ -198,6 +233,18 @@ public partial class Generator
                                 VariableDeclaration(PointerType(ifaceName)).AddVariables(
                                     VariableDeclarator(pThisLocal.Identifier).WithInitializer(EqualsValueClause(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, ThisExpression())))),
                                 vtblInvocationStatement).WithFixedKeyword(TokenWithSpace(SyntaxKind.FixedKeyword)));
+
+                        if (ccwThisParameter is not null && !ccwMethodsToSkip.Contains(methodDefHandle))
+                        {
+                            //// @object.Property = inputArg;
+                            StatementSyntax propertySet = ExpressionStatement(AssignmentExpression(
+                                SyntaxKind.SimpleAssignmentExpression,
+                                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, objectLocal, propertyName),
+                                IdentifierName(parameterListPreserveSig.Parameters.Last().Identifier.ValueText)));
+                            this.TryGenerateConstantOrThrow("S_OK");
+                            AddCcwThunk(propertySet, returnSOK);
+                        }
+
                         break;
                     default:
                         throw new NotSupportedException("Unsupported accessor kind: " + accessorKind);
@@ -291,9 +338,9 @@ public partial class Generator
                     List<AttributeListSyntax>(),
                     modifiers: TokenList(TokenWithSpace(SyntaxKind.PublicKeyword)), // always use public so struct can implement the COM interface
                     returnType.WithTrailingTrivia(TriviaList(Space)),
-                    explicitInterfaceSpecifier: null!,
+                    explicitInterfaceSpecifier: null,
                     SafeIdentifier(methodName),
-                    null!,
+                    null,
                     parameterList,
                     List<TypeParameterConstraintClauseSyntax>(),
                     body: body,
@@ -312,6 +359,87 @@ public partial class Generator
                 propertyOrMethod = methodDeclaration;
 
                 members.AddRange(methodDefinition.Generator.DeclareFriendlyOverloads(methodDefinition.Method, methodDeclaration, IdentifierName(ifaceName.Identifier.ValueText), FriendlyOverloadOf.StructMethod, helperMethodsInStruct));
+
+                if (ccwThisParameter is not null && !ccwMethodsToSkip.Contains(methodDefHandle))
+                {
+                    // Prepare the args for the thunk call. The Interface we thunk into *always* uses PreserveSig, which is super convenient for us.
+                    ArgumentListSyntax args = ArgumentList().AddArguments(parameterListPreserveSig.Parameters.Select(p => Argument(IdentifierName(p.Identifier.ValueText))).ToArray());
+
+                    // @object!.SomeMethod(args)
+                    InvocationExpressionSyntax thunkInvoke = InvocationExpression(
+                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, objectLocal, SafeIdentifierName(methodName)),
+                        args);
+
+                    StatementSyntax returnManagedMethodInvocation = returnTypePreserveSig is PredefinedTypeSyntax { Keyword.RawKind: (int)SyntaxKind.VoidKeyword }
+                        ? ExpressionStatement(thunkInvoke)
+                        : ReturnStatement(thunkInvoke);
+
+                    AddCcwThunk(returnManagedMethodInvocation);
+                }
+            }
+
+            void AddCcwThunk(params StatementSyntax[] thunkInvokeAndReturn)
+            {
+                if (ccwThisParameter is null || ccwMethodsToSkip.Contains(methodDefHandle))
+                {
+                    return;
+                }
+
+                this.RequestComHelpers(context);
+                bool hrReturnType = returnTypePreserveSig is QualifiedNameSyntax { Right.Identifier.ValueText: "HRESULT" };
+
+                //// HRESULT hr = ComHelpers.UnwrapCCW(@this, out Interface? @object);
+                LocalDeclarationStatementSyntax hrDecl = LocalDeclarationStatement(VariableDeclaration(HresultTypeSyntax).AddVariables(
+                    VariableDeclarator(hrLocal.Identifier).WithInitializer(EqualsValueClause(
+                        InvocationExpression(
+                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("ComHelpers"), IdentifierName("UnwrapCCW")),
+                            ArgumentList().AddArguments(
+                                Argument(pThisLocal),
+                                Argument(DeclarationExpression(NestedCOMInterfaceName.WithTrailingTrivia(Space), SingleVariableDesignation(objectLocal.Identifier))).WithRefKindKeyword(Token(SyntaxKind.OutKeyword))))))));
+
+                StatementSyntax ifNullReturnStatement = hrReturnType
+                    //// if (hr.Failed) return hr;
+                    ? IfStatement(
+                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, hrLocal, IdentifierName("Failed")),
+                        Block().AddStatements(ReturnStatement(hrLocal)))
+                    //// hr.ThrowOnFailure();
+                    : ExpressionStatement(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, hrLocal, HRThrowOnFailureMethodName)));
+
+                //// catch (Exception ex) { return (HRESULT)ex.HResult; }
+                IdentifierNameSyntax exLocal = IdentifierName("ex");
+                CatchClauseSyntax catchClause = CatchClause(CatchDeclaration(IdentifierName(nameof(Exception)).WithTrailingTrivia(Space), exLocal.Identifier), null, Block().AddStatements(
+                    ReturnStatement(CastExpression(HresultTypeSyntax, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, exLocal, IdentifierName(nameof(Exception.HResult)))))));
+
+                BlockSyntax tryBlock = Block().AddStatements(
+                    hrDecl,
+                    ifNullReturnStatement).AddStatements(thunkInvokeAndReturn);
+
+                BlockSyntax ccwBody = hrReturnType
+                    //// try { ... } catch { ... }
+                    ? Block().AddStatements(TryStatement(tryBlock, new SyntaxList<CatchClauseSyntax>(catchClause), null))
+                    //// { .... } // any exception is thrown back to native code.
+                    : tryBlock;
+
+                //// [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvStdcall) })]
+                //// private static HRESULT Clone(IEnumEventObject* @this, IEnumEventObject** ppInterface)
+                MethodDeclarationSyntax ccwMethod = MethodDeclaration(
+                    new SyntaxList<AttributeListSyntax>(CcwEntrypointAttributes),
+                    TokenList(TokenWithSpace(SyntaxKind.PrivateKeyword), Token(SyntaxKind.StaticKeyword)),
+                    returnTypePreserveSig,
+                    explicitInterfaceSpecifier: null,
+                    SafeIdentifier(methodName),
+                    typeParameterList: null,
+                    ParameterList().WithParameters(parameterListPreserveSig.Parameters.Insert(0, ccwThisParameter)),
+                    constraintClauses: default,
+                    ccwBody,
+                    semicolonToken: default);
+                members.Add(ccwMethod);
+
+                populateVTableBody = populateVTableBody.AddStatements(
+                    ExpressionStatement(AssignmentExpression(
+                        SyntaxKind.SimpleAssignmentExpression,
+                        MemberAccessExpression(SyntaxKind.PointerMemberAccessExpression, vtblParamName, innerMethodName),
+                        PrefixUnaryExpression(SyntaxKind.AddressOfExpression, SafeIdentifierName(methodName)))));
             }
 
             // Add documentation if we can find it.
@@ -319,11 +447,28 @@ public partial class Generator
             members.Add(propertyOrMethod);
         }
 
-        // We expose the vtbl struct, not because we expect folks to use it directly, but because some folks may use it to manually generate CCWs.
-        StructDeclarationSyntax? vtblStruct = StructDeclaration(Identifier("Vtbl"))
-            .AddMembers(vtblMembers.ToArray())
-            .AddModifiers(TokenWithSpace(this.Visibility));
-        members.Add(vtblStruct);
+        if (ccwThisParameter is not null)
+        {
+            // We expose the vtbl struct to support CCWs
+            IdentifierNameSyntax vtblStructName = IdentifierName("Vtbl");
+            StructDeclarationSyntax? vtblStruct = StructDeclaration(Identifier("Vtbl")).WithTrailingTrivia(Space)
+                .AddMembers(vtblMembers.ToArray())
+                .AddModifiers(TokenWithSpace(this.Visibility));
+            members.Add(vtblStruct);
+
+            // internal static void PopulateVTable(Vtbl* vtable)
+            MethodDeclarationSyntax populateVtblMethodDecl = MethodDeclaration(PredefinedType(Token(SyntaxKind.VoidKeyword)), Identifier("PopulateVTable"))
+                .AddModifiers(Token(this.Visibility), Token(SyntaxKind.StaticKeyword))
+                .AddParameterListParameters(Parameter(vtblParamName.Identifier).WithType(PointerType(vtblStructName).WithTrailingTrivia(Space)))
+                .WithBody(populateVTableBody);
+            members.Add(populateVtblMethodDecl);
+
+            if (populateVTableBody.Statements.Count != allMethods.Count - ccwMethodsToSkip.Count)
+            {
+                // We failed to initialize all the necessary vtbl entries.
+                throw new GenerationFailedException("Internal error while generating CCW vtbl initializer.");
+            }
+        }
 
         // private void** lpVtbl; // Vtbl* (but we avoid strong typing to enable trimming the entire vtbl struct away)
         members.Add(FieldDeclaration(VariableDeclaration(PointerType(PointerType(PredefinedType(Token(SyntaxKind.VoidKeyword))))).AddVariables(VariableDeclarator(vtblFieldName.Identifier))).AddModifiers(TokenWithSpace(SyntaxKind.PrivateKeyword)));

@@ -9,6 +9,7 @@ public partial class Generator
     private readonly bool canCallCreateSpan;
     private readonly bool canUseUnsafeAsRef;
     private readonly bool canUseUnsafeNullRef;
+    private readonly bool canUseUnmanagedCallersOnlyAttribute;
     private readonly bool unscopedRefAttributePredefined;
     private readonly INamedTypeSymbol? runtimeFeatureClass;
     private readonly bool generateSupportedOSPlatformAttributes;

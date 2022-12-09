@@ -99,7 +99,7 @@ public partial class Generator
         var vtblMembers = new List<MemberDeclarationSyntax>();
         TypeSyntaxSettings typeSettings = this.comSignatureTypeSettings;
         IdentifierNameSyntax pThisLocal = IdentifierName("pThis");
-        ParameterSyntax? ccwThisParameter = this.canUseUnmanagedCallersOnlyAttribute && !this.options.AllowMarshaling && originalIfaceName != "IUnknown" && originalIfaceName != "IDispatch" ? Parameter(pThisLocal.Identifier).WithType(PointerType(ifaceName).WithTrailingTrivia(Space)) : null;
+        ParameterSyntax? ccwThisParameter = this.canUseUnmanagedCallersOnlyAttribute && !this.options.AllowMarshaling && originalIfaceName != "IUnknown" && originalIfaceName != "IDispatch" && !this.IsNonCOMInterface(typeDef) ? Parameter(pThisLocal.Identifier).WithType(PointerType(ifaceName).WithTrailingTrivia(Space)) : null;
         List<QualifiedMethodDefinitionHandle> ccwMethodsToSkip = new();
         IdentifierNameSyntax vtblParamName = IdentifierName("vtable");
         BlockSyntax populateVTableBody = Block();

@@ -240,6 +240,19 @@ public class COMTests : GeneratorTestBase
         this.AssertNoDiagnostics();
     }
 
+    /// <summary>
+    /// A non-COM compliant interface (since it doesn't derive from IUnknown).
+    /// </summary>
+    [Fact]
+    public void IVssCreateWriterMetadata()
+    {
+        this.compilation = this.starterCompilations["net6.0"];
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = false });
+        Assert.True(this.generator.TryGenerate("IVssCreateWriterMetadata", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+    }
+
     [Fact]
     public void ComOutPtrTypedAsOutObject()
     {

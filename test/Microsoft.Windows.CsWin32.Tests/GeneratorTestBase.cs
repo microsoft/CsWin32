@@ -191,6 +191,7 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
     protected void AssertNoDiagnostics(CSharpCompilation compilation, bool logAllGeneratedCode = true)
     {
         var diagnostics = FilterDiagnostics(compilation.GetDiagnostics());
+        this.logger.WriteLine($"{diagnostics.Length} diagnostics reported.");
         this.LogDiagnostics(diagnostics);
 
         var emitDiagnostics = ImmutableArray<Diagnostic>.Empty;

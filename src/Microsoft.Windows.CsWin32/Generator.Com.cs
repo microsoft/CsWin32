@@ -447,15 +447,15 @@ public partial class Generator
             members.Add(propertyOrMethod);
         }
 
+        // We expose the vtbl struct to support CCWs.
+        IdentifierNameSyntax vtblStructName = IdentifierName("Vtbl");
+        StructDeclarationSyntax? vtblStruct = StructDeclaration(Identifier("Vtbl")).WithTrailingTrivia(Space)
+            .AddMembers(vtblMembers.ToArray())
+            .AddModifiers(TokenWithSpace(this.Visibility));
+        members.Add(vtblStruct);
+
         if (ccwThisParameter is not null)
         {
-            // We expose the vtbl struct to support CCWs
-            IdentifierNameSyntax vtblStructName = IdentifierName("Vtbl");
-            StructDeclarationSyntax? vtblStruct = StructDeclaration(Identifier("Vtbl")).WithTrailingTrivia(Space)
-                .AddMembers(vtblMembers.ToArray())
-                .AddModifiers(TokenWithSpace(this.Visibility));
-            members.Add(vtblStruct);
-
             // internal static void PopulateVTable(Vtbl* vtable)
             MethodDeclarationSyntax populateVtblMethodDecl = MethodDeclaration(PredefinedType(Token(SyntaxKind.VoidKeyword)), Identifier("PopulateVTable"))
                 .AddModifiers(Token(this.Visibility), Token(SyntaxKind.StaticKeyword))

@@ -2,6 +2,7 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 #pragma warning disable CA1812 // dead code
+#pragma warning disable CS0168 // Variable is declared but never used
 
 using Windows.Win32;
 using Windows.Win32.Foundation;
@@ -25,5 +26,12 @@ internal static unsafe class GeneratedForm
         HRESULT hr = o.GetSubscriberProperty(null, out v);
         hr = o.get_MachineName(out SysFreeStringSafeHandle sh);
         o.MachineName = bstr;
+    }
+
+    private static unsafe void IUnknownGetsVtbl()
+    {
+        // WinForms needs the v-table to be declared for these base interfaces.
+        IUnknown.Vtbl v;
+        IDispatch.Vtbl v2;
     }
 }

@@ -363,8 +363,8 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
 
         internal static class NetFramework
         {
-            internal static readonly ReferenceAssemblies Net35 = ReferenceAssemblies.NetFramework.Net35.Default.AddPackages(AdditionalLegacyPackages);
-            internal static readonly ReferenceAssemblies Net472 = ReferenceAssemblies.NetFramework.Net472.Default.AddPackages(AdditionalModernPackages);
+            internal static readonly ReferenceAssemblies Net35 = ReferenceAssemblies.NetFramework.Net35.WindowsForms.AddPackages(AdditionalLegacyPackages);
+            internal static readonly ReferenceAssemblies Net472 = ReferenceAssemblies.NetFramework.Net472.WindowsForms.AddPackages(AdditionalModernPackages);
         }
 
         internal static class Net

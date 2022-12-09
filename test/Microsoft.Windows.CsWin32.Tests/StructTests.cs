@@ -34,6 +34,17 @@ public class StructTests : GeneratorTestBase
         Assert.True(structDecl.Modifiers.Any(SyntaxKind.PartialKeyword));
     }
 
+    [Theory]
+    [MemberData(nameof(TFMData))]
+    public void PointReferencingStruct(string tfm)
+    {
+        this.compilation = this.starterCompilations[tfm];
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate("INPUTCONTEXT", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+    }
+
     [Fact]
     public void CollidingStructNotGenerated()
     {

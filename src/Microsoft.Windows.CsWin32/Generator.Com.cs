@@ -456,9 +456,10 @@ public partial class Generator
 
         if (ccwThisParameter is not null)
         {
-            // internal static void PopulateVTable(Vtbl* vtable)
+            // PopulateVTable must be public in order to (implicitly) implement an interface that WinForms declares.
+            // public static void PopulateVTable(Vtbl* vtable)
             MethodDeclarationSyntax populateVtblMethodDecl = MethodDeclaration(PredefinedType(Token(SyntaxKind.VoidKeyword)), Identifier("PopulateVTable"))
-                .AddModifiers(Token(this.Visibility), Token(SyntaxKind.StaticKeyword))
+                .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword))
                 .AddParameterListParameters(Parameter(vtblParamName.Identifier).WithType(PointerType(vtblStructName).WithTrailingTrivia(Space)))
                 .WithBody(populateVTableBody);
             members.Add(populateVtblMethodDecl);

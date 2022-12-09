@@ -103,8 +103,8 @@ public partial class Generator
         List<QualifiedMethodDefinitionHandle> ccwMethodsToSkip = new();
         IdentifierNameSyntax vtblParamName = IdentifierName("vtable");
         BlockSyntax populateVTableBody = Block();
-        IdentifierNameSyntax objectLocal = IdentifierName("@object");
-        IdentifierNameSyntax hrLocal = IdentifierName("hr");
+        IdentifierNameSyntax objectLocal = IdentifierName("__object");
+        IdentifierNameSyntax hrLocal = IdentifierName("__hr");
         StatementSyntax returnSOK = ReturnStatement(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, HresultTypeSyntax, IdentifierName("S_OK")));
 
         // It is imperative that we generate methods for all base interfaces as well, ahead of any implemented by *this* interface.

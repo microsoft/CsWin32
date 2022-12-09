@@ -3,6 +3,7 @@
 
 public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
 {
+    protected const string DefaultTFM = "netstandard2.0";
     protected static readonly GeneratorOptions DefaultTestGeneratorOptions = new GeneratorOptions { EmitSingleFile = true };
     protected static readonly string FileSeparator = new string('=', 140);
     protected static readonly string MetadataPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "Windows.Win32.winmd");
@@ -44,12 +45,14 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
             new object[] { "net6.0" },
         };
 
-    public static IEnumerable<object[]> TFMDataNoNetFx35 =>
-        new object[][]
+    public static IEnumerable<object[]> TFMDataNoNetFx35MemberData => TFMDataNoNetFx35.Select(tfm => new object[] { tfm }).ToArray();
+
+    public static string[] TFMDataNoNetFx35 =>
+        new string[]
         {
-            new object[] { "net472" },
-            new object[] { "netstandard2.0" },
-            new object[] { "net6.0" },
+            "net472",
+            "netstandard2.0",
+            "net6.0",
         };
 
     public static Platform[] SpecificCpuArchitectures =>
@@ -105,7 +108,7 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
             }
         }
 
-        this.compilation = this.starterCompilations["netstandard2.0"];
+        this.compilation = this.starterCompilations[DefaultTFM];
     }
 
     public Task DisposeAsync() => Task.CompletedTask;

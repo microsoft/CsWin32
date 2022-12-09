@@ -119,7 +119,7 @@ public partial class Generator
 
             // We do *not* emit CCW methods for IUnknown, because those are provided by ComWrappers.
             if (ccwThisParameter is not null &&
-                (qualifiedBaseType.Reader.StringComparer.Equals(baseType.Name, "IUnknown") || qualifiedBaseType.Reader.StringComparer.Equals(baseType.Name, "IDispatch")))
+                (qualifiedBaseType.Reader.StringComparer.Equals(baseType.Name, "IUnknown") || qualifiedBaseType.Reader.StringComparer.Equals(baseType.Name, "IDispatch") || qualifiedBaseType.Reader.StringComparer.Equals(baseType.Name, "IInspectable")))
             {
                 ccwMethodsToSkip.AddRange(methodsThisType);
             }

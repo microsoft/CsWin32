@@ -253,6 +253,19 @@ public class COMTests : GeneratorTestBase
         this.AssertNoDiagnostics();
     }
 
+    /// <summary>
+    /// An IInspectable-derived interface.
+    /// </summary>
+    [Fact]
+    public void IProtectionPolicyManagerInterop3()
+    {
+        this.compilation = this.starterCompilations["net6.0"];
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = false });
+        Assert.True(this.generator.TryGenerate("IProtectionPolicyManagerInterop3", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+    }
+
     [Fact]
     public void ComOutPtrTypedAsOutObject()
     {

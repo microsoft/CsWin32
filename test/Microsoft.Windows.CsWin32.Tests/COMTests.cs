@@ -231,6 +231,16 @@ public class COMTests : GeneratorTestBase
     }
 
     [Fact]
+    public void MethodWithHRParameter()
+    {
+        this.compilation = this.starterCompilations["net6.0"];
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = false });
+        Assert.True(this.generator.TryGenerate("IFileOpenDialog", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+    }
+
+    [Fact]
     public void ComOutPtrTypedAsOutObject()
     {
         const string methodName = "CoCreateInstance";

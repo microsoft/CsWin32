@@ -103,8 +103,8 @@ public partial class Generator
         List<QualifiedMethodDefinitionHandle> ccwMethodsToSkip = new();
         IdentifierNameSyntax vtblParamName = IdentifierName("vtable");
         BlockSyntax populateVTableBody = Block();
-        IdentifierNameSyntax objectLocal = IdentifierName("@object");
-        IdentifierNameSyntax hrLocal = IdentifierName("hr");
+        IdentifierNameSyntax objectLocal = IdentifierName("__object");
+        IdentifierNameSyntax hrLocal = IdentifierName("__hr");
         StatementSyntax returnSOK = ReturnStatement(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, HresultTypeSyntax, IdentifierName("S_OK")));
 
         // It is imperative that we generate methods for all base interfaces as well, ahead of any implemented by *this* interface.
@@ -456,9 +456,10 @@ public partial class Generator
 
         if (ccwThisParameter is not null)
         {
-            // internal static void PopulateVTable(Vtbl* vtable)
+            // PopulateVTable must be public in order to (implicitly) implement an interface that WinForms declares.
+            // public static void PopulateVTable(Vtbl* vtable)
             MethodDeclarationSyntax populateVtblMethodDecl = MethodDeclaration(PredefinedType(Token(SyntaxKind.VoidKeyword)), Identifier("PopulateVTable"))
-                .AddModifiers(Token(this.Visibility), Token(SyntaxKind.StaticKeyword))
+                .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword))
                 .AddParameterListParameters(Parameter(vtblParamName.Identifier).WithType(PointerType(vtblStructName).WithTrailingTrivia(Space)))
                 .WithBody(populateVTableBody);
             members.Add(populateVtblMethodDecl);

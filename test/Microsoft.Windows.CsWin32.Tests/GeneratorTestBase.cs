@@ -314,7 +314,7 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
 
     protected Generator CreateGenerator(string path, GeneratorOptions? options = null, CSharpCompilation? compilation = null, bool includeDocs = false) => new Generator(path, includeDocs ? Docs.Get(ApiDocsPath) : null, options ?? DefaultTestGeneratorOptions, compilation ?? this.compilation, this.parseOptions);
 
-    private static ImmutableArray<Diagnostic> FilterDiagnostics(ImmutableArray<Diagnostic> diagnostics) => diagnostics.Where(d => d.Severity > DiagnosticSeverity.Hidden).ToImmutableArray();
+    private static ImmutableArray<Diagnostic> FilterDiagnostics(ImmutableArray<Diagnostic> diagnostics) => diagnostics.Where(d => d.Severity > DiagnosticSeverity.Hidden && d.Descriptor.Id != "CS1701").ToImmutableArray();
 
     private static void AssertConsistentLineEndings(Compilation compilation)
     {

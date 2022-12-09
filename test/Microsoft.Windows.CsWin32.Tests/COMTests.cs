@@ -266,6 +266,19 @@ public class COMTests : GeneratorTestBase
         this.AssertNoDiagnostics();
     }
 
+    /// <summary>
+    /// An interface with managed types.
+    /// </summary>
+    [Fact]
+    public void ICompositionCapabilitiesInteropFactory()
+    {
+        this.compilation = this.starterCompilations["net6.0"];
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = false });
+        Assert.True(this.generator.TryGenerate("ICompositionCapabilitiesInteropFactory", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+    }
+
     [Fact]
     public void ComOutPtrTypedAsOutObject()
     {

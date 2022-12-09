@@ -101,6 +101,7 @@ public partial class Generator
         IdentifierNameSyntax pThisLocal = IdentifierName("pThis");
         ParameterSyntax? ccwThisParameter = this.canUseUnmanagedCallersOnlyAttribute && !this.options.AllowMarshaling && originalIfaceName != "IUnknown" && originalIfaceName != "IDispatch" && !this.IsNonCOMInterface(typeDef) ? Parameter(pThisLocal.Identifier).WithType(PointerType(ifaceName).WithTrailingTrivia(Space)) : null;
         List<QualifiedMethodDefinitionHandle> ccwMethodsToSkip = new();
+        List<MemberDeclarationSyntax> ccwEntrypointMethods = new();
         IdentifierNameSyntax vtblParamName = IdentifierName("vtable");
         BlockSyntax populateVTableBody = Block();
         IdentifierNameSyntax objectLocal = IdentifierName("__object");
@@ -147,6 +148,7 @@ public partial class Generator
 
             ParameterListSyntax parameterList = methodDefinition.Generator.CreateParameterList(methodDefinition.Method, signature, typeSettings);
             ParameterListSyntax parameterListPreserveSig = parameterList; // preserve a copy that has no mutations.
+            bool requiresMarshaling = parameterList.Parameters.Any(p => p.AttributeLists.Count > 0 || p.Modifiers.Any(SyntaxKind.RefKeyword) || p.Modifiers.Any(SyntaxKind.OutKeyword) || p.Modifiers.Any(SyntaxKind.InKeyword));
             FunctionPointerParameterListSyntax funcPtrParameters = FunctionPointerParameterList()
                 .AddParameters(FunctionPointerParameter(PointerType(ifaceName)))
                 .AddParameters(parameterList.Parameters.Select(p => FunctionPointerParameter(p.Type!).WithModifiers(p.Modifiers)).ToArray())
@@ -385,6 +387,20 @@ public partial class Generator
                     return;
                 }
 
+                if (requiresMarshaling)
+                {
+                    // Oops. This method requires marshaling, which isn't supported in a native-callable function.
+                    // Abandon all efforts to add CCW support to this interface.
+                    ccwThisParameter = null;
+                    foreach (MethodDeclarationSyntax ccwEntrypointMethod in ccwEntrypointMethods)
+                    {
+                        members.Remove(ccwEntrypointMethod);
+                    }
+
+                    ccwEntrypointMethods.Clear();
+                    return;
+                }
+
                 this.RequestComHelpers(context);
                 bool hrReturnType = returnTypePreserveSig is QualifiedNameSyntax { Right.Identifier.ValueText: "HRESULT" };
 
@@ -434,6 +450,7 @@ public partial class Generator
                     ccwBody,
                     semicolonToken: default);
                 members.Add(ccwMethod);
+                ccwEntrypointMethods.Add(ccwMethod);
 
                 populateVTableBody = populateVTableBody.AddStatements(
                     ExpressionStatement(AssignmentExpression(

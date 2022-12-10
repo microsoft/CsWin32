@@ -240,41 +240,16 @@ public class COMTests : GeneratorTestBase
         this.AssertNoDiagnostics();
     }
 
-    /// <summary>
-    /// A non-COM compliant interface (since it doesn't derive from IUnknown).
-    /// </summary>
-    [Fact]
-    public void IVssCreateWriterMetadata()
+    [Theory]
+    [InlineData("IVssCreateWriterMetadata")] // A non-COM compliant interface (since it doesn't derive from IUnknown).
+    [InlineData("IProtectionPolicyManagerInterop3")] // An IInspectable-derived interface.
+    [InlineData("ICompositionCapabilitiesInteropFactory")] // An interface with managed types.
+    [InlineData("IPicture")] // An interface with properties that cannot be represented as properties.
+    public void InterestingComInterfaces(string api)
     {
         this.compilation = this.starterCompilations["net6.0"];
         this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = false });
-        Assert.True(this.generator.TryGenerate("IVssCreateWriterMetadata", CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
-    }
-
-    /// <summary>
-    /// An IInspectable-derived interface.
-    /// </summary>
-    [Fact]
-    public void IProtectionPolicyManagerInterop3()
-    {
-        this.compilation = this.starterCompilations["net6.0"];
-        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = false });
-        Assert.True(this.generator.TryGenerate("IProtectionPolicyManagerInterop3", CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
-    }
-
-    /// <summary>
-    /// An interface with managed types.
-    /// </summary>
-    [Fact]
-    public void ICompositionCapabilitiesInteropFactory()
-    {
-        this.compilation = this.starterCompilations["net6.0"];
-        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = false });
-        Assert.True(this.generator.TryGenerate("ICompositionCapabilitiesInteropFactory", CancellationToken.None));
+        Assert.True(this.generator.TryGenerate(api, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
     }

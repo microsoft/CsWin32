@@ -133,6 +133,8 @@ public partial class Generator
             allMethods.Select(qh => qh.Reader.GetMethodDefinition(qh.MethodHandle)),
             originalIfaceName,
             allowNonConsecutiveAccessors: true);
+        ISet<string>? ifaceDeclaredProperties = ccwThisParameter is not null ? this.GetDeclarableProperties(allMethods.Select(qh => qh.Reader.GetMethodDefinition(qh.MethodHandle)), originalIfaceName, allowNonConsecutiveAccessors: false) : null;
+
         foreach (QualifiedMethodDefinitionHandle methodDefHandle in allMethods)
         {
             methodCounter++;
@@ -176,7 +178,7 @@ public partial class Generator
                     .AddArguments(Argument(pThisLocal))
                     .AddArguments(parameterList.Parameters.Select(p => Argument(IdentifierName(p.Identifier.ValueText)).WithRefKindKeyword(p.Modifiers.Count > 0 ? p.Modifiers[0] : default)).ToArray())));
 
-            MemberDeclarationSyntax propertyOrMethod;
+            MemberDeclarationSyntax? propertyOrMethod;
             MethodDeclarationSyntax? methodDeclaration = null;
 
             // We can declare this method as a property accessor if it represents a property.
@@ -214,18 +216,6 @@ public partial class Generator
                                     resultLocalDeclaration,
                                     vtblInvocationStatement,
                                     returnStatement)).WithFixedKeyword(TokenWithSpace(SyntaxKind.FixedKeyword)));
-
-                        if (ccwThisParameter is not null && !ccwMethodsToSkip.Contains(methodDefHandle))
-                        {
-                            //// *inputArg = @object.Property;
-                            StatementSyntax propertyGet = ExpressionStatement(AssignmentExpression(
-                                SyntaxKind.SimpleAssignmentExpression,
-                                PrefixUnaryExpression(SyntaxKind.PointerIndirectionExpression, IdentifierName(parameterListPreserveSig.Parameters.Last().Identifier.ValueText)),
-                                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, objectLocal, propertyName)));
-                            this.TryGenerateConstantOrThrow("S_OK");
-                            AddCcwThunk(propertyGet, returnSOK);
-                        }
-
                         break;
                     case SyntaxKind.SetAccessorDeclaration:
                         // vtblInvoke(pThis, value).ThrowOnFailure();
@@ -235,18 +225,6 @@ public partial class Generator
                                 VariableDeclaration(PointerType(ifaceName)).AddVariables(
                                     VariableDeclarator(pThisLocal.Identifier).WithInitializer(EqualsValueClause(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, ThisExpression())))),
                                 vtblInvocationStatement).WithFixedKeyword(TokenWithSpace(SyntaxKind.FixedKeyword)));
-
-                        if (ccwThisParameter is not null && !ccwMethodsToSkip.Contains(methodDefHandle))
-                        {
-                            //// @object.Property = inputArg;
-                            StatementSyntax propertySet = ExpressionStatement(AssignmentExpression(
-                                SyntaxKind.SimpleAssignmentExpression,
-                                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, objectLocal, propertyName),
-                                IdentifierName(parameterListPreserveSig.Parameters.Last().Identifier.ValueText)));
-                            this.TryGenerateConstantOrThrow("S_OK");
-                            AddCcwThunk(propertySet, returnSOK);
-                        }
-
                         break;
                     default:
                         throw new NotSupportedException("Unsupported accessor kind: " + accessorKind);
@@ -260,7 +238,7 @@ public partial class Generator
                     // Add the accessor to the existing property declaration.
                     PropertyDeclarationSyntax priorDeclaration = (PropertyDeclarationSyntax)members[priorPropertyDeclarationIndex];
                     members[priorPropertyDeclarationIndex] = priorDeclaration.WithAccessorList(priorDeclaration.AccessorList!.AddAccessors(accessor));
-                    continue;
+                    propertyOrMethod = null;
                 }
                 else
                 {
@@ -361,8 +339,38 @@ public partial class Generator
                 propertyOrMethod = methodDeclaration;
 
                 members.AddRange(methodDefinition.Generator.DeclareFriendlyOverloads(methodDefinition.Method, methodDeclaration, IdentifierName(ifaceName.Identifier.ValueText), FriendlyOverloadOf.StructMethod, helperMethodsInStruct));
+            }
 
-                if (ccwThisParameter is not null && !ccwMethodsToSkip.Contains(methodDefHandle))
+            if (ccwThisParameter is not null && !ccwMethodsToSkip.Contains(methodDefHandle))
+            {
+                if (this.TryGetPropertyAccessorInfo(methodDefinition.Method, originalIfaceName, out propertyName, out accessorKind, out propertyType) &&
+                    ifaceDeclaredProperties!.Contains(propertyName.Identifier.ValueText))
+                {
+                    switch (accessorKind)
+                    {
+                        case SyntaxKind.GetAccessorDeclaration:
+                            //// *inputArg = @object.Property;
+                            StatementSyntax propertyGet = ExpressionStatement(AssignmentExpression(
+                                SyntaxKind.SimpleAssignmentExpression,
+                                PrefixUnaryExpression(SyntaxKind.PointerIndirectionExpression, IdentifierName(parameterListPreserveSig.Parameters.Last().Identifier.ValueText)),
+                                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, objectLocal, propertyName)));
+                            this.TryGenerateConstantOrThrow("S_OK");
+                            AddCcwThunk(propertyGet, returnSOK);
+                            break;
+                        case SyntaxKind.SetAccessorDeclaration:
+                            //// @object.Property = inputArg;
+                            StatementSyntax propertySet = ExpressionStatement(AssignmentExpression(
+                                SyntaxKind.SimpleAssignmentExpression,
+                                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, objectLocal, propertyName),
+                                IdentifierName(parameterListPreserveSig.Parameters.Last().Identifier.ValueText)));
+                            this.TryGenerateConstantOrThrow("S_OK");
+                            AddCcwThunk(propertySet, returnSOK);
+                            break;
+                        default:
+                            throw new NotSupportedException("Unsupported accessor kind: " + accessorKind);
+                    }
+                }
+                else
                 {
                     // Prepare the args for the thunk call. The Interface we thunk into *always* uses PreserveSig, which is super convenient for us.
                     ArgumentListSyntax args = ArgumentList().AddArguments(parameterListPreserveSig.Parameters.Select(p => Argument(IdentifierName(p.Identifier.ValueText))).ToArray());
@@ -459,9 +467,12 @@ public partial class Generator
                         PrefixUnaryExpression(SyntaxKind.AddressOfExpression, SafeIdentifierName(methodName)))));
             }
 
-            // Add documentation if we can find it.
-            propertyOrMethod = this.AddApiDocumentation($"{ifaceName}.{methodName}", propertyOrMethod);
-            members.Add(propertyOrMethod);
+            if (propertyOrMethod is not null)
+            {
+                // Add documentation if we can find it.
+                propertyOrMethod = this.AddApiDocumentation($"{ifaceName}.{methodName}", propertyOrMethod);
+                members.Add(propertyOrMethod);
+            }
         }
 
         // We expose the vtbl struct to support CCWs.

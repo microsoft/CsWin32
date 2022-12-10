@@ -29,6 +29,7 @@ public class FullGenerationTests : GeneratorTestBase
         this.TestHelper(marshaling, useIntPtrForComOutPtr, platform, tfm, generator => generator.GenerateAll(CancellationToken.None));
     }
 
+    [Trait("TestCategory", "FailsInCloudTest")] // these take ~4GB of memory to run.
     [Theory, PairwiseData]
     public void InteropTypes(
         MarshalingOptions marshaling,

@@ -20,36 +20,47 @@ public class FullGenerationTests : GeneratorTestBase
 
     [Trait("TestCategory", "FailsInCloudTest")] // these take ~4GB of memory to run.
     [Theory, PairwiseData]
-    public void Everything(MarshalingOptions marshaling, bool useIntPtrForComOutPtr, [CombinatorialMemberData(nameof(AnyCpuArchitectures))] Platform platform)
+    public void Everything(
+        MarshalingOptions marshaling,
+        bool useIntPtrForComOutPtr,
+        [CombinatorialMemberData(nameof(AnyCpuArchitectures))] Platform platform,
+        [CombinatorialMemberData(nameof(TFMDataNoNetFx35))] string tfm)
     {
-        this.TestHelper(marshaling, useIntPtrForComOutPtr, platform, generator => generator.GenerateAll(CancellationToken.None));
+        this.TestHelper(marshaling, useIntPtrForComOutPtr, platform, tfm, generator => generator.GenerateAll(CancellationToken.None));
     }
 
     [Theory, PairwiseData]
-    public void InteropTypes(MarshalingOptions marshaling, bool useIntPtrForComOutPtr)
+    public void InteropTypes(
+        MarshalingOptions marshaling,
+        bool useIntPtrForComOutPtr,
+        [CombinatorialMemberData(nameof(TFMDataNoNetFx35))] string tfm)
     {
-        this.TestHelper(marshaling, useIntPtrForComOutPtr, Platform.X64, generator => generator.GenerateAllInteropTypes(CancellationToken.None));
+        this.TestHelper(marshaling, useIntPtrForComOutPtr, Platform.X64, tfm, generator => generator.GenerateAllInteropTypes(CancellationToken.None));
     }
 
     [Fact]
     public void Constants()
     {
-        this.TestHelper(marshaling: MarshalingOptions.FullMarshaling, useIntPtrForComOutPtr: false, Platform.X64, generator => generator.GenerateAllConstants(CancellationToken.None));
+        this.TestHelper(marshaling: MarshalingOptions.FullMarshaling, useIntPtrForComOutPtr: false, Platform.X64, DefaultTFM, generator => generator.GenerateAllConstants(CancellationToken.None));
     }
 
     [Theory, PairwiseData]
-    public void ExternMethods(MarshalingOptions marshaling, bool useIntPtrForComOutPtr, [CombinatorialMemberData(nameof(SpecificCpuArchitectures))] Platform platform)
+    public void ExternMethods(
+        MarshalingOptions marshaling,
+        bool useIntPtrForComOutPtr,
+        [CombinatorialMemberData(nameof(SpecificCpuArchitectures))] Platform platform,
+        [CombinatorialMemberData(nameof(TFMDataNoNetFx35))] string tfm)
     {
-        this.TestHelper(marshaling, useIntPtrForComOutPtr, platform, generator => generator.GenerateAllExternMethods(CancellationToken.None));
+        this.TestHelper(marshaling, useIntPtrForComOutPtr, platform, tfm, generator => generator.GenerateAllExternMethods(CancellationToken.None));
     }
 
     [Fact]
     public void Macros()
     {
-        this.TestHelper(marshaling: MarshalingOptions.FullMarshaling, useIntPtrForComOutPtr: false, Platform.X64, generator => generator.GenerateAllMacros(CancellationToken.None));
+        this.TestHelper(marshaling: MarshalingOptions.FullMarshaling, useIntPtrForComOutPtr: false, Platform.X64, DefaultTFM, generator => generator.GenerateAllMacros(CancellationToken.None));
     }
 
-    private void TestHelper(MarshalingOptions marshaling, bool useIntPtrForComOutPtr, Platform platform, Action<Generator> generationCommands)
+    private void TestHelper(MarshalingOptions marshaling, bool useIntPtrForComOutPtr, Platform platform, string targetFramework, Action<Generator> generationCommands)
     {
         var generatorOptions = new GeneratorOptions
         {
@@ -57,6 +68,7 @@ public class FullGenerationTests : GeneratorTestBase
             UseSafeHandles = marshaling == MarshalingOptions.FullMarshaling,
             ComInterop = new() { UseIntPtrForComOutPointers = useIntPtrForComOutPtr },
         };
+        this.compilation = this.starterCompilations[targetFramework];
         this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(platform));
 
         long? lastHeapSize = null;

@@ -240,6 +240,20 @@ public class COMTests : GeneratorTestBase
         this.AssertNoDiagnostics();
     }
 
+    [Theory]
+    [InlineData("IVssCreateWriterMetadata")] // A non-COM compliant interface (since it doesn't derive from IUnknown).
+    [InlineData("IProtectionPolicyManagerInterop3")] // An IInspectable-derived interface.
+    [InlineData("ICompositionCapabilitiesInteropFactory")] // An interface with managed types.
+    [InlineData("IPicture")] // An interface with properties that cannot be represented as properties.
+    public void InterestingComInterfaces(string api)
+    {
+        this.compilation = this.starterCompilations["net6.0"];
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = false });
+        Assert.True(this.generator.TryGenerate(api, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+    }
+
     [Fact]
     public void ComOutPtrTypedAsOutObject()
     {

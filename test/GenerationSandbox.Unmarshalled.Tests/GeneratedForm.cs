@@ -28,6 +28,14 @@ internal static unsafe class GeneratedForm
         o.MachineName = bstr;
     }
 
+#if NET5_0_OR_GREATER
+    private static unsafe void IStream_GetsCCW()
+    {
+        IStream.Vtbl vtbl;
+        IStream.PopulateVTable(&vtbl);
+    }
+#endif
+
     private static unsafe void IUnknownGetsVtbl()
     {
         // WinForms needs the v-table to be declared for these base interfaces.

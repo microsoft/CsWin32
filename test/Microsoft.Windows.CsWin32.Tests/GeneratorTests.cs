@@ -975,7 +975,7 @@ class Program
     }
 
     [Theory]
-    [MemberData(nameof(TFMDataNoNetFx35))]
+    [MemberData(nameof(TFMDataNoNetFx35MemberData))]
     public void MiniDumpWriteDump_AllOptionalPointerParametersAreOptional(string tfm)
     {
         // We split on TFMs because the generated code is slightly different depending on TFM.

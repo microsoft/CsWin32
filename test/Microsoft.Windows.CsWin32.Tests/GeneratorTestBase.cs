@@ -3,6 +3,7 @@
 
 public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
 {
+    protected const string DefaultTFM = "netstandard2.0";
     protected static readonly GeneratorOptions DefaultTestGeneratorOptions = new GeneratorOptions { EmitSingleFile = true };
     protected static readonly string FileSeparator = new string('=', 140);
     protected static readonly string MetadataPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "Windows.Win32.winmd");
@@ -44,12 +45,14 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
             new object[] { "net6.0" },
         };
 
-    public static IEnumerable<object[]> TFMDataNoNetFx35 =>
-        new object[][]
+    public static IEnumerable<object[]> TFMDataNoNetFx35MemberData => TFMDataNoNetFx35.Select(tfm => new object[] { tfm }).ToArray();
+
+    public static string[] TFMDataNoNetFx35 =>
+        new string[]
         {
-            new object[] { "net472" },
-            new object[] { "netstandard2.0" },
-            new object[] { "net6.0" },
+            "net472",
+            "netstandard2.0",
+            "net6.0",
         };
 
     public static Platform[] SpecificCpuArchitectures =>
@@ -105,7 +108,7 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
             }
         }
 
-        this.compilation = this.starterCompilations["netstandard2.0"];
+        this.compilation = this.starterCompilations[DefaultTFM];
     }
 
     public Task DisposeAsync() => Task.CompletedTask;
@@ -191,6 +194,7 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
     protected void AssertNoDiagnostics(CSharpCompilation compilation, bool logAllGeneratedCode = true)
     {
         var diagnostics = FilterDiagnostics(compilation.GetDiagnostics());
+        this.logger.WriteLine($"{diagnostics.Length} diagnostics reported.");
         this.LogDiagnostics(diagnostics);
 
         var emitDiagnostics = ImmutableArray<Diagnostic>.Empty;
@@ -313,7 +317,7 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
 
     protected Generator CreateGenerator(string path, GeneratorOptions? options = null, CSharpCompilation? compilation = null, bool includeDocs = false) => new Generator(path, includeDocs ? Docs.Get(ApiDocsPath) : null, options ?? DefaultTestGeneratorOptions, compilation ?? this.compilation, this.parseOptions);
 
-    private static ImmutableArray<Diagnostic> FilterDiagnostics(ImmutableArray<Diagnostic> diagnostics) => diagnostics.Where(d => d.Severity > DiagnosticSeverity.Hidden).ToImmutableArray();
+    private static ImmutableArray<Diagnostic> FilterDiagnostics(ImmutableArray<Diagnostic> diagnostics) => diagnostics.Where(d => d.Severity > DiagnosticSeverity.Hidden && d.Descriptor.Id != "CS1701").ToImmutableArray();
 
     private static void AssertConsistentLineEndings(Compilation compilation)
     {
@@ -363,8 +367,8 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
 
         internal static class NetFramework
         {
-            internal static readonly ReferenceAssemblies Net35 = ReferenceAssemblies.NetFramework.Net35.Default.AddPackages(AdditionalLegacyPackages);
-            internal static readonly ReferenceAssemblies Net472 = ReferenceAssemblies.NetFramework.Net472.Default.AddPackages(AdditionalModernPackages);
+            internal static readonly ReferenceAssemblies Net35 = ReferenceAssemblies.NetFramework.Net35.WindowsForms.AddPackages(AdditionalLegacyPackages);
+            internal static readonly ReferenceAssemblies Net472 = ReferenceAssemblies.NetFramework.Net472.WindowsForms.AddPackages(AdditionalModernPackages);
         }
 
         internal static class Net

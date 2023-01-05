@@ -45,7 +45,7 @@ internal static unsafe class GeneratedForm
 
     private static void RegKeyHandle()
     {
-        WIN32_ERROR status = PInvoke.RegLoadAppKey(string.Empty, out SafeRegistryHandle handle, 0, 0, 0);
+        WIN32_ERROR status = PInvoke.RegLoadAppKey(string.Empty, out SafeRegistryHandle handle, 0, 0);
     }
 
     private static void PreserveSigBasedOnMetadata()

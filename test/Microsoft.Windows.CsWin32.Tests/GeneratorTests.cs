@@ -152,6 +152,8 @@ public class GeneratorTests : GeneratorTestBase
             "PZZWSTR",
             "PCZZSTR",
             "PCZZWSTR",
+            "LoadLibraryEx", // method with a reserved parameter
+            "IEnumNetCfgComponent", // interface with a method containing an `[Reserved] out` parameter (bonkers, I know).
             "IEventSubscription",
             "IRealTimeStylusSynchronization", // uses the `lock` C# keyword.
             "IHTMLInputElement", // has a field named `checked`, a C# keyword.

@@ -55,6 +55,7 @@ public partial class Generator
         MethodSignature<TypeHandleInfo> originalSignature = methodDefinition.DecodeSignature(SignatureHandleProvider.Instance, null);
         var parameters = externMethodDeclaration.ParameterList.Parameters.Select(StripAttributes).ToList();
         var lengthParamUsedBy = new Dictionary<int, int>();
+        var parametersToRemove = new List<int>();
         var arguments = externMethodDeclaration.ParameterList.Parameters.Select(p => Argument(IdentifierName(p.Identifier.Text)).WithRefKindKeyword(p.Modifiers.FirstOrDefault(p => p.Kind() is SyntaxKind.RefKeyword or SyntaxKind.OutKeyword or SyntaxKind.InKeyword))).ToList();
         TypeSyntax? externMethodReturnType = externMethodDeclaration.ReturnType.WithoutLeadingTrivia();
         var fixedBlocks = new List<VariableDeclarationSyntax>();
@@ -72,6 +73,8 @@ public partial class Generator
             }
 
             bool isOptional = (param.Attributes & ParameterAttributes.Optional) == ParameterAttributes.Optional;
+            bool isReserved = this.FindInteropDecorativeAttribute(param.GetCustomAttributes(), "ReservedAttribute") is not null;
+            isOptional |= isReserved; // Per metadata decision made at https://github.com/microsoft/win32metadata/issues/1421#issuecomment-1372608090
             bool isIn = (param.Attributes & ParameterAttributes.In) == ParameterAttributes.In;
             bool isConst = this.FindInteropDecorativeAttribute(param.GetCustomAttributes(), "ConstAttribute") is not null;
             bool isComOutPtr = this.FindInteropDecorativeAttribute(param.GetCustomAttributes(), "ComOutPtrAttribute") is not null;
@@ -90,7 +93,14 @@ public partial class Generator
             bool isManagedParameterType = this.IsManagedType(parameterTypeInfo);
             IdentifierNameSyntax origName = IdentifierName(externParam.Identifier.ValueText);
 
-            if (isManagedParameterType && (externParam.Modifiers.Any(SyntaxKind.OutKeyword) || externParam.Modifiers.Any(SyntaxKind.RefKeyword)))
+            if (isReserved && !isOut)
+            {
+                // Remove the parameter and supply the default value for the type to the extern method.
+                arguments[param.SequenceNumber - 1] = Argument(LiteralExpression(SyntaxKind.DefaultLiteralExpression));
+                parametersToRemove.Add(param.SequenceNumber - 1);
+                signatureChanged = true;
+            }
+            else if (isManagedParameterType && (externParam.Modifiers.Any(SyntaxKind.OutKeyword) || externParam.Modifiers.Any(SyntaxKind.RefKeyword)))
             {
                 bool hasOut = externParam.Modifiers.Any(SyntaxKind.OutKeyword);
                 arguments[param.SequenceNumber - 1] = arguments[param.SequenceNumber - 1].WithRefKindKeyword(TokenWithSpace(hasOut ? SyntaxKind.OutKeyword : SyntaxKind.RefKeyword));
@@ -487,15 +497,13 @@ public partial class Generator
 
         if (signatureChanged)
         {
-            if (lengthParamUsedBy.Count > 0)
+            // Remove in reverse order so as to not invalidate the indexes of elements to remove.
+            // Also take care to only remove each element once, even if it shows up multiple times in the collection.
+            SortedSet<int> parameterIndexesToRemove = new(lengthParamUsedBy.Keys);
+            parameterIndexesToRemove.UnionWith(parametersToRemove);
+            foreach (int indexToRemove in parameterIndexesToRemove.Reverse())
             {
-                // Remove in reverse order so as to not invalidate the indexes of elements to remove.
-                // Also take care to only remove each element once, even if it shows up multiple times in the collection.
-                var parameterIndexesToRemove = new SortedSet<int>(lengthParamUsedBy.Keys);
-                foreach (int indexToRemove in parameterIndexesToRemove.Reverse())
-                {
-                    parameters.RemoveAt(indexToRemove);
-                }
+                parameters.RemoveAt(indexToRemove);
             }
 
             TypeSyntax docRefExternName = overloadOf == FriendlyOverloadOf.InterfaceMethod

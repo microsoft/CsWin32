@@ -329,10 +329,8 @@ public partial class Generator
                     leadingStatements.Add(
                         LocalDeclarationStatement(VariableDeclaration(elementType)
                             .AddVariables(VariableDeclarator(localName.Identifier).WithInitializer(
-                                EqualsValueClause(ConditionalExpression(
-                                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName("HasValue")),
-                                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName("Value")),
-                                    DefaultExpression(elementType)))))));
+                                EqualsValueClause(
+                                    BinaryExpression(SyntaxKind.CoalesceExpression, origName, DefaultExpression(elementType)))))));
                     arguments[param.SequenceNumber - 1] = Argument(ConditionalExpression(
                         MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName("HasValue")),
                         PrefixUnaryExpression(SyntaxKind.AddressOfExpression, localName),
@@ -461,10 +459,8 @@ public partial class Generator
                 leadingStatements.Add(
                     LocalDeclarationStatement(VariableDeclaration(externParam.Type)
                         .AddVariables(VariableDeclarator(localName.Identifier).WithInitializer(
-                            EqualsValueClause(ConditionalExpression(
-                                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName("HasValue")),
-                                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName("Value")),
-                                DefaultExpression(externParam.Type)))))));
+                            EqualsValueClause(
+                                BinaryExpression(SyntaxKind.CoalesceExpression, origName, DefaultExpression(externParam.Type)))))));
 
                 // We can't pass in null, but we can be fancy to achieve the same effect.
                 // Unsafe.NullRef<TParamType>() or Unsafe.AsRef<TParamType>(null), depending on what's available.

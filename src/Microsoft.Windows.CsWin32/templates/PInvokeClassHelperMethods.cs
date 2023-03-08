@@ -5,7 +5,7 @@ internal class PInvokeClassHelperMethods
 {
 	private static void EnsureNullTerminated(Span<char> buffer, string parameterName)
 	{
-		if (buffer.LastIndexOf('\0') == -1)
+		if (buffer != null && buffer.LastIndexOf('\0') == -1)
 		{
 			throw new ArgumentException("Required null terminator is missing.", parameterName);
 		}

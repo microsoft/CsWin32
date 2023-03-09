@@ -24,7 +24,7 @@ public class SourceGenerator : ISourceGenerator
     public static readonly DiagnosticDescriptor NoMatchingMethodOrType = new DiagnosticDescriptor(
         "PInvoke001",
         "No matching method, type or constant found",
-        "Method, type or constant \"{0}\" not found.",
+        "Method, type or constant \"{0}\" not found",
         "Functionality",
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
@@ -40,7 +40,9 @@ public class SourceGenerator : ISourceGenerator
     public static readonly DiagnosticDescriptor NoMatchingMethodOrTypeWithSuggestions = new DiagnosticDescriptor(
         "PInvoke001",
         "No matching method, type or constant found",
+#pragma warning disable RS1032 // end with a period
         "Method, type or constant \"{0}\" not found. Did you mean {1}?",
+#pragma warning restore RS1032 // end with a period
         "Functionality",
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
@@ -48,7 +50,7 @@ public class SourceGenerator : ISourceGenerator
     public static readonly DiagnosticDescriptor NoMethodsForModule = new DiagnosticDescriptor(
         "PInvoke001",
         "No module found",
-        "No methods found under module \"{0}\".",
+        "No methods found under module \"{0}\"",
         "Functionality",
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
@@ -65,7 +67,9 @@ public class SourceGenerator : ISourceGenerator
     public static readonly DiagnosticDescriptor BannedApi = new DiagnosticDescriptor(
         "PInvoke003",
         "BannedAPI",
+#pragma warning disable RS1032 // end with a period
         "This API will not be generated. {0}",
+#pragma warning restore RS1032 // end with a period
         "Functionality",
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
@@ -98,7 +102,7 @@ public class SourceGenerator : ISourceGenerator
     public static readonly DiagnosticDescriptor AmbiguousMatchError = new DiagnosticDescriptor(
         "PInvoke007",
         "AmbiguousMatch",
-        "The API \"{0}\" is ambiguous.",
+        "The API \"{0}\" is ambiguous",
         "Functionality",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
@@ -106,7 +110,7 @@ public class SourceGenerator : ISourceGenerator
     public static readonly DiagnosticDescriptor AmbiguousMatchErrorWithSuggestions = new DiagnosticDescriptor(
         "PInvoke007",
         "AmbiguousMatch",
-        "The API \"{0}\" is ambiguous. Please specify one of: {1}",
+        "The API \"{0}\" is ambiguous. Please specify one of: {1}.",
         "Functionality",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);

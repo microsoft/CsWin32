@@ -136,7 +136,7 @@ public partial class Generator : IDisposable
         this.fieldOfHandleTypeDefTypeSettings = this.generalTypeSettings with { PreferNativeInt = false };
         this.externSignatureTypeSettings = this.generalTypeSettings with { QualifyNames = true, PreferMarshaledTypes = options.AllowMarshaling };
         this.externReleaseSignatureTypeSettings = this.externSignatureTypeSettings with { PreferNativeInt = false, PreferMarshaledTypes = false };
-        this.comSignatureTypeSettings = this.generalTypeSettings with { QualifyNames = true };
+        this.comSignatureTypeSettings = this.generalTypeSettings with { QualifyNames = true, PreferInOutRef = options.AllowMarshaling };
         this.extensionMethodSignatureTypeSettings = this.generalTypeSettings with { QualifyNames = true };
         this.functionPointerTypeSettings = this.generalTypeSettings with { QualifyNames = true };
         this.errorMessageTypeSettings = this.generalTypeSettings with { QualifyNames = true, Generator = null }; // Avoid risk of infinite recursion from errors in ToTypeSyntax

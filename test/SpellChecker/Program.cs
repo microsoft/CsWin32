@@ -60,7 +60,7 @@ unsafe
                 IEnumString suggestions = spellChecker.Suggest(word);
                 do
                 {
-                    suggestions.Next(suggestionResult, null);
+                    suggestions.Next(suggestionResult, out _);
                     if (suggestionResult[0].Value is not null)
                     {
                         Console.WriteLine($"\t{suggestionResult[0]}");

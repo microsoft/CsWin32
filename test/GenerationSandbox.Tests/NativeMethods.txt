@@ -3,6 +3,7 @@ BOOLEAN
 CHAR
 CreateCursor
 CreateFile
+CSIDL_DESKTOP
 DISPLAYCONFIG_VIDEO_SIGNAL_INFO
 EnumWindows
 GetProcAddress
@@ -13,6 +14,8 @@ HDC_UserSize
 IDirectorySearch
 IEnumDebugPropertyInfo
 IPersistFile
+IServiceProvider
+IShellWindows
 KEY_EVENT_RECORD
 LoadLibrary
 MainAVIHeader
@@ -25,6 +28,9 @@ RECT
 RegLoadAppKey
 RM_PROCESS_INFO
 ShellLink
+ShellWindowFindWindowOptions
+ShellWindows
+ShellWindowTypeConstants
 SHFILEOPSTRUCTW
 SIZE
 VARDESC

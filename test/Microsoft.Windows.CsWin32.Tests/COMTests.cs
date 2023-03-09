@@ -241,14 +241,21 @@ public class COMTests : GeneratorTestBase
     }
 
     [Theory]
-    [InlineData("IVssCreateWriterMetadata")] // A non-COM compliant interface (since it doesn't derive from IUnknown).
-    [InlineData("IProtectionPolicyManagerInterop3")] // An IInspectable-derived interface.
-    [InlineData("ICompositionCapabilitiesInteropFactory")] // An interface with managed types.
-    [InlineData("IPicture")] // An interface with properties that cannot be represented as properties.
-    public void InterestingComInterfaces(string api)
+    [CombinatorialData]
+    public void InterestingComInterfaces(
+        [CombinatorialValues(
+            "IVssCreateWriterMetadata", // A non-COM compliant interface (since it doesn't derive from IUnknown).
+            "IProtectionPolicyManagerInterop3", // An IInspectable-derived interface.
+            "ICompositionCapabilitiesInteropFactory", // An interface with managed types.
+            "IPicture", // An interface with properties that cannot be represented as properties.
+            "ID2D1DeviceContext2", // CreateLookupTable3D takes fixed length arrays as parameters
+            "IVPBaseConfig", // GetConnectInfo has a CountParamIndex that points to an [In, Out] parameter.
+            "IWMDMDevice2")] // The GetSpecifyPropertyPages method has an NativeArrayInfo.CountParamIndex pointing at an [Out] parameter.
+        string api,
+        bool allowMarshaling)
     {
         this.compilation = this.starterCompilations["net6.0"];
-        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = false });
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling });
         Assert.True(this.generator.TryGenerate(api, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();

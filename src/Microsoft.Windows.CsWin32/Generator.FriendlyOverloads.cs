@@ -251,6 +251,7 @@ public partial class Generator
                     if (sizeParamIndex.HasValue
                         && externMethodDeclaration.ParameterList.Parameters.Count > sizeParamIndex.Value
                         && !(externMethodDeclaration.ParameterList.Parameters[sizeParamIndex.Value].Type is PointerTypeSyntax)
+                        && !(externMethodDeclaration.ParameterList.Parameters[sizeParamIndex.Value].Modifiers.Any(SyntaxKind.OutKeyword) || externMethodDeclaration.ParameterList.Parameters[sizeParamIndex.Value].Modifiers.Any(SyntaxKind.RefKeyword))
                         && !isPointerToPointer)
                     {
                         signatureChanged = true;
@@ -290,7 +291,7 @@ public partial class Generator
 
                         arguments[sizeParamIndex.Value] = Argument(sizeArgExpression);
                     }
-                    else if (sizeConst.HasValue && !isPointerToPointer && this.canUseSpan)
+                    else if (sizeConst.HasValue && !isPointerToPointer && this.canUseSpan && externParam.Type is PointerTypeSyntax)
                     {
                         // TODO: add support for lists of pointers via a generated pointer-wrapping struct
                         signatureChanged = true;

@@ -423,12 +423,14 @@ public partial class Generator
                 // wstrParam1
                 arguments[param.SequenceNumber - 1] = Argument(localWstrName);
 
-                // if (buffer.LastIndexOf('\0') == -1) throw new ArgumentException("Required null terminator is missing.", "Param1");
+                // if (buffer != null && buffer.LastIndexOf('\0') == -1) throw new ArgumentException("Required null terminator is missing.", "Param1");
                 InvocationExpressionSyntax lastIndexOf = InvocationExpression(
                     MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName(nameof(MemoryExtensions.LastIndexOf))),
                     ArgumentList().AddArguments(Argument(LiteralExpression(SyntaxKind.CharacterLiteralExpression, Literal('\0')))));
+                ExpressionSyntax lastIndexOfEqualsMinusOne = BinaryExpression(SyntaxKind.EqualsExpression, lastIndexOf, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(-1)));
+                ExpressionSyntax bufferNotNull = BinaryExpression(SyntaxKind.NotEqualsExpression, origName, LiteralExpression(SyntaxKind.NullLiteralExpression));
                 leadingOutsideTryStatements.Add(IfStatement(
-                    BinaryExpression(SyntaxKind.EqualsExpression, lastIndexOf, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(-1))),
+                    BinaryExpression(SyntaxKind.LogicalAndExpression, bufferNotNull, lastIndexOfEqualsMinusOne),
                     ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentException))).AddArgumentListArguments(
                         Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal("Required null terminator missing."))),
                         Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(externParam.Identifier.ValueText)))))));

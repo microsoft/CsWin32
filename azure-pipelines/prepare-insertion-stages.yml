@@ -11,14 +11,14 @@ stages:
     - checkout: none
     - download: current
       artifact: deployables-Windows
-      displayName: Download deployables-Windows artifact
+      displayName: 🔻 Download deployables-Windows artifact
     - task: UseDotNet@2
-      displayName: Install .NET SDK
+      displayName: ⚙️ Install .NET SDK
       inputs:
         packageType: sdk
         version: 6.x
     - task: NuGetAuthenticate@0
-      displayName: Authenticate NuGet feeds
+      displayName: 🔏 Authenticate NuGet feeds
       inputs:
         nuGetServiceConnections: azure-public/winsdk
         forceReinstallCredentialProvider: true

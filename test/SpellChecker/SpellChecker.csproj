@@ -4,6 +4,7 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFrameworks>net6.0-windows8.0;net472</TargetFrameworks>
+    <IsTestProject>false</IsTestProject>
   </PropertyGroup>
 
 </Project>

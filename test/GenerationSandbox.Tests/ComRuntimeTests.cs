@@ -14,8 +14,8 @@ public class ComRuntimeTests
         IServiceProvider serviceProvider = (IServiceProvider)shellWindows.FindWindowSW(
             PInvoke.CSIDL_DESKTOP,
             null,
-            (int)ShellWindowTypeConstants.SWC_DESKTOP,
+            ShellWindowTypeConstants.SWC_DESKTOP,
             out int hwnd,
-            (int)ShellWindowFindWindowOptions.SWFO_NEEDDISPATCH);
+            ShellWindowFindWindowOptions.SWFO_NEEDDISPATCH);
     }
 }

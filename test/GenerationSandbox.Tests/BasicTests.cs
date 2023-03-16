@@ -200,7 +200,7 @@ public class BasicTests
         var path = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
         using var fileHandle = PInvoke.CreateFile(
             path,
-            FILE_ACCESS_FLAGS.FILE_GENERIC_WRITE,
+            (uint)FILE_ACCESS_RIGHTS.FILE_GENERIC_WRITE,
             FILE_SHARE_MODE.FILE_SHARE_NONE,
             lpSecurityAttributes: default,
             FILE_CREATION_DISPOSITION.CREATE_NEW,

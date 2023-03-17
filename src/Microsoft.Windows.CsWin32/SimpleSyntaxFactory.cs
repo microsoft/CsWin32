@@ -98,6 +98,7 @@ internal static class SimpleSyntaxFactory
     internal static readonly SyntaxToken SemicolonWithLineFeed = TokenWithLineFeed(SyntaxKind.SemicolonToken);
     internal static readonly IdentifierNameSyntax InlineArrayIndexerExtensionsClassName = IdentifierName("InlineArrayIndexerExtensions");
     internal static readonly TypeSyntax SafeHandleTypeSyntax = IdentifierName("SafeHandle");
+    internal static readonly IdentifierNameSyntax GuidTypeSyntax = IdentifierName(nameof(Guid));
     internal static readonly IdentifierNameSyntax IntPtrTypeSyntax = IdentifierName(nameof(IntPtr));
     internal static readonly IdentifierNameSyntax UIntPtrTypeSyntax = IdentifierName(nameof(UIntPtr));
     internal static readonly AttributeSyntax ComImportAttributeSyntax = Attribute(IdentifierName("ComImport"));
@@ -371,7 +372,7 @@ internal static class SimpleSyntaxFactory
         byte j = (byte)args.FixedArguments[9].Value!;
         byte k = (byte)args.FixedArguments[10].Value!;
 
-        return ObjectCreationExpression(IdentifierName(nameof(Guid))).AddArgumentListArguments(
+        return ObjectCreationExpression(GuidTypeSyntax).AddArgumentListArguments(
             Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(a), a))),
             Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(b), b))),
             Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(c), c))),
@@ -415,7 +416,7 @@ internal static class SimpleSyntaxFactory
 
         ExpressionSyntax UncheckedSignedWrapper(LiteralExpressionSyntax value, SyntaxKind signedType)
         {
-            return assignableToSignedInteger && value.Token.Text.StartsWith("0xF", StringComparison.OrdinalIgnoreCase)
+            return assignableToSignedInteger && char.ToUpper(value.Token.Text[2]) is '8' or '9' or (>= 'A' and <= 'F')
                 ? UncheckedExpression(CastExpression(PredefinedType(Token(signedType)), value))
                 : value;
         }
@@ -452,5 +453,25 @@ internal static class SimpleSyntaxFactory
                 float.IsNaN(value) ? MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, PredefinedType(Token(SyntaxKind.FloatKeyword)), IdentifierName(nameof(float.NaN))) :
                 LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(value));
         }
+    }
+
+    internal static ExpressionSyntax ToExpressionSyntax(PrimitiveTypeCode primitiveTypeCode, ReadOnlyMemory<char> valueAsString)
+    {
+        string valueAsStringReally = valueAsString.ToString();
+        return primitiveTypeCode switch
+        {
+            PrimitiveTypeCode.Int64 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(long.Parse(valueAsStringReally, CultureInfo.InvariantCulture))),
+            PrimitiveTypeCode.Byte => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(byte.Parse(valueAsStringReally, CultureInfo.InvariantCulture))),
+            PrimitiveTypeCode.SByte => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(sbyte.Parse(valueAsStringReally, CultureInfo.InvariantCulture))),
+            PrimitiveTypeCode.Int16 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(short.Parse(valueAsStringReally, CultureInfo.InvariantCulture))),
+            PrimitiveTypeCode.UInt16 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ushort.Parse(valueAsStringReally, CultureInfo.InvariantCulture))),
+            PrimitiveTypeCode.Int32 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(int.Parse(valueAsStringReally, CultureInfo.InvariantCulture))),
+            PrimitiveTypeCode.UInt32 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(uint.Parse(valueAsStringReally, CultureInfo.InvariantCulture))),
+            PrimitiveTypeCode.UInt64 => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ulong.Parse(valueAsStringReally, CultureInfo.InvariantCulture))),
+            PrimitiveTypeCode.Single => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(float.Parse(valueAsStringReally, CultureInfo.InvariantCulture))),
+            PrimitiveTypeCode.Double => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(double.Parse(valueAsStringReally, CultureInfo.InvariantCulture))),
+            PrimitiveTypeCode.String => LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(valueAsStringReally)),
+            _ => throw new NotSupportedException($"Unrecognized primitive type code: {primitiveTypeCode}."),
+        };
     }
 }

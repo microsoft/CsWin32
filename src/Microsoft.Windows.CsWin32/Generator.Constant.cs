@@ -158,28 +158,187 @@ public partial class Generator
         });
     }
 
-    private static ObjectCreationExpressionSyntax PropertyKeyValue(CustomAttribute propertyKeyAttribute, TypeSyntax type)
+    private static List<ReadOnlyMemory<char>> SplitConstantArguments(ReadOnlyMemory<char> args)
     {
-        CustomAttributeValue<TypeSyntax> args = propertyKeyAttribute.DecodeValue(CustomAttributeTypeProvider.Instance);
-        uint a = (uint)args.FixedArguments[0].Value!;
-        ushort b = (ushort)args.FixedArguments[1].Value!;
-        ushort c = (ushort)args.FixedArguments[2].Value!;
-        byte d = (byte)args.FixedArguments[3].Value!;
-        byte e = (byte)args.FixedArguments[4].Value!;
-        byte f = (byte)args.FixedArguments[5].Value!;
-        byte g = (byte)args.FixedArguments[6].Value!;
-        byte h = (byte)args.FixedArguments[7].Value!;
-        byte i = (byte)args.FixedArguments[8].Value!;
-        byte j = (byte)args.FixedArguments[9].Value!;
-        byte k = (byte)args.FixedArguments[10].Value!;
-        uint pid = (uint)args.FixedArguments[11].Value!;
+        List<ReadOnlyMemory<char>> argExpressions = new();
 
-        return ObjectCreationExpression(type).WithInitializer(
-            InitializerExpression(SyntaxKind.ObjectInitializerExpression, SeparatedList<ExpressionSyntax>(new[]
+        // Recursively parse the arguments, splitting on commas that are not nested within curly brances.
+        int start = 0;
+        int depth = 0;
+        for (int i = 0; i < args.Length; i++)
+        {
+            switch (args.Span[i])
             {
-                AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, IdentifierName("fmtid"), GuidValue(propertyKeyAttribute)),
-                AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, IdentifierName("pid"), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(pid))),
-            })));
+                case '{':
+                    depth++;
+                    break;
+                case '}':
+                    depth--;
+                    break;
+                case ',':
+                    if (depth == 0)
+                    {
+                        ReadOnlyMemory<char> arg = args.Slice(start, i - start);
+
+                        argExpressions.Add(TrimCurlyBraces(arg));
+                        start = i + 1;
+
+                        // Trim a leading space if present.
+                        if (args.Span[start] == ' ')
+                        {
+                            start++;
+                            i++;
+                        }
+                    }
+
+                    break;
+            }
+        }
+
+        if (start < args.Length)
+        {
+            argExpressions.Add(TrimCurlyBraces(args.Slice(start)));
+        }
+
+        ReadOnlyMemory<char> TrimCurlyBraces(ReadOnlyMemory<char> arg)
+        {
+            return arg.Span[0] == '{' && arg.Span[arg.Length - 1] == '}' ? arg.Slice(1, arg.Length - 2) : arg;
+        }
+
+        return argExpressions;
+    }
+
+    private ObjectCreationExpressionSyntax? CreateConstantViaCtor(List<ReadOnlyMemory<char>> args, TypeSyntax targetType, TypeDefinition targetTypeDef)
+    {
+        foreach (MethodDefinitionHandle methodDefHandle in targetTypeDef.GetMethods())
+        {
+            MethodDefinition methodDef = this.Reader.GetMethodDefinition(methodDefHandle);
+            if (this.Reader.StringComparer.Equals(methodDef.Name, ".ctor") && methodDef.GetParameters().Count == args.Count)
+            {
+                MethodSignature<TypeHandleInfo> ctorSignature = methodDef.DecodeSignature(SignatureHandleProvider.Instance, null);
+                var argExpressions = new ArgumentSyntax[args.Count];
+
+                for (int i = 0; i < args.Count; i++)
+                {
+                    TypeHandleInfo parameterTypeInfo = ctorSignature.ParameterTypes[i];
+                    argExpressions[i] = Argument(this.CreateConstant(args[i], parameterTypeInfo));
+                    i++;
+                }
+
+                return ObjectCreationExpression(targetType).AddArgumentListArguments(argExpressions);
+            }
+        }
+
+        return null;
+    }
+
+    private ObjectCreationExpressionSyntax? CreateConstantByField(List<ReadOnlyMemory<char>> args, TypeSyntax targetType, TypeDefinition targetTypeDef)
+    {
+        if (targetTypeDef.GetFields().Count != args.Count)
+        {
+            return null;
+        }
+
+        var fieldAssignmentExpressions = new AssignmentExpressionSyntax[args.Count];
+        int i = 0;
+        foreach (FieldDefinitionHandle fieldDefHandle in targetTypeDef.GetFields())
+        {
+            FieldDefinition fieldDef = this.Reader.GetFieldDefinition(fieldDefHandle);
+            string fieldName = this.Reader.GetString(fieldDef.Name);
+            TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null) with { IsConstantField = true };
+            fieldAssignmentExpressions[i] = AssignmentExpression(
+                SyntaxKind.SimpleAssignmentExpression,
+                IdentifierName(fieldName),
+                this.CreateConstant(args[i], fieldTypeInfo));
+            i++;
+        }
+
+        return ObjectCreationExpression(targetType)
+            .WithArgumentList(null)
+            .WithInitializer(InitializerExpression(SyntaxKind.ObjectInitializerExpression, SeparatedList<ExpressionSyntax>()).AddExpressions(fieldAssignmentExpressions));
+    }
+
+    private ExpressionSyntax CreateConstant(ReadOnlyMemory<char> argsAsString, TypeHandleInfo targetType)
+    {
+        return targetType switch
+        {
+            ArrayTypeHandleInfo { ElementType: PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.Byte } } pointerType => this.CreateByteArrayConstant(argsAsString),
+            PrimitiveTypeHandleInfo primitiveType => ToExpressionSyntax(primitiveType.PrimitiveTypeCode, argsAsString),
+            HandleTypeHandleInfo handleType => this.CreateConstant(argsAsString, targetType.ToTypeSyntax(this.fieldTypeSettings, null).Type, (TypeReferenceHandle)handleType.Handle),
+            _ => throw new GenerationFailedException($"Unsupported constant type: {targetType}"),
+        };
+    }
+
+    private ExpressionSyntax CreateConstant(ReadOnlyMemory<char> argsAsString, TypeSyntax targetType, TypeReferenceHandle targetTypeRefHandle)
+    {
+        if (!this.TryGetTypeDefHandle(targetTypeRefHandle, out TypeDefinitionHandle targetTypeDefHandle))
+        {
+            // Special case for System.Guid.
+            TypeReference typeRef = this.Reader.GetTypeReference(targetTypeRefHandle);
+            if (this.Reader.StringComparer.Equals(typeRef.Name, "Guid"))
+            {
+                List<ReadOnlyMemory<char>> guidArgs = SplitConstantArguments(argsAsString);
+                return this.CreateGuidConstant(guidArgs);
+            }
+
+            throw new GenerationFailedException("Unrecognized target type.");
+        }
+
+        this.RequestInteropType(targetTypeDefHandle, this.DefaultContext);
+        TypeDefinition typeDef = this.Reader.GetTypeDefinition(targetTypeDefHandle);
+
+        List<ReadOnlyMemory<char>> args = SplitConstantArguments(argsAsString);
+
+        ObjectCreationExpressionSyntax? result =
+            this.CreateConstantViaCtor(args, targetType, typeDef) ??
+            this.CreateConstantByField(args, targetType, typeDef);
+
+        return result ?? throw new GenerationFailedException($"Unable to construct constant value given {args.Count} fields or constructor arguments.");
+    }
+
+    private ExpressionSyntax CreateByteArrayConstant(ReadOnlyMemory<char> argsAsString)
+    {
+        List<ReadOnlyMemory<char>> args = SplitConstantArguments(argsAsString);
+        TypeSyntax byteTypeSyntax = PredefinedType(Token(SyntaxKind.ByteKeyword));
+        return CastExpression(
+            MakeReadOnlySpanOfT(byteTypeSyntax),
+            ArrayCreationExpression(ArrayType(byteTypeSyntax).AddRankSpecifiers(ArrayRankSpecifier())).WithInitializer(InitializerExpression(SyntaxKind.ArrayInitializerExpression, SeparatedList<ExpressionSyntax>())
+            .AddExpressions(args.Select(b => ToExpressionSyntax(PrimitiveTypeCode.Byte, b)).ToArray())));
+    }
+
+    private ExpressionSyntax CreateGuidConstant(List<ReadOnlyMemory<char>> guidArgs)
+    {
+        if (guidArgs.Count != 11)
+        {
+            throw new GenerationFailedException($"Unexpected element count {guidArgs.Count} when constructing a Guid, which requires 11.");
+        }
+
+        var ctorArgs = new SyntaxToken[11]
+        {
+            Literal(uint.Parse(guidArgs[0].ToString(), CultureInfo.InvariantCulture)),
+            Literal(ushort.Parse(guidArgs[1].ToString(), CultureInfo.InvariantCulture)),
+            Literal(ushort.Parse(guidArgs[2].ToString(), CultureInfo.InvariantCulture)),
+            Literal(byte.Parse(guidArgs[3].ToString(), CultureInfo.InvariantCulture)),
+            Literal(byte.Parse(guidArgs[4].ToString(), CultureInfo.InvariantCulture)),
+            Literal(byte.Parse(guidArgs[5].ToString(), CultureInfo.InvariantCulture)),
+            Literal(byte.Parse(guidArgs[6].ToString(), CultureInfo.InvariantCulture)),
+            Literal(byte.Parse(guidArgs[7].ToString(), CultureInfo.InvariantCulture)),
+            Literal(byte.Parse(guidArgs[8].ToString(), CultureInfo.InvariantCulture)),
+            Literal(byte.Parse(guidArgs[9].ToString(), CultureInfo.InvariantCulture)),
+            Literal(byte.Parse(guidArgs[10].ToString(), CultureInfo.InvariantCulture)),
+        };
+
+        return ObjectCreationExpression(GuidTypeSyntax).AddArgumentListArguments(ctorArgs.Select(t => Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, t))).ToArray());
+    }
+
+    private ExpressionSyntax CreateConstant(CustomAttribute constantAttribute, TypeHandleInfo targetType)
+    {
+        TypeReferenceHandle targetTypeRefHandle = (TypeReferenceHandle)((HandleTypeHandleInfo)targetType).Handle;
+        CustomAttributeValue<TypeSyntax> args = constantAttribute.DecodeValue(CustomAttributeTypeProvider.Instance);
+        return this.CreateConstant(
+            ((string)args.FixedArguments[0].Value!).AsMemory(),
+            targetType.ToTypeSyntax(this.fieldTypeSettings, null).Type,
+            targetTypeRefHandle);
     }
 
     private FieldDeclarationSyntax DeclareConstant(FieldDefinition fieldDef)
@@ -193,7 +352,7 @@ public partial class Generator
             ExpressionSyntax value =
                 fieldDef.GetDefaultValue() is { IsNil: false } constantHandle ? ToExpressionSyntax(this.Reader, constantHandle) :
                 this.FindInteropDecorativeAttribute(customAttributes, nameof(GuidAttribute)) is CustomAttribute guidAttribute ? GuidValue(guidAttribute) :
-                this.FindInteropDecorativeAttribute(customAttributes, "PropertyKeyAttribute") is CustomAttribute propertyKeyAttribute ? PropertyKeyValue(propertyKeyAttribute, fieldType.Type) :
+                this.FindInteropDecorativeAttribute(customAttributes, "ConstantAttribute") is CustomAttribute constantAttribute ? this.CreateConstant(constantAttribute, fieldTypeInfo) :
                 throw new NotSupportedException("Unsupported constant: " + name);
             bool requiresUnsafe = false;
             if (fieldType.Type is not PredefinedTypeSyntax && value is not ObjectCreationExpressionSyntax)

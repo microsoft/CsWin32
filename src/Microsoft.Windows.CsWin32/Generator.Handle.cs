@@ -197,6 +197,10 @@ public partial class Generator
                                 ExpressionSyntax noerror = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseName("winmdroot.Foundation.WIN32_ERROR"), IdentifierName("NO_ERROR"));
                                 releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, noerror);
                                 break;
+                            case "HGLOBAL":
+                            case "HLOCAL":
+                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, DefaultExpression(releaseMethodReturnType.Type));
+                                break;
                             default:
                                 throw new NotSupportedException($"Return type {identifierName.Identifier.ValueText} on release method {releaseMethod} not supported.");
                         }

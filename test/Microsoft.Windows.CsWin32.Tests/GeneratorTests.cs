@@ -894,6 +894,7 @@ public class GeneratorTests : GeneratorTestBase
         // Now produce more code in a referencing project that needs HANDLE, which is found *twice*, once in each referenced project.
         this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate("CreateFile", CancellationToken.None));
+        Assert.True(this.generator.TryGenerate("FILE_ACCESS_RIGHTS", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
 
         // Consume the API to verify the user experience isn't broken.
@@ -910,7 +911,7 @@ class Program
     {
         HANDLE h = PInvoke.CreateFile(
             default(PCWSTR),
-            FILE_ACCESS_FLAGS.FILE_ADD_FILE,
+            (uint)FILE_ACCESS_RIGHTS.FILE_ADD_FILE,
             FILE_SHARE_MODE.FILE_SHARE_READ,
             null,
             FILE_CREATION_DISPOSITION.CREATE_NEW,

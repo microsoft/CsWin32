@@ -175,11 +175,9 @@ public class GeneratorTests : GeneratorTestBase
             "JsRuntimeVersion", // An enum that has an extra member in a separate header file.
             "ReportEvent", // Failed at one point
             "DISPLAYCONFIG_VIDEO_SIGNAL_INFO", // Union, explicit layout, bitmask, nested structs
-            "g_wszStreamBufferRecordingDuration", // Constant string field
             "MFVideoAlphaBitmap", // field named params
             "DDRAWI_DDVIDEOPORT_INT", // field that is never used
             "MainAVIHeader", // dwReserved field is a fixed length array
-            "HBMMENU_POPUP_RESTORE", // A HBITMAP handle as a constant
             "RpcServerRegisterIfEx", // Optional attribute on delegate type.
             "RpcSsSwapClientAllocFree", // Parameters typed as pointers to in delegates and out delegates
             "RPC_DISPATCH_TABLE", // Struct with a field typed as a delegate
@@ -187,7 +185,6 @@ public class GeneratorTests : GeneratorTestBase
             "DDHAL_DESTROYDRIVERDATA", // Struct with a field typed as a delegate
             "I_RpcServerInqAddressChangeFn", // p/invoke that returns a function pointer
             "WSPUPCALLTABLE", // a delegate with a delegate in its signature
-            "HWND_BOTTOM", // A constant typed as a typedef'd struct
             "BOOL", // a special cased typedef struct
             "uregex_getMatchCallback", // friendly overload with delegate parameter, and out parameters
             "CreateDispatcherQueueController", // References a WinRT type
@@ -208,11 +205,6 @@ public class GeneratorTests : GeneratorTestBase
             "PICTYPE", // An enum with -1 as an enum value
             "CoCreateInstance", // a hand-written friendly overload
             "JsVariantToValue",
-            "D2D1_DEFAULT_FLATTENING_TOLERANCE", // a float constant
-            "WIA_CATEGORY_FINISHED_FILE", // GUID constant
-            "DEVPKEY_MTPBTH_IsConnected", // DEVPROPKEY constant
-            "PKEY_AudioEndpoint_FormFactor", // PROPERTYKEY constant
-            "RT_CURSOR", // PCWSTR constant
             "IOleUILinkContainerW", // An IUnknown-derived interface with no GUID
             "FILE_TYPE_NOTIFICATION_INPUT",
             "DS_SELECTION_LIST", // A struct with a fixed-length inline array of potentially managed structs
@@ -222,7 +214,6 @@ public class GeneratorTests : GeneratorTestBase
             "IDelayedPropertyStoreFactory", // interface inheritance across namespaces
             "D3D9ON12_ARGS", // Contains an inline array of IUnknown objects
             "NCryptOpenKey", // Generates a SafeHandle based on a UIntPtr
-            "X509_CERT", // A constant defined as PCSTR
             "CIDLData_CreateFromIDArray", // Method with out parameter of a possibly marshaled interop type shared with the BCL,
             "ID3D12Resource", // COM interface with base types
             "OpenTrace", // the CloseTrace method called by the SafeHandle returns WIN32_ERROR. The handle is ALWAYS 64-bits.

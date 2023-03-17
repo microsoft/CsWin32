@@ -152,6 +152,7 @@ public class GeneratorTests : GeneratorTestBase
             "PZZWSTR",
             "PCZZSTR",
             "PCZZWSTR",
+            "RoCreatePropertySetSerializer", // References a WinRT API
             "LocalLock", // returns HLOCAL, which requires special release support
             "LoadLibraryEx", // method with a reserved parameter
             "IEnumNetCfgComponent", // interface with a method containing an `[Reserved] out` parameter (bonkers, I know).

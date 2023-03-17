@@ -301,8 +301,9 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
         ImmutableArray<MetadataReference> metadataReferences = await references.ResolveAsync(LanguageNames.CSharp, default);
 
         // Workaround for https://github.com/dotnet/roslyn-sdk/issues/699
+        const string winRTPackageId = "Microsoft.Windows.SDK.Contracts";
         metadataReferences = metadataReferences.AddRange(
-            Directory.GetFiles(Path.Combine(Path.GetTempPath(), "test-packages", "Microsoft.Windows.SDK.Contracts.10.0.19041.1", "ref", "netstandard2.0"), "*.winmd").Select(p => MetadataReference.CreateFromFile(p)));
+            Directory.GetFiles(Path.Combine(Path.GetTempPath(), "test-packages", $"{winRTPackageId}.{references.Packages.Single(id => string.Equals(id.Id, winRTPackageId, StringComparison.OrdinalIgnoreCase)).Version}", "ref", "netstandard2.0"), "*.winmd").Select(p => MetadataReference.CreateFromFile(p)));
 
         // CONSIDER: How can I pass in the source generator itself, with AdditionalFiles, so I'm exercising that code too?
         var compilation = CSharpCompilation.Create(
@@ -355,7 +356,7 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
     {
 #pragma warning disable SA1202 // Elements should be ordered by access - because field initializer depend on each other
         private static readonly ImmutableArray<PackageIdentity> AdditionalLegacyPackages = ImmutableArray.Create(
-            new PackageIdentity("Microsoft.Windows.SDK.Contracts", "10.0.19041.1"));
+            new PackageIdentity("Microsoft.Windows.SDK.Contracts", "10.0.22621.2"));
 
         private static readonly ImmutableArray<PackageIdentity> AdditionalModernPackages = AdditionalLegacyPackages.AddRange(ImmutableArray.Create(
             new PackageIdentity("System.Runtime.CompilerServices.Unsafe", "6.0.0"),

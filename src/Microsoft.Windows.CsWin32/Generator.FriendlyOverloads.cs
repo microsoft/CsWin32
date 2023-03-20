@@ -203,8 +203,7 @@ public partial class Generator
             }
             else if ((externParam.Type is PointerTypeSyntax { ElementType: TypeSyntax ptrElementType }
                 && !IsVoid(ptrElementType)
-                && !this.IsInterface(parameterTypeInfo)
-                && this.canUseSpan) ||
+                && !this.IsInterface(parameterTypeInfo)) ||
                 externParam.Type is ArrayTypeSyntax)
             {
                 TypeSyntax elementType = externParam.Type is PointerTypeSyntax ptr ? ptr.ElementType
@@ -249,6 +248,7 @@ public partial class Generator
                     // It is possible that sizeParamIndex points to a parameter that is not on the extern method
                     // when the parameter is the last one and was moved to a return value.
                     if (sizeParamIndex.HasValue
+                        && this.canUseSpan
                         && externMethodDeclaration.ParameterList.Parameters.Count > sizeParamIndex.Value
                         && !(externMethodDeclaration.ParameterList.Parameters[sizeParamIndex.Value].Type is PointerTypeSyntax)
                         && !(externMethodDeclaration.ParameterList.Parameters[sizeParamIndex.Value].Modifiers.Any(SyntaxKind.OutKeyword) || externMethodDeclaration.ParameterList.Parameters[sizeParamIndex.Value].Modifiers.Any(SyntaxKind.RefKeyword))

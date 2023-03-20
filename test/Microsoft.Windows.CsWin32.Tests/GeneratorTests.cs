@@ -50,6 +50,17 @@ public class GeneratorTests : GeneratorTestBase
 
     [Theory]
     [MemberData(nameof(TFMData))]
+    public void CoCreateInstance(string tfm)
+    {
+        this.compilation = this.starterCompilations[tfm];
+        this.generator = this.CreateGenerator(includeDocs: true);
+        Assert.True(this.generator.TryGenerateExternMethod("CoCreateInstance", out _));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+    }
+
+    [Theory]
+    [MemberData(nameof(TFMData))]
     public void SimplestMethod(string tfm)
     {
         this.compilation = this.starterCompilations[tfm];

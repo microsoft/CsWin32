@@ -39,4 +39,9 @@ This repository can be built on Windows, Linux, and OSX.
 
 Building, testing, and packing this repository can be done by using the standard dotnet CLI commands (e.g. `dotnet build`, `dotnet test`, `dotnet pack`, etc.).
 
+## Parsing the metadata
+
+The win32metadata has [these little "gems"](https://github.com/microsoft/win32metadata/blob/main/docs/projections.md) that CsWin32 should consider consuming to improve the quality of the generated APIs.
+When we identify a gem that we should support but do not yet support, file [an issue with a `metadata gem` label](https://github.com/microsoft/CsWin32/issues?q=is%3Aissue+is%3Aopen+label%3A%22metadata+gem%22).
+
 [pwsh]: https://docs.microsoft.com/powershell/scripting/install/installing-powershell?view=powershell-6

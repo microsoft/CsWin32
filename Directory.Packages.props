@@ -28,7 +28,7 @@
     <PackageVersion Include="Microsoft.Win32.Registry" Version="5.0.0" />
     <PackageVersion Include="Microsoft.Windows.SDK.Win32Docs" Version="$(ApiDocsVersion)" />
     <PackageVersion Include="Microsoft.Windows.SDK.Win32Metadata" Version="$(MetadataVersion)" />
-    <PackageVersion Include="NuGet.Protocol" Version="6.4.0" />
+    <PackageVersion Include="NuGet.Protocol" Version="6.5.0" />
     <PackageVersion Include="System.Collections.Immutable" Version="6.0.0" />
     <PackageVersion Include="System.Memory" Version="$(SystemMemoryVersion)" />
     <PackageVersion Include="System.Reflection.Metadata" Version="5.0.0" />

@@ -12,6 +12,8 @@
     <CodeAnalysisVersion Condition="'$(IsTestProject)'!='true'">3.11.0</CodeAnalysisVersion>
     <SystemMemoryVersion>4.5.5</SystemMemoryVersion>
     <SystemMemoryVersion Condition="'$(IsTestProject)'!='true'">4.5.4</SystemMemoryVersion>
+    <SystemReflectionMetadataVersion>6.0.1</SystemReflectionMetadataVersion>
+    <SystemReflectionMetadataVersion Condition="'$(IsTestProject)'!='true'">5.0.0</SystemReflectionMetadataVersion>
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="coverlet.msbuild" Version="3.2.0" />
@@ -31,7 +33,7 @@
     <PackageVersion Include="NuGet.Protocol" Version="6.5.0" />
     <PackageVersion Include="System.Collections.Immutable" Version="6.0.0" />
     <PackageVersion Include="System.Memory" Version="$(SystemMemoryVersion)" />
-    <PackageVersion Include="System.Reflection.Metadata" Version="5.0.0" />
+    <PackageVersion Include="System.Reflection.Metadata" Version="$(SystemReflectionMetadataVersion)" />
     <PackageVersion Include="System.Runtime.CompilerServices.Unsafe" Version="6.0.0" />
     <PackageVersion Include="System.Text.Encodings.Web" Version="4.7.2" />
     <PackageVersion Include="System.Text.Json" Version="4.7.2" />

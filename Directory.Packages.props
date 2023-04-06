@@ -8,10 +8,10 @@
     <!-- <DiaMetadataVersion>0.2.185-preview-g7e1e6a442c</DiaMetadataVersion> -->
     <ApiDocsVersion>0.1.12-alpha</ApiDocsVersion>
 
-    <CodeAnalysisVersion>3.11.0</CodeAnalysisVersion>
-    <CodeAnalysisVersion Condition="'$(IsTestProject)'=='true'">4.4.0</CodeAnalysisVersion>
-    <SystemMemoryVersion>4.5.4</SystemMemoryVersion>
-    <SystemMemoryVersion Condition="'$(IsTestProject)'=='true'">4.5.5</SystemMemoryVersion>
+    <CodeAnalysisVersion>4.4.0</CodeAnalysisVersion>
+    <CodeAnalysisVersion Condition="'$(IsTestProject)'!='true'">3.11.0</CodeAnalysisVersion>
+    <SystemMemoryVersion>4.5.5</SystemMemoryVersion>
+    <SystemMemoryVersion Condition="'$(IsTestProject)'!='true'">4.5.4</SystemMemoryVersion>
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="coverlet.msbuild" Version="3.2.0" />

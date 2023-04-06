@@ -952,6 +952,7 @@ class Program
             TestState =
             {
                 ReferenceAssemblies = MyReferenceAssemblies.NetStandard20,
+                Sources = { string.Empty },
                 AdditionalFiles =
                 {
                     ("NativeMethods.txt", "CreateFile"),

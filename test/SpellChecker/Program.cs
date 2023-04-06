@@ -9,11 +9,7 @@ using static Windows.Win32.PInvoke;
 
 unsafe
 {
-    CoCreateInstance(
-        typeof(SpellCheckerFactory).GUID,
-        null,
-        CLSCTX.CLSCTX_INPROC_SERVER,
-        out ISpellCheckerFactory spellCheckerFactory).ThrowOnFailure();
+    var spellCheckerFactory = (ISpellCheckerFactory)new SpellCheckerFactory();
 
     BOOL supported = spellCheckerFactory.IsSupported("en-US");
 

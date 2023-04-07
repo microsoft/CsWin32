@@ -49,7 +49,28 @@ public partial class Generator
                     CustomAttributeHandleCollection fieldAttributes = fieldDef.GetCustomAttributes();
                     TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null);
                     hasUtf16CharField |= fieldTypeInfo is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.Char };
-                    TypeSyntaxAndMarshaling fieldTypeSyntax = fieldTypeInfo.ToTypeSyntax(typeSettings, fieldAttributes);
+                    TypeSyntaxSettings thisFieldTypeSettings = typeSettings;
+
+                    // Do not qualify names of a type nested inside *this* struct, since this struct may or may not have a mangled name.
+                    if (thisFieldTypeSettings.QualifyNames && fieldTypeInfo is HandleTypeHandleInfo fieldHandleTypeInfo && this.IsNestedType(fieldHandleTypeInfo.Handle))
+                    {
+                        if (fieldHandleTypeInfo.Handle.Kind == HandleKind.TypeReference)
+                        {
+                            if (this.TryGetTypeDefHandle((TypeReferenceHandle)fieldHandleTypeInfo.Handle, out QualifiedTypeDefinitionHandle fieldTypeDefHandle) && fieldTypeDefHandle.Generator == this)
+                            {
+                                foreach (TypeDefinitionHandle nestedTypeHandle in typeDef.GetNestedTypes())
+                                {
+                                    if (fieldTypeDefHandle.DefinitionHandle == nestedTypeHandle)
+                                    {
+                                        thisFieldTypeSettings = thisFieldTypeSettings with { QualifyNames = false };
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    TypeSyntaxAndMarshaling fieldTypeSyntax = fieldTypeInfo.ToTypeSyntax(thisFieldTypeSettings, fieldAttributes);
                     (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? MarshalAsAttribute) fieldInfo = this.ReinterpretFieldType(fieldDef, fieldTypeSyntax.Type, fieldAttributes, context);
                     additionalMembers = additionalMembers.AddRange(fieldInfo.AdditionalMembers);
 
@@ -147,7 +168,7 @@ public partial class Generator
 
         // If the field is a pointer to a COM interface (and we're using bona fide interfaces),
         // then we must type it as an array.
-        if (context.AllowMarshaling && fieldTypeHandleInfo is PointerTypeHandleInfo ptr3 && this.IsManagedType(ptr3.ElementType))
+        if (context.AllowMarshaling && fieldTypeHandleInfo is PointerTypeHandleInfo ptr3 && this.IsInterface(ptr3.ElementType))
         {
             return (ArrayType(ptr3.ElementType.ToTypeSyntax(typeSettings, null).Type).AddRankSpecifiers(ArrayRankSpecifier()), default(SyntaxList<MemberDeclarationSyntax>), marshalAs);
         }

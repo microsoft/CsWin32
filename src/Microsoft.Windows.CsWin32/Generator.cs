@@ -138,7 +138,7 @@ public partial class Generator : IDisposable
         this.externReleaseSignatureTypeSettings = this.externSignatureTypeSettings with { PreferNativeInt = false, PreferMarshaledTypes = false };
         this.comSignatureTypeSettings = this.generalTypeSettings with { QualifyNames = true, PreferInOutRef = options.AllowMarshaling };
         this.extensionMethodSignatureTypeSettings = this.generalTypeSettings with { QualifyNames = true };
-        this.functionPointerTypeSettings = this.generalTypeSettings with { QualifyNames = true };
+        this.functionPointerTypeSettings = this.generalTypeSettings with { QualifyNames = true, AllowMarshaling = false };
         this.errorMessageTypeSettings = this.generalTypeSettings with { QualifyNames = true, Generator = null }; // Avoid risk of infinite recursion from errors in ToTypeSyntax
 
         this.methodsAndConstantsClassName = IdentifierName(options.ClassName);
@@ -1159,9 +1159,17 @@ public partial class Generator : IDisposable
                     StructDeclarationSyntax structDeclaration = this.DeclareStruct(typeDefHandle, context);
 
                     // Proactively generate all nested types as well.
+                    // If the outer struct is using ExplicitLayout, generate the nested types as unmanaged structs since that's what will be needed.
+                    Context nestedContext = context;
+                    bool explicitLayout = (typeDef.Attributes & TypeAttributes.ExplicitLayout) == TypeAttributes.ExplicitLayout;
+                    if (context.AllowMarshaling && explicitLayout)
+                    {
+                        nestedContext = nestedContext with { AllowMarshaling = false };
+                    }
+
                     foreach (TypeDefinitionHandle nestedHandle in typeDef.GetNestedTypes())
                     {
-                        if (this.RequestInteropTypeHelper(nestedHandle, context) is { } nestedType)
+                        if (this.RequestInteropTypeHelper(nestedHandle, nestedContext) is { } nestedType)
                         {
                             structDeclaration = structDeclaration.AddMembers(nestedType);
                         }
@@ -1201,7 +1209,7 @@ public partial class Generator : IDisposable
         }
         catch (Exception ex)
         {
-            throw new GenerationFailedException("Failed to generate " + this.Reader.GetString(typeDef.Name), ex);
+            throw new GenerationFailedException($"Failed to generate {this.Reader.GetString(typeDef.Name)}{(context.AllowMarshaling ? string.Empty : " (unmanaged)")}", ex);
         }
     }
 
@@ -1365,6 +1373,7 @@ public partial class Generator : IDisposable
         }
     }
 
+    [DebuggerDisplay($"AllowMarshaling: {{{nameof(AllowMarshaling)}}}")]
     internal record struct Context
     {
         /// <summary>

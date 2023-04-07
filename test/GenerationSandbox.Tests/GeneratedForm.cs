@@ -7,6 +7,7 @@ using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.Networking.ActiveDirectory;
 using Windows.Win32.System.Diagnostics.Debug;
+using Windows.Win32.System.Threading;
 
 #pragma warning disable CA1812 // dead code
 
@@ -64,5 +65,12 @@ internal static unsafe class GeneratedForm
     {
         Windows.Win32.UI.Shell.SHFILEOPSTRUCTW s = default;
         PCZZWSTR from = s.pFrom;
+    }
+
+    private static void PROCESS_BASIC_INFORMATION_PebBaseAddressIsPointer()
+    {
+        PROCESS_BASIC_INFORMATION info = default;
+        PEB_unmanaged* p = null;
+        info.PebBaseAddress = p;
     }
 }

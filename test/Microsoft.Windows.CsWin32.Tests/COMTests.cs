@@ -250,6 +250,8 @@ public class COMTests : GeneratorTestBase
             "IPicture", // An interface with properties that cannot be represented as properties.
             "ID2D1DeviceContext2", // CreateLookupTable3D takes fixed length arrays as parameters
             "IVPBaseConfig", // GetConnectInfo has a CountParamIndex that points to an [In, Out] parameter.
+            "IXAudio2SourceVoice", // Requires switch to unmanaged IXAudio2Voice struct which verifies type names retain the _unmanaged suffix everywhere required.
+            "MSP_EVENT_INFO", // Generates ITStream_unmanaged and ITTerminal_unmanaged
             "IWMDMDevice2")] // The GetSpecifyPropertyPages method has an NativeArrayInfo.CountParamIndex pointing at an [Out] parameter.
         string api,
         bool allowMarshaling)

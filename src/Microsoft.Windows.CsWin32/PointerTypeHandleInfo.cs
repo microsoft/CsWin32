@@ -9,6 +9,12 @@ internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleIn
 
     internal override TypeSyntaxAndMarshaling ToTypeSyntax(TypeSyntaxSettings inputs, CustomAttributeHandleCollection? customAttributes, ParameterAttributes parameterAttributes)
     {
+        // We can't marshal a pointer exposed as a field, unless it's a pointer to an array.
+        if (inputs.AllowMarshaling && inputs.IsField && (customAttributes is null || inputs.Generator?.FindNativeArrayInfoAttribute(customAttributes.Value) is null))
+        {
+            inputs = inputs with { AllowMarshaling = false };
+        }
+
         TypeSyntaxAndMarshaling elementTypeDetails = this.ElementType.ToTypeSyntax(inputs with { PreferInOutRef = false }, customAttributes);
         if (elementTypeDetails.MarshalAsAttribute is object || inputs.Generator?.IsManagedType(this.ElementType) is true || (inputs.PreferInOutRef && this.ElementType is PrimitiveTypeHandleInfo { PrimitiveTypeCode: not PrimitiveTypeCode.Void }))
         {
@@ -66,13 +72,6 @@ internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleIn
         else if (inputs.AllowMarshaling && inputs.Generator?.FindInteropDecorativeAttribute(customAttributes, "ComOutPtrAttribute") is not null)
         {
             return new TypeSyntaxAndMarshaling(PredefinedType(Token(SyntaxKind.ObjectKeyword)), new MarshalAsAttribute(UnmanagedType.IUnknown), null);
-        }
-
-        // Since we'll be using pointers, we have to ensure the element type does not require any marshaling.
-        if (inputs.AllowMarshaling)
-        {
-            // Evidently all tests pass without actually doing this, so we'll leave it out for now.
-            ////elementTypeDetails = this.ElementType.ToTypeSyntax(inputs with { AllowMarshaling = false }, customAttributes);
         }
 
         return new TypeSyntaxAndMarshaling(PointerType(elementTypeDetails.Type));

@@ -117,4 +117,35 @@ namespace Microsoft.Windows.Sdk
         BaseTypeDeclarationSyntax type = Assert.Single(this.FindGeneratedType("FARPROC"));
         Assert.IsType<StructDeclarationSyntax>(type);
     }
+
+    [Fact]
+    public void PointerFieldIsDeclaredAsPointer()
+    {
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate("PROCESS_BASIC_INFORMATION", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        var type = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("PROCESS_BASIC_INFORMATION"));
+        FieldDeclarationSyntax field = Assert.Single(type.Members.OfType<FieldDeclarationSyntax>(), m => m.Declaration.Variables.Any(v => v.Identifier.ValueText == "PebBaseAddress"));
+        Assert.IsType<PointerTypeSyntax>(field.Declaration.Type);
+    }
+
+    [Theory]
+    [CombinatorialData]
+    public void InterestingStructs(
+        [CombinatorialValues(
+        "WSD_EVENT")] // has a pointer field to a managed struct
+        string name,
+        bool allowMarshaling)
+    {
+        var options = DefaultTestGeneratorOptions with
+        {
+            AllowMarshaling = allowMarshaling,
+        };
+        this.generator = this.CreateGenerator(options);
+        Assert.True(this.generator.TryGenerate(name, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+    }
 }

@@ -22,6 +22,8 @@
       <group targetFramework="net45">
         <dependency id="Microsoft.Windows.SDK.Win32Metadata" version="$MetadataVersion$" include="buildTransitive" />
         <dependency id="Microsoft.Windows.SDK.Win32Docs" version="$ApiDocsVersion$" include="buildTransitive" />
+        <dependency id="System.Memory" version="4.5.5" include="All" />
+        <dependency id="System.Runtime.CompilerServices.Unsafe" version="5.0.0" include="All" />
       </group>
       <group targetFramework="net461">
         <dependency id="Microsoft.Windows.SDK.Win32Metadata" version="$MetadataVersion$" include="buildTransitive" />

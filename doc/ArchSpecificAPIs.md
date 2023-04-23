@@ -29,7 +29,7 @@ To generate arch-specific APIs, target your C# compilation to a specific archite
 One very simple way to do this is add this property to your .csproj project file:
 
 ```xml
-<PlatformTarget>x64<PlatformTarget>
+<PlatformTarget>x64</PlatformTarget>
 ```
 
 This will effectively produce an x64-specific assembly.

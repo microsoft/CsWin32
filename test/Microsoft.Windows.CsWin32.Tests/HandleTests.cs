@@ -111,7 +111,7 @@ public class HandleTests : GeneratorTestBase
     [Theory]
     [InlineData("HANDLE")]
     [InlineData("HGDIOBJ")]
-    [InlineData("HINSTANCE")]
+    [InlineData("HMODULE")]
     public void HandleStructsHaveStaticNullMember(string handleName)
     {
         // A null HGDIOBJ has a specific meaning beyond just the concept of an invalid handle:

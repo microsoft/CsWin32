@@ -10,8 +10,8 @@ EndPaint
 GetMessage
 GetModuleHandle
 HDC
-HINSTANCE
 HMENU
+HMODULE
 HWND
 ICompositorDesktopInterop
 IDC_ARROW

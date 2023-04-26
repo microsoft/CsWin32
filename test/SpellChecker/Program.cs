@@ -29,7 +29,7 @@ unsafe
     Span<PWSTR> suggestionResult = new PWSTR[1];
     while (true)
     {
-        if (errors.Next() is not ISpellingError error)
+        if (errors.Next(out ISpellingError error).ThrowOnFailure() == HRESULT.S_FALSE)
         {
             break;
         }

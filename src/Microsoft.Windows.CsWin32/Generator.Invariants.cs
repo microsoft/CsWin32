@@ -5,7 +5,7 @@ namespace Microsoft.Windows.CsWin32;
 
 public partial class Generator
 {
-    internal const string InteropDecorationNamespace = "Windows.Win32.Interop";
+    internal const string InteropDecorationNamespace = "Windows.Win32.Foundation.Metadata";
     internal const string NativeArrayInfoAttribute = "NativeArrayInfoAttribute";
     internal const string RAIIFreeAttribute = "RAIIFreeAttribute";
     internal const string DoNotReleaseAttribute = "DoNotReleaseAttribute";

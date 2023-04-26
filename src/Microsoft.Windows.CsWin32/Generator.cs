@@ -456,6 +456,12 @@ public partial class Generator : IDisposable
                 continue;
             }
 
+            if (this.Reader.StringComparer.Equals(typeDef.Namespace, InteropDecorationNamespace))
+            {
+                // Ignore the attributes that describe the metadata.
+                continue;
+            }
+
             if (this.IsCompatibleWithPlatform(typeDef.GetCustomAttributes()))
             {
                 try

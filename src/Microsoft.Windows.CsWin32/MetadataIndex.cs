@@ -94,7 +94,7 @@ internal class MetadataIndex
                         var trh = (TypeReferenceHandle)memberReference.Parent;
                         TypeReference tr = mr.GetTypeReference(trh);
                         if (mr.StringComparer.Equals(tr.Name, "SupportedArchitectureAttribute") &&
-                            mr.StringComparer.Equals(tr.Namespace, "Windows.Win32.Interop"))
+                            mr.StringComparer.Equals(tr.Namespace, Generator.InteropDecorationNamespace))
                         {
                             this.SupportedArchitectureAttributeCtor = memberRefHandle;
                             break;

@@ -35,7 +35,7 @@ internal static unsafe class GeneratedForm
 
     private static void FARPROC_InSignatureChangedToIntPtr()
     {
-        FARPROC p = PInvoke.GetProcAddress(default(HINSTANCE), default(PCSTR));
+        FARPROC p = PInvoke.GetProcAddress(default(HMODULE), default(PCSTR));
         p = PInvoke.GetProcAddress(default(SafeHandle), null);
     }
 

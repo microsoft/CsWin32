@@ -73,4 +73,10 @@ internal static unsafe class GeneratedForm
         PEB_unmanaged* p = null;
         info.PebBaseAddress = p;
     }
+
+    private static void WriteFile()
+    {
+        uint written = 0;
+        PInvoke.WriteFile((SafeHandle?)null, new byte[2], &written, (NativeOverlapped*)null);
+    }
 }

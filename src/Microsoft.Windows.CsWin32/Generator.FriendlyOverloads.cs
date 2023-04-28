@@ -238,6 +238,14 @@ public partial class Generator
                     sizeParamIndex = nativeArrayInfo.CountParamIndex;
                     sizeConst = nativeArrayInfo.CountConst;
                 }
+                else if (externParam.Type is PointerTypeSyntax { ElementType: PredefinedTypeSyntax { Keyword.RawKind: (int)SyntaxKind.ByteKeyword } } && this.FindInteropDecorativeAttribute(param.GetCustomAttributes(), MemorySizeAttribute) is CustomAttribute att2)
+                {
+                    // A very special case as documented in https://github.com/microsoft/win32metadata/issues/1555
+                    // where MemorySizeAttribute is applied to byte* parameters to indicate the size of the buffer.
+                    isArray = true;
+                    MemorySize memorySize = DecodeMemorySizeAttribute(att2);
+                    sizeParamIndex = memorySize.BytesParamIndex;
+                }
 
                 IdentifierNameSyntax localName = IdentifierName(origName + "Local");
                 if (isArray)

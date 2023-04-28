@@ -1054,6 +1054,15 @@ public partial class Generator : IDisposable
         };
     }
 
+    private static MemorySize DecodeMemorySizeAttribute(CustomAttribute memorySizeAttribute)
+    {
+        CustomAttributeValue<TypeSyntax> args = memorySizeAttribute.DecodeValue(CustomAttributeTypeProvider.Instance);
+        return new MemorySize
+        {
+            BytesParamIndex = (short?)args.NamedArguments.FirstOrDefault(a => a.Name == "BytesParamIndex").Value,
+        };
+    }
+
     private bool TryGetRenamedMethod(string methodName, [NotNullWhen(true)] out string? newName)
     {
         if (this.WideCharOnly && IsWideFunction(methodName))
@@ -1419,6 +1428,11 @@ public partial class Generator : IDisposable
         internal short? CountParamIndex { get; init; }
 
         internal int? CountConst { get; init; }
+    }
+
+    internal struct MemorySize
+    {
+        internal short? BytesParamIndex { get; init; }
     }
 
     private class DirectiveTriviaRemover : CSharpSyntaxRewriter

@@ -21,7 +21,7 @@ public partial class Generator : IDisposable
     private readonly TypeSyntaxSettings functionPointerTypeSettings;
     private readonly TypeSyntaxSettings errorMessageTypeSettings;
 
-    private readonly Dictionary<string, ISymbol?> findTypeSymbolIfAlreadyAvailableCache = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, IReadOnlyList<ISymbol>> findTypeSymbolIfAlreadyAvailableCache = new(StringComparer.Ordinal);
     private readonly Rental<MetadataReader> metadataReader;
     private readonly GeneratorOptions options;
     private readonly CSharpCompilation? compilation;
@@ -953,7 +953,9 @@ public partial class Generator : IDisposable
         fullyQualifiedName = $"{ns}.{specialName}";
 
         // Skip if the compilation already defines this type or can access it from elsewhere.
-        if (this.FindTypeSymbolIfAlreadyAvailable(fullyQualifiedName) is object)
+        // But if we have more than one match, the compiler won't be able to resolve our type references.
+        // In such a case, we'll prefer to just declare our own local symbol.
+        if (this.FindTypeSymbolsIfAlreadyAvailable(fullyQualifiedName).Count == 1)
         {
             // The type already exists either in this project or a referenced one.
             return null;
@@ -1064,24 +1066,27 @@ public partial class Generator : IDisposable
         return false;
     }
 
-    private ISymbol? FindTypeSymbolIfAlreadyAvailable(string fullyQualifiedMetadataName)
+    private ISymbol? FindTypeSymbolIfAlreadyAvailable(string fullyQualifiedMetadataName) => this.FindTypeSymbolsIfAlreadyAvailable(fullyQualifiedMetadataName).FirstOrDefault();
+
+    private IReadOnlyList<ISymbol> FindTypeSymbolsIfAlreadyAvailable(string fullyQualifiedMetadataName)
     {
-        if (this.findTypeSymbolIfAlreadyAvailableCache.TryGetValue(fullyQualifiedMetadataName, out ISymbol? result))
+        if (this.findTypeSymbolIfAlreadyAvailableCache.TryGetValue(fullyQualifiedMetadataName, out IReadOnlyList<ISymbol>? result))
         {
             return result;
         }
 
+        List<ISymbol>? results = null;
         if (this.compilation is object)
         {
             if (this.compilation.Assembly.GetTypeByMetadataName(fullyQualifiedMetadataName) is { } ownSymbol)
             {
                 // This assembly defines it.
                 // But if it defines it as a partial, we should not consider it as fully defined so we populate our side.
-                result = ownSymbol.DeclaringSyntaxReferences.Any(sr => sr.GetSyntax() is BaseTypeDeclarationSyntax type && type.Modifiers.Any(SyntaxKind.PartialKeyword))
-                    ? null
-                    : ownSymbol;
-                this.findTypeSymbolIfAlreadyAvailableCache.Add(fullyQualifiedMetadataName, result);
-                return result;
+                if (!ownSymbol.DeclaringSyntaxReferences.Any(sr => sr.GetSyntax() is BaseTypeDeclarationSyntax type && type.Modifiers.Any(SyntaxKind.PartialKeyword)))
+                {
+                    results ??= new();
+                    results.Add(ownSymbol);
+                }
             }
 
             foreach (MetadataReference? reference in this.compilation.References)
@@ -1099,23 +1104,30 @@ public partial class Generator : IDisposable
                         if (this.compilation.IsSymbolAccessibleWithin(externalSymbol, this.compilation.Assembly))
                         {
                             // A referenced assembly declares this symbol and it is accessible to our own.
-                            // If we already found a match, then we have multiple matches now and the compiler won't be able to resolve our type references.
-                            // In such a case, we'll prefer to just declare our own local symbol.
-                            if (result is not null)
-                            {
-                                this.findTypeSymbolIfAlreadyAvailableCache.Add(fullyQualifiedMetadataName, null);
-                                return null;
-                            }
-
-                            result = externalSymbol;
+                            results ??= new();
+                            results.Add(externalSymbol);
                         }
                     }
                 }
             }
         }
 
+        result = (IReadOnlyList<ISymbol>?)results ?? Array.Empty<ISymbol>();
         this.findTypeSymbolIfAlreadyAvailableCache.Add(fullyQualifiedMetadataName, result);
         return result;
+    }
+
+    private ISymbol? FindExtensionMethodIfAlreadyAvailable(string fullyQualifiedTypeMetadataName, string methodName)
+    {
+        foreach (INamedTypeSymbol typeSymbol in this.FindTypeSymbolsIfAlreadyAvailable(fullyQualifiedTypeMetadataName).OfType<INamedTypeSymbol>())
+        {
+            if (typeSymbol.GetMembers(methodName) is { Length: > 0 } members)
+            {
+                return members[0];
+            }
+        }
+
+        return null;
     }
 
     private MemberDeclarationSyntax? RequestInteropTypeHelper(TypeDefinitionHandle typeDefHandle, Context context)
@@ -1132,7 +1144,10 @@ public partial class Generator : IDisposable
         bool isManagedType = this.IsManagedType(typeDefHandle);
         string fullyQualifiedName = this.GetMangledIdentifier(ns + "." + name, context.AllowMarshaling, isManagedType);
 
-        if (this.FindTypeSymbolIfAlreadyAvailable(fullyQualifiedName) is object)
+        // Skip if the compilation already defines this type or can access it from elsewhere.
+        // But if we have more than one match, the compiler won't be able to resolve our type references.
+        // In such a case, we'll prefer to just declare our own local symbol.
+        if (this.FindTypeSymbolsIfAlreadyAvailable(fullyQualifiedName).Count == 1)
         {
             // The type already exists either in this project or a referenced one.
             return null;

@@ -777,8 +777,12 @@ public partial class Generator
 
     private ClassDeclarationSyntax DeclareInlineArrayIndexerExtensionsClass()
     {
+        var filteredExtensionMethods =
+            this.committedCode.InlineArrayIndexerExtensions.Where(e =>
+                this.FindExtensionMethodIfAlreadyAvailable($"{this.Namespace}.{InlineArrayIndexerExtensionsClassName}", e.Identifier.ValueText) is null).ToArray();
+
         return ClassDeclaration(InlineArrayIndexerExtensionsClassName.Identifier)
-            .AddMembers(this.committedCode.InlineArrayIndexerExtensions.ToArray())
+            .AddMembers(filteredExtensionMethods)
             .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)))
             .AddAttributeLists(AttributeList().AddAttributes(GeneratedCodeAttribute));
     }

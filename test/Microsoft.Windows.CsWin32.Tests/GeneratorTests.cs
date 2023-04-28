@@ -828,6 +828,8 @@ public class GeneratorTests : GeneratorTestBase
     [Theory, PairwiseData]
     public void ProjectReferenceBetweenTwoGeneratingProjects(bool internalsVisibleTo)
     {
+        this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(Platform.X64));
+
         CSharpCompilation referencedProject = this.compilation
             .WithAssemblyName("refdProj");
         if (internalsVisibleTo)
@@ -840,6 +842,7 @@ public class GeneratorTests : GeneratorTestBase
         Assert.True(referencedGenerator.TryGenerate("LockWorkStation", CancellationToken.None));
         Assert.True(referencedGenerator.TryGenerate("CreateFile", CancellationToken.None));
         Assert.True(referencedGenerator.TryGenerate("RAWHID", CancellationToken.None));
+        Assert.True(referencedGenerator.TryGenerate("SHFILEINFOW", CancellationToken.None)); // generates inline arrays + extension methods
         referencedProject = this.AddGeneratedCode(referencedProject, referencedGenerator);
         this.AssertNoDiagnostics(referencedProject);
 
@@ -848,6 +851,7 @@ public class GeneratorTests : GeneratorTestBase
         this.generator = this.CreateGenerator(new GeneratorOptions { ClassName = "P2" });
         Assert.True(this.generator.TryGenerate("HidD_GetAttributes", CancellationToken.None));
         Assert.True(this.generator.TryGenerate("RAWHID", CancellationToken.None));
+        Assert.True(this.generator.TryGenerate("DROPDESCRIPTION", CancellationToken.None)); // reuses the same inline array and extension methods as SHFILEINFOW.
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
     }

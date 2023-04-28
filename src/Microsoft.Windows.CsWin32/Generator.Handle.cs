@@ -67,7 +67,7 @@ public partial class Generator
                 return safeHandleType;
             }
 
-            if (this.FindTypeSymbolIfAlreadyAvailable($"{this.Namespace}.{safeHandleType}") is object)
+            if (this.FindTypeSymbolsIfAlreadyAvailable($"{this.Namespace}.{safeHandleType}").Count > 0)
             {
                 return safeHandleType;
             }

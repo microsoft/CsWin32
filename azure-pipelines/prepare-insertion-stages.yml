@@ -1,3 +1,8 @@
+parameters:
+- name: ArchiveSymbols
+  type: boolean
+  default: true
+
 stages:
 
 - stage: azure_public_winsdk_feed

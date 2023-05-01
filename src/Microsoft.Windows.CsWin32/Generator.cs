@@ -71,6 +71,11 @@ public partial class Generator : IDisposable
     /// <param name="parseOptions">The parse options that will be used for the generated code.</param>
     public Generator(string metadataLibraryPath, Docs? docs, GeneratorOptions options, CSharpCompilation? compilation = null, CSharpParseOptions? parseOptions = null)
     {
+        if (options is null)
+        {
+            throw new ArgumentNullException(nameof(options));
+        }
+
         this.InputAssemblyName = Path.GetFileNameWithoutExtension(metadataLibraryPath);
         this.MetadataIndex = MetadataIndex.Get(metadataLibraryPath, compilation?.Options.Platform);
         this.ApiDocs = docs;
@@ -238,6 +243,11 @@ public partial class Generator : IDisposable
     /// <returns><see langword="true"/> if the string contains characters that are likely mistakenly included and causing a mismatch; <see langword="false"/> otherwise.</returns>
     public static bool ContainsIllegalCharactersForAPIName(string apiName)
     {
+        if (apiName is null)
+        {
+            throw new ArgumentNullException(nameof(apiName));
+        }
+
         for (int i = 0; i < apiName.Length; i++)
         {
             char ch = apiName[i];

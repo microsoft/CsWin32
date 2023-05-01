@@ -22,7 +22,7 @@ jobs:
 
   - template: install-dependencies.yml
 
-  - powershell: '& (./azure-pipelines/Get-nbgv.ps1) cloud -ca'
+  - script: dotnet tool run nbgv cloud -ca
     displayName: ⚙ Set build number
 
   - template: dotnet.yml

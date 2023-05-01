@@ -57,6 +57,11 @@ public class Docs
     /// <returns>An instance that contains all the docs provided. When <paramref name="docs"/> contains exactly one element, that element is returned.</returns>
     public static Docs Merge(IReadOnlyList<Docs> docs)
     {
+        if (docs is null)
+        {
+            throw new ArgumentNullException(nameof(docs));
+        }
+
         if (docs.Count == 1)
         {
             // Nothing to merge.

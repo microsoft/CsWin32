@@ -20,6 +20,20 @@ public class StructTests : GeneratorTestBase
     }
 
     [Theory]
+    [InlineData("BCRYPT_KEY_HANDLE", "BCRYPT_HANDLE")]
+    public void AlsoUsableForTypeDefs(string structName, string alsoUsableForStructName)
+    {
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate(structName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        Assert.IsType<StructDeclarationSyntax>(this.FindGeneratedType(structName).Single());
+        Assert.IsType<StructDeclarationSyntax>(this.FindGeneratedType(alsoUsableForStructName).Single());
+
+        // TODO: Assert that structName can be implicitly converted to alsoUsableForStructName.
+    }
+
+    [Theory]
     [InlineData("BOOL")]
     [InlineData("HRESULT")]
     [InlineData("MEMORY_BASIC_INFORMATION")]

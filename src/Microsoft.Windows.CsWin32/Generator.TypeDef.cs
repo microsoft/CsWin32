@@ -174,6 +174,26 @@ public partial class Generator
             }
         }
 
+        foreach (var alsoUsableForValue in this.GetAlsoUsableForValues(typeDefHandle))
+        {
+            // Add implicit conversion operators for each AlsoUsableFor attribute on the struct.
+            var fullyQualifiedAlsoUsableForValue = $"{this.Reader.GetString(typeDef.Namespace)}.{alsoUsableForValue}";
+            if (this.TryGenerateType(fullyQualifiedAlsoUsableForValue))
+            {
+                ISymbol? alsoUsableForTypeSymbol = this.FindTypeSymbolIfAlreadyAvailable(fullyQualifiedAlsoUsableForValue);
+                IdentifierNameSyntax alsoUsableForTypeSymbolName = IdentifierName(alsoUsableForValue);
+                ExpressionSyntax valueValueArg = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, fieldIdentifierName);
+
+                // public static implicit operator HINSTANCE(HMODULE value) => new HINSTANCE(value.Value);
+                members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), alsoUsableForTypeSymbolName)
+                    .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))))
+                    .WithExpressionBody(ArrowExpressionClause(
+                        ObjectCreationExpression(alsoUsableForTypeSymbolName).AddArgumentListArguments(Argument(valueValueArg))))
+                    .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
+                    .WithSemicolonToken(SemicolonWithLineFeed));
+            }
+        }
+
         switch (name.Identifier.ValueText)
         {
             case "PWSTR":
@@ -317,6 +337,41 @@ public partial class Generator
             .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
             .WithExpressionBody(ArrowExpressionClause(hashExpr))
             .WithSemicolonToken(SemicolonWithLineFeed);
+    }
+
+    private List<string> GetAlsoUsableForValues(EntityHandle handle)
+    {
+        QualifiedTypeDefinitionHandle tdh;
+        if (handle.Kind == HandleKind.TypeReference)
+        {
+            if (!this.TryGetTypeDefHandle((TypeReferenceHandle)handle, out tdh))
+            {
+                throw new GenerationFailedException("Unable to look up type definition.");
+            }
+        }
+        else if (handle.Kind == HandleKind.TypeDefinition)
+        {
+            tdh = new QualifiedTypeDefinitionHandle(this, (TypeDefinitionHandle)handle);
+        }
+        else
+        {
+            throw new GenerationFailedException("Unexpected handle type.");
+        }
+
+        List<string> alsoUsableForValues = new();
+        QualifiedTypeDefinition td = tdh.Resolve();
+        foreach (CustomAttributeHandle ah in td.Definition.GetCustomAttributes())
+        {
+            CustomAttribute a = td.Reader.GetCustomAttribute(ah);
+            if (MetadataUtilities.IsAttribute(td.Reader, a, InteropDecorationNamespace, AlsoUsableForAttribute))
+            {
+                CustomAttributeValue<TypeSyntax> attributeData = a.DecodeValue(CustomAttributeTypeProvider.Instance);
+                string alsoUsableForValue = (string)(attributeData.FixedArguments[0].Value ?? throw new GenerationFailedException("Missing invalid value attribute."));
+                alsoUsableForValues.Add(alsoUsableForValue);
+            }
+        }
+
+        return alsoUsableForValues;
     }
 
     private bool IsSafeHandleCompatibleTypeDef(TypeHandleInfo? typeDef)

@@ -365,7 +365,7 @@ public partial class Generator
             if (MetadataUtilities.IsAttribute(td.Reader, a, InteropDecorationNamespace, AlsoUsableForAttribute))
             {
                 CustomAttributeValue<TypeSyntax> attributeData = a.DecodeValue(CustomAttributeTypeProvider.Instance);
-                string alsoUsableForValue = (string)(attributeData.FixedArguments[0].Value ?? throw new GenerationFailedException("Missing invalid value attribute."));
+                string alsoUsableForValue = (string)(attributeData.FixedArguments[0].Value ?? throw new GenerationFailedException("Missing AlsoUsableFor attribute."));
                 alsoUsableForValues.Add(alsoUsableForValue);
             }
         }

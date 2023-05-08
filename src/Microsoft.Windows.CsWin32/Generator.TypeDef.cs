@@ -174,13 +174,12 @@ public partial class Generator
             }
         }
 
-        foreach (var alsoUsableForValue in this.GetAlsoUsableForValues(typeDefHandle))
+        foreach (string alsoUsableForValue in this.GetAlsoUsableForValues(typeDefHandle))
         {
             // Add implicit conversion operators for each AlsoUsableFor attribute on the struct.
             var fullyQualifiedAlsoUsableForValue = $"{this.Reader.GetString(typeDef.Namespace)}.{alsoUsableForValue}";
             if (this.TryGenerateType(fullyQualifiedAlsoUsableForValue))
             {
-                ISymbol? alsoUsableForTypeSymbol = this.FindTypeSymbolIfAlreadyAvailable(fullyQualifiedAlsoUsableForValue);
                 IdentifierNameSyntax alsoUsableForTypeSymbolName = IdentifierName(alsoUsableForValue);
                 ExpressionSyntax valueValueArg = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, fieldIdentifierName);
 

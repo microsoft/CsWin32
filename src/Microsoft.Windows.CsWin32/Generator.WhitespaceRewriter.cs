@@ -331,9 +331,10 @@ public partial class Generator
                     StructDeclarationSyntax or
                     NamespaceDeclarationSyntax or
                     EnumDeclarationSyntax or
-                    MethodDeclarationSyntax or
+                    BaseMethodDeclarationSyntax or
                     IndexerDeclarationSyntax or
-                    PropertyDeclarationSyntax)
+                    PropertyDeclarationSyntax or
+                    FieldDeclarationSyntax)
                 {
                     mutableMembers[i] = mutableMembers[i].WithLeadingTrivia(mutableMembers[i].GetLeadingTrivia().Insert(0, LineFeed));
                 }

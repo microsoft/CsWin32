@@ -174,7 +174,7 @@ public partial class Generator
             }
         }
 
-        foreach (string alsoUsableForValue in this.GetAlsoUsableForValues(typeDefHandle))
+        foreach (string alsoUsableForValue in this.GetAlsoUsableForValues(typeDef))
         {
             // Add implicit conversion operators for each AlsoUsableFor attribute on the struct.
             var fullyQualifiedAlsoUsableForValue = $"{this.Reader.GetString(typeDef.Namespace)}.{alsoUsableForValue}";
@@ -338,15 +338,13 @@ public partial class Generator
             .WithSemicolonToken(SemicolonWithLineFeed);
     }
 
-    private List<string> GetAlsoUsableForValues(TypeDefinitionHandle handle)
+    private List<string> GetAlsoUsableForValues(TypeDefinition typeDef)
     {
         List<string> alsoUsableForValues = new();
-        QualifiedTypeDefinitionHandle tdh = new QualifiedTypeDefinitionHandle(this, handle);
-        QualifiedTypeDefinition td = tdh.Resolve();
-        foreach (CustomAttributeHandle ah in td.Definition.GetCustomAttributes())
+        foreach (CustomAttributeHandle ah in typeDef.GetCustomAttributes())
         {
-            CustomAttribute a = td.Reader.GetCustomAttribute(ah);
-            if (MetadataUtilities.IsAttribute(td.Reader, a, InteropDecorationNamespace, AlsoUsableForAttribute))
+            CustomAttribute a = this.Reader.GetCustomAttribute(ah);
+            if (MetadataUtilities.IsAttribute(this.Reader, a, InteropDecorationNamespace, AlsoUsableForAttribute))
             {
                 CustomAttributeValue<TypeSyntax> attributeData = a.DecodeValue(CustomAttributeTypeProvider.Instance);
                 string alsoUsableForValue = (string)(attributeData.FixedArguments[0].Value ?? throw new GenerationFailedException("Missing AlsoUsableFor attribute."));

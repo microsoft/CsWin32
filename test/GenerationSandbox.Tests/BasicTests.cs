@@ -7,6 +7,7 @@ using Windows.Win32;
 using Windows.Win32.Devices.Display;
 using Windows.Win32.Foundation;
 using Windows.Win32.Media.DirectShow;
+using Windows.Win32.Security.Cryptography;
 using Windows.Win32.Storage.FileSystem;
 using Windows.Win32.System.Com;
 using Windows.Win32.System.Console;
@@ -34,6 +35,14 @@ public class BasicTests
         new object[] { decimal.MinValue },
         new object[] { decimal.MaxValue },
     };
+
+    [Fact]
+    public void AlsoUsableForImplicitConversion()
+    {
+        BCRYPT_KEY_HANDLE bcryptKeyHandle = new(new IntPtr(5));
+        BCRYPT_HANDLE bcryptHandle = bcryptKeyHandle;
+        Assert.Equal(bcryptKeyHandle, bcryptHandle);
+    }
 
     [Fact]
     public void GetTickCount_Nonzero()

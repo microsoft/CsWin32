@@ -174,6 +174,25 @@ public partial class Generator
             }
         }
 
+        foreach (string alsoUsableForValue in this.GetAlsoUsableForValues(typeDef))
+        {
+            // Add implicit conversion operators for each AlsoUsableFor attribute on the struct.
+            var fullyQualifiedAlsoUsableForValue = $"{this.Reader.GetString(typeDef.Namespace)}.{alsoUsableForValue}";
+            if (this.TryGenerateType(fullyQualifiedAlsoUsableForValue))
+            {
+                IdentifierNameSyntax alsoUsableForTypeSymbolName = IdentifierName(alsoUsableForValue);
+                ExpressionSyntax valueValueArg = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, fieldIdentifierName);
+
+                // public static implicit operator HINSTANCE(HMODULE value) => new HINSTANCE(value.Value);
+                members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), alsoUsableForTypeSymbolName)
+                    .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))))
+                    .WithExpressionBody(ArrowExpressionClause(
+                        ObjectCreationExpression(alsoUsableForTypeSymbolName).AddArgumentListArguments(Argument(valueValueArg))))
+                    .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
+                    .WithSemicolonToken(SemicolonWithLineFeed));
+            }
+        }
+
         switch (name.Identifier.ValueText)
         {
             case "PWSTR":
@@ -317,6 +336,23 @@ public partial class Generator
             .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
             .WithExpressionBody(ArrowExpressionClause(hashExpr))
             .WithSemicolonToken(SemicolonWithLineFeed);
+    }
+
+    private List<string> GetAlsoUsableForValues(TypeDefinition typeDef)
+    {
+        List<string> alsoUsableForValues = new();
+        foreach (CustomAttributeHandle ah in typeDef.GetCustomAttributes())
+        {
+            CustomAttribute a = this.Reader.GetCustomAttribute(ah);
+            if (MetadataUtilities.IsAttribute(this.Reader, a, InteropDecorationNamespace, AlsoUsableForAttribute))
+            {
+                CustomAttributeValue<TypeSyntax> attributeData = a.DecodeValue(CustomAttributeTypeProvider.Instance);
+                string alsoUsableForValue = (string)(attributeData.FixedArguments[0].Value ?? throw new GenerationFailedException("Missing AlsoUsableFor attribute."));
+                alsoUsableForValues.Add(alsoUsableForValue);
+            }
+        }
+
+        return alsoUsableForValues;
     }
 
     private bool IsSafeHandleCompatibleTypeDef(TypeHandleInfo? typeDef)

@@ -70,6 +70,7 @@ public partial class Generator
     private const string SystemRuntimeCompilerServices = "System.Runtime.CompilerServices";
     private const string SystemRuntimeInteropServices = "System.Runtime.InteropServices";
     private const string NativeTypedefAttribute = "NativeTypedefAttribute";
+    private const string AlsoUsableForAttribute = "AlsoUsableForAttribute";
     private const string InvalidHandleValueAttribute = "InvalidHandleValueAttribute";
     private const string CanReturnMultipleSuccessValuesAttribute = "CanReturnMultipleSuccessValuesAttribute";
     private const string CanReturnErrorsAsSuccessAttribute = "CanReturnErrorsAsSuccessAttribute";

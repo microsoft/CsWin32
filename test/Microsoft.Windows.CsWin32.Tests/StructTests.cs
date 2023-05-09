@@ -29,8 +29,6 @@ public class StructTests : GeneratorTestBase
         this.AssertNoDiagnostics();
         Assert.IsType<StructDeclarationSyntax>(this.FindGeneratedType(structName).Single());
         Assert.IsType<StructDeclarationSyntax>(this.FindGeneratedType(alsoUsableForStructName).Single());
-
-        // TODO: Assert that structName can be implicitly converted to alsoUsableForStructName.
     }
 
     [Theory]

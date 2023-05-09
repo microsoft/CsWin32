@@ -338,26 +338,10 @@ public partial class Generator
             .WithSemicolonToken(SemicolonWithLineFeed);
     }
 
-    private List<string> GetAlsoUsableForValues(EntityHandle handle)
+    private List<string> GetAlsoUsableForValues(TypeDefinitionHandle handle)
     {
-        QualifiedTypeDefinitionHandle tdh;
-        if (handle.Kind == HandleKind.TypeReference)
-        {
-            if (!this.TryGetTypeDefHandle((TypeReferenceHandle)handle, out tdh))
-            {
-                throw new GenerationFailedException("Unable to look up type definition.");
-            }
-        }
-        else if (handle.Kind == HandleKind.TypeDefinition)
-        {
-            tdh = new QualifiedTypeDefinitionHandle(this, (TypeDefinitionHandle)handle);
-        }
-        else
-        {
-            throw new GenerationFailedException("Unexpected handle type.");
-        }
-
         List<string> alsoUsableForValues = new();
+        QualifiedTypeDefinitionHandle tdh = new QualifiedTypeDefinitionHandle(this, handle);
         QualifiedTypeDefinition td = tdh.Resolve();
         foreach (CustomAttributeHandle ah in td.Definition.GetCustomAttributes())
         {

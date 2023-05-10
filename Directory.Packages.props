@@ -4,9 +4,9 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
 
-    <MetadataVersion>49.0.21-preview</MetadataVersion>
+    <MetadataVersion>51.0.33-preview</MetadataVersion>
     <!-- <DiaMetadataVersion>0.2.185-preview-g7e1e6a442c</DiaMetadataVersion> -->
-    <ApiDocsVersion>0.1.12-alpha</ApiDocsVersion>
+    <ApiDocsVersion>0.1.41-alpha</ApiDocsVersion>
 
     <CodeAnalysisVersion>4.5.0</CodeAnalysisVersion>
     <CodeAnalysisVersion Condition="'$(IsTestProject)'!='true'">3.11.0</CodeAnalysisVersion>

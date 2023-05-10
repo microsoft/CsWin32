@@ -8,6 +8,7 @@ using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.System.Com;
 using Windows.Win32.System.Com.Events;
+using Windows.Win32.System.Variant;
 
 /// <summary>
 /// Contains "tests" that never run. Merely compiling is enough to verify the generated code has the right API shape.

@@ -469,7 +469,7 @@ public partial class Generator
 
     private bool IsUntypedDelegate(TypeDefinition typeDef) => IsUntypedDelegate(this.Reader, typeDef);
 
-    private bool IsTypeDefStruct(TypeDefinition typeDef) => this.FindInteropDecorativeAttribute(typeDef.GetCustomAttributes(), NativeTypedefAttribute).HasValue;
+    private bool IsTypeDefStruct(TypeDefinition typeDef) => this.FindInteropDecorativeAttribute(typeDef.GetCustomAttributes(), NativeTypedefAttribute).HasValue || this.FindInteropDecorativeAttribute(typeDef.GetCustomAttributes(), MetadataTypedefAttribute).HasValue;
 
     private bool IsEmptyStructWithGuid(TypeDefinition typeDef)
     {

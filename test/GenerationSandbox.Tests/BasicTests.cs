@@ -37,9 +37,9 @@ public class BasicTests
     };
 
     [Fact]
-    public void AlsoUsableForImplicitConversion()
+    public unsafe void AlsoUsableForImplicitConversion()
     {
-        BCRYPT_KEY_HANDLE bcryptKeyHandle = new(new IntPtr(5));
+        BCRYPT_KEY_HANDLE bcryptKeyHandle = new((void*)5);
         BCRYPT_HANDLE bcryptHandle = bcryptKeyHandle;
         Assert.Equal(bcryptKeyHandle, bcryptHandle);
     }

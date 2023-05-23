@@ -263,6 +263,8 @@ internal static class FastSyntaxFactory
 
     internal static MethodDeclarationSyntax MethodDeclaration(TypeSyntax returnType, SyntaxToken identifier) => SyntaxFactory.MethodDeclaration(default(SyntaxList<AttributeListSyntax>), default(SyntaxTokenList), returnType.WithTrailingTrivia(TriviaList(Space)), null, identifier, null, ParameterList(), default(SyntaxList<TypeParameterConstraintClauseSyntax>), null, null, default(SyntaxToken));
 
+    internal static LocalFunctionStatementSyntax LocalFunctionStatement(TypeSyntax returnType, SyntaxToken identifier) => SyntaxFactory.LocalFunctionStatement(default(SyntaxList<AttributeListSyntax>), default(SyntaxTokenList), returnType, identifier, null, ParameterList(), default(SyntaxList<TypeParameterConstraintClauseSyntax>), null, null);
+
     internal static MethodDeclarationSyntax MethodDeclaration(SyntaxList<AttributeListSyntax> attributeLists, SyntaxTokenList modifiers, TypeSyntax returnType, ExplicitInterfaceSpecifierSyntax? explicitInterfaceSpecifier, SyntaxToken identifier, TypeParameterListSyntax? typeParameterList, ParameterListSyntax parameterList, SyntaxList<TypeParameterConstraintClauseSyntax> constraintClauses, BlockSyntax body, SyntaxToken semicolonToken) => SyntaxFactory.MethodDeclaration(attributeLists, modifiers, returnType.WithTrailingTrivia(TriviaList(Space)), explicitInterfaceSpecifier!, identifier, typeParameterList!, parameterList, constraintClauses, body, semicolonToken);
 
     internal static MemberDeclarationSyntax? ParseMemberDeclaration(string text, ParseOptions? options) => SyntaxFactory.ParseMemberDeclaration(text, options: options);

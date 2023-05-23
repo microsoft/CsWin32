@@ -30,6 +30,7 @@ PZZWSTR
 RECT
 RegLoadAppKey
 RM_PROCESS_INFO
+SHDESCRIPTIONID
 ShellLink
 ShellWindowFindWindowOptions
 ShellWindows

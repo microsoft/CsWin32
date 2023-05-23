@@ -240,6 +240,20 @@ public class COMTests : GeneratorTestBase
         this.AssertNoDiagnostics();
     }
 
+    [Fact]
+    public void AssociatedEnumOnMethodParameters()
+    {
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate("IShellFolderView", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        InterfaceDeclarationSyntax ifaceSyntax = Assert.Single(this.FindGeneratedType("IShellFolderView").OfType<InterfaceDeclarationSyntax>());
+        MethodDeclarationSyntax methodSyntax = Assert.Single(ifaceSyntax.Members.OfType<MethodDeclarationSyntax>(), m => m.Identifier.ValueText == "Select");
+        ParameterSyntax parameter = Assert.Single(methodSyntax.ParameterList.Parameters);
+        Assert.Equal("SFVS_SELECT", Assert.IsType<QualifiedNameSyntax>(parameter.Type).Right.Identifier.ValueText);
+    }
+
     [Theory]
     [CombinatorialData]
     public void InterestingComInterfaces(
@@ -320,6 +334,19 @@ public class COMTests : GeneratorTestBase
         {
             Assert.DoesNotContain(iface.AttributeLists, al => IsAttributePresent(al, "SupportedOSPlatform"));
         }
+    }
+
+    [Fact]
+    public void IStream_ProducesPopulateVTable()
+    {
+        this.compilation = this.starterCompilations["net6.0"];
+        const string typeName = "IStream";
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = false });
+        Assert.True(this.generator.TryGenerateType(typeName));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        var iface = (StructDeclarationSyntax)this.FindGeneratedType(typeName).Single();
+        Assert.Single(iface.Members.OfType<MethodDeclarationSyntax>(), m => m.Identifier.ValueText == "PopulateVTable");
     }
 
     [Theory]

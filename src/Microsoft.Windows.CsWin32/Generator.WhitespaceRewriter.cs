@@ -285,6 +285,8 @@ public partial class Generator
             return base.VisitReturnStatement(this.WithIndentingTrivia(node));
         }
 
+        public override SyntaxNode? VisitLocalFunctionStatement(LocalFunctionStatementSyntax node) => base.VisitLocalFunctionStatement(this.WithIndentingTrivia(node));
+
         public override SyntaxToken VisitToken(SyntaxToken token)
         {
             if (token.IsKind(SyntaxKind.CommaToken) && token.Parent is ParameterListSyntax or AttributeArgumentListSyntax or ArgumentListSyntax)
@@ -357,6 +359,12 @@ public partial class Generator
                 return node.ReplaceToken(firstToken, firstToken.WithLeadingTrivia(firstToken.HasLeadingTrivia ? firstToken.LeadingTrivia.Add(indentTrivia) : TriviaList(indentTrivia)));
             }
 
+            if (node is LocalFunctionStatementSyntax localFunction)
+            {
+                SyntaxToken firstToken = GetFirstTokenForFunction(localFunction);
+                return node.ReplaceToken(firstToken, firstToken.WithLeadingTrivia(firstToken.HasLeadingTrivia ? firstToken.LeadingTrivia.Add(indentTrivia) : TriviaList(indentTrivia)));
+            }
+
             // Take care to preserve xml doc comments, pragmas, etc.
             return node.WithLeadingTrivia(node.HasLeadingTrivia ? this.VisitList(node.GetLeadingTrivia()).Add(indentTrivia) : TriviaList(indentTrivia));
 
@@ -373,6 +381,22 @@ public partial class Generator
                 else
                 {
                     return memberDeclaration.GetFirstToken();
+                }
+            }
+
+            static SyntaxToken GetFirstTokenForFunction(LocalFunctionStatementSyntax localFunction)
+            {
+                if (!localFunction.AttributeLists.Any())
+                {
+                    return localFunction.GetFirstToken();
+                }
+                else if (localFunction.Modifiers.Any())
+                {
+                    return localFunction.Modifiers[0];
+                }
+                else
+                {
+                    return localFunction.GetFirstToken();
                 }
             }
         }

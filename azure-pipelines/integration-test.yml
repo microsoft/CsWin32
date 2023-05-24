@@ -1,0 +1,48 @@
+jobs:
+# Matrix over VS 2019 and VS 2022
+
+- job: integrationtest
+  displayName: 🧪 Integration tests
+  strategy:
+    matrix:
+      vs2019:
+        vmImage: windows-2019
+        currentSdk: false
+      vs2022:
+        vmImage: windows-2022
+        currentSdk: true
+  pool:
+    vmImage: $[ variables['vmImage'] ]
+  dependsOn: Windows
+  steps:
+  - checkout: self
+    fetchDepth: 1 # no need for git history here
+    clean: true
+  - download: current
+    artifact: deployables-Windows
+    displayName: 🔻 Download nupkg
+  - pwsh: |
+      $nupkg = (Get-ChildItem -Path $(Pipeline.Workspace)/deployables-Windows -Filter *.nupkg)[0].Name
+      if ($nupkg -match 'Microsoft\.Windows\.CsWin32\.(.+)\.nupkg') {
+        $version = $Matches[1]
+        Write-Host "Will consume Microsoft.Windows.CsWin32 $version"
+        Write-Host "##vso[task.setvariable variable=NuGetPackageVersion]$version"
+      }
+    displayName: 🔧 Consume nupkg
+  - task: MSBuild@1
+    displayName: 🧪 MSBuild non-sdk style
+    inputs:
+      solution: integration-tests\nonsdk\nonsdk.csproj
+      msbuildArguments: /r
+  - task: MSBuild@1
+    displayName: 🧪 MSBuild sdk-style
+    inputs:
+      solution: integration-tests\sdk\sdk.csproj
+      msbuildArguments: /r
+    condition: eq(variables.currentSdk, 'true')
+  - task: DotNetCoreCLI@2
+    displayName: 🧪 dotnet build
+    inputs:
+      command: build
+      projects: integration-tests\sdk\sdk.csproj
+    condition: eq(variables.currentSdk, 'true')

@@ -10,6 +10,7 @@ public partial class Generator
     internal const string MemorySizeAttribute = "MemorySizeAttribute";
     internal const string RAIIFreeAttribute = "RAIIFreeAttribute";
     internal const string DoNotReleaseAttribute = "DoNotReleaseAttribute";
+    internal const string AssociatedEnumAttribute = "AssociatedEnumAttribute";
     internal const string GlobalNamespacePrefix = "global::";
     internal const string GlobalWinmdRootNamespaceAlias = "winmdroot";
     internal const string WinRTCustomMarshalerClass = "WinRTCustomMarshaler";

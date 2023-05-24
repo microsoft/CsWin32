@@ -121,7 +121,7 @@ public partial class Generator
                 this.RequestExternMethod(methodDefHandle);
             });
 
-            string methodNamespace = this.Reader.GetString(this.Reader.GetTypeDefinition(methodDef.GetDeclaringType()).Namespace);
+            string methodNamespace = this.GetMethodNamespace(methodDef);
             preciseApi = ImmutableList.Create($"{methodNamespace}.{methodName}");
             return true;
         }
@@ -168,6 +168,8 @@ public partial class Generator
         return false;
     }
 
+    private string GetMethodNamespace(MethodDefinition methodDef) => this.Reader.GetString(this.Reader.GetTypeDefinition(methodDef.GetDeclaringType()).Namespace);
+
     private void DeclareExternMethod(MethodDefinitionHandle methodDefinitionHandle)
     {
         MethodDefinition methodDefinition = this.Reader.GetMethodDefinition(methodDefinitionHandle);
@@ -204,43 +206,123 @@ public partial class Generator
             CustomAttributeHandleCollection? returnTypeAttributes = this.GetReturnTypeCustomAttributes(methodDefinition);
             TypeSyntaxAndMarshaling returnType = signature.ReturnType.ToTypeSyntax(typeSettings, returnTypeAttributes, ParameterAttributes.Out);
 
-            MethodDeclarationSyntax methodDeclaration = MethodDeclaration(
-                List<AttributeListSyntax>()
-                    .Add(AttributeList()
-                        .WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken))
-                        .AddAttributes(DllImport(import, moduleName, entrypoint, requiresUnicodeCharSet ? CharSet.Unicode : CharSet.Ansi))),
-                modifiers: TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.ExternKeyword)),
+            // Search for any enum substitutions.
+            TypeSyntax? returnTypeEnumName = this.FindAssociatedEnum(returnTypeAttributes);
+            TypeSyntax?[]? parameterEnumType = null;
+            foreach (ParameterHandle parameterHandle in methodDefinition.GetParameters())
+            {
+                Parameter parameter = this.Reader.GetParameter(parameterHandle);
+                if (parameter.SequenceNumber == 0)
+                {
+                    continue;
+                }
+
+                if (this.FindAssociatedEnum(parameter.GetCustomAttributes()) is IdentifierNameSyntax parameterEnumName)
+                {
+                    parameterEnumType ??= new TypeSyntax?[signature.ParameterTypes.Length];
+                    parameterEnumType[parameter.SequenceNumber - 1] = parameterEnumName;
+                }
+            }
+
+            AttributeListSyntax CreateDllImportAttributeList() => AttributeList()
+                .WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken))
+                .AddAttributes(DllImport(import, moduleName, entrypoint, requiresUnicodeCharSet ? CharSet.Unicode : CharSet.Ansi));
+
+            MethodDeclarationSyntax externDeclaration = MethodDeclaration(
+                List<AttributeListSyntax>().Add(CreateDllImportAttributeList()),
+                modifiers: TokenList(TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.ExternKeyword)),
                 returnType.Type.WithTrailingTrivia(TriviaList(Space)),
                 explicitInterfaceSpecifier: null!,
                 SafeIdentifier(methodName),
                 null!,
-                FixTrivia(this.CreateParameterList(methodDefinition, signature, typeSettings)),
+                this.CreateParameterList(methodDefinition, signature, typeSettings),
                 List<TypeParameterConstraintClauseSyntax>(),
                 body: null!,
                 TokenWithLineFeed(SyntaxKind.SemicolonToken));
-            methodDeclaration = returnType.AddReturnMarshalAs(methodDeclaration);
+            externDeclaration = returnType.AddReturnMarshalAs(externDeclaration);
 
             if (this.generateDefaultDllImportSearchPathsAttribute)
             {
-                methodDeclaration = methodDeclaration.AddAttributeLists(
+                externDeclaration = externDeclaration.AddAttributeLists(
                     IsLibraryAllowedAppLocal(moduleName) ? DefaultDllImportSearchPathsAllowAppDirAttributeList : DefaultDllImportSearchPathsAttributeList);
+            }
+
+            bool requiresUnsafe = RequiresUnsafe(externDeclaration.ReturnType) || externDeclaration.ParameterList.Parameters.Any(p => RequiresUnsafe(p.Type));
+            if (requiresUnsafe)
+            {
+                externDeclaration = externDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));
+            }
+
+            MethodDeclarationSyntax exposedMethod;
+            if (returnTypeEnumName is null && parameterEnumType is null)
+            {
+                // No need for wrapping the extern method, so just expose it directly.
+                exposedMethod = externDeclaration.WithModifiers(externDeclaration.Modifiers.Insert(0, TokenWithSpace(this.Visibility)));
+            }
+            else
+            {
+                string ns = this.GetMethodNamespace(methodDefinition);
+                NameSyntax nsSyntax = ParseName(ReplaceCommonNamespaceWithAlias(this, ns));
+                ParameterListSyntax exposedParameterList = this.CreateParameterList(methodDefinition, signature, typeSettings);
+                static SyntaxToken RefInOutKeyword(ParameterSyntax p) =>
+                    p.Modifiers.Any(SyntaxKind.OutKeyword) ? TokenWithSpace(SyntaxKind.OutKeyword) :
+                    p.Modifiers.Any(SyntaxKind.RefKeyword) ? TokenWithSpace(SyntaxKind.RefKeyword) :
+                    default;
+                ArgumentListSyntax argumentList = exposedParameterList.Parameters.Aggregate(ArgumentList(), (list, p) => list.AddArguments(Argument(IdentifierName(p.Identifier.ValueText)).WithRefKindKeyword(RefInOutKeyword(p))));
+                if (parameterEnumType is not null)
+                {
+                    for (int i = 0; i < parameterEnumType.Length; i++)
+                    {
+                        if (parameterEnumType[i] is TypeSyntax parameterType)
+                        {
+                            NameSyntax qualifiedParameterType = QualifiedName(nsSyntax, (SimpleNameSyntax)parameterType);
+                            exposedParameterList = exposedParameterList.ReplaceNode(exposedParameterList.Parameters[i], exposedParameterList.Parameters[i].WithType(qualifiedParameterType.WithTrailingTrivia(Space)));
+                            this.RequestInteropType(ns, parameterEnumType[i]!.ToString(), this.DefaultContext);
+                            argumentList = argumentList.ReplaceNode(argumentList.Arguments[i], argumentList.Arguments[i].WithExpression(CastExpression(externDeclaration.ParameterList.Parameters[i].Type!.WithTrailingTrivia(default(SyntaxTriviaList)), argumentList.Arguments[i].Expression)));
+                        }
+                    }
+                }
+
+                // We need to specify Entrypoint because our local function will have a different name.
+                // It must have a unique name because some functions will have the same signature as our exposed method except for the return type.
+                entrypoint ??= methodName;
+                IdentifierNameSyntax localExternFunctionName = IdentifierName("LocalExternFunction");
+                ExpressionSyntax invocation = InvocationExpression(localExternFunctionName, argumentList);
+
+                if (returnTypeEnumName is not null)
+                {
+                    this.RequestInteropType(ns, returnTypeEnumName.ToString(), this.DefaultContext);
+                    returnTypeEnumName = QualifiedName(nsSyntax, (SimpleNameSyntax)returnTypeEnumName);
+                    invocation = CastExpression(returnTypeEnumName, invocation);
+                }
+
+                StatementSyntax forwardingStatement = returnType.Type is PredefinedTypeSyntax { Keyword.RawKind: (int)SyntaxKind.VoidKeyword } ? ExpressionStatement(invocation) : ReturnStatement(invocation);
+                LocalFunctionStatementSyntax externFunction = LocalFunctionStatement(externDeclaration.ReturnType, localExternFunctionName.Identifier)
+                    .AddAttributeLists(CreateDllImportAttributeList().WithOpenBracketToken(Token(SyntaxKind.OpenBracketToken).WithLeadingTrivia(LineFeed)))
+                    .WithModifiers(externDeclaration.Modifiers)
+                    .WithParameterList(externDeclaration.ParameterList)
+                    .WithSemicolonToken(SemicolonWithLineFeed);
+
+                exposedMethod = MethodDeclaration(returnTypeEnumName ?? returnType.Type, externDeclaration.Identifier)
+                    .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword))
+                    .WithParameterList(exposedParameterList)
+                    .AddBodyStatements(forwardingStatement, externFunction);
+                if (requiresUnsafe)
+                {
+                    exposedMethod = exposedMethod.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));
+                }
             }
 
             if (this.GetSupportedOSPlatformAttribute(methodDefinition.GetCustomAttributes()) is AttributeSyntax supportedOSPlatformAttribute)
             {
-                methodDeclaration = methodDeclaration.AddAttributeLists(AttributeList().AddAttributes(supportedOSPlatformAttribute));
+                exposedMethod = exposedMethod.AddAttributeLists(AttributeList().AddAttributes(supportedOSPlatformAttribute));
             }
 
             // Add documentation if we can find it.
-            methodDeclaration = this.AddApiDocumentation(entrypoint ?? methodName, methodDeclaration);
+            exposedMethod = this.AddApiDocumentation(entrypoint ?? methodName, exposedMethod);
 
-            if (RequiresUnsafe(methodDeclaration.ReturnType) || methodDeclaration.ParameterList.Parameters.Any(p => RequiresUnsafe(p.Type)))
-            {
-                methodDeclaration = methodDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));
-            }
-
-            this.volatileCode.AddMemberToModule(moduleName, this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, this.methodsAndConstantsClassName, FriendlyOverloadOf.ExternMethod, this.injectedPInvokeHelperMethods));
-            this.volatileCode.AddMemberToModule(moduleName, methodDeclaration);
+            this.volatileCode.AddMemberToModule(moduleName, this.DeclareFriendlyOverloads(methodDefinition, exposedMethod, this.methodsAndConstantsClassName, FriendlyOverloadOf.ExternMethod, this.injectedPInvokeHelperMethods));
+            this.volatileCode.AddMemberToModule(moduleName, exposedMethod);
         }
         catch (Exception ex)
         {

@@ -8,7 +8,24 @@ internal record PrimitiveTypeHandleInfo(PrimitiveTypeCode PrimitiveTypeCode) : T
     public override string ToString() => this.ToTypeSyntaxForDisplay().ToString();
 
     internal override TypeSyntaxAndMarshaling ToTypeSyntax(TypeSyntaxSettings inputs, CustomAttributeHandleCollection? customAttributes, ParameterAttributes parameterAttributes)
-        => new TypeSyntaxAndMarshaling(ToTypeSyntax(this.PrimitiveTypeCode, inputs.PreferNativeInt));
+    {
+        // We want to expose the enum type when there is one, but doing it *properly* requires marshaling to the underlying type.
+        // The length of the enum may differ from the length of the primitive type, which means we can't just use the enum type directly.
+        // Even if the lengths match, if the enum's underlying base type conflicts with the primitive's signed type (e.g. int != uint),
+        // certain CPU architectures can fail as well.
+        // So we just have to use the primitive type when marshaling is not allowed.
+        if (inputs.AllowMarshaling && inputs.Generator?.FindAssociatedEnum(customAttributes) is NameSyntax enumTypeName && inputs.Generator.TryGenerateType(enumTypeName.ToString(), out IReadOnlyList<string> preciseMatch))
+        {
+            // Use the qualified name.
+            enumTypeName = ParseName(Generator.ReplaceCommonNamespaceWithAlias(inputs.Generator, preciseMatch[0]));
+            MarshalAsAttribute marshalAs = new(GetUnmanagedType(this.PrimitiveTypeCode));
+            return new TypeSyntaxAndMarshaling(enumTypeName, marshalAs, nativeArrayInfo: null);
+        }
+        else
+        {
+            return new TypeSyntaxAndMarshaling(ToTypeSyntax(this.PrimitiveTypeCode, inputs.PreferNativeInt));
+        }
+    }
 
     internal override bool? IsValueType(TypeSyntaxSettings inputs)
     {
@@ -36,6 +53,22 @@ internal record PrimitiveTypeHandleInfo(PrimitiveTypeCode PrimitiveTypeCode) : T
             PrimitiveTypeCode.IntPtr => preferNativeInt ? IdentifierName("nint") : IdentifierName(nameof(IntPtr)),
             PrimitiveTypeCode.UIntPtr => preferNativeInt ? IdentifierName("nuint") : IdentifierName(nameof(UIntPtr)),
             PrimitiveTypeCode.Void => PredefinedType(Token(SyntaxKind.VoidKeyword)),
+            _ => throw new NotSupportedException("Unsupported type code: " + typeCode),
+        };
+    }
+
+    private static UnmanagedType GetUnmanagedType(PrimitiveTypeCode typeCode)
+    {
+        return typeCode switch
+        {
+            PrimitiveTypeCode.SByte => UnmanagedType.I1,
+            PrimitiveTypeCode.Byte => UnmanagedType.U1,
+            PrimitiveTypeCode.Int16 => UnmanagedType.I2,
+            PrimitiveTypeCode.UInt16 => UnmanagedType.U2,
+            PrimitiveTypeCode.Int32 => UnmanagedType.I4,
+            PrimitiveTypeCode.UInt32 => UnmanagedType.U4,
+            PrimitiveTypeCode.Int64 => UnmanagedType.I8,
+            PrimitiveTypeCode.UInt64 => UnmanagedType.U8,
             _ => throw new NotSupportedException("Unsupported type code: " + typeCode),
         };
     }

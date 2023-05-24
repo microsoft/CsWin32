@@ -74,8 +74,32 @@ public partial class Generator
                     (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? MarshalAsAttribute) fieldInfo = this.ReinterpretFieldType(fieldDef, fieldTypeSyntax.Type, fieldAttributes, context);
                     additionalMembers = additionalMembers.AddRange(fieldInfo.AdditionalMembers);
 
-                    field = FieldDeclaration(VariableDeclaration(fieldInfo.FieldType).AddVariables(fieldDeclarator))
-                        .AddModifiers(TokenWithSpace(this.Visibility));
+                    PropertyDeclarationSyntax? property = null;
+                    if (this.FindAssociatedEnum(fieldAttributes) is { } propertyType)
+                    {
+                        // Keep the field with its original type, but then add a property that returns the enum type.
+                        fieldDeclarator = VariableDeclarator(SafeIdentifier($"_{fieldName}"));
+                        field = FieldDeclaration(VariableDeclaration(fieldInfo.FieldType).AddVariables(fieldDeclarator))
+                            .AddModifiers(TokenWithSpace(SyntaxKind.PrivateKeyword));
+
+                        // internal EnumType FieldName {
+                        //    get => (EnumType)this._fieldName;
+                        //    set => this._fieldName = (UnderlyingType)value;
+                        // }
+                        this.RequestInteropType(this.Reader.GetString(typeDef.Namespace), propertyType.Identifier.ValueText, context);
+                        ExpressionSyntax fieldAccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName(fieldDeclarator.Identifier));
+                        property = PropertyDeclaration(propertyType.WithTrailingTrivia(Space), Identifier(fieldName).WithTrailingTrivia(LineFeed))
+                            .AddModifiers(TokenWithSpace(this.Visibility))
+                            .WithAccessorList(AccessorList().AddAccessors(
+                                AccessorDeclaration(SyntaxKind.GetAccessorDeclaration).WithExpressionBody(ArrowExpressionClause(CastExpression(propertyType, fieldAccess))).WithSemicolonToken(Semicolon),
+                                AccessorDeclaration(SyntaxKind.SetAccessorDeclaration).WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccess, CastExpression(fieldInfo.FieldType, IdentifierName("value"))))).WithSemicolonToken(Semicolon)));
+                        additionalMembers = additionalMembers.Add(property);
+                    }
+                    else
+                    {
+                        field = FieldDeclaration(VariableDeclaration(fieldInfo.FieldType).AddVariables(fieldDeclarator))
+                            .AddModifiers(TokenWithSpace(this.Visibility));
+                    }
 
                     if (fieldInfo.MarshalAsAttribute is object)
                     {
@@ -85,6 +109,7 @@ public partial class Generator
                     if (this.HasObsoleteAttribute(fieldDef.GetCustomAttributes()))
                     {
                         field = field.AddAttributeLists(AttributeList().AddAttributes(ObsoleteAttributeSyntax));
+                        property = property?.AddAttributeLists(AttributeList().AddAttributes(ObsoleteAttributeSyntax));
                     }
 
                     if (fieldInfo.FieldType is PointerTypeSyntax || fieldInfo.FieldType is FunctionPointerTypeSyntax)

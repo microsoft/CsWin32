@@ -5,8 +5,6 @@ namespace Microsoft.Windows.CsWin32;
 
 public partial class Generator
 {
-    internal bool IsAttribute(CustomAttribute attribute, string ns, string name) => MetadataUtilities.IsAttribute(this.Reader, attribute, ns, name);
-
     internal NativeArrayInfo? FindNativeArrayInfoAttribute(CustomAttributeHandleCollection customAttributeHandles)
     {
         return this.FindInteropDecorativeAttribute(customAttributeHandles, NativeArrayInfoAttribute) is CustomAttribute att
@@ -19,6 +17,17 @@ public partial class Generator
 
     internal CustomAttribute? FindAttribute(CustomAttributeHandleCollection? customAttributeHandles, string attributeNamespace, string attributeName)
         => MetadataUtilities.FindAttribute(this.Reader, customAttributeHandles, attributeNamespace, attributeName);
+
+    internal IdentifierNameSyntax? FindAssociatedEnum(CustomAttributeHandleCollection? customAttributeHandles)
+    {
+        if (this.FindAttribute(customAttributeHandles, InteropDecorationNamespace, AssociatedEnumAttribute) is CustomAttribute att)
+        {
+            CustomAttributeValue<TypeSyntax> args = att.DecodeValue(CustomAttributeTypeProvider.Instance);
+            return IdentifierName((string)args.FixedArguments[0].Value!);
+        }
+
+        return null;
+    }
 
     internal bool TryGetTypeDefHandle(TypeReferenceHandle typeRefHandle, out QualifiedTypeDefinitionHandle typeDefHandle)
     {

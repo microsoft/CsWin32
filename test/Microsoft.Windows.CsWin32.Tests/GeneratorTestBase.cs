@@ -134,6 +134,11 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
 
     protected static bool IsAttributePresent(AttributeListSyntax al, string attributeName) => al.Attributes.Any(a => a.Name.ToString() == attributeName);
 
+    protected static bool IsOrContainsExternMethod(MethodDeclarationSyntax method)
+    {
+        return method.Modifiers.Any(SyntaxKind.ExternKeyword) || method.Body?.Statements.OfType<LocalFunctionStatementSyntax>().Any(f => f.Modifiers.Any(SyntaxKind.ExternKeyword)) is true;
+    }
+
     protected static IEnumerable<AttributeSyntax> FindAttribute(SyntaxList<AttributeListSyntax> attributeLists, string name) => attributeLists.SelectMany(al => al.Attributes).Where(a => a.Name.ToString() == name);
 
     protected CSharpCompilation AddGeneratedCode(CSharpCompilation compilation, Generator generator)

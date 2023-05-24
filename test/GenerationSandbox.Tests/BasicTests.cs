@@ -503,4 +503,12 @@ public class BasicTests
             },
         };
     }
+
+    [Fact]
+    public void FieldWithAssociatedEnum()
+    {
+        SHDESCRIPTIONID s = default;
+        s.dwDescriptionId = SHDID_ID.SHDID_FS_FILE;
+        Assert.Equal(SHDID_ID.SHDID_FS_FILE, s.dwDescriptionId);
+    }
 }

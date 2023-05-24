@@ -143,6 +143,19 @@ namespace Microsoft.Windows.Sdk
         Assert.IsType<PointerTypeSyntax>(field.Declaration.Type);
     }
 
+    [Fact]
+    public void FieldWithAssociatedEnum()
+    {
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate("SHDESCRIPTIONID", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        var type = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("SHDESCRIPTIONID"));
+        PropertyDeclarationSyntax property = Assert.Single(type.Members.OfType<PropertyDeclarationSyntax>(), m => m.Identifier.ValueText == "dwDescriptionId");
+        Assert.Equal("SHDID_ID", Assert.IsType<IdentifierNameSyntax>(property.Type).Identifier.ValueText);
+    }
+
     [Theory]
     [CombinatorialData]
     public void InterestingStructs(

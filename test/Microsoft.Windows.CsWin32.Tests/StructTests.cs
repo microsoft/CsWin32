@@ -57,6 +57,24 @@ public class StructTests : GeneratorTestBase
         this.AssertNoDiagnostics();
     }
 
+    [Theory, CombinatorialData]
+    public void RECT_IncludesSystemDrawingWhenReferenced(bool referenceSystemDrawing)
+    {
+        this.compilation = this.starterCompilations["net472"];
+        if (!referenceSystemDrawing)
+        {
+            this.compilation = this.compilation.RemoveReferences(this.compilation.References.Where(r => r.Display?.EndsWith("System.Drawing.dll", StringComparison.OrdinalIgnoreCase) is true));
+        }
+
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate("RECT", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        StructDeclarationSyntax rectStruct = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("RECT"));
+        Assert.Equal(referenceSystemDrawing, rectStruct.Members.OfType<ConstructorDeclarationSyntax>().Any(ctor => ctor.ParameterList.Parameters.Any(p => p.Type?.ToString().Contains("System.Drawing.Rectangle") is true)));
+    }
+
     [Fact]
     public void CollidingStructNotGenerated()
     {

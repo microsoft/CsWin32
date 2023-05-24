@@ -226,7 +226,7 @@ public partial class Generator
                 .AddAttributeLists(AttributeList().AddAttributes(GeneratedCodeAttribute))
                 .WithLeadingTrivia(ParseLeadingTrivia($@"
 /// <summary>
-/// Represents a Win32 handle that can be closed with <see cref=""{this.options.ClassName}.{renamedReleaseMethod ?? releaseMethod}""/>.
+/// Represents a Win32 handle that can be closed with <see cref=""{this.options.ClassName}.{renamedReleaseMethod ?? releaseMethod}({releaseMethodParameterType.Type})""/>.
 /// </summary>
 "));
 
@@ -239,7 +239,7 @@ public partial class Generator
         }
     }
 
-    internal bool TryGetHandleReleaseMethod(EntityHandle handleStructDefHandle, [NotNullWhen(true)] out string? releaseMethod)
+    internal bool TryGetHandleReleaseMethod(EntityHandle handleStructDefHandle, CustomAttributeHandleCollection? handleReferenceAttributes, [NotNullWhen(true)] out string? releaseMethod)
     {
         if (handleStructDefHandle.IsNil)
         {
@@ -251,20 +251,31 @@ public partial class Generator
         {
             if (this.TryGetTypeDefHandle((TypeReferenceHandle)handleStructDefHandle, out TypeDefinitionHandle typeDefHandle))
             {
-                return this.TryGetHandleReleaseMethod(typeDefHandle, out releaseMethod);
+                return this.TryGetHandleReleaseMethod(typeDefHandle, handleReferenceAttributes, out releaseMethod);
             }
         }
         else if (handleStructDefHandle.Kind == HandleKind.TypeDefinition)
         {
-            return this.TryGetHandleReleaseMethod((TypeDefinitionHandle)handleStructDefHandle, out releaseMethod);
+            return this.TryGetHandleReleaseMethod((TypeDefinitionHandle)handleStructDefHandle, handleReferenceAttributes, out releaseMethod);
         }
 
         releaseMethod = null;
         return false;
     }
 
-    internal bool TryGetHandleReleaseMethod(TypeDefinitionHandle handleStructDefHandle, [NotNullWhen(true)] out string? releaseMethod)
+    internal bool TryGetHandleReleaseMethod(TypeDefinitionHandle handleStructDefHandle, CustomAttributeHandleCollection? handleReferenceAttributes, [NotNullWhen(true)] out string? releaseMethod)
     {
+        // Prefer direct attributes on the type reference over the default release method for the struct type.
+        if (this.FindAttribute(handleReferenceAttributes, InteropDecorationNamespace, RAIIFreeAttribute) is CustomAttribute raii)
+        {
+            CustomAttributeValue<TypeSyntax> args = raii.DecodeValue(CustomAttributeTypeProvider.Instance);
+            if (args.FixedArguments[0].Value is string localRelease)
+            {
+                releaseMethod = localRelease;
+                return true;
+            }
+        }
+
         return this.MetadataIndex.HandleTypeReleaseMethod.TryGetValue(handleStructDefHandle, out releaseMethod);
     }
 

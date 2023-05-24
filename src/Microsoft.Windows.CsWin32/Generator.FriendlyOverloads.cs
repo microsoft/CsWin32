@@ -53,6 +53,7 @@ public partial class Generator
         };
 
         MethodSignature<TypeHandleInfo> originalSignature = methodDefinition.DecodeSignature(SignatureHandleProvider.Instance, null);
+        CustomAttributeHandleCollection? returnTypeAttributes = null;
         var parameters = externMethodDeclaration.ParameterList.Parameters.Select(StripAttributes).ToList();
         var lengthParamUsedBy = new Dictionary<int, int>();
         var parametersToRemove = new List<int>();
@@ -67,17 +68,23 @@ public partial class Generator
         foreach (ParameterHandle paramHandle in methodDefinition.GetParameters())
         {
             Parameter param = this.Reader.GetParameter(paramHandle);
+            if (param.SequenceNumber == 0)
+            {
+                returnTypeAttributes = param.GetCustomAttributes();
+            }
+
             if (param.SequenceNumber == 0 || param.SequenceNumber - 1 >= parameters.Count)
             {
                 continue;
             }
 
             bool isOptional = (param.Attributes & ParameterAttributes.Optional) == ParameterAttributes.Optional;
-            bool isReserved = this.FindInteropDecorativeAttribute(param.GetCustomAttributes(), "ReservedAttribute") is not null;
+            CustomAttributeHandleCollection paramAttributes = param.GetCustomAttributes();
+            bool isReserved = this.FindInteropDecorativeAttribute(paramAttributes, "ReservedAttribute") is not null;
             isOptional |= isReserved; // Per metadata decision made at https://github.com/microsoft/win32metadata/issues/1421#issuecomment-1372608090
             bool isIn = (param.Attributes & ParameterAttributes.In) == ParameterAttributes.In;
-            bool isConst = this.FindInteropDecorativeAttribute(param.GetCustomAttributes(), "ConstAttribute") is not null;
-            bool isComOutPtr = this.FindInteropDecorativeAttribute(param.GetCustomAttributes(), "ComOutPtrAttribute") is not null;
+            bool isConst = this.FindInteropDecorativeAttribute(paramAttributes, "ConstAttribute") is not null;
+            bool isComOutPtr = this.FindInteropDecorativeAttribute(paramAttributes, "ComOutPtrAttribute") is not null;
             bool isOut = isComOutPtr || (param.Attributes & ParameterAttributes.Out) == ParameterAttributes.Out;
 
             // TODO:
@@ -105,7 +112,7 @@ public partial class Generator
                 bool hasOut = externParam.Modifiers.Any(SyntaxKind.OutKeyword);
                 arguments[param.SequenceNumber - 1] = arguments[param.SequenceNumber - 1].WithRefKindKeyword(TokenWithSpace(hasOut ? SyntaxKind.OutKeyword : SyntaxKind.RefKeyword));
             }
-            else if (isOut && !isIn && !isReleaseMethod && parameterTypeInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo pointedElementInfo } && this.TryGetHandleReleaseMethod(pointedElementInfo.Handle, out string? outReleaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, outReleaseMethod))
+            else if (isOut && !isIn && !isReleaseMethod && parameterTypeInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo pointedElementInfo } && this.TryGetHandleReleaseMethod(pointedElementInfo.Handle, paramAttributes, out string? outReleaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, outReleaseMethod))
             {
                 if (this.RequestSafeHandle(outReleaseMethod) is TypeSyntax safeHandleType)
                 {
@@ -134,7 +141,7 @@ public partial class Generator
                             Argument(LiteralExpression(doNotRelease ? SyntaxKind.FalseLiteralExpression : SyntaxKind.TrueLiteralExpression)).WithNameColon(NameColon(IdentifierName("ownsHandle")))))));
                 }
             }
-            else if (this.options.UseSafeHandles && isIn && !isOut && !isReleaseMethod && parameterTypeInfo is HandleTypeHandleInfo parameterHandleTypeInfo && this.TryGetHandleReleaseMethod(parameterHandleTypeInfo.Handle, out string? releaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, releaseMethod)
+            else if (this.options.UseSafeHandles && isIn && !isOut && !isReleaseMethod && parameterTypeInfo is HandleTypeHandleInfo parameterHandleTypeInfo && this.TryGetHandleReleaseMethod(parameterHandleTypeInfo.Handle, paramAttributes, out string? releaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, releaseMethod)
                 && !(this.TryGetTypeDefFieldType(parameterHandleTypeInfo, out TypeHandleInfo? fieldType) && !this.IsSafeHandleCompatibleTypeDefFieldType(fieldType)))
             {
                 IdentifierNameSyntax typeDefHandleName = IdentifierName(externParam.Identifier.ValueText + "Local");
@@ -231,14 +238,14 @@ public partial class Generator
                 bool isNullTerminated = false; // TODO
                 short? sizeParamIndex = null;
                 int? sizeConst = null;
-                if (this.FindInteropDecorativeAttribute(param.GetCustomAttributes(), NativeArrayInfoAttribute) is CustomAttribute att)
+                if (this.FindInteropDecorativeAttribute(paramAttributes, NativeArrayInfoAttribute) is CustomAttribute att)
                 {
                     isArray = true;
                     NativeArrayInfo nativeArrayInfo = DecodeNativeArrayInfoAttribute(att);
                     sizeParamIndex = nativeArrayInfo.CountParamIndex;
                     sizeConst = nativeArrayInfo.CountConst;
                 }
-                else if (externParam.Type is PointerTypeSyntax { ElementType: PredefinedTypeSyntax { Keyword.RawKind: (int)SyntaxKind.ByteKeyword } } && this.FindInteropDecorativeAttribute(param.GetCustomAttributes(), MemorySizeAttribute) is CustomAttribute att2)
+                else if (externParam.Type is PointerTypeSyntax { ElementType: PredefinedTypeSyntax { Keyword.RawKind: (int)SyntaxKind.ByteKeyword } } && this.FindInteropDecorativeAttribute(paramAttributes, MemorySizeAttribute) is CustomAttribute att2)
                 {
                     // A very special case as documented in https://github.com/microsoft/win32metadata/issues/1555
                     // where MemorySizeAttribute is applied to byte* parameters to indicate the size of the buffer.
@@ -490,7 +497,7 @@ public partial class Generator
         }
 
         TypeSyntax? returnSafeHandleType = originalSignature.ReturnType is HandleTypeHandleInfo returnTypeHandleInfo
-            && this.TryGetHandleReleaseMethod(returnTypeHandleInfo.Handle, out string? returnReleaseMethod)
+            && this.TryGetHandleReleaseMethod(returnTypeHandleInfo.Handle, returnTypeAttributes, out string? returnReleaseMethod)
             ? this.RequestSafeHandle(returnReleaseMethod) : null;
         SyntaxToken friendlyMethodName = externMethodDeclaration.Identifier;
 

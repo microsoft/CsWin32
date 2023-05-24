@@ -27,6 +27,19 @@ public class FriendlyOverloadTests : GeneratorTestBase
         Assert.All(this.FindGeneratedMethod(name), m => Assert.Equal(5,  m.ParameterList.Parameters.Count));
     }
 
+    [Fact]
+    public void SpecializedRAIIFree()
+    {
+        const string Method = "CreateActCtx";
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate(Method, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        MethodDeclarationSyntax method = Assert.Single(this.FindGeneratedMethod(Method), m => !IsOrContainsExternMethod(m));
+        Assert.Equal("ReleaseActCtxSafeHandle", Assert.IsType<IdentifierNameSyntax>(method.ReturnType).Identifier.ValueText);
+    }
+
     private void Generate(string name)
     {
         this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(Platform.X64));

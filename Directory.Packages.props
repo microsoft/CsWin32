@@ -10,10 +10,6 @@
 
     <CodeAnalysisVersion>4.5.0</CodeAnalysisVersion>
     <CodeAnalysisVersion Condition="'$(IsTestProject)'!='true'">3.11.0</CodeAnalysisVersion>
-    <SystemMemoryVersion>4.5.5</SystemMemoryVersion>
-    <SystemMemoryVersion Condition="'$(IsTestProject)'!='true'">4.5.4</SystemMemoryVersion>
-    <SystemReflectionMetadataVersion>6.0.1</SystemReflectionMetadataVersion>
-    <SystemReflectionMetadataVersion Condition="'$(IsTestProject)'!='true'">5.0.0</SystemReflectionMetadataVersion>
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="coverlet.msbuild" Version="3.2.0" />
@@ -31,14 +27,21 @@
     <PackageVersion Include="Microsoft.Windows.SDK.Win32Metadata" Version="$(MetadataVersion)" />
     <PackageVersion Include="NuGet.Protocol" Version="6.5.0" />
     <PackageVersion Include="System.Collections.Immutable" Version="6.0.0" />
-    <PackageVersion Include="System.Memory" Version="$(SystemMemoryVersion)" />
-    <PackageVersion Include="System.Reflection.Metadata" Version="$(SystemReflectionMetadataVersion)" />
+    <PackageVersion Include="System.Memory" Version="4.5.5" />
+    <PackageVersion Include="System.Reflection.Metadata" Version="6.0.1" />
     <PackageVersion Include="System.Runtime.CompilerServices.Unsafe" Version="6.0.0" />
     <PackageVersion Include="System.Text.Encodings.Web" Version="4.7.2" />
     <PackageVersion Include="System.Text.Json" Version="4.7.2" />
     <PackageVersion Include="Xunit.Combinatorial" Version="1.6.12-alpha" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="2.4.5" />
     <PackageVersion Include="xunit" Version="2.4.2" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(IsTestProject)'!='true'">
+    <!-- These versions carefully chosen to support VS 2019 Update 11. -->
+    <PackageVersion Update="System.Collections.Immutable" Version="5.0.0" />
+    <PackageVersion Update="System.Memory" Version="4.5.4" />
+    <PackageVersion Update="System.Reflection.Metadata" Version="5.0.0" />
+    <PackageVersion Update="System.Runtime.CompilerServices.Unsafe" Version="5.0.0" />
   </ItemGroup>
   <ItemGroup>
     <GlobalPackageReference Include="CSharpIsNullAnalyzer" Version="0.1.329" />

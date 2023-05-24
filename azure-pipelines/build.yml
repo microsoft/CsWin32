@@ -85,3 +85,6 @@ jobs:
     - template: publish-codecoverage.yml
       parameters:
         includeMacOS: ${{ parameters.includeMacOS }}
+
+- ${{ if parameters.RunTests }}:
+  - template: integration-test.yml

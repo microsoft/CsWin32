@@ -113,6 +113,7 @@ public partial class Generator : IDisposable
             AddSymbolIf(this.canCallCreateSpan, "canCallCreateSpan");
             AddSymbolIf(this.canUseUnsafeAsRef, "canUseUnsafeAsRef");
             AddSymbolIf(this.canUseUnsafeNullRef, "canUseUnsafeNullRef");
+            AddSymbolIf(compilation?.GetTypeByMetadataName("System.Drawing.Point") is not null, "canUseSystemDrawing");
 
             if (extraSymbols.Count > 0)
             {

@@ -186,10 +186,9 @@ public class SourceGenerator : ISourceGenerator
         }
 
         Docs? docs = ParseDocs(context);
-        IReadOnlyList<Generator> generators = CollectMetadataPaths(context).Select(path => new Generator(path, docs, options, compilation, parseOptions)).ToList();
+        SuperGenerator superGenerator = SuperGenerator.Combine(CollectMetadataPaths(context).Select(path => new Generator(path, docs, options, compilation, parseOptions)));
         try
         {
-            SuperGenerator.Combine(generators);
             foreach (AdditionalText nativeMethodsTxtFile in nativeMethodsTxtFiles)
             {
                 SourceText? nativeMethodsTxt = nativeMethodsTxtFile.GetText(context.CancellationToken);
@@ -220,15 +219,7 @@ public class SourceGenerator : ISourceGenerator
                         if (name.EndsWith(".*", StringComparison.Ordinal))
                         {
                             string? moduleName = name.Substring(0, name.Length - 2);
-                            int matches = 0;
-                            foreach (Generator generator in generators)
-                            {
-                                if (generator.TryGenerateAllExternMethods(moduleName, context.CancellationToken))
-                                {
-                                    matches++;
-                                }
-                            }
-
+                            int matches = superGenerator.TryGenerateAllExternMethods(moduleName, context.CancellationToken);
                             switch (matches)
                             {
                                 case 0:
@@ -242,22 +233,10 @@ public class SourceGenerator : ISourceGenerator
                             continue;
                         }
 
-                        List<string> matchingApis = new();
-                        foreach (Generator generator in generators)
+                        superGenerator.TryGenerate(name, out IReadOnlyList<string> matchingApis, out IReadOnlyList<string> redirectedEnums, context.CancellationToken);
+                        foreach (string declaringEnum in redirectedEnums)
                         {
-                            if (generator.TryGenerate(name, out IReadOnlyList<string> preciseApi, context.CancellationToken))
-                            {
-                                matchingApis.AddRange(preciseApi);
-                                continue;
-                            }
-
-                            matchingApis.AddRange(preciseApi);
-                            if (generator.TryGetEnumName(name, out string? declaringEnum))
-                            {
-                                context.ReportDiagnostic(Diagnostic.Create(UseEnumValueDeclaringType, location, declaringEnum));
-                                generator.TryGenerate(declaringEnum, out preciseApi, context.CancellationToken);
-                                matchingApis.AddRange(preciseApi);
-                            }
+                            context.ReportDiagnostic(Diagnostic.Create(UseEnumValueDeclaringType, location, declaringEnum));
                         }
 
                         switch (matchingApis.Count)
@@ -285,15 +264,9 @@ public class SourceGenerator : ISourceGenerator
                 }
             }
 
-            foreach (Generator generator in generators)
+            foreach (KeyValuePair<string, CompilationUnitSyntax> unit in superGenerator.GetCompilationUnits(context.CancellationToken))
             {
-                IOrderedEnumerable<KeyValuePair<string, CodeAnalysis.CSharp.Syntax.CompilationUnitSyntax>>? compilationUnits = generator.GetCompilationUnits(context.CancellationToken)
-                    .OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
-                    .ThenBy(pair => pair.Key, StringComparer.Ordinal);
-                foreach (KeyValuePair<string, CodeAnalysis.CSharp.Syntax.CompilationUnitSyntax> unit in compilationUnits)
-                {
-                    context.AddSource($"{generator.InputAssemblyName}.{unit.Key}", unit.Value.GetText(Encoding.UTF8));
-                }
+                context.AddSource(unit.Key, unit.Value.GetText(Encoding.UTF8));
             }
 
             string ConcatSuggestions(IReadOnlyList<string> suggestions)
@@ -316,12 +289,7 @@ public class SourceGenerator : ISourceGenerator
 
             void ReportNoMatch(Location? location, string failedAttempt)
             {
-                List<string> suggestions = new();
-                foreach (Generator generator in generators)
-                {
-                    suggestions.AddRange(generator.GetSuggestions(failedAttempt).Take(4));
-                }
-
+                IReadOnlyList<string> suggestions = superGenerator.GetSuggestions(failedAttempt);
                 if (suggestions.Count > 0)
                 {
                     context.ReportDiagnostic(Diagnostic.Create(NoMatchingMethodOrTypeWithSuggestions, location, failedAttempt, ConcatSuggestions(suggestions)));
@@ -337,10 +305,7 @@ public class SourceGenerator : ISourceGenerator
         }
         finally
         {
-            foreach (Generator generator in generators)
-            {
-                generator.Dispose();
-            }
+            superGenerator.Dispose();
         }
     }
 

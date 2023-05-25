@@ -5,7 +5,7 @@ namespace Microsoft.Windows.CsWin32;
 
 public partial class Generator
 {
-    /// <inheritdoc cref="MetadataIndex.TryGetEnumName(MetadataReader, string, out string?)"/>
+    /// <inheritdoc/>
     public bool TryGetEnumName(string enumValueName, [NotNullWhen(true)] out string? declaringEnum) => this.MetadataIndex.TryGetEnumName(this.Reader, enumValueName, out declaringEnum);
 
     private EnumDeclarationSyntax DeclareEnum(TypeDefinition typeDef)

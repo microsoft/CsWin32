@@ -68,7 +68,7 @@ internal class Program
             }
 
             Console.WriteLine("Gathering source files...");
-            IReadOnlyDictionary<string, Microsoft.CodeAnalysis.CSharp.Syntax.CompilationUnitSyntax>? compilationUnits = generator.GetCompilationUnits(cts.Token);
+            IEnumerable<KeyValuePair<string, Microsoft.CodeAnalysis.CSharp.Syntax.CompilationUnitSyntax>> compilationUnits = generator.GetCompilationUnits(cts.Token);
             Console.WriteLine("Emitting source files...");
             compilationUnits.AsParallel().WithCancellation(cts.Token).ForAll(unit =>
             {

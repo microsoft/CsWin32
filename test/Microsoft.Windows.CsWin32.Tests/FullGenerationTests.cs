@@ -61,7 +61,7 @@ public class FullGenerationTests : GeneratorTestBase
         this.TestHelper(marshaling: MarshalingOptions.FullMarshaling, useIntPtrForComOutPtr: false, Platform.X64, DefaultTFM, generator => generator.GenerateAllMacros(CancellationToken.None));
     }
 
-    private void TestHelper(MarshalingOptions marshaling, bool useIntPtrForComOutPtr, Platform platform, string targetFramework, Action<Generator> generationCommands)
+    private void TestHelper(MarshalingOptions marshaling, bool useIntPtrForComOutPtr, Platform platform, string targetFramework, Action<IGenerator> generationCommands)
     {
         var generatorOptions = new GeneratorOptions
         {

@@ -5,10 +5,7 @@ namespace Microsoft.Windows.CsWin32;
 
 public partial class Generator
 {
-    /// <summary>
-    /// Generates a projection of all extern methods and their supporting types.
-    /// </summary>
-    /// <param name="cancellationToken">A cancellation token.</param>
+    /// <inheritdoc/>
     public void GenerateAllExternMethods(CancellationToken cancellationToken)
     {
         foreach (MethodDefinitionHandle methodHandle in this.MetadataIndex.Apis.SelectMany(api => this.Reader.GetTypeDefinition(api).GetMethods()))
@@ -94,12 +91,7 @@ public partial class Generator
         return successful;
     }
 
-    /// <summary>
-    /// Generate code for the named extern method, if it is recognized.
-    /// </summary>
-    /// <param name="possiblyQualifiedName">The name of the extern method, optionally qualified with a namespace.</param>
-    /// <param name="preciseApi">Receives the canonical API names that <paramref name="possiblyQualifiedName"/> matched on.</param>
-    /// <returns><see langword="true"/> if a match was found and the extern method generated; otherwise <see langword="false"/>.</returns>
+    /// <inheritdoc/>
     public bool TryGenerateExternMethod(string possiblyQualifiedName, out IReadOnlyList<string> preciseApi)
     {
         if (possiblyQualifiedName is null)

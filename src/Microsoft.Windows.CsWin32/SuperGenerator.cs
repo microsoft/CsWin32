@@ -6,7 +6,7 @@ namespace Microsoft.Windows.CsWin32;
 /// <summary>
 /// A coordinator of many <see cref="Generator"/> objects, allowing code to be generated that requires types from across many input winmd's.
 /// </summary>
-public class SuperGenerator
+public class SuperGenerator : IGenerator, IDisposable
 {
     private SuperGenerator(ImmutableDictionary<string, Generator> generators)
     {
@@ -40,6 +40,182 @@ public class SuperGenerator
         }
 
         return super;
+    }
+
+    /// <inheritdoc cref="Generator.TryGenerateAllExternMethods(string, CancellationToken)"/>
+    /// <returns>The number of extern methods that were generated.</returns>
+    public int TryGenerateAllExternMethods(string moduleName, CancellationToken cancellationToken)
+    {
+        int matches = 0;
+        foreach (Generator generator in this.Generators.Values)
+        {
+            if (generator.TryGenerateAllExternMethods(moduleName, cancellationToken))
+            {
+                matches++;
+            }
+        }
+
+        return matches;
+    }
+
+    /// <inheritdoc/>
+    public bool TryGenerate(string apiNameOrModuleWildcard, out IReadOnlyList<string> preciseApi, CancellationToken cancellationToken) => this.TryGenerate(apiNameOrModuleWildcard, out preciseApi, out _, cancellationToken);
+
+    /// <inheritdoc cref="TryGenerate(string, out IReadOnlyList{string}, CancellationToken)"/>
+    /// <param name="apiNameOrModuleWildcard"><inheritdoc cref="TryGenerate(string, out IReadOnlyList{string}, CancellationToken)" path="/param[@name='apiNameOrModuleWildcard']"/></param>
+    /// <param name="preciseApi"><inheritdoc cref="TryGenerate(string, out IReadOnlyList{string}, CancellationToken)" path="/param[@name='preciseApi']"/></param>
+    /// <param name="redirectedEnums">Receives names of the enum that declares <paramref name="apiNameOrModuleWildcard"/> as an enum value.</param>
+    /// <param name="cancellationToken"><inheritdoc cref="TryGenerate(string, out IReadOnlyList{string}, CancellationToken)" path="/param[@name='cancellationToken']"/></param>
+    public bool TryGenerate(string apiNameOrModuleWildcard, out IReadOnlyList<string> preciseApi, out IReadOnlyList<string> redirectedEnums, CancellationToken cancellationToken)
+    {
+        List<string> preciseApiAccumulator = new();
+        List<string> redirectedEnumsAccumulator = new();
+        bool success = false;
+        foreach (Generator generator in this.Generators.Values)
+        {
+            if (generator.TryGenerate(apiNameOrModuleWildcard, out preciseApi, cancellationToken))
+            {
+                preciseApiAccumulator.AddRange(preciseApi);
+                success = true;
+                continue;
+            }
+
+            preciseApiAccumulator.AddRange(preciseApi);
+            if (generator.TryGetEnumName(apiNameOrModuleWildcard, out string? declaringEnum))
+            {
+                redirectedEnumsAccumulator.Add(declaringEnum);
+                if (generator.TryGenerate(declaringEnum, out preciseApi, cancellationToken))
+                {
+                    success = true;
+                }
+
+                preciseApiAccumulator.AddRange(preciseApi);
+            }
+        }
+
+        preciseApi = preciseApiAccumulator;
+        redirectedEnums = redirectedEnumsAccumulator;
+        return success;
+    }
+
+    /// <inheritdoc/>
+    public bool TryGenerateType(string possiblyQualifiedName, out IReadOnlyList<string> preciseApi)
+    {
+        List<string> preciseApiAccumulator = new();
+        bool success = false;
+        foreach (Generator generator in this.Generators.Values)
+        {
+            success |= generator.TryGenerateType(possiblyQualifiedName, out preciseApi);
+            preciseApiAccumulator.AddRange(preciseApi);
+        }
+
+        preciseApi = preciseApiAccumulator;
+        return success;
+    }
+
+    /// <inheritdoc/>
+    public void GenerateAllExternMethods(CancellationToken cancellationToken)
+    {
+        foreach (Generator generator in this.Generators.Values)
+        {
+            generator.GenerateAllExternMethods(cancellationToken);
+        }
+    }
+
+    /// <inheritdoc/>
+    public void GenerateAllConstants(CancellationToken cancellationToken)
+    {
+        foreach (Generator generator in this.Generators.Values)
+        {
+            generator.GenerateAllConstants(cancellationToken);
+        }
+    }
+
+    /// <inheritdoc/>
+    public void GenerateAllInteropTypes(CancellationToken cancellationToken)
+    {
+        foreach (Generator generator in this.Generators.Values)
+        {
+            generator.GenerateAllInteropTypes(cancellationToken);
+        }
+    }
+
+    /// <inheritdoc/>
+    public bool TryGenerateExternMethod(string possiblyQualifiedName, out IReadOnlyList<string> preciseApi)
+    {
+        List<string> preciseApiAccumulator = new();
+        bool success = false;
+        foreach (Generator generator in this.Generators.Values)
+        {
+            success |= generator.TryGenerateExternMethod(possiblyQualifiedName, out preciseApi);
+            preciseApiAccumulator.AddRange(preciseApi);
+        }
+
+        preciseApi = preciseApiAccumulator;
+        return success;
+    }
+
+    /// <inheritdoc/>
+    public void GenerateAllMacros(CancellationToken cancellationToken)
+    {
+        foreach (Generator generator in this.Generators.Values)
+        {
+            generator.GenerateAllMacros(cancellationToken);
+        }
+    }
+
+    /// <inheritdoc/>
+    public void GenerateAll(CancellationToken cancellationToken)
+    {
+        foreach (Generator generator in this.Generators.Values)
+        {
+            generator.GenerateAll(cancellationToken);
+        }
+    }
+
+    /// <inheritdoc/>
+    public bool TryGetEnumName(string enumValueName, [NotNullWhen(true)] out string? declaringEnum)
+    {
+        foreach (Generator generator in this.Generators.Values)
+        {
+            if (generator.TryGetEnumName(enumValueName, out declaringEnum))
+            {
+                return true;
+            }
+        }
+
+        declaringEnum = null;
+        return false;
+    }
+
+    /// <inheritdoc/>
+    public IReadOnlyList<string> GetSuggestions(string name)
+    {
+        List<string> suggestions = new();
+        foreach (Generator generator in this.Generators.Values)
+        {
+            suggestions.AddRange(generator.GetSuggestions(name).Take(4));
+        }
+
+        return suggestions;
+    }
+
+    /// <inheritdoc/>
+    public IEnumerable<KeyValuePair<string, CompilationUnitSyntax>> GetCompilationUnits(CancellationToken cancellationToken)
+    {
+        return this.Generators.SelectMany(
+            g => g.Value.GetCompilationUnits(cancellationToken).Select(kv => new KeyValuePair<string, CompilationUnitSyntax>($"{g.Value.InputAssemblyName}.{kv.Key}", kv.Value)))
+            .OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(pair => pair.Key, StringComparer.Ordinal);
+    }
+
+    /// <inheritdoc/>
+    public void Dispose()
+    {
+        foreach (Generator generator in this.Generators.Values)
+        {
+            generator.Dispose();
+        }
     }
 
     /// <summary>

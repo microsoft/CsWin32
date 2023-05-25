@@ -7,6 +7,20 @@ public partial class Generator
 {
     internal static bool IsUntypedDelegate(MetadataReader reader, TypeDefinition typeDef) => reader.StringComparer.Equals(typeDef.Name, "PROC") || reader.StringComparer.Equals(typeDef.Name, "FARPROC");
 
+    internal FunctionPointerTypeSyntax FunctionPointer(QualifiedTypeDefinition delegateType)
+    {
+        if (delegateType.Generator != this)
+        {
+            FunctionPointerTypeSyntax? result = null;
+            delegateType.Generator.volatileCode.GenerationTransaction(() => result = delegateType.Generator.FunctionPointer(delegateType.Definition));
+            return result!;
+        }
+        else
+        {
+            return this.FunctionPointer(delegateType.Definition);
+        }
+    }
+
     internal FunctionPointerTypeSyntax FunctionPointer(TypeDefinition delegateType)
     {
         CustomAttribute ufpAtt = this.FindAttribute(delegateType.GetCustomAttributes(), SystemRuntimeInteropServices, nameof(UnmanagedFunctionPointerAttribute))!.Value;
@@ -130,9 +144,9 @@ public partial class Generator
 
     private FunctionPointerParameterSyntax TranslateDelegateToFunctionPointer(TypeHandleInfo parameterTypeInfo, CustomAttributeHandleCollection? customAttributeHandles)
     {
-        if (this.IsDelegateReference(parameterTypeInfo, out TypeDefinition delegateTypeDef))
+        if (this.IsDelegateReference(parameterTypeInfo, out QualifiedTypeDefinition delegateTypeDef))
         {
-            return FunctionPointerParameter(this.FunctionPointer(delegateTypeDef));
+            return FunctionPointerParameter(delegateTypeDef.Generator.FunctionPointer(delegateTypeDef.Definition));
         }
 
         return FunctionPointerParameter(parameterTypeInfo.ToTypeSyntax(this.functionPointerTypeSettings, customAttributeHandles).GetUnmarshaledType());

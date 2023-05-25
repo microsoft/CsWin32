@@ -5,10 +5,7 @@ namespace Microsoft.Windows.CsWin32;
 
 public partial class Generator
 {
-    /// <summary>
-    /// Generates a projection of all constants.
-    /// </summary>
-    /// <param name="cancellationToken">A cancellation token.</param>
+    /// <inheritdoc/>
     public void GenerateAllConstants(CancellationToken cancellationToken)
     {
         foreach (FieldDefinitionHandle fieldDefHandle in this.MetadataIndex.Apis.SelectMany(api => this.Reader.GetTypeDefinition(api).GetFields()))

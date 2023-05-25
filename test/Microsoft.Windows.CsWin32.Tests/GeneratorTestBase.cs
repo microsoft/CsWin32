@@ -15,7 +15,7 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
     protected readonly Dictionary<string, ImmutableArray<string>> preprocessorSymbolsByTfm = new();
     protected CSharpCompilation compilation;
     protected CSharpParseOptions parseOptions;
-    protected Generator? generator;
+    protected IGenerator? generator;
 
     public GeneratorTestBase(ITestOutputHelper logger)
     {
@@ -141,9 +141,9 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
 
     protected static IEnumerable<AttributeSyntax> FindAttribute(SyntaxList<AttributeListSyntax> attributeLists, string name) => attributeLists.SelectMany(al => al.Attributes).Where(a => a.Name.ToString() == name);
 
-    protected CSharpCompilation AddGeneratedCode(CSharpCompilation compilation, Generator generator)
+    protected CSharpCompilation AddGeneratedCode(CSharpCompilation compilation, IGenerator generator)
     {
-        var compilationUnits = generator.GetCompilationUnits(CancellationToken.None);
+        var compilationUnits = generator.GetCompilationUnits(CancellationToken.None).ToList();
         var syntaxTrees = new List<SyntaxTree>(compilationUnits.Count);
         foreach (var unit in compilationUnits)
         {
@@ -168,7 +168,7 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
         return compilation.AddSyntaxTrees(syntaxTrees);
     }
 
-    protected void CollectGeneratedCode(Generator generator) => this.compilation = this.AddGeneratedCode(this.compilation, generator);
+    protected void CollectGeneratedCode(IGenerator generator) => this.compilation = this.AddGeneratedCode(this.compilation, generator);
 
     protected IEnumerable<MethodDeclarationSyntax> FindGeneratedMethod(string name, Compilation? compilation = null) => (compilation ?? this.compilation).SyntaxTrees.SelectMany(st => st.GetRoot().DescendantNodes().OfType<MethodDeclarationSyntax>()).Where(md => md.Identifier.ValueText == name);
 
@@ -319,9 +319,10 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
         return compilation;
     }
 
-    protected Generator CreateGenerator(GeneratorOptions? options = null, CSharpCompilation? compilation = null, bool includeDocs = false) => this.CreateGenerator(MetadataPath, options, compilation, includeDocs);
+    protected SuperGenerator CreateGenerator(GeneratorOptions? options = null, CSharpCompilation? compilation = null, bool includeDocs = false) => this.CreateSuperGenerator(new[] { MetadataPath }, options, compilation, includeDocs);
 
-    protected Generator CreateGenerator(string path, GeneratorOptions? options = null, CSharpCompilation? compilation = null, bool includeDocs = false) => new Generator(path, includeDocs ? Docs.Get(ApiDocsPath) : null, options ?? DefaultTestGeneratorOptions, compilation ?? this.compilation, this.parseOptions);
+    protected SuperGenerator CreateSuperGenerator(string[] metadataPaths, GeneratorOptions? options = null, CSharpCompilation? compilation = null, bool includeDocs = false) =>
+        SuperGenerator.Combine(metadataPaths.Select(path => new Generator(path, includeDocs ? Docs.Get(ApiDocsPath) : null, options ?? DefaultTestGeneratorOptions, compilation ?? this.compilation, this.parseOptions)));
 
     private static ImmutableArray<Diagnostic> FilterDiagnostics(ImmutableArray<Diagnostic> diagnostics) => diagnostics.Where(d => d.Severity > DiagnosticSeverity.Hidden && d.Descriptor.Id != "CS1701").ToImmutableArray();
 

@@ -24,6 +24,12 @@ public partial class Generator
             return;
         }
 
+        if (!this.IsWin32Sdk)
+        {
+            this.MainGenerator.volatileCode.GenerationTransaction(() => this.MainGenerator.DeclareUnscopedRefAttributeIfNecessary());
+            return;
+        }
+
         const string name = "UnscopedRefAttribute";
         this.volatileCode.GenerateSpecialType(name, delegate
         {

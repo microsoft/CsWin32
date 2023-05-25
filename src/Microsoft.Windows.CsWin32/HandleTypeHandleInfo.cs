@@ -60,7 +60,7 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
             case HandleKind.TypeReference:
                 var trh = (TypeReferenceHandle)this.Handle;
                 TypeReference tr = this.reader.GetTypeReference(trh);
-                nameSyntax = inputs.QualifyNames ? GetNestingQualifiedName(inputs.Generator, this.reader, tr, hasUnmanagedSuffix) : IdentifierName(this.reader.GetString(tr.Name) + simpleNameSuffix);
+                nameSyntax = inputs.QualifyNames ? GetNestingQualifiedName(inputs, this.reader, tr, hasUnmanagedSuffix) : IdentifierName(this.reader.GetString(tr.Name) + simpleNameSuffix);
                 isInterface = inputs.Generator?.IsInterface(trh) is true;
                 isNonCOMConformingInterface = isInterface && inputs.Generator?.IsNonCOMInterface(trh) is true;
                 break;
@@ -113,7 +113,7 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
         {
             return new TypeSyntaxAndMarshaling(PredefinedType(Token(SyntaxKind.ObjectKeyword)), marshalAs, null);
         }
-        else if (!inputs.AllowMarshaling && this.IsDelegate(inputs, out TypeDefinition delegateDefinition) && inputs.Generator is object && !Generator.IsUntypedDelegate(this.reader, delegateDefinition))
+        else if (!inputs.AllowMarshaling && this.IsDelegate(inputs, out QualifiedTypeDefinition delegateDefinition) && inputs.Generator is object && !Generator.IsUntypedDelegate(delegateDefinition.Generator.Reader, delegateDefinition.Definition))
         {
             return new TypeSyntaxAndMarshaling(inputs.Generator.FunctionPointer(delegateDefinition));
         }
@@ -255,10 +255,16 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
         }
     }
 
-    private static NameSyntax GetNestingQualifiedName(Generator? generator, MetadataReader reader, TypeReferenceHandle handle, bool hasUnmanagedSuffix) => GetNestingQualifiedName(generator, reader, reader.GetTypeReference(handle), hasUnmanagedSuffix);
+    private static NameSyntax GetNestingQualifiedName(TypeSyntaxSettings inputs, MetadataReader reader, TypeReferenceHandle handle, bool hasUnmanagedSuffix)
+        => GetNestingQualifiedName(inputs, reader, reader.GetTypeReference(handle), hasUnmanagedSuffix);
 
-    private static NameSyntax GetNestingQualifiedName(Generator? generator, MetadataReader reader, TypeReference tr, bool hasUnmanagedSuffix)
+    private static NameSyntax GetNestingQualifiedName(TypeSyntaxSettings inputs, MetadataReader reader, TypeReference tr, bool hasUnmanagedSuffix)
     {
+        if (inputs.Generator is null)
+        {
+            throw new ArgumentException();
+        }
+
         string simpleName = reader.GetString(tr.Name);
         if (hasUnmanagedSuffix)
         {
@@ -267,35 +273,41 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
 
         SimpleNameSyntax typeName = IdentifierName(simpleName);
         return tr.ResolutionScope.Kind == HandleKind.TypeReference
-            ? QualifiedName(GetNestingQualifiedName(generator, reader, (TypeReferenceHandle)tr.ResolutionScope, hasUnmanagedSuffix), typeName)
-            : QualifiedName(ParseName(Generator.ReplaceCommonNamespaceWithAlias(generator, reader.GetString(tr.Namespace))), typeName);
+            ? QualifiedName(GetNestingQualifiedName(inputs, reader, (TypeReferenceHandle)tr.ResolutionScope, hasUnmanagedSuffix), typeName)
+            : QualifiedName(ParseName(inputs.AvoidWinmdRootAlias ? $"{Generator.GlobalNamespacePrefix}{reader.GetString(tr.Namespace)}" : Generator.ReplaceCommonNamespaceWithAlias(inputs.Generator, reader.GetString(tr.Namespace))), typeName);
     }
 
-    private bool IsDelegate(TypeSyntaxSettings inputs, out TypeDefinition delegateTypeDef)
+    private bool IsDelegate(TypeSyntaxSettings inputs, out QualifiedTypeDefinition delegateTypeDef)
     {
         TypeDefinitionHandle tdh = default;
+        Generator? generator = inputs.Generator;
         switch (this.Handle.Kind)
         {
-            case HandleKind.TypeReference:
+            case HandleKind.TypeReference when inputs.Generator is not null:
                 var trHandle = (TypeReferenceHandle)this.Handle;
-                inputs.Generator?.TryGetTypeDefHandle(trHandle, out tdh);
+                if (inputs.Generator.TryGetTypeDefHandle(trHandle, out QualifiedTypeDefinitionHandle qtdh))
+                {
+                    tdh = qtdh.DefinitionHandle;
+                    generator = qtdh.Generator;
+                }
+
                 break;
             case HandleKind.TypeDefinition:
                 tdh = (TypeDefinitionHandle)this.Handle;
                 break;
         }
 
-        if (!tdh.IsNil && inputs.Generator is object)
+        if (!tdh.IsNil && generator is object)
         {
-            TypeDefinition td = this.reader.GetTypeDefinition(tdh);
+            TypeDefinition td = generator.Reader.GetTypeDefinition(tdh);
             if ((td.Attributes & TypeAttributes.Class) == TypeAttributes.Class)
             {
-                inputs.Generator.GetBaseTypeInfo(td, out StringHandle baseTypeName, out StringHandle baseTypeNamespace);
+                generator.GetBaseTypeInfo(td, out StringHandle baseTypeName, out StringHandle baseTypeNamespace);
                 if (!baseTypeName.IsNil)
                 {
-                    if (this.reader.StringComparer.Equals(baseTypeName, nameof(MulticastDelegate)) && this.reader.StringComparer.Equals(baseTypeNamespace, nameof(System)))
+                    if (generator.Reader.StringComparer.Equals(baseTypeName, nameof(MulticastDelegate)) && generator.Reader.StringComparer.Equals(baseTypeNamespace, nameof(System)))
                     {
-                        delegateTypeDef = this.reader.GetTypeDefinition(tdh);
+                        delegateTypeDef = new(generator, generator.Reader.GetTypeDefinition(tdh));
                         return true;
                     }
                 }

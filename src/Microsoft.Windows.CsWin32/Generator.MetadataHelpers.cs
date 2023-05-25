@@ -185,9 +185,9 @@ public partial class Generator
         else if (elementType is HandleTypeHandleInfo { Handle: { Kind: HandleKind.TypeReference } typeRefHandle } handleElement)
         {
             var trh = (TypeReferenceHandle)typeRefHandle;
-            if (this.TryGetTypeDefHandle(trh, out TypeDefinitionHandle tdr))
+            if (this.TryGetTypeDefHandle(trh, out QualifiedTypeDefinitionHandle qtdr))
             {
-                return this.IsManagedType(tdr);
+                return qtdr.Generator.IsManagedType(qtdr.DefinitionHandle);
             }
 
             // If the type comes from an external assembly, assume that structs are blittable and anything else is not.
@@ -228,7 +228,7 @@ public partial class Generator
         return false;
     }
 
-    private bool IsDelegateReference(TypeHandleInfo typeHandleInfo, out TypeDefinition delegateTypeDef)
+    private bool IsDelegateReference(TypeHandleInfo typeHandleInfo, out QualifiedTypeDefinition delegateTypeDef)
     {
         if (typeHandleInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo handleInfo })
         {
@@ -243,22 +243,22 @@ public partial class Generator
         return false;
     }
 
-    private bool IsDelegateReference(HandleTypeHandleInfo typeHandleInfo, out TypeDefinition delegateTypeDef)
+    private bool IsDelegateReference(HandleTypeHandleInfo typeHandleInfo, out QualifiedTypeDefinition delegateTypeDef)
     {
         if (typeHandleInfo.Handle.Kind == HandleKind.TypeDefinition)
         {
             var tdh = (TypeDefinitionHandle)typeHandleInfo.Handle;
-            delegateTypeDef = this.Reader.GetTypeDefinition(tdh);
-            return this.IsDelegate(delegateTypeDef);
+            delegateTypeDef = new(this, this.Reader.GetTypeDefinition(tdh));
+            return this.IsDelegate(delegateTypeDef.Definition);
         }
 
         if (typeHandleInfo.Handle.Kind == HandleKind.TypeReference)
         {
             var trh = (TypeReferenceHandle)typeHandleInfo.Handle;
-            if (this.TryGetTypeDefHandle(trh, out TypeDefinitionHandle tdh))
+            if (this.TryGetTypeDefHandle(trh, out QualifiedTypeDefinitionHandle qtdh))
             {
-                delegateTypeDef = this.Reader.GetTypeDefinition(tdh);
-                return this.IsDelegate(delegateTypeDef);
+                delegateTypeDef = qtdh.Resolve();
+                return qtdh.Generator.IsDelegate(delegateTypeDef.Definition);
             }
         }
 
@@ -370,14 +370,14 @@ public partial class Generator
                                 }
                                 else if (elementType is HandleTypeHandleInfo { Handle: { Kind: HandleKind.TypeDefinition } fieldTypeDefHandle })
                                 {
-                                    if (TestFieldAndHandleCycle((TypeDefinitionHandle)fieldTypeDefHandle) is true)
+                                    if (TestFieldAndHandleCycle(new(this, (TypeDefinitionHandle)fieldTypeDefHandle)) is true)
                                     {
                                         return true;
                                     }
                                 }
                                 else if (elementType is HandleTypeHandleInfo { Handle: { Kind: HandleKind.TypeReference } fieldTypeRefHandle })
                                 {
-                                    if (this.TryGetTypeDefHandle((TypeReferenceHandle)fieldTypeRefHandle, out TypeDefinitionHandle tdr) && TestFieldAndHandleCycle(tdr) is true)
+                                    if (this.TryGetTypeDefHandle((TypeReferenceHandle)fieldTypeRefHandle, out QualifiedTypeDefinitionHandle qtdr) && TestFieldAndHandleCycle(qtdr) is true)
                                     {
                                         return true;
                                     }
@@ -387,26 +387,33 @@ public partial class Generator
                                     throw new GenerationFailedException("Unrecognized type.");
                                 }
 
-                                bool? TestFieldAndHandleCycle(TypeDefinitionHandle tdh)
+                                bool? TestFieldAndHandleCycle(QualifiedTypeDefinitionHandle qtdh)
                                 {
-                                    bool? result = Helper(tdh);
-                                    switch (result)
+                                    if (qtdh.Generator == this)
                                     {
-                                        case true:
-                                            this.managedTypesCheck.Add(typeDefinitionHandle, true);
-                                            break;
-                                        case null:
-                                            cycleFixups ??= new();
-                                            if (!cycleFixups.TryGetValue(tdh, out var list))
-                                            {
-                                                cycleFixups.Add(tdh, list = new());
-                                            }
+                                        bool? result = Helper(qtdh.DefinitionHandle);
+                                        switch (result)
+                                        {
+                                            case true:
+                                                this.managedTypesCheck.Add(typeDefinitionHandle, true);
+                                                break;
+                                            case null:
+                                                cycleFixups ??= new();
+                                                if (!cycleFixups.TryGetValue(qtdh.DefinitionHandle, out var list))
+                                                {
+                                                    cycleFixups.Add(qtdh.DefinitionHandle, list = new());
+                                                }
 
-                                            list.Add(typeDefinitionHandle);
-                                            break;
+                                                list.Add(typeDefinitionHandle);
+                                                break;
+                                        }
+
+                                        return result;
                                     }
-
-                                    return result;
+                                    else
+                                    {
+                                        return qtdh.Generator.IsManagedType(qtdh.DefinitionHandle);
+                                    }
                                 }
                             }
                             catch (Exception ex)

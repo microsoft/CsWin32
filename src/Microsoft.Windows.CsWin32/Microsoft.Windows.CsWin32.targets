@@ -5,7 +5,16 @@
 
   <Target Name="SetNuSpecProperties" BeforeTargets="GenerateNuspec" DependsOnTargets="GetBuildVersion">
     <PropertyGroup>
-      <NuspecProperties>$(NuspecProperties);Version=$(Version);BaseOutputPath=$(OutputPath);MetadataVersion=$(MetadataVersion);ApiDocsVersion=$(ApiDocsVersion);PackageReleaseNotes=$(PackageReleaseNotes);commit=$(GitCommitId);</NuspecProperties>
+      <NuspecProperties>
+        $(NuspecProperties);
+        Version=$(Version);
+        BaseOutputPath=$(OutputPath);
+        MetadataVersion=$(MetadataVersion);
+        WDKMetadataVersion=$(WDKMetadataVersion);
+        ApiDocsVersion=$(ApiDocsVersion);
+        PackageReleaseNotes=$(PackageReleaseNotes);
+        commit=$(GitCommitId);
+      </NuspecProperties>
     </PropertyGroup>
   </Target>
 

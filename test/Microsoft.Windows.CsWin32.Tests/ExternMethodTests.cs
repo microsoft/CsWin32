@@ -44,4 +44,17 @@ public class ExternMethodTests : GeneratorTestBase
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
     }
+
+    /// <summary>
+    /// Verifies that we can generate APIs from the WDK, which includes references to the SDK.
+    /// </summary>
+    [Fact]
+    public void WdkMethod_NtCreateFile()
+    {
+        const string Method = "NtCreateFile";
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate(Method, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+    }
 }

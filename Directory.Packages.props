@@ -5,6 +5,7 @@
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
 
     <MetadataVersion>52.0.65-preview</MetadataVersion>
+    <WDKMetadataVersion>0.7.3-experimental</WDKMetadataVersion>
     <!-- <DiaMetadataVersion>0.2.185-preview-g7e1e6a442c</DiaMetadataVersion> -->
     <ApiDocsVersion>0.1.41-alpha</ApiDocsVersion>
 
@@ -25,6 +26,7 @@
     <PackageVersion Include="Microsoft.Win32.Registry" Version="5.0.0" />
     <PackageVersion Include="Microsoft.Windows.SDK.Win32Docs" Version="$(ApiDocsVersion)" />
     <PackageVersion Include="Microsoft.Windows.SDK.Win32Metadata" Version="$(MetadataVersion)" />
+    <PackageVersion Include="Microsoft.Windows.WDK.Win32Metadata" Version="$(WDKMetadataVersion)" />
     <PackageVersion Include="NuGet.Protocol" Version="6.5.0" />
     <PackageVersion Include="System.Collections.Immutable" Version="6.0.0" />
     <PackageVersion Include="System.Memory" Version="4.5.5" />

@@ -81,6 +81,7 @@ internal class MetadataIndex
 
         using Rental<MetadataReader> mrRental = GetMetadataReader(metadataPath);
         MetadataReader mr = mrRental.Value;
+        this.MetadataName = Path.GetFileNameWithoutExtension(mr.GetString(mr.GetAssemblyDefinition().Name));
 
         foreach (MemberReferenceHandle memberRefHandle in mr.MemberReferences)
         {
@@ -210,6 +211,11 @@ internal class MetadataIndex
             this.CommonNamespaceDot = this.CommonNamespace + ".";
         }
     }
+
+    /// <summary>
+    /// Gets the assembly name of the metadata file.
+    /// </summary>
+    internal string MetadataName { get; }
 
     /// <summary>
     /// Gets the ref handle to the constructor on the SupportedArchitectureAttribute, if there is one.

@@ -51,7 +51,7 @@ public partial class Generator : IGenerator, IDisposable
             throw new GenerationFailedException("Missing embedded resource.");
         }
 
-        PInvokeMacros = ((ClassDeclarationSyntax)member).Members.OfType<MethodDeclarationSyntax>().ToDictionary(m => m.Identifier.ValueText, m => m);
+        Win32SdkMacros = ((ClassDeclarationSyntax)member).Members.OfType<MethodDeclarationSyntax>().ToDictionary(m => m.Identifier.ValueText, m => m);
 
         if (!TryFetchTemplate("ComHelpers", null, out member))
         {
@@ -76,7 +76,6 @@ public partial class Generator : IGenerator, IDisposable
             throw new ArgumentNullException(nameof(options));
         }
 
-        this.InputAssemblyName = Path.GetFileNameWithoutExtension(metadataLibraryPath);
         this.MetadataIndex = MetadataIndex.Get(metadataLibraryPath, compilation?.Options.Platform);
         this.ApiDocs = docs;
         this.metadataReader = MetadataIndex.GetMetadataReader(metadataLibraryPath);
@@ -144,7 +143,7 @@ public partial class Generator : IGenerator, IDisposable
         this.externReleaseSignatureTypeSettings = this.externSignatureTypeSettings with { PreferNativeInt = false, PreferMarshaledTypes = false };
         this.comSignatureTypeSettings = this.generalTypeSettings with { QualifyNames = true, PreferInOutRef = options.AllowMarshaling };
         this.extensionMethodSignatureTypeSettings = this.generalTypeSettings with { QualifyNames = true };
-        this.functionPointerTypeSettings = this.generalTypeSettings with { QualifyNames = true, AllowMarshaling = false };
+        this.functionPointerTypeSettings = this.generalTypeSettings with { QualifyNames = true, AvoidWinmdRootAlias = true, AllowMarshaling = false };
         this.errorMessageTypeSettings = this.generalTypeSettings with { QualifyNames = true, Generator = null }; // Avoid risk of infinite recursion from errors in ToTypeSyntax
 
         this.methodsAndConstantsClassName = IdentifierName(options.ClassName);
@@ -159,9 +158,30 @@ public partial class Generator : IGenerator, IDisposable
 
     internal SuperGenerator? SuperGenerator { get; set; }
 
+    /// <summary>
+    /// Gets the Windows.Win32 generator.
+    /// </summary>
+    internal Generator MainGenerator
+    {
+        get
+        {
+            if (this.IsWin32Sdk || this.SuperGenerator is null)
+            {
+                return this;
+            }
+
+            if (this.SuperGenerator.TryGetGenerator("Windows.Win32", out Generator? generator))
+            {
+                return generator;
+            }
+
+            throw new InvalidOperationException("Unable to find Windows.Win32 generator.");
+        }
+    }
+
     internal GeneratorOptions Options => this.options;
 
-    internal string InputAssemblyName { get; }
+    internal string InputAssemblyName => this.MetadataIndex.MetadataName;
 
     internal MetadataIndex MetadataIndex { get; }
 
@@ -179,6 +199,8 @@ public partial class Generator : IGenerator, IDisposable
     private string Namespace => this.InputAssemblyName;
 
     private SyntaxKind Visibility => this.options.Public ? SyntaxKind.PublicKeyword : SyntaxKind.InternalKeyword;
+
+    private bool IsWin32Sdk => string.Equals(this.MetadataIndex.MetadataName, "Windows.Win32", StringComparison.OrdinalIgnoreCase);
 
     private IEnumerable<MemberDeclarationSyntax> NamespaceMembers
     {
@@ -419,7 +441,13 @@ public partial class Generator : IGenerator, IDisposable
     /// <inheritdoc/>
     public void GenerateAllMacros(CancellationToken cancellationToken)
     {
-        foreach (KeyValuePair<string, MethodDeclarationSyntax> macro in PInvokeMacros)
+        if (!this.IsWin32Sdk)
+        {
+            // We only have macros to generate for the main SDK.
+            return;
+        }
+
+        foreach (KeyValuePair<string, MethodDeclarationSyntax> macro in Win32SdkMacros)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -549,7 +577,7 @@ public partial class Generator : IGenerator, IDisposable
             throw new ArgumentNullException(nameof(macroName));
         }
 
-        if (!PInvokeMacros.TryGetValue(macroName, out MethodDeclarationSyntax macro))
+        if (!this.IsWin32Sdk || !Win32SdkMacros.TryGetValue(macroName, out MethodDeclarationSyntax macro))
         {
             preciseApi = Array.Empty<string>();
             return false;
@@ -764,9 +792,16 @@ public partial class Generator : IGenerator, IDisposable
 
     internal void RequestComHelpers(Context context)
     {
-        const string specialType = "ComHelpers";
-        this.RequestInteropType("Windows.Win32.Foundation", "HRESULT", context);
-        this.volatileCode.GenerateSpecialType(specialType, () => this.volatileCode.AddSpecialType(specialType, ComHelperClass));
+        if (this.IsWin32Sdk)
+        {
+            const string specialType = "ComHelpers";
+            this.RequestInteropType("Windows.Win32.Foundation", "HRESULT", context);
+            this.volatileCode.GenerateSpecialType(specialType, () => this.volatileCode.AddSpecialType(specialType, ComHelperClass));
+        }
+        else if (this.SuperGenerator is not null && this.SuperGenerator.TryGetGenerator("Windows.Win32", out Generator? generator))
+        {
+            generator.RequestComHelpers(context);
+        }
     }
 
     internal bool TryStripCommonNamespace(string fullNamespace, [NotNullWhen(true)] out string? strippedNamespace)

@@ -112,7 +112,7 @@ public partial class Generator
                         property = property?.AddAttributeLists(AttributeList().AddAttributes(ObsoleteAttributeSyntax));
                     }
 
-                    if (fieldInfo.FieldType is PointerTypeSyntax || fieldInfo.FieldType is FunctionPointerTypeSyntax)
+                    if (RequiresUnsafe(fieldInfo.FieldType))
                     {
                         field = field.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));
                     }
@@ -186,7 +186,7 @@ public partial class Generator
         }
 
         // If the field is a delegate type, we have to replace that with a native function pointer to avoid the struct becoming a 'managed type'.
-        if ((!context.AllowMarshaling) && this.IsDelegateReference(fieldTypeHandleInfo, out TypeDefinition typeDef) && !this.IsUntypedDelegate(typeDef))
+        if ((!context.AllowMarshaling) && this.IsDelegateReference(fieldTypeHandleInfo, out QualifiedTypeDefinition typeDef) && !typeDef.Generator.IsUntypedDelegate(typeDef.Definition))
         {
             return (this.FunctionPointer(typeDef), default(SyntaxList<MemberDeclarationSyntax>), marshalAs);
         }

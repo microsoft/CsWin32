@@ -393,7 +393,7 @@ internal static class SimpleSyntaxFactory
 
     internal static IdentifierNameSyntax SafeIdentifierName(string name) => IdentifierName(CSharpKeywords.Contains(name) ? "@" + name : name);
 
-    internal static bool RequiresUnsafe(TypeSyntax? typeSyntax) => typeSyntax is PointerTypeSyntax || typeSyntax is FunctionPointerTypeSyntax;
+    internal static bool RequiresUnsafe(TypeSyntax? typeSyntax) => typeSyntax is PointerTypeSyntax or FunctionPointerTypeSyntax || (typeSyntax is ArrayTypeSyntax a && RequiresUnsafe(a.ElementType));
 
     internal static ExpressionSyntax ToHexExpressionSyntax(MetadataReader reader, ConstantHandle constantHandle, bool assignableToSignedInteger)
     {

@@ -7,6 +7,8 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
     protected static readonly GeneratorOptions DefaultTestGeneratorOptions = new GeneratorOptions { EmitSingleFile = true };
     protected static readonly string FileSeparator = new string('=', 140);
     protected static readonly string MetadataPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "Windows.Win32.winmd");
+    protected static readonly string WdkMetadataPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "Windows.Wdk.winmd");
+    protected static readonly string[] DefaultMetadataPaths = new[] { MetadataPath, WdkMetadataPath };
     ////protected static readonly string DiaMetadataPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "Microsoft.Dia.winmd");
     protected static readonly string ApiDocsPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "apidocs.msgpack");
 
@@ -319,7 +321,8 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
         return compilation;
     }
 
-    protected SuperGenerator CreateGenerator(GeneratorOptions? options = null, CSharpCompilation? compilation = null, bool includeDocs = false) => this.CreateSuperGenerator(new[] { MetadataPath }, options, compilation, includeDocs);
+    protected SuperGenerator CreateGenerator(GeneratorOptions? options = null, CSharpCompilation? compilation = null, bool includeDocs = false)
+        => this.CreateSuperGenerator(DefaultMetadataPaths, options, compilation, includeDocs);
 
     protected SuperGenerator CreateSuperGenerator(string[] metadataPaths, GeneratorOptions? options = null, CSharpCompilation? compilation = null, bool includeDocs = false) =>
         SuperGenerator.Combine(metadataPaths.Select(path => new Generator(path, includeDocs ? Docs.Get(ApiDocsPath) : null, options ?? DefaultTestGeneratorOptions, compilation ?? this.compilation, this.parseOptions)));

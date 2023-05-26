@@ -126,11 +126,7 @@ To update the metadata used as the source for code generation, you may install a
 dotnet add package Microsoft.Windows.SDK.Win32Metadata --prerelease
 ```
 
-Alternatively, you may set the `MicrosoftWindowsSdkWin32MetadataBasePath` property in your project file to the path of the directory containing `Windows.Win32.winmd`:
-
-```xml
-<MicrosoftWindowsSdkWin32MetadataBasePath>c:\path\to\dir</MicrosoftWindowsSdkWin32MetadataBasePath>
-```
+CsWin32 also consumes the WDK from a similarly named package: `Microsoft.Windows.WDK.WDKMetadata`.
 
 ## Consuming daily builds
 

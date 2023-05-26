@@ -178,6 +178,9 @@ namespace Microsoft.Windows.Sdk
     [CombinatorialData]
     public void InterestingStructs(
         [CombinatorialValues(
+        "DRIVER_OBJECT", // has an inline array of delegates
+        "DEVICE_RELATIONS", // ends with an inline "flexible" array
+        "D3DHAL_CONTEXTCREATEDATA", // contains a field that is a pointer to a struct that is normally managed
         "WSD_EVENT")] // has a pointer field to a managed struct
         string name,
         bool allowMarshaling)

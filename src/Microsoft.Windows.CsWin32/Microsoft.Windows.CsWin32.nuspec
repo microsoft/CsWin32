@@ -17,28 +17,33 @@
     <dependencies>
       <group targetFramework="net20">
         <dependency id="Microsoft.Windows.SDK.Win32Metadata" version="$MetadataVersion$" include="buildTransitive" />
+        <dependency id="Microsoft.Windows.WDK.Win32Metadata" version="$WDKMetadataVersion$" include="buildTransitive" />
         <dependency id="Microsoft.Windows.SDK.Win32Docs" version="$ApiDocsVersion$" include="buildTransitive" />
       </group>
       <group targetFramework="net45">
         <dependency id="Microsoft.Windows.SDK.Win32Metadata" version="$MetadataVersion$" include="buildTransitive" />
+        <dependency id="Microsoft.Windows.WDK.Win32Metadata" version="$WDKMetadataVersion$" include="buildTransitive" />
         <dependency id="Microsoft.Windows.SDK.Win32Docs" version="$ApiDocsVersion$" include="buildTransitive" />
         <dependency id="System.Memory" version="4.5.5" include="All" />
         <dependency id="System.Runtime.CompilerServices.Unsafe" version="5.0.0" include="All" />
       </group>
       <group targetFramework="net461">
         <dependency id="Microsoft.Windows.SDK.Win32Metadata" version="$MetadataVersion$" include="buildTransitive" />
+        <dependency id="Microsoft.Windows.WDK.Win32Metadata" version="$WDKMetadataVersion$" include="buildTransitive" />
         <dependency id="Microsoft.Windows.SDK.Win32Docs" version="$ApiDocsVersion$" include="buildTransitive" />
         <dependency id="System.Memory" version="4.5.5" include="All" />
         <dependency id="System.Runtime.CompilerServices.Unsafe" version="6.0.0" include="All" />
       </group>
       <group targetFramework=".NETStandard1.1">
         <dependency id="Microsoft.Windows.SDK.Win32Metadata" version="$MetadataVersion$" include="buildTransitive" />
+        <dependency id="Microsoft.Windows.WDK.Win32Metadata" version="$WDKMetadataVersion$" include="buildTransitive" />
         <dependency id="Microsoft.Windows.SDK.Win32Docs" version="$ApiDocsVersion$" include="buildTransitive" />
         <dependency id="System.Memory" version="4.5.5" include="All" />
         <dependency id="System.Runtime.CompilerServices.Unsafe" version="5.0.0" include="All" />
       </group>
       <group targetFramework=".NETStandard2.0">
         <dependency id="Microsoft.Windows.SDK.Win32Metadata" version="$MetadataVersion$" include="buildTransitive" />
+        <dependency id="Microsoft.Windows.WDK.Win32Metadata" version="$WDKMetadataVersion$" include="buildTransitive" />
         <dependency id="Microsoft.Windows.SDK.Win32Docs" version="$ApiDocsVersion$" include="buildTransitive" />
         <dependency id="System.Memory" version="4.5.5" include="All" />
         <dependency id="System.Runtime.CompilerServices.Unsafe" version="6.0.0" include="All" />

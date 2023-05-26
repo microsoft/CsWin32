@@ -74,6 +74,15 @@ public class HandleTests : GeneratorTestBase
         Assert.Equal("HANDLE", Assert.IsType<QualifiedNameSyntax>(friendlyOverload.ParameterList.Parameters[0].Type).Right.Identifier.ValueText);
     }
 
+    [Fact]
+    public void SafeHandleInWDK()
+    {
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions);
+        Assert.True(this.generator.TryGenerate("OROpenHive", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+    }
+
     /// <summary>
     /// Verifies that MSIHANDLE is wrapped with a SafeHandle even though it is a 32-bit handle.
     /// This is safe because we never pass SafeHandle directly to extern methods, so we can fix the length of the parameter or return value.

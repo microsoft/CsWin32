@@ -42,7 +42,7 @@
     <PackageVersion Update="System.Collections.Immutable" Version="5.0.0" />
     <PackageVersion Update="System.Memory" Version="4.5.4" />
     <PackageVersion Update="System.Reflection.Metadata" Version="5.0.0" />
-    <PackageVersion Update="System.Runtime.CompilerServices.Unsafe" Version="5.0.0" />
+    <PackageVersion Update="System.Runtime.CompilerServices.Unsafe" Version="6.0.0" />
   </ItemGroup>
   <ItemGroup>
     <GlobalPackageReference Include="CSharpIsNullAnalyzer" Version="0.1.495" />

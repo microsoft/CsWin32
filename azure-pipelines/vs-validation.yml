@@ -24,8 +24,6 @@ stages:
       RunTests: false
 
 - template: prepare-insertion-stages.yml
-  parameters:
-    ArchiveSymbols: false
 
 - stage: insertion
   displayName: VS insertion

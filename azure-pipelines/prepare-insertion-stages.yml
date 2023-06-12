@@ -1,15 +1,11 @@
-parameters:
-- name: ArchiveSymbols
-  type: boolean
-  default: true
-
 stages:
 
-- stage: azure_public_winsdk_feed
-  displayName: azure-public/winsdk feed
+- stage: release
+  displayName: Publish
   condition: and(succeeded(), eq(dependencies.Build.outputs['Windows.SetPipelineVariables.IsSigned'], 'true'))
   jobs:
   - job: push
+    displayName: azure-public/winsdk feed
     pool:
       vmImage: ubuntu-latest
     steps:
@@ -28,3 +24,4 @@ stages:
         nuGetServiceConnections: azure-public/winsdk
         forceReinstallCredentialProvider: true
     - script: dotnet nuget push $(Pipeline.Workspace)/deployables-Windows/*.nupkg -s https://pkgs.dev.azure.com/azure-public/winsdk/_packaging/CI/nuget/v3/index.json --api-key azdo --skip-duplicate
+      displayName: 📦 Push nuget packages

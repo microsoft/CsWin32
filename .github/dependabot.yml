@@ -1,11 +1,11 @@
 # Please see the documentation for all configuration options:
-# https://help.github.com/github/administering-a-repository/configuration-options-for-dependency-updates
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
 
 version: 2
 updates:
 - package-ecosystem: nuget
   directory: /
   schedule:
-    interval: monthly
+    interval: weekly
   ignore:
   - dependency-name: MessagePack # We have to use the MessagePack version used by win32metadata (https://github.com/microsoft/CsWin32/issues/371)

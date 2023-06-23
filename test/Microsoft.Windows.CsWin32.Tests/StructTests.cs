@@ -175,6 +175,19 @@ namespace Microsoft.Windows.Sdk
     }
 
     [Theory]
+    [InlineData("PCSTR")]
+    public void SpecialStruct_ByRequest(string structName)
+    {
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate(structName, out IReadOnlyList<string> preciseApi, CancellationToken.None));
+        Assert.Single(preciseApi);
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        var type = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType(structName));
+    }
+
+    [Theory]
     [CombinatorialData]
     public void InterestingStructs(
         [CombinatorialValues(

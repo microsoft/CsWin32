@@ -547,7 +547,7 @@ public partial class Generator : IGenerator, IDisposable
             return false;
         }
 
-        if (SpecialTypeDefNames.Contains(typeName))
+        if (this.InputAssemblyName.Equals("Windows.Win32", StringComparison.OrdinalIgnoreCase) && SpecialTypeDefNames.Contains(typeName))
         {
             string? fullyQualifiedName = null;
             this.volatileCode.GenerationTransaction(() => this.RequestSpecialTypeDefStruct(typeName, out fullyQualifiedName));

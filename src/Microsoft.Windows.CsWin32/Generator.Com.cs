@@ -99,8 +99,9 @@ public partial class Generator
         var members = new List<MemberDeclarationSyntax>();
         var vtblMembers = new List<MemberDeclarationSyntax>();
         TypeSyntaxSettings typeSettings = context.Filter(this.comSignatureTypeSettings);
-        IdentifierNameSyntax pThisLocal = IdentifierName("pThis");
-        ParameterSyntax? ccwThisParameter = this.canUseUnmanagedCallersOnlyAttribute && !this.options.AllowMarshaling && originalIfaceName != "IUnknown" && originalIfaceName != "IDispatch" && !this.IsNonCOMInterface(typeDef) ? Parameter(pThisLocal.Identifier).WithType(PointerType(ifaceName).WithTrailingTrivia(Space)) : null;
+        IdentifierNameSyntax pThisParameterName = IdentifierName("pThis");
+        ExpressionSyntax pThis = ThisPointer(PointerType(ifaceName));
+        ParameterSyntax? ccwThisParameter = this.canUseUnmanagedCallersOnlyAttribute && !this.options.AllowMarshaling && originalIfaceName != "IUnknown" && originalIfaceName != "IDispatch" && !this.IsNonCOMInterface(typeDef) ? Parameter(pThisParameterName.Identifier).WithType(PointerType(ifaceName).WithTrailingTrivia(Space)) : null;
         List<QualifiedMethodDefinitionHandle> ccwMethodsToSkip = new();
         List<MemberDeclarationSyntax> ccwEntrypointMethods = new();
         IdentifierNameSyntax vtblParamName = IdentifierName("vtable");
@@ -177,7 +178,7 @@ public partial class Generator
                 CastExpression(unmanagedDelegateType, ElementAccessExpression(vtblFieldName).AddArgumentListArguments(Argument(methodOffset))));
             InvocationExpressionSyntax vtblInvocation = InvocationExpression(vtblIndexingExpression)
                 .WithArgumentList(FixTrivia(ArgumentList()
-                    .AddArguments(Argument(pThisLocal))
+                    .AddArguments(Argument(pThis))
                     .AddArguments(parameterList.Parameters.Select(p => Argument(IdentifierName(p.Identifier.ValueText)).WithRefKindKeyword(p.Modifiers.Count > 0 ? p.Modifiers[0] : default)).ToArray())));
 
             MemberDeclarationSyntax? propertyOrMethod;
@@ -205,28 +206,20 @@ public partial class Generator
                         ArgumentSyntax resultArgument = funcPtrParameters.Parameters[1].Modifiers.Any(SyntaxKind.OutKeyword)
                             ? Argument(resultLocal).WithRefKindKeyword(Token(SyntaxKind.OutKeyword))
                             : Argument(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, resultLocal));
-                        StatementSyntax vtblInvocationStatement = ThrowOnHRFailure(vtblInvocation.WithArgumentList(ArgumentList().AddArguments(Argument(pThisLocal), resultArgument)));
+                        StatementSyntax vtblInvocationStatement = ThrowOnHRFailure(vtblInvocation.WithArgumentList(ArgumentList().AddArguments(Argument(pThis), resultArgument)));
 
                         // return __result;
                         StatementSyntax returnStatement = ReturnStatement(resultLocal);
 
                         body = Block().AddStatements(
-                            FixedStatement(
-                                VariableDeclaration(PointerType(ifaceName)).AddVariables(
-                                    VariableDeclarator(pThisLocal.Identifier).WithInitializer(EqualsValueClause(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, ThisExpression())))),
-                                Block().AddStatements(
-                                    resultLocalDeclaration,
-                                    vtblInvocationStatement,
-                                    returnStatement)).WithFixedKeyword(TokenWithSpace(SyntaxKind.FixedKeyword)));
+                            resultLocalDeclaration,
+                            vtblInvocationStatement,
+                            returnStatement);
                         break;
                     case SyntaxKind.SetAccessorDeclaration:
                         // vtblInvoke(pThis, value).ThrowOnFailure();
-                        vtblInvocationStatement = ThrowOnHRFailure(vtblInvocation.WithArgumentList(ArgumentList().AddArguments(Argument(pThisLocal), Argument(IdentifierName("value")))));
-                        body = Block().AddStatements(
-                            FixedStatement(
-                                VariableDeclaration(PointerType(ifaceName)).AddVariables(
-                                    VariableDeclarator(pThisLocal.Identifier).WithInitializer(EqualsValueClause(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, ThisExpression())))),
-                                vtblInvocationStatement).WithFixedKeyword(TokenWithSpace(SyntaxKind.FixedKeyword)));
+                        vtblInvocationStatement = ThrowOnHRFailure(vtblInvocation.WithArgumentList(ArgumentList().AddArguments(Argument(pThis), Argument(IdentifierName("value")))));
+                        body = Block().AddStatements(vtblInvocationStatement);
                         break;
                     default:
                         throw new NotSupportedException("Unsupported accessor kind: " + accessorKind);
@@ -260,14 +253,15 @@ public partial class Generator
             }
             else
             {
-                StatementSyntax fixedBody;
+                BlockSyntax body;
                 bool preserveSig = this.UsePreserveSigForComMethod(methodDefinition.Method, signature, ifaceName.Identifier.ValueText, methodName);
                 if (preserveSig)
                 {
                     // return ...
-                    fixedBody = IsVoid(returnType)
-                        ? ExpressionStatement(vtblInvocation)
-                        : ReturnStatement(vtblInvocation);
+                    body = Block().AddStatements(
+                        IsVoid(returnType)
+                            ? ExpressionStatement(vtblInvocation)
+                            : ReturnStatement(vtblInvocation));
                 }
                 else
                 {
@@ -298,23 +292,16 @@ public partial class Generator
                         // return __retVal;
                         ReturnStatementSyntax returnStatement = ReturnStatement(retValLocalName);
 
-                        fixedBody = Block().AddStatements(localRetValDecl, InvokeVtblAndThrow(), returnStatement);
+                        body = Block().AddStatements(localRetValDecl, InvokeVtblAndThrow(), returnStatement);
                     }
                     else
                     {
                         // Remove the return type
                         returnType = PredefinedType(Token(SyntaxKind.VoidKeyword));
 
-                        fixedBody = InvokeVtblAndThrow();
+                        body = Block().AddStatements(InvokeVtblAndThrow());
                     }
                 }
-
-                // fixed (IPersist* pThis = &this)
-                FixedStatementSyntax fixedStatement = FixedStatement(
-                    VariableDeclaration(PointerType(ifaceName)).AddVariables(
-                        VariableDeclarator(pThisLocal.Identifier).WithInitializer(EqualsValueClause(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, ThisExpression())))),
-                    fixedBody).WithFixedKeyword(TokenWithSpace(SyntaxKind.FixedKeyword));
-                BlockSyntax body = Block().AddStatements(fixedStatement);
 
                 methodDeclaration = MethodDeclaration(
                     List<AttributeListSyntax>(),
@@ -420,7 +407,7 @@ public partial class Generator
                         InvocationExpression(
                             MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("ComHelpers"), IdentifierName("UnwrapCCW")),
                             ArgumentList().AddArguments(
-                                Argument(pThisLocal),
+                                Argument(pThisParameterName),
                                 Argument(DeclarationExpression(NestedCOMInterfaceName.WithTrailingTrivia(Space), SingleVariableDesignation(objectLocal.Identifier))).WithRefKindKeyword(Token(SyntaxKind.OutKeyword))))))));
 
                 StatementSyntax ifNullReturnStatement = hrReturnType
@@ -475,6 +462,15 @@ public partial class Generator
                 propertyOrMethod = this.AddApiDocumentation($"{ifaceName}.{methodName}", propertyOrMethod);
                 members.Add(propertyOrMethod);
             }
+        }
+
+        static ExpressionSyntax ThisPointer(PointerTypeSyntax? typedPointer = null)
+        {
+            // (type*)Unsafe.AsPointer(ref this)
+            InvocationExpressionSyntax invocation = InvocationExpression(
+                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Unsafe)), IdentifierName(nameof(Unsafe.AsPointer))),
+                ArgumentList().AddArguments(Argument(RefExpression(ThisExpression()))));
+            return typedPointer is not null ? CastExpression(typedPointer, invocation) : invocation;
         }
 
         // We expose the vtbl struct to support CCWs.

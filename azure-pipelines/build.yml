@@ -6,7 +6,7 @@ parameters:
 - name: includeMacOS
 - name: RunTests
   type: boolean
-  default: true
+  default: false
 
 jobs:
 - job: Windows

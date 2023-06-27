@@ -33,6 +33,10 @@ public partial class Generator
 
     private static bool IsHresult(TypeHandleInfo? typeHandleInfo) => typeHandleInfo is HandleTypeHandleInfo handleInfo && handleInfo.IsType("HRESULT");
 
+    private static bool GenerateCcwFor(string interfaceName) => interfaceName is not ("IUnknown" or "IDispatch" or "IInspectable");
+
+    private static bool GenerateCcwFor(MetadataReader reader, StringHandle typeName) => !(reader.StringComparer.Equals(typeName, "IUnknown") || reader.StringComparer.Equals(typeName, "IDispatch") || reader.StringComparer.Equals(typeName, "IInspectable"));
+
     /// <summary>
     /// Generates a type to represent a COM interface.
     /// </summary>
@@ -121,8 +125,7 @@ public partial class Generator
             allMethods.AddRange(methodsThisType);
 
             // We do *not* emit CCW methods for IUnknown, because those are provided by ComWrappers.
-            if (ccwThisParameter is not null &&
-                (qualifiedBaseType.Reader.StringComparer.Equals(baseType.Name, "IUnknown") || qualifiedBaseType.Reader.StringComparer.Equals(baseType.Name, "IDispatch") || qualifiedBaseType.Reader.StringComparer.Equals(baseType.Name, "IInspectable")))
+            if (ccwThisParameter is not null && !GenerateCcwFor(qualifiedBaseType.Reader, baseType.Name))
             {
                 ccwMethodsToSkip.AddRange(methodsThisType);
             }
@@ -482,7 +485,7 @@ public partial class Generator
 
         if (ccwThisParameter is not null)
         {
-            // PopulateVTable must be public in order to (implicitly) implement an interface that WinForms declares.
+            // PopulateVTable must be public in order to (implicitly) implement the IVTable<TComInterface, TVTable> interface.
             // public static void PopulateVTable(Vtbl* vtable)
             MethodDeclarationSyntax populateVtblMethodDecl = MethodDeclaration(PredefinedType(Token(SyntaxKind.VoidKeyword)), Identifier("PopulateVTable"))
                 .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword))
@@ -503,7 +506,7 @@ public partial class Generator
         BaseListSyntax baseList = BaseList(SeparatedList<BaseTypeSyntax>());
 
         CustomAttribute? guidAttribute = this.FindGuidAttribute(typeDef.GetCustomAttributes());
-        var staticMembers = this.DeclareStaticCOMInterfaceMembers(guidAttribute);
+        var staticMembers = this.DeclareStaticCOMInterfaceMembers(originalIfaceName, ifaceName, ccwThisParameter is not null, guidAttribute, context);
         members.AddRange(staticMembers.Members);
         baseList = baseList.AddTypes(staticMembers.BaseTypes.ToArray());
 
@@ -755,11 +758,27 @@ public partial class Generator
         return ifaceDeclaration;
     }
 
-    private unsafe (List<MemberDeclarationSyntax> Members, List<BaseTypeSyntax> BaseTypes) DeclareStaticCOMInterfaceMembers(CustomAttribute? guidAttribute)
+    private unsafe (IReadOnlyList<MemberDeclarationSyntax> Members, IReadOnlyList<BaseTypeSyntax> BaseTypes) DeclareStaticCOMInterfaceMembers(
+        string originalIfaceName,
+        IdentifierNameSyntax ifaceName,
+        bool populateVtblDeclared,
+        CustomAttribute? guidAttribute,
+        Context context)
     {
         List<MemberDeclarationSyntax> members = new();
         List<BaseTypeSyntax> baseTypes = new();
 
+        // IVTable<ComStructType, ComStructType.Vtbl>
+        // Static interface members require C# 11 and .NET 7 at minimum.
+        if (populateVtblDeclared && this.IsFeatureAvailable(Feature.InterfaceStaticMembers) && !context.AllowMarshaling && GenerateCcwFor(originalIfaceName))
+        {
+            this.RequestComHelpers(context);
+            baseTypes.Add(SimpleBaseType(GenericName("IVTable").AddTypeArgumentListArguments(
+                ifaceName,
+                QualifiedName(ifaceName, IdentifierName("Vtbl")))));
+        }
+
+        // IComIID
         if (guidAttribute.HasValue)
         {
             Guid guidAttributeValue = DecodeGuidFromAttribute(guidAttribute.Value);

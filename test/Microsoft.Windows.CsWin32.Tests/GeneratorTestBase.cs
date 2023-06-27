@@ -25,7 +25,7 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
 
         this.parseOptions = CSharpParseOptions.Default
             .WithDocumentationMode(DocumentationMode.Diagnose)
-            .WithLanguageVersion(LanguageVersion.CSharp9);
+            .WithLanguageVersion(LanguageVersion.CSharp11);
 
         // set in InitializeAsync
         this.compilation = null!;
@@ -45,6 +45,7 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
             new object[] { "net472" },
             new object[] { "netstandard2.0" },
             new object[] { "net6.0" },
+            new object[] { "net7.0" },
         };
 
     public static IEnumerable<object[]> TFMDataNoNetFx35MemberData => TFMDataNoNetFx35.Select(tfm => new object[] { tfm }).ToArray();
@@ -55,6 +56,7 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
             "net472",
             "netstandard2.0",
             "net6.0",
+            "net7.0",
         };
 
     public static Platform[] SpecificCpuArchitectures =>

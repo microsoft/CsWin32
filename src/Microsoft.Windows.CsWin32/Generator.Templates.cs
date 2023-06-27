@@ -38,6 +38,17 @@ public partial class Generator
         return true;
     }
 
+    private static void FetchTemplate<T>(string name, Generator? generator, out T member)
+        where T : MemberDeclarationSyntax
+    {
+        if (!TryFetchTemplate(name, generator, out MemberDeclarationSyntax? localMember))
+        {
+            throw new GenerationFailedException("Missing embedded resource.");
+        }
+
+        member = (T)localMember;
+    }
+
     private IEnumerable<MemberDeclarationSyntax> ExtractMembersFromTemplate(string name) => ((TypeDeclarationSyntax)this.FetchTemplate($"{name}")).Members;
 
     /// <summary>

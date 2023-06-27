@@ -37,6 +37,17 @@ internal static unsafe class GeneratedForm
     }
 #endif
 
+#if NET7_0_OR_GREATER
+    private static unsafe void GetVTable()
+    {
+        IUnknown.Vtbl* vtbl = GetVtable<IStream>();
+
+        static IUnknown.Vtbl* GetVtable<T>()
+            where T : IVTable
+            => T.VTable;
+    }
+#endif
+
     private static unsafe void IUnknownGetsVtbl()
     {
         // WinForms needs the v-table to be declared for these base interfaces.

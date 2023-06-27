@@ -21,6 +21,8 @@ public partial class Generator : IGenerator, IDisposable
     private readonly TypeSyntaxSettings functionPointerTypeSettings;
     private readonly TypeSyntaxSettings errorMessageTypeSettings;
 
+    private readonly ClassDeclarationSyntax comHelperClass;
+
     private readonly Dictionary<string, IReadOnlyList<ISymbol>> findTypeSymbolIfAlreadyAvailableCache = new(StringComparer.Ordinal);
     private readonly Rental<MetadataReader> metadataReader;
     private readonly GeneratorOptions options;
@@ -53,12 +55,8 @@ public partial class Generator : IGenerator, IDisposable
 
         Win32SdkMacros = ((ClassDeclarationSyntax)member).Members.OfType<MethodDeclarationSyntax>().ToDictionary(m => m.Identifier.ValueText, m => m);
 
-        if (!TryFetchTemplate("ComHelpers", null, out member))
-        {
-            throw new GenerationFailedException("Missing embedded resource.");
-        }
-
-        ComHelperClass = (ClassDeclarationSyntax)member;
+        FetchTemplate("IVTable", null, out IVTableInterface);
+        FetchTemplate("IVTable`2", null, out IVTableGenericInterface);
     }
 
     /// <summary>
@@ -113,6 +111,7 @@ public partial class Generator : IGenerator, IDisposable
             AddSymbolIf(this.canUseUnsafeAsRef, "canUseUnsafeAsRef");
             AddSymbolIf(this.canUseUnsafeNullRef, "canUseUnsafeNullRef");
             AddSymbolIf(compilation?.GetTypeByMetadataName("System.Drawing.Point") is not null, "canUseSystemDrawing");
+            AddSymbolIf(this.IsFeatureAvailable(Feature.InterfaceStaticMembers), "canUseInterfaceStaticMembers");
 
             if (extraSymbols.Count > 0)
             {
@@ -147,10 +146,15 @@ public partial class Generator : IGenerator, IDisposable
         this.errorMessageTypeSettings = this.generalTypeSettings with { QualifyNames = true, Generator = null }; // Avoid risk of infinite recursion from errors in ToTypeSyntax
 
         this.methodsAndConstantsClassName = IdentifierName(options.ClassName);
+
+        FetchTemplate("ComHelpers", this, out this.comHelperClass);
     }
 
     private enum Feature
     {
+        /// <summary>
+        /// Indicates that interfaces can declare static members. This requires at least .NET 7 and C# 11.
+        /// </summary>
         InterfaceStaticMembers,
     }
 
@@ -794,9 +798,17 @@ public partial class Generator : IGenerator, IDisposable
     {
         if (this.IsWin32Sdk)
         {
-            const string specialType = "ComHelpers";
             this.RequestInteropType("Windows.Win32.Foundation", "HRESULT", context);
-            this.volatileCode.GenerateSpecialType(specialType, () => this.volatileCode.AddSpecialType(specialType, ComHelperClass));
+            this.volatileCode.GenerateSpecialType("ComHelpers", () => this.volatileCode.AddSpecialType("ComHelpers", this.comHelperClass));
+            if (this.IsFeatureAvailable(Feature.InterfaceStaticMembers) && !context.AllowMarshaling)
+            {
+                this.volatileCode.GenerateSpecialType("IVTable", () => this.volatileCode.AddSpecialType("IVTable", IVTableInterface));
+                this.volatileCode.GenerateSpecialType("IVTable`2", () => this.volatileCode.AddSpecialType("IVTable`2", IVTableGenericInterface));
+                if (!this.TryGenerate("IUnknown", default))
+                {
+                    throw new GenerationFailedException("Unable to generate IUnknown.");
+                }
+            }
         }
         else if (this.SuperGenerator is not null && this.SuperGenerator.TryGetGenerator("Windows.Win32", out Generator? generator))
         {
@@ -865,7 +877,7 @@ public partial class Generator : IGenerator, IDisposable
             }
         }
 
-        bool hasUnmanagedName = this.HasUnmanagedSuffix(context.AllowMarshaling, this.IsManagedType(typeDefHandle));
+        bool hasUnmanagedName = this.HasUnmanagedSuffix(this.Reader, typeDef.Name, context.AllowMarshaling, this.IsManagedType(typeDefHandle));
         this.volatileCode.GenerateType(typeDefHandle, hasUnmanagedName, delegate
         {
             if (this.RequestInteropTypeHelper(typeDefHandle, context) is MemberDeclarationSyntax typeDeclaration)
@@ -1027,10 +1039,12 @@ public partial class Generator : IGenerator, IDisposable
         return specialDeclaration;
     }
 
-    internal bool HasUnmanagedSuffix(bool allowMarshaling, bool isManagedType) => !allowMarshaling && isManagedType && this.options.AllowMarshaling;
+    internal bool HasUnmanagedSuffix(string originalName, bool allowMarshaling, bool isManagedType) => !allowMarshaling && isManagedType && this.options.AllowMarshaling && originalName is not "IUnknown";
+
+    internal bool HasUnmanagedSuffix(MetadataReader reader, StringHandle typeName, bool allowMarshaling, bool isManagedType) => !allowMarshaling && isManagedType && this.options.AllowMarshaling && !reader.StringComparer.Equals(typeName, "IUnknown");
 
     internal string GetMangledIdentifier(string normalIdentifier, bool allowMarshaling, bool isManagedType) =>
-        this.HasUnmanagedSuffix(allowMarshaling, isManagedType) ? normalIdentifier + UnmanagedInteropSuffix : normalIdentifier;
+        this.HasUnmanagedSuffix(normalIdentifier, allowMarshaling, isManagedType) ? normalIdentifier + UnmanagedInteropSuffix : normalIdentifier;
 
     /// <summary>
     /// Disposes of managed and unmanaged resources.

@@ -254,6 +254,23 @@ public class COMTests : GeneratorTestBase
         Assert.Equal("SFVS_SELECT", Assert.IsType<QualifiedNameSyntax>(parameter.Type).Right.Identifier.ValueText);
     }
 
+    [Theory, CombinatorialData]
+    public void InterestingUnmarshaledComInterfaces(
+        [CombinatorialValues(
+        "IUnknown",
+        "IDispatch",
+        "IInspectable")]
+        string api,
+        [CombinatorialMemberData(nameof(TFMDataNoNetFx35))]
+        string tfm)
+    {
+        this.compilation = this.starterCompilations[tfm];
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = false });
+        Assert.True(this.generator.TryGenerate(api, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+    }
+
     [Theory]
     [CombinatorialData]
     public void InterestingComInterfaces(
@@ -347,6 +364,20 @@ public class COMTests : GeneratorTestBase
         this.AssertNoDiagnostics();
         var iface = (StructDeclarationSyntax)this.FindGeneratedType(typeName).Single();
         Assert.Single(iface.Members.OfType<MethodDeclarationSyntax>(), m => m.Identifier.ValueText == "PopulateVTable");
+    }
+
+    [Fact]
+    public void IPersistFile_DerivesFromIComIID()
+    {
+        this.compilation = this.starterCompilations["net7.0"];
+        const string typeName = "IPersistFile";
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = false });
+        Assert.True(this.generator.TryGenerateType(typeName));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        var iface = (StructDeclarationSyntax)this.FindGeneratedType(typeName).Single();
+        Assert.NotNull(iface.BaseList);
+        Assert.Single(iface.BaseList.Types, bt => bt.Type.ToString().Contains("IComIID"));
     }
 
     [Theory]

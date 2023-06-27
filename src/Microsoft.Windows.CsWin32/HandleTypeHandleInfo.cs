@@ -47,12 +47,12 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
         bool isInterface;
         bool isNonCOMConformingInterface;
         bool isManagedType = inputs.Generator?.IsManagedType(this) ?? false;
-        bool hasUnmanagedSuffix = inputs.Generator?.HasUnmanagedSuffix(inputs.AllowMarshaling, isManagedType) ?? false;
-        string simpleNameSuffix = hasUnmanagedSuffix ? Generator.UnmanagedInteropSuffix : string.Empty;
         switch (this.Handle.Kind)
         {
             case HandleKind.TypeDefinition:
                 TypeDefinition td = this.reader.GetTypeDefinition((TypeDefinitionHandle)this.Handle);
+                bool hasUnmanagedSuffix = inputs.Generator?.HasUnmanagedSuffix(this.reader, td.Name, inputs.AllowMarshaling, isManagedType) ?? false;
+                string simpleNameSuffix = hasUnmanagedSuffix ? Generator.UnmanagedInteropSuffix : string.Empty;
                 nameSyntax = inputs.QualifyNames ? GetNestingQualifiedName(inputs.Generator, this.reader, td, hasUnmanagedSuffix, isInterfaceNestedInStruct: false) : IdentifierName(this.reader.GetString(td.Name) + simpleNameSuffix);
                 isInterface = (td.Attributes & TypeAttributes.Interface) == TypeAttributes.Interface;
                 isNonCOMConformingInterface = isInterface && inputs.Generator?.IsNonCOMInterface(td) is true;
@@ -60,6 +60,8 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
             case HandleKind.TypeReference:
                 var trh = (TypeReferenceHandle)this.Handle;
                 TypeReference tr = this.reader.GetTypeReference(trh);
+                hasUnmanagedSuffix = inputs.Generator?.HasUnmanagedSuffix(this.reader, tr.Name, inputs.AllowMarshaling, isManagedType) ?? false;
+                simpleNameSuffix = hasUnmanagedSuffix ? Generator.UnmanagedInteropSuffix : string.Empty;
                 nameSyntax = inputs.QualifyNames ? GetNestingQualifiedName(inputs, this.reader, tr, hasUnmanagedSuffix) : IdentifierName(this.reader.GetString(tr.Name) + simpleNameSuffix);
                 isInterface = inputs.Generator?.IsInterface(trh) is true;
                 isNonCOMConformingInterface = isInterface && inputs.Generator?.IsNonCOMInterface(trh) is true;

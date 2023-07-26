@@ -114,6 +114,8 @@ public partial class Generator
         IdentifierNameSyntax hrLocal = IdentifierName("__hr");
         StatementSyntax returnSOK = ReturnStatement(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, HresultTypeSyntax, IdentifierName("S_OK")));
 
+        this.MainGenerator.RequestInteropType("Windows.Win32.Foundation", "HRESULT", context);
+
         // It is imperative that we generate methods for all base interfaces as well, ahead of any implemented by *this* interface.
         var allMethods = new List<QualifiedMethodDefinitionHandle>();
         while (!baseTypes.IsEmpty)
@@ -134,11 +136,13 @@ public partial class Generator
         allMethods.AddRange(typeDef.GetMethods().Select(m => new QualifiedMethodDefinitionHandle(this, m)));
         int methodCounter = 0;
         HashSet<string> helperMethodsInStruct = new();
-        ISet<string> declaredProperties = this.GetDeclarableProperties(
-            allMethods.Select(qh => qh.Reader.GetMethodDefinition(qh.MethodHandle)),
-            originalIfaceName,
-            allowNonConsecutiveAccessors: true,
-            context);
+        HashSet<string> declaredProperties = new(StringComparer.Ordinal);
+        declaredProperties.UnionWith(
+            from method in allMethods
+            group method by method.Generator into methodsByMetadata
+            let methodDefs = methodsByMetadata.Select(qh => qh.Reader.GetMethodDefinition(qh.MethodHandle))
+            from property in methodsByMetadata.Key.GetDeclarableProperties(methodDefs, originalIfaceName, allowNonConsecutiveAccessors: true, context)
+            select property);
         ISet<string>? ifaceDeclaredProperties = ccwThisParameter is not null ? this.GetDeclarableProperties(allMethods.Select(qh => qh.Reader.GetMethodDefinition(qh.MethodHandle)), originalIfaceName, allowNonConsecutiveAccessors: false, context) : null;
 
         foreach (QualifiedMethodDefinitionHandle methodDefHandle in allMethods)
@@ -189,7 +193,7 @@ public partial class Generator
 
             // We can declare this method as a property accessor if it represents a property.
             // We must also confirm that the property type is the same in both cases, because sometimes they aren't (e.g. IUIAutomationProxyFactoryEntry.ClassName).
-            if (this.TryGetPropertyAccessorInfo(methodDefinition.Method, originalIfaceName, context, out IdentifierNameSyntax? propertyName, out SyntaxKind? accessorKind, out TypeSyntax? propertyType) &&
+            if (methodDefinition.Generator.TryGetPropertyAccessorInfo(methodDefinition.Method, originalIfaceName, context, out IdentifierNameSyntax? propertyName, out SyntaxKind? accessorKind, out TypeSyntax? propertyType) &&
                 declaredProperties.Contains(propertyName.Identifier.ValueText))
             {
                 StatementSyntax ThrowOnHRFailure(ExpressionSyntax hrExpression) => ExpressionStatement(InvocationExpression(
@@ -257,7 +261,7 @@ public partial class Generator
             else
             {
                 BlockSyntax body;
-                bool preserveSig = this.UsePreserveSigForComMethod(methodDefinition.Method, signature, ifaceName.Identifier.ValueText, methodName);
+                bool preserveSig = methodDefinition.Generator.UsePreserveSigForComMethod(methodDefinition.Method, signature, ifaceName.Identifier.ValueText, methodName);
                 if (preserveSig)
                 {
                     // return ...

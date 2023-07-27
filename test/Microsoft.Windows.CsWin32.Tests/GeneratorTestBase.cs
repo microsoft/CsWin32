@@ -10,6 +10,7 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
     protected static readonly string WdkMetadataPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "Windows.Wdk.winmd");
     protected static readonly string[] DefaultMetadataPaths = new[] { MetadataPath, WdkMetadataPath };
     ////protected static readonly string DiaMetadataPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "Microsoft.Dia.winmd");
+    protected static readonly string ServiceFabricMetadataPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "ExternalMetadata", "ServiceFabric.winmd");
     protected static readonly string ApiDocsPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "apidocs.msgpack");
 
     protected readonly ITestOutputHelper logger;

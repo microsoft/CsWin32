@@ -200,7 +200,7 @@ public partial class Generator : IGenerator, IDisposable
 
     private bool WideCharOnly => this.options.WideCharOnly;
 
-    private string Namespace => this.InputAssemblyName;
+    private string Namespace => this.MetadataIndex.CommonNamespace;
 
     private SyntaxKind Visibility => this.options.Public ? SyntaxKind.PublicKeyword : SyntaxKind.InternalKeyword;
 

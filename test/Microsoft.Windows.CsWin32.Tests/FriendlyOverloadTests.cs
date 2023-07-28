@@ -28,7 +28,7 @@ public class FriendlyOverloadTests : GeneratorTestBase
     }
 
     [Fact]
-    public void SpecializedRAIIFree()
+    public void SpecializedRAIIFree_ReturnValue()
     {
         const string Method = "CreateActCtx";
         this.generator = this.CreateGenerator();
@@ -38,6 +38,19 @@ public class FriendlyOverloadTests : GeneratorTestBase
 
         MethodDeclarationSyntax method = Assert.Single(this.FindGeneratedMethod(Method), m => !IsOrContainsExternMethod(m));
         Assert.Equal("ReleaseActCtxSafeHandle", Assert.IsType<IdentifierNameSyntax>(method.ReturnType).Identifier.ValueText);
+    }
+
+    [Fact]
+    public void SpecializedRAIIFree_OutParameter()
+    {
+        const string Method = "DsGetDcOpen";
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate(Method, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        MethodDeclarationSyntax method = Assert.Single(this.FindGeneratedMethod(Method), m => !IsOrContainsExternMethod(m));
+        Assert.Equal("DsGetDcCloseWSafeHandle", Assert.IsType<IdentifierNameSyntax>(method.ParameterList.Parameters.Last().Type).Identifier.ValueText);
     }
 
     private void Generate(string name)

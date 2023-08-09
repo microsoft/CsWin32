@@ -322,7 +322,7 @@ public partial class Generator
                     body: body,
                     semicolonToken: default);
 
-                if (methodName == nameof(object.GetType) && parameterList.Parameters.Count == 0)
+                if (methodName is nameof(object.GetType) or nameof(object.ToString) && parameterList.Parameters.Count == 0)
                 {
                     methodDeclaration = methodDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.NewKeyword));
                 }

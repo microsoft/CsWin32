@@ -380,6 +380,16 @@ public class COMTests : GeneratorTestBase
         Assert.Single(iface.BaseList.Types, bt => bt.Type.ToString().Contains("IComIID"));
     }
 
+    [Theory, PairwiseData]
+    public void ITypeNameBuilder_ToStringOverload(bool allowMarshaling)
+    {
+        const string typeName = "ITypeNameBuilder";
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling });
+        Assert.True(this.generator.TryGenerateType(typeName));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+    }
+
     [Theory]
     [CombinatorialData]
     public void COMInterfaceIIDInterfaceOnAppropriateTFMs(

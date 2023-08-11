@@ -13,6 +13,7 @@ GetTickCount
 GetWindowText
 GetWindowTextLength
 HDC_UserSize
+HRESULT_FROM_WIN32
 IDirectorySearch
 IEnumDebugPropertyInfo
 IPersistFile
@@ -21,6 +22,9 @@ IShellWindows
 KEY_EVENT_RECORD
 LoadLibrary
 MainAVIHeader
+MAKELPARAM
+MAKELRESULT
+MAKEWPARAM
 MAX_PATH
 NTSTATUS
 PathParseIconLocation
@@ -30,6 +34,7 @@ PZZWSTR
 RECT
 RegLoadAppKey
 RM_PROCESS_INFO
+S_OK
 SHDESCRIPTIONID
 ShellLink
 ShellWindowFindWindowOptions

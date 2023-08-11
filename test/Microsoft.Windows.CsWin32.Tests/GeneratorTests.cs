@@ -389,29 +389,6 @@ public class GeneratorTests : GeneratorTestBase
         Assert.Contains(field!.Value.Field.AttributeLists, al => IsAttributePresent(al, "Obsolete"));
     }
 
-    [Theory, PairwiseData]
-    public void MacroAPIsGenerateWithAppropriateVisibility(bool publicVisibility)
-    {
-        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { Public = publicVisibility });
-        Assert.True(this.generator.TryGenerate("HRESULT_FROM_WIN32", CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
-        var method = Assert.Single(this.FindGeneratedMethod("HRESULT_FROM_WIN32"));
-
-        Assert.True(method.Modifiers.Any(publicVisibility ? SyntaxKind.PublicKeyword : SyntaxKind.InternalKeyword));
-    }
-
-    [Theory]
-    [MemberData(nameof(AvailableMacros))]
-    public void MacroAPIsGenerate(string macro)
-    {
-        this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate(macro, CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
-        Assert.Single(this.FindGeneratedMethod(macro));
-    }
-
     [Theory]
     [InlineData("BOOL")]
     [InlineData("BOOLEAN")]

@@ -216,9 +216,13 @@ public partial class Generator
                 }
             }
 
+            bool setLastError = (import.Attributes & MethodImportAttributes.SetLastError) == MethodImportAttributes.SetLastError;
+            bool setLastErrorViaMarshaling = setLastError && (this.Options.AllowMarshaling || !this.canUseSetLastPInvokeError);
+            bool setLastErrorManually = setLastError && !setLastErrorViaMarshaling;
+
             AttributeListSyntax CreateDllImportAttributeList() => AttributeList()
                 .WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken))
-                .AddAttributes(DllImport(import, moduleName, entrypoint, requiresUnicodeCharSet ? CharSet.Unicode : CharSet.Ansi));
+                .AddAttributes(DllImport(import, moduleName, entrypoint, setLastErrorViaMarshaling, requiresUnicodeCharSet ? CharSet.Unicode : CharSet.Ansi));
 
             MethodDeclarationSyntax externDeclaration = MethodDeclaration(
                 List<AttributeListSyntax>().Add(CreateDllImportAttributeList()),
@@ -246,7 +250,7 @@ public partial class Generator
             }
 
             MethodDeclarationSyntax exposedMethod;
-            if (returnTypeEnumName is null && parameterEnumType is null)
+            if (returnTypeEnumName is null && parameterEnumType is null && !setLastErrorManually)
             {
                 // No need for wrapping the extern method, so just expose it directly.
                 exposedMethod = externDeclaration.WithModifiers(externDeclaration.Modifiers.Insert(0, TokenWithSpace(this.Visibility)));
@@ -288,17 +292,57 @@ public partial class Generator
                     invocation = CastExpression(returnTypeEnumName, invocation);
                 }
 
-                StatementSyntax forwardingStatement = returnType.Type is PredefinedTypeSyntax { Keyword.RawKind: (int)SyntaxKind.VoidKeyword } ? ExpressionStatement(invocation) : ReturnStatement(invocation);
+                BlockSyntax body = Block();
+
+                IdentifierNameSyntax? retValLocalName = returnType.Type is PredefinedTypeSyntax { Keyword.RawKind: (int)SyntaxKind.VoidKeyword } ? null : IdentifierName("__retVal");
+
+                if (setLastErrorManually)
+                {
+                    // Marshal.SetLastSystemError(0);
+                    body = body.AddStatements(ExpressionStatement(InvocationExpression(
+                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Marshal)), IdentifierName("SetLastSystemError")),
+                        ArgumentList().AddArguments(Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)))))));
+                }
+
+                if (retValLocalName is not null)
+                {
+                    // var __retVal = LocalExternFunction(...);
+                    body = body.AddStatements(
+                        LocalDeclarationStatement(VariableDeclaration(returnTypeEnumName ?? returnType.Type).AddVariables(
+                            VariableDeclarator(retValLocalName.Identifier).WithInitializer(EqualsValueClause(invocation)))));
+                }
+                else
+                {
+                    // LocalExternFunction(...);
+                    body = body.AddStatements(ExpressionStatement(invocation));
+                }
+
+                if (setLastErrorManually)
+                {
+                    // Marshal.SetLastPInvokeError(Marshal.GetLastSystemError())
+                    body = body.AddStatements(ExpressionStatement(InvocationExpression(
+                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Marshal)), IdentifierName("SetLastPInvokeError")),
+                        ArgumentList().AddArguments(Argument(InvocationExpression(
+                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Marshal)), IdentifierName("GetLastSystemError"))))))));
+                }
+
+                if (retValLocalName is not null)
+                {
+                    // return __retVal;
+                    body = body.AddStatements(ReturnStatement(retValLocalName));
+                }
+
                 LocalFunctionStatementSyntax externFunction = LocalFunctionStatement(externDeclaration.ReturnType, localExternFunctionName.Identifier)
                     .AddAttributeLists(CreateDllImportAttributeList().WithOpenBracketToken(Token(SyntaxKind.OpenBracketToken).WithLeadingTrivia(LineFeed)))
                     .WithModifiers(externDeclaration.Modifiers)
                     .WithParameterList(externDeclaration.ParameterList)
                     .WithSemicolonToken(SemicolonWithLineFeed);
+                body = body.AddStatements(externFunction);
 
                 exposedMethod = MethodDeclaration(returnTypeEnumName ?? returnType.Type, externDeclaration.Identifier)
                     .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword))
                     .WithParameterList(exposedParameterList)
-                    .AddBodyStatements(forwardingStatement, externFunction);
+                    .WithBody(body);
                 if (requiresUnsafe)
                 {
                     exposedMethod = exposedMethod.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));

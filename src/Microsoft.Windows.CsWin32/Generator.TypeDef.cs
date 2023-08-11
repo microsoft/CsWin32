@@ -197,7 +197,7 @@ public partial class Generator
         {
             case "PWSTR":
             case "PSTR":
-                members = members.AddRange(this.ExtractMembersFromTemplate(name.Identifier.ValueText));
+                members = AddOrReplaceMembers(members, this.ExtractMembersFromTemplate(name.Identifier.ValueText));
                 this.TryGenerateType("Windows.Win32.Foundation.PC" + name.Identifier.ValueText.Substring(1)); // the template references its constant version
                 break;
             case "BSTR":
@@ -205,10 +205,27 @@ public partial class Generator
             case "NTSTATUS":
             case "BOOL":
             case "BOOLEAN":
-                members = members.AddRange(this.ExtractMembersFromTemplate(name.Identifier.ValueText));
+                members = AddOrReplaceMembers(members, this.ExtractMembersFromTemplate(name.Identifier.ValueText));
                 break;
             default:
                 break;
+        }
+
+        SyntaxList<MemberDeclarationSyntax> AddOrReplaceMembers(SyntaxList<MemberDeclarationSyntax> members, IEnumerable<MemberDeclarationSyntax> adds)
+        {
+            foreach (MemberDeclarationSyntax add in adds)
+            {
+                if (add is BaseMethodDeclarationSyntax addedMethod && members.FirstOrDefault(m => m is BaseMethodDeclarationSyntax existingMethod && IsSignatureMatch(addedMethod, existingMethod)) is MethodDeclarationSyntax replacedMethod)
+                {
+                    members = members.Replace(replacedMethod, addedMethod);
+                }
+                else
+                {
+                    members = members.Add(add);
+                }
+            }
+
+            return members;
         }
 
         SyntaxTokenList structModifiers = TokenList(TokenWithSpace(this.Visibility));
@@ -335,6 +352,13 @@ public partial class Generator
         yield return MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), Identifier(nameof(object.GetHashCode)))
             .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
             .WithExpressionBody(ArrowExpressionClause(hashExpr))
+            .WithSemicolonToken(SemicolonWithLineFeed);
+
+        // public override string ToString() => $"0x{this.Value:x}";
+        string valueAsNumber = fieldType is PointerTypeSyntax ? "(nuint)this.Value" : "this.Value";
+        yield return MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword)), Identifier(nameof(object.ToString)))
+            .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
+            .WithExpressionBody(ArrowExpressionClause(SyntaxFactory.ParseExpression("$\"0x{" + valueAsNumber + ":x}\"")))
             .WithSemicolonToken(SemicolonWithLineFeed);
     }
 

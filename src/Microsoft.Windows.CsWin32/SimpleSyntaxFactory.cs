@@ -474,4 +474,38 @@ internal static class SimpleSyntaxFactory
             _ => throw new NotSupportedException($"Unrecognized primitive type code: {primitiveTypeCode}."),
         };
     }
+
+    internal static bool IsSignatureMatch(BaseMethodDeclarationSyntax a, BaseMethodDeclarationSyntax b)
+    {
+        if (a.GetType() != b.GetType())
+        {
+            return false;
+        }
+
+        if (a is MethodDeclarationSyntax aMethod && b is MethodDeclarationSyntax bMethod)
+        {
+            if (aMethod.Identifier.ValueText != bMethod.Identifier.ValueText)
+            {
+                return false;
+            }
+        }
+
+        if (a.ParameterList.Parameters.Count != b.ParameterList.Parameters.Count)
+        {
+            return false;
+        }
+
+        // Check parameter types
+        for (int i = 0; i < a.ParameterList.Parameters.Count; i++)
+        {
+            ParameterSyntax aParam = a.ParameterList.Parameters[i];
+            ParameterSyntax bParam = b.ParameterList.Parameters[i];
+            if (aParam.Type?.ToString() != bParam.Type?.ToString())
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 }

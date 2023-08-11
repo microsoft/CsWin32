@@ -59,28 +59,28 @@ public class SuperGenerator : IGenerator, IDisposable
     }
 
     /// <inheritdoc/>
-    public bool TryGenerate(string apiNameOrModuleWildcard, out IReadOnlyList<string> preciseApi, CancellationToken cancellationToken) => this.TryGenerate(apiNameOrModuleWildcard, out preciseApi, out _, cancellationToken);
+    public bool TryGenerate(string apiNameOrModuleWildcard, out IReadOnlyCollection<string> preciseApi, CancellationToken cancellationToken) => this.TryGenerate(apiNameOrModuleWildcard, out preciseApi, out _, cancellationToken);
 
-    /// <inheritdoc cref="TryGenerate(string, out IReadOnlyList{string}, CancellationToken)"/>
-    /// <param name="apiNameOrModuleWildcard"><inheritdoc cref="TryGenerate(string, out IReadOnlyList{string}, CancellationToken)" path="/param[@name='apiNameOrModuleWildcard']"/></param>
-    /// <param name="preciseApi"><inheritdoc cref="TryGenerate(string, out IReadOnlyList{string}, CancellationToken)" path="/param[@name='preciseApi']"/></param>
+    /// <inheritdoc cref="TryGenerate(string, out IReadOnlyCollection{string}, CancellationToken)"/>
+    /// <param name="apiNameOrModuleWildcard"><inheritdoc cref="TryGenerate(string, out IReadOnlyCollection{string}, CancellationToken)" path="/param[@name='apiNameOrModuleWildcard']"/></param>
+    /// <param name="preciseApi"><inheritdoc cref="TryGenerate(string, out IReadOnlyCollection{string}, CancellationToken)" path="/param[@name='preciseApi']"/></param>
     /// <param name="redirectedEnums">Receives names of the enum that declares <paramref name="apiNameOrModuleWildcard"/> as an enum value.</param>
-    /// <param name="cancellationToken"><inheritdoc cref="TryGenerate(string, out IReadOnlyList{string}, CancellationToken)" path="/param[@name='cancellationToken']"/></param>
-    public bool TryGenerate(string apiNameOrModuleWildcard, out IReadOnlyList<string> preciseApi, out IReadOnlyList<string> redirectedEnums, CancellationToken cancellationToken)
+    /// <param name="cancellationToken"><inheritdoc cref="TryGenerate(string, out IReadOnlyCollection{string}, CancellationToken)" path="/param[@name='cancellationToken']"/></param>
+    public bool TryGenerate(string apiNameOrModuleWildcard, out IReadOnlyCollection<string> preciseApi, out IReadOnlyCollection<string> redirectedEnums, CancellationToken cancellationToken)
     {
-        List<string> preciseApiAccumulator = new();
-        List<string> redirectedEnumsAccumulator = new();
+        HashSet<string> preciseApiAccumulator = new(StringComparer.Ordinal);
+        HashSet<string> redirectedEnumsAccumulator = new(StringComparer.Ordinal);
         bool success = false;
         foreach (Generator generator in this.Generators.Values)
         {
             if (generator.TryGenerate(apiNameOrModuleWildcard, out preciseApi, cancellationToken))
             {
-                preciseApiAccumulator.AddRange(preciseApi);
+                preciseApiAccumulator.UnionWith(preciseApi);
                 success = true;
                 continue;
             }
 
-            preciseApiAccumulator.AddRange(preciseApi);
+            preciseApiAccumulator.UnionWith(preciseApi);
             if (generator.TryGetEnumName(apiNameOrModuleWildcard, out string? declaringEnum))
             {
                 redirectedEnumsAccumulator.Add(declaringEnum);
@@ -89,7 +89,7 @@ public class SuperGenerator : IGenerator, IDisposable
                     success = true;
                 }
 
-                preciseApiAccumulator.AddRange(preciseApi);
+                preciseApiAccumulator.UnionWith(preciseApi);
             }
         }
 
@@ -99,7 +99,7 @@ public class SuperGenerator : IGenerator, IDisposable
     }
 
     /// <inheritdoc/>
-    public bool TryGenerateType(string possiblyQualifiedName, out IReadOnlyList<string> preciseApi)
+    public bool TryGenerateType(string possiblyQualifiedName, out IReadOnlyCollection<string> preciseApi)
     {
         List<string> preciseApiAccumulator = new();
         bool success = false;
@@ -141,7 +141,7 @@ public class SuperGenerator : IGenerator, IDisposable
     }
 
     /// <inheritdoc/>
-    public bool TryGenerateExternMethod(string possiblyQualifiedName, out IReadOnlyList<string> preciseApi)
+    public bool TryGenerateExternMethod(string possiblyQualifiedName, out IReadOnlyCollection<string> preciseApi)
     {
         List<string> preciseApiAccumulator = new();
         bool success = false;

@@ -233,7 +233,7 @@ public class SourceGenerator : ISourceGenerator
                             continue;
                         }
 
-                        superGenerator.TryGenerate(name, out IReadOnlyList<string> matchingApis, out IReadOnlyList<string> redirectedEnums, context.CancellationToken);
+                        superGenerator.TryGenerate(name, out IReadOnlyCollection<string> matchingApis, out IReadOnlyCollection<string> redirectedEnums, context.CancellationToken);
                         foreach (string declaringEnum in redirectedEnums)
                         {
                             context.ReportDiagnostic(Diagnostic.Create(UseEnumValueDeclaringType, location, declaringEnum));
@@ -269,18 +269,19 @@ public class SourceGenerator : ISourceGenerator
                 context.AddSource(unit.Key, unit.Value.GetText(Encoding.UTF8));
             }
 
-            string ConcatSuggestions(IReadOnlyList<string> suggestions)
+            string ConcatSuggestions(IReadOnlyCollection<string> suggestions)
             {
                 var suggestionBuilder = new StringBuilder();
-                for (int i = 0; i < suggestions.Count; i++)
+                int i = 0;
+                foreach (string suggestion in suggestions)
                 {
-                    if (i > 0)
+                    if (++i > 0)
                     {
                         suggestionBuilder.Append(i < suggestions.Count - 1 ? ", " : " or ");
                     }
 
                     suggestionBuilder.Append('"');
-                    suggestionBuilder.Append(suggestions[i]);
+                    suggestionBuilder.Append(suggestion);
                     suggestionBuilder.Append('"');
                 }
 

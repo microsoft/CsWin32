@@ -85,7 +85,7 @@ public partial class Generator
     /// <param name="possiblyQualifiedName">The name of the constant, optionally qualified with a namespace.</param>
     /// <param name="preciseApi">Receives the canonical API names that <paramref name="possiblyQualifiedName"/> matched on.</param>
     /// <returns><see langword="true"/> if a match was found and the constant generated; otherwise <see langword="false"/>.</returns>
-    public bool TryGenerateConstant(string possiblyQualifiedName, out IReadOnlyList<string> preciseApi)
+    public bool TryGenerateConstant(string possiblyQualifiedName, out IReadOnlyCollection<string> preciseApi)
     {
         if (possiblyQualifiedName is null)
         {

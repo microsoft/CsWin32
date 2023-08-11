@@ -179,7 +179,7 @@ namespace Microsoft.Windows.Sdk
     public void SpecialStruct_ByRequest(string structName)
     {
         this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate(structName, out IReadOnlyList<string> preciseApi, CancellationToken.None));
+        Assert.True(this.generator.TryGenerate(structName, out IReadOnlyCollection<string> preciseApi, CancellationToken.None));
         Assert.Single(preciseApi);
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();

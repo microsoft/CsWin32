@@ -206,6 +206,8 @@ public partial class Generator
 
         public override SyntaxNode? VisitTryStatement(TryStatementSyntax node) => base.VisitTryStatement(this.WithIndentingTrivia(node));
 
+        public override SyntaxNode? VisitThrowStatement(ThrowStatementSyntax node) => base.VisitThrowStatement(this.WithIndentingTrivia(node));
+
         public override SyntaxNode? VisitCatchClause(CatchClauseSyntax node) => base.VisitCatchClause(this.WithIndentingTrivia(node));
 
         public override SyntaxNode? VisitFinallyClause(FinallyClauseSyntax node) => base.VisitFinallyClause(this.WithIndentingTrivia(node));

@@ -295,6 +295,22 @@ public class COMTests : GeneratorTestBase
     }
 
     [Fact]
+    public void EnvironmentFailFast()
+    {
+        this.compilation = this.starterCompilations["net7.0"];
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = false });
+
+        // Emit something into the Environment namespace, to invite collisions.
+        Assert.True(this.generator.TryGenerate("ENCLAVE_IDENTITY", CancellationToken.None));
+
+        // Emit the interface that can require Environment.FailFast.
+        Assert.True(this.generator.TryGenerate("ITypeInfo", CancellationToken.None));
+
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+    }
+
+    [Fact]
     public void ComOutPtrTypedAsOutObject()
     {
         const string methodName = "CoCreateInstance";

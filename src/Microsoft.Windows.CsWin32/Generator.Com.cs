@@ -425,20 +425,35 @@ public partial class Generator
                     //// hr.ThrowOnFailure();
                     : ExpressionStatement(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, hrLocal, HRThrowOnFailureMethodName)));
 
-                //// catch (Exception ex) { return (HRESULT)ex.HResult; }
                 IdentifierNameSyntax exLocal = IdentifierName("ex");
-                CatchClauseSyntax catchClause = CatchClause(CatchDeclaration(IdentifierName(nameof(Exception)).WithTrailingTrivia(Space), exLocal.Identifier), null, Block().AddStatements(
-                    ReturnStatement(CastExpression(HresultTypeSyntax, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, exLocal, IdentifierName(nameof(Exception.HResult)))))));
+                BlockSyntax catchBlock = Block();
+                if (hrReturnType)
+                {
+                    //// return (HRESULT)ex.HResult;
+                    catchBlock = catchBlock.AddStatements(ReturnStatement(CastExpression(HresultTypeSyntax, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, exLocal, IdentifierName(nameof(Exception.HResult))))));
+                }
+                else
+                {
+                    //// Environment.FailFast("COM object threw an exception from a non-HRESULT returning method.", ex);
+                    //// throw;
+                    catchBlock = catchBlock.AddStatements(
+                        ExpressionStatement(InvocationExpression(
+                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseName("global::System.Environment"), IdentifierName(nameof(Environment.FailFast))),
+                            ArgumentList().AddArguments(
+                                Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal("COM object threw an exception from a non-HRESULT returning method."))),
+                                Argument(exLocal)))),
+                        ThrowStatement());
+                }
+
+                //// catch (Exception ex) {
+                CatchClauseSyntax catchClause = CatchClause(CatchDeclaration(IdentifierName(nameof(Exception)).WithTrailingTrivia(Space), exLocal.Identifier), null, catchBlock);
 
                 BlockSyntax tryBlock = Block().AddStatements(
                     hrDecl,
                     ifNullReturnStatement).AddStatements(thunkInvokeAndReturn);
 
-                BlockSyntax ccwBody = hrReturnType
-                    //// try { ... } catch { ... }
-                    ? Block().AddStatements(TryStatement(tryBlock, new SyntaxList<CatchClauseSyntax>(catchClause), null))
-                    //// { .... } // any exception is thrown back to native code.
-                    : tryBlock;
+                //// try { ... } catch { ... }
+                BlockSyntax ccwBody = Block().AddStatements(TryStatement(tryBlock, new SyntaxList<CatchClauseSyntax>(catchClause), null));
 
                 //// [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvStdcall) })]
                 //// private static HRESULT Clone(IEnumEventObject* @this, IEnumEventObject** ppInterface)

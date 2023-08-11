@@ -944,6 +944,16 @@ public partial class Generator : IGenerator, IDisposable
                     this.TryGenerateType(identifierString.Substring(GlobalNamespacePrefix.Length));
                 }
             }
+
+            // Generate macro dependencies, if any.
+            foreach (IdentifierNameSyntax identifier in macro.DescendantNodes().OfType<IdentifierNameSyntax>())
+            {
+                string identifierString = identifier.ToString();
+                if (Win32SdkMacros.ContainsKey(identifierString))
+                {
+                    this.TryGenerateMacro(identifierString, out _);
+                }
+            }
         });
     }
 

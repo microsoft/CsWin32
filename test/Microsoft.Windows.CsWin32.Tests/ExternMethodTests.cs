@@ -57,4 +57,24 @@ public class ExternMethodTests : GeneratorTestBase
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
     }
+
+    [Theory, CombinatorialData]
+    public void SetLastError_ByMarshaling(
+        bool allowMarshaling,
+        [CombinatorialMemberData(nameof(TFMDataNoNetFx35))] string tfm)
+    {
+        this.compilation = this.starterCompilations[tfm];
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling });
+        Assert.True(this.generator.TryGenerate("GetVersionEx", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        bool expectMarshalingAttribute = allowMarshaling || tfm is "net472" or "netstandard2.0";
+        MethodDeclarationSyntax originalMethod = this.FindGeneratedMethod("GetVersionEx").Single(m => m.ParameterList.Parameters[0].Type is PointerTypeSyntax);
+        AttributeSyntax? attribute = FindDllImportAttribute(originalMethod.AttributeLists) ?? FindDllImportAttribute(originalMethod.Body?.Statements.OfType<LocalFunctionStatementSyntax>().SingleOrDefault()?.AttributeLists ?? default);
+        Assert.NotNull(attribute);
+        Assert.Equal(expectMarshalingAttribute, attribute.ArgumentList!.Arguments.Any(a => a.NameEquals?.Name.Identifier.ValueText == "SetLastError"));
+
+        static AttributeSyntax? FindDllImportAttribute(SyntaxList<AttributeListSyntax> attributeLists) => attributeLists.SelectMany(al => al.Attributes).FirstOrDefault(a => a.Name.ToString() == "DllImport");
+    }
 }

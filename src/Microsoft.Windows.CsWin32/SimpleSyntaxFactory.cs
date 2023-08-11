@@ -203,7 +203,7 @@ internal static class SimpleSyntaxFactory
                 IdentifierName(Enum.GetName(typeof(ComInterfaceType), interfaceType)!))));
     }
 
-    internal static AttributeSyntax DllImport(MethodImport import, string moduleName, string? entrypoint, CharSet charSet = CharSet.Ansi)
+    internal static AttributeSyntax DllImport(MethodImport import, string moduleName, string? entrypoint, bool setLastError, CharSet charSet = CharSet.Ansi)
     {
         List<AttributeArgumentSyntax> args = new();
         AttributeSyntax? dllImportAttribute = Attribute(IdentifierName("DllImport"));
@@ -216,7 +216,7 @@ internal static class SimpleSyntaxFactory
                     .WithNameEquals(NameEquals(nameof(DllImportAttribute.EntryPoint))));
         }
 
-        if ((import.Attributes & MethodImportAttributes.SetLastError) == MethodImportAttributes.SetLastError)
+        if (setLastError)
         {
             args.Add(AttributeArgument(LiteralExpression(SyntaxKind.TrueLiteralExpression))
                     .WithNameEquals(NameEquals(nameof(DllImportAttribute.SetLastError))));

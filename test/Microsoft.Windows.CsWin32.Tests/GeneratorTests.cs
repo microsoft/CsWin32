@@ -273,11 +273,28 @@ public class GeneratorTests : GeneratorTestBase
         Assert.Empty(this.FindGeneratedConstant("ALG_SID_HMAC"));
     }
 
+    /// <summary>
+    /// Asserts that the source generator will not emit a warning when a wildcard is used to generate constants that match in more than one metadata assembly.
+    /// </summary>
+    [Fact]
+    public void WildcardForConstants_DefinedAcrossMetadata()
+    {
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate("IOCTL_*", out IReadOnlyCollection<string> preciseApi, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        Assert.Single(this.FindGeneratedConstant("IOCTL_ABORT_PIPE")); // Win32
+        Assert.Single(this.FindGeneratedConstant("IOCTL_REDIR_QUERY_PATH")); // WDK
+
+        // If this produces more than one result, the source generator will complain.
+        Assert.Single(preciseApi);
+    }
+
     [Fact]
     public void WildcardForConstants_NoMatch()
     {
         this.generator = this.CreateGenerator();
-        Assert.False(this.generator.TryGenerate("IDONTEXIST*", out IReadOnlyList<string> preciseApi, CancellationToken.None));
+        Assert.False(this.generator.TryGenerate("IDONTEXIST*", out IReadOnlyCollection<string> preciseApi, CancellationToken.None));
         Assert.Empty(preciseApi);
     }
 
@@ -369,7 +386,7 @@ public class GeneratorTests : GeneratorTestBase
     public void AmbiguousApiName()
     {
         this.generator = this.CreateGenerator();
-        Assert.False(this.generator.TryGenerate("IDENTITY_TYPE", out IReadOnlyList<string> preciseApi, CancellationToken.None));
+        Assert.False(this.generator.TryGenerate("IDENTITY_TYPE", out IReadOnlyCollection<string> preciseApi, CancellationToken.None));
         Assert.Equal(2, preciseApi.Count);
         Assert.Contains("Windows.Win32.NetworkManagement.NetworkPolicyServer.IDENTITY_TYPE", preciseApi);
         Assert.Contains("Windows.Win32.Security.Authentication.Identity.Provider.IDENTITY_TYPE", preciseApi);

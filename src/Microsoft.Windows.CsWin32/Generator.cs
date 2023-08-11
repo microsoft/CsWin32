@@ -315,7 +315,7 @@ public partial class Generator : IGenerator, IDisposable
     }
 
     /// <inheritdoc/>
-    public bool TryGenerate(string apiNameOrModuleWildcard, out IReadOnlyList<string> preciseApi, CancellationToken cancellationToken)
+    public bool TryGenerate(string apiNameOrModuleWildcard, out IReadOnlyCollection<string> preciseApi, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(apiNameOrModuleWildcard))
         {
@@ -390,7 +390,7 @@ public partial class Generator : IGenerator, IDisposable
     /// <param name="namespace">The namespace to generate APIs for.</param>
     /// <param name="preciseApi">Receives the canonical API names that <paramref name="namespace"/> matched on.</param>
     /// <returns><see langword="true"/> if a matching namespace was found; otherwise <see langword="false"/>.</returns>
-    public bool TryGenerateNamespace(string @namespace, out IReadOnlyList<string> preciseApi)
+    public bool TryGenerateNamespace(string @namespace, out IReadOnlyCollection<string> preciseApi)
     {
         if (@namespace is null)
         {
@@ -506,7 +506,7 @@ public partial class Generator : IGenerator, IDisposable
     }
 
     /// <inheritdoc/>
-    public bool TryGenerateType(string possiblyQualifiedName, out IReadOnlyList<string> preciseApi)
+    public bool TryGenerateType(string possiblyQualifiedName, out IReadOnlyCollection<string> preciseApi)
     {
         if (possiblyQualifiedName is null)
         {
@@ -575,7 +575,7 @@ public partial class Generator : IGenerator, IDisposable
     /// <param name="macroName">The name of the macro. Never qualified with a namespace.</param>
     /// <param name="preciseApi">Receives the canonical API names that <paramref name="macroName"/> matched on.</param>
     /// <returns><see langword="true"/> if a match was found and the macro generated; otherwise <see langword="false"/>.</returns>
-    public bool TryGenerateMacro(string macroName, out IReadOnlyList<string> preciseApi)
+    public bool TryGenerateMacro(string macroName, out IReadOnlyCollection<string> preciseApi)
     {
         if (macroName is null)
         {

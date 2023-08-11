@@ -92,7 +92,7 @@ public partial class Generator
     }
 
     /// <inheritdoc/>
-    public bool TryGenerateExternMethod(string possiblyQualifiedName, out IReadOnlyList<string> preciseApi)
+    public bool TryGenerateExternMethod(string possiblyQualifiedName, out IReadOnlyCollection<string> preciseApi)
     {
         if (possiblyQualifiedName is null)
         {

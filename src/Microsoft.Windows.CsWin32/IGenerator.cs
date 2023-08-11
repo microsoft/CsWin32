@@ -15,7 +15,7 @@ public interface IGenerator : IDisposable
     /// <param name="preciseApi">Receives the canonical API names that <paramref name="apiNameOrModuleWildcard"/> matched on.</param>
     /// <param name="cancellationToken">A cancellation token.</param>
     /// <returns><see langword="true" /> if any matching APIs were found and generated; <see langword="false"/> otherwise.</returns>
-    bool TryGenerate(string apiNameOrModuleWildcard, out IReadOnlyList<string> preciseApi, CancellationToken cancellationToken);
+    bool TryGenerate(string apiNameOrModuleWildcard, out IReadOnlyCollection<string> preciseApi, CancellationToken cancellationToken);
 
     /// <summary>
     /// Collects the result of code generation.
@@ -30,7 +30,7 @@ public interface IGenerator : IDisposable
     /// <param name="possiblyQualifiedName">The name of the interop type, optionally qualified with a namespace.</param>
     /// <param name="preciseApi">Receives the canonical API names that <paramref name="possiblyQualifiedName"/> matched on.</param>
     /// <returns><see langword="true"/> if a match was found and the type generated; otherwise <see langword="false"/>.</returns>
-    bool TryGenerateType(string possiblyQualifiedName, out IReadOnlyList<string> preciseApi);
+    bool TryGenerateType(string possiblyQualifiedName, out IReadOnlyCollection<string> preciseApi);
 
     /// <summary>
     /// Generates a projection of all extern methods and their supporting types.
@@ -56,7 +56,7 @@ public interface IGenerator : IDisposable
     /// <param name="possiblyQualifiedName">The name of the extern method, optionally qualified with a namespace.</param>
     /// <param name="preciseApi">Receives the canonical API names that <paramref name="possiblyQualifiedName"/> matched on.</param>
     /// <returns><see langword="true"/> if a match was found and the extern method generated; otherwise <see langword="false"/>.</returns>
-    bool TryGenerateExternMethod(string possiblyQualifiedName, out IReadOnlyList<string> preciseApi);
+    bool TryGenerateExternMethod(string possiblyQualifiedName, out IReadOnlyCollection<string> preciseApi);
 
     /// <summary>
     /// Generates a projection of all macros.

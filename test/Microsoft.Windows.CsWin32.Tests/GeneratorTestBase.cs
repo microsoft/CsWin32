@@ -146,6 +146,14 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
 
     protected static IEnumerable<AttributeSyntax> FindAttribute(SyntaxList<AttributeListSyntax> attributeLists, string name) => attributeLists.SelectMany(al => al.Attributes).Where(a => a.Name.ToString() == name);
 
+    protected void GenerateApi(string methodName)
+    {
+        this.generator ??= this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate(methodName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+    }
+
     protected CSharpCompilation AddGeneratedCode(CSharpCompilation compilation, IGenerator generator)
     {
         var compilationUnits = generator.GetCompilationUnits(CancellationToken.None).ToList();
@@ -270,10 +278,7 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
 
     protected void AssertGeneratedType(string apiName, string expectedSyntax, string? expectedExtensions = null)
     {
-        this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate(apiName, CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi(apiName);
         BaseTypeDeclarationSyntax syntax = Assert.Single(this.FindGeneratedType(apiName));
         Assert.Equal(TestUtils.NormalizeToExpectedLineEndings(expectedSyntax), TestUtils.NormalizeToExpectedLineEndings(syntax.ToFullString()));
 
@@ -293,10 +298,7 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
 
     protected void AssertGeneratedMember(string apiName, string memberName, string expectedSyntax)
     {
-        this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate(apiName, CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi(apiName);
         BaseTypeDeclarationSyntax typeSyntax = Assert.Single(this.FindGeneratedType(apiName));
         var semanticModel = this.compilation.GetSemanticModel(typeSyntax.SyntaxTree, ignoreAccessibility: false);
         var member = Assert.Single(semanticModel.GetDeclaredSymbol(typeSyntax, CancellationToken.None)!.GetMembers(memberName));

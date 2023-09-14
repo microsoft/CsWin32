@@ -11,13 +11,7 @@ public class ExternMethodTests : GeneratorTestBase
     [Fact]
     public void AssociatedEnumOnParameter()
     {
-        const string Method = "SHObjectProperties";
-        this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate(Method, CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
-
-        MethodDeclarationSyntax method = Assert.Single(this.FindGeneratedMethod(Method), IsOrContainsExternMethod);
+        MethodDeclarationSyntax method = Assert.Single(this.GenerateMethod("SHObjectProperties"), IsOrContainsExternMethod);
         ParameterSyntax enumParam = method.ParameterList.Parameters[1];
         Assert.Equal("SHOP_TYPE", Assert.IsType<QualifiedNameSyntax>(enumParam.Type).Right.Identifier.ValueText);
     }
@@ -25,24 +19,14 @@ public class ExternMethodTests : GeneratorTestBase
     [Fact]
     public void AssociatedEnumOnReturnValue()
     {
-        const string Method = "PathCleanupSpec";
-        this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate(Method, CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
-
-        MethodDeclarationSyntax method = Assert.Single(this.FindGeneratedMethod(Method), IsOrContainsExternMethod);
+        MethodDeclarationSyntax method = Assert.Single(this.GenerateMethod("PathCleanupSpec"), IsOrContainsExternMethod);
         Assert.Equal("PCS_RET", Assert.IsType<QualifiedNameSyntax>(method.ReturnType).Right.Identifier.ValueText);
     }
 
     [Fact]
     public void AssociatedEnumOnParameterWithVoidReturn()
     {
-        const string Method = "SHChangeNotify";
-        this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate(Method, CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateMethod("SHChangeNotify");
     }
 
     /// <summary>
@@ -51,11 +35,7 @@ public class ExternMethodTests : GeneratorTestBase
     [Fact]
     public void WdkMethod_NtCreateFile()
     {
-        const string Method = "NtCreateFile";
-        this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate(Method, CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateMethod("NtCreateFile");
     }
 
     [Theory, CombinatorialData]
@@ -65,9 +45,7 @@ public class ExternMethodTests : GeneratorTestBase
     {
         this.compilation = this.starterCompilations[tfm];
         this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling });
-        Assert.True(this.generator.TryGenerate("GetVersionEx", CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi("GetVersionEx");
 
         bool expectMarshalingAttribute = allowMarshaling || tfm is "net472" or "netstandard2.0";
         MethodDeclarationSyntax originalMethod = this.FindGeneratedMethod("GetVersionEx").Single(m => m.ParameterList.Parameters[0].Type is PointerTypeSyntax);
@@ -76,5 +54,11 @@ public class ExternMethodTests : GeneratorTestBase
         Assert.Equal(expectMarshalingAttribute, attribute.ArgumentList!.Arguments.Any(a => a.NameEquals?.Name.Identifier.ValueText == "SetLastError"));
 
         static AttributeSyntax? FindDllImportAttribute(SyntaxList<AttributeListSyntax> attributeLists) => attributeLists.SelectMany(al => al.Attributes).FirstOrDefault(a => a.Name.ToString() == "DllImport");
+    }
+
+    private IEnumerable<MethodDeclarationSyntax> GenerateMethod(string methodName)
+    {
+        this.GenerateApi(methodName);
+        return this.FindGeneratedMethod(methodName);
     }
 }

@@ -14,9 +14,7 @@ public class GeneratorTests : GeneratorTestBase
     public void AssemblyAttributeGenerated(bool emitSingleFile)
     {
         this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { EmitSingleFile = emitSingleFile });
-        Assert.True(this.generator.TryGenerate("GetTickCount", CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi("GetTickCount");
         IEnumerable<AttributeSyntax> assemblyMetadataAttributes =
             from tree in this.compilation.SyntaxTrees
             from attributeList in tree.GetCompilationUnitRoot().AttributeLists
@@ -551,10 +549,7 @@ public class GeneratorTests : GeneratorTestBase
     [Fact]
     public void BOOL_FieldRemainsBOOL()
     {
-        this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate("ICONINFO", CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi("ICONINFO");
         var theStruct = (StructDeclarationSyntax)this.FindGeneratedType("ICONINFO").Single();
         VariableDeclarationSyntax field = theStruct.Members.OfType<FieldDeclarationSyntax>().Select(m => m.Declaration).Single(d => d.Variables.Any(v => v.Identifier.ValueText == "fIcon"));
         Assert.Equal("BOOL", Assert.IsType<QualifiedNameSyntax>(field.Type).Right.Identifier.ValueText);
@@ -563,20 +558,14 @@ public class GeneratorTests : GeneratorTestBase
     [Fact]
     public void TypeNameCollisionsDoNotCauseTooMuchCodeGen()
     {
-        this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate("TYPEDESC", CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi("TYPEDESC");
         Assert.Empty(this.FindGeneratedType("D3DMATRIX"));
     }
 
     [Fact]
     public void Const_PWSTR_Becomes_PCWSTR_and_String()
     {
-        this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate("StrCmpLogical", CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi("StrCmpLogical");
 
         bool foundPCWSTROverload = false;
         bool foundStringOverload = false;
@@ -776,10 +765,7 @@ public class GeneratorTests : GeneratorTestBase
     public void UnicodeExtenMethodsGetCharSet()
     {
         const string MethodName = "VkKeyScan";
-        this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate(MethodName, CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi(MethodName);
         MethodDeclarationSyntax generatedMethod = this.FindGeneratedMethod(MethodName).Single();
         Assert.Contains(
             generatedMethod.AttributeLists.SelectMany(al => al.Attributes),
@@ -986,10 +972,7 @@ class Program
     {
         // We split on TFMs because the generated code is slightly different depending on TFM.
         this.compilation = this.starterCompilations[tfm].WithOptions(this.compilation.Options.WithPlatform(Platform.X64));
-        this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate("MiniDumpWriteDump", CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi("MiniDumpWriteDump");
 
         MethodDeclarationSyntax externMethod = Assert.Single(this.FindGeneratedMethod("MiniDumpWriteDump"), m => !m.Modifiers.Any(SyntaxKind.ExternKeyword));
         Assert.All(externMethod.ParameterList.Parameters.Reverse().Take(3), p => Assert.IsType<NullableTypeSyntax>(p.Type));
@@ -1070,10 +1053,7 @@ class Program
     [Fact]
     public void SeekOriginEnumPreferred()
     {
-        this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerateType("IStream"));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi("IStream");
 
         MethodDeclarationSyntax seekMethod = Assert.Single(this.FindGeneratedMethod("Seek"));
         QualifiedNameSyntax seekParamType = Assert.IsType<QualifiedNameSyntax>(seekMethod.ParameterList.Parameters[1].Type);

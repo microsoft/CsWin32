@@ -92,10 +92,7 @@ namespace Microsoft.Windows.Sdk
 }
 ";
         this.compilation = this.compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(test, this.parseOptions, "test.cs"));
-        this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate("CreateFile", CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi("CreateFile");
     }
 
     [Fact]
@@ -105,10 +102,7 @@ namespace Microsoft.Windows.Sdk
         this.compilation = this.compilation.AddSyntaxTrees(
             CSharpSyntaxTree.ParseText("namespace Microsoft.Windows.Sdk { partial struct HRESULT { void Foo() { } } }", this.parseOptions, "myHRESULT.cs"));
 
-        this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate(structName, CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi(structName);
 
         bool hasFooMethod = false;
         bool hasValueProperty = false;
@@ -125,10 +119,7 @@ namespace Microsoft.Windows.Sdk
     [Fact]
     public void PROC_GeneratedAsStruct()
     {
-        this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate("PROC", CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi("PROC");
 
         BaseTypeDeclarationSyntax type = Assert.Single(this.FindGeneratedType("PROC"));
         Assert.IsType<StructDeclarationSyntax>(type);
@@ -139,10 +130,7 @@ namespace Microsoft.Windows.Sdk
     public void FARPROC_GeneratedAsStruct(string tfm)
     {
         this.compilation = this.starterCompilations[tfm];
-        this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate("FARPROC", CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi("FARPROC");
 
         BaseTypeDeclarationSyntax type = Assert.Single(this.FindGeneratedType("FARPROC"));
         Assert.IsType<StructDeclarationSyntax>(type);
@@ -151,10 +139,7 @@ namespace Microsoft.Windows.Sdk
     [Fact]
     public void PointerFieldIsDeclaredAsPointer()
     {
-        this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate("PROCESS_BASIC_INFORMATION", CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi("PROCESS_BASIC_INFORMATION");
 
         var type = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("PROCESS_BASIC_INFORMATION"));
         FieldDeclarationSyntax field = Assert.Single(type.Members.OfType<FieldDeclarationSyntax>(), m => m.Declaration.Variables.Any(v => v.Identifier.ValueText == "PebBaseAddress"));
@@ -164,10 +149,7 @@ namespace Microsoft.Windows.Sdk
     [Fact]
     public void FieldWithAssociatedEnum()
     {
-        this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate("SHDESCRIPTIONID", CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi("SHDESCRIPTIONID");
 
         var type = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("SHDESCRIPTIONID"));
         PropertyDeclarationSyntax property = Assert.Single(type.Members.OfType<PropertyDeclarationSyntax>(), m => m.Identifier.ValueText == "dwDescriptionId");
@@ -203,8 +185,6 @@ namespace Microsoft.Windows.Sdk
             AllowMarshaling = allowMarshaling,
         };
         this.generator = this.CreateGenerator(options);
-        Assert.True(this.generator.TryGenerate(name, CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi(name);
     }
 }

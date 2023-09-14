@@ -16,10 +16,7 @@ public class COMTests : GeneratorTestBase
     public void FriendlyOverloadOfCOMInterfaceRemovesParameter()
     {
         const string ifaceName = "IEnumDebugPropertyInfo";
-        this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate(ifaceName, CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi(ifaceName);
         Assert.Contains(this.FindGeneratedMethod("Next"), m => m.ParameterList.Parameters.Count == 3 && m.ParameterList.Parameters[0].Modifiers.Any(SyntaxKind.ThisKeyword));
     }
 
@@ -27,10 +24,7 @@ public class COMTests : GeneratorTestBase
     public void IDispatchDerivedInterface()
     {
         const string ifaceName = "IInkRectangle";
-        this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate(ifaceName, CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi(ifaceName);
 #pragma warning disable CS0618 // Type or member is obsolete
         Assert.Contains(this.FindGeneratedType(ifaceName), t => t.BaseList is null && t.AttributeLists.Any(al => al.Attributes.Any(a => a.Name is IdentifierNameSyntax { Identifier: { ValueText: "InterfaceType" } } && a.ArgumentList?.Arguments[0].Expression is MemberAccessExpressionSyntax { Name: IdentifierNameSyntax { Identifier: { ValueText: nameof(ComInterfaceType.InterfaceIsIDispatch) } } })));
 #pragma warning restore CS0618 // Type or member is obsolete
@@ -40,10 +34,7 @@ public class COMTests : GeneratorTestBase
     public void IInpectableDerivedInterface()
     {
         const string ifaceName = "IUserConsentVerifierInterop";
-        this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate(ifaceName, CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi(ifaceName);
         Assert.Contains(this.FindGeneratedType(ifaceName), t => t.BaseList is null && ((InterfaceDeclarationSyntax)t).Members.Count == 1 && t.AttributeLists.Any(al => al.Attributes.Any(a => a.Name is IdentifierNameSyntax { Identifier: { ValueText: "InterfaceType" } } && a.ArgumentList?.Arguments[0].Expression is MemberAccessExpressionSyntax { Name: IdentifierNameSyntax { Identifier: { ValueText: nameof(ComInterfaceType.InterfaceIsIInspectable) } } })));
 
         // Make sure the WinRT marshaler was not brought in
@@ -55,9 +46,7 @@ public class COMTests : GeneratorTestBase
     {
         const string ifaceName = "IADsClass";
         this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling });
-        Assert.True(this.generator.TryGenerate(ifaceName, CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi(ifaceName);
         InterfaceDeclarationSyntax ifaceSyntax;
         if (allowMarshaling)
         {
@@ -83,9 +72,7 @@ public class COMTests : GeneratorTestBase
     {
         const string ifaceName = "IUIAutomationProxyFactoryEntry";
         this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling });
-        Assert.True(this.generator.TryGenerate(ifaceName, CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi(ifaceName);
         InterfaceDeclarationSyntax ifaceSyntax;
         if (allowMarshaling)
         {
@@ -107,9 +94,7 @@ public class COMTests : GeneratorTestBase
     {
         const string ifaceName = "IADsClass";
         this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = false });
-        Assert.True(this.generator.TryGenerate(ifaceName, CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi(ifaceName);
         StructDeclarationSyntax structSyntax = Assert.Single(this.FindGeneratedType(ifaceName).OfType<StructDeclarationSyntax>());
 
         // Check a property where we expect just a getter.
@@ -126,9 +111,7 @@ public class COMTests : GeneratorTestBase
     {
         const string ifaceName = "IUIAutomationProxyFactoryEntry";
         this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = false });
-        Assert.True(this.generator.TryGenerate(ifaceName, CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi(ifaceName);
         StructDeclarationSyntax structSyntax = Assert.Single(this.FindGeneratedType(ifaceName).OfType<StructDeclarationSyntax>());
 
         // Check for a property where the interface declares the getter and setter in non-consecutive rows of the VMT.
@@ -151,9 +134,7 @@ public class COMTests : GeneratorTestBase
     public void COMPropertiesAreGeneratedAsStructProperties_NonConsecutiveAccessors_IPicture()
     {
         this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = false });
-        Assert.True(this.generator.TryGenerate("IPicture", CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi("IPicture");
     }
 
     [Theory, PairwiseData]
@@ -161,9 +142,7 @@ public class COMTests : GeneratorTestBase
     {
         const string ifaceName = "IHTMLImgElement";
         this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = marshaling > 0, ComInterop = new GeneratorOptions.ComInteropOptions { UseIntPtrForComOutPointers = marshaling == 1 } });
-        Assert.True(this.generator.TryGenerate(ifaceName, CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi(ifaceName);
         InterfaceDeclarationSyntax ifaceSyntax;
         if (marshaling > 0)
         {
@@ -208,10 +187,7 @@ public class COMTests : GeneratorTestBase
         const string WinRTInteropInterfaceName = "ICompositorDesktopInterop";
         const string WinRTClassName = "Windows.UI.Composition.Desktop.DesktopWindowTarget";
 
-        this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate(WinRTInteropInterfaceName, CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi(WinRTInteropInterfaceName);
 
         InterfaceDeclarationSyntax interfaceDeclaration = (InterfaceDeclarationSyntax)Assert.Single(this.FindGeneratedType(WinRTInteropInterfaceName));
         MethodDeclarationSyntax method = (MethodDeclarationSyntax)interfaceDeclaration.Members.First();
@@ -243,10 +219,7 @@ public class COMTests : GeneratorTestBase
     [Fact]
     public void AssociatedEnumOnMethodParameters()
     {
-        this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate("IShellFolderView", CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi("IShellFolderView");
 
         InterfaceDeclarationSyntax ifaceSyntax = Assert.Single(this.FindGeneratedType("IShellFolderView").OfType<InterfaceDeclarationSyntax>());
         MethodDeclarationSyntax methodSyntax = Assert.Single(ifaceSyntax.Members.OfType<MethodDeclarationSyntax>(), m => m.Identifier.ValueText == "Select");
@@ -266,9 +239,7 @@ public class COMTests : GeneratorTestBase
     {
         this.compilation = this.starterCompilations[tfm];
         this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = false });
-        Assert.True(this.generator.TryGenerate(api, CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi(api);
     }
 
     [Theory]
@@ -289,9 +260,7 @@ public class COMTests : GeneratorTestBase
     {
         this.compilation = this.starterCompilations["net6.0"];
         this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling });
-        Assert.True(this.generator.TryGenerate(api, CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi(api);
     }
 
     [Fact]
@@ -314,10 +283,7 @@ public class COMTests : GeneratorTestBase
     public void ComOutPtrTypedAsOutObject()
     {
         const string methodName = "CoCreateInstance";
-        this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate(methodName, CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi(methodName);
         Assert.Contains(this.FindGeneratedMethod(methodName), m => m.ParameterList.Parameters.Last() is { } last && last.Modifiers.Any(SyntaxKind.OutKeyword) && last.Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.ObjectKeyword } });
     }
 
@@ -326,9 +292,7 @@ public class COMTests : GeneratorTestBase
     {
         const string methodName = "CoCreateInstance";
         this.generator = this.CreateGenerator(new GeneratorOptions { ComInterop = new() { UseIntPtrForComOutPointers = true } });
-        Assert.True(this.generator.TryGenerate(methodName, CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi(methodName);
         Assert.Contains(this.FindGeneratedMethod(methodName), m => m.ParameterList.Parameters.Last() is { } last && last.Modifiers.Any(SyntaxKind.OutKeyword) && last.Type is IdentifierNameSyntax { Identifier: { ValueText: "IntPtr" } });
     }
 
@@ -338,9 +302,7 @@ public class COMTests : GeneratorTestBase
         var options = DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling };
         this.generator = this.CreateGenerator(options);
         const string methodName = "D3DCompile"; // A method whose signature references non-COM interface ID3DInclude
-        Assert.True(this.generator.TryGenerate(methodName, CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi(methodName);
 
         // The generated methods MUST reference the "interface" (which must actually be generated as a struct) by pointer.
         Assert.Contains(this.FindGeneratedType("ID3DInclude"), t => t is StructDeclarationSyntax);
@@ -353,9 +315,7 @@ public class COMTests : GeneratorTestBase
         this.compilation = this.starterCompilations[net60 ? "net6.0" : "netstandard2.0"];
         const string typeName = "IInkCursors";
         this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling });
-        Assert.True(this.generator.TryGenerateType(typeName));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi(typeName);
 
         var iface = this.FindGeneratedType(typeName).Single();
 
@@ -375,9 +335,7 @@ public class COMTests : GeneratorTestBase
         this.compilation = this.starterCompilations["net6.0"];
         const string typeName = "IStream";
         this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = false });
-        Assert.True(this.generator.TryGenerateType(typeName));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi(typeName);
         var iface = (StructDeclarationSyntax)this.FindGeneratedType(typeName).Single();
         Assert.Single(iface.Members.OfType<MethodDeclarationSyntax>(), m => m.Identifier.ValueText == "PopulateVTable");
     }
@@ -388,9 +346,7 @@ public class COMTests : GeneratorTestBase
         this.compilation = this.starterCompilations["net7.0"];
         const string typeName = "IPersistFile";
         this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = false });
-        Assert.True(this.generator.TryGenerateType(typeName));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi(typeName);
         var iface = (StructDeclarationSyntax)this.FindGeneratedType(typeName).Single();
         Assert.NotNull(iface.BaseList);
         Assert.Single(iface.BaseList.Types, bt => bt.Type.ToString().Contains("IComIID"));
@@ -401,9 +357,7 @@ public class COMTests : GeneratorTestBase
     {
         const string typeName = "ITypeNameBuilder";
         this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling });
-        Assert.True(this.generator.TryGenerateType(typeName));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi(typeName);
     }
 
     [Theory]
@@ -417,9 +371,7 @@ public class COMTests : GeneratorTestBase
         this.compilation = this.starterCompilations[tfm];
         this.parseOptions = this.parseOptions.WithLanguageVersion(langVersion);
         this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling });
-        Assert.True(this.generator.TryGenerate(structName, CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi(structName);
 
         BaseTypeDeclarationSyntax type = this.FindGeneratedType(structName).Single();
         IEnumerable<BaseTypeSyntax> actual = type.BaseList?.Types ?? Enumerable.Empty<BaseTypeSyntax>();

@@ -31,10 +31,7 @@ public class FriendlyOverloadTests : GeneratorTestBase
     public void SpecializedRAIIFree_ReturnValue()
     {
         const string Method = "CreateActCtx";
-        this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate(Method, CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi(Method);
 
         MethodDeclarationSyntax method = Assert.Single(this.FindGeneratedMethod(Method), m => !IsOrContainsExternMethod(m));
         Assert.Equal("ReleaseActCtxSafeHandle", Assert.IsType<IdentifierNameSyntax>(method.ReturnType).Identifier.ValueText);
@@ -44,10 +41,7 @@ public class FriendlyOverloadTests : GeneratorTestBase
     public void SpecializedRAIIFree_OutParameter()
     {
         const string Method = "DsGetDcOpen";
-        this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate(Method, CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi(Method);
 
         MethodDeclarationSyntax method = Assert.Single(this.FindGeneratedMethod(Method), m => !IsOrContainsExternMethod(m));
         Assert.Equal("DsGetDcCloseWSafeHandle", Assert.IsType<IdentifierNameSyntax>(method.ParameterList.Parameters.Last().Type).Identifier.ValueText);
@@ -56,9 +50,6 @@ public class FriendlyOverloadTests : GeneratorTestBase
     private void Generate(string name)
     {
         this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(Platform.X64));
-        this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate(name, CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi(name);
     }
 }

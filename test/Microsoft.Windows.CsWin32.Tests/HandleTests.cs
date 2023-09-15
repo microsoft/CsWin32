@@ -12,10 +12,7 @@ public class HandleTests : GeneratorTestBase
     public void BSTR_FieldsDoNotBecomeSafeHandles(bool allowMarshaling)
     {
         var options = DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling };
-        this.generator = this.CreateGenerator(options);
-        Assert.True(this.generator.TryGenerate("DebugPropertyInfo", CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi("DebugPropertyInfo");
         StructDeclarationSyntax structDecl = Assert.IsType<StructDeclarationSyntax>(this.FindGeneratedType("DebugPropertyInfo").Single());
         var bstrField = structDecl.Members.OfType<FieldDeclarationSyntax>().First(m => m.Declaration.Variables.Any(v => v.Identifier.ValueText == "m_bstrName"));
         Assert.Equal("BSTR", Assert.IsType<QualifiedNameSyntax>(bstrField.Declaration.Type).Right.Identifier.ValueText);
@@ -24,20 +21,14 @@ public class HandleTests : GeneratorTestBase
     [Fact]
     public void NamespaceHandleGetsNoSafeHandle()
     {
-        this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate("CreatePrivateNamespace", CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi("CreatePrivateNamespace");
         Assert.Empty(this.FindGeneratedType("ClosePrivateNamespaceSafeHandle"));
     }
 
     [Fact]
     public void CreateFileUsesSafeHandles()
     {
-        this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate("CreateFile", CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi("CreateFile");
 
         Assert.Contains(
             this.FindGeneratedMethod("CreateFile"),
@@ -67,9 +58,7 @@ public class HandleTests : GeneratorTestBase
     public void AvoidSafeHandles()
     {
         this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { UseSafeHandles = false });
-        Assert.True(this.generator.TryGenerate("GetExitCodeThread", CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi("GetExitCodeThread");
         MethodDeclarationSyntax friendlyOverload = Assert.Single(this.FindGeneratedMethod("GetExitCodeThread"), m => m.ParameterList.Parameters[^1].Modifiers.Any(SyntaxKind.OutKeyword));
         Assert.Equal("HANDLE", Assert.IsType<QualifiedNameSyntax>(friendlyOverload.ParameterList.Parameters[0].Type).Right.Identifier.ValueText);
     }
@@ -78,9 +67,7 @@ public class HandleTests : GeneratorTestBase
     public void SafeHandleInWDK()
     {
         this.generator = this.CreateGenerator(DefaultTestGeneratorOptions);
-        Assert.True(this.generator.TryGenerate("OROpenHive", CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi("OROpenHive");
     }
 
     /// <summary>
@@ -91,9 +78,7 @@ public class HandleTests : GeneratorTestBase
     public void MSIHANDLE_BecomesSafeHandle()
     {
         this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate("MsiGetLastErrorRecord", CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi("MsiGetLastErrorRecord");
 
         Assert.Contains(
             this.FindGeneratedMethod("MsiGetLastErrorRecord"),
@@ -146,10 +131,7 @@ public class HandleTests : GeneratorTestBase
     [Fact]
     public void ReleaseMethodGeneratedWithHandleStruct()
     {
-        this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate("HANDLE", CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi("HANDLE");
         Assert.True(this.IsMethodGenerated("CloseHandle"));
     }
 }

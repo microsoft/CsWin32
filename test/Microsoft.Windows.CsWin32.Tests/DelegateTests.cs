@@ -20,9 +20,6 @@ public class DelegateTests : GeneratorTestBase
         {
             AllowMarshaling = allowMarshaling,
         };
-        this.generator = this.CreateGenerator(options);
-        Assert.True(this.generator.TryGenerate(name, CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi(name);
     }
 }

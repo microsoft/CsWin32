@@ -23,9 +23,6 @@ public class ConstantsTests : GeneratorTestBase
     public void InterestingConstants(string name)
     {
         this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(Platform.X64));
-        this.generator = this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate(name, CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi(name);
     }
 }

@@ -3,13 +3,11 @@
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
-
     <MetadataVersion>54.0.44-preview</MetadataVersion>
     <WDKMetadataVersion>0.7.3-experimental</WDKMetadataVersion>
     <!-- <DiaMetadataVersion>0.2.185-preview-g7e1e6a442c</DiaMetadataVersion> -->
     <ApiDocsVersion>0.1.42-alpha</ApiDocsVersion>
-
-    <CodeAnalysisVersion>4.6.0</CodeAnalysisVersion>
+    <CodeAnalysisVersion>4.8.0-1.final</CodeAnalysisVersion>
     <CodeAnalysisVersion Condition="'$(IsTestProject)'!='true'">3.11.0</CodeAnalysisVersion>
   </PropertyGroup>
   <ItemGroup>
@@ -17,7 +15,7 @@
     <PackageVersion Include="MessagePack" Version="2.2.85" />
     <PackageVersion Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="3.3.4" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Common" Version="$(CodeAnalysisVersion)" />
-    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.SourceGenerators.Testing.XUnit" Version="1.1.2-beta1.23323.1" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.SourceGenerators.Testing.XUnit" Version="1.1.2-beta1.23407.1" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="$(CodeAnalysisVersion)" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="$(CodeAnalysisVersion)" />
     <!-- <PackageVersion Include="Microsoft.Dia.Win32Metadata" Version="0.2.185-preview-g7e1e6a442c" /> -->

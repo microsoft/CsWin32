@@ -411,7 +411,7 @@ public class COMTests : GeneratorTestBase
     public void COMInterfaceIIDInterfaceOnAppropriateTFMs(
         bool allowMarshaling,
         [CombinatorialValues(LanguageVersion.CSharp10, LanguageVersion.CSharp11)] LanguageVersion langVersion,
-        [CombinatorialValues("net6.0", "net7.0")] string tfm)
+        [CombinatorialValues("net6.0", "net7.0", "net8.0")] string tfm)
     {
         const string structName = "IEnumBstr";
         this.compilation = this.starterCompilations[tfm];
@@ -427,7 +427,7 @@ public class COMTests : GeneratorTestBase
 
         // Static interface members requires C# 11 and .NET 7.
         // And COM *interfaces* are not allowed to have them, so assert we only generate them on structs.
-        if (tfm == "net7.0" && langVersion >= LanguageVersion.CSharp11 && type is StructDeclarationSyntax)
+        if (tfm is "net7.0" or "net8.0" && langVersion >= LanguageVersion.CSharp11 && type is StructDeclarationSyntax)
         {
             Assert.Contains(actual, predicate);
         }

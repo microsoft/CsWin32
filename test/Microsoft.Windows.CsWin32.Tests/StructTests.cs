@@ -187,6 +187,20 @@ namespace Microsoft.Windows.Sdk
         var type = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType(structName));
     }
 
+    [Theory, CombinatorialData]
+    public void InterestingStructs_AcrossTFMs(
+        [CombinatorialValues(
+        "BITMAPINFO")] // struct may produce warnings when targeting .NET 8.0
+        string name,
+        [CombinatorialMemberData(nameof(TFMDataNoNetFx35))] string tfm)
+    {
+        this.compilation = this.starterCompilations[tfm];
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate(name, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+    }
+
     [Theory]
     [CombinatorialData]
     public void InterestingStructs(

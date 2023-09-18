@@ -363,7 +363,7 @@ public class SourceGenerator : ISourceGenerator
                     }
                     catch (Exception e)
                     {
-                        context.ReportDiagnostic(Diagnostic.Create(DocParsingError, null, path, e.Message));
+                        context.ReportDiagnostic(Diagnostic.Create(DocParsingError, null, path, e));
                     }
                 }
 

@@ -212,7 +212,7 @@ public partial class Generator
                 nameColon: null,
                 TokenWithSpace(SyntaxKind.RefKeyword),
                 InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Unsafe)), IdentifierName(nameof(Unsafe.AsRef))))
-                    .WithArgumentList(ArgumentList().AddArguments(Argument(value0))));
+                    .WithArgumentList(ArgumentList().AddArguments(Argument(value0).WithRefKindKeyword(Token(SyntaxKind.InKeyword)))));
 
             // MemoryMarshal.CreateReadOnlySpan(ref Unsafe.AsRef(Value[0]), Length)
             InvocationExpressionSyntax createReadOnlySpanInvocation = InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("MemoryMarshal"), IdentifierName("CreateReadOnlySpan")))

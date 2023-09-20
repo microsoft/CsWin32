@@ -358,7 +358,7 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
             {
                 if (firstLineBreakLength != thisLineBreakLength && thisLineBreakLength > 0)
                 {
-                    Assert.False(true, $"{syntaxTree.FilePath} Line {lineCount} had a {thisLineBreakLength}-byte line ending but line 1's line ending was {firstLineBreakLength} bytes long.");
+                    Assert.Fail($"{syntaxTree.FilePath} Line {lineCount} had a {thisLineBreakLength}-byte line ending but line 1's line ending was {firstLineBreakLength} bytes long.");
                 }
             }
 

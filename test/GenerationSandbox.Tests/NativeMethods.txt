@@ -19,6 +19,7 @@ IEnumDebugPropertyInfo
 IPersistFile
 IServiceProvider
 IShellWindows
+IStream
 KEY_EVENT_RECORD
 LoadLibrary
 MainAVIHeader

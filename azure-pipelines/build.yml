@@ -22,7 +22,7 @@ jobs:
 
   - template: install-dependencies.yml
 
-  - script: dotnet tool run nbgv cloud -ca
+  - script: dotnet nbgv cloud -ca
     displayName: ⚙ Set build number
 
   - template: dotnet.yml

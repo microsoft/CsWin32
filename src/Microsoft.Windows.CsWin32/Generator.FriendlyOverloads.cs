@@ -40,7 +40,7 @@ public partial class Generator
 
 #pragma warning disable SA1114 // Parameter list should follow declaration
         static ParameterSyntax StripAttributes(ParameterSyntax parameter) => parameter.WithAttributeLists(List<AttributeListSyntax>());
-        static ExpressionSyntax GetSpanLength(ExpressionSyntax span) => MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, span, IdentifierName(nameof(Span<int>.Length)));
+        static ExpressionSyntax GetSpanLength(ExpressionSyntax span, bool isRefType) => isRefType ? ParenthesizedExpression(BinaryExpression(SyntaxKind.CoalesceExpression, ConditionalAccessExpression(span, IdentifierName(nameof(Span<int>.Length))), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)))) : MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, span, IdentifierName(nameof(Span<int>.Length)));
         bool isReleaseMethod = this.MetadataIndex.ReleaseMethods.Contains(externMethodDeclaration.Identifier.ValueText);
         bool doNotRelease = this.FindInteropDecorativeAttribute(this.GetReturnTypeCustomAttributes(methodDefinition), DoNotReleaseAttribute) is not null;
 
@@ -270,6 +270,16 @@ public partial class Generator
                         && !isPointerToPointer)
                     {
                         signatureChanged = true;
+                        bool remainsRefType = true;
+                        if (externParam.Type is PointerTypeSyntax)
+                        {
+                            remainsRefType = false;
+                            parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
+                                .WithType((isIn && isConst ? MakeReadOnlySpanOfT(elementType) : MakeSpanOfT(elementType)).WithTrailingTrivia(TriviaList(Space)));
+                            fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
+                                VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
+                            arguments[param.SequenceNumber - 1] = Argument(localName);
+                        }
 
                         if (lengthParamUsedBy.TryGetValue(sizeParamIndex.Value, out int userIndex))
                         {
@@ -280,8 +290,8 @@ public partial class Generator
                             leadingStatements.Add(IfStatement(
                                 BinaryExpression(
                                     SyntaxKind.NotEqualsExpression,
-                                    GetSpanLength(otherUserName),
-                                    GetSpanLength(origName)),
+                                    GetSpanLength(otherUserName, parameters[userIndex].Type is ArrayTypeSyntax),
+                                    GetSpanLength(origName, remainsRefType)),
                                 ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentException))).WithArgumentList(ArgumentList()))));
                         }
                         else
@@ -289,16 +299,7 @@ public partial class Generator
                             lengthParamUsedBy.Add(sizeParamIndex.Value, param.SequenceNumber - 1);
                         }
 
-                        if (externParam.Type is PointerTypeSyntax)
-                        {
-                            parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
-                                .WithType((isIn && isConst ? MakeReadOnlySpanOfT(elementType) : MakeSpanOfT(elementType)).WithTrailingTrivia(TriviaList(Space)));
-                            fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
-                                VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
-                            arguments[param.SequenceNumber - 1] = Argument(localName);
-                        }
-
-                        ExpressionSyntax sizeArgExpression = GetSpanLength(origName);
+                        ExpressionSyntax sizeArgExpression = GetSpanLength(origName, remainsRefType);
                         if (!(parameters[sizeParamIndex.Value].Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.IntKeyword } }))
                         {
                             sizeArgExpression = CastExpression(parameters[sizeParamIndex.Value].Type!, sizeArgExpression);
@@ -322,7 +323,7 @@ public partial class Generator
                         leadingStatements.Add(IfStatement(
                             BinaryExpression(
                                 SyntaxKind.LessThanExpression,
-                                GetSpanLength(origName),
+                                GetSpanLength(origName, false /* we've converted it to be a span */),
                                 LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(sizeConst.Value))),
                             ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentException))).WithArgumentList(ArgumentList()))));
                     }

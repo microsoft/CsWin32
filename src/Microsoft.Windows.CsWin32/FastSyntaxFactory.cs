@@ -104,6 +104,10 @@ internal static class FastSyntaxFactory
 
     internal static MemberAccessExpressionSyntax MemberAccessExpression(SyntaxKind kind, ExpressionSyntax expression, SimpleNameSyntax name) => SyntaxFactory.MemberAccessExpression(kind, expression, Token(GetMemberAccessExpressionOperatorTokenKind(kind)), name);
 
+    internal static ConditionalAccessExpressionSyntax ConditionalAccessExpression(ExpressionSyntax expression, SimpleNameSyntax name) => SyntaxFactory.ConditionalAccessExpression(expression, Token(SyntaxKind.QuestionToken), MemberBindingExpression(name));
+
+    internal static MemberBindingExpressionSyntax MemberBindingExpression(SimpleNameSyntax name) => SyntaxFactory.MemberBindingExpression(Token(SyntaxKind.DotToken), name);
+
     internal static NameColonSyntax NameColon(IdentifierNameSyntax name) => SyntaxFactory.NameColon(name, Token(TriviaList(), SyntaxKind.ColonToken, TriviaList(Space)));
 
     internal static UsingDirectiveSyntax UsingDirective(NameSyntax name) => SyntaxFactory.UsingDirective(Token(TriviaList(), SyntaxKind.UsingKeyword, TriviaList(Space)), default, null, name, Semicolon);

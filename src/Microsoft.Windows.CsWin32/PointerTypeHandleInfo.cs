@@ -16,7 +16,8 @@ internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleIn
         }
 
         TypeSyntaxAndMarshaling elementTypeDetails = this.ElementType.ToTypeSyntax(inputs with { PreferInOutRef = false }, customAttributes);
-        if (elementTypeDetails.MarshalAsAttribute is object || inputs.Generator?.IsManagedType(this.ElementType) is true || (inputs.PreferInOutRef && this.ElementType is PrimitiveTypeHandleInfo { PrimitiveTypeCode: not PrimitiveTypeCode.Void }))
+        bool xOptional = (parameterAttributes & ParameterAttributes.Optional) == ParameterAttributes.Optional;
+        if (elementTypeDetails.MarshalAsAttribute is object || inputs.Generator?.IsManagedType(this.ElementType) is true || (inputs.PreferInOutRef && !xOptional && this.ElementType is PrimitiveTypeHandleInfo { PrimitiveTypeCode: not PrimitiveTypeCode.Void }))
         {
             bool xIn = (parameterAttributes & ParameterAttributes.In) == ParameterAttributes.In;
             bool xOut = (parameterAttributes & ParameterAttributes.Out) == ParameterAttributes.Out;

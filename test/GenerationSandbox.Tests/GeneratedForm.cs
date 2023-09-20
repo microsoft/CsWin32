@@ -6,6 +6,7 @@ using Microsoft.Win32.SafeHandles;
 using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.Networking.ActiveDirectory;
+using Windows.Win32.System.Com;
 using Windows.Win32.System.Diagnostics.Debug;
 using Windows.Win32.System.Threading;
 
@@ -78,5 +79,66 @@ internal static unsafe class GeneratedForm
     {
         uint written = 0;
         PInvoke.WriteFile((SafeHandle?)null, new byte[2], &written, (NativeOverlapped*)null);
+    }
+
+    private class MyStream : IStream
+    {
+        public HRESULT Read(void* pv, uint cb, uint* pcbRead)
+        {
+            // the last parameter should be a pointer because it is optional, and using `out uint` makes it very cumbersome
+            // for C# implementation of this interface to detect a null argument before setting the out parameter,
+            // which would throw NRE in such a case.
+            throw new NotImplementedException();
+        }
+
+        public HRESULT Write(void* pv, uint cb, uint* pcbWritten)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void Seek(long dlibMove, SeekOrigin dwOrigin, ulong* plibNewPosition)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void SetSize(ulong libNewSize)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void CopyTo(IStream pstm, ulong cb, ulong* pcbRead, ulong* pcbWritten)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void Commit([MarshalAs(UnmanagedType.U4)] STGC grfCommitFlags)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void Revert()
+        {
+            throw new NotImplementedException();
+        }
+
+        public void LockRegion(ulong libOffset, ulong cb, [MarshalAs(UnmanagedType.U4)] LOCKTYPE dwLockType)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void UnlockRegion(ulong libOffset, ulong cb, uint dwLockType)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void Stat(Windows.Win32.System.Com.STATSTG* pstatstg, [MarshalAs(UnmanagedType.U4)] STATFLAG grfStatFlag)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void Clone(out IStream ppstm)
+        {
+            throw new NotImplementedException();
+        }
     }
 }

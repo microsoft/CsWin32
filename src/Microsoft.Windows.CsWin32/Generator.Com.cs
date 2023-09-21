@@ -615,7 +615,7 @@ public partial class Generator
 
         AttributeSyntax ifaceType = InterfaceType(
             foundIInspectable ? ComInterfaceType.InterfaceIsIInspectable :
-            foundIDispatch ? ComInterfaceType.InterfaceIsIDispatch :
+            foundIDispatch ? (allMethods.Count == 0 ? ComInterfaceType.InterfaceIsIDispatch : ComInterfaceType.InterfaceIsDual) :
             foundIUnknown ? ComInterfaceType.InterfaceIsIUnknown :
             throw new NotSupportedException("No COM interface base type found."));
 

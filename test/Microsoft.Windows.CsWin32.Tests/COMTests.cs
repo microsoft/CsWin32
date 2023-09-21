@@ -20,14 +20,18 @@ public class COMTests : GeneratorTestBase
         Assert.Contains(this.FindGeneratedMethod("Next"), m => m.ParameterList.Parameters.Count == 3 && m.ParameterList.Parameters[0].Modifiers.Any(SyntaxKind.ThisKeyword));
     }
 
-    [Fact]
-    public void IDispatchDerivedInterface()
+    [Theory]
+    [InlineData("IHTMLDocument")]
+    [InlineData("IHTMLDocument2")]
+    public void IDispatchInterfaceIsDual(string ifaceName)
     {
-        const string ifaceName = "IInkRectangle";
+        // Interfaces that derive from IDispatch are also IUnknown.
+        // We should label them as such iff members are defined on the interface (beyond those defined on IDispatch).
         this.GenerateApi(ifaceName);
-#pragma warning disable CS0618 // Type or member is obsolete
-        Assert.Contains(this.FindGeneratedType(ifaceName), t => t.BaseList is null && t.AttributeLists.Any(al => al.Attributes.Any(a => a.Name is IdentifierNameSyntax { Identifier: { ValueText: "InterfaceType" } } && a.ArgumentList?.Arguments[0].Expression is MemberAccessExpressionSyntax { Name: IdentifierNameSyntax { Identifier: { ValueText: nameof(ComInterfaceType.InterfaceIsIDispatch) } } })));
-#pragma warning restore CS0618 // Type or member is obsolete
+        InterfaceDeclarationSyntax iface = (InterfaceDeclarationSyntax)this.FindGeneratedType(ifaceName).Single();
+        AttributeSyntax ifaceAttr = iface.AttributeLists.SelectMany(al => al.Attributes).Single(att => att.Name.ToString() == "InterfaceType");
+        var arg = Assert.IsType<MemberAccessExpressionSyntax>(ifaceAttr.ArgumentList?.Arguments[0].Expression);
+        Assert.Equal(nameof(ComInterfaceType.InterfaceIsDual), arg.Name.Identifier.ValueText);
     }
 
     [Fact]

@@ -35,6 +35,11 @@ public partial class Generator
         private readonly Dictionary<MethodDefinitionHandle, Exception?> methodsGenerating = new();
 
         /// <summary>
+        /// The constants that are or have been generated.
+        /// </summary>
+        private readonly Dictionary<FieldDefinitionHandle, Exception?> constantsGenerating = new();
+
+        /// <summary>
         /// A collection of the names of special types we are or have generated.
         /// </summary>
         private readonly Dictionary<string, Exception?> specialTypesGenerating = new(StringComparer.Ordinal);
@@ -303,12 +308,26 @@ public partial class Generator
         {
             this.ThrowIfNotGenerating();
 
-            if (this.fieldsToSyntax.ContainsKey(fieldDefinitionHandle) || this.parent?.fieldsToSyntax.ContainsKey(fieldDefinitionHandle) is true)
+            if (this.constantsGenerating.TryGetValue(fieldDefinitionHandle, out Exception? failure) || this.parent?.constantsGenerating.TryGetValue(fieldDefinitionHandle, out failure) is true)
             {
+                if (failure is object)
+                {
+                    throw new GenerationFailedException("This constant already failed in generation previously.", failure);
+                }
+
                 return;
             }
 
-            generator();
+            this.constantsGenerating.Add(fieldDefinitionHandle, null);
+            try
+            {
+                generator();
+            }
+            catch (Exception ex)
+            {
+                this.constantsGenerating[fieldDefinitionHandle] = ex;
+                throw;
+            }
         }
 
         internal void GenerateMacro(string macroName, Action generator)

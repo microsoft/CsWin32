@@ -200,6 +200,11 @@ public partial class Generator
                 members = AddOrReplaceMembers(members, this.ExtractMembersFromTemplate(name.Identifier.ValueText));
                 this.TryGenerateType("Windows.Win32.Foundation.PC" + name.Identifier.ValueText.Substring(1)); // the template references its constant version
                 break;
+            case "VARIANT_BOOL":
+                members = AddOrReplaceMembers(members, this.ExtractMembersFromTemplate(name.Identifier.ValueText));
+                this.TryGenerateConstant("VARIANT_TRUE", out _); // the template references its constant version
+                this.TryGenerateConstant("VARIANT_FALSE", out _); // the template references its constant version
+                break;
             case "BSTR":
             case "HRESULT":
             case "NTSTATUS":

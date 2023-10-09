@@ -3,8 +3,8 @@
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
-    <MetadataVersion>54.0.44-preview</MetadataVersion>
-    <WDKMetadataVersion>0.7.3-experimental</WDKMetadataVersion>
+    <MetadataVersion>55.0.45-preview</MetadataVersion>
+    <WDKMetadataVersion>0.9.9-experimental</WDKMetadataVersion>
     <!-- <DiaMetadataVersion>0.2.185-preview-g7e1e6a442c</DiaMetadataVersion> -->
     <ApiDocsVersion>0.1.42-alpha</ApiDocsVersion>
     <CodeAnalysisVersion>4.6.0</CodeAnalysisVersion>

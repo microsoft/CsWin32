@@ -86,7 +86,7 @@ public partial class Generator
                         //    get => (EnumType)this._fieldName;
                         //    set => this._fieldName = (UnderlyingType)value;
                         // }
-                        this.RequestInteropType(this.Reader.GetString(typeDef.Namespace), propertyType.Identifier.ValueText, context);
+                        this.RequestInteropType(this.GetNamespaceForPossiblyNestedType(typeDef), propertyType.Identifier.ValueText, context);
                         ExpressionSyntax fieldAccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName(fieldDeclarator.Identifier));
                         property = PropertyDeclaration(propertyType.WithTrailingTrivia(Space), Identifier(fieldName).WithTrailingTrivia(LineFeed))
                             .AddModifiers(TokenWithSpace(this.Visibility))

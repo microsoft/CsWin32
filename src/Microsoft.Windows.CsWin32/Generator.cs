@@ -1329,6 +1329,18 @@ public partial class Generator : IGenerator, IDisposable
         return moduleName;
     }
 
+    private string GetNamespaceForPossiblyNestedType(TypeDefinition nestedTypeDef)
+    {
+        if (nestedTypeDef.IsNested)
+        {
+            return this.GetNamespaceForPossiblyNestedType(this.Reader.GetTypeDefinition(nestedTypeDef.GetDeclaringType()));
+        }
+        else
+        {
+            return this.Reader.GetString(nestedTypeDef.Namespace);
+        }
+    }
+
     private ParameterListSyntax CreateParameterList(MethodDefinition methodDefinition, MethodSignature<TypeHandleInfo> signature, TypeSyntaxSettings typeSettings)
         => FixTrivia(ParameterList().AddParameters(methodDefinition.GetParameters().Select(this.Reader.GetParameter).Where(p => !p.Name.IsNil).Select(p => this.CreateParameter(signature.ParameterTypes[p.SequenceNumber - 1], p, typeSettings)).ToArray()));
 

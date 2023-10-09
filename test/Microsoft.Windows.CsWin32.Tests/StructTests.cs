@@ -177,6 +177,7 @@ namespace Microsoft.Windows.Sdk
         "DRIVER_OBJECT", // has an inline array of delegates
         "DEVICE_RELATIONS", // ends with an inline "flexible" array
         "D3DHAL_CONTEXTCREATEDATA", // contains a field that is a pointer to a struct that is normally managed
+        "MIB_TCPTABLE", // a struct that references another struct with a nested anonymous type, that loosely references an enum in the same namespace (by way of an attribute).
         "WSD_EVENT")] // has a pointer field to a managed struct
         string name,
         bool allowMarshaling)

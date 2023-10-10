@@ -126,7 +126,7 @@ To update the metadata used as the source for code generation, you may install a
 dotnet add package Microsoft.Windows.SDK.Win32Metadata --prerelease
 ```
 
-CsWin32 also consumes the WDK from a similarly named package: `Microsoft.Windows.WDK.WDKMetadata`.
+CsWin32 also consumes the WDK from a similarly named package: `Microsoft.Windows.WDK.Win32Metadata`.
 
 ## Consuming daily builds
 

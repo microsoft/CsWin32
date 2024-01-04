@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
 <Project>
   <!-- https://learn.microsoft.com/nuget/consume-packages/central-package-management -->
   <PropertyGroup>
@@ -20,7 +21,7 @@
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="$(CodeAnalysisVersion)" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="$(CodeAnalysisVersion)" />
     <!-- <PackageVersion Include="Microsoft.Dia.Win32Metadata" Version="0.2.185-preview-g7e1e6a442c" /> -->
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.7.2" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
     <PackageVersion Include="Microsoft.Win32.Registry" Version="5.0.0" />
     <PackageVersion Include="Microsoft.Windows.SDK.Win32Docs" Version="$(ApiDocsVersion)" />
     <PackageVersion Include="Microsoft.Windows.SDK.Win32Metadata" Version="$(MetadataVersion)" />
@@ -33,8 +34,8 @@
     <PackageVersion Include="System.Text.Encodings.Web" Version="4.7.2" />
     <PackageVersion Include="System.Text.Json" Version="4.7.2" />
     <PackageVersion Include="Xunit.Combinatorial" Version="1.6.12-alpha" />
-    <PackageVersion Include="xunit.runner.visualstudio" Version="2.4.5" />
-    <PackageVersion Include="xunit" Version="2.5.1" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="2.5.5" />
+    <PackageVersion Include="xunit" Version="2.6.3" />
   </ItemGroup>
   <ItemGroup Condition="'$(IsTestProject)'!='true'">
     <!-- These versions carefully chosen to support VS 2019 Update 11. -->
@@ -51,6 +52,6 @@
     <GlobalPackageReference Include="StyleCop.Analyzers.Unstable" Version="1.2.0.507" />
   </ItemGroup>
   <ItemGroup>
-    <GlobalPackageReference Include="Microsoft.SourceLink.GitHub" Version="1.1.1" />
+    <GlobalPackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
   </ItemGroup>
 </Project>

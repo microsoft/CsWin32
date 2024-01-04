@@ -24,7 +24,7 @@ public class FriendlyOverloadTests : GeneratorTestBase
         // So assert that no overload has fewer parameters.
         const string name = "SHGetFileInfo";
         this.Generate(name);
-        Assert.All(this.FindGeneratedMethod(name), m => Assert.Equal(5,  m.ParameterList.Parameters.Count));
+        Assert.All(this.FindGeneratedMethod(name), m => Assert.Equal(5, m.ParameterList.Parameters.Count));
     }
 
     [Fact]

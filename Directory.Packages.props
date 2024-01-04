@@ -8,7 +8,7 @@
     <WDKMetadataVersion>0.9.9-experimental</WDKMetadataVersion>
     <!-- <DiaMetadataVersion>0.2.185-preview-g7e1e6a442c</DiaMetadataVersion> -->
     <ApiDocsVersion>0.1.42-alpha</ApiDocsVersion>
-    <CodeAnalysisVersion>4.6.0</CodeAnalysisVersion>
+    <CodeAnalysisVersion>4.8.0</CodeAnalysisVersion>
     <CodeAnalysisVersion Condition="'$(IsTestProject)'!='true'">3.11.0</CodeAnalysisVersion>
   </PropertyGroup>
   <ItemGroup>

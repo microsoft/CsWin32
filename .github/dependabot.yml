@@ -8,7 +8,4 @@ updates:
   schedule:
     interval: weekly
   ignore:
-  # This package has unlisted versions on nuget.org that are not supported. Avoid them.
-  - dependency-name: dotnet-format
-    versions: ["6.x", "7.x", "8.x"]
   - dependency-name: MessagePack # We have to use the MessagePack version used by win32metadata (https://github.com/microsoft/CsWin32/issues/371)

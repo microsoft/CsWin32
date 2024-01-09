@@ -1,11 +1,3 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <Import Project="..\GenerationSandbox.props" />
-  <ItemGroup>
-    <None Remove="NativeMethods.json" />
-    <None Remove="NativeMethods.txt" />
-  </ItemGroup>
-  <ItemGroup>
-    <AdditionalFiles Include="NativeMethods.json" />
-    <AdditionalFiles Include="NativeMethods.txt" />
-  </ItemGroup>
 </Project>

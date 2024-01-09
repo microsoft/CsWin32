@@ -45,6 +45,9 @@ jobs:
   - template: dotnet.yml
     parameters:
       RunTests: ${{ parameters.RunTests }}
+  - script: dotnet format --verify-no-changes -v diagnostic
+    displayName: 💅 Verify formatted code
+    enabled: false # it fails
 
 - job: macOS
   condition: ${{ parameters.includeMacOS }}

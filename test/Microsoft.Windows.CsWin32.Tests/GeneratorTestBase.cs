@@ -146,10 +146,10 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
 
     protected static IEnumerable<AttributeSyntax> FindAttribute(SyntaxList<AttributeListSyntax> attributeLists, string name) => attributeLists.SelectMany(al => al.Attributes).Where(a => a.Name.ToString() == name);
 
-    protected void GenerateApi(string methodName)
+    protected void GenerateApi(string apiName)
     {
         this.generator ??= this.CreateGenerator();
-        Assert.True(this.generator.TryGenerate(methodName, CancellationToken.None));
+        Assert.True(this.generator.TryGenerate(apiName, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
     }

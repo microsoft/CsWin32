@@ -151,6 +151,74 @@ public partial class Generator : IGenerator, IDisposable
         FetchTemplate("ComHelpers", this, out this.comHelperClass);
     }
 
+    internal enum GeneratingElement
+    {
+        /// <summary>
+        /// Any other member that isn't otherwise enumerated.
+        /// </summary>
+        Other,
+
+        /// <summary>
+        /// A member on a COM interface that is actually being generated as an interface (as opposed to a struct for no-marshal COM).
+        /// </summary>
+        InterfaceMember,
+
+        /// <summary>
+        /// A member on a COM interface that is declared as a struct instead of an interface to avoid the marshaler.
+        /// </summary>
+        InterfaceAsStructMember,
+
+        /// <summary>
+        /// A delegate.
+        /// </summary>
+        Delegate,
+
+        /// <summary>
+        /// An extern, static method.
+        /// </summary>
+        ExternMethod,
+
+        /// <summary>
+        /// A property on a COM interface or struct.
+        /// </summary>
+        Property,
+
+        /// <summary>
+        /// A field on a struct.
+        /// </summary>
+        Field,
+
+        /// <summary>
+        /// A constant value.
+        /// </summary>
+        Constant,
+
+        /// <summary>
+        /// A function pointer.
+        /// </summary>
+        FunctionPointer,
+
+        /// <summary>
+        /// An enum value.
+        /// </summary>
+        EnumValue,
+
+        /// <summary>
+        /// A friendly overload.
+        /// </summary>
+        FriendlyOverload,
+
+        /// <summary>
+        /// A member on a helper class (e.g. a SafeHandle-derived class).
+        /// </summary>
+        HelperClassMember,
+
+        /// <summary>
+        /// A member of a struct that does <em>not</em> stand for a COM interface.
+        /// </summary>
+        StructMember,
+    }
+
     private enum Feature
     {
         /// <summary>
@@ -1341,10 +1409,10 @@ public partial class Generator : IGenerator, IDisposable
         }
     }
 
-    private ParameterListSyntax CreateParameterList(MethodDefinition methodDefinition, MethodSignature<TypeHandleInfo> signature, TypeSyntaxSettings typeSettings)
-        => FixTrivia(ParameterList().AddParameters(methodDefinition.GetParameters().Select(this.Reader.GetParameter).Where(p => !p.Name.IsNil).Select(p => this.CreateParameter(signature.ParameterTypes[p.SequenceNumber - 1], p, typeSettings)).ToArray()));
+    private ParameterListSyntax CreateParameterList(MethodDefinition methodDefinition, MethodSignature<TypeHandleInfo> signature, TypeSyntaxSettings typeSettings, GeneratingElement forElement)
+        => FixTrivia(ParameterList().AddParameters(methodDefinition.GetParameters().Select(this.Reader.GetParameter).Where(p => !p.Name.IsNil).Select(p => this.CreateParameter(signature.ParameterTypes[p.SequenceNumber - 1], p, typeSettings, forElement)).ToArray()));
 
-    private ParameterSyntax CreateParameter(TypeHandleInfo parameterInfo, Parameter parameter, TypeSyntaxSettings typeSettings)
+    private ParameterSyntax CreateParameter(TypeHandleInfo parameterInfo, Parameter parameter, TypeSyntaxSettings typeSettings, GeneratingElement forElement)
     {
         string name = this.Reader.GetString(parameter.Name);
         try
@@ -1352,7 +1420,7 @@ public partial class Generator : IGenerator, IDisposable
             // TODO:
             // * Notice [Out][RAIIFree] handle producing parameters. Can we make these provide SafeHandle's?
             bool isReturnOrOutParam = parameter.SequenceNumber == 0 || (parameter.Attributes & ParameterAttributes.Out) == ParameterAttributes.Out;
-            TypeSyntaxAndMarshaling parameterTypeSyntax = parameterInfo.ToTypeSyntax(typeSettings, parameter.GetCustomAttributes(), parameter.Attributes);
+            TypeSyntaxAndMarshaling parameterTypeSyntax = parameterInfo.ToTypeSyntax(typeSettings, forElement, parameter.GetCustomAttributes(), parameter.Attributes);
 
             // Determine the custom attributes to apply.
             AttributeListSyntax? attributes = AttributeList();

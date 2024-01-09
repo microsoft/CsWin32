@@ -722,7 +722,7 @@ public partial class Generator
             }
             else
             {
-                qualifiedElementType = fieldTypeHandleInfo.ToTypeSyntax(this.extensionMethodSignatureTypeSettings, customAttributes).Type switch
+                qualifiedElementType = fieldTypeHandleInfo.ToTypeSyntax(this.extensionMethodSignatureTypeSettings, GeneratingElement.Other, customAttributes).Type switch
                 {
                     ArrayTypeSyntax at => at.ElementType,
                     PointerTypeSyntax ptrType => ptrType.ElementType,

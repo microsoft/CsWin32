@@ -7,7 +7,7 @@ internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleIn
 {
     public override string ToString() => this.ToTypeSyntaxForDisplay().ToString();
 
-    internal override TypeSyntaxAndMarshaling ToTypeSyntax(TypeSyntaxSettings inputs, CustomAttributeHandleCollection? customAttributes, ParameterAttributes parameterAttributes)
+    internal override TypeSyntaxAndMarshaling ToTypeSyntax(TypeSyntaxSettings inputs, Generator.GeneratingElement forElement, CustomAttributeHandleCollection? customAttributes, ParameterAttributes parameterAttributes)
     {
         // We can't marshal a pointer exposed as a field, unless it's a pointer to an array.
         if (inputs.AllowMarshaling && inputs.IsField && (customAttributes is null || inputs.Generator?.FindNativeArrayInfoAttribute(customAttributes.Value) is null))
@@ -15,7 +15,7 @@ internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleIn
             inputs = inputs with { AllowMarshaling = false };
         }
 
-        TypeSyntaxAndMarshaling elementTypeDetails = this.ElementType.ToTypeSyntax(inputs with { PreferInOutRef = false }, customAttributes);
+        TypeSyntaxAndMarshaling elementTypeDetails = this.ElementType.ToTypeSyntax(inputs with { PreferInOutRef = false }, forElement, customAttributes);
         bool xOptional = (parameterAttributes & ParameterAttributes.Optional) == ParameterAttributes.Optional;
         if (elementTypeDetails.MarshalAsAttribute is object || inputs.Generator?.IsManagedType(this.ElementType) is true || (inputs.PreferInOutRef && !xOptional && this.ElementType is PrimitiveTypeHandleInfo { PrimitiveTypeCode: not PrimitiveTypeCode.Void }))
         {

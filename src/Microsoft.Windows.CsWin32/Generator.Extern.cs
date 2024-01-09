@@ -196,7 +196,7 @@ public partial class Generator
             bool requiresUnicodeCharSet = signature.ParameterTypes.Any(p => p is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.Char });
 
             CustomAttributeHandleCollection? returnTypeAttributes = this.GetReturnTypeCustomAttributes(methodDefinition);
-            TypeSyntaxAndMarshaling returnType = signature.ReturnType.ToTypeSyntax(typeSettings, returnTypeAttributes, ParameterAttributes.Out);
+            TypeSyntaxAndMarshaling returnType = signature.ReturnType.ToTypeSyntax(typeSettings, GeneratingElement.ExternMethod, returnTypeAttributes, ParameterAttributes.Out);
 
             // Search for any enum substitutions.
             TypeSyntax? returnTypeEnumName = this.FindAssociatedEnum(returnTypeAttributes);
@@ -231,7 +231,7 @@ public partial class Generator
                 explicitInterfaceSpecifier: null!,
                 SafeIdentifier(methodName),
                 null!,
-                this.CreateParameterList(methodDefinition, signature, typeSettings),
+                this.CreateParameterList(methodDefinition, signature, typeSettings, GeneratingElement.ExternMethod),
                 List<TypeParameterConstraintClauseSyntax>(),
                 body: null!,
                 TokenWithLineFeed(SyntaxKind.SemicolonToken));
@@ -259,7 +259,7 @@ public partial class Generator
             {
                 string ns = this.GetMethodNamespace(methodDefinition);
                 NameSyntax nsSyntax = ParseName(ReplaceCommonNamespaceWithAlias(this, ns));
-                ParameterListSyntax exposedParameterList = this.CreateParameterList(methodDefinition, signature, typeSettings);
+                ParameterListSyntax exposedParameterList = this.CreateParameterList(methodDefinition, signature, typeSettings, GeneratingElement.ExternMethod);
                 static SyntaxToken RefInOutKeyword(ParameterSyntax p) =>
                     p.Modifiers.Any(SyntaxKind.OutKeyword) ? TokenWithSpace(SyntaxKind.OutKeyword) :
                     p.Modifiers.Any(SyntaxKind.RefKeyword) ? TokenWithSpace(SyntaxKind.RefKeyword) :

@@ -129,6 +129,15 @@ public class HandleTests : GeneratorTestBase
     }
 
     [Fact]
+    public void SafeHandleOverloadsGeneratedFor_HGDIObj()
+    {
+        this.GenerateApi("GetObject");
+        Assert.Contains(
+            this.FindGeneratedMethod("GetObject"),
+            method => method!.ParameterList.Parameters[0].Type is IdentifierNameSyntax { Identifier: { ValueText: "SafeHandle" } });
+    }
+
+    [Fact]
     public void ReleaseMethodGeneratedWithHandleStruct()
     {
         this.GenerateApi("HANDLE");

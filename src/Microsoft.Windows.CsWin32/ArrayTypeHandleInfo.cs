@@ -7,9 +7,9 @@ internal record ArrayTypeHandleInfo(TypeHandleInfo ElementType, ArrayShape Shape
 {
     public override string ToString() => this.ToTypeSyntaxForDisplay().ToString();
 
-    internal override TypeSyntaxAndMarshaling ToTypeSyntax(TypeSyntaxSettings inputs, CustomAttributeHandleCollection? customAttributes, ParameterAttributes parameterAttributes)
+    internal override TypeSyntaxAndMarshaling ToTypeSyntax(TypeSyntaxSettings inputs, Generator.GeneratingElement forElement, CustomAttributeHandleCollection? customAttributes, ParameterAttributes parameterAttributes)
     {
-        TypeSyntaxAndMarshaling element = this.ElementType.ToTypeSyntax(inputs, customAttributes);
+        TypeSyntaxAndMarshaling element = this.ElementType.ToTypeSyntax(inputs, forElement, customAttributes);
         if (inputs.AllowMarshaling || inputs.IsField)
         {
             ArrayTypeSyntax arrayType = ArrayType(element.Type, SingletonList(ArrayRankSpecifier().AddSizes(this.Shape.Sizes.Select(size => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(size))).ToArray<ExpressionSyntax>())));

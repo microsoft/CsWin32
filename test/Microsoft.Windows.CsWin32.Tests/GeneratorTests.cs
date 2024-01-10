@@ -483,7 +483,7 @@ public class GeneratorTests : GeneratorTestBase
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
 
-        var generatedMethod = this.FindGeneratedMethod("OMSetRenderTargets").Where(m => m.ParameterList.Parameters.Count == 3 && m.ParameterList.Parameters[0].Identifier.ValueText == "NumViews").FirstOrDefault();
+        var generatedMethod = this.FindGeneratedMethod("OMSetRenderTargets").FirstOrDefault(m => m.ParameterList.Parameters.Count == 3 && m.ParameterList.Parameters[0].Identifier.ValueText == "NumViews" && (!allowMarshaling || m.Parent is InterfaceDeclarationSyntax));
         Assert.NotNull(generatedMethod);
 
         if (allowMarshaling)

@@ -267,6 +267,22 @@ public class COMTests : GeneratorTestBase
         this.GenerateApi(api);
     }
 
+    /// <summary>
+    /// Verifies that COM methods that accept `[Optional, In]` parameters are declared as pointers
+    /// rather than `in` parameters, since the marshaller will throw NRE if the reference is null (via <see cref="Unsafe.NullRef{T}"/>).
+    /// </summary>
+    /// <seealso href="https://github.com/microsoft/CsWin32/issues/1081"/>
+    [Fact]
+    public void OptionalInPointerParameterExposedAsPointer()
+    {
+        this.GenerateApi("IMMDevice");
+
+        MethodDeclarationSyntax comMethod = this.FindGeneratedMethod("Activate").First(m => !m.Modifiers.Any(SyntaxKind.StaticKeyword));
+        ParameterSyntax optionalInParam = comMethod.ParameterList.Parameters[2];
+        Assert.Empty(optionalInParam.Modifiers);
+        Assert.IsType<PointerTypeSyntax>(optionalInParam.Type);
+    }
+
     [Fact]
     public void EnvironmentFailFast()
     {

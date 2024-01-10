@@ -54,10 +54,10 @@ public partial class Generator
         }
 
         this.GetSignatureForDelegate(typeDef, out MethodDefinition invokeMethodDef, out MethodSignature<TypeHandleInfo> signature, out CustomAttributeHandleCollection? returnTypeAttributes);
-        TypeSyntaxAndMarshaling returnValue = signature.ReturnType.ToTypeSyntax(typeSettings, returnTypeAttributes);
+        TypeSyntaxAndMarshaling returnValue = signature.ReturnType.ToTypeSyntax(typeSettings, GeneratingElement.Delegate, returnTypeAttributes);
 
         DelegateDeclarationSyntax result = DelegateDeclaration(returnValue.Type, Identifier(name))
-            .WithParameterList(FixTrivia(this.CreateParameterList(invokeMethodDef, signature, typeSettings)))
+            .WithParameterList(FixTrivia(this.CreateParameterList(invokeMethodDef, signature, typeSettings, GeneratingElement.Delegate)))
             .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword));
         result = returnValue.AddReturnMarshalAs(result);
 
@@ -149,6 +149,6 @@ public partial class Generator
             return FunctionPointerParameter(delegateTypeDef.Generator.FunctionPointer(delegateTypeDef.Definition));
         }
 
-        return FunctionPointerParameter(parameterTypeInfo.ToTypeSyntax(this.functionPointerTypeSettings, customAttributeHandles).GetUnmarshaledType());
+        return FunctionPointerParameter(parameterTypeInfo.ToTypeSyntax(this.functionPointerTypeSettings, GeneratingElement.FunctionPointer, customAttributeHandles).GetUnmarshaledType());
     }
 }

@@ -261,7 +261,7 @@ public partial class Generator
         {
             ArrayTypeHandleInfo { ElementType: PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.Byte } } pointerType => this.CreateByteArrayConstant(argsAsString),
             PrimitiveTypeHandleInfo primitiveType => ToExpressionSyntax(primitiveType.PrimitiveTypeCode, argsAsString),
-            HandleTypeHandleInfo handleType => this.CreateConstant(argsAsString, targetType.ToTypeSyntax(this.fieldTypeSettings, null).Type, (TypeReferenceHandle)handleType.Handle),
+            HandleTypeHandleInfo handleType => this.CreateConstant(argsAsString, targetType.ToTypeSyntax(this.fieldTypeSettings, GeneratingElement.Constant, null).Type, (TypeReferenceHandle)handleType.Handle),
             _ => throw new GenerationFailedException($"Unsupported constant type: {targetType}"),
         };
     }
@@ -334,7 +334,7 @@ public partial class Generator
         CustomAttributeValue<TypeSyntax> args = constantAttribute.DecodeValue(CustomAttributeTypeProvider.Instance);
         return this.CreateConstant(
             ((string)args.FixedArguments[0].Value!).AsMemory(),
-            targetType.ToTypeSyntax(this.fieldTypeSettings, null).Type,
+            targetType.ToTypeSyntax(this.fieldTypeSettings, GeneratingElement.Constant, null).Type,
             targetTypeRefHandle);
     }
 
@@ -345,7 +345,7 @@ public partial class Generator
         {
             TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null) with { IsConstantField = true };
             CustomAttributeHandleCollection customAttributes = fieldDef.GetCustomAttributes();
-            TypeSyntaxAndMarshaling fieldType = fieldTypeInfo.ToTypeSyntax(this.fieldTypeSettings, customAttributes);
+            TypeSyntaxAndMarshaling fieldType = fieldTypeInfo.ToTypeSyntax(this.fieldTypeSettings, GeneratingElement.Constant, customAttributes);
             ExpressionSyntax value =
                 fieldDef.GetDefaultValue() is { IsNil: false } constantHandle ? ToExpressionSyntax(this.Reader, constantHandle) :
                 this.FindInteropDecorativeAttribute(customAttributes, nameof(GuidAttribute)) is CustomAttribute guidAttribute ? GuidValue(guidAttribute) :

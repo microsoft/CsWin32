@@ -126,7 +126,7 @@ public partial class Generator
                         .WithModifiers(TokenList(TokenWithSpace(SyntaxKind.OutKeyword)));
 
                     // HANDLE SomeLocal;
-                    leadingStatements.Add(LocalDeclarationStatement(VariableDeclaration(pointedElementInfo.ToTypeSyntax(parameterTypeSyntaxSettings, null).Type).AddVariables(
+                    leadingStatements.Add(LocalDeclarationStatement(VariableDeclaration(pointedElementInfo.ToTypeSyntax(parameterTypeSyntaxSettings, GeneratingElement.FriendlyOverload, null).Type).AddVariables(
                         VariableDeclarator(typeDefHandleName.Identifier))));
 
                     // Argument: &SomeLocal

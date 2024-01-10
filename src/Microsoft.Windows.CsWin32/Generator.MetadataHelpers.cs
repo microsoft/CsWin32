@@ -444,7 +444,7 @@ public partial class Generator
             }
             catch (Exception ex)
             {
-                throw new GenerationFailedException($"Unable to determine if {new HandleTypeHandleInfo(this.Reader, typeDefinitionHandle).ToTypeSyntax(this.errorMessageTypeSettings, null)} is a managed type.", ex);
+                throw new GenerationFailedException($"Unable to determine if {new HandleTypeHandleInfo(this.Reader, typeDefinitionHandle).ToTypeSyntax(this.errorMessageTypeSettings, GeneratingElement.Other, null)} is a managed type.", ex);
             }
         }
     }

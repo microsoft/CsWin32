@@ -175,6 +175,12 @@ internal class MetadataIndex
                                     }
                                 }
                             }
+                            else if (this.MetadataName == "Windows.Win32" && typeName == "HGDIOBJ")
+                            {
+                                // This "base type" struct doesn't have an RAIIFree attribute,
+                                // but methods that take an HGDIOBJ parameter are expected to offer SafeHandle friendly overloads.
+                                this.handleTypeReleaseMethod.Add(tdh, "DeleteObject");
+                            }
                         }
                     }
                 }

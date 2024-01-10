@@ -52,9 +52,30 @@ public class ExternMethodTests : GeneratorTestBase
         AttributeSyntax? attribute = FindDllImportAttribute(originalMethod.AttributeLists) ?? FindDllImportAttribute(originalMethod.Body?.Statements.OfType<LocalFunctionStatementSyntax>().SingleOrDefault()?.AttributeLists ?? default);
         Assert.NotNull(attribute);
         Assert.Equal(expectMarshalingAttribute, attribute.ArgumentList!.Arguments.Any(a => a.NameEquals?.Name.Identifier.ValueText == "SetLastError"));
-
-        static AttributeSyntax? FindDllImportAttribute(SyntaxList<AttributeListSyntax> attributeLists) => attributeLists.SelectMany(al => al.Attributes).FirstOrDefault(a => a.Name.ToString() == "DllImport");
     }
+
+    [Fact]
+    public void CustomEntryPointCarriesOver()
+    {
+        this.GenerateApi("FileIconInit");
+        MethodDeclarationSyntax method = Assert.Single(this.FindGeneratedMethod("FileIconInit"));
+        AttributeSyntax? attribute = FindDllImportAttribute(method.AttributeLists);
+        Assert.NotNull(attribute);
+        AttributeArgumentSyntax arg = Assert.Single(attribute.ArgumentList!.Arguments, a => a.NameEquals?.Name.Identifier.ValueText == "EntryPoint");
+        Assert.True(arg.Expression is LiteralExpressionSyntax { RawKind: (int)SyntaxKind.StringLiteralExpression, Token: { Value: "#660" } });
+    }
+
+    [Fact]
+    public void DefaultEntryPointIsNotEmitted()
+    {
+        this.GenerateApi("GetTickCount");
+        MethodDeclarationSyntax method = Assert.Single(this.FindGeneratedMethod("GetTickCount"));
+        AttributeSyntax? attribute = FindDllImportAttribute(method.AttributeLists);
+        Assert.NotNull(attribute);
+        Assert.DoesNotContain(attribute.ArgumentList!.Arguments, a => a.NameEquals?.Name.Identifier.ValueText == "EntryPoint");
+    }
+
+    private static AttributeSyntax? FindDllImportAttribute(SyntaxList<AttributeListSyntax> attributeLists) => attributeLists.SelectMany(al => al.Attributes).FirstOrDefault(a => a.Name.ToString() == "DllImport");
 
     private IEnumerable<MethodDeclarationSyntax> GenerateMethod(string methodName)
     {

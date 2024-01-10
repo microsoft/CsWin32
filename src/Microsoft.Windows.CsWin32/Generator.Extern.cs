@@ -190,6 +190,11 @@ public partial class Generator
                 methodName = newName;
             }
 
+            if (!import.Name.IsNil && import.Name != methodDefinition.Name)
+            {
+                entrypoint = this.Reader.GetString(import.Name);
+            }
+
             // If this method releases a handle, recreate the method signature such that we take the struct rather than the SafeHandle as a parameter.
             TypeSyntaxSettings typeSettings = this.MetadataIndex.ReleaseMethods.Contains(entrypoint ?? methodName) ? this.externReleaseSignatureTypeSettings : this.externSignatureTypeSettings;
             MethodSignature<TypeHandleInfo> signature = methodDefinition.DecodeSignature(SignatureHandleProvider.Instance, null);

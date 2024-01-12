@@ -93,4 +93,19 @@ internal static class MetadataUtilities
 
         return null;
     }
+
+    internal static IEnumerable<CustomAttribute> FindAttributes(MetadataReader reader, CustomAttributeHandleCollection? customAttributeHandles, string attributeNamespace, string attributeName)
+    {
+        if (customAttributeHandles is not null)
+        {
+            foreach (CustomAttributeHandle handle in customAttributeHandles)
+            {
+                CustomAttribute att = reader.GetCustomAttribute(handle);
+                if (IsAttribute(reader, att, attributeNamespace, attributeName))
+                {
+                    yield return att;
+                }
+            }
+        }
+    }
 }

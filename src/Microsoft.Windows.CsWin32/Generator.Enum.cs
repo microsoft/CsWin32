@@ -16,21 +16,20 @@ public partial class Generator
         TypeSyntax? enumBaseType = null;
         foreach (FieldDefinitionHandle fieldDefHandle in typeDef.GetFields())
         {
-            FieldDefinition fieldDef = this.Reader.GetFieldDefinition(fieldDefHandle);
-            string enumValueName = this.Reader.GetString(fieldDef.Name);
-            ConstantHandle valueHandle = fieldDef.GetDefaultValue();
-            if (valueHandle.IsNil)
-            {
-                enumBaseType = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null).ToTypeSyntax(this.enumTypeSettings, GeneratingElement.EnumValue, null).Type;
-                continue;
-            }
+            AddEnumValue(fieldDefHandle);
+        }
 
-            bool enumBaseTypeIsSigned = enumBaseType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.LongKeyword or (int)SyntaxKind.IntKeyword or (int)SyntaxKind.ShortKeyword or (int)SyntaxKind.SByteKeyword } };
-            ExpressionSyntax enumValue = flagsEnum ? ToHexExpressionSyntax(this.Reader, valueHandle, enumBaseTypeIsSigned) : ToExpressionSyntax(this.Reader, valueHandle);
-            EnumMemberDeclarationSyntax enumMember = EnumMemberDeclaration(SafeIdentifier(enumValueName))
-                .WithEqualsValue(EqualsValueClause(enumValue));
-            enumValues.Add(enumMember);
-            enumValues.Add(TokenWithLineFeed(SyntaxKind.CommaToken));
+        // Add associated constants.
+        foreach (CustomAttribute associatedConstAtt in MetadataUtilities.FindAttributes(this.Reader, typeDef.GetCustomAttributes(), InteropDecorationNamespace, AssociatedConstantAttribute))
+        {
+            CustomAttributeValue<TypeSyntax> decodedAttribute = associatedConstAtt.DecodeValue(CustomAttributeTypeProvider.Instance);
+            if (decodedAttribute.FixedArguments.Length >= 1 && decodedAttribute.FixedArguments[0].Value is string constName)
+            {
+                if (TryFindConstant(constName, out FieldDefinitionHandle fieldHandle))
+                {
+                    AddEnumValue(fieldHandle);
+                }
+            }
         }
 
         if (enumBaseType is null)
@@ -58,5 +57,38 @@ public partial class Generator
         result = this.AddApiDocumentation(name, result);
 
         return result;
+
+        void AddEnumValue(FieldDefinitionHandle fieldDefHandle)
+        {
+            FieldDefinition fieldDef = this.Reader.GetFieldDefinition(fieldDefHandle);
+            string enumValueName = this.Reader.GetString(fieldDef.Name);
+            ConstantHandle valueHandle = fieldDef.GetDefaultValue();
+            if (valueHandle.IsNil)
+            {
+                enumBaseType = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null).ToTypeSyntax(this.enumTypeSettings, GeneratingElement.EnumValue, null).Type;
+                return;
+            }
+
+            bool enumBaseTypeIsSigned = enumBaseType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.LongKeyword or (int)SyntaxKind.IntKeyword or (int)SyntaxKind.ShortKeyword or (int)SyntaxKind.SByteKeyword } };
+            ExpressionSyntax enumValue = flagsEnum ? ToHexExpressionSyntax(this.Reader, valueHandle, enumBaseTypeIsSigned) : ToExpressionSyntax(this.Reader, valueHandle);
+            EnumMemberDeclarationSyntax enumMember = EnumMemberDeclaration(SafeIdentifier(enumValueName))
+                .WithEqualsValue(EqualsValueClause(enumValue));
+            enumValues.Add(enumMember);
+            enumValues.Add(TokenWithLineFeed(SyntaxKind.CommaToken));
+        }
+
+        bool TryFindConstant(string name, out FieldDefinitionHandle fieldDefinitionHandle)
+        {
+            foreach (var ns in this.MetadataIndex.MetadataByNamespace)
+            {
+                if (ns.Value.Fields.TryGetValue(name, out fieldDefinitionHandle))
+                {
+                    return true;
+                }
+            }
+
+            fieldDefinitionHandle = default;
+            return false;
+        }
     }
 }

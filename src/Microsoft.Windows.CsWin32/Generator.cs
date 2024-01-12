@@ -867,12 +867,24 @@ public partial class Generator : IGenerator, IDisposable
     {
         if (this.IsWin32Sdk)
         {
-            this.RequestInteropType("Windows.Win32.Foundation", "HRESULT", context);
-            this.volatileCode.GenerateSpecialType("ComHelpers", () => this.volatileCode.AddSpecialType("ComHelpers", this.comHelperClass));
+            if (!this.IsTypeAlreadyFullyDeclared($"{this.Namespace}.{this.comHelperClass.Identifier.ValueText}"))
+            {
+                this.RequestInteropType("Windows.Win32.Foundation", "HRESULT", context);
+                this.volatileCode.GenerateSpecialType("ComHelpers", () => this.volatileCode.AddSpecialType("ComHelpers", this.comHelperClass));
+            }
+
             if (this.IsFeatureAvailable(Feature.InterfaceStaticMembers) && !context.AllowMarshaling)
             {
-                this.volatileCode.GenerateSpecialType("IVTable", () => this.volatileCode.AddSpecialType("IVTable", IVTableInterface));
-                this.volatileCode.GenerateSpecialType("IVTable`2", () => this.volatileCode.AddSpecialType("IVTable`2", IVTableGenericInterface));
+                if (!this.IsTypeAlreadyFullyDeclared($"{this.Namespace}.{IVTableInterface.Identifier.ValueText}"))
+                {
+                    this.volatileCode.GenerateSpecialType("IVTable", () => this.volatileCode.AddSpecialType("IVTable", IVTableInterface));
+                }
+
+                if (!this.IsTypeAlreadyFullyDeclared($"{this.Namespace}.{IVTableGenericInterface.Identifier.ValueText}`2"))
+                {
+                    this.volatileCode.GenerateSpecialType("IVTable`2", () => this.volatileCode.AddSpecialType("IVTable`2", IVTableGenericInterface));
+                }
+
                 if (!this.TryGenerate("IUnknown", default))
                 {
                     throw new GenerationFailedException("Unable to generate IUnknown.");
@@ -1058,10 +1070,7 @@ public partial class Generator : IGenerator, IDisposable
         string ns = $"{this.Namespace}.{subNamespace}";
         fullyQualifiedName = $"{ns}.{specialName}";
 
-        // Skip if the compilation already defines this type or can access it from elsewhere.
-        // But if we have more than one match, the compiler won't be able to resolve our type references.
-        // In such a case, we'll prefer to just declare our own local symbol.
-        if (this.FindTypeSymbolsIfAlreadyAvailable(fullyQualifiedName).Count == 1)
+        if (this.IsTypeAlreadyFullyDeclared(fullyQualifiedName))
         {
             // The type already exists either in this project or a referenced one.
             return null;
@@ -1183,6 +1192,19 @@ public partial class Generator : IGenerator, IDisposable
         return false;
     }
 
+    /// <summary>
+    /// Checks whether a type with the given name is already defined in the compilation
+    /// such that we must (or should) skip generating it ourselves.
+    /// </summary>
+    /// <param name="fullyQualifiedMetadataName">The fully-qualified metadata name of the type.</param>
+    /// <returns><see langword="true"/> if the type should <em>not</em> be emitted; <see langword="false" /> if the type is not already declared in the compilation.</returns>
+    /// <remarks>
+    /// Skip if the compilation already defines this type or can access it from elsewhere.
+    /// But if we have more than one match, the compiler won't be able to resolve our type references.
+    /// In such a case, we'll prefer to just declare our own local symbol.
+    /// </remarks>
+    private bool IsTypeAlreadyFullyDeclared(string fullyQualifiedMetadataName) => this.FindTypeSymbolsIfAlreadyAvailable(fullyQualifiedMetadataName).Count == 1;
+
     private ISymbol? FindTypeSymbolIfAlreadyAvailable(string fullyQualifiedMetadataName) => this.FindTypeSymbolsIfAlreadyAvailable(fullyQualifiedMetadataName).FirstOrDefault();
 
     private IReadOnlyList<ISymbol> FindTypeSymbolsIfAlreadyAvailable(string fullyQualifiedMetadataName)
@@ -1264,7 +1286,7 @@ public partial class Generator : IGenerator, IDisposable
         // Skip if the compilation already defines this type or can access it from elsewhere.
         // But if we have more than one match, the compiler won't be able to resolve our type references.
         // In such a case, we'll prefer to just declare our own local symbol.
-        if (this.FindTypeSymbolsIfAlreadyAvailable(fullyQualifiedName).Count == 1)
+        if (this.IsTypeAlreadyFullyDeclared(fullyQualifiedName))
         {
             // The type already exists either in this project or a referenced one.
             return null;

@@ -14,6 +14,11 @@ public partial class Generator
 
     private IEnumerable<MethodDeclarationSyntax> DeclareFriendlyOverloads(MethodDefinition methodDefinition, MethodDeclarationSyntax externMethodDeclaration, NameSyntax declaringTypeName, FriendlyOverloadOf overloadOf, HashSet<string> helperMethodsAdded)
     {
+        if (!this.options.FriendlyOverloads.Enabled)
+        {
+            yield break;
+        }
+
         // If/when we ever need helper methods for the friendly overloads again, they can be added when used with code like this:
         ////if (helperMethodsAdded.Add(SomeHelperMethodName))
         ////{

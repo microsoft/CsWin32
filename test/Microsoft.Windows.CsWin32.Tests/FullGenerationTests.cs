@@ -19,6 +19,13 @@ public class FullGenerationTests : GeneratorTestBase
     }
 
     [Trait("TestCategory", "FailsInCloudTest")] // these take ~4GB of memory to run.
+    [Fact]
+    public void Everything_NoFriendlyOverloads()
+    {
+        this.TestHelper(new GeneratorOptions { FriendlyOverloads = new() { Enabled = false } }, Platform.X64, "net7.0", generator => generator.GenerateAll(CancellationToken.None));
+    }
+
+    [Trait("TestCategory", "FailsInCloudTest")] // these take ~4GB of memory to run.
     [Theory, PairwiseData]
     public void Everything(
         MarshalingOptions marshaling,
@@ -26,7 +33,7 @@ public class FullGenerationTests : GeneratorTestBase
         [CombinatorialMemberData(nameof(AnyCpuArchitectures))] Platform platform,
         [CombinatorialMemberData(nameof(TFMDataNoNetFx35))] string tfm)
     {
-        this.TestHelper(marshaling, useIntPtrForComOutPtr, platform, tfm, generator => generator.GenerateAll(CancellationToken.None));
+        this.TestHelper(OptionsForMarshaling(marshaling, useIntPtrForComOutPtr), platform, tfm, generator => generator.GenerateAll(CancellationToken.None));
     }
 
     [Trait("TestCategory", "FailsInCloudTest")] // these take ~4GB of memory to run.
@@ -36,13 +43,13 @@ public class FullGenerationTests : GeneratorTestBase
         bool useIntPtrForComOutPtr,
         [CombinatorialMemberData(nameof(TFMDataNoNetFx35))] string tfm)
     {
-        this.TestHelper(marshaling, useIntPtrForComOutPtr, Platform.X64, tfm, generator => generator.GenerateAllInteropTypes(CancellationToken.None));
+        this.TestHelper(OptionsForMarshaling(marshaling, useIntPtrForComOutPtr), Platform.X64, tfm, generator => generator.GenerateAllInteropTypes(CancellationToken.None));
     }
 
     [Fact]
     public void Constants()
     {
-        this.TestHelper(marshaling: MarshalingOptions.FullMarshaling, useIntPtrForComOutPtr: false, Platform.X64, DefaultTFM, generator => generator.GenerateAllConstants(CancellationToken.None));
+        this.TestHelper(new GeneratorOptions(), Platform.X64, DefaultTFM, generator => generator.GenerateAllConstants(CancellationToken.None));
     }
 
     [Theory, PairwiseData]
@@ -52,23 +59,27 @@ public class FullGenerationTests : GeneratorTestBase
         [CombinatorialMemberData(nameof(SpecificCpuArchitectures))] Platform platform,
         [CombinatorialMemberData(nameof(TFMDataNoNetFx35))] string tfm)
     {
-        this.TestHelper(marshaling, useIntPtrForComOutPtr, platform, tfm, generator => generator.GenerateAllExternMethods(CancellationToken.None));
+        this.TestHelper(OptionsForMarshaling(marshaling, useIntPtrForComOutPtr), platform, tfm, generator => generator.GenerateAllExternMethods(CancellationToken.None));
     }
 
     [Fact]
     public void Macros()
     {
-        this.TestHelper(marshaling: MarshalingOptions.FullMarshaling, useIntPtrForComOutPtr: false, Platform.X64, DefaultTFM, generator => generator.GenerateAllMacros(CancellationToken.None));
+        this.TestHelper(new GeneratorOptions(), Platform.X64, DefaultTFM, generator => generator.GenerateAllMacros(CancellationToken.None));
     }
 
-    private void TestHelper(MarshalingOptions marshaling, bool useIntPtrForComOutPtr, Platform platform, string targetFramework, Action<IGenerator> generationCommands)
+    private static GeneratorOptions OptionsForMarshaling(MarshalingOptions marshaling, bool useIntPtrForComOutPtr) => new()
     {
-        var generatorOptions = new GeneratorOptions
+        AllowMarshaling = marshaling >= MarshalingOptions.MarshalingWithoutSafeHandles,
+        UseSafeHandles = marshaling == MarshalingOptions.FullMarshaling,
+        ComInterop = new()
         {
-            AllowMarshaling = marshaling >= MarshalingOptions.MarshalingWithoutSafeHandles,
-            UseSafeHandles = marshaling == MarshalingOptions.FullMarshaling,
-            ComInterop = new() { UseIntPtrForComOutPointers = useIntPtrForComOutPtr },
-        };
+            UseIntPtrForComOutPointers = useIntPtrForComOutPtr,
+        },
+    };
+
+    private void TestHelper(GeneratorOptions generatorOptions, Platform platform, string targetFramework, Action<IGenerator> generationCommands)
+    {
         this.compilation = this.starterCompilations[targetFramework];
         this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(platform));
 

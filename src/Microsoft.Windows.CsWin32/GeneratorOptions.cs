@@ -42,6 +42,11 @@ public record GeneratorOptions
     public bool AllowMarshaling { get; init; } = true;
 
     /// <summary>
+    /// Gets options related to friendly overloads.
+    /// </summary>
+    public FriendlyOverloadOptions FriendlyOverloads { get; init; } = new();
+
+    /// <summary>
     /// Gets a value indicating whether to generate APIs judged to be unnecessary or redundant given the target framework
     /// because the project multi-targets to frameworks that need the APIs consistently for easier coding.
     /// </summary>
@@ -82,5 +87,17 @@ public record GeneratorOptions
         /// This may be useful on .NET when using ComWrappers. See <see href="https://github.com/microsoft/CsWin32/issues/328">this issue</see> for more details.
         /// </remarks>
         public bool UseIntPtrForComOutPointers { get; init; }
+    }
+
+    /// <summary>
+    /// Options for friendly overloads.
+    /// </summary>
+    public record FriendlyOverloadOptions
+    {
+        /// <summary>
+        /// Gets a value indicating whether to generate method overloads that may be easier to consume or be more idiomatic C#.
+        /// </summary>
+        /// <value>The default value is <see langword="true" />.</value>
+        public bool Enabled { get; init; } = true;
     }
 }

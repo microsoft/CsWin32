@@ -14,7 +14,7 @@ public partial class Generator
 
     private IEnumerable<MethodDeclarationSyntax> DeclareFriendlyOverloads(MethodDefinition methodDefinition, MethodDeclarationSyntax externMethodDeclaration, NameSyntax declaringTypeName, FriendlyOverloadOf overloadOf, HashSet<string> helperMethodsAdded)
     {
-        if (!this.options.FriendlyOverloads)
+        if (!this.options.FriendlyOverloads.Enabled)
         {
             yield break;
         }

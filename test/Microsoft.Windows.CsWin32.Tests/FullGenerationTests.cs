@@ -22,7 +22,7 @@ public class FullGenerationTests : GeneratorTestBase
     [Fact]
     public void Everything_NoFriendlyOverloads()
     {
-        this.TestHelper(new GeneratorOptions { FriendlyOverloads = false }, Platform.X64, "net7.0", generator => generator.GenerateAll(CancellationToken.None));
+        this.TestHelper(new GeneratorOptions { FriendlyOverloads = new() { Enabled = false } }, Platform.X64, "net7.0", generator => generator.GenerateAll(CancellationToken.None));
     }
 
     [Trait("TestCategory", "FailsInCloudTest")] // these take ~4GB of memory to run.

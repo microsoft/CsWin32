@@ -38,9 +38,15 @@
       "default": true
     },
     "friendlyOverloads": {
-      "description": "A value indicating whether to generate method overloads that may be easier to consume or be more idiomatic C#. These may use fewer pointers, accept or return SafeHandles, etc.",
-      "type": "boolean",
-      "default": true
+      "description": "An object with properties that control generation of friendly overloads.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "A value indicating whether to generate method overloads that may be easier to consume or be more idiomatic C#. These may use fewer pointers, accept or return SafeHandles, etc.",
+          "type": "boolean",
+          "default": true
+        }
+      }
     },
     "multiTargetingFriendlyAPIs": {
       "description": "A value indicating whether to generate APIs judged to be unnecessary or redundant given the target framework. This is useful for multi-targeting projects that need a consistent set of APIs across target frameworks to avoid too many conditional compilation regions.",

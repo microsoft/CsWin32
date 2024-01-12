@@ -42,6 +42,11 @@ public record GeneratorOptions
     public bool AllowMarshaling { get; init; } = true;
 
     /// <summary>
+    /// Gets a value indicating whether to generate method overloads that may be easier to consume or be more idiomatic C#.
+    /// </summary>
+    public bool FriendlyOverloads { get; init; } = true;
+
+    /// <summary>
     /// Gets a value indicating whether to generate APIs judged to be unnecessary or redundant given the target framework
     /// because the project multi-targets to frameworks that need the APIs consistently for easier coding.
     /// </summary>

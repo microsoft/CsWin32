@@ -7,6 +7,7 @@ public partial class Generator
 {
     internal const string InteropDecorationNamespace = "Windows.Win32.Foundation.Metadata";
     internal const string NativeArrayInfoAttribute = "NativeArrayInfoAttribute";
+    internal const string NativeBitfieldAttribute = "NativeBitfieldAttribute";
     internal const string MemorySizeAttribute = "MemorySizeAttribute";
     internal const string RAIIFreeAttribute = "RAIIFreeAttribute";
     internal const string DoNotReleaseAttribute = "DoNotReleaseAttribute";

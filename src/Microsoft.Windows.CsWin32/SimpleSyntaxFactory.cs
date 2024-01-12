@@ -349,11 +349,11 @@ internal static class SimpleSyntaxFactory
             InitializerExpression(SyntaxKind.ArrayInitializerExpression, SeparatedList(elements)));
     }
 
-    internal static unsafe string ToHex<T>(T value)
+    internal static unsafe string ToHex<T>(T value, int? hexLength = null)
         where T : unmanaged
     {
-        int fullHexLength = sizeof(T) * 2;
-        string hex = string.Format(CultureInfo.InvariantCulture, "0x{0:X" + fullHexLength + "}", value);
+        hexLength ??= sizeof(T) * 2;
+        string hex = string.Format(CultureInfo.InvariantCulture, "0x{0:X" + hexLength + "}", value);
         return hex;
     }
 

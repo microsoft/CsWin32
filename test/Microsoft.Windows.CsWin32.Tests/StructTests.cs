@@ -156,6 +156,71 @@ namespace Microsoft.Windows.Sdk
         Assert.Equal("SHDID_ID", Assert.IsType<IdentifierNameSyntax>(property.Type).Identifier.ValueText);
     }
 
+    [Fact]
+    public void Bitfield_Bool()
+    {
+        this.GenerateApi("SHELLFLAGSTATE");
+        StructDeclarationSyntax structDecl = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("SHELLFLAGSTATE"));
+
+        // Verify that the struct has a single field of type int.
+        FieldDeclarationSyntax bitfield = Assert.Single(structDecl.Members.OfType<FieldDeclarationSyntax>());
+        Assert.True(bitfield.Declaration.Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.IntKeyword } });
+
+        // Verify that many other *properties* are added that access into the bitfield.
+        // The actual behavior of the properties is verified in the functional unit tests.
+        List<PropertyDeclarationSyntax> properties = structDecl.Members.OfType<PropertyDeclarationSyntax>().ToList();
+        Assert.Contains(properties, p => p.Identifier.ValueText == "fShowAllObjects" && p.Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.BoolKeyword } });
+        Assert.Contains(properties, p => p.Identifier.ValueText == "fShowExtensions" && p.Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.BoolKeyword } });
+    }
+
+    [Fact]
+    public void Bitfield_UIntPtr()
+    {
+        this.GenerateApi("PSAPI_WORKING_SET_BLOCK");
+        StructDeclarationSyntax structDecl = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("_Anonymous_e__Struct"));
+
+        // Verify that the struct has a single field of type int.
+        FieldDeclarationSyntax bitfield = Assert.Single(structDecl.Members.OfType<FieldDeclarationSyntax>());
+        Assert.True(bitfield.Declaration.Type is IdentifierNameSyntax { Identifier.ValueText: "nuint" });
+
+        // Verify that many other *properties* are added that access into the bitfield.
+        // The actual behavior of the properties is verified in the functional unit tests.
+        List<PropertyDeclarationSyntax> properties = structDecl.Members.OfType<PropertyDeclarationSyntax>().ToList();
+        Assert.Contains(properties, p => p.Identifier.ValueText == "Protection" && p.Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.ByteKeyword } });
+        Assert.Contains(properties, p => p.Identifier.ValueText == "Shared" && p.Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.BoolKeyword } });
+    }
+
+    [Fact]
+    public void Bitfield_Multiple()
+    {
+        this.GenerateApi("AM_COLCON");
+        StructDeclarationSyntax structDecl = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("AM_COLCON"));
+        Assert.Equal(4, structDecl.Members.OfType<FieldDeclarationSyntax>().Count());
+
+        // Verify that each field produced 2 properties of type byte.
+        List<PropertyDeclarationSyntax> properties = structDecl.Members.OfType<PropertyDeclarationSyntax>().ToList();
+        Assert.Equal(4 * 2, properties.Count);
+        Assert.All(properties, p => Assert.True(p.Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.ByteKeyword } }));
+        Assert.Contains(properties, p => p.Identifier.ValueText == "emph1col");
+        Assert.Contains(properties, p => p.Identifier.ValueText == "patcon");
+    }
+
+    [Fact]
+    public void Bitfield_MultiplePropertyTypes()
+    {
+        this.GenerateApi("BM_REQUEST_TYPE");
+        StructDeclarationSyntax structDecl = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("_BM"));
+
+        List<PropertyDeclarationSyntax> fields = structDecl.Members.OfType<PropertyDeclarationSyntax>().ToList();
+        Assert.Equal(4, fields.Count);
+        Assert.Equal(SyntaxKind.ByteKeyword, GetPropertyType("Recipient"));
+        Assert.Equal(SyntaxKind.ByteKeyword, GetPropertyType("Reserved"));
+        Assert.Equal(SyntaxKind.ByteKeyword, GetPropertyType("Type"));
+        Assert.Equal(SyntaxKind.BoolKeyword, GetPropertyType("Dir"));
+
+        SyntaxKind GetPropertyType(string name) => ((PredefinedTypeSyntax)fields.Single(f => f.Identifier.ValueText == name).Type).Keyword.Kind();
+    }
+
     [Theory]
     [InlineData("PCSTR")]
     public void SpecialStruct_ByRequest(string structName)
@@ -178,6 +243,9 @@ namespace Microsoft.Windows.Sdk
         "DEVICE_RELATIONS", // ends with an inline "flexible" array
         "D3DHAL_CONTEXTCREATEDATA", // contains a field that is a pointer to a struct that is normally managed
         "MIB_TCPTABLE", // a struct that references another struct with a nested anonymous type, that loosely references an enum in the same namespace (by way of an attribute).
+        "WHEA_XPF_TLB_CHECK", // a struct with a ulong bitfield with one field exceeding 32-bits in length.
+        "TRANSPORT_PROPERTIES", // a struct with a long bitfield with one subfield expressed as ulong.
+        "D3DKMDT_DISPLAYMODE_FLAGS", // a struct with an interesting bool/byte conversion.
         "WSD_EVENT")] // has a pointer field to a managed struct
         string name,
         bool allowMarshaling)

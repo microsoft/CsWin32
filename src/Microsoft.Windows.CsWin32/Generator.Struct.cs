@@ -34,13 +34,28 @@ public partial class Generator
         foreach (FieldDefinitionHandle fieldDefHandle in typeDef.GetFields())
         {
             FieldDefinition fieldDef = this.Reader.GetFieldDefinition(fieldDefHandle);
+            FieldDeclarationSyntax field;
+
+            if (fieldDef.Attributes.HasFlag(FieldAttributes.Static))
+            {
+                if (fieldDef.Attributes.HasFlag(FieldAttributes.Literal))
+                {
+                    field = this.DeclareConstant(fieldDef);
+                    members.Add(field);
+                    continue;
+                }
+                else
+                {
+                    throw new NotSupportedException();
+                }
+            }
+
             string fieldName = this.Reader.GetString(fieldDef.Name);
 
             try
             {
                 CustomAttribute? fixedBufferAttribute = this.FindAttribute(fieldDef.GetCustomAttributes(), SystemRuntimeCompilerServices, nameof(FixedBufferAttribute));
 
-                FieldDeclarationSyntax field;
                 VariableDeclaratorSyntax fieldDeclarator = VariableDeclarator(SafeIdentifier(fieldName));
                 if (fixedBufferAttribute.HasValue)
                 {

@@ -234,6 +234,16 @@ namespace Microsoft.Windows.Sdk
         var type = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType(structName));
     }
 
+    [Fact]
+    public void StructConstantsAreGeneratedAsConstants()
+    {
+        this.GenerateApi("Color");
+        var type = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("Color"));
+        FieldDeclarationSyntax argb = Assert.Single(type.Members.OfType<FieldDeclarationSyntax>().Where(f => !(f.Modifiers.Any(SyntaxKind.StaticKeyword) || f.Modifiers.Any(SyntaxKind.ConstKeyword))));
+        Assert.Equal("Argb", argb.Declaration.Variables.Single().Identifier.ValueText);
+        Assert.NotEmpty(type.Members.OfType<FieldDeclarationSyntax>().Where(f => f.Modifiers.Any(SyntaxKind.ConstKeyword)));
+    }
+
     [Theory]
     [CombinatorialData]
     public void InterestingStructs(

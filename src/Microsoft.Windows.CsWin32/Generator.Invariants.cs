@@ -77,6 +77,7 @@ public partial class Generator
     private const string AlsoUsableForAttribute = "AlsoUsableForAttribute";
     private const string InvalidHandleValueAttribute = "InvalidHandleValueAttribute";
     private const string CanReturnMultipleSuccessValuesAttribute = "CanReturnMultipleSuccessValuesAttribute";
+    private const string FlexibleArrayAttribute = "FlexibleArrayAttribute";
     private const string CanReturnErrorsAsSuccessAttribute = "CanReturnErrorsAsSuccessAttribute";
     private const string SimpleFileNameAnnotation = "SimpleFileName";
     private const string NamespaceContainerAnnotation = "NamespaceContainer";

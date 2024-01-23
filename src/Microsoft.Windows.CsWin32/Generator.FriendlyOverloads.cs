@@ -103,9 +103,16 @@ public partial class Generator
 
             TypeHandleInfo parameterTypeInfo = originalSignature.ParameterTypes[param.SequenceNumber - 1];
             bool isManagedParameterType = this.IsManagedType(parameterTypeInfo);
+            bool mustRemainAsPointer = parameterTypeInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo pointedElement } && this.IsStructWithFlexibleArray(pointedElement);
+
             IdentifierNameSyntax origName = IdentifierName(externParam.Identifier.ValueText);
 
-            if (isReserved && !isOut)
+            if (mustRemainAsPointer)
+            {
+                // This block intentionally left blank, so as to disable further processing that might try to
+                // replace a pointer with a `ref` or similar modifier.
+            }
+            else if (isReserved && !isOut)
             {
                 // Remove the parameter and supply the default value for the type to the extern method.
                 arguments[param.SequenceNumber - 1] = Argument(LiteralExpression(SyntaxKind.DefaultLiteralExpression));

@@ -84,6 +84,27 @@ public partial class Generator
         return false;
     }
 
+    internal bool TryGetTypeDefHandle(EntityHandle entityHandle, out QualifiedTypeDefinitionHandle typeDefHandle)
+    {
+        if (entityHandle.IsNil)
+        {
+            typeDefHandle = default;
+            return false;
+        }
+
+        switch (entityHandle.Kind)
+        {
+            case HandleKind.TypeReference:
+                return this.TryGetTypeDefHandle((TypeReferenceHandle)entityHandle, out typeDefHandle);
+            case HandleKind.TypeDefinition:
+                typeDefHandle = new QualifiedTypeDefinitionHandle(this, (TypeDefinitionHandle)entityHandle);
+                return true;
+            default:
+                typeDefHandle = default;
+                return false;
+        }
+    }
+
     internal bool IsNonCOMInterface(TypeDefinition interfaceTypeDef)
     {
         if (this.Reader.StringComparer.Equals(interfaceTypeDef.Name, "IUnknown"))
@@ -163,6 +184,27 @@ public partial class Generator
     }
 
     internal bool IsDelegate(TypeDefinition typeDef) => (typeDef.Attributes & TypeAttributes.Class) == TypeAttributes.Class && typeDef.BaseType.Kind == HandleKind.TypeReference && this.Reader.StringComparer.Equals(this.Reader.GetTypeReference((TypeReferenceHandle)typeDef.BaseType).Name, nameof(MulticastDelegate));
+
+    internal bool IsStructWithFlexibleArray(HandleTypeHandleInfo typeInfo)
+    {
+        return this.TryGetTypeDefHandle(typeInfo.Handle, out QualifiedTypeDefinitionHandle typeHandle)
+            && typeHandle.Generator.IsStructWithFlexibleArray(typeHandle.DefinitionHandle);
+    }
+
+    internal bool IsStructWithFlexibleArray(TypeDefinitionHandle typeDefHandle)
+    {
+        TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefHandle);
+        foreach (FieldDefinitionHandle fieldHandle in typeDef.GetFields())
+        {
+            FieldDefinition field = this.Reader.GetFieldDefinition(fieldHandle);
+            if (MetadataUtilities.FindAttribute(this.Reader, field.GetCustomAttributes(), InteropDecorationNamespace, FlexibleArrayAttribute) is not null)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     internal bool IsManagedType(TypeHandleInfo typeHandleInfo)
     {

@@ -26,6 +26,17 @@ public partial class Generator
             context = context with { AllowMarshaling = false };
         }
 
+        // If the last field has the [FlexibleArray] attribute, we must disable marshaling since the struct
+        // is only ever valid when accessed via a pointer since the struct acts as a header of an arbitrarily-sized array.
+        if (typeDef.GetFields().LastOrDefault() is FieldDefinitionHandle { IsNil: false } lastFieldHandle)
+        {
+            FieldDefinition lastField = this.Reader.GetFieldDefinition(lastFieldHandle);
+            if (MetadataUtilities.FindAttribute(this.Reader, lastField.GetCustomAttributes(), InteropDecorationNamespace, FlexibleArrayAttribute) is not null)
+            {
+                context = context with { AllowMarshaling = false };
+            }
+        }
+
         TypeSyntaxSettings typeSettings = context.Filter(this.fieldTypeSettings);
 
         bool hasUtf16CharField = false;

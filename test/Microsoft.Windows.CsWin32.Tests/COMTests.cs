@@ -380,6 +380,17 @@ public class COMTests : GeneratorTestBase
         this.GenerateApi(typeName);
     }
 
+    [Fact]
+    public void ReferencesToStructWithFlexibleArrayAreAlwaysPointers()
+    {
+        this.GenerateApi("IAMLine21Decoder");
+        Assert.All(this.FindGeneratedMethod("SetOutputFormat"), m => Assert.IsType<PointerTypeSyntax>(m.ParameterList.Parameters[0].Type));
+
+        // Assert that the 'unmanaged' declaration of the struct is the *only* declaration.
+        Assert.Single(this.FindGeneratedType("BITMAPINFO"));
+        Assert.Empty(this.FindGeneratedType("BITMAPINFO_unmanaged"));
+    }
+
     [Theory]
     [CombinatorialData]
     public void COMInterfaceIIDInterfaceOnAppropriateTFMs(

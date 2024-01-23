@@ -161,6 +161,20 @@ public partial class Generator
                     var fieldTypeInfo = (PrimitiveTypeHandleInfo)fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null);
 
                     CustomAttributeValue<TypeSyntax> decodedAttribute = bitfieldAttribute.DecodeValue(CustomAttributeTypeProvider.Instance);
+                    (int? fieldBitLength, bool signed) = fieldTypeInfo.PrimitiveTypeCode switch
+                    {
+                        PrimitiveTypeCode.Byte => (8, false),
+                        PrimitiveTypeCode.SByte => (8, true),
+                        PrimitiveTypeCode.UInt16 => (16, false),
+                        PrimitiveTypeCode.Int16 => (16, true),
+                        PrimitiveTypeCode.UInt32 => (32, false),
+                        PrimitiveTypeCode.Int32 => (32, true),
+                        PrimitiveTypeCode.UInt64 => (64, false),
+                        PrimitiveTypeCode.Int64 => (64, true),
+                        PrimitiveTypeCode.UIntPtr => (null, false),
+                        PrimitiveTypeCode.IntPtr => ((int?)null, true),
+                        _ => throw new NotImplementedException(),
+                    };
                     string propName = (string)decodedAttribute.FixedArguments[0].Value!;
                     byte propOffset = (byte)(long)decodedAttribute.FixedArguments[1].Value!;
                     byte propLength = (byte)(long)decodedAttribute.FixedArguments[2].Value!;
@@ -171,18 +185,25 @@ public partial class Generator
                         continue;
                     }
 
-                    TypeSyntax propertyType = propLength switch
+                    long minValue = signed ? -(1L << (propLength - 1)) : 0;
+                    long maxValue = (1L << (propLength - (signed ? 1 : 0))) - 1;
+                    int? leftPad = fieldBitLength.HasValue ? fieldBitLength - (propOffset + propLength) : null;
+                    int rightPad = propOffset;
+                    (TypeSyntax propertyType, int propertyBitLength) = propLength switch
                     {
-                        1 => PredefinedType(Token(SyntaxKind.BoolKeyword)),
-                        <= 8 => PredefinedType(Token(SyntaxKind.ByteKeyword)),
-                        <= 16 => PredefinedType(Token(SyntaxKind.UShortKeyword)),
-                        <= 32 => PredefinedType(Token(SyntaxKind.UIntKeyword)),
-                        <= 64 => PredefinedType(Token(SyntaxKind.ULongKeyword)),
+                        1 => (PredefinedType(Token(SyntaxKind.BoolKeyword)), 1),
+                        <= 8 => (PredefinedType(Token(signed ? SyntaxKind.SByteKeyword : SyntaxKind.ByteKeyword)), 8),
+                        <= 16 => (PredefinedType(Token(signed ? SyntaxKind.ShortKeyword : SyntaxKind.UShortKeyword)), 16),
+                        <= 32 => (PredefinedType(Token(signed ? SyntaxKind.IntKeyword : SyntaxKind.UIntKeyword)), 32),
+                        <= 64 => (PredefinedType(Token(signed ? SyntaxKind.LongKeyword : SyntaxKind.ULongKeyword)), 64),
                         _ => throw new NotSupportedException(),
                     };
 
-                    AccessorDeclarationSyntax getter = AccessorDeclaration(SyntaxKind.GetAccessorDeclaration);
-                    AccessorDeclarationSyntax setter = AccessorDeclaration(SyntaxKind.SetAccessorDeclaration);
+                    AccessorDeclarationSyntax getter = AccessorDeclaration(SyntaxKind.GetAccessorDeclaration)
+                        .AddModifiers(TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
+                        .AddAttributeLists(AttributeList().AddAttributes(MethodImpl(MethodImplOptions.AggressiveInlining)));
+                    AccessorDeclarationSyntax setter = AccessorDeclaration(SyntaxKind.SetAccessorDeclaration)
+                        .AddAttributeLists(AttributeList().AddAttributes(MethodImpl(MethodImplOptions.AggressiveInlining)));
 
                     ulong maskNoOffset = (1UL << propLength) - 1;
                     ulong mask = maskNoOffset << propOffset;
@@ -203,36 +224,61 @@ public partial class Generator
                         ExpressionSyntax notMaskNoOffset = UncheckedExpression(CastExpression(propertyType, PrefixUnaryExpression(SyntaxKind.BitwiseNotExpression, maskNoOffsetExpr)));
                         LiteralExpressionSyntax propOffsetExpr = LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(propOffset));
 
-                        // get => (byte)((field & unchecked((FIELDTYPE)getterMask)) >> propOffset);
+                        // signed:
+                        // get => (byte)((field << leftPad) >> (leftPad + rightPad)));
+                        // unsigned:
+                        // get => (byte)((field >> rightPad) & maskNoOffset);
                         ExpressionSyntax getterExpression =
-                            CastExpression(propertyType, ParenthesizedExpression(BinaryExpression(
-                                SyntaxKind.RightShiftExpression,
-                                ParenthesizedExpression(BinaryExpression(
-                                    SyntaxKind.BitwiseAndExpression,
-                                    fieldAccess,
-                                    UncheckedExpression(CastExpression(fieldType, maskExpr)))),
-                                propOffsetExpr)));
+                            CastExpression(propertyType, ParenthesizedExpression(
+                                signed ?
+                                    BinaryExpression(
+                                        SyntaxKind.RightShiftExpression,
+                                        ParenthesizedExpression(BinaryExpression(
+                                            SyntaxKind.LeftShiftExpression,
+                                            fieldAccess,
+                                            LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(leftPad!.Value)))),
+                                        LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(leftPad.Value + rightPad)))
+                                    : BinaryExpression(
+                                        SyntaxKind.BitwiseAndExpression,
+                                        ParenthesizedExpression(BinaryExpression(SyntaxKind.RightShiftExpression, fieldAccess, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(rightPad)))),
+                                        maskNoOffsetExpr)));
                         getter = getter
                             .WithExpressionBody(ArrowExpressionClause(getterExpression))
                             .WithSemicolonToken(SemicolonWithLineFeed);
 
-                        // if ((value & ~maskNoOffset) != 0) throw new ArgumentOutOfRangeException(nameof(value));
-                        // field = (int)((field & unchecked((int)~mask)) | ((int)value << propOffset)));
                         IdentifierNameSyntax valueName = IdentifierName("value");
-                        setter = setter.WithBody(Block().AddStatements(
-                            IfStatement(
-                                BinaryExpression(SyntaxKind.NotEqualsExpression, ParenthesizedExpression(BinaryExpression(SyntaxKind.BitwiseAndExpression, valueName, notMaskNoOffset)), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))),
-                                ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentOutOfRangeException))).AddArgumentListArguments(Argument(InvocationExpression(IdentifierName("nameof")).WithArgumentList(ArgumentList().AddArguments(Argument(valueName))))))),
-                            ExpressionStatement(AssignmentExpression(
-                                SyntaxKind.SimpleAssignmentExpression,
-                                fieldAccess,
-                                CastExpression(fieldType, ParenthesizedExpression(
-                                    BinaryExpression(
-                                        SyntaxKind.BitwiseOrExpression,
-                                        //// (field & unchecked((int)~mask))
-                                        fieldAndNotMask,
-                                        //// ((int)value << propOffset)
-                                        ParenthesizedExpression(BinaryExpression(SyntaxKind.LeftShiftExpression, CastExpression(fieldType, valueName), propOffsetExpr)))))))));
+
+                        List<StatementSyntax> setterStatements = new();
+                        if (propertyBitLength > propLength)
+                        {
+                            // The allowed range is smaller than the property type, so we need to check that the value fits.
+                            // signed:
+                            //  global::System.Debug.Assert(value is >= minValue and <= maxValue);
+                            // unsigned:
+                            //  global::System.Debug.Assert(value is <= maxValue);
+                            RelationalPatternSyntax max = RelationalPattern(TokenWithSpace(SyntaxKind.LessThanEqualsToken), CastExpression(propertyType, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(maxValue))));
+                            RelationalPatternSyntax? min = signed ? RelationalPattern(TokenWithSpace(SyntaxKind.GreaterThanEqualsToken), CastExpression(propertyType, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(minValue)))) : null;
+                            setterStatements.Add(ExpressionStatement(InvocationExpression(
+                                ParseName("global::System.Diagnostics.Debug.Assert"),
+                                ArgumentList().AddArguments(Argument(
+                                    IsPatternExpression(
+                                        valueName,
+                                        min is null ? max : BinaryPattern(SyntaxKind.AndPattern, min, max)))))));
+                        }
+
+                        // field = (int)((field & unchecked((int)~mask)) | ((int)(value & mask) << propOffset)));
+                        ExpressionSyntax valueAndMaskNoOffset = ParenthesizedExpression(BinaryExpression(SyntaxKind.BitwiseAndExpression, valueName, maskNoOffsetExpr));
+                        setterStatements.Add(ExpressionStatement(AssignmentExpression(
+                            SyntaxKind.SimpleAssignmentExpression,
+                            fieldAccess,
+                            CastExpression(fieldType, ParenthesizedExpression(
+                                BinaryExpression(
+                                    SyntaxKind.BitwiseOrExpression,
+                                    //// (field & unchecked((int)~mask))
+                                    fieldAndNotMask,
+                                    //// ((int)(value & mask) << propOffset)
+                                    ParenthesizedExpression(BinaryExpression(SyntaxKind.LeftShiftExpression, CastExpression(fieldType, valueAndMaskNoOffset), propOffsetExpr))))))));
+                        setter = setter.WithBody(Block().AddStatements(setterStatements.ToArray()));
                     }
                     else
                     {
@@ -261,11 +307,12 @@ public partial class Generator
                     }
 
                     string bitDescription = propLength == 1 ? $"bit {propOffset}" : $"bits {propOffset}-{propOffset + propLength - 1}";
+                    string allowedRange = propLength == 1 ? string.Empty : $" Allowed values are [{minValue}..{maxValue}].";
 
                     PropertyDeclarationSyntax bitfieldProperty = PropertyDeclaration(propertyType.WithTrailingTrivia(Space), Identifier(propName).WithTrailingTrivia(LineFeed))
                         .AddModifiers(TokenWithSpace(this.Visibility))
                         .WithAccessorList(AccessorList().AddAccessors(getter, setter))
-                        .WithLeadingTrivia(ParseLeadingTrivia($"/// <summary>Gets or sets {bitDescription} in the <see cref=\"{fieldName}\" /> field.</summary>\n"));
+                        .WithLeadingTrivia(ParseLeadingTrivia($"/// <summary>Gets or sets {bitDescription} in the <see cref=\"{fieldName}\" /> field.{allowedRange}</summary>\n"));
 
                     members.Add(bitfieldProperty);
                 }

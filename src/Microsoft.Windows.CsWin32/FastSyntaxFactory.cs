@@ -390,6 +390,10 @@ internal static class FastSyntaxFactory
 
     internal static IsPatternExpressionSyntax IsPatternExpression(ExpressionSyntax expression, PatternSyntax pattern) => SyntaxFactory.IsPatternExpression(expression, Token(TriviaList(Space), SyntaxKind.IsKeyword, TriviaList(Space)), pattern);
 
+    internal static BinaryPatternSyntax BinaryPattern(SyntaxKind kind, PatternSyntax left, PatternSyntax right) => SyntaxFactory.BinaryPattern(kind, left, TokenWithSpaces(GetBinaryPatternOperatorTokenKind(kind)), right);
+
+    internal static RelationalPatternSyntax RelationalPattern(SyntaxToken operatorToken, ExpressionSyntax expression) => SyntaxFactory.RelationalPattern(operatorToken, expression);
+
     internal static ConditionalExpressionSyntax ConditionalExpression(ExpressionSyntax condition, ExpressionSyntax whenTrue, ExpressionSyntax whenFalse) => SyntaxFactory.ConditionalExpression(condition, Token(TriviaList(Space), SyntaxKind.QuestionToken, TriviaList(Space)), whenTrue, Token(TriviaList(Space), SyntaxKind.ColonToken, TriviaList(Space)), whenFalse);
 
     internal static IfStatementSyntax IfStatement(ExpressionSyntax condition, StatementSyntax whenTrue) => IfStatement(condition, whenTrue, null);
@@ -594,6 +598,14 @@ internal static class FastSyntaxFactory
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
     }
+
+    private static SyntaxKind GetBinaryPatternOperatorTokenKind(SyntaxKind kind)
+        => kind switch
+        {
+            SyntaxKind.OrPattern => SyntaxKind.OrKeyword,
+            SyntaxKind.AndPattern => SyntaxKind.AndKeyword,
+            _ => throw new ArgumentOutOfRangeException(),
+        };
 
     private static SyntaxToken XmlReplaceBracketTokens(SyntaxToken originalToken, SyntaxToken rewrittenToken)
     {

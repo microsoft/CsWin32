@@ -75,6 +75,17 @@ public class ExternMethodTests : GeneratorTestBase
         Assert.DoesNotContain(attribute.ArgumentList!.Arguments, a => a.NameEquals?.Name.Identifier.ValueText == "EntryPoint");
     }
 
+    [Fact]
+    public void ReferencesToStructWithFlexibleArrayAreAlwaysPointers()
+    {
+        this.GenerateApi("CreateDIBSection");
+        Assert.All(this.FindGeneratedMethod("CreateDIBSection"), m => Assert.IsType<PointerTypeSyntax>(m.ParameterList.Parameters[1].Type));
+
+        // Assert that the 'unmanaged' declaration of the struct is the *only* declaration.
+        Assert.Single(this.FindGeneratedType("BITMAPINFO"));
+        Assert.Empty(this.FindGeneratedType("BITMAPINFO_unmanaged"));
+    }
+
     private static AttributeSyntax? FindDllImportAttribute(SyntaxList<AttributeListSyntax> attributeLists) => attributeLists.SelectMany(al => al.Attributes).FirstOrDefault(a => a.Name.ToString() == "DllImport");
 
     private IEnumerable<MethodDeclarationSyntax> GenerateMethod(string methodName)

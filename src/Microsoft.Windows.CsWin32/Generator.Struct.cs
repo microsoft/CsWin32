@@ -28,11 +28,14 @@ public partial class Generator
 
         // If the last field has the [FlexibleArray] attribute, we must disable marshaling since the struct
         // is only ever valid when accessed via a pointer since the struct acts as a header of an arbitrarily-sized array.
+        FieldDefinitionHandle flexibleArrayFieldHandle = default;
+        MethodDeclarationSyntax? sizeOfMethod = null;
         if (typeDef.GetFields().LastOrDefault() is FieldDefinitionHandle { IsNil: false } lastFieldHandle)
         {
             FieldDefinition lastField = this.Reader.GetFieldDefinition(lastFieldHandle);
             if (MetadataUtilities.FindAttribute(this.Reader, lastField.GetCustomAttributes(), InteropDecorationNamespace, FlexibleArrayAttribute) is not null)
             {
+                flexibleArrayFieldHandle = lastFieldHandle;
                 context = context with { AllowMarshaling = false };
             }
         }
@@ -79,6 +82,37 @@ public partial class Generator
                             fieldDeclarator
                                 .WithArgumentList(BracketedArgumentList(SingletonSeparatedList(Argument(size)))))
                         .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword), Token(SyntaxKind.FixedKeyword));
+                }
+                else if (fieldDefHandle == flexibleArrayFieldHandle)
+                {
+                    CustomAttributeHandleCollection fieldAttributes = fieldDef.GetCustomAttributes();
+                    var fieldTypeInfo = (ArrayTypeHandleInfo)fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null);
+                    TypeSyntax fieldType = fieldTypeInfo.ElementType.ToTypeSyntax(typeSettings, GeneratingElement.StructMember, fieldAttributes).Type;
+
+                    if (fieldType is PointerTypeSyntax or FunctionPointerTypeSyntax)
+                    {
+                        // These types are not allowed as generic type arguments (https://github.com/dotnet/runtime/issues/13627)
+                        // so we have to generate a special nested struct dedicated to this type instead of using the generic type.
+                        StructDeclarationSyntax helperStruct = this.DeclareVariableLengthInlineArrayHelper(context, fieldType);
+                        additionalMembers = additionalMembers.Add(helperStruct);
+
+                        field = FieldDeclaration(
+                            VariableDeclaration(IdentifierName(helperStruct.Identifier.ValueText)))
+                            .AddDeclarationVariables(fieldDeclarator)
+                            .AddModifiers(TokenWithSpace(this.Visibility));
+                    }
+                    else
+                    {
+                        this.RequestVariableLengthInlineArrayHelper(context);
+                        field = FieldDeclaration(
+                            VariableDeclaration(
+                                GenericName($"global::Windows.Win32.VariableLengthInlineArray")
+                                .WithTypeArgumentList(TypeArgumentList().AddArguments(fieldType))))
+                            .AddDeclarationVariables(fieldDeclarator)
+                            .AddModifiers(TokenWithSpace(this.Visibility));
+                    }
+
+                    sizeOfMethod = this.DeclareSizeOfMethod(name, fieldType, typeSettings);
                 }
                 else
                 {
@@ -334,6 +368,12 @@ public partial class Generator
             }
         }
 
+        // Add a SizeOf method, if there is a FlexibleArray field.
+        if (sizeOfMethod is not null)
+        {
+            members.Add(sizeOfMethod);
+        }
+
         // Add the additional members, taking care to not introduce redundant declarations.
         members.AddRange(additionalMembers.Where(c => c is not StructDeclarationSyntax cs || !members.OfType<StructDeclarationSyntax>().Any(m => m.Identifier.ValueText == cs.Identifier.ValueText)));
 
@@ -370,6 +410,95 @@ public partial class Generator
         return result;
     }
 
+    private StructDeclarationSyntax DeclareVariableLengthInlineArrayHelper(Context context, TypeSyntax fieldType)
+    {
+        IdentifierNameSyntax firstElementFieldName = IdentifierName("e0");
+        List<MemberDeclarationSyntax> members = new();
+
+        // internal unsafe T e0;
+        members.Add(FieldDeclaration(VariableDeclaration(fieldType).AddVariables(VariableDeclarator(firstElementFieldName.Identifier)))
+            .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword)));
+
+        if (this.canUseUnsafeAdd)
+        {
+            ////[MethodImpl(MethodImplOptions.AggressiveInlining)]
+            ////get { fixed (int** p = &e0) return *(p + index); }
+            IdentifierNameSyntax pLocal = IdentifierName("p");
+            AccessorDeclarationSyntax getter = AccessorDeclaration(SyntaxKind.GetAccessorDeclaration)
+                .WithBody(Block().AddStatements(
+                    FixedStatement(
+                        VariableDeclaration(PointerType(fieldType)).AddVariables(
+                            VariableDeclarator(pLocal.Identifier).WithInitializer(EqualsValueClause(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, firstElementFieldName)))),
+                        ReturnStatement(PrefixUnaryExpression(SyntaxKind.PointerIndirectionExpression, ParenthesizedExpression(BinaryExpression(SyntaxKind.AddExpression, pLocal, IdentifierName("index"))))))))
+                .AddAttributeLists(AttributeList().AddAttributes(MethodImpl(MethodImplOptions.AggressiveInlining)));
+
+            ////[MethodImpl(MethodImplOptions.AggressiveInlining)]
+            ////set { fixed (int** p = &e0) *(p + index) = value; }
+            AccessorDeclarationSyntax setter = AccessorDeclaration(SyntaxKind.SetAccessorDeclaration)
+                .WithBody(Block().AddStatements(
+                    FixedStatement(
+                        VariableDeclaration(PointerType(fieldType)).AddVariables(
+                            VariableDeclarator(pLocal.Identifier).WithInitializer(EqualsValueClause(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, firstElementFieldName)))),
+                        ExpressionStatement(AssignmentExpression(
+                            SyntaxKind.SimpleAssignmentExpression,
+                            PrefixUnaryExpression(SyntaxKind.PointerIndirectionExpression, ParenthesizedExpression(BinaryExpression(SyntaxKind.AddExpression, pLocal, IdentifierName("index")))),
+                            IdentifierName("value"))))))
+                .AddAttributeLists(AttributeList().AddAttributes(MethodImpl(MethodImplOptions.AggressiveInlining)));
+
+            ////internal unsafe T this[int index]
+            members.Add(IndexerDeclaration(fieldType.WithTrailingTrivia(Space))
+                .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword))
+                .AddParameterListParameters(Parameter(Identifier("index")).WithType(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))))
+                .AddAccessorListAccessors(getter, setter));
+        }
+
+        // internal partial struct VariableLengthInlineArrayHelper
+        return StructDeclaration(Identifier("VariableLengthInlineArrayHelper"))
+            .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.PartialKeyword))
+            .AddMembers(members.ToArray());
+    }
+
+    private MethodDeclarationSyntax DeclareSizeOfMethod(TypeSyntax structType, TypeSyntax elementType, TypeSyntaxSettings typeSettings)
+    {
+        PredefinedTypeSyntax intType = PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword));
+        IdentifierNameSyntax countName = IdentifierName("count");
+        IdentifierNameSyntax localName = IdentifierName("v");
+        List<StatementSyntax> statements = new();
+
+        // int v = sizeof(OUTER_STRUCT);
+        statements.Add(LocalDeclarationStatement(VariableDeclaration(intType).AddVariables(
+            VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(SizeOfExpression(structType))))));
+
+        // if (count > 1)
+        //   v += checked((count - 1) * sizeof(ELEMENT_TYPE));
+        // else if (count < 0)
+        //   throw new ArgumentOutOfRangeException(nameof(count));
+        statements.Add(IfStatement(
+            BinaryExpression(SyntaxKind.GreaterThanExpression, countName, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(1))),
+            ExpressionStatement(AssignmentExpression(
+                SyntaxKind.AddAssignmentExpression,
+                localName,
+                CheckedExpression(BinaryExpression(
+                    SyntaxKind.MultiplyExpression,
+                    ParenthesizedExpression(BinaryExpression(SyntaxKind.SubtractExpression, countName, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(1)))),
+                    SizeOfExpression(elementType))))),
+            ElseClause(IfStatement(
+                BinaryExpression(SyntaxKind.LessThanExpression, countName, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))),
+                ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentOutOfRangeException))))).WithCloseParenToken(TokenWithLineFeed(SyntaxKind.CloseParenToken)))).WithCloseParenToken(TokenWithLineFeed(SyntaxKind.CloseParenToken)));
+
+        // return v;
+        statements.Add(ReturnStatement(localName));
+
+        // internal static unsafe int SizeOf(int count)
+        MethodDeclarationSyntax sizeOfMethod = MethodDeclaration(intType, Identifier("SizeOf"))
+            .AddParameterListParameters(Parameter(countName.Identifier).WithType(intType))
+            .WithBody(Block().AddStatements(statements.ToArray()))
+            .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword))
+            .WithLeadingTrivia(ParseLeadingTrivia("/// <summary>Computes the amount of memory that must be allocated to store this struct, including the specified number of elements in the variable length inline array at the end.</summary>\n"));
+
+        return sizeOfMethod;
+    }
+
     private (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? MarshalAsAttribute) ReinterpretFieldType(FieldDefinition fieldDef, TypeSyntax originalType, CustomAttributeHandleCollection customAttributes, Context context)
     {
         TypeSyntaxSettings typeSettings = context.Filter(this.fieldTypeSettings);
@@ -396,5 +525,24 @@ public partial class Generator
         }
 
         return (originalType, default(SyntaxList<MemberDeclarationSyntax>), marshalAs);
+    }
+
+    private void RequestVariableLengthInlineArrayHelper(Context context)
+    {
+        if (this.IsWin32Sdk)
+        {
+            if (!this.IsTypeAlreadyFullyDeclared($"{this.Namespace}.{this.variableLengthInlineArrayStruct.Identifier.ValueText}"))
+            {
+                this.DeclareUnscopedRefAttributeIfNecessary();
+                this.volatileCode.GenerateSpecialType("VariableLengthInlineArray", () => this.volatileCode.AddSpecialType("VariableLengthInlineArray", this.variableLengthInlineArrayStruct));
+            }
+        }
+        else if (this.SuperGenerator is not null && this.SuperGenerator.TryGetGenerator("Windows.Win32", out Generator? generator))
+        {
+            generator.volatileCode.GenerationTransaction(delegate
+            {
+                generator.RequestVariableLengthInlineArrayHelper(context);
+            });
+        }
     }
 }

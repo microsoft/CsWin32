@@ -245,6 +245,22 @@ namespace Microsoft.Windows.Sdk
     }
 
     [Theory]
+    [MemberData(nameof(TFMData))]
+    public void FlexibleArrayMember(string tfm)
+    {
+        this.compilation = this.starterCompilations[tfm];
+        this.GenerateApi("BITMAPINFO");
+        var type = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("BITMAPINFO"));
+        FieldDeclarationSyntax flexArrayField = Assert.Single(type.Members.OfType<FieldDeclarationSyntax>(), m => m.Declaration.Variables.Any(v => v.Identifier.ValueText == "bmiColors"));
+        var fieldType = Assert.IsType<GenericNameSyntax>(Assert.IsType<QualifiedNameSyntax>(flexArrayField.Declaration.Type).Right);
+        Assert.Equal("VariableLengthInlineArray", fieldType.Identifier.ValueText);
+        Assert.Equal("RGBQUAD", Assert.IsType<QualifiedNameSyntax>(Assert.Single(fieldType.TypeArgumentList.Arguments)).Right.Identifier.ValueText);
+
+        // Verify that the SizeOf method was generated.
+        Assert.Single(this.FindGeneratedMethod("SizeOf"));
+    }
+
+    [Theory]
     [CombinatorialData]
     public void InterestingStructs(
         [CombinatorialValues(

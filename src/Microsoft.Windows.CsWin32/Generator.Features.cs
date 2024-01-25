@@ -8,6 +8,7 @@ public partial class Generator
     private readonly bool canUseSpan;
     private readonly bool canCallCreateSpan;
     private readonly bool canUseUnsafeAsRef;
+    private readonly bool canUseUnsafeAdd;
     private readonly bool canUseUnsafeNullRef;
     private readonly bool canUseUnmanagedCallersOnlyAttribute;
     private readonly bool canUseSetLastPInvokeError;

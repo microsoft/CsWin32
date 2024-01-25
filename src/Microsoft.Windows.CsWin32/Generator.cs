@@ -22,6 +22,7 @@ public partial class Generator : IGenerator, IDisposable
     private readonly TypeSyntaxSettings errorMessageTypeSettings;
 
     private readonly ClassDeclarationSyntax comHelperClass;
+    private readonly StructDeclarationSyntax variableLengthInlineArrayStruct;
 
     private readonly Dictionary<string, IReadOnlyList<ISymbol>> findTypeSymbolIfAlreadyAvailableCache = new(StringComparer.Ordinal);
     private readonly Rental<MetadataReader> metadataReader;
@@ -86,7 +87,8 @@ public partial class Generator : IGenerator, IDisposable
 
         this.canUseSpan = this.compilation?.GetTypeByMetadataName(typeof(Span<>).FullName) is not null;
         this.canCallCreateSpan = this.compilation?.GetTypeByMetadataName(typeof(MemoryMarshal).FullName)?.GetMembers("CreateSpan").Any() is true;
-        this.canUseUnsafeAsRef = this.compilation?.GetTypeByMetadataName(typeof(Unsafe).FullName)?.GetMembers("AsRef").Any() is true;
+        this.canUseUnsafeAsRef = this.compilation?.GetTypeByMetadataName(typeof(Unsafe).FullName)?.GetMembers("Add").Any() is true;
+        this.canUseUnsafeAdd = this.compilation?.GetTypeByMetadataName(typeof(Unsafe).FullName)?.GetMembers("AsRef").Any() is true;
         this.canUseUnsafeNullRef = this.compilation?.GetTypeByMetadataName(typeof(Unsafe).FullName)?.GetMembers("NullRef").Any() is true;
         this.canUseUnmanagedCallersOnlyAttribute = this.compilation?.GetTypeByMetadataName("System.Runtime.InteropServices.UnmanagedCallersOnlyAttribute") is not null;
         this.canUseSetLastPInvokeError = this.compilation?.GetTypeByMetadataName("System.Runtime.InteropServices.Marshal")?.GetMembers("GetLastSystemError").IsEmpty is false;
@@ -110,6 +112,7 @@ public partial class Generator : IGenerator, IDisposable
             AddSymbolIf(this.canUseSpan, "canUseSpan");
             AddSymbolIf(this.canCallCreateSpan, "canCallCreateSpan");
             AddSymbolIf(this.canUseUnsafeAsRef, "canUseUnsafeAsRef");
+            AddSymbolIf(this.canUseUnsafeAdd, "canUseUnsafeAdd");
             AddSymbolIf(this.canUseUnsafeNullRef, "canUseUnsafeNullRef");
             AddSymbolIf(compilation?.GetTypeByMetadataName("System.Drawing.Point") is not null, "canUseSystemDrawing");
             AddSymbolIf(this.IsFeatureAvailable(Feature.InterfaceStaticMembers), "canUseInterfaceStaticMembers");
@@ -149,6 +152,7 @@ public partial class Generator : IGenerator, IDisposable
         this.methodsAndConstantsClassName = IdentifierName(options.ClassName);
 
         FetchTemplate("ComHelpers", this, out this.comHelperClass);
+        FetchTemplate("VariableLengthInlineArray`1", this, out this.variableLengthInlineArrayStruct);
     }
 
     internal enum GeneratingElement

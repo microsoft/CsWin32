@@ -3,10 +3,30 @@ parameters:
   type: object
   default:
     vmImage: windows-2022
+- name: linuxPool
+  type: object
+  default:
+    vmImage: ubuntu-20.04
+- name: macOSPool
+  type: object
+  default:
+    vmImage: macOS-12
 - name: includeMacOS
+  type: boolean
 - name: RunTests
   type: boolean
   default: false
+- name: artifact_names
+  type: object
+  default:
+  - build_logs
+  - coverageResults
+  - deployables
+  - projectAssetsJson
+  - symbols
+  - testResults
+  - test_symbols
+  - Variables
 
 jobs:
 - job: Windows
@@ -14,6 +34,15 @@ jobs:
   pool: ${{ parameters.windowsPool }}
   variables:
     TestFilter: ""
+  ${{ if eq(variables['system.collectionId'], '011b8bdf-6d56-4f87-be0d-0092136884d9') }}:
+    templateContext:
+      outputParentDirectory: $(Build.ArtifactStagingDirectory)
+      outputs:
+      - ${{ each artifact_name in parameters.artifact_names }}:
+        - output: pipelineArtifact
+          displayName: 📢 Publish ${{ artifact_name }}-Windows
+          targetPath: $(Build.ArtifactStagingDirectory)/${{ artifact_name }}-Windows
+          artifactName: ${{ artifact_name }}-Windows
   steps:
   - checkout: self
     fetchDepth: 0 # avoid shallow clone so nbgv can do its work.
@@ -31,11 +60,19 @@ jobs:
 
 - job: Linux
   timeoutInMinutes: 240
-  pool:
-    vmImage: Ubuntu 20.04
+  pool: ${{ parameters.linuxPool }}
   variables:
     TestFilter: "&WindowsOnly!=true"
     Platform: NonWindows
+  ${{ if eq(variables['system.collectionId'], '011b8bdf-6d56-4f87-be0d-0092136884d9') }}:
+    templateContext:
+      outputParentDirectory: $(Build.ArtifactStagingDirectory)
+      outputs:
+      - ${{ each artifact_name in parameters.artifact_names }}:
+        - output: pipelineArtifact
+          displayName: 📢 Publish ${{ artifact_name }}-Linux
+          targetPath: $(Build.ArtifactStagingDirectory)/${{ artifact_name }}-Linux
+          artifactName: ${{ artifact_name }}-Linux
   steps:
   - checkout: self
     fetchDepth: 0 # avoid shallow clone so nbgv can do its work.
@@ -52,11 +89,19 @@ jobs:
 - job: macOS
   condition: ${{ parameters.includeMacOS }}
   timeoutInMinutes: 240
-  pool:
-    vmImage: macOS-12
+  pool: ${{ parameters.macOSPool }}
   variables:
     TestFilter: "&WindowsOnly!=true"
     Platform: NonWindows
+  ${{ if eq(variables['system.collectionId'], '011b8bdf-6d56-4f87-be0d-0092136884d9') }}:
+    templateContext:
+      outputParentDirectory: $(Build.ArtifactStagingDirectory)
+      outputs:
+      - ${{ each artifact_name in parameters.artifact_names }}:
+        - output: pipelineArtifact
+          displayName: 📢 Publish ${{ artifact_name }}-macOS
+          targetPath: $(Build.ArtifactStagingDirectory)/${{ artifact_name }}-macOS
+          artifactName: ${{ artifact_name }}-macOS
   steps:
   - checkout: self
     fetchDepth: 0 # avoid shallow clone so nbgv can do its work.

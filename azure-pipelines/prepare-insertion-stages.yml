@@ -1,27 +1,62 @@
+parameters:
+- name: ArchiveSymbols
+  type: boolean
+  default: true
+
 stages:
 
 - stage: release
   displayName: Publish
   condition: and(succeeded(), eq(dependencies.Build.outputs['Windows.SetPipelineVariables.IsSigned'], 'true'))
   jobs:
-  - job: push
-    displayName: azure-public/winsdk feed
-    pool:
-      vmImage: ubuntu-latest
-    steps:
-    - checkout: none
-    - download: current
-      artifact: deployables-Windows
-      displayName: 🔻 Download deployables-Windows artifact
-    - task: UseDotNet@2
-      displayName: ⚙️ Install .NET SDK
-      inputs:
-        packageType: sdk
-        version: 6.x
-    - task: NuGetAuthenticate@0
-      displayName: 🔏 Authenticate NuGet feeds
-      inputs:
-        nuGetServiceConnections: azure-public/winsdk
-        forceReinstallCredentialProvider: true
-    - script: dotnet nuget push $(Pipeline.Workspace)/deployables-Windows/*.nupkg -s https://pkgs.dev.azure.com/azure-public/winsdk/_packaging/CI/nuget/v3/index.json --api-key azdo --skip-duplicate
-      displayName: 📦 Push nuget packages
+  - ${{ if parameters.ArchiveSymbols }}:
+    - job: symbol_archive
+      displayName: Archive symbols
+      pool: ubuntu-latest
+      steps:
+      - checkout: none
+      - download: current
+        artifact: Variables-Windows
+        displayName: 🔻 Download Variables-Windows artifact
+      - powershell: $(Pipeline.Workspace)/Variables-Windows/_pipelines.ps1
+        displayName: ⚙️ Set pipeline variables based on artifacts
+      - download: current
+        artifact: symbols-legacy
+        displayName: 🔻 Download symbols-legacy artifact
+      - task: MicroBuildArchiveSymbols@4
+        displayName: 🔣 Archive symbols to Symweb
+        inputs:
+          SymbolsFeatureName: $(SymbolsFeatureName)
+          SymbolsProject: VS
+          SymbolsAgentPath: $(Pipeline.Workspace)/symbols-legacy
+          azureSubscription: Symbols Upload (DevDiv)
+
+  - ${{ if true }}: # leave the condition to avoid merge conflicts later.
+    - job: push
+      displayName: azure-public/vs-impl feed
+      ${{ if parameters.ArchiveSymbols }}:
+        dependsOn: symbol_archive
+      pool:
+        name: AzurePipelines-EO
+        demands:
+        - ImageOverride -equals 1ESPT-Ubuntu22.04
+        os: Linux
+      templateContext:
+        outputs:
+        - output: nuget
+          displayName: 📦 Push nuget packages
+          packagesToPush: '$(Pipeline.Workspace)/deployables-Windows/NuGet/*.nupkg'
+          packageParentPath: $(Pipeline.Workspace)/deployables-Windows/NuGet
+          allowPackageConflicts: true
+          nuGetFeedType: external
+          publishFeedCredentials: azure-public/winsdk
+      steps:
+      - checkout: none
+      - download: current
+        artifact: Variables-Windows
+        displayName: 🔻 Download Variables-Windows artifact
+      - powershell: $(Pipeline.Workspace)/Variables-Windows/_pipelines.ps1
+        displayName: ⚙️ Set pipeline variables based on artifacts
+      - download: current
+        artifact: deployables-Windows
+        displayName: 🔻 Download deployables-Windows artifact

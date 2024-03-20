@@ -1,46 +1,19 @@
 parameters:
-- name: ArchiveSymbols
+- name: RealSign
   type: boolean
-  default: true
+  default: false
 
 stages:
 
 - stage: release
   displayName: Publish
-  condition: and(succeeded(), eq(dependencies.Build.outputs['Windows.SetPipelineVariables.IsSigned'], 'true'))
+  condition: and(succeeded(), eq('${{ parameters.RealSign }}', 'true'))
   jobs:
-  - ${{ if parameters.ArchiveSymbols }}:
-    - job: symbol_archive
-      displayName: Archive symbols
-      pool: ubuntu-latest
-      steps:
-      - checkout: none
-      - download: current
-        artifact: Variables-Windows
-        displayName: 🔻 Download Variables-Windows artifact
-      - powershell: $(Pipeline.Workspace)/Variables-Windows/_pipelines.ps1
-        displayName: ⚙️ Set pipeline variables based on artifacts
-      - download: current
-        artifact: symbols-legacy
-        displayName: 🔻 Download symbols-legacy artifact
-      - task: MicroBuildArchiveSymbols@4
-        displayName: 🔣 Archive symbols to Symweb
-        inputs:
-          SymbolsFeatureName: $(SymbolsFeatureName)
-          SymbolsProject: VS
-          SymbolsAgentPath: $(Pipeline.Workspace)/symbols-legacy
-          azureSubscription: Symbols Upload (DevDiv)
-
   - ${{ if true }}: # leave the condition to avoid merge conflicts later.
     - job: push
-      displayName: azure-public/vs-impl feed
-      ${{ if parameters.ArchiveSymbols }}:
-        dependsOn: symbol_archive
+      displayName: azure-public/winsdk feed
       pool:
-        name: AzurePipelines-EO
-        demands:
-        - ImageOverride -equals 1ESPT-Ubuntu22.04
-        os: Linux
+        vmImage: ubuntu-20.04
       templateContext:
         outputs:
         - output: nuget

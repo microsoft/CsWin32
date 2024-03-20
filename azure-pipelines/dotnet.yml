@@ -5,19 +5,22 @@ parameters:
   default: false
 - name: Is1ESPT
   type: boolean
+- name: RealSign
+  type: boolean
+  default: false
 
 steps:
 
 - script: dotnet build -t:build,pack --no-restore -c $(BuildConfiguration) -warnaserror /bl:"$(Build.ArtifactStagingDirectory)/build_logs/build.binlog"
   displayName: 🛠 dotnet build
 
-- ${{ if eq(variables['system.collectionId'], 'cb55739e-4afe-46a3-970f-1b49d8ee7564') }}:
+- ${{ if parameters.RealSign }}:
   - template: ./signstep1.yml
 
 - script: dotnet pack --no-build /p:buildprojectreferences=false -c $(BuildConfiguration) /v:m /bl:"$(Build.ArtifactStagingDirectory)/build_logs/pack.binlog"
   displayName: 📦 dotnet pack
 
-- ${{ if eq(variables['system.collectionId'], 'cb55739e-4afe-46a3-970f-1b49d8ee7564') }}:
+- ${{ if parameters.RealSign }}:
   - template: ./signstep2.yml
 
 - powershell: azure-pipelines/dotnet-test-cloud.ps1 -Configuration $(BuildConfiguration) -Agent $(Agent.JobName) -PublishResults

@@ -79,18 +79,11 @@ extends:
             RealSign: ${{ or(parameters.RealSign, eq(variables['Build.Reason'],'Schedule')) }}
             # ShouldSkipOptimize: ${{ parameters.ShouldSkipOptimize }}
             EnableAPIScan: ${{ and(parameters.EnableCompliance, parameters.EnableAPIScan, ne(variables['Build.Reason'], 'pullRequest')) }}
-            windowsPool:
-              name: 1es-managed-pool-ss
-              os: windows
+            windowsPool: Azure-Pipelines-1ESPT-ExDShared
             linuxPool:
-              name: AzurePipelines-EO
-              demands:
-              - ImageOverride -equals 1ESPT-Ubuntu22.04
-              os: Linux
-            macOSPool:
-              name: Azure Pipelines
-              vmImage: macOS-12
-              os: macOS
+              name: Azure-Pipelines-1ESPT-ExDShared
+              image: ubuntu-2004
+              os: linux
             EnableMacOSBuild: ${{ parameters.EnableMacOSBuild }}
             RunTests: ${{ parameters.RunTests }}
       - template: /azure-pipelines/prepare-insertion-stages.yml@self
@@ -116,14 +109,9 @@ extends:
             EnableAPIScan: ${{ and(parameters.EnableCompliance, parameters.EnableAPIScan, ne(variables['Build.Reason'], 'pullRequest')) }}
             windowsPool: Azure-Pipelines-1ESPT-ExDShared
             linuxPool:
-              name: AzurePipelines-EO
-              demands:
-              - ImageOverride -equals 1ESPT-Ubuntu22.04
-              os: Linux
-            macOSPool:
-              name: Azure Pipelines
-              vmImage: macOS-12
-              os: macOS
+              name: Azure-Pipelines-1ESPT-ExDShared
+              image: ubuntu-2004
+              os: linux
             EnableMacOSBuild: ${{ parameters.EnableMacOSBuild }}
             RunTests: ${{ parameters.RunTests }}
       - template: /azure-pipelines/prepare-insertion-stages.yml@self

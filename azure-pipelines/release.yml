@@ -3,9 +3,9 @@ pr: none
 
 resources:
   repositories:
-  - repository: MicroBuildTemplate
+  - repository: 1esPipelines
     type: git
-    name: 1ESPipelineTemplates/MicroBuildTemplate
+    name: 1ESPipelineTemplates/1ESPipelineTemplates
     ref: refs/tags/release
   pipelines:
   - pipeline: CI
@@ -19,7 +19,7 @@ variables:
 - group: CsWin32 Publishing secrets
 
 extends:
-  template: azure-pipelines/MicroBuild.1ES.Official.yml@MicroBuildTemplate
+  template: v1/1ES.Official.PipelineTemplate.yml@1esPipelines
   parameters:
     sdl:
       sourceAnalysisPool: VSEngSS-MicroBuild2022-1ES

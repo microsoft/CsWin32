@@ -234,5 +234,6 @@ jobs:
       parameters:
         windowsPool: ${{ parameters.windowsPool }}
 
-- ${{ if parameters.RunTests }}:
+  # Run the integration tests, but only on azure-public so we don't have to worry about multiple pools
+- ${{ if and(parameters.RunTests, not(parameters.Is1ESPT)) }}:
   - template: integration-test.yml

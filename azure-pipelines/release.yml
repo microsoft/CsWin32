@@ -21,7 +21,7 @@ extends:
   template: v1/1ES.Official.PipelineTemplate.yml@1esPipelines
   parameters:
     sdl:
-      sourceAnalysisPool: VSEngSS-MicroBuild2022-1ES
+      sourceAnalysisPool: Azure-Pipelines-1ESPT-ExDShared
 
     stages:
     - stage: release

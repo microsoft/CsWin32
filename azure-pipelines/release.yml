@@ -29,7 +29,9 @@ extends:
       jobs:
       - job: release
         pool:
-          vmImage: ubuntu-20.04
+          name: Azure-Pipelines-1ESPT-ExDShared
+          image: ubuntu-2004
+          os: linux
         templateContext:
           outputs:
           - output: nuget

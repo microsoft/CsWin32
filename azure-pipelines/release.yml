@@ -16,7 +16,6 @@ resources:
 
 variables:
 - template: GlobalVariables.yml
-- group: CsWin32 Publishing secrets
 
 extends:
   template: v1/1ES.Official.PipelineTemplate.yml@1esPipelines

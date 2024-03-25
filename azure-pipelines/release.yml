@@ -16,20 +16,21 @@ resources:
 
 variables:
 - template: GlobalVariables.yml
-- group: CsWin32 Publishing secrets
 
 extends:
   template: v1/1ES.Official.PipelineTemplate.yml@1esPipelines
   parameters:
     sdl:
-      sourceAnalysisPool: VSEngSS-MicroBuild2022-1ES
+      sourceAnalysisPool: Azure-Pipelines-1ESPT-ExDShared
 
     stages:
     - stage: release
       jobs:
       - job: release
         pool:
-          vmImage: ubuntu-20.04
+          name: Azure-Pipelines-1ESPT-ExDShared
+          image: ubuntu-2004
+          os: linux
         templateContext:
           outputs:
           - output: nuget

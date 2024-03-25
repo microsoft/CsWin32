@@ -35,7 +35,7 @@ extends:
   template: azure-pipelines/MicroBuild.1ES.Official.yml@MicroBuildTemplate
   parameters:
     sdl:
-      sourceAnalysisPool: VSEngSS-MicroBuild2022-1ES
+      sourceAnalysisPool: Azure-Pipelines-1ESPT-ExDShared
 
     stages:
     - stage: archive

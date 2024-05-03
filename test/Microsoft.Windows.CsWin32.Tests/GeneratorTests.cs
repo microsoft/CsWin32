@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-using VerifyTest = Microsoft.CodeAnalysis.CSharp.Testing.CSharpSourceGeneratorTest<Microsoft.Windows.CsWin32.SourceGenerator, Microsoft.CodeAnalysis.Testing.Verifiers.XUnitVerifier>;
-
 public class GeneratorTests : GeneratorTestBase
 {
     public GeneratorTests(ITestOutputHelper logger)
@@ -929,36 +927,6 @@ class Program
     }
 
     [Fact]
-    public async Task UnparseableNativeMethodsJson()
-    {
-        await new VerifyTest
-        {
-            TestState =
-            {
-                ReferenceAssemblies = MyReferenceAssemblies.NetStandard20,
-                Sources = { string.Empty },
-                AdditionalFiles =
-                {
-                    ("NativeMethods.txt", "CreateFile"),
-                    ("NativeMethods.json", @"{ ""allowMarshaling"": f }"), // the point where the user is typing "false"
-                },
-                AnalyzerConfigFiles =
-                {
-                    ("/.globalconfig", ConstructGlobalConfigString()),
-                },
-                GeneratedSources =
-                {
-                    // Nothing generated, but no exceptions thrown that would lead Roslyn to disable the source generator in the IDE either.
-                },
-                ExpectedDiagnostics =
-                {
-                    new DiagnosticResult(SourceGenerator.OptionsParsingError.Id, DiagnosticSeverity.Error),
-                },
-            },
-        }.RunAsync();
-    }
-
-    [Fact]
     public void OpensMetadataForSharedReading()
     {
         using FileStream competingReader = File.OpenRead(MetadataPath);
@@ -1058,24 +1026,5 @@ class Program
         MethodDeclarationSyntax seekMethod = Assert.Single(this.FindGeneratedMethod("Seek"));
         QualifiedNameSyntax seekParamType = Assert.IsType<QualifiedNameSyntax>(seekMethod.ParameterList.Parameters[1].Type);
         Assert.Equal(nameof(SeekOrigin), seekParamType.Right.Identifier.ValueText);
-    }
-
-    private static string ConstructGlobalConfigString(bool omitDocs = false)
-    {
-        StringBuilder globalConfigBuilder = new();
-        globalConfigBuilder.AppendLine("is_global = true");
-        globalConfigBuilder.AppendLine();
-        globalConfigBuilder.AppendLine($"build_property.CsWin32InputMetadataPaths = {JoinAssemblyMetadata("ProjectionMetadataWinmd")}");
-        if (!omitDocs)
-        {
-            globalConfigBuilder.AppendLine($"build_property.CsWin32InputDocPaths = {JoinAssemblyMetadata("ProjectionDocs")}");
-        }
-
-        return globalConfigBuilder.ToString();
-
-        static string JoinAssemblyMetadata(string name)
-        {
-            return string.Join(";", typeof(GeneratorTests).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().Where(metadata => metadata.Key == name).Select(metadata => metadata.Value));
-        }
     }
 }

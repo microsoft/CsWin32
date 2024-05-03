@@ -27,4 +27,46 @@ public class SourceGeneratorTests
             },
         }.RunAsync();
     }
+
+    /// <summary>
+    /// Asserts that no warning is produced even without the required reference, when no source is being generated anyway.
+    /// </summary>
+    [Fact]
+    public async Task MissingSystemMemoryReference_NoGeneratedCode()
+    {
+        await new VerifyCS.Test
+        {
+            ReferenceAssemblies = ReferenceAssemblies.NetFramework.Net472.Default,
+        }.RunAsync();
+    }
+
+    /// <summary>
+    /// Asserts that a warning is produced when targeting a framework that our generated code requires the System.Memory reference for, but the reference is missing.
+    /// </summary>
+    [Fact]
+    public async Task MissingSystemMemoryReference_WithGeneratedCode_NetFx472()
+    {
+        await new VerifyCS.Test
+        {
+            ReferenceAssemblies = ReferenceAssemblies.NetFramework.Net472.Default,
+            NativeMethodsTxt = "CreateFile",
+            ExpectedDiagnostics =
+            {
+                new DiagnosticResult(SourceGenerator.MissingRecommendedReference.Id, DiagnosticSeverity.Warning),
+            },
+        }.RunAsync();
+    }
+
+    /// <summary>
+    /// Asserts that when targeting a framework that implicitly includes the references we need, no warning is generated.
+    /// </summary>
+    [Fact]
+    public async Task MissingSystemMemoryReference_WithGeneratedCode_Net60()
+    {
+        await new VerifyCS.Test
+        {
+            ReferenceAssemblies = ReferenceAssemblies.Net.Net60,
+            NativeMethodsTxt = "CreateFile",
+        }.RunAsync();
+    }
 }

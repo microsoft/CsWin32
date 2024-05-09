@@ -27,4 +27,4 @@ steps:
     SessionTimeout: 60
     MaxConcurrency: 50
     MaxRetryAttempts: 5
-  condition: and(succeeded(), eq(variables['Agent.OS'], 'Windows_NT'), eq(variables['IsSigned'], 'true'))
+  condition: and(succeeded(), eq(variables['Agent.OS'], 'Windows_NT'))

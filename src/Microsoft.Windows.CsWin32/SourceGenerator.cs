@@ -122,6 +122,14 @@ public class SourceGenerator : ISourceGenerator
         "Configuration",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor MissingRecommendedReference = new(
+        "PInvoke009",
+        "Missing package reference",
+        "Missing reference to recommended package: \"{0}\"",
+        "Configuration",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
 #pragma warning restore CS1591 // Missing XML comment for publicly visible type or member
 
     private const string NativeMethodsTxtAdditionalFileName = "NativeMethods.txt";
@@ -183,6 +191,11 @@ public class SourceGenerator : ISourceGenerator
         if (!compilation.Options.AllowUnsafe)
         {
             context.ReportDiagnostic(Diagnostic.Create(UnsafeCodeRequired, location: null));
+        }
+
+        if (compilation.GetTypeByMetadataName("System.Memory`1") is null)
+        {
+            context.ReportDiagnostic(Diagnostic.Create(MissingRecommendedReference, location: null, "System.Memory"));
         }
 
         Docs? docs = ParseDocs(context);

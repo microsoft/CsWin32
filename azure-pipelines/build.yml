@@ -1,12 +1,95 @@
 parameters:
+##### The following parameters are not set by other YAML files that import this one,
+##### but we use parameters because they support rich types and defaults.
+##### Feel free to adjust their default value as needed.
+
+# Whether this repo uses OptProf to optimize the built binaries.
+- name: EnableOptProf
+  type: boolean
+  default: false
+# Whether this repo is localized.
+- name: EnableLocalization
+  type: boolean
+  default: false
+# Whether to run `dotnet format` as part of the build to ensure code style consistency.
+# This is just one of a a few mechanisms to enforce code style consistency.
+- name: EnableDotNetFormatCheck
+  type: boolean
+  default: false # false positives break the build
+# This lists the names of the artifacts that will be published *from every OS build agent*.
+# Any new azure-pipelines/artifacts/*.ps1 script needs to be added to this list.
+# If an artifact is only generated or collected on one OS, it should NOT be listed here,
+# but should be manually added to the `outputs:` field in the appropriate OS job.
+- name: artifact_names
+  type: object
+  default:
+    - build_logs
+    - coverageResults
+    - deployables
+    - projectAssetsJson
+    - symbols
+    - testResults
+    - test_symbols
+    - Variables
+# The Enable*Build parameters turn non-Windows agents on or off.
+# Their default value should be based on whether the build and tests are expected/required to pass on that platform.
+# Callers (e.g. Official.yml) *may* expose these parameters at queue-time in order to turn OFF optional agents.
+- name: EnableLinuxBuild
+  type: boolean
+  default: true
+- name: EnableMacOSBuild
+  type: boolean
+  default: true
+
+##### 👆🏼 You MAY change the defaults above.
+##### 👇🏼 You should NOT change the defaults below.
+
+##### The following parameters are expected to be set by other YAML files that import this one.
+##### Those without defaults require explicit values to be provided by our importers.
+
+# Indicates whether the entrypoint file is 1ESPT compliant. Use this parameter to switch between publish tasks to fit 1ES or non-1ES needs.
+- name: Is1ESPT
+  type: boolean
+
+- name: RealSign
+  type: boolean
+  default: false
+
+# Whether this particular run is an OptProf profiling run.
+# This is used to skip unit tests and other non-essential work to improve reliability of the OptProf pipeline.
+- name: IsOptProf
+  type: boolean
+  default: false
+
+- name: RunTests
+  type: boolean
+  default: true
+
+- name: EnableAPIScan
+  type: boolean
+  default: false
+
+# This parameter exists to provide a workaround to get a build out even when no OptProf profiling outputs can be found.
+# Entrypoint yaml files like official.yml should expose this as a queue-time setting when EnableOptProf is true in this file.
+# The OptProf.yml entrypoint sets this parameter to true so that collecting profile data isn't blocked by a prior lack of profile data.
+- name: ShouldSkipOptimize
+  type: boolean
+  default: false
+
+# The pool parameters are set to defaults that work in the azure-public AzDO account.
+# They are overridden by callers for the devdiv AzDO account to use 1ES compliant pools.
 - name: windowsPool
   type: object
   default:
     vmImage: windows-2022
-- name: includeMacOS
-- name: RunTests
-  type: boolean
-  default: false
+- name: linuxPool
+  type: object
+  default:
+    vmImage: ubuntu-20.04
+- name: macOSPool
+  type: object
+  default:
+    vmImage: macOS-12
 
 jobs:
 - job: Windows
@@ -14,80 +97,143 @@ jobs:
   pool: ${{ parameters.windowsPool }}
   variables:
     TestFilter: ""
+  ${{ if parameters.Is1ESPT }}:
+    templateContext:
+      outputParentDirectory: $(Build.ArtifactStagingDirectory)
+      outputs:
+      - ${{ each artifact_name in parameters.artifact_names }}:
+        - ${{ if or(ne(artifact_name, 'testResults'), parameters.RunTests) }}:
+          - output: pipelineArtifact
+            displayName: 📢 Publish ${{ artifact_name }}-Windows
+            targetPath: $(Build.ArtifactStagingDirectory)/${{ artifact_name }}-Windows
+            artifactName: ${{ artifact_name }}-Windows
+            condition: succeededOrFailed()
+      - ${{ if parameters.EnableLocalization }}:
+        - output: pipelineArtifact
+          displayName: 📢 Publish LocBin-Windows
+          targetPath: $(Build.ArtifactStagingDirectory)/LocBin-Windows
+          artifactName: LocBin-Windows
+      - ${{ if parameters.EnableAPIScan }}:
+        - output: pipelineArtifact
+          displayName: 📢 Publish APIScanInputs
+          targetPath: $(Build.ArtifactStagingDirectory)/APIScanInputs-Windows
+          artifactName: APIScanInputs
   steps:
-  - checkout: self
-    fetchDepth: 0 # avoid shallow clone so nbgv can do its work.
-    clean: true
-    submodules: true
+  - ${{ if not(parameters.Is1ESPT) }}:
+    - checkout: self
+      fetchDepth: 0 # avoid shallow clone so nbgv can do its work.
+      clean: true
+      submodules: true
+    - ${{ if parameters.EnableOptProf }}:
+      - powershell: Write-Host "##vso[task.setvariable variable=PROFILINGINPUTSDROPNAME]$(azure-pipelines/variables/ProfilingInputsDropName.ps1)"
+        displayName: ⚙ Set ProfilingInputsDropName for optprof
 
   - template: install-dependencies.yml
 
   - script: dotnet nbgv cloud -ca
     displayName: ⚙ Set build number
+    name: nbgv
 
   - template: dotnet.yml
     parameters:
+      Is1ESPT: ${{ parameters.Is1ESPT }}
       RunTests: ${{ parameters.RunTests }}
+      IsOptProf: ${{ parameters.IsOptProf }}
+      RealSign: ${{ parameters.RealSign }}
 
-- job: Linux
-  timeoutInMinutes: 240
-  pool:
-    vmImage: Ubuntu 20.04
-  variables:
-    TestFilter: "&WindowsOnly!=true"
-    Platform: NonWindows
-  steps:
-  - checkout: self
-    fetchDepth: 0 # avoid shallow clone so nbgv can do its work.
-    clean: true
-    submodules: true
-  - template: install-dependencies.yml
-  - template: dotnet.yml
-    parameters:
-      RunTests: ${{ parameters.RunTests }}
-  - script: dotnet format --verify-no-changes -v diagnostic
-    displayName: 💅 Verify formatted code
-    enabled: false # it fails
+  - ${{ if and(parameters.EnableDotNetFormatCheck, not(parameters.EnableLinuxBuild)) }}:
+    - script: dotnet format --verify-no-changes --no-restore
+      displayName: 💅 Verify formatted code
 
-- job: macOS
-  condition: ${{ parameters.includeMacOS }}
-  timeoutInMinutes: 240
-  pool:
-    vmImage: macOS-12
-  variables:
-    TestFilter: "&WindowsOnly!=true"
-    Platform: NonWindows
-  steps:
-  - checkout: self
-    fetchDepth: 0 # avoid shallow clone so nbgv can do its work.
-    clean: true
-    submodules: true
-  - template: install-dependencies.yml
-  - template: dotnet.yml
-    parameters:
-      RunTests: ${{ parameters.RunTests }}
+- ${{ if not(parameters.IsOptProf) }}:
+  - ${{ if parameters.EnableLinuxBuild }}:
+    - job: Linux
+      pool: ${{ parameters.linuxPool }}
+      variables:
+        TestFilter: "&WindowsOnly!=true"
+        Platform: NonWindows
+      ${{ if parameters.Is1ESPT }}:
+        templateContext:
+          outputParentDirectory: $(Build.ArtifactStagingDirectory)
+          outputs:
+          - ${{ each artifact_name in parameters.artifact_names }}:
+            - ${{ if or(ne(artifact_name, 'testResults'), parameters.RunTests) }}:
+              - output: pipelineArtifact
+                displayName: 📢 Publish ${{ artifact_name }}-Linux
+                targetPath: $(Build.ArtifactStagingDirectory)/${{ artifact_name }}-Linux
+                artifactName: ${{ artifact_name }}-Linux
+                condition: succeededOrFailed()
+      steps:
+      - checkout: self
+        fetchDepth: 0 # avoid shallow clone so nbgv can do its work.
+        clean: true
+      - template: install-dependencies.yml
+      - template: dotnet.yml
+        parameters:
+          Is1ESPT: ${{ parameters.Is1ESPT }}
+          RunTests: ${{ parameters.RunTests }}
+      - ${{ if parameters.EnableDotNetFormatCheck }}:
+        - script: dotnet format --verify-no-changes --no-restore
+          displayName: 💅 Verify formatted code
 
-- job: WrapUp
-  dependsOn:
-  - Windows
-  - Linux
-  - macOS
-  pool: ${{ parameters.windowsPool }} # Use Windows agent because PublishSymbols task requires it (https://github.com/microsoft/azure-pipelines-tasks/issues/13821).
-  condition: succeededOrFailed()
-  steps:
-  - checkout: self
-    fetchDepth: 0 # avoid shallow clone so nbgv can do its work.
-    clean: true
-  - template: install-dependencies.yml
-    parameters:
-      initArgs: -NoRestore
-  - template: publish-symbols.yml
-    parameters:
-      includeMacOS: ${{ parameters.includeMacOS }}
-  - ${{ if parameters.RunTests }}:
-    - template: publish-codecoverage.yml
+  - ${{ if parameters.EnableMacOSBuild }}:
+    - job: macOS
+      pool: ${{ parameters.macOSPool }}
+      variables:
+        TestFilter: "&WindowsOnly!=true"
+        Platform: NonWindows
+      ${{ if parameters.Is1ESPT }}:
+        templateContext:
+          outputParentDirectory: $(Build.ArtifactStagingDirectory)
+          outputs:
+          - ${{ each artifact_name in parameters.artifact_names }}:
+            - ${{ if or(ne(artifact_name, 'testResults'), parameters.RunTests) }}:
+              - output: pipelineArtifact
+                displayName: 📢 Publish ${{ artifact_name }}-macOS
+                targetPath: $(Build.ArtifactStagingDirectory)/${{ artifact_name }}-macOS
+                artifactName: ${{ artifact_name }}-macOS
+                condition: succeededOrFailed()
+      steps:
+      - checkout: self
+        fetchDepth: 0 # avoid shallow clone so nbgv can do its work.
+        clean: true
+      - template: install-dependencies.yml
+      - template: dotnet.yml
+        parameters:
+          Is1ESPT: ${{ parameters.Is1ESPT }}
+          RunTests: ${{ parameters.RunTests }}
+
+  - job: WrapUp
+    dependsOn:
+    - Windows
+    - ${{ if parameters.EnableLinuxBuild }}:
+      - Linux
+    - ${{ if parameters.EnableMacOSBuild }}:
+      - macOS
+    pool: ${{ parameters.windowsPool }} # Use Windows agent because PublishSymbols task requires it (https://github.com/microsoft/azure-pipelines-tasks/issues/13821).
+    condition: succeededOrFailed()
+    steps:
+    - checkout: self
+      fetchDepth: 0 # avoid shallow clone so nbgv can do its work.
+      clean: true
+    - template: install-dependencies.yml
       parameters:
-        includeMacOS: ${{ parameters.includeMacOS }}
+        initArgs: -NoRestore
+    - template: publish-symbols.yml
+      parameters:
+        EnableLinuxBuild: ${{ parameters.EnableLinuxBuild }}
+        EnableMacOSBuild: ${{ parameters.EnableMacOSBuild }}
+    - ${{ if parameters.RunTests }}:
+      - template: publish-codecoverage.yml
+        parameters:
+          EnableLinuxBuild: ${{ parameters.EnableLinuxBuild }}
+          EnableMacOSBuild: ${{ parameters.EnableMacOSBuild }}
 
-- ${{ if parameters.RunTests }}:
+  - ${{ if parameters.EnableAPIScan }}:
+    - template: apiscan.yml
+      parameters:
+        windowsPool: ${{ parameters.windowsPool }}
+
+  # Run the integration tests, but only on azure-public so we don't have to worry about multiple pools
+- ${{ if and(parameters.RunTests, not(parameters.Is1ESPT)) }}:
   - template: integration-test.yml

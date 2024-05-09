@@ -1,33 +1,52 @@
 parameters:
-  RunTests:
+- name: RunTests
+- name: IsOptProf
+  type: boolean
+  default: false
+- name: Is1ESPT
+  type: boolean
+- name: RealSign
+  type: boolean
+  default: false
 
 steps:
 
 - script: dotnet build -t:build,pack --no-restore -c $(BuildConfiguration) -warnaserror /bl:"$(Build.ArtifactStagingDirectory)/build_logs/build.binlog"
   displayName: 🛠 dotnet build
 
-- ${{ if eq(variables['system.collectionId'], 'cb55739e-4afe-46a3-970f-1b49d8ee7564') }}:
+- ${{ if parameters.RealSign }}:
   - template: ./signstep1.yml
 
 - script: dotnet pack --no-build /p:buildprojectreferences=false -c $(BuildConfiguration) /v:m /bl:"$(Build.ArtifactStagingDirectory)/build_logs/pack.binlog"
   displayName: 📦 dotnet pack
 
-- ${{ if eq(variables['system.collectionId'], 'cb55739e-4afe-46a3-970f-1b49d8ee7564') }}:
+- ${{ if parameters.RealSign }}:
   - template: ./signstep2.yml
 
 - powershell: azure-pipelines/dotnet-test-cloud.ps1 -Configuration $(BuildConfiguration) -Agent $(Agent.JobName) -PublishResults
   displayName: 🧪 dotnet test
   condition: and(succeeded(), ${{ parameters.RunTests }})
 
+- ${{ if parameters.IsOptProf }}:
+  # We have to artifically run this script so that the extra .nupkg is produced for variables/InsertConfigValues.ps1 to notice.
+  - powershell: azure-pipelines\artifacts\VSInsertion.ps1
+    displayName: 🔧 Prepare VSInsertion artifact
+
 - powershell: azure-pipelines/variables/_pipelines.ps1
   failOnStderr: true
   displayName: ⚙ Update pipeline variables based on build outputs
   condition: succeededOrFailed()
 
-- powershell: azure-pipelines/artifacts/_pipelines.ps1 -ArtifactNameSuffix "-$(Agent.JobName)" -Verbose
-  failOnStderr: true
-  displayName: 📢 Publish artifacts
-  condition: succeededOrFailed()
+- ${{ if parameters.Is1ESPT }}:
+  - powershell: azure-pipelines/artifacts/_pipelines.ps1 -StageOnly -AvoidSymbolicLinks -ArtifactNameSuffix "-$(Agent.JobName)" -Verbose
+    failOnStderr: true
+    displayName: 📢 Stage artifacts
+    condition: succeededOrFailed()
+- ${{ else }}:
+  - powershell: azure-pipelines/artifacts/_pipelines.ps1 -ArtifactNameSuffix "-$(Agent.JobName)" -Verbose
+    failOnStderr: true
+    displayName: 📢 Publish artifacts
+    condition: succeededOrFailed()
 
 - ${{ if and(ne(variables['codecov_token'], ''), parameters.RunTests) }}:
   - powershell: |

@@ -9,7 +9,7 @@
     <IncludeBuildOutput>false</IncludeBuildOutput>
     <IncludeSymbols>false</IncludeSymbols>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
-    <NoWarn>$(NoWarn);NU5128;NU5127</NoWarn>
+    <NoWarn>$(NoWarn);NU5128;NU5127;NU5104</NoWarn>
     <NuSpecFile>Microsoft.Windows.CsWin32.nuspec</NuSpecFile>
   </PropertyGroup>
 

@@ -7,7 +7,7 @@ internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleIn
 {
     public override string ToString() => this.ToTypeSyntaxForDisplay().ToString();
 
-    internal override TypeSyntaxAndMarshaling ToTypeSyntax(TypeSyntaxSettings inputs, Generator.GeneratingElement forElement, CustomAttributeHandleCollection? customAttributes, ParameterAttributes parameterAttributes)
+    internal override TypeSyntaxAndMarshaling ToTypeSyntax(TypeSyntaxSettings inputs, Generator.GeneratingElement forElement, CustomAttributeHandleCollection? customAttributes, ParameterAttributes parameterAttributes = default)
     {
         Generator.NativeArrayInfo? nativeArrayInfo = customAttributes.HasValue ? inputs.Generator?.FindNativeArrayInfoAttribute(customAttributes.Value) : null;
 

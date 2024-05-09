@@ -143,4 +143,13 @@ public class HandleTests : GeneratorTestBase
         this.GenerateApi("HANDLE");
         Assert.True(this.IsMethodGenerated("CloseHandle"));
     }
+
+    [Theory]
+    [InlineData("ICOpen")]
+    [InlineData("CM_Register_Notification")]
+    [InlineData("AllocateAndInitializeSid")]
+    public void ReleaseMethodGeneratedWithUncommonReturnType(string api)
+    {
+        this.GenerateApi(api);
+    }
 }

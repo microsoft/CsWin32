@@ -205,8 +205,9 @@ public partial class Generator
         return argExpressions;
     }
 
-    private ObjectCreationExpressionSyntax? CreateConstantViaCtor(List<ReadOnlyMemory<char>> args, TypeSyntax targetType, TypeDefinition targetTypeDef)
+    private ObjectCreationExpressionSyntax? CreateConstantViaCtor(List<ReadOnlyMemory<char>> args, TypeSyntax targetType, TypeDefinition targetTypeDef, out bool unsafeRequired)
     {
+        unsafeRequired = false;
         foreach (MethodDefinitionHandle methodDefHandle in targetTypeDef.GetMethods())
         {
             MethodDefinition methodDef = this.Reader.GetMethodDefinition(methodDefHandle);
@@ -218,7 +219,8 @@ public partial class Generator
                 for (int i = 0; i < args.Count; i++)
                 {
                     TypeHandleInfo parameterTypeInfo = ctorSignature.ParameterTypes[i];
-                    argExpressions[i] = Argument(this.CreateConstant(args[i], parameterTypeInfo));
+                    argExpressions[i] = Argument(this.CreateConstant(args[i], parameterTypeInfo, out bool thisRequiresUnsafe));
+                    unsafeRequired |= thisRequiresUnsafe;
                     i++;
                 }
 
@@ -229,8 +231,9 @@ public partial class Generator
         return null;
     }
 
-    private ObjectCreationExpressionSyntax? CreateConstantByField(List<ReadOnlyMemory<char>> args, TypeSyntax targetType, TypeDefinition targetTypeDef)
+    private ObjectCreationExpressionSyntax? CreateConstantByField(List<ReadOnlyMemory<char>> args, TypeSyntax targetType, TypeDefinition targetTypeDef, out bool unsafeRequired)
     {
+        unsafeRequired = false;
         if (targetTypeDef.GetFields().Count != args.Count)
         {
             return null;
@@ -246,7 +249,8 @@ public partial class Generator
             fieldAssignmentExpressions[i] = AssignmentExpression(
                 SyntaxKind.SimpleAssignmentExpression,
                 IdentifierName(fieldName),
-                this.CreateConstant(args[i], fieldTypeInfo));
+                this.CreateConstant(args[i], fieldTypeInfo, out bool thisRequiresUnsafe));
+            unsafeRequired |= thisRequiresUnsafe;
             i++;
         }
 
@@ -255,18 +259,20 @@ public partial class Generator
             .WithInitializer(InitializerExpression(SyntaxKind.ObjectInitializerExpression, SeparatedList<ExpressionSyntax>()).AddExpressions(fieldAssignmentExpressions));
     }
 
-    private ExpressionSyntax CreateConstant(ReadOnlyMemory<char> argsAsString, TypeHandleInfo targetType)
+    private ExpressionSyntax CreateConstant(ReadOnlyMemory<char> argsAsString, TypeHandleInfo targetType, out bool unsafeRequired)
     {
+        unsafeRequired = targetType is PointerTypeHandleInfo;
         return targetType switch
         {
             ArrayTypeHandleInfo { ElementType: PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.Byte } } pointerType => this.CreateByteArrayConstant(argsAsString),
             PrimitiveTypeHandleInfo primitiveType => ToExpressionSyntax(primitiveType.PrimitiveTypeCode, argsAsString),
-            HandleTypeHandleInfo handleType => this.CreateConstant(argsAsString, targetType.ToTypeSyntax(this.fieldTypeSettings, GeneratingElement.Constant, null).Type, (TypeReferenceHandle)handleType.Handle),
+            HandleTypeHandleInfo handleType => this.CreateConstant(argsAsString, targetType.ToTypeSyntax(this.fieldTypeSettings, GeneratingElement.Constant, null).Type, (TypeReferenceHandle)handleType.Handle, out unsafeRequired),
+            PointerTypeHandleInfo pointerType => CastExpression(pointerType.ToTypeSyntax(this.fieldTypeSettings, GeneratingElement.Constant, null).Type, ParenthesizedExpression(ToExpressionSyntax(PrimitiveTypeCode.UInt64, argsAsString))),
             _ => throw new GenerationFailedException($"Unsupported constant type: {targetType}"),
         };
     }
 
-    private ExpressionSyntax CreateConstant(ReadOnlyMemory<char> argsAsString, TypeSyntax targetType, TypeReferenceHandle targetTypeRefHandle)
+    private ExpressionSyntax CreateConstant(ReadOnlyMemory<char> argsAsString, TypeSyntax targetType, TypeReferenceHandle targetTypeRefHandle, out bool unsafeRequired)
     {
         if (!this.TryGetTypeDefHandle(targetTypeRefHandle, out TypeDefinitionHandle targetTypeDefHandle))
         {
@@ -275,6 +281,7 @@ public partial class Generator
             if (this.Reader.StringComparer.Equals(typeRef.Name, "Guid"))
             {
                 List<ReadOnlyMemory<char>> guidArgs = SplitConstantArguments(argsAsString);
+                unsafeRequired = false;
                 return this.CreateGuidConstant(guidArgs);
             }
 
@@ -287,8 +294,8 @@ public partial class Generator
         List<ReadOnlyMemory<char>> args = SplitConstantArguments(argsAsString);
 
         ObjectCreationExpressionSyntax? result =
-            this.CreateConstantViaCtor(args, targetType, typeDef) ??
-            this.CreateConstantByField(args, targetType, typeDef);
+            this.CreateConstantViaCtor(args, targetType, typeDef, out unsafeRequired) ??
+            this.CreateConstantByField(args, targetType, typeDef, out unsafeRequired);
 
         return result ?? throw new GenerationFailedException($"Unable to construct constant value given {args.Count} fields or constructor arguments.");
     }
@@ -328,14 +335,15 @@ public partial class Generator
         return ObjectCreationExpression(GuidTypeSyntax).AddArgumentListArguments(ctorArgs.Select(t => Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, t))).ToArray());
     }
 
-    private ExpressionSyntax CreateConstant(CustomAttribute constantAttribute, TypeHandleInfo targetType)
+    private ExpressionSyntax CreateConstant(CustomAttribute constantAttribute, TypeHandleInfo targetType, out bool unsafeRequired)
     {
         TypeReferenceHandle targetTypeRefHandle = (TypeReferenceHandle)((HandleTypeHandleInfo)targetType).Handle;
         CustomAttributeValue<TypeSyntax> args = constantAttribute.DecodeValue(CustomAttributeTypeProvider.Instance);
         return this.CreateConstant(
             ((string)args.FixedArguments[0].Value!).AsMemory(),
             targetType.ToTypeSyntax(this.fieldTypeSettings, GeneratingElement.Constant, null).Type,
-            targetTypeRefHandle);
+            targetTypeRefHandle,
+            out unsafeRequired);
     }
 
     private FieldDeclarationSyntax DeclareConstant(FieldDefinition fieldDef)
@@ -346,12 +354,12 @@ public partial class Generator
             TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null) with { IsConstantField = true };
             CustomAttributeHandleCollection customAttributes = fieldDef.GetCustomAttributes();
             TypeSyntaxAndMarshaling fieldType = fieldTypeInfo.ToTypeSyntax(this.fieldTypeSettings, GeneratingElement.Constant, customAttributes);
+            bool requiresUnsafe = false;
             ExpressionSyntax value =
                 fieldDef.GetDefaultValue() is { IsNil: false } constantHandle ? ToExpressionSyntax(this.Reader, constantHandle) :
                 this.FindInteropDecorativeAttribute(customAttributes, nameof(GuidAttribute)) is CustomAttribute guidAttribute ? GuidValue(guidAttribute) :
-                this.FindInteropDecorativeAttribute(customAttributes, "ConstantAttribute") is CustomAttribute constantAttribute ? this.CreateConstant(constantAttribute, fieldTypeInfo) :
+                this.FindInteropDecorativeAttribute(customAttributes, "ConstantAttribute") is CustomAttribute constantAttribute ? this.CreateConstant(constantAttribute, fieldTypeInfo, out requiresUnsafe) :
                 throw new NotSupportedException("Unsupported constant: " + name);
-            bool requiresUnsafe = false;
             if (fieldType.Type is not PredefinedTypeSyntax && value is not ObjectCreationExpressionSyntax)
             {
                 if (fieldTypeInfo is HandleTypeHandleInfo handleFieldTypeInfo && this.IsHandle(handleFieldTypeInfo.Handle, out _))

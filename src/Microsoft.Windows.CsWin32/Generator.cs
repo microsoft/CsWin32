@@ -1006,7 +1006,7 @@ public partial class Generator : IGenerator, IDisposable
                     {
                         AssemblyReference assemblyRef = this.Reader.GetAssemblyReference((AssemblyReferenceHandle)typeRef.ResolutionScope);
                         string scope = this.Reader.GetString(assemblyRef.Name);
-                        throw new GenerationFailedException($"Input metadata file \"{scope}\" has not been provided.");
+                        throw new GenerationFailedException($"Input metadata file \"{scope}\" has not been provided, or is referenced at a version that is lacking the type \"{metadataName}\".");
                     }
                 }
             }

@@ -19,6 +19,7 @@ public class ConstantsTests : GeneratorTestBase
     [InlineData("X509_CERT")] // A constant defined as PCSTR
     [InlineData("RT_CURSOR")] // PCWSTR constant
     [InlineData("HBMMENU_POPUP_RESTORE")] // A HBITMAP handle as a constant
+    [InlineData("CONDITION_VARIABLE_INIT")] // A 0 constant typed void*
 
     public void InterestingConstants(string name)
     {

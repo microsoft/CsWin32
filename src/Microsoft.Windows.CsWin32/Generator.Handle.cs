@@ -149,6 +149,7 @@ public partial class Generator
                     IdentifierName(renamedReleaseMethod ?? releaseMethod)),
                 ArgumentList().AddArguments(releaseHandleArgument));
             BlockSyntax? releaseBlock = null;
+            bool releaseMethodIsUnsafe = false;
             if (!(releaseMethodReturnType.Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.BoolKeyword } } ||
                 releaseMethodReturnType.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "BOOL" } } }))
             {
@@ -197,6 +198,15 @@ public partial class Generator
                                 ExpressionSyntax noerror = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseName("global::Windows.Win32.Foundation.WIN32_ERROR"), IdentifierName("NO_ERROR"));
                                 releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, noerror);
                                 break;
+                            case "CONFIGRET":
+                                noerror = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseName("global::Windows.Win32.Devices.DeviceAndDriverInstallation.CONFIGRET"), IdentifierName("CR_SUCCESS"));
+                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, noerror);
+                                break;
+                            case "LRESULT" when releaseMethod == "ICClose":
+                                this.TryGenerateConstantOrThrow("ICERR_OK");
+                                noerror = CastExpression(ParseName("global::Windows.Win32.Foundation.LRESULT"), MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("PInvoke"), IdentifierName("ICERR_OK")));
+                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, noerror);
+                                break;
                             case "HGLOBAL":
                             case "HLOCAL":
                                 releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, DefaultExpression(releaseMethodReturnType.Type));
@@ -206,11 +216,28 @@ public partial class Generator
                         }
 
                         break;
+                    case PointerTypeSyntax { ElementType: PredefinedTypeSyntax elementType }:
+                        releaseMethodIsUnsafe = true;
+                        switch (elementType.Keyword.Kind())
+                        {
+                            case SyntaxKind.VoidKeyword when releaseMethod == "FreeSid":
+                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, LiteralExpression(SyntaxKind.NullLiteralExpression));
+                                break;
+                            default:
+                                throw new NotSupportedException($"Return type {elementType}* on release method {releaseMethod} not supported.");
+                        }
+
+                        break;
                 }
             }
 
             MethodDeclarationSyntax releaseHandleDeclaration = MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Identifier("ReleaseHandle"))
                 .AddModifiers(TokenWithSpace(SyntaxKind.ProtectedKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword));
+            if (releaseMethodIsUnsafe)
+            {
+                releaseHandleDeclaration = releaseHandleDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));
+            }
+
             releaseHandleDeclaration = releaseBlock is null
                 ? releaseHandleDeclaration
                      .WithExpressionBody(ArrowExpressionClause(releaseInvocation))

@@ -5,7 +5,7 @@ internal static class MyReferenceAssemblies
 {
 #pragma warning disable SA1202 // Elements should be ordered by access - because field initializer depend on each other
     private static readonly ImmutableArray<PackageIdentity> AdditionalLegacyPackages = ImmutableArray.Create(
-        new PackageIdentity("Microsoft.Windows.SDK.Contracts", "10.0.22621.2"));
+        new PackageIdentity("Microsoft.Windows.SDK.Contracts", "10.0.22621.2428"));
 
     private static readonly ImmutableArray<PackageIdentity> AdditionalModernPackages = AdditionalLegacyPackages.AddRange(ImmutableArray.Create(
         new PackageIdentity("System.Runtime.CompilerServices.Unsafe", "6.0.0"),

@@ -69,4 +69,21 @@ public class SourceGeneratorTests
             NativeMethodsTxt = "CreateFile",
         }.RunAsync();
     }
+
+    [Fact]
+    public async Task NonUniqueWinmdProjectionNames()
+    {
+        await new VerifyCS.Test
+        {
+            NativeMethodsTxt = "CreateFile",
+            GeneratorConfiguration = GeneratorConfiguration.Default with
+            {
+                InputMetadataPaths = GeneratorConfiguration.Default.InputMetadataPaths.AddRange(GeneratorConfiguration.Default.InputMetadataPaths),
+            },
+            ExpectedDiagnostics =
+            {
+                new DiagnosticResult(SourceGenerator.NonUniqueMetadataInputs.Id, DiagnosticSeverity.Error),
+            },
+        }.RunAsync();
+    }
 }

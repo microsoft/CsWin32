@@ -35,8 +35,8 @@ extends:
           outputs:
           - output: nuget
             displayName: 📦 Push packages to nuget.org
-            packagesToPush: '$(Pipeline.Workspace)/CI/deployables-Windows/NuGet/*.nupkg'
-            packageParentPath: $(Pipeline.Workspace)/CI/deployables-Windows/NuGet
+            packagesToPush: '$(Pipeline.Workspace)/CI/deployables-Windows/*.nupkg'
+            packageParentPath: $(Pipeline.Workspace)/CI/deployables-Windows
             allowPackageConflicts: true
             nuGetFeedType: external
             publishFeedCredentials: Microsoft.Windows.CsWin32
@@ -53,7 +53,6 @@ extends:
         - download: CI
           artifact: deployables-Windows
           displayName: 🔻 Download deployables-Windows artifact
-          patterns: 'deployables-Windows/NuGet/*'
         - task: GitHubRelease@1
           displayName: 📢 GitHub release (create)
           inputs:
@@ -65,7 +64,7 @@ extends:
             title: v$(resources.pipeline.CI.runName)
             isDraft: true # After running this step, visit the new draft release, edit, and publish.
             isPreRelease: $(IsPrerelease)
-            assets: $(Pipeline.Workspace)/CI/deployables-Windows/NuGet/*.nupkg
+            assets: $(Pipeline.Workspace)/CI/deployables-Windows/*.nupkg
             changeLogCompareToRelease: lastNonDraftRelease
             changeLogType: issueBased
             changeLogLabels: |

@@ -130,10 +130,22 @@ public class SourceGenerator : ISourceGenerator
         "Configuration",
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor NonUniqueMetadataInputs = new(
+        InputProjectionErrorId,
+        InputProjectionErrorTitle,
+        "The metadata projections input into CsWin32 must have unique names. The name \"{0}\" is used more than once.",
+        "Configuration",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
 #pragma warning restore CS1591 // Missing XML comment for publicly visible type or member
+
+    private const string InputProjectionErrorId = "PInvoke010";
+    private const string InputProjectionErrorTitle = "Input projection error";
 
     private const string NativeMethodsTxtAdditionalFileName = "NativeMethods.txt";
     private const string NativeMethodsJsonAdditionalFileName = "NativeMethods.json";
+
     private static readonly char[] ZeroWhiteSpace = new char[]
     {
         '\uFEFF', // ZERO WIDTH NO-BREAK SPACE (U+FEFF)
@@ -199,7 +211,14 @@ public class SourceGenerator : ISourceGenerator
         }
 
         Docs? docs = ParseDocs(context);
-        SuperGenerator superGenerator = SuperGenerator.Combine(CollectMetadataPaths(context).Select(path => new Generator(path, docs, options, compilation, parseOptions)));
+        Generator[] generators = CollectMetadataPaths(context).Select(path => new Generator(path, docs, options, compilation, parseOptions)).ToArray();
+        if (TryFindNonUniqueValue(generators, g => g.InputAssemblyName, StringComparer.OrdinalIgnoreCase, out (Generator Item, string Value) nonUniqueGenerator))
+        {
+            context.ReportDiagnostic(Diagnostic.Create(NonUniqueMetadataInputs, null, nonUniqueGenerator.Value));
+            return;
+        }
+
+        SuperGenerator superGenerator = SuperGenerator.Combine(generators);
         try
         {
             foreach (AdditionalText nativeMethodsTxtFile in nativeMethodsTxtFiles)
@@ -344,6 +363,23 @@ public class SourceGenerator : ISourceGenerator
         sb.AppendLine(ex.ToString());
 
         return sb.ToString();
+    }
+
+    private static bool TryFindNonUniqueValue<T, TValue>(IEnumerable<T> sequence, Func<T, TValue> valueSelector, IEqualityComparer<TValue> comparer, out (T Item, TValue Value) nonUniqueValue)
+    {
+        HashSet<TValue> seenValues = new(comparer);
+        nonUniqueValue = default;
+        foreach (T item in sequence)
+        {
+            TValue value = valueSelector(item);
+            if (!seenValues.Add(value))
+            {
+                nonUniqueValue = (item, value);
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static IReadOnlyList<string> CollectMetadataPaths(GeneratorExecutionContext context)

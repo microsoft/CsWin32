@@ -21,7 +21,6 @@ internal static class CSharpSourceGeneratorVerifier
 
             this.ReferenceAssemblies = MyReferenceAssemblies.NetStandard20;
             this.TestState.Sources.Add(string.Empty);
-            this.TestState.AnalyzerConfigFiles.Add(("/.globalconfig", ConstructGlobalConfigString()));
         }
 
         public LanguageVersion LanguageVersion { get; set; } = LanguageVersion.CSharp9;
@@ -31,15 +30,11 @@ internal static class CSharpSourceGeneratorVerifier
         [StringSyntax(StringSyntaxAttribute.Json)]
         public string? NativeMethodsJson { get; set; }
 
-        protected override IEnumerable<Type> GetSourceGenerators()
-        {
-            yield return typeof(SourceGenerator);
-        }
+        public GeneratorConfiguration GeneratorConfiguration { get; set; } = GeneratorConfiguration.Default;
 
-        protected override ParseOptions CreateParseOptions()
-        {
-            return ((CSharpParseOptions)base.CreateParseOptions()).WithLanguageVersion(this.LanguageVersion);
-        }
+        protected override IEnumerable<Type> GetSourceGenerators() => [typeof(SourceGenerator)];
+
+        protected override ParseOptions CreateParseOptions() => ((CSharpParseOptions)base.CreateParseOptions()).WithLanguageVersion(this.LanguageVersion);
 
         protected override CompilationOptions CreateCompilationOptions()
         {
@@ -62,26 +57,9 @@ internal static class CSharpSourceGeneratorVerifier
                 this.TestState.AdditionalFiles.Add(("NativeMethods.json", this.NativeMethodsJson));
             }
 
+            this.TestState.AnalyzerConfigFiles.Add(("/.globalconfig", this.GeneratorConfiguration.ToGlobalConfigString()));
+
             return base.RunImplAsync(cancellationToken);
-        }
-
-        private static string ConstructGlobalConfigString(bool omitDocs = false)
-        {
-            StringBuilder globalConfigBuilder = new();
-            globalConfigBuilder.AppendLine("is_global = true");
-            globalConfigBuilder.AppendLine();
-            globalConfigBuilder.AppendLine($"build_property.CsWin32InputMetadataPaths = {JoinAssemblyMetadata("ProjectionMetadataWinmd")}");
-            if (!omitDocs)
-            {
-                globalConfigBuilder.AppendLine($"build_property.CsWin32InputDocPaths = {JoinAssemblyMetadata("ProjectionDocs")}");
-            }
-
-            return globalConfigBuilder.ToString();
-
-            static string JoinAssemblyMetadata(string name)
-            {
-                return string.Join(";", typeof(GeneratorTests).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().Where(metadata => metadata.Key == name).Select(metadata => metadata.Value));
-            }
         }
     }
 }

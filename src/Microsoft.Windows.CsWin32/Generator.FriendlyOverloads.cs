@@ -174,16 +174,13 @@ public partial class Generator
                 StatementSyntax nullHandleStatement = ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentNullException))).WithArgumentList(ArgumentList().AddArguments(Argument(NameOfExpression(IdentifierName(externParam.Identifier.ValueText))))));
                 if (isOptional)
                 {
+                    // (HANDLE)new IntPtr(-1);
                     HashSet<IntPtr> invalidValues = this.GetInvalidHandleValues(parameterHandleTypeInfo.Handle);
-                    if (invalidValues.Count > 0)
-                    {
-                        // (HANDLE)new IntPtr(-1);
-                        IntPtr invalidValue = GetPreferredInvalidHandleValue(invalidValues);
-                        ExpressionSyntax invalidExpression = CastExpression(externParam.Type, IntPtrExpr(invalidValue));
+                    IntPtr invalidValue = invalidValues.Count > 0 ? GetPreferredInvalidHandleValue(invalidValues) : IntPtr.Zero;
+                    ExpressionSyntax invalidExpression = CastExpression(externParam.Type, IntPtrExpr(invalidValue));
 
-                        // hTemplateFileLocal = invalid-handle-value;
-                        nullHandleStatement = ExpressionStatement(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, typeDefHandleName, invalidExpression));
-                    }
+                    // hTemplateFileLocal = invalid-handle-value;
+                    nullHandleStatement = ExpressionStatement(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, typeDefHandleName, invalidExpression));
                 }
 
                 // if (hTemplateFile is object)

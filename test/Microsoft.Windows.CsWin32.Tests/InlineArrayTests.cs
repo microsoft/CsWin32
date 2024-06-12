@@ -31,6 +31,33 @@ public class InlineArrayTests : GeneratorTestBase
         this.AssertNoDiagnostics();
     }
 
+    [Theory, CombinatorialData]
+    public async Task UnsafeApiReferencesOnlyWhenAvailable(
+        bool referenceUnsafe,
+        bool referenceMemory,
+        [CombinatorialValues("net35", "net472", "netstandard2.0")] string tfm)
+    {
+        ReferenceAssemblies referenceAssemblies = tfm switch
+        {
+            "net35" => ReferenceAssemblies.NetFramework.Net35.WindowsForms,
+            "net472" => ReferenceAssemblies.NetFramework.Net472.WindowsForms,
+            "netstandard2.0" => ReferenceAssemblies.NetStandard.NetStandard20,
+            _ => throw new ArgumentOutOfRangeException(nameof(tfm)),
+        };
+        if (referenceUnsafe)
+        {
+            referenceAssemblies = referenceAssemblies.AddPackages([MyReferenceAssemblies.ExtraPackages.Unsafe]);
+        }
+
+        if (referenceMemory)
+        {
+            referenceAssemblies = referenceAssemblies.AddPackages([MyReferenceAssemblies.ExtraPackages.Memory]);
+        }
+
+        this.compilation = await this.CreateCompilationAsync(referenceAssemblies, Platform.AnyCpu);
+        this.GenerateApi("THUMBBUTTON");
+    }
+
     [Theory, PairwiseData]
     public void FixedLengthInlineArray_Pointers(
         bool allowMarshaling,

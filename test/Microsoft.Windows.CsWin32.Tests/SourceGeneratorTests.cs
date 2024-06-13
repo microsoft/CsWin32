@@ -71,6 +71,16 @@ public class SourceGeneratorTests
     }
 
     [Fact]
+    public async Task Gdi32()
+    {
+        await new VerifyCS.Test
+        {
+            ReferenceAssemblies = ReferenceAssemblies.Net.Net60,
+            NativeMethodsTxt = "gdi32.*",
+        }.RunAsync();
+    }
+
+    [Fact]
     public async Task NonUniqueWinmdProjectionNames()
     {
         await new VerifyCS.Test

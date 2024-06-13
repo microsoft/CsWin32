@@ -258,7 +258,9 @@ public class SourceGenerator : ISourceGenerator
                                     context.ReportDiagnostic(Diagnostic.Create(NoMethodsForModule, location, moduleName));
                                     break;
                                 case > 1:
-                                    context.ReportDiagnostic(Diagnostic.Create(AmbiguousMatchError, location, moduleName));
+                                    // Stop complaining about multiple metadata exporting methods from the same module.
+                                    // https://github.com/microsoft/CsWin32/issues/1201
+                                    ////context.ReportDiagnostic(Diagnostic.Create(AmbiguousMatchError, location, moduleName));
                                     break;
                             }
 

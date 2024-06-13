@@ -8,9 +8,9 @@ internal static class MyReferenceAssemblies
         new PackageIdentity("Microsoft.Windows.SDK.Contracts", "10.0.22621.2428"));
 
     private static readonly ImmutableArray<PackageIdentity> AdditionalModernPackages = AdditionalLegacyPackages.AddRange(ImmutableArray.Create(
-        new PackageIdentity("System.Runtime.CompilerServices.Unsafe", "6.0.0"),
-        new PackageIdentity("System.Memory", "4.5.5"),
-        new PackageIdentity("Microsoft.Win32.Registry", "5.0.0")));
+        ExtraPackages.Unsafe,
+        ExtraPackages.Memory,
+        ExtraPackages.Registry));
 
     internal static readonly ReferenceAssemblies NetStandard20 = ReferenceAssemblies.NetStandard.NetStandard20.AddPackages(AdditionalModernPackages);
 #pragma warning restore SA1202 // Elements should be ordered by access
@@ -25,5 +25,12 @@ internal static class MyReferenceAssemblies
     {
         internal static readonly ReferenceAssemblies Net60 = ReferenceAssemblies.Net.Net60.AddPackages(AdditionalModernPackages);
         internal static readonly ReferenceAssemblies Net70 = ReferenceAssemblies.Net.Net70.AddPackages(AdditionalModernPackages);
+    }
+
+    internal static class ExtraPackages
+    {
+        internal static readonly PackageIdentity Unsafe = new PackageIdentity("System.Runtime.CompilerServices.Unsafe", "6.0.0");
+        internal static readonly PackageIdentity Memory = new PackageIdentity("System.Memory", "4.5.5");
+        internal static readonly PackageIdentity Registry = new PackageIdentity("Microsoft.Win32.Registry", "5.0.0");
     }
 }

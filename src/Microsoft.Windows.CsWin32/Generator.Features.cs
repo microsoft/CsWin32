@@ -10,6 +10,7 @@ public partial class Generator
     private readonly bool canUseUnsafeAsRef;
     private readonly bool canUseUnsafeAdd;
     private readonly bool canUseUnsafeNullRef;
+    private readonly bool canUseUnsafeSkipInit;
     private readonly bool canUseUnmanagedCallersOnlyAttribute;
     private readonly bool canUseSetLastPInvokeError;
     private readonly bool unscopedRefAttributePredefined;

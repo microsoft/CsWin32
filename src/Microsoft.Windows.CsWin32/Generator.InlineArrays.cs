@@ -605,11 +605,20 @@ public partial class Generator
                 ? MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, resultLocal, valueFieldName) // result.Value
                 : PrefixUnaryExpression(SyntaxKind.AddressOfExpression, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, resultLocal, firstElementName!)); // &result._0
 
-            // Unsafe.SkipInit(out __char_1 result);
-            implicitSpanToStruct = implicitSpanToStruct.AddBodyStatements(
-                ExpressionStatement(InvocationExpression(
-                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Unsafe)), IdentifierName("SkipInit")),
-                    ArgumentList().AddArguments(Argument(nameColon: null, Token(SyntaxKind.OutKeyword), DeclarationExpression(fixedLengthStructName.WithTrailingTrivia(Space), SingleVariableDesignation(resultLocal.Identifier)))))));
+            if (this.canUseUnsafeSkipInit)
+            {
+                // Unsafe.SkipInit(out __char_1 result);
+                implicitSpanToStruct = implicitSpanToStruct.AddBodyStatements(
+                    ExpressionStatement(InvocationExpression(
+                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Unsafe)), IdentifierName("SkipInit")),
+                        ArgumentList().AddArguments(Argument(nameColon: null, Token(SyntaxKind.OutKeyword), DeclarationExpression(fixedLengthStructName.WithTrailingTrivia(Space), SingleVariableDesignation(resultLocal.Identifier)))))));
+            }
+            else
+            {
+                implicitSpanToStruct = implicitSpanToStruct.AddBodyStatements(
+                    LocalDeclarationStatement(VariableDeclaration(fixedLengthStructName)).AddDeclarationVariables(
+                        VariableDeclarator(resultLocal.Identifier).WithInitializer(EqualsValueClause(DefaultExpression(fixedLengthStructName)))));
+            }
 
             // x.Slice(initLength, Length - initLength).Clear();
             StatementSyntax ClearSlice(ExpressionSyntax span) =>

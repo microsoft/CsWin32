@@ -18,8 +18,13 @@ jobs:
   - checkout: self
     fetchDepth: 1 # no need for git history here
     clean: true
-  - pwsh: Remove-Item global.json # Accept the latest .NET SDK for this integration test to match common customer experience.
-    displayName: 🔧 Remove global.json
+  - task: CopyFiles@2
+    inputs:
+      SourceFolder: integration-tests
+      Contents: '**'
+      TargetFolder: $(Pipeline.Workspace)/integration-tests
+      Overwrite: true
+    displayName: 🔧 Copy integration tests out of the repo
   - download: current
     artifact: deployables-Windows
     displayName: 🔻 Download nupkg
@@ -34,17 +39,15 @@ jobs:
   - task: MSBuild@1
     displayName: 🧪 MSBuild non-sdk style
     inputs:
-      solution: integration-tests\nonsdk\nonsdk.csproj
+      solution: $(Pipeline.Workspace)\integration-tests\nonsdk\nonsdk.csproj
       msbuildArguments: /r
   - task: MSBuild@1
     displayName: 🧪 MSBuild sdk-style
     inputs:
-      solution: integration-tests\sdk\sdk.csproj
+      solution: $(Pipeline.Workspace)\integration-tests\sdk\sdk.csproj
       msbuildArguments: /r
     condition: eq(variables.currentSdk, 'true')
-  - task: DotNetCoreCLI@2
+  - pwsh: dotnet build
     displayName: 🧪 dotnet build
-    inputs:
-      command: build
-      projects: integration-tests\sdk\sdk.csproj
+    workingDirectory: $(Pipeline.Workspace)\integration-tests\sdk
     condition: eq(variables.currentSdk, 'true')

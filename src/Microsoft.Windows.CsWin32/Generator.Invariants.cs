@@ -150,24 +150,22 @@ public partial class Generator
     private static readonly string[] AppLocalLibraries = new[] { "DbgHelp.dll", "SymSrv.dll", "SrcSrv.dll" };
 
     // [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static readonly AttributeListSyntax DefaultDllImportSearchPathsAttributeList = AttributeList()
-        .WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken))
-        .AddAttributes(Attribute(IdentifierName("DefaultDllImportSearchPaths")).AddArgumentListArguments(
+    private static readonly AttributeSyntax DefaultDllImportSearchPathsAttribute =
+        Attribute(IdentifierName("DefaultDllImportSearchPaths")).AddArgumentListArguments(
             AttributeArgument(CompoundExpression(
                 SyntaxKind.BitwiseOrExpression,
                 IdentifierName(nameof(DllImportSearchPath)),
-                nameof(DllImportSearchPath.System32)))));
+                nameof(DllImportSearchPath.System32))));
 
     // [DefaultDllImportSearchPaths(DllImportSearchPath.System32 | ...)]
-    private static readonly AttributeListSyntax DefaultDllImportSearchPathsAllowAppDirAttributeList = AttributeList()
-        .WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken))
-        .AddAttributes(Attribute(IdentifierName("DefaultDllImportSearchPaths")).AddArgumentListArguments(
+    private static readonly AttributeSyntax DefaultDllImportSearchPathsAllowAppDirAttribute =
+        Attribute(IdentifierName("DefaultDllImportSearchPaths")).AddArgumentListArguments(
             AttributeArgument(CompoundExpression(
                 SyntaxKind.BitwiseOrExpression,
                 IdentifierName(nameof(DllImportSearchPath)),
                 nameof(DllImportSearchPath.System32),
                 nameof(DllImportSearchPath.ApplicationDirectory),
-                nameof(DllImportSearchPath.AssemblyDirectory)))));
+                nameof(DllImportSearchPath.AssemblyDirectory))));
 
     private static readonly AttributeSyntax GeneratedCodeAttribute = Attribute(IdentifierName("global::System.CodeDom.Compiler.GeneratedCode"))
         .WithArgumentList(FixTrivia(AttributeArgumentList().AddArguments(

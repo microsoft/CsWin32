@@ -225,9 +225,21 @@ public partial class Generator
             bool setLastErrorViaMarshaling = setLastError && (this.Options.AllowMarshaling || !this.canUseSetLastPInvokeError);
             bool setLastErrorManually = setLastError && !setLastErrorViaMarshaling;
 
-            AttributeListSyntax CreateDllImportAttributeList() => AttributeList()
-                .WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken))
-                .AddAttributes(DllImport(import, moduleName, entrypoint, setLastErrorViaMarshaling, requiresUnicodeCharSet ? CharSet.Unicode : CharSet.Ansi));
+            AttributeListSyntax CreateDllImportAttributeList()
+            {
+                AttributeListSyntax result = AttributeList()
+                    .WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken))
+                    .AddAttributes(DllImport(import, moduleName, entrypoint, setLastErrorViaMarshaling, requiresUnicodeCharSet ? CharSet.Unicode : CharSet.Ansi));
+                if (this.generateDefaultDllImportSearchPathsAttribute)
+                {
+                    result = result.AddAttributes(
+                        IsLibraryAllowedAppLocal(moduleName)
+                            ? DefaultDllImportSearchPathsAllowAppDirAttribute
+                            : DefaultDllImportSearchPathsAttribute);
+                }
+
+                return result;
+            }
 
             MethodDeclarationSyntax externDeclaration = MethodDeclaration(
                 List<AttributeListSyntax>().Add(CreateDllImportAttributeList()),
@@ -241,12 +253,6 @@ public partial class Generator
                 body: null!,
                 TokenWithLineFeed(SyntaxKind.SemicolonToken));
             externDeclaration = returnType.AddReturnMarshalAs(externDeclaration);
-
-            if (this.generateDefaultDllImportSearchPathsAttribute)
-            {
-                externDeclaration = externDeclaration.AddAttributeLists(
-                    IsLibraryAllowedAppLocal(moduleName) ? DefaultDllImportSearchPathsAllowAppDirAttributeList : DefaultDllImportSearchPathsAttributeList);
-            }
 
             bool requiresUnsafe = RequiresUnsafe(externDeclaration.ReturnType) || externDeclaration.ParameterList.Parameters.Any(p => RequiresUnsafe(p.Type));
             if (requiresUnsafe)

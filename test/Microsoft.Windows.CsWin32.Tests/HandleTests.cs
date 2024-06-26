@@ -117,7 +117,7 @@ public class HandleTests : GeneratorTestBase
     [InlineData("HANDLE")]
     [InlineData("HGDIOBJ")]
     [InlineData("HWND")]
-    public void HandleTypeDefsUseIntPtrAsFieldType(string handleType)
+    public void HandleTypeDefsUseVoidStarAsFieldType(string handleType)
     {
         this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate(handleType, CancellationToken.None));
@@ -125,7 +125,7 @@ public class HandleTests : GeneratorTestBase
         this.AssertNoDiagnostics();
         StructDeclarationSyntax hwnd = Assert.IsType<StructDeclarationSyntax>(this.FindGeneratedType(handleType).Single());
         FieldDeclarationSyntax field = hwnd.Members.OfType<FieldDeclarationSyntax>().Single();
-        Assert.Equal(nameof(IntPtr), Assert.IsType<IdentifierNameSyntax>(field.Declaration.Type).Identifier.ValueText);
+        Assert.True(field.Declaration.Type is PointerTypeSyntax { ElementType: PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.VoidKeyword } } });
     }
 
     [Fact]
@@ -152,4 +152,8 @@ public class HandleTests : GeneratorTestBase
     {
         this.GenerateApi(api);
     }
+
+    [Theory]
+    [InlineData("HDC")]
+    public void InterestingHandles(string api) => this.GenerateApi(api);
 }

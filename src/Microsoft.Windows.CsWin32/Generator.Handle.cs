@@ -324,19 +324,26 @@ public partial class Generator
 
     private bool IsHandle(TypeDefinitionHandle typeDefHandle, out string? releaseMethodName)
     {
+        // Structs with RAIIFree attributes are handles.
         if (this.MetadataIndex.HandleTypeReleaseMethod.TryGetValue(typeDefHandle, out releaseMethodName))
         {
             return true;
         }
 
-        // Special case handles that do not carry RAIIFree attributes.
         releaseMethodName = null;
         TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefHandle);
-        return this.Reader.StringComparer.Equals(typeDef.Name, "HGDIOBJ")
-            || this.Reader.StringComparer.Equals(typeDef.Name, "HWND");
+
+        // Structs with InvalidHandleValue attributes are handles.
+        if (this.HasAnyInvalidHandleValueAttributes(typeDef))
+        {
+            return true;
+        }
+
+        // Special case handles that do not carry RAIIFree or InvalidHandleValue attributes.
+        return this.Reader.StringComparer.Equals(typeDef.Name, "HWND");
     }
 
-    private HashSet<IntPtr> GetInvalidHandleValues(EntityHandle handle)
+    private QualifiedTypeDefinition GetQualifiedTypeDefinition(EntityHandle handle)
     {
         QualifiedTypeDefinitionHandle tdh;
         if (handle.Kind == HandleKind.TypeReference)
@@ -355,8 +362,13 @@ public partial class Generator
             throw new GenerationFailedException("Unexpected handle type.");
         }
 
+        return tdh.Resolve();
+    }
+
+    private HashSet<IntPtr> GetInvalidHandleValues(EntityHandle handle)
+    {
+        QualifiedTypeDefinition td = this.GetQualifiedTypeDefinition(handle);
         HashSet<IntPtr> invalidHandleValues = new();
-        QualifiedTypeDefinition td = tdh.Resolve();
         foreach (CustomAttributeHandle ah in td.Definition.GetCustomAttributes())
         {
             CustomAttribute a = td.Reader.GetCustomAttribute(ah);
@@ -369,5 +381,19 @@ public partial class Generator
         }
 
         return invalidHandleValues;
+    }
+
+    private bool HasAnyInvalidHandleValueAttributes(TypeDefinition typeDef)
+    {
+        foreach (CustomAttributeHandle ah in typeDef.GetCustomAttributes())
+        {
+            CustomAttribute a = this.Reader.GetCustomAttribute(ah);
+            if (MetadataUtilities.IsAttribute(this.Reader, a, InteropDecorationNamespace, InvalidHandleValueAttribute))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

@@ -105,11 +105,11 @@ public partial class Generator
         SyntaxList<MemberDeclarationSyntax> members = List<MemberDeclarationSyntax>();
 
         FieldDeclarationSyntax fieldSyntax = FieldDeclaration(
-            VariableDeclaration(fieldInfo.FieldType).AddVariables(fieldDeclarator))
+            VariableDeclaration(fieldType.Type).AddVariables(fieldDeclarator))
             .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.ReadOnlyKeyword));
         members = members.Add(fieldSyntax);
 
-        members = members.AddRange(this.CreateCommonTypeDefMembers(name, fieldInfo.FieldType, fieldIdentifierName));
+        members = members.AddRange(this.CreateCommonTypeDefMembers(name, fieldType.Type, fieldIdentifierName));
 
         IdentifierNameSyntax valueParameter = IdentifierName("value");
         MemberAccessExpressionSyntax fieldAccessExpression = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), fieldIdentifierName);
@@ -132,7 +132,7 @@ public partial class Generator
                     .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
                     .WithSemicolonToken(SemicolonWithLineFeed));
             }
-            else
+            else if (fieldType.Type is not IdentifierNameSyntax { Identifier: { Text: nameof(IntPtr) } })
             {
                 // public static implicit operator IntPtr(MSIHANDLE value) => new IntPtr(value.Value);
                 members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), IntPtrTypeSyntax)
@@ -261,8 +261,20 @@ public partial class Generator
             .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, valueParameter).WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken))))
             .WithSemicolonToken(SemicolonWithLineFeed);
 
+        // Add an IntPtr constructor as well if the field type is a pointer.
+        if (fieldType is PointerTypeSyntax)
+        {
+            // public HWND(IntPtr value) : this((void*)value) { }
+            yield return ConstructorDeclaration(structName.Identifier)
+                .AddModifiers(TokenWithSpace(this.Visibility))
+                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))))
+                .WithInitializer(ConstructorInitializer(SyntaxKind.ThisConstructorInitializer).AddArgumentListArguments(Argument(CastExpression(fieldType, valueParameter))))
+                .WithBody(Block());
+        }
+
         // If this typedef struct represents a pointer, add an IsNull property.
-        if (fieldType is IdentifierNameSyntax { Identifier: { Value: nameof(IntPtr) or nameof(UIntPtr) } })
+        if (fieldType is IdentifierNameSyntax { Identifier: { Value: nameof(IntPtr) or nameof(UIntPtr) } }
+            or PointerTypeSyntax { ElementType: PredefinedTypeSyntax { Keyword.RawKind: (int)SyntaxKind.VoidKeyword } })
         {
             // internal static HWND Null => default;
             yield return PropertyDeclaration(structName.WithTrailingTrivia(TriviaList(Space)), "Null")

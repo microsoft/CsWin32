@@ -11,8 +11,9 @@ internal static class CSharpSourceGeneratorVerifier
         private readonly string testFile;
         private readonly string testMethod;
 
-        public Test([CallerFilePath] string? testFile = null, [CallerMemberName] string? testMethod = null)
+        public Test(ITestOutputHelper logger, [CallerFilePath] string? testFile = null, [CallerMemberName] string? testMethod = null)
         {
+            this.Logger = logger;
             this.testFile = testFile ?? throw new ArgumentNullException(nameof(testFile));
             this.testMethod = testMethod ?? throw new ArgumentNullException(nameof(testMethod));
 
@@ -28,9 +29,14 @@ internal static class CSharpSourceGeneratorVerifier
         public string? NativeMethodsTxt { get; set; }
 
         [StringSyntax(StringSyntaxAttribute.Json)]
-        public string? NativeMethodsJson { get; set; }
+        public string? NativeMethodsJson { get; set; } = """
+            {
+            }
+            """;
 
         public GeneratorConfiguration GeneratorConfiguration { get; set; } = GeneratorConfiguration.Default;
+
+        internal ITestOutputHelper Logger { get; }
 
         protected override IEnumerable<Type> GetSourceGenerators() => [typeof(SourceGenerator)];
 
@@ -60,6 +66,24 @@ internal static class CSharpSourceGeneratorVerifier
             this.TestState.AnalyzerConfigFiles.Add(("/.globalconfig", this.GeneratorConfiguration.ToGlobalConfigString()));
 
             return base.RunImplAsync(cancellationToken);
+        }
+
+#pragma warning disable SA1316 // Tuple element names should use correct casing
+        protected override async Task<(Compilation compilation, ImmutableArray<Diagnostic> generatorDiagnostics)> GetProjectCompilationAsync(Project project, IVerifier verifier, CancellationToken cancellationToken)
+#pragma warning restore SA1316 // Tuple element names should use correct casing
+        {
+            var (compilation, diagnostics) = await base.GetProjectCompilationAsync(project, verifier, cancellationToken);
+
+            var documentsWithDiagnostics = compilation.GetDiagnostics(cancellationToken).Select(d => d.Location.SourceTree).Distinct().ToArray();
+            foreach (SyntaxTree? source in documentsWithDiagnostics)
+            {
+                if (source is not null)
+                {
+                    GeneratorTestBase.LogGeneratedCode(source, this.Logger);
+                }
+            }
+
+            return (compilation, diagnostics);
         }
     }
 }

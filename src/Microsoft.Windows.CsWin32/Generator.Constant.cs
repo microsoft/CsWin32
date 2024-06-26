@@ -274,7 +274,7 @@ public partial class Generator
 
     private ExpressionSyntax CreateConstant(ReadOnlyMemory<char> argsAsString, TypeSyntax targetType, TypeReferenceHandle targetTypeRefHandle, out bool unsafeRequired)
     {
-        if (!this.TryGetTypeDefHandle(targetTypeRefHandle, out TypeDefinitionHandle targetTypeDefHandle))
+        if (!this.TryGetTypeDefHandle(targetTypeRefHandle, out QualifiedTypeDefinitionHandle targetTypeDefHandle))
         {
             // Special case for System.Guid.
             TypeReference typeRef = this.Reader.GetTypeReference(targetTypeRefHandle);
@@ -288,14 +288,17 @@ public partial class Generator
             throw new GenerationFailedException("Unrecognized target type.");
         }
 
-        this.RequestInteropType(targetTypeDefHandle, this.DefaultContext);
-        TypeDefinition typeDef = this.Reader.GetTypeDefinition(targetTypeDefHandle);
+        targetTypeDefHandle.Generator.volatileCode.GenerationTransaction(delegate
+        {
+            targetTypeDefHandle.Generator.RequestInteropType(targetTypeDefHandle.DefinitionHandle, this.DefaultContext);
+        });
+        TypeDefinition typeDef = targetTypeDefHandle.Reader.GetTypeDefinition(targetTypeDefHandle.DefinitionHandle);
 
         List<ReadOnlyMemory<char>> args = SplitConstantArguments(argsAsString);
 
         ObjectCreationExpressionSyntax? result =
-            this.CreateConstantViaCtor(args, targetType, typeDef, out unsafeRequired) ??
-            this.CreateConstantByField(args, targetType, typeDef, out unsafeRequired);
+            targetTypeDefHandle.Generator.CreateConstantViaCtor(args, targetType, typeDef, out unsafeRequired) ??
+            targetTypeDefHandle.Generator.CreateConstantByField(args, targetType, typeDef, out unsafeRequired);
 
         return result ?? throw new GenerationFailedException($"Unable to construct constant value given {args.Count} fields or constructor arguments.");
     }

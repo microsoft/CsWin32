@@ -3,12 +3,12 @@
 
 using VerifyCS = CSharpSourceGeneratorVerifier;
 
-public class SourceGeneratorTests
+public class SourceGeneratorTests(ITestOutputHelper logger)
 {
     [Fact]
     public async Task UnparseableNativeMethodsJson()
     {
-        await new VerifyCS.Test
+        await new VerifyCS.Test(logger)
         {
             NativeMethodsTxt = "CreateFile",
 #pragma warning disable JSON001 // Invalid JSON pattern -- deliberate point of the test
@@ -34,7 +34,7 @@ public class SourceGeneratorTests
     [Fact]
     public async Task MissingSystemMemoryReference_NoGeneratedCode()
     {
-        await new VerifyCS.Test
+        await new VerifyCS.Test(logger)
         {
             ReferenceAssemblies = ReferenceAssemblies.NetFramework.Net472.Default,
         }.RunAsync();
@@ -46,7 +46,7 @@ public class SourceGeneratorTests
     [Fact]
     public async Task MissingSystemMemoryReference_WithGeneratedCode_NetFx472()
     {
-        await new VerifyCS.Test
+        await new VerifyCS.Test(logger)
         {
             ReferenceAssemblies = ReferenceAssemblies.NetFramework.Net472.Default,
             NativeMethodsTxt = "CreateFile",
@@ -63,7 +63,7 @@ public class SourceGeneratorTests
     [Fact]
     public async Task MissingSystemMemoryReference_WithGeneratedCode_Net60()
     {
-        await new VerifyCS.Test
+        await new VerifyCS.Test(logger)
         {
             ReferenceAssemblies = ReferenceAssemblies.Net.Net60,
             NativeMethodsTxt = "CreateFile",
@@ -73,7 +73,7 @@ public class SourceGeneratorTests
     [Fact]
     public async Task Gdi32()
     {
-        await new VerifyCS.Test
+        await new VerifyCS.Test(logger)
         {
             ReferenceAssemblies = ReferenceAssemblies.Net.Net60,
             NativeMethodsTxt = "gdi32.*",
@@ -83,7 +83,7 @@ public class SourceGeneratorTests
     [Fact]
     public async Task NonUniqueWinmdProjectionNames()
     {
-        await new VerifyCS.Test
+        await new VerifyCS.Test(logger)
         {
             NativeMethodsTxt = "CreateFile",
             GeneratorConfiguration = GeneratorConfiguration.Default with

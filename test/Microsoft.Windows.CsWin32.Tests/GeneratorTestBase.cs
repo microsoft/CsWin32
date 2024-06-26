@@ -123,6 +123,16 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
         this.generator?.Dispose();
     }
 
+    internal static void LogGeneratedCode(SyntaxTree tree, ITestOutputHelper logger)
+    {
+        logger.WriteLine(FileSeparator);
+        logger.WriteLine($"{tree.FilePath} content:");
+        logger.WriteLine(FileSeparator);
+        using NumberedLineWriter lineWriter = new(logger);
+        tree.GetRoot().WriteTo(lineWriter);
+        lineWriter.WriteLine(string.Empty);
+    }
+
     protected static AccessorDeclarationSyntax? FindAccessor(BaseTypeDeclarationSyntax typeSyntax, string propertyName, SyntaxKind kind)
     {
         SyntaxList<MemberDeclarationSyntax> members = typeSyntax switch
@@ -266,15 +276,7 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
         }
     }
 
-    protected void LogGeneratedCode(SyntaxTree tree)
-    {
-        this.logger.WriteLine(FileSeparator);
-        this.logger.WriteLine($"{tree.FilePath} content:");
-        this.logger.WriteLine(FileSeparator);
-        using var lineWriter = new NumberedLineWriter(this.logger);
-        tree.GetRoot().WriteTo(lineWriter);
-        lineWriter.WriteLine(string.Empty);
-    }
+    protected void LogGeneratedCode(SyntaxTree tree) => LogGeneratedCode(tree, this.logger);
 
     protected void AssertGeneratedType(string apiName, string expectedSyntax, string? expectedExtensions = null)
     {

@@ -18,7 +18,7 @@ Write-Progress -Activity $ActivityName -CurrentOperation "Discovery PDB files"
 $PDBs = Get-ChildItem -rec "$Path/*.pdb"
 
 # Filter PDBs to product OR test related.
-$testregex = "unittest|tests|\.test\."
+$testregex = "unittest|tests|\.test\.|WinRTInteropTest|SpellChecker"
 
 Write-Progress -Activity $ActivityName -CurrentOperation "De-duplicating symbols"
 $PDBsByHash = @{}

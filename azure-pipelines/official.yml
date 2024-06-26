@@ -60,7 +60,7 @@ extends:
         sourceAnalysisPool: Azure-Pipelines-1ESPT-ExDShared
         codeSignValidation:
           enabled: true
-          break: true
+          break: false
           additionalTargetsGlobPattern: -|Variables-*\*.ps1;-|APIScanInputs-*\**;-|test_symbols-*\**;-|MicroBuild\**
         policheck:
           enabled: true

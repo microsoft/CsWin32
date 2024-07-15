@@ -9,7 +9,7 @@
     <!-- <DiaMetadataVersion>0.2.185-preview-g7e1e6a442c</DiaMetadataVersion> -->
     <ApiDocsVersion>0.1.42-alpha</ApiDocsVersion>
     <CodeAnalysisVersion>4.8.0</CodeAnalysisVersion>
-    <CodeAnalysisVersion Condition="'$(IsTestProject)'!='true'">3.11.0</CodeAnalysisVersion>
+    <CodeAnalysisVersion Condition="'$(IsTestProject)'!='true'">4.8.0</CodeAnalysisVersion>
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="IsExternalInit" Version="1.0.3" />
@@ -34,14 +34,14 @@
     <PackageVersion Include="System.Text.Encodings.Web" Version="4.7.1" />
     <PackageVersion Include="System.Text.Json" Version="4.7.2" />
     <PackageVersion Include="Xunit.Combinatorial" Version="1.6.24" />
-    <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.1" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />
     <PackageVersion Include="xunit" Version="2.8.1" />
   </ItemGroup>
   <ItemGroup Condition="'$(IsTestProject)'!='true'">
     <!-- These versions carefully chosen to support VS 2019 Update 11. -->
-    <PackageVersion Update="System.Collections.Immutable" Version="5.0.0" />
+    <PackageVersion Update="System.Collections.Immutable" Version="7.0.0" />
     <PackageVersion Update="System.Memory" Version="4.5.4" />
-    <PackageVersion Update="System.Reflection.Metadata" Version="5.0.0" />
+    <PackageVersion Update="System.Reflection.Metadata" Version="7.0.0" />
     <PackageVersion Update="System.Runtime.CompilerServices.Unsafe" Version="5.0.0" />
   </ItemGroup>
   <ItemGroup>

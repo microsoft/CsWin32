@@ -1,32 +1,63 @@
 parameters:
-- name: RealSign
+- name: ArchiveSymbols
   type: boolean
-  default: false
+  default: true
+- name: RealSign
+  displayName: Real sign?
+  type: boolean
 
 stages:
-
 - stage: release
   displayName: Publish
   condition: and(succeeded(), eq('${{ parameters.RealSign }}', 'true'))
   jobs:
-  - ${{ if true }}: # leave the condition to avoid merge conflicts later.
+  - ${{ if parameters.ArchiveSymbols }}:
+    - job: symbol_archive
+      displayName: Archive symbols
+      pool: VSEngSS-MicroBuild2022-1ES
+      steps:
+      - checkout: none
+      - download: current
+        artifact: Variables-Windows
+        displayName: 🔻 Download Variables-Windows artifact
+      - powershell: $(Pipeline.Workspace)/Variables-Windows/_pipelines.ps1
+        displayName: ⚙️ Set pipeline variables based on artifacts
+      - download: current
+        artifact: symbols-legacy
+        displayName: 🔻 Download symbols-legacy artifact
+      - task: MicroBuildArchiveSymbols@5
+        displayName: 🔣 Archive symbols to Symweb
+        inputs:
+          SymbolsFeatureName: $(SymbolsFeatureName)
+          SymbolsProject: VS
+          SymbolsAgentPath: $(Pipeline.Workspace)/symbols-legacy
+
+  - ${{ if false }}: # Switch to true to enable, but leave the condition to avoid merge conflicts later.
     - job: push
       displayName: azure-public/winsdk feed
+      ${{ if parameters.ArchiveSymbols }}:
+        dependsOn: symbol_archive
       pool:
-        name: Azure-Pipelines-1ESPT-ExDShared
-        image: ubuntu-2004
-        os: linux
+        name: AzurePipelines-EO
+        demands:
+        - ImageOverride -equals 1ESPT-Ubuntu22.04
+        os: Linux
       templateContext:
         outputs:
         - output: nuget
           displayName: 📦 Push nuget packages
-          packagesToPush: '$(Pipeline.Workspace)/deployables-Windows/*.nupkg'
-          packageParentPath: $(Pipeline.Workspace)/deployables-Windows
+          packagesToPush: '$(Pipeline.Workspace)/deployables-Windows/NuGet/*.nupkg'
+          packageParentPath: $(Pipeline.Workspace)/deployables-Windows/NuGet
           allowPackageConflicts: true
           nuGetFeedType: external
           publishFeedCredentials: azure-public/winsdk/CI
       steps:
       - checkout: none
+      - download: current
+        artifact: Variables-Windows
+        displayName: 🔻 Download Variables-Windows artifact
+      - powershell: $(Pipeline.Workspace)/Variables-Windows/_pipelines.ps1
+        displayName: ⚙️ Set pipeline variables based on artifacts
       - download: current
         artifact: deployables-Windows
         displayName: 🔻 Download deployables-Windows artifact

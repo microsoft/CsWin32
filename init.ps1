@@ -30,6 +30,19 @@
     Skips the package restore step.
 .PARAMETER NoToolRestore
     Skips the dotnet tool restore step.
+.PARAMETER Signing
+    Install the MicroBuild signing plugin for building test-signed builds on desktop machines.
+.PARAMETER Localization
+    Install the MicroBuild localization plugin for building loc builds on desktop machines.
+    The environment is configured to build pseudo-loc for JPN only, but may be used to build
+    all languages with shipping-style loc by using the `/p:loctype=full,loclanguages=vs`
+    when building.
+.PARAMETER Setup
+    Install the MicroBuild setup plugin for building VSIXv3 packages.
+.PARAMETER OptProf
+    Install the MicroBuild OptProf plugin for building optimized assemblies on desktop machines.
+.PARAMETER Sbom
+    Install the MicroBuild SBOM plugin.
 .PARAMETER AccessToken
     An optional access token for authenticating to Azure Artifacts authenticated feeds.
 .PARAMETER Interactive
@@ -49,6 +62,16 @@ Param (
     [switch]$NoRestore,
     [Parameter()]
     [switch]$NoToolRestore,
+    [Parameter()]
+    [switch]$Signing,
+    [Parameter()]
+    [switch]$Localization,
+    [Parameter()]
+    [switch]$Setup,
+    [Parameter()]
+    [switch]$OptProf,
+    [Parameter()]
+    [switch]$SBOM,
     [Parameter()]
     [string]$AccessToken,
     [Parameter()]
@@ -101,6 +124,42 @@ try {
         if ($lastexitcode -ne 0) {
             throw "Failure while restoring dotnet CLI tools."
         }
+    }
+
+    $InstallNuGetPkgScriptPath = "$PSScriptRoot\azure-pipelines\Install-NuGetPackage.ps1"
+    $nugetVerbosity = 'quiet'
+    if ($Verbose) { $nugetVerbosity = 'normal' }
+    $MicroBuildPackageSource = 'https://pkgs.dev.azure.com/devdiv/_packaging/MicroBuildToolset%40Local/nuget/v3/index.json'
+    if ($Signing) {
+        Write-Host "Installing MicroBuild signing plugin" -ForegroundColor $HeaderColor
+        & $InstallNuGetPkgScriptPath MicroBuild.Plugins.Signing -source $MicroBuildPackageSource -Verbosity $nugetVerbosity
+        $EnvVars['SignType'] = "Test"
+    }
+
+    if ($Setup) {
+        Write-Host "Installing MicroBuild SwixBuild plugin..." -ForegroundColor $HeaderColor
+        & $InstallNuGetPkgScriptPath Microsoft.VisualStudioEng.MicroBuild.Plugins.SwixBuild -source $MicroBuildPackageSource -Verbosity $nugetVerbosity
+    }
+
+    if ($OptProf) {
+        Write-Host "Installing MicroBuild OptProf plugin" -ForegroundColor $HeaderColor
+        & $InstallNuGetPkgScriptPath MicroBuild.Plugins.OptProf -source $MicroBuildPackageSource -Verbosity $nugetVerbosity
+        $EnvVars['OptProfEnabled'] = '1'
+    }
+
+    if ($Localization) {
+        Write-Host "Installing MicroBuild localization plugin" -ForegroundColor $HeaderColor
+        & $InstallNuGetPkgScriptPath MicroBuild.Plugins.Localization -source $MicroBuildPackageSource -Verbosity $nugetVerbosity
+        $EnvVars['LocType'] = "Pseudo"
+        $EnvVars['LocLanguages'] = "JPN"
+    }
+
+    if ($SBOM) {
+        Write-Host "Installing MicroBuild SBOM plugin" -ForegroundColor $HeaderColor
+        & $InstallNuGetPkgScriptPath MicroBuild.Plugins.Sbom -source $MicroBuildPackageSource -Verbosity $nugetVerbosity
+        $PkgMicrosoft_ManifestTool_CrossPlatform = & $InstallNuGetPkgScriptPath Microsoft.ManifestTool.CrossPlatform -source 'https://1essharedassets.pkgs.visualstudio.com/1esPkgs/_packaging/SBOMTool/nuget/v3/index.json' -Verbosity $nugetVerbosity
+        $EnvVars['GenerateSBOM'] = "true"
+        $EnvVars['PkgMicrosoft_ManifestTool_CrossPlatform'] = $PkgMicrosoft_ManifestTool_CrossPlatform
     }
 
     & "$PSScriptRoot/tools/Set-EnvVars.ps1" -Variables $EnvVars -PrependPath $PrependPath | Out-Null

@@ -5,27 +5,16 @@ parameters:
   default: false
 - name: Is1ESPT
   type: boolean
-- name: RealSign
-  type: boolean
-  default: false
 
 steps:
 
 - script: dotnet build -t:build,pack --no-restore -c $(BuildConfiguration) -warnaserror /bl:"$(Build.ArtifactStagingDirectory)/build_logs/build.binlog"
   displayName: 🛠 dotnet build
 
-- ${{ if parameters.RealSign }}:
-  - template: ./signstep1.yml
-
-- script: dotnet pack --no-build /p:buildprojectreferences=false -c $(BuildConfiguration) /v:m /bl:"$(Build.ArtifactStagingDirectory)/build_logs/pack.binlog"
-  displayName: 📦 dotnet pack
-
-- ${{ if parameters.RealSign }}:
-  - template: ./signstep2.yml
-
-- powershell: azure-pipelines/dotnet-test-cloud.ps1 -Configuration $(BuildConfiguration) -Agent $(Agent.JobName) -PublishResults
-  displayName: 🧪 dotnet test
-  condition: and(succeeded(), ${{ parameters.RunTests }})
+- ${{ if not(parameters.IsOptProf) }}:
+  - powershell: azure-pipelines/dotnet-test-cloud.ps1 -Configuration $(BuildConfiguration) -Agent $(Agent.JobName) -PublishResults
+    displayName: 🧪 dotnet test
+    condition: and(succeeded(), ${{ parameters.RunTests }})
 
 - ${{ if parameters.IsOptProf }}:
   - script: dotnet pack src\VSInsertionMetadata -c $(BuildConfiguration) -warnaserror /bl:"$(Build.ArtifactStagingDirectory)/build_logs/VSInsertion-Pack.binlog"

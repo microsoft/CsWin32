@@ -36,14 +36,17 @@ extends:
   template: azure-pipelines/MicroBuild.1ES.Official.yml@MicroBuildTemplate
   parameters:
     sdl:
-      sourceAnalysisPool: Azure-Pipelines-1ESPT-ExDShared
+      sourceAnalysisPool: VSEngSS-MicroBuild2022-1ES
 
     stages:
     - stage: archive
       jobs:
       - job: archive
         pool:
-          vmImage: ubuntu-20.04
+          name: AzurePipelines-EO
+          demands:
+          - ImageOverride -equals 1ESPT-Ubuntu22.04
+          os: Linux
 
         steps:
         - checkout: self

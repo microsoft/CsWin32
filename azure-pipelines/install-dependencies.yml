@@ -7,17 +7,17 @@ parameters:
   default: true # If nuget.config pulls from the azure-public account, we need to authenticate when building on the devdiv account.
 
 steps:
-- ${{ if and(parameters.needsAzurePublicFeeds, eq(variables['system.collectionId'], 'cb55739e-4afe-46a3-970f-1b49d8ee7564')) }}:
+- ${{ if and(parameters.needsAzurePublicFeeds, eq(variables['system.collectionId'], '011b8bdf-6d56-4f87-be0d-0092136884d9')) }}:
   - template: WIFtoPATauth.yml
     parameters:
       wifServiceConnectionName: azure-public/vside package pull
-      deadPATServiceConnectionId: 53e443aa-4df6-4848-a00f-8e0ff4caf7db # azure-public/vside/msft_consumption
+      deadPATServiceConnectionId: 0ae39abc-4d06-4436-a7b5-865833df49db # azure-public/msft_consumption
 
 - task: NuGetAuthenticate@1
   displayName: 🔏 Authenticate NuGet feeds
   inputs:
-    ${{ if and(parameters.needsAzurePublicFeeds, eq(variables['system.collectionId'], 'cb55739e-4afe-46a3-970f-1b49d8ee7564')) }}:
-      nuGetServiceConnections: azure-public/vside/msft_consumption
+    ${{ if and(parameters.needsAzurePublicFeeds, eq(variables['system.collectionId'], '011b8bdf-6d56-4f87-be0d-0092136884d9')) }}:
+      nuGetServiceConnections: azure-public/msft_consumption
 
 - powershell: |
     $AccessToken = '$(System.AccessToken)' # Avoid specifying the access token directly on the init.ps1 command line to avoid it showing up in errors
@@ -29,14 +29,6 @@ steps:
       mono --version
     }
   displayName: ⚙ Install prerequisites
-
-# ESRP signing requires this
-- task: UseDotNet@2
-  displayName: ⚙ Installing .NET Core 2.1 runtime
-  inputs:
-    packageType: runtime
-    version: 2.1.x
-  condition: eq(variables['system.collectionId'], 'cb55739e-4afe-46a3-970f-1b49d8ee7564')
 
 - powershell: azure-pipelines/variables/_pipelines.ps1
   failOnStderr: true

@@ -43,10 +43,22 @@
 
   <Target Name="Sign3rdPartyDependencies" DependsOnTargets="PackBuildOutputs">
     <ItemGroup>
+      <PowershellScriptsToSign Include="tools\*.ps1">
+        <StrongName>None</StrongName>
+        <Authenticode>MicrosoftSHA2</Authenticode>
+      </PowershellScriptsToSign>
+      <PowershellScriptsToSign>
+        <SignedOutputPath>$(OutDir)signed\tools\%(Filename)%(Extension)</SignedOutputPath>
+      </PowershellScriptsToSign>
+    </ItemGroup>
+    <ItemGroup>
+      <SelectedCloudBuildFilesToSign Include="@(PowershellScriptsToSign)" />
       <SelectedCloudBuildFilesToSign Include="@(TfmSpecificPackageFile)" Condition="'%(TfmSpecificPackageFile.Authenticode)'!=''">
         <StrongName>None</StrongName>
         <SignedOutputPath>$(OutDir)signed\%(Filename)%(Extension)</SignedOutputPath>
       </SelectedCloudBuildFilesToSign>
+    </ItemGroup>
+    <ItemGroup>
       <SelectedCloudBuildFilesToSignOutput Include="@(SelectedCloudBuildFilesToSign->'%(SignedOutputPath)'->Distinct())" />
       <FilesToSign Include="@(SelectedCloudBuildFilesToSignOutput)" />
     </ItemGroup>

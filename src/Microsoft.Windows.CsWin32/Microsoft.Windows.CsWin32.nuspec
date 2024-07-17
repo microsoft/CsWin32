@@ -54,6 +54,6 @@
     <file src="README.md" target="README.md" />
     <file src="..\..\NOTICE.txt" target="NOTICE.txt" />
     <file src="build\**" target="build\" />
-    <file src="tools\**" target="tools\" />
+    <file src="$BaseOutputPath$signed\tools\*.ps1" target="tools\" />
   </files>
 </package>

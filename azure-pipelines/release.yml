@@ -9,7 +9,7 @@ resources:
     ref: refs/tags/release
   pipelines:
   - pipeline: CI
-    source: microsoft.CsWin32
+    source: CsWin32
     trigger:
       tags:
       - auto-release

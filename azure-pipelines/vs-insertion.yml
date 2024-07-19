@@ -9,7 +9,7 @@ resources:
     ref: refs/tags/release
   pipelines:
   - pipeline: CI
-    source: Library # TODO: This should match the name of your CI pipeline
+    source: CsWin32
     tags:
     - Real signed
     trigger:
@@ -54,7 +54,7 @@ extends:
             TeamEmail: $(TeamEmail)
             InsertionPayloadName: $(Build.Repository.Name) $(Build.BuildNumber)
             InsertionBuildPolicy: Request Perf DDRITs
-            InsertionReviewers: $(Build.RequestedFor) # Append `,Your team name` (without quotes)
+            InsertionReviewers: $(Build.RequestedFor),Andrew Arnott
             AutoCompletePR: true
             AutoCompleteMergeStrategy: Squash
             ShallowClone: true

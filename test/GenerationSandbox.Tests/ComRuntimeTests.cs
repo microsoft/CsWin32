@@ -8,6 +8,7 @@ using IServiceProvider = Windows.Win32.System.Com.IServiceProvider;
 public class ComRuntimeTests
 {
     [Fact]
+    [Trait("TestCategory", "FailsInCloudTest")]
     public void RemotableInterface()
     {
         IShellWindows shellWindows = (IShellWindows)new ShellWindows();

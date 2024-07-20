@@ -160,9 +160,9 @@ public class COMTests : GeneratorTestBase
 
         if (marshaling == 1)
         {
-            Assert.Empty(ifaceSyntax.Members.OfType<PropertyDeclarationSyntax>().Where(m => m.Identifier.ValueText == "border"));
-            Assert.NotEmpty(ifaceSyntax.Members.OfType<MethodDeclarationSyntax>().Where(m => m.Identifier.ValueText == "put_border"));
-            Assert.NotEmpty(ifaceSyntax.Members.OfType<MethodDeclarationSyntax>().Where(m => m.Identifier.ValueText == "get_border"));
+            Assert.DoesNotContain(ifaceSyntax.Members.OfType<PropertyDeclarationSyntax>(), m => m.Identifier.ValueText == "border");
+            Assert.Contains(ifaceSyntax.Members.OfType<MethodDeclarationSyntax>(), m => m.Identifier.ValueText == "put_border");
+            Assert.Contains(ifaceSyntax.Members.OfType<MethodDeclarationSyntax>(), m => m.Identifier.ValueText == "get_border");
         }
         else
         {

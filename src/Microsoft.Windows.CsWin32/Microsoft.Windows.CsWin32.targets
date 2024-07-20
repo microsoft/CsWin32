@@ -2,6 +2,9 @@
   <PropertyGroup>
     <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);PackBuildOutputs</TargetsForTfmSpecificContentInPackage>
   </PropertyGroup>
+  <ItemGroup>
+    <SignFilesDependsOn Include="Sign3rdPartyDependencies" />
+  </ItemGroup>
 
   <Target Name="SetNuSpecProperties" BeforeTargets="GenerateNuspec" DependsOnTargets="GetBuildVersion">
     <PropertyGroup>
@@ -13,6 +16,7 @@
         WDKMetadataVersion=$(WDKMetadataVersion);
         ApiDocsVersion=$(ApiDocsVersion);
         PackageReleaseNotes=$(PackageReleaseNotes);
+        SignedOutputPath=$(IntermediateOutputPath)signed\;
         commit=$(GitCommitId);
       </NuspecProperties>
     </PropertyGroup>
@@ -22,8 +26,8 @@
     <ItemGroup>
       <!-- Analysis of C# projects -->
       <TfmSpecificPackageFile Include="$(TargetPath)" PackagePath="analyzers\cs\" />
-      <TfmSpecificPackageFile Include="@(ReferencePath)" PackagePath="analyzers\cs\" Condition=" '%(FileName)%(Extension)' == 'MessagePack.dll' " />
-      <TfmSpecificPackageFile Include="@(ReferencePath)" PackagePath="analyzers\cs\" Condition=" '%(FileName)%(Extension)' == 'MessagePack.Annotations.dll' " />
+      <TfmSpecificPackageFile Include="@(ReferencePath)" PackagePath="analyzers\cs\" Condition=" '%(FileName)%(Extension)' == 'MessagePack.dll' " Authenticode="3PartySHA2" />
+      <TfmSpecificPackageFile Include="@(ReferencePath)" PackagePath="analyzers\cs\" Condition=" '%(FileName)%(Extension)' == 'MessagePack.Annotations.dll' " Authenticode="3PartySHA2" />
       <TfmSpecificPackageFile Include="@(ReferencePath)" PackagePath="analyzers\cs\" Condition=" '%(FileName)%(Extension)' == 'Microsoft.Bcl.AsyncInterfaces.dll' " />
       <TfmSpecificPackageFile Include="@(ReferencePath)" PackagePath="analyzers\cs\" Condition=" '%(FileName)%(Extension)' == 'System.Text.Json.dll' " />
       <TfmSpecificPackageFile Include="@(ReferencePath)" PackagePath="analyzers\cs\" Condition=" '%(FileName)%(Extension)' == 'System.Text.Encodings.Web.dll' " />
@@ -38,4 +42,32 @@
     </ItemGroup>
   </Target>
 
+  <Target Name="Sign3rdPartyDependencies" DependsOnTargets="PackBuildOutputs" BeforeTargets="GenerateNuspec">
+    <ItemGroup>
+      <PowershellScriptsToSign Include="tools\*.ps1">
+        <StrongName>None</StrongName>
+        <Authenticode>MicrosoftSHA2</Authenticode>
+      </PowershellScriptsToSign>
+      <PowershellScriptsToSign>
+        <SignedOutputPath>$(IntermediateOutputPath)signed\tools\%(Filename)%(Extension)</SignedOutputPath>
+      </PowershellScriptsToSign>
+    </ItemGroup>
+    <ItemGroup>
+      <SelectedCloudBuildFilesToSign Include="@(PowershellScriptsToSign)" />
+      <SelectedCloudBuildFilesToSign Include="@(TfmSpecificPackageFile)" Condition="'%(TfmSpecificPackageFile.Authenticode)'!=''">
+        <StrongName>None</StrongName>
+        <SignedOutputPath>$(IntermediateOutputPath)signed\%(Filename)%(Extension)</SignedOutputPath>
+      </SelectedCloudBuildFilesToSign>
+    </ItemGroup>
+    <ItemGroup>
+      <SelectedCloudBuildFilesToSignOutput Include="@(SelectedCloudBuildFilesToSign->'%(SignedOutputPath)'->Distinct())" />
+      <FilesToSign Include="@(SelectedCloudBuildFilesToSignOutput)" />
+    </ItemGroup>
+    <ItemGroup>
+      <TfmSpecificPackageFile Remove="@(SelectedCloudBuildFilesToSign)" />
+      <TfmSpecificPackageFile Include="@(SelectedCloudBuildFilesToSignOutput)" />
+    </ItemGroup>
+    <Copy SourceFiles="@(SelectedCloudBuildFilesToSign)"
+          DestinationFiles="@(SelectedCloudBuildFilesToSign->'%(SignedOutputPath)')" />
+  </Target>
 </Project>

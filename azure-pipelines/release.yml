@@ -3,13 +3,13 @@ pr: none
 
 resources:
   repositories:
-  - repository: 1esPipelines
+  - repository: MicroBuildTemplate
     type: git
-    name: 1ESPipelineTemplates/1ESPipelineTemplates
+    name: 1ESPipelineTemplates/MicroBuildTemplate
     ref: refs/tags/release
   pipelines:
   - pipeline: CI
-    source: microsoft.CsWin32
+    source: CsWin32
     trigger:
       tags:
       - auto-release
@@ -18,25 +18,26 @@ variables:
 - template: GlobalVariables.yml
 
 extends:
-  template: v1/1ES.Official.PipelineTemplate.yml@1esPipelines
+  template: azure-pipelines/MicroBuild.1ES.Official.yml@MicroBuildTemplate
   parameters:
     sdl:
-      sourceAnalysisPool: Azure-Pipelines-1ESPT-ExDShared
+      sourceAnalysisPool: VSEngSS-MicroBuild2022-1ES
 
     stages:
     - stage: release
       jobs:
       - job: release
         pool:
-          name: Azure-Pipelines-1ESPT-ExDShared
-          image: ubuntu-2004
-          os: linux
+          name: AzurePipelines-EO
+          demands:
+          - ImageOverride -equals 1ESPT-Ubuntu22.04
+          os: Linux
         templateContext:
           outputs:
           - output: nuget
             displayName: 📦 Push packages to nuget.org
-            packagesToPush: '$(Pipeline.Workspace)/CI/deployables-Windows/*.nupkg'
-            packageParentPath: $(Pipeline.Workspace)/CI/deployables-Windows
+            packagesToPush: '$(Pipeline.Workspace)/CI/deployables-Windows/NuGet/*.nupkg'
+            packageParentPath: $(Pipeline.Workspace)/CI/deployables-Windows/NuGet
             allowPackageConflicts: true
             nuGetFeedType: external
             publishFeedCredentials: Microsoft.Windows.CsWin32
@@ -53,6 +54,7 @@ extends:
         - download: CI
           artifact: deployables-Windows
           displayName: 🔻 Download deployables-Windows artifact
+          patterns: 'NuGet/*'
         - task: GitHubRelease@1
           displayName: 📢 GitHub release (create)
           inputs:
@@ -64,7 +66,7 @@ extends:
             title: v$(resources.pipeline.CI.runName)
             isDraft: true # After running this step, visit the new draft release, edit, and publish.
             isPreRelease: $(IsPrerelease)
-            assets: $(Pipeline.Workspace)/CI/deployables-Windows/*.nupkg
+            assets: $(Pipeline.Workspace)/CI/deployables-Windows/NuGet/*.nupkg
             changeLogCompareToRelease: lastNonDraftRelease
             changeLogType: issueBased
             changeLogLabels: |

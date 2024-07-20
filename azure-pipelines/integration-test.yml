@@ -29,7 +29,7 @@ jobs:
     artifact: deployables-Windows
     displayName: 🔻 Download nupkg
   - pwsh: |
-      $nupkg = (Get-ChildItem -Path $(Pipeline.Workspace)/deployables-Windows -Filter *.nupkg)[0].Name
+      $nupkg = (Get-ChildItem -Path $(Pipeline.Workspace)/deployables-Windows/NuGet -Filter *.nupkg)[0].Name
       if ($nupkg -match 'Microsoft\.Windows\.CsWin32\.(.+)\.nupkg') {
         $version = $Matches[1]
         Write-Host "Will consume Microsoft.Windows.CsWin32 $version"

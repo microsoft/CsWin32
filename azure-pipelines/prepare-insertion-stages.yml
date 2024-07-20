@@ -32,7 +32,7 @@ stages:
           SymbolsProject: VS
           SymbolsAgentPath: $(Pipeline.Workspace)/symbols-legacy
 
-  - ${{ if false }}: # Switch to true to enable, but leave the condition to avoid merge conflicts later.
+  - ${{ if true }}: # Switch to true to enable, but leave the condition to avoid merge conflicts later.
     - job: push
       displayName: azure-public/winsdk feed
       ${{ if parameters.ArchiveSymbols }}:
@@ -63,5 +63,5 @@ stages:
         displayName: 🔻 Download deployables-Windows artifact
       - template: WIFtoPATauth.yml
         parameters:
-          wifServiceConnectionName: azure-public/winsdk package push
-          deadPATServiceConnectionId: 069a1efb-1adb-4cf0-8152-e228d2b6bb13 # azure-public/winsdk/CI
+          wifServiceConnectionName: azure-public/vside package push
+          deadPATServiceConnectionId: 9c66bbfe-03da-40f0-8ed7-23f599039d5d # azure-public/winsdk/CI

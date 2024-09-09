@@ -46,7 +46,7 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
             new object[] { "net472" },
             new object[] { "netstandard2.0" },
             new object[] { "net6.0" },
-            new object[] { "net7.0" },
+            new object[] { "net8.0" },
         };
 
     public static IEnumerable<object[]> TFMDataNoNetFx35MemberData => TFMDataNoNetFx35.Select(tfm => new object[] { tfm }).ToArray();
@@ -57,7 +57,7 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
             "net472",
             "netstandard2.0",
             "net6.0",
-            "net7.0",
+            "net8.0",
         };
 
     public static Platform[] SpecificCpuArchitectures =>
@@ -87,7 +87,7 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
         this.starterCompilations.Add("net6.0", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net60));
         this.starterCompilations.Add("net6.0-x86", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net60, Platform.X86));
         this.starterCompilations.Add("net6.0-x64", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net60, Platform.X64));
-        this.starterCompilations.Add("net7.0", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net70));
+        this.starterCompilations.Add("net8.0", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net70));
 
         foreach (string tfm in this.starterCompilations.Keys)
         {

@@ -123,6 +123,25 @@ CsWin32 will notice that your project already declares the type and skip generat
 Note that if that type is the only thing that references some other generated type, CsWin32 will stop generating that type too.
 To keep CsWin32 generating the referred types you need, add them explicitly to `NativeMethods.txt`.
 
+### Support for trimming, AOT, and/or disabling the runtime marshaler
+
+Newer .NET runtime versions may fail for CsWin32 generated code when the application project builds with one or both of these properties set:
+
+```xml
+<PublishAot>true</PublishAot>
+<DisableRuntimeMarshalling>true</DisableRuntimeMarshalling>
+<PublishTrimmed>true</PublishTrimmed>
+```
+
+CsWin32 supports these environments by avoiding code that relies on the runtime marshaler when the `allowMarshaling` setting is disabled in the `NativeMethods.json` file.
+For example:
+
+```json
+{
+  "$schema": "https://aka.ms/CsWin32.schema.json",
+  "allowMarshaling": false
+}```
+
 ### Newer metadata
 
 To update the metadata used as the source for code generation, you may install a newer `Microsoft.Windows.SDK.Win32Metadata` package:

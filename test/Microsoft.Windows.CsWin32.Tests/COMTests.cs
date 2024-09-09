@@ -419,4 +419,35 @@ public class COMTests : GeneratorTestBase
             Assert.DoesNotContain(actual, predicate);
         }
     }
+
+    [Fact]
+    public void FunctionPointersAsParameters()
+    {
+        this.GenerateApi("IContextCallback");
+        MethodDeclarationSyntax method = this.FindGeneratedMethod("ContextCallback").Single(m => m.Parent is InterfaceDeclarationSyntax);
+        ParameterSyntax parameter = method.ParameterList.Parameters[0];
+        Assert.Contains(
+            parameter.AttributeLists,
+            al => al.Attributes.Any(a =>
+            a is
+            {
+                Name: IdentifierNameSyntax { Identifier.ValueText: "MarshalAs" },
+                ArgumentList.Arguments: [{ Expression: MemberAccessExpressionSyntax { Name: IdentifierNameSyntax { Identifier.ValueText: "FunctionPtr" } } }],
+            }));
+    }
+
+    [Fact]
+    public void NoFunctionPointerForFARPROC()
+    {
+        this.GenerateApi("GetProcAddress");
+        MethodDeclarationSyntax method = this.FindGeneratedMethod("GetProcAddress").Single(m => m.Modifiers.Any(SyntaxKind.ExternKeyword));
+        Assert.DoesNotContain(
+            method.AttributeLists,
+            al => al.Target is { Identifier.RawKind: (int)SyntaxKind.ReturnKeyword } && al.Attributes.Any(a =>
+            a is
+            {
+                Name: IdentifierNameSyntax { Identifier.ValueText: "MarshalAs" },
+                ArgumentList.Arguments: [{ Expression: MemberAccessExpressionSyntax { Name: IdentifierNameSyntax { Identifier.ValueText: "FunctionPtr" } } }],
+            }));
+    }
 }

@@ -76,6 +76,7 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
         bool isInterface;
         bool isNonCOMConformingInterface;
         bool isManagedType = inputs.Generator?.IsManagedType(this) ?? false;
+        QualifiedTypeDefinitionHandle? qtdh = default;
         switch (this.Handle.Kind)
         {
             case HandleKind.TypeDefinition:
@@ -85,6 +86,7 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
                 nameSyntax = inputs.QualifyNames ? GetNestingQualifiedName(inputs.Generator, this.reader, td, hasUnmanagedSuffix, isInterfaceNestedInStruct: false) : IdentifierName(this.reader.GetString(td.Name) + simpleNameSuffix);
                 isInterface = (td.Attributes & TypeAttributes.Interface) == TypeAttributes.Interface;
                 isNonCOMConformingInterface = isInterface && inputs.Generator?.IsNonCOMInterface(td) is true;
+                qtdh = inputs.Generator is not null ? new QualifiedTypeDefinitionHandle(inputs.Generator, (TypeDefinitionHandle)this.Handle) : default;
                 break;
             case HandleKind.TypeReference:
                 var trh = (TypeReferenceHandle)this.Handle;
@@ -94,6 +96,14 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
                 nameSyntax = inputs.QualifyNames ? GetNestingQualifiedName(inputs, this.reader, tr, hasUnmanagedSuffix) : IdentifierName(this.reader.GetString(tr.Name) + simpleNameSuffix);
                 isInterface = inputs.Generator?.IsInterface(trh) is true;
                 isNonCOMConformingInterface = isInterface && inputs.Generator?.IsNonCOMInterface(trh) is true;
+                if (inputs.Generator is not null)
+                {
+                    if (inputs.Generator.TryGetTypeDefHandle(this.Handle, out QualifiedTypeDefinitionHandle qtdhTmp))
+                    {
+                        qtdh = qtdhTmp;
+                    }
+                }
+
                 break;
             default:
                 throw new NotSupportedException("Unrecognized handle type.");
@@ -114,6 +124,10 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
         {
             return new TypeSyntaxAndMarshaling(bclType);
         }
+
+        MarshalAsAttribute? marshalAs = null;
+        bool isDelegate = this.IsDelegate(inputs, out QualifiedTypeDefinition delegateDefinition)
+            && (qtdh is null || !Generator.IsUntypedDelegate(qtdh.Value.Reader, qtdh.Value.Reader.GetTypeDefinition(qtdh.Value.DefinitionHandle)));
 
         if (simpleName is "PWSTR" or "PSTR")
         {
@@ -140,17 +154,22 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
                 return new TypeSyntaxAndMarshaling(IdentifierName(specialName));
             }
         }
-        else if (TryMarshalAsObject(inputs, simpleName, out MarshalAsAttribute? marshalAs))
+        else if (TryMarshalAsObject(inputs, simpleName, out marshalAs))
         {
             return new TypeSyntaxAndMarshaling(PredefinedType(Token(SyntaxKind.ObjectKeyword)), marshalAs, null);
         }
-        else if (!inputs.AllowMarshaling && this.IsDelegate(inputs, out QualifiedTypeDefinition delegateDefinition) && inputs.Generator is object && !Generator.IsUntypedDelegate(delegateDefinition.Generator.Reader, delegateDefinition.Definition))
+        else if (!inputs.AllowMarshaling && isDelegate && inputs.Generator is object && !Generator.IsUntypedDelegate(delegateDefinition.Generator.Reader, delegateDefinition.Definition))
         {
             return new TypeSyntaxAndMarshaling(inputs.Generator.FunctionPointer(delegateDefinition));
         }
         else
         {
             this.RequestTypeGeneration(inputs.Generator, this.GetContext(inputs));
+        }
+
+        if (isDelegate)
+        {
+            marshalAs = new(UnmanagedType.FunctionPtr);
         }
 
         TypeSyntax syntax = isInterface && (!inputs.AllowMarshaling || isNonCOMConformingInterface)
@@ -178,12 +197,12 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
                         marshalCookie = marshalCookie.Substring(Generator.GlobalNamespacePrefix.Length);
                     }
 
-                    return new TypeSyntaxAndMarshaling(syntax, new MarshalAsAttribute(UnmanagedType.CustomMarshaler) { MarshalCookie = marshalCookie, MarshalType = Generator.WinRTCustomMarshalerFullName }, null);
+                    marshalAs = new MarshalAsAttribute(UnmanagedType.CustomMarshaler) { MarshalCookie = marshalCookie, MarshalType = Generator.WinRTCustomMarshalerFullName };
                 }
             }
         }
 
-        return new TypeSyntaxAndMarshaling(syntax);
+        return new TypeSyntaxAndMarshaling(syntax, marshalAs, null);
     }
 
     internal override bool? IsValueType(TypeSyntaxSettings inputs)

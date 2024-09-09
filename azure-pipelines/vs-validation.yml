@@ -14,6 +14,8 @@ resources:
 
 variables:
 - template: GlobalVariables.yml
+- name: MicroBuild_NuPkgSigningEnabled
+  value: false # test-signed nuget packages fail to restore in the VS insertion PR validations. Just don't sign them *at all*.
 
 extends:
   template: azure-pipelines/MicroBuild.1ES.Unofficial.yml@MicroBuildTemplate
@@ -27,21 +29,31 @@ extends:
         DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
         NUGET_PACKAGES: $(Agent.TempDirectory)/.nuget/packages/
         BuildConfiguration: Release
-        ValidationBuild: true
+        SkipCodesignVerify: true
 
       jobs:
       - template: /azure-pipelines/build.yml@self
         parameters:
           Is1ESPT: true
-          RealSign: true
+          RealSign: false
           windowsPool: VSEngSS-MicroBuild2022-1ES
+          linuxPool:
+            name: AzurePipelines-EO
+            demands:
+            - ImageOverride -equals 1ESPT-Ubuntu22.04
+            os: Linux
+          macOSPool:
+            name: Azure Pipelines
+            vmImage: macOS-12
+            os: macOS
           EnableMacOSBuild: false
           RunTests: false
+          SkipCodesignVerify: true
 
     - template: /azure-pipelines/prepare-insertion-stages.yml@self
       parameters:
         ArchiveSymbols: false
-        RealSign: true
+        RealSign: false
 
     - stage: insertion
       displayName: VS insertion
@@ -73,12 +85,13 @@ extends:
           inputs:
             TeamName: $(TeamName)
             TeamEmail: $(TeamEmail)
-            InsertionPayloadName: $(Build.Repository.Name) VALIDATION BUILD $(Build.BuildNumber) ($(Build.SourceBranch)) [Skip-SymbolCheck]
+            InsertionPayloadName: $(Build.Repository.Name) VALIDATION BUILD $(Build.BuildNumber) ($(Build.SourceBranch)) [Skip-SymbolCheck] [Skip-HashCheck] [Skip-SignCheck]
             InsertionDescription: |
               This PR is for **validation purposes only** for !$(System.PullRequest.PullRequestId). **Do not complete**.
             CustomScriptExecutionCommand: src/VSSDK/NuGet/AllowUnstablePackages.ps1
             InsertionBuildPolicy: Request Perf DDRITs
             InsertionReviewers: $(Build.RequestedFor)
+            DraftPR: false # set to true and update InsertionBuildPolicy when we can specify all the validations we want to run (https://dev.azure.com/devdiv/DevDiv/_workitems/edit/2224288)
             AutoCompletePR: false
             ShallowClone: true
         - powershell: |

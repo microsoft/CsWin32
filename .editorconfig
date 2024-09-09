@@ -198,5 +198,8 @@ dotnet_diagnostic.CA1062.severity = suggestion
 dotnet_diagnostic.MsgPack001.severity = error
 dotnet_diagnostic.MsgPack002.severity = error
 
+# CA2016: Forward the CancellationToken parameter
+dotnet_diagnostic.CA2016.severity = warning
+
 [*.sln]
 indent_style = tab

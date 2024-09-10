@@ -284,7 +284,7 @@ public partial class Generator
                         {
                             remainsRefType = false;
                             parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
-                                .WithType((isIn && isConst ? MakeReadOnlySpanOfT(elementType) : MakeSpanOfT(elementType)).WithTrailingTrivia(TriviaList(Space)));
+                                .WithType((isIn ? MakeReadOnlySpanOfT(elementType) : MakeSpanOfT(elementType)).WithTrailingTrivia(TriviaList(Space)));
                             fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
                                 VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
                             arguments[param.SequenceNumber - 1] = Argument(localName);
@@ -323,7 +323,7 @@ public partial class Generator
 
                         // Accept a span instead of a pointer.
                         parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
-                            .WithType((isIn && isConst ? MakeReadOnlySpanOfT(elementType) : MakeSpanOfT(elementType)).WithTrailingTrivia(TriviaList(Space)));
+                            .WithType((isIn ? MakeReadOnlySpanOfT(elementType) : MakeSpanOfT(elementType)).WithTrailingTrivia(TriviaList(Space)));
                         fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
                             VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
                         arguments[param.SequenceNumber - 1] = Argument(localName);

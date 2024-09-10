@@ -47,6 +47,16 @@ public class FriendlyOverloadTests : GeneratorTestBase
         Assert.Equal("DsGetDcCloseWSafeHandle", Assert.IsType<IdentifierNameSyntax>(method.ParameterList.Parameters.Last().Type).Identifier.ValueText);
     }
 
+    [Fact]
+    public void InAttributeOnArraysProjectedAsReadOnlySpan()
+    {
+        const string Method = "RmRegisterResources";
+        this.GenerateApi(Method);
+
+        MethodDeclarationSyntax method = Assert.Single(this.FindGeneratedMethod(Method), m => !IsOrContainsExternMethod(m));
+        Assert.Equal(3, method.ParameterList.Parameters.Count(p => p.Type is GenericNameSyntax { Identifier.ValueText: "ReadOnlySpan" }));
+    }
+
     private void Generate(string name)
     {
         this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(Platform.X64));

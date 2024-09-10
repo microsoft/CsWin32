@@ -326,7 +326,9 @@ public partial class Generator
         .Add("ULARGE_INTEGER", "Use the C# ulong keyword instead.")
         .Add("OVERLAPPED", "Use System.Threading.NativeOverlapped instead.")
         .Add("POINT", "Use System.Drawing.Point instead.")
-        .Add("POINTF", "Use System.Drawing.PointF instead.");
+        .Add("POINTF", "Use System.Drawing.PointF instead.")
+        .Add("AddVectoredExceptionHandler", "SEH native function pointers are unstable when implemented by .NET managed code. Learn more at https://github.com/microsoft/CsWin32/issues/1253#issuecomment-2341562332")
+        .Add("RemoveVectoredExceptionHandler", "SEH native function pointers are unstable when implemented by .NET managed code. Learn more at https://github.com/microsoft/CsWin32/issues/1253#issuecomment-2341562332");
 
     /// <summary>
     /// Gets a map of interop APIs that should not be generated when marshaling is allowed, and messages to emit in diagnostics if these APIs are ever directly requested.

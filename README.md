@@ -140,7 +140,8 @@ For example:
 {
   "$schema": "https://aka.ms/CsWin32.schema.json",
   "allowMarshaling": false
-}```
+}
+```
 
 ### Newer metadata
 

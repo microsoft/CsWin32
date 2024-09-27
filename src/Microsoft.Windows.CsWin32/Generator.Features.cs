@@ -5,6 +5,7 @@ namespace Microsoft.Windows.CsWin32;
 
 public partial class Generator
 {
+    private readonly bool canUseUnscopedRef;
     private readonly bool canUseSpan;
     private readonly bool canCallCreateSpan;
     private readonly bool canUseUnsafeAsRef;

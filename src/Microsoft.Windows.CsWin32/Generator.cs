@@ -85,6 +85,11 @@ public partial class Generator : IGenerator, IDisposable
         this.parseOptions = parseOptions;
         this.volatileCode = new(this.committedCode);
 
+        // UnscopedRefAttribute may be emitted to work on downlevel *runtimes*, but we can't use it
+        // on downlevel *compilers*. Only .NET 8+ SDK compilers support it. Since we cannot detect
+        // compiler version, we use language version instead.
+        this.canUseUnscopedRef = this.parseOptions?.LanguageVersion >= (LanguageVersion)1100; // C# 11.0
+
         this.canUseSpan = this.compilation?.GetTypeByMetadataName(typeof(Span<>).FullName) is not null;
         this.canCallCreateSpan = this.compilation?.GetTypeByMetadataName(typeof(MemoryMarshal).FullName)?.GetMembers("CreateSpan").Any() is true;
         this.canUseUnsafeAsRef = this.compilation?.GetTypeByMetadataName(typeof(Unsafe).FullName)?.GetMembers("Add").Any() is true;
@@ -117,6 +122,7 @@ public partial class Generator : IGenerator, IDisposable
             AddSymbolIf(this.canUseUnsafeNullRef, "canUseUnsafeNullRef");
             AddSymbolIf(compilation?.GetTypeByMetadataName("System.Drawing.Point") is not null, "canUseSystemDrawing");
             AddSymbolIf(this.IsFeatureAvailable(Feature.InterfaceStaticMembers), "canUseInterfaceStaticMembers");
+            AddSymbolIf(this.canUseUnscopedRef, "canUseUnscopedRef");
 
             if (extraSymbols.Count > 0)
             {

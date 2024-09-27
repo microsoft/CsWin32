@@ -3,6 +3,8 @@
 {
 	internal T e0;
 
+#if canUseUnscopedRef
+
 #if canUseUnsafeAdd
 	internal ref T this[int index]
 	{
@@ -29,5 +31,7 @@
 		}
 #endif
 	}
+#endif
+
 #endif
 }

@@ -22,7 +22,17 @@ public partial class Generator : IGenerator, IDisposable
     private readonly TypeSyntaxSettings errorMessageTypeSettings;
 
     private readonly ClassDeclarationSyntax comHelperClass;
-    private readonly StructDeclarationSyntax variableLengthInlineArrayStruct;
+
+    /// <summary>
+    /// The struct with one type parameter used to represent a variable-length inline array.
+    /// </summary>
+    private readonly StructDeclarationSyntax variableLengthInlineArrayStruct1;
+
+    /// <summary>
+    /// The struct with two type parameters used to represent a variable-length inline array.
+    /// This is useful when the exposed type parameter is C# unmanaged but runtime unblittable (i.e. <see langword="bool" /> and <see langword="char" />).
+    /// </summary>
+    private readonly StructDeclarationSyntax variableLengthInlineArrayStruct2;
 
     private readonly Dictionary<string, IReadOnlyList<ISymbol>> findTypeSymbolIfAlreadyAvailableCache = new(StringComparer.Ordinal);
     private readonly Rental<MetadataReader> metadataReader;
@@ -159,7 +169,8 @@ public partial class Generator : IGenerator, IDisposable
         this.methodsAndConstantsClassName = IdentifierName(options.ClassName);
 
         FetchTemplate("ComHelpers", this, out this.comHelperClass);
-        FetchTemplate("VariableLengthInlineArray`1", this, out this.variableLengthInlineArrayStruct);
+        FetchTemplate("VariableLengthInlineArray`1", this, out this.variableLengthInlineArrayStruct1);
+        FetchTemplate("VariableLengthInlineArray`2", this, out this.variableLengthInlineArrayStruct2);
     }
 
     internal enum GeneratingElement

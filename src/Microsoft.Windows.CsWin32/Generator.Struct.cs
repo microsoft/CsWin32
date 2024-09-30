@@ -101,9 +101,21 @@ public partial class Generator
                             .AddDeclarationVariables(fieldDeclarator)
                             .AddModifiers(TokenWithSpace(this.Visibility));
                     }
+                    else if (fieldType is PredefinedTypeSyntax { Keyword.RawKind: (int)SyntaxKind.CharKeyword })
+                    {
+                        // If the field is a char, we need to use a helper struct to avoid marshaling issues
+                        // because although C# considered char to be "unmanaged", .NET Framework considers it non-blittable.
+                        this.RequestVariableLengthInlineArrayHelper2(context);
+                        field = FieldDeclaration(
+                            VariableDeclaration(
+                                GenericName($"global::Windows.Win32.VariableLengthInlineArray")
+                                .WithTypeArgumentList(TypeArgumentList().AddArguments(fieldType, PredefinedType(Token(SyntaxKind.UShortKeyword))))))
+                            .AddDeclarationVariables(fieldDeclarator)
+                            .AddModifiers(TokenWithSpace(this.Visibility));
+                    }
                     else
                     {
-                        this.RequestVariableLengthInlineArrayHelper(context);
+                        this.RequestVariableLengthInlineArrayHelper1(context);
                         field = FieldDeclaration(
                             VariableDeclaration(
                                 GenericName($"global::Windows.Win32.VariableLengthInlineArray")
@@ -527,21 +539,40 @@ public partial class Generator
         return (originalType, default(SyntaxList<MemberDeclarationSyntax>), marshalAs);
     }
 
-    private void RequestVariableLengthInlineArrayHelper(Context context)
+    private void RequestVariableLengthInlineArrayHelper1(Context context)
     {
         if (this.IsWin32Sdk)
         {
-            if (!this.IsTypeAlreadyFullyDeclared($"{this.Namespace}.{this.variableLengthInlineArrayStruct.Identifier.ValueText}"))
+            if (!this.IsTypeAlreadyFullyDeclared($"{this.Namespace}.{this.variableLengthInlineArrayStruct1.Identifier.ValueText}`1"))
             {
                 this.DeclareUnscopedRefAttributeIfNecessary();
-                this.volatileCode.GenerateSpecialType("VariableLengthInlineArray", () => this.volatileCode.AddSpecialType("VariableLengthInlineArray", this.variableLengthInlineArrayStruct));
+                this.volatileCode.GenerateSpecialType("VariableLengthInlineArray1", () => this.volatileCode.AddSpecialType("VariableLengthInlineArray1", this.variableLengthInlineArrayStruct1));
             }
         }
         else if (this.SuperGenerator is not null && this.SuperGenerator.TryGetGenerator("Windows.Win32", out Generator? generator))
         {
             generator.volatileCode.GenerationTransaction(delegate
             {
-                generator.RequestVariableLengthInlineArrayHelper(context);
+                generator.RequestVariableLengthInlineArrayHelper1(context);
+            });
+        }
+    }
+
+    private void RequestVariableLengthInlineArrayHelper2(Context context)
+    {
+        if (this.IsWin32Sdk)
+        {
+            if (!this.IsTypeAlreadyFullyDeclared($"{this.Namespace}.{this.variableLengthInlineArrayStruct2.Identifier.ValueText}`2"))
+            {
+                this.DeclareUnscopedRefAttributeIfNecessary();
+                this.volatileCode.GenerateSpecialType("VariableLengthInlineArray2", () => this.volatileCode.AddSpecialType("VariableLengthInlineArray2", this.variableLengthInlineArrayStruct2));
+            }
+        }
+        else if (this.SuperGenerator is not null && this.SuperGenerator.TryGetGenerator("Windows.Win32", out Generator? generator))
+        {
+            generator.volatileCode.GenerationTransaction(delegate
+            {
+                generator.RequestVariableLengthInlineArrayHelper2(context);
             });
         }
     }

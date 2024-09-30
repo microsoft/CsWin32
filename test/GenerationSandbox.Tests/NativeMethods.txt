@@ -39,6 +39,7 @@ RECT
 RegLoadAppKey
 RM_PROCESS_INFO
 S_OK
+SetupDiGetDeviceInterfaceDetail
 SHDESCRIPTIONID
 SHELLFLAGSTATE
 ShellLink

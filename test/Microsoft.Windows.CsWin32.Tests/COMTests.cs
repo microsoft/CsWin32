@@ -450,4 +450,24 @@ public class COMTests : GeneratorTestBase
                 ArgumentList.Arguments: [{ Expression: MemberAccessExpressionSyntax { Name: IdentifierNameSyntax { Identifier.ValueText: "FunctionPtr" } } }],
             }));
     }
+
+    [Fact]
+    public void IUnknown_QueryInterfaceGenericHelper()
+    {
+        this.generator = this.CreateGenerator(new GeneratorOptions { AllowMarshaling = false });
+
+        this.GenerateApi("IUnknown");
+        Assert.Contains(this.FindGeneratedMethod("QueryInterface"), m => m.TypeParameterList?.Parameters.Count == 1);
+    }
+
+    [Fact]
+    public void IUnknown_Derived_QueryInterfaceGenericHelper()
+    {
+        this.generator = this.CreateGenerator(new GeneratorOptions { AllowMarshaling = false });
+
+        this.GenerateApi("ITypeLib");
+        Assert.Contains(
+            this.FindGeneratedMethod("QueryInterface"),
+            m => m.Parent is StructDeclarationSyntax { Identifier.Text: "ITypeLib" } && m.TypeParameterList?.Parameters.Count == 1);
+    }
 }

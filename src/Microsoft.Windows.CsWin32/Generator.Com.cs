@@ -118,6 +118,7 @@ public partial class Generator
 
         // It is imperative that we generate methods for all base interfaces as well, ahead of any implemented by *this* interface.
         var allMethods = new List<QualifiedMethodDefinitionHandle>();
+        bool hasIUnknownMembers = originalIfaceName == "IUnknown";
         while (!baseTypes.IsEmpty)
         {
             QualifiedTypeDefinitionHandle qualifiedBaseType = baseTypes.Peek();
@@ -125,6 +126,8 @@ public partial class Generator
             TypeDefinition baseType = qualifiedBaseType.Generator.Reader.GetTypeDefinition(qualifiedBaseType.DefinitionHandle);
             IEnumerable<QualifiedMethodDefinitionHandle> methodsThisType = baseType.GetMethods().Select(m => new QualifiedMethodDefinitionHandle(qualifiedBaseType.Generator, m));
             allMethods.AddRange(methodsThisType);
+
+            hasIUnknownMembers |= qualifiedBaseType.Reader.StringComparer.Equals(baseType.Name, "IUnknown");
 
             // We do *not* emit CCW methods for IUnknown, because those are provided by ComWrappers.
             if (ccwThisParameter is not null && !GenerateCcwFor(qualifiedBaseType.Reader, baseType.Name))
@@ -493,6 +496,12 @@ public partial class Generator
                 MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Unsafe)), IdentifierName(nameof(Unsafe.AsPointer))),
                 ArgumentList().AddArguments(Argument(RefExpression(ThisExpression()))));
             return typedPointer is not null ? CastExpression(typedPointer, invocation) : invocation;
+        }
+
+        // Add helper methods when appropriate.
+        if (hasIUnknownMembers)
+        {
+            members.AddRange(this.ExtractMembersFromTemplate("IUnknownHelperMethods"));
         }
 
         // We expose the vtbl struct to support CCWs.

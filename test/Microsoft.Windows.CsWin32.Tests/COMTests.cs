@@ -126,8 +126,8 @@ public class COMTests : GeneratorTestBase
         // And in some cases, the types are *not* the same, so don't generate any property.
         Assert.Null(FindAccessor(structSyntax, "ClassName", SyntaxKind.GetAccessorDeclaration));
         Assert.Null(FindAccessor(structSyntax, "ClassName", SyntaxKind.SetAccessorDeclaration));
-        Assert.NotEmpty(structSyntax.Members.OfType<MethodDeclarationSyntax>().Where(m => m.Identifier.ValueText == "get_ClassName"));
-        Assert.NotEmpty(structSyntax.Members.OfType<MethodDeclarationSyntax>().Where(m => m.Identifier.ValueText == "put_ClassName"));
+        Assert.Contains(structSyntax.Members.OfType<MethodDeclarationSyntax>(), m => m.Identifier.ValueText == "get_ClassName");
+        Assert.Contains(structSyntax.Members.OfType<MethodDeclarationSyntax>(), m => m.Identifier.ValueText == "put_ClassName");
     }
 
     /// <summary>
@@ -203,8 +203,8 @@ public class COMTests : GeneratorTestBase
         AttributeSyntax marshalAsAttr = Assert.Single(FindAttribute(lastParam.AttributeLists, "MarshalAs"));
 
         Assert.True(marshalAsAttr.ArgumentList?.Arguments[0].ToString() == "UnmanagedType.CustomMarshaler");
-        Assert.Single(marshalAsAttr.ArgumentList.Arguments.Where(arg => arg.ToString() == $"MarshalCookie = \"{WinRTClassName}\""));
-        Assert.Single(marshalAsAttr.ArgumentList.Arguments.Where(arg => arg.ToString() == $"MarshalType = \"{WinRTCustomMarshalerFullName}\""));
+        Assert.Single(marshalAsAttr.ArgumentList.Arguments, arg => arg.ToString() == $"MarshalCookie = \"{WinRTClassName}\"");
+        Assert.Single(marshalAsAttr.ArgumentList.Arguments, arg => arg.ToString() == $"MarshalType = \"{WinRTCustomMarshalerFullName}\"");
 
         // Make sure the WinRT marshaler was brought in
         Assert.Single(this.FindGeneratedType(WinRTCustomMarshalerClass));

@@ -503,7 +503,7 @@ public class GeneratorTests : GeneratorTestBase
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
         IEnumerable<MethodDeclarationSyntax> overloads = this.FindGeneratedMethod("EvtNext");
-        Assert.NotEmpty(overloads.Where(o => o.ParameterList.Parameters.Count == 5 && (o.ParameterList.Parameters[1].Type?.ToString().StartsWith("Span<", StringComparison.Ordinal) ?? false)));
+        Assert.Contains(overloads, o => o.ParameterList.Parameters.Count == 5 && (o.ParameterList.Parameters[1].Type?.ToString().StartsWith("Span<", StringComparison.Ordinal) ?? false));
     }
 
     [Theory, PairwiseData]

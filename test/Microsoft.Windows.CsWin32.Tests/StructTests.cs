@@ -239,9 +239,9 @@ namespace Microsoft.Windows.Sdk
     {
         this.GenerateApi("Color");
         var type = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("Color"));
-        FieldDeclarationSyntax argb = Assert.Single(type.Members.OfType<FieldDeclarationSyntax>().Where(f => !(f.Modifiers.Any(SyntaxKind.StaticKeyword) || f.Modifiers.Any(SyntaxKind.ConstKeyword))));
+        FieldDeclarationSyntax argb = Assert.Single(type.Members.OfType<FieldDeclarationSyntax>(), f => !(f.Modifiers.Any(SyntaxKind.StaticKeyword) || f.Modifiers.Any(SyntaxKind.ConstKeyword)));
         Assert.Equal("Argb", argb.Declaration.Variables.Single().Identifier.ValueText);
-        Assert.NotEmpty(type.Members.OfType<FieldDeclarationSyntax>().Where(f => f.Modifiers.Any(SyntaxKind.ConstKeyword)));
+        Assert.Contains(type.Members.OfType<FieldDeclarationSyntax>(), f => f.Modifiers.Any(SyntaxKind.ConstKeyword));
     }
 
     [Theory]

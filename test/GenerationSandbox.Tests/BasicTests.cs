@@ -453,7 +453,7 @@ public class BasicTests
         sourceString.AsSpan().CopyTo(buffer);
         int result = PInvoke.PathParseIconLocation(ref buffer);
         Assert.Equal(3, result);
-        Assert.Equal("hi there", buffer.ToString());
+        Assert.Equal("hi there\0", buffer.ToString());
     }
 
     [Fact]

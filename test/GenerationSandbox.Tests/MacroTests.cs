@@ -65,4 +65,30 @@ public class MacroTests
             Assert.Equal((LRESULT)(nint)0xFFFFFFFF, MAKELRESULT(0xFFFF, 0xFFFF));
         }
     }
+
+    [Fact]
+    public void LOWORDTest()
+    {
+        Assert.Equal((ushort)0x0000, LOWORD(0x00000000u));
+        Assert.Equal((ushort)0x0001, LOWORD(0x00010001u));
+        Assert.Equal((ushort)0x0000, LOWORD(0xFFFF0000u));
+        Assert.Equal((ushort)0x1234, LOWORD(0x56781234u));
+        Assert.Equal((ushort)0xFFFF, LOWORD(0xFFFFFFFFu));
+        Assert.Equal((ushort)0xABCD, LOWORD(0x1234ABCDu));
+        Assert.Equal((ushort)0x0000, LOWORD(0xFFFF0000u));
+        Assert.Equal((ushort)0x8000, LOWORD(0xFFFF8000u));
+    }
+
+    [Fact]
+    public void HIWORDTest()
+    {
+        Assert.Equal((ushort)0x0000, HIWORD(0x00000000u));
+        Assert.Equal((ushort)0x0001, HIWORD(0x00010001u));
+        Assert.Equal((ushort)0xFFFF, HIWORD(0xFFFF0000u));
+        Assert.Equal((ushort)0x5678, HIWORD(0x56781234u));
+        Assert.Equal((ushort)0xFFFF, HIWORD(0xFFFFFFFFu));
+        Assert.Equal((ushort)0x1234, HIWORD(0x1234ABCDu));
+        Assert.Equal((ushort)0xFFFF, HIWORD(0xFFFF1234u));
+        Assert.Equal((ushort)0x8000, HIWORD(0x80000000u));
+    }
 }

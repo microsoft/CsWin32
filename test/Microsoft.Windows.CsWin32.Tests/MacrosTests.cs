@@ -15,9 +15,22 @@ public class MacrosTests : GeneratorTestBase
         Assert.True(this.generator.TryGenerate("MAKELONG", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
-        var method = Assert.Single(this.FindGeneratedMethod("MAKELONG"));
+        var makelongMethod = Assert.Single(this.FindGeneratedMethod("MAKELONG"));
+        Assert.True(makelongMethod.Modifiers.Any(publicVisibility ? SyntaxKind.PublicKeyword : SyntaxKind.InternalKeyword));
 
-        Assert.True(method.Modifiers.Any(publicVisibility ? SyntaxKind.PublicKeyword : SyntaxKind.InternalKeyword));
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { Public = publicVisibility });
+        Assert.True(this.generator.TryGenerate("LOWORD", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        var lowordMethod = Assert.Single(this.FindGeneratedMethod("LOWORD"));
+        Assert.True(lowordMethod.Modifiers.Any(publicVisibility ? SyntaxKind.PublicKeyword : SyntaxKind.InternalKeyword));
+
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { Public = publicVisibility });
+        Assert.True(this.generator.TryGenerate("HIWORD", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+        var hiwordMethod = Assert.Single(this.FindGeneratedMethod("HIWORD"));
+        Assert.True(hiwordMethod.Modifiers.Any(publicVisibility ? SyntaxKind.PublicKeyword : SyntaxKind.InternalKeyword));
     }
 
     [Theory]

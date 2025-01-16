@@ -61,11 +61,11 @@ public class SourceGeneratorTests(ITestOutputHelper logger)
     /// Asserts that when targeting a framework that implicitly includes the references we need, no warning is generated.
     /// </summary>
     [Fact]
-    public async Task MissingSystemMemoryReference_WithGeneratedCode_Net60()
+    public async Task MissingSystemMemoryReference_WithGeneratedCode_Net80()
     {
         await new VerifyCS.Test(logger)
         {
-            ReferenceAssemblies = ReferenceAssemblies.Net.Net60,
+            ReferenceAssemblies = ReferenceAssemblies.Net.Net80,
             NativeMethodsTxt = "CreateFile",
         }.RunAsync(TestContext.Current.CancellationToken);
     }
@@ -75,7 +75,8 @@ public class SourceGeneratorTests(ITestOutputHelper logger)
     {
         await new VerifyCS.Test(logger)
         {
-            ReferenceAssemblies = ReferenceAssemblies.Net.Net60,
+            ReferenceAssemblies = ReferenceAssemblies.Net.Net80,
+            LanguageVersion = LanguageVersion.CSharp12,
             NativeMethodsTxt = "gdi32.*",
         }.RunAsync(TestContext.Current.CancellationToken);
     }

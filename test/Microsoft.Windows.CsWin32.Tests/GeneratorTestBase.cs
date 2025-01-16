@@ -26,7 +26,7 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
 
         this.parseOptions = CSharpParseOptions.Default
             .WithDocumentationMode(DocumentationMode.Diagnose)
-            .WithLanguageVersion(LanguageVersion.CSharp11);
+            .WithLanguageVersion(LanguageVersion.CSharp12);
 
         // set in InitializeAsync
         this.compilation = null!;
@@ -91,14 +91,27 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
 
         foreach (string tfm in this.starterCompilations.Keys)
         {
-            if (tfm.StartsWith("net6") || tfm.StartsWith("net7"))
+            if (tfm.StartsWith("netstandard", StringComparison.OrdinalIgnoreCase))
             {
-                AddSymbols("NET5_0_OR_GREATER", "NET6_0_OR_GREATER", "NET6_0");
+                AddSymbols("NETSTANDARD");
+                AddSymbols("NETSTANDARD2_0");
+            }
+            else if (tfm.Contains('.'))
+            {
+                AddSymbols("NET5_0_OR_GREATER");
+                AddSymbols("NET6_0_OR_GREATER");
+                AddSymbols("NET7_0_OR_GREATER");
+                AddSymbols("NET8_0_OR_GREATER");
+                AddSymbols(tfm.Replace('.', '_').ToUpperInvariant());
+            }
+            else
+            {
+                AddSymbols("NETFRAMEWORK");
             }
 
-            if (tfm.StartsWith("net7"))
+            if (tfm.StartsWith("net9"))
             {
-                AddSymbols("NET7_0_OR_GREATER", "NET7_0");
+                AddSymbols("NET9_0_OR_GREATER");
             }
 
             // Guarantee we have at least an empty list of symbols for each TFM.
@@ -153,6 +166,13 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
     {
         return method.Modifiers.Any(SyntaxKind.ExternKeyword) || method.Body?.Statements.OfType<LocalFunctionStatementSyntax>().Any(f => f.Modifiers.Any(SyntaxKind.ExternKeyword)) is true;
     }
+
+    protected static LanguageVersion? GetLanguageVersionForTfm(string tfm) => tfm switch
+    {
+        "net8.0" => LanguageVersion.CSharp12,
+        "net9.0" => LanguageVersion.CSharp13,
+        _ => null,
+    };
 
     protected static IEnumerable<AttributeSyntax> FindAttribute(SyntaxList<AttributeListSyntax> attributeLists, string name) => attributeLists.SelectMany(al => al.Attributes).Where(a => a.Name.ToString() == name);
 

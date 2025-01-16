@@ -13,11 +13,10 @@ public class InlineArrayTests : GeneratorTestBase
         bool allowMarshaling,
         bool multitargetingAPIs,
         [CombinatorialValues("net35", "net472", "net8.0")] string tfm,
-        [CombinatorialValues(/*char*/"RM_PROCESS_INFO", /*custom unmanaged*/"ARRAYDESC")] string api,
-        [CombinatorialValues(LanguageVersion.CSharp8, LanguageVersion.CSharp9)] LanguageVersion langVersion)
+        [CombinatorialValues(/*char*/"RM_PROCESS_INFO", /*custom unmanaged*/"ARRAYDESC")] string api)
     {
         this.compilation = this.starterCompilations[tfm];
-        this.parseOptions = this.parseOptions.WithLanguageVersion(langVersion);
+        this.parseOptions = this.parseOptions.WithLanguageVersion(GetLanguageVersionForTfm(tfm) ?? LanguageVersion.CSharp9);
         this.generator = this.CreateGenerator(new GeneratorOptions { AllowMarshaling = allowMarshaling, MultiTargetingFriendlyAPIs = multitargetingAPIs });
 
         // TODO we need to test

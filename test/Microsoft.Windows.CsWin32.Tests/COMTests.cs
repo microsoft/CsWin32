@@ -341,11 +341,11 @@ public class COMTests : GeneratorTestBase
 
         if (netstandard)
         {
-            Assert.Contains(iface.AttributeLists, al => IsAttributePresent(al, "SupportedOSPlatform"));
+            Assert.DoesNotContain(iface.AttributeLists, al => IsAttributePresent(al, "SupportedOSPlatform"));
         }
         else
         {
-            Assert.DoesNotContain(iface.AttributeLists, al => IsAttributePresent(al, "SupportedOSPlatform"));
+            Assert.Contains(iface.AttributeLists, al => IsAttributePresent(al, "SupportedOSPlatform"));
         }
     }
 
@@ -395,12 +395,11 @@ public class COMTests : GeneratorTestBase
     [CombinatorialData]
     public void COMInterfaceIIDInterfaceOnAppropriateTFMs(
         bool allowMarshaling,
-        [CombinatorialValues(LanguageVersion.CSharp10, LanguageVersion.CSharp11)] LanguageVersion langVersion,
         [CombinatorialValues("net8.0", "net9.0")] string tfm)
     {
         const string structName = "IEnumBstr";
         this.compilation = this.starterCompilations[tfm];
-        this.parseOptions = this.parseOptions.WithLanguageVersion(langVersion);
+        this.parseOptions = this.parseOptions.WithLanguageVersion(GetLanguageVersionForTfm(tfm) ?? LanguageVersion.Latest);
         this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling });
         this.GenerateApi(structName);
 
@@ -408,9 +407,9 @@ public class COMTests : GeneratorTestBase
         IEnumerable<BaseTypeSyntax> actual = type.BaseList?.Types ?? Enumerable.Empty<BaseTypeSyntax>();
         Predicate<BaseTypeSyntax> predicate = t => t.Type.ToString().Contains("IComIID");
 
-        // Static interface members requires C# 11 and .NET 7.
+        // Static interface members requires C# 11 and .NET 7+.
         // And COM *interfaces* are not allowed to have them, so assert we only generate them on structs.
-        if (tfm == "net8.0" && langVersion >= LanguageVersion.CSharp11 && type is StructDeclarationSyntax)
+        if (this.parseOptions.LanguageVersion >= LanguageVersion.CSharp11 && type is StructDeclarationSyntax)
         {
             Assert.Contains(actual, predicate);
         }

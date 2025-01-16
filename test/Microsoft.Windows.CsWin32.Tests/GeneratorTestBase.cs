@@ -45,8 +45,8 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
             new object[] { "net35" },
             new object[] { "net472" },
             new object[] { "netstandard2.0" },
-            new object[] { "net6.0" },
             new object[] { "net8.0" },
+            new object[] { "net9.0" },
         };
 
     public static IEnumerable<object[]> TFMDataNoNetFx35MemberData => TFMDataNoNetFx35.Select(tfm => new object[] { tfm }).ToArray();
@@ -56,8 +56,8 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
         {
             "net472",
             "netstandard2.0",
-            "net6.0",
             "net8.0",
+            "net9.0",
         };
 
     public static Platform[] SpecificCpuArchitectures =>
@@ -79,15 +79,15 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
 
     public static IEnumerable<object[]> AvailableMacros => Generator.AvailableMacros.Select(name => new object[] { name });
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         this.starterCompilations.Add("net35", await this.CreateCompilationAsync(MyReferenceAssemblies.NetFramework.Net35));
         this.starterCompilations.Add("net472", await this.CreateCompilationAsync(MyReferenceAssemblies.NetFramework.Net472));
         this.starterCompilations.Add("netstandard2.0", await this.CreateCompilationAsync(MyReferenceAssemblies.NetStandard20));
-        this.starterCompilations.Add("net6.0", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net60));
-        this.starterCompilations.Add("net6.0-x86", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net60, Platform.X86));
-        this.starterCompilations.Add("net6.0-x64", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net60, Platform.X64));
-        this.starterCompilations.Add("net8.0", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net70));
+        this.starterCompilations.Add("net8.0", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net80));
+        this.starterCompilations.Add("net8.0-x86", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net80, Platform.X86));
+        this.starterCompilations.Add("net8.0-x64", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net80, Platform.X64));
+        this.starterCompilations.Add("net9.0", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net90));
 
         foreach (string tfm in this.starterCompilations.Keys)
         {
@@ -116,7 +116,7 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
         this.compilation = this.starterCompilations[DefaultTFM];
     }
 
-    public Task DisposeAsync() => Task.CompletedTask;
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     public void Dispose()
     {

@@ -23,8 +23,8 @@ internal static class MyReferenceAssemblies
 
     internal static class Net
     {
-        internal static readonly ReferenceAssemblies Net60 = ReferenceAssemblies.Net.Net60.AddPackages(AdditionalModernPackages);
-        internal static readonly ReferenceAssemblies Net70 = ReferenceAssemblies.Net.Net70.AddPackages(AdditionalModernPackages);
+        internal static readonly ReferenceAssemblies Net80 = ReferenceAssemblies.Net.Net80.AddPackages(AdditionalModernPackages);
+        internal static readonly ReferenceAssemblies Net90 = ReferenceAssemblies.Net.Net90.AddPackages(AdditionalModernPackages);
     }
 
     internal static class ExtraPackages

@@ -3,22 +3,32 @@
   "isRoot": true,
   "tools": {
     "powershell": {
-      "version": "7.4.5",
+      "version": "7.4.6",
       "commands": [
         "pwsh"
-      ]
+      ],
+      "rollForward": false
     },
     "dotnet-coverage": {
-      "version": "17.12.5",
+      "version": "17.13.1",
       "commands": [
         "dotnet-coverage"
-      ]
+      ],
+      "rollForward": false
     },
     "nbgv": {
-      "version": "3.6.143",
+      "version": "3.7.115",
       "commands": [
         "nbgv"
-      ]
+      ],
+      "rollForward": false
+    },
+    "docfx": {
+      "version": "2.78.2",
+      "commands": [
+        "docfx"
+      ],
+      "rollForward": false
     }
   }
 }

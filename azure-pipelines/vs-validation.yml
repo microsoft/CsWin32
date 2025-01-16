@@ -44,7 +44,7 @@ extends:
             os: Linux
           macOSPool:
             name: Azure Pipelines
-            vmImage: macOS-12
+            vmImage: macOS-14
             os: macOS
           EnableMacOSBuild: false
           RunTests: false
@@ -68,11 +68,18 @@ extends:
         - download: current
           artifact: Variables-Windows
           displayName: 🔻 Download Variables-Windows artifact
-        - powershell: $(Pipeline.Workspace)/Variables-Windows/_pipelines.ps1
+        - powershell: $(Pipeline.Workspace)/Variables-Windows/_define.ps1
           displayName: ⚙️ Set pipeline variables based on artifacts
         - download: current
           artifact: VSInsertion-Windows
           displayName: 🔻 Download VSInsertion-Windows artifact
+        - ${{ if eq(variables['ContainsVsix'], 'true') }}:
+          - task: 1ES.MicroBuildVstsDrop@1
+            displayName: 🔺 Upload VSTS Drop
+            inputs:
+              dropFolder: $(Pipeline.Workspace)/VSInsertion-windows/Vsix
+              dropName: $(VstsDropNames)
+              accessToken: $(System.AccessToken)
         - task: 1ES.PublishNuget@1
           displayName: 📦 Push VS-repo packages to VS feed
           inputs:
@@ -80,7 +87,7 @@ extends:
             packageParentPath: $(Pipeline.Workspace)/VSInsertion-Windows
             allowPackageConflicts: true
             publishVstsFeed: VS
-        - task: MicroBuildInsertVsPayload@4
+        - task: MicroBuildInsertVsPayload@5
           displayName: 🏭 Insert VS Payload
           inputs:
             TeamName: $(TeamName)
@@ -89,7 +96,7 @@ extends:
             InsertionDescription: |
               This PR is for **validation purposes only** for !$(System.PullRequest.PullRequestId). **Do not complete**.
             CustomScriptExecutionCommand: src/VSSDK/NuGet/AllowUnstablePackages.ps1
-            InsertionBuildPolicy: Request Perf DDRITs
+            InsertionBuildPolicies: Request Perf DDRITs
             InsertionReviewers: $(Build.RequestedFor)
             DraftPR: false # set to true and update InsertionBuildPolicy when we can specify all the validations we want to run (https://dev.azure.com/devdiv/DevDiv/_workitems/edit/2224288)
             AutoCompletePR: false

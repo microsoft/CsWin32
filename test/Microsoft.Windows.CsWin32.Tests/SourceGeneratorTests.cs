@@ -25,7 +25,7 @@ public class SourceGeneratorTests(ITestOutputHelper logger)
                     new DiagnosticResult(SourceGenerator.OptionsParsingError.Id, DiagnosticSeverity.Error),
                 },
             },
-        }.RunAsync();
+        }.RunAsync(TestContext.Current.CancellationToken);
     }
 
     /// <summary>
@@ -37,7 +37,7 @@ public class SourceGeneratorTests(ITestOutputHelper logger)
         await new VerifyCS.Test(logger)
         {
             ReferenceAssemblies = ReferenceAssemblies.NetFramework.Net472.Default,
-        }.RunAsync();
+        }.RunAsync(TestContext.Current.CancellationToken);
     }
 
     /// <summary>
@@ -54,7 +54,7 @@ public class SourceGeneratorTests(ITestOutputHelper logger)
             {
                 new DiagnosticResult(SourceGenerator.MissingRecommendedReference.Id, DiagnosticSeverity.Warning),
             },
-        }.RunAsync();
+        }.RunAsync(TestContext.Current.CancellationToken);
     }
 
     /// <summary>
@@ -67,7 +67,7 @@ public class SourceGeneratorTests(ITestOutputHelper logger)
         {
             ReferenceAssemblies = ReferenceAssemblies.Net.Net60,
             NativeMethodsTxt = "CreateFile",
-        }.RunAsync();
+        }.RunAsync(TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -77,7 +77,7 @@ public class SourceGeneratorTests(ITestOutputHelper logger)
         {
             ReferenceAssemblies = ReferenceAssemblies.Net.Net60,
             NativeMethodsTxt = "gdi32.*",
-        }.RunAsync();
+        }.RunAsync(TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -94,6 +94,6 @@ public class SourceGeneratorTests(ITestOutputHelper logger)
             {
                 new DiagnosticResult(SourceGenerator.NonUniqueMetadataInputs.Id, DiagnosticSeverity.Error),
             },
-        }.RunAsync();
+        }.RunAsync(TestContext.Current.CancellationToken);
     }
 }

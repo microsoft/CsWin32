@@ -42,7 +42,6 @@
   </ItemDefinitionGroup>
 
   <ItemGroup>
-    <PackageReference Include="IsExternalInit" PrivateAssets="all" />
     <PackageReference Include="MessagePack" />
     <PackageReference Include="MessagePackAnalyzer" PrivateAssets="all" />
     <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" PrivateAssets="all" />

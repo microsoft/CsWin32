@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <TargetFrameworks>net8.0</TargetFrameworks>
+    <OutputType>Exe</OutputType>
     <RootNamespace />
   </PropertyGroup>
 
@@ -43,7 +44,8 @@
     <PackageReference Include="System.Collections.Immutable" />
     <PackageReference Include="System.Reflection.Metadata" />
     <PackageReference Include="System.Text.Json" />
-    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.assert" ExcludeAssets="compile"/>
     <PackageReference Include="Xunit.Combinatorial" />
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>

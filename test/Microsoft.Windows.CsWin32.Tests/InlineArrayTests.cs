@@ -12,7 +12,7 @@ public class InlineArrayTests : GeneratorTestBase
     public void FixedLengthInlineArray(
         bool allowMarshaling,
         bool multitargetingAPIs,
-        [CombinatorialValues("net35", "net472", "net6.0")] string tfm,
+        [CombinatorialValues("net35", "net472", "net8.0")] string tfm,
         [CombinatorialValues(/*char*/"RM_PROCESS_INFO", /*custom unmanaged*/"ARRAYDESC")] string api,
         [CombinatorialValues(LanguageVersion.CSharp8, LanguageVersion.CSharp9)] LanguageVersion langVersion)
     {
@@ -62,7 +62,7 @@ public class InlineArrayTests : GeneratorTestBase
     public void FixedLengthInlineArray_Pointers(
         bool allowMarshaling,
         bool multitargetingAPIs,
-        [CombinatorialValues("net35", "net472", "net6.0")] string tfm)
+        [CombinatorialValues("net35", "net472", "net8.0")] string tfm)
     {
         this.compilation = this.starterCompilations[tfm];
         this.generator = this.CreateGenerator(new GeneratorOptions { AllowMarshaling = allowMarshaling, MultiTargetingFriendlyAPIs = multitargetingAPIs });

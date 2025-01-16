@@ -2,21 +2,22 @@
   <Import Project="CsWin32User.props" />
 
   <PropertyGroup>
-    <TargetFrameworks>net8.0-windows7.0;net6.0-windows7.0;net472</TargetFrameworks>
+    <TargetFrameworks>net8.0-windows7.0;net472</TargetFrameworks>
+    <OutputType>Exe</OutputType>
     <RootNamespace />
     <PlatformTarget>x64</PlatformTarget>
+    <DisablePolyfill>true</DisablePolyfill>
   </PropertyGroup>
 
   <ItemGroup>
     <Using Include="Xunit" />
-    <Using Include="Xunit.Abstractions" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Win32.Registry" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="System.Runtime.CompilerServices.Unsafe" />
-    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.v3" />
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
 

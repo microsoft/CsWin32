@@ -37,7 +37,7 @@ public class StructTests : GeneratorTestBase
     [InlineData("MEMORY_BASIC_INFORMATION")]
     public void StructsArePartial(string structName)
     {
-        this.compilation = this.starterCompilations["net6.0-x64"]; // MEMORY_BASIC_INFORMATION is arch-specific
+        this.compilation = this.starterCompilations["net8.0-x64"]; // MEMORY_BASIC_INFORMATION is arch-specific
         this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate(structName, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
@@ -91,7 +91,7 @@ namespace Microsoft.Windows.Sdk
     }
 }
 ";
-        this.compilation = this.compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(test, this.parseOptions, "test.cs"));
+        this.compilation = this.compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(test, this.parseOptions, "test.cs", cancellationToken: TestContext.Current.CancellationToken));
         this.GenerateApi("CreateFile");
     }
 
@@ -100,7 +100,7 @@ namespace Microsoft.Windows.Sdk
     {
         const string structName = "HRESULT";
         this.compilation = this.compilation.AddSyntaxTrees(
-            CSharpSyntaxTree.ParseText("namespace Microsoft.Windows.Sdk { partial struct HRESULT { void Foo() { } } }", this.parseOptions, "myHRESULT.cs"));
+            CSharpSyntaxTree.ParseText("namespace Microsoft.Windows.Sdk { partial struct HRESULT { void Foo() { } } }", this.parseOptions, "myHRESULT.cs", cancellationToken: TestContext.Current.CancellationToken));
 
         this.GenerateApi(structName);
 

@@ -67,7 +67,7 @@ public class GeneratorTests : GeneratorTestBase
         this.AssertNoDiagnostics();
 
         var generatedMethod = this.FindGeneratedMethod(methodName).Single();
-        if (tfm is "net6.0" or "net8.0")
+        if (tfm is "net8.0" or "net9.0")
         {
             Assert.Contains(generatedMethod.AttributeLists, al => IsAttributePresent(al, "SupportedOSPlatform"));
         }
@@ -139,7 +139,7 @@ public class GeneratorTests : GeneratorTestBase
     public void SupportedOSPlatform_AppearsOnFriendlyOverloads()
     {
         const string methodName = "GetStagedPackagePathByFullName2";
-        this.compilation = this.starterCompilations["net6.0"];
+        this.compilation = this.starterCompilations["net8.0"];
         this.generator = this.CreateGenerator();
         Assert.True(this.generator.TryGenerate(methodName, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
@@ -297,7 +297,7 @@ public class GeneratorTests : GeneratorTestBase
     [Theory, PairwiseData]
     public void UnionWithRefAndValueTypeFields(
         [CombinatorialValues("VARDESC", "VARIANT")] string typeName,
-        [CombinatorialValues("net6.0", "net472", "netstandard2.0")] string tfm)
+        [CombinatorialValues("net8.0", "net472", "netstandard2.0")] string tfm)
     {
         this.compilation = this.starterCompilations[tfm];
         this.generator = this.CreateGenerator();
@@ -368,7 +368,7 @@ public class GeneratorTests : GeneratorTestBase
     }
 
     [Theory, CombinatorialData]
-    public void Decimal([CombinatorialValues("net472", "net6.0")] string tfm)
+    public void Decimal([CombinatorialValues("net472", "net8.0")] string tfm)
     {
         this.compilation = this.starterCompilations[tfm];
         this.parseOptions = this.parseOptions.WithPreprocessorSymbols(this.preprocessorSymbolsByTfm[tfm]);
@@ -813,7 +813,7 @@ public class GeneratorTests : GeneratorTestBase
         if (internalsVisibleTo)
         {
             referencedProject = referencedProject.AddSyntaxTrees(
-                CSharpSyntaxTree.ParseText($@"[assembly: System.Runtime.CompilerServices.InternalsVisibleToAttribute(""{this.compilation.AssemblyName}"")]", this.parseOptions));
+                CSharpSyntaxTree.ParseText($@"[assembly: System.Runtime.CompilerServices.InternalsVisibleToAttribute(""{this.compilation.AssemblyName}"")]", this.parseOptions, cancellationToken: TestContext.Current.CancellationToken));
         }
 
         using var referencedGenerator = this.CreateGenerator(new GeneratorOptions { ClassName = "P1" }, referencedProject);
@@ -851,7 +851,7 @@ public class GeneratorTests : GeneratorTestBase
             LogProject(referencedProject.AssemblyName!);
             if (internalsVisibleTo)
             {
-                var ivtSource = CSharpSyntaxTree.ParseText($@"[assembly: System.Runtime.CompilerServices.InternalsVisibleToAttribute(""{this.compilation.AssemblyName}"")]", this.parseOptions);
+                var ivtSource = CSharpSyntaxTree.ParseText($@"[assembly: System.Runtime.CompilerServices.InternalsVisibleToAttribute(""{this.compilation.AssemblyName}"")]", this.parseOptions, cancellationToken: TestContext.Current.CancellationToken);
                 referencedProject = referencedProject.AddSyntaxTrees(ivtSource);
             }
 
@@ -905,7 +905,7 @@ class Program
     }
 }
 ";
-        this.compilation = this.compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(programCsSource, this.parseOptions, "Program.cs"));
+        this.compilation = this.compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(programCsSource, this.parseOptions, "Program.cs", cancellationToken: TestContext.Current.CancellationToken));
 
         this.AssertNoDiagnostics();
 

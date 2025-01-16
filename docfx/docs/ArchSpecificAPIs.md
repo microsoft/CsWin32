@@ -54,13 +54,13 @@ Visual Studio for Windows makes this fairly automatic via the configuration mana
 
 When you're done, it should look something like this:
 
-![Solution Configuration Manager](ConfigurationManager_x64.png)
+![Solution Configuration Manager](../images/ConfigurationManager_x64.png)
 
 You can repeat this process for each target architecture you want to support.
 
 Now in Visual Studio, you can use the active solution platform switcher in the Standard toolbar to control which platform you are targeting, as shown:
 
-![Active solution platform switcher](StandardToolbarPlatformSwitcher.png)
+![Active solution platform switcher](../images/StandardToolbarPlatformSwitcher.png)
 
 CsWin32 will now generate arch-specific APIs in each non-AnyCPU platform of your project.
 

@@ -28,5 +28,5 @@ internal record GeneratorConfiguration
         }
     }
 
-    private static ImmutableArray<string> CollectAssemblyMetadata(string name) => [.. typeof(GeneratorTests).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().Where(metadata => metadata.Key == name && metadata.Value is not null).Select(metadata => metadata.Value)];
+    private static ImmutableArray<string> CollectAssemblyMetadata(string name) => [.. typeof(GeneratorTests).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().Where(metadata => metadata.Key == name && metadata.Value is not null).Select(metadata => metadata.Value!)];
 }

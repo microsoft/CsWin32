@@ -1,0 +1,48 @@
+{
+	"metadata": [
+		{
+			"src": [
+				{
+					"src": "../src/Microsoft.Windows.CsWin32",
+					"files": [
+						"**/*.csproj"
+					]
+				}
+			],
+			"dest": "api"
+		}
+	],
+	"build": {
+		"content": [
+			{
+				"files": [
+					"**/*.{md,yml}"
+				],
+				"exclude": [
+					"_site/**"
+				]
+			}
+		],
+		"resource": [
+			{
+				"files": [
+					"images/**"
+				]
+			}
+		],
+		"xref": [
+			"https://learn.microsoft.com/en-us/dotnet/.xrefmap.json"
+		],
+		"output": "_site",
+		"template": [
+			"default",
+			"modern"
+		],
+		"globalMetadata": {
+			"_appName": "CsWin32",
+			"_appTitle": "CsWin32",
+			"_enableSearch": true,
+			"pdf": false
+		}
+	}
+}

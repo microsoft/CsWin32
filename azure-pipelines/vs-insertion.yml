@@ -40,6 +40,13 @@ extends:
         - download: CI
           artifact: VSInsertion-Windows
           displayName: 🔻 Download VSInsertion-Windows artifact
+        - ${{ if eq(variables['ContainsVsix'], 'true') }}:
+          - task: 1ES.MicroBuildVstsDrop@1
+            displayName: 🔺 Upload VSTS Drop
+            inputs:
+              dropFolder: $(Pipeline.Workspace)/CI/VSInsertion-windows/Vsix
+              dropName: $(VstsDropNames)
+              accessToken: $(System.AccessToken)
         - task: 1ES.PublishNuget@1
           displayName: 📦 Push VS-repo packages to VS feed
           inputs:
@@ -47,13 +54,13 @@ extends:
             packageParentPath: $(Pipeline.Workspace)/CI/VSInsertion-Windows
             allowPackageConflicts: true
             publishVstsFeed: VS
-        - task: MicroBuildInsertVsPayload@4
+        - task: MicroBuildInsertVsPayload@5
           displayName: 🏭 Insert VS Payload
           inputs:
             TeamName: $(TeamName)
             TeamEmail: $(TeamEmail)
             InsertionPayloadName: $(Build.Repository.Name) $(Build.BuildNumber)
-            InsertionBuildPolicy: Request Perf DDRITs
+            InsertionBuildPolicies: Request Perf DDRITs
             InsertionReviewers: $(Build.RequestedFor),Andrew Arnott
             AutoCompletePR: true
             AutoCompleteMergeStrategy: Squash

@@ -25,7 +25,7 @@ public class SourceGeneratorTests(ITestOutputHelper logger)
                     new DiagnosticResult(SourceGenerator.OptionsParsingError.Id, DiagnosticSeverity.Error),
                 },
             },
-        }.RunAsync();
+        }.RunAsync(TestContext.Current.CancellationToken);
     }
 
     /// <summary>
@@ -37,7 +37,7 @@ public class SourceGeneratorTests(ITestOutputHelper logger)
         await new VerifyCS.Test(logger)
         {
             ReferenceAssemblies = ReferenceAssemblies.NetFramework.Net472.Default,
-        }.RunAsync();
+        }.RunAsync(TestContext.Current.CancellationToken);
     }
 
     /// <summary>
@@ -54,20 +54,20 @@ public class SourceGeneratorTests(ITestOutputHelper logger)
             {
                 new DiagnosticResult(SourceGenerator.MissingRecommendedReference.Id, DiagnosticSeverity.Warning),
             },
-        }.RunAsync();
+        }.RunAsync(TestContext.Current.CancellationToken);
     }
 
     /// <summary>
     /// Asserts that when targeting a framework that implicitly includes the references we need, no warning is generated.
     /// </summary>
     [Fact]
-    public async Task MissingSystemMemoryReference_WithGeneratedCode_Net60()
+    public async Task MissingSystemMemoryReference_WithGeneratedCode_Net80()
     {
         await new VerifyCS.Test(logger)
         {
-            ReferenceAssemblies = ReferenceAssemblies.Net.Net60,
+            ReferenceAssemblies = ReferenceAssemblies.Net.Net80,
             NativeMethodsTxt = "CreateFile",
-        }.RunAsync();
+        }.RunAsync(TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -75,9 +75,10 @@ public class SourceGeneratorTests(ITestOutputHelper logger)
     {
         await new VerifyCS.Test(logger)
         {
-            ReferenceAssemblies = ReferenceAssemblies.Net.Net60,
+            ReferenceAssemblies = ReferenceAssemblies.Net.Net80,
+            LanguageVersion = LanguageVersion.CSharp12,
             NativeMethodsTxt = "gdi32.*",
-        }.RunAsync();
+        }.RunAsync(TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -94,6 +95,6 @@ public class SourceGeneratorTests(ITestOutputHelper logger)
             {
                 new DiagnosticResult(SourceGenerator.NonUniqueMetadataInputs.Id, DiagnosticSeverity.Error),
             },
-        }.RunAsync();
+        }.RunAsync(TestContext.Current.CancellationToken);
     }
 }

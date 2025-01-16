@@ -14,4 +14,3 @@ global using Microsoft.CodeAnalysis.Testing;
 global using Microsoft.CodeAnalysis.Text;
 global using Microsoft.Windows.CsWin32;
 global using Xunit;
-global using Xunit.Abstractions;

@@ -7,5 +7,17 @@ updates:
   directory: /
   schedule:
     interval: weekly
+  groups:
+    nerdbank-gitversioning:
+      patterns:
+      - nbgv
+      - nerdbank.gitversioning
+    xunit:
+      patterns:
+      - 'xunit*'
+- package-ecosystem: dotnet-sdk
+  directory: /
+  schedule:
+    interval: monthly
   ignore:
   - dependency-name: MessagePack # We have to use the MessagePack version used by win32metadata (https://github.com/microsoft/CsWin32/issues/371)

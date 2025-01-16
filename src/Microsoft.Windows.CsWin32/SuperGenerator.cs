@@ -61,7 +61,9 @@ public class SuperGenerator : IGenerator, IDisposable
     /// <inheritdoc/>
     public bool TryGenerate(string apiNameOrModuleWildcard, out IReadOnlyCollection<string> preciseApi, CancellationToken cancellationToken) => this.TryGenerate(apiNameOrModuleWildcard, out preciseApi, out _, cancellationToken);
 
-    /// <inheritdoc cref="TryGenerate(string, out IReadOnlyCollection{string}, CancellationToken)"/>
+    /// <inheritdoc cref="TryGenerate(string, out IReadOnlyCollection{string}, CancellationToken)" path="/summary" />
+    /// <inheritdoc cref="TryGenerate(string, out IReadOnlyCollection{string}, CancellationToken)" path="/returns" />
+    /// <inheritdoc cref="TryGenerate(string, out IReadOnlyCollection{string}, CancellationToken)" path="/remarks" />
     /// <param name="apiNameOrModuleWildcard"><inheritdoc cref="TryGenerate(string, out IReadOnlyCollection{string}, CancellationToken)" path="/param[@name='apiNameOrModuleWildcard']"/></param>
     /// <param name="preciseApi"><inheritdoc cref="TryGenerate(string, out IReadOnlyCollection{string}, CancellationToken)" path="/param[@name='preciseApi']"/></param>
     /// <param name="redirectedEnums">Receives names of the enum that declares <paramref name="apiNameOrModuleWildcard"/> as an enum value.</param>

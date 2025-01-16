@@ -18,4 +18,4 @@
 
 ## Usage
 
-[Check out our product documentation](https://microsoft.github.io/CsWin32/).
+[Check out our product documentation](https://microsoft.github.io/CsWin32/docs/getting-started.html).

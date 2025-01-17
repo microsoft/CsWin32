@@ -3,8 +3,6 @@
 
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
-using System.IO.MemoryMappedFiles;
-using System.Reflection.PortableExecutable;
 
 namespace Microsoft.Windows.CsWin32;
 
@@ -25,19 +23,7 @@ internal class MetadataIndex
 {
     private static readonly int MaxPooledObjectCount = Math.Max(Environment.ProcessorCount, 4);
 
-    private static readonly Action<MetadataReader, object?> ReaderRecycleDelegate = Recycle;
-
-    private static readonly Dictionary<CacheKey, MetadataIndex> Cache = new();
-
-    /// <summary>
-    /// A cache of metadata files read.
-    /// All access to this should be within a <see cref="Cache"/> lock.
-    /// </summary>
-    private static readonly Dictionary<string, MemoryMappedFile> MetadataFiles = new(StringComparer.OrdinalIgnoreCase);
-
-    private static readonly ConcurrentDictionary<string, ConcurrentBag<(PEReader, MetadataReader)>> PooledPEReaders = new(StringComparer.OrdinalIgnoreCase);
-
-    private readonly string metadataPath;
+    private readonly MetadataFile metadataFile;
 
     private readonly Platform? platform;
 
@@ -72,14 +58,14 @@ internal class MetadataIndex
     /// <summary>
     /// Initializes a new instance of the <see cref="MetadataIndex"/> class.
     /// </summary>
-    /// <param name="metadataPath">The path to the metadata that this index will represent.</param>
+    /// <param name="metadataFile">The metadata file that this index will represent.</param>
     /// <param name="platform">The platform filter to apply when reading the metadata.</param>
-    private MetadataIndex(string metadataPath, Platform? platform)
+    internal MetadataIndex(MetadataFile metadataFile, Platform? platform)
     {
-        this.metadataPath = metadataPath;
+        this.metadataFile = metadataFile;
         this.platform = platform;
 
-        using Rental<MetadataReader> mrRental = GetMetadataReader(metadataPath);
+        using MetadataFile.Rental mrRental = metadataFile.GetMetadataReader();
         MetadataReader mr = mrRental.Value;
         this.MetadataName = Path.GetFileNameWithoutExtension(mr.GetString(mr.GetAssemblyDefinition().Name));
 
@@ -246,50 +232,7 @@ internal class MetadataIndex
 
     internal string CommonNamespaceDot { get; }
 
-    private string DebuggerDisplay => $"{this.metadataPath} ({this.platform})";
-
-    internal static MetadataIndex Get(string metadataPath, Platform? platform)
-    {
-        metadataPath = Path.GetFullPath(metadataPath);
-        CacheKey key = new(metadataPath, platform);
-        lock (Cache)
-        {
-            if (!Cache.TryGetValue(key, out MetadataIndex index))
-            {
-                Cache.Add(key, index = new MetadataIndex(metadataPath, platform));
-            }
-
-            return index;
-        }
-    }
-
-    internal static Rental<MetadataReader> GetMetadataReader(string metadataPath)
-    {
-        if (PooledPEReaders.TryGetValue(metadataPath, out ConcurrentBag<(PEReader, MetadataReader)>? pool) && pool.TryTake(out (PEReader, MetadataReader) readers))
-        {
-            return new(readers.Item2, ReaderRecycleDelegate, (readers.Item1, metadataPath));
-        }
-
-        PEReader peReader = new PEReader(CreateFileView(metadataPath));
-        return new(peReader.GetMetadataReader(), ReaderRecycleDelegate, (peReader, metadataPath));
-    }
-
-    internal static MemoryMappedViewStream CreateFileView(string metadataPath)
-    {
-        lock (Cache)
-        {
-            // We use a memory mapped file so that many threads can perform random access on it concurrently,
-            // only mapping the file into memory once.
-            if (!MetadataFiles.TryGetValue(metadataPath, out MemoryMappedFile? file))
-            {
-                var metadataStream = new FileStream(metadataPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-                file = MemoryMappedFile.CreateFromFile(metadataStream, mapName: null, capacity: 0, MemoryMappedFileAccess.Read, HandleInheritability.None, leaveOpen: false);
-                MetadataFiles.Add(metadataPath, file);
-            }
-
-            return file.CreateViewStream(offset: 0, size: 0, MemoryMappedFileAccess.Read);
-        }
-    }
+    private string DebuggerDisplay => $"{this.metadataFile.Path} ({this.platform})";
 
     /// <summary>
     /// Attempts to translate a <see cref="TypeReferenceHandle"/> to a <see cref="TypeDefinitionHandle"/>.
@@ -423,21 +366,6 @@ internal class MetadataIndex
         return false;
     }
 
-    private static void Recycle(MetadataReader metadataReader, object? state)
-    {
-        (PEReader peReader, string metadataPath) = ((PEReader, string))state!;
-        ConcurrentBag<(PEReader, MetadataReader)> pool = PooledPEReaders.GetOrAdd(metadataPath, _ => new());
-        if (pool.Count < MaxPooledObjectCount)
-        {
-            pool.Add((peReader, metadataReader));
-        }
-        else
-        {
-            // The pool is full. Dispose of this rather than recycle it.
-            peReader.Dispose();
-        }
-    }
-
     private static string CommonPrefix(IReadOnlyList<string> ss)
     {
         if (ss.Count == 0)
@@ -496,34 +424,5 @@ internal class MetadataIndex
 
         // Return null if the value was determined to be missing.
         return this.enumTypeReference.HasValue && !this.enumTypeReference.Value.IsNil ? this.enumTypeReference.Value : null;
-    }
-
-    [DebuggerDisplay("{" + nameof(DebuggerDisplay) + ",nq}")]
-    private struct CacheKey : IEquatable<CacheKey>
-    {
-        internal CacheKey(string metadataPath, Platform? platform)
-        {
-            this.MetadataPath = metadataPath;
-            this.Platform = platform;
-        }
-
-        internal string MetadataPath { get; }
-
-        internal Platform? Platform { get; }
-
-        private string DebuggerDisplay => $"{this.MetadataPath} ({this.Platform})";
-
-        public override bool Equals(object obj) => obj is CacheKey other && this.Equals(other);
-
-        public bool Equals(CacheKey other)
-        {
-            return this.Platform == other.Platform
-                && string.Equals(this.MetadataPath, other.MetadataPath, StringComparison.OrdinalIgnoreCase);
-        }
-
-        public override int GetHashCode()
-        {
-            return StringComparer.OrdinalIgnoreCase.GetHashCode(this.MetadataPath) + (this.Platform.HasValue ? (int)this.Platform.Value : 0);
-        }
     }
 }

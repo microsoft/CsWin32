@@ -35,7 +35,7 @@ public partial class Generator : IGenerator, IDisposable
     private readonly StructDeclarationSyntax variableLengthInlineArrayStruct2;
 
     private readonly Dictionary<string, IReadOnlyList<ISymbol>> findTypeSymbolIfAlreadyAvailableCache = new(StringComparer.Ordinal);
-    private readonly Rental<MetadataReader> metadataReader;
+    private readonly MetadataFile.Rental metadataReader;
     private readonly GeneratorOptions options;
     private readonly CSharpCompilation? compilation;
     private readonly CSharpParseOptions? parseOptions;
@@ -85,9 +85,11 @@ public partial class Generator : IGenerator, IDisposable
             throw new ArgumentNullException(nameof(options));
         }
 
-        this.MetadataIndex = MetadataIndex.Get(metadataLibraryPath, compilation?.Options.Platform);
+        MetadataFile metadataFile = MetadataCache.Default.GetMetadataFile(metadataLibraryPath);
+        this.MetadataIndex = metadataFile.GetMetadataIndex(compilation?.Options.Platform);
+        this.metadataReader = metadataFile.GetMetadataReader();
+
         this.ApiDocs = docs;
-        this.metadataReader = MetadataIndex.GetMetadataReader(metadataLibraryPath);
 
         this.options = options;
         this.options.Validate();

@@ -218,129 +218,122 @@ public class SourceGenerator : ISourceGenerator
             return;
         }
 
-        SuperGenerator superGenerator = SuperGenerator.Combine(generators);
-        try
+        using SuperGenerator superGenerator = SuperGenerator.Combine(generators);
+        foreach (AdditionalText nativeMethodsTxtFile in nativeMethodsTxtFiles)
         {
-            foreach (AdditionalText nativeMethodsTxtFile in nativeMethodsTxtFiles)
+            SourceText? nativeMethodsTxt = nativeMethodsTxtFile.GetText(context.CancellationToken);
+            if (nativeMethodsTxt is null)
             {
-                SourceText? nativeMethodsTxt = nativeMethodsTxtFile.GetText(context.CancellationToken);
-                if (nativeMethodsTxt is null)
+                return;
+            }
+
+            foreach (TextLine line in nativeMethodsTxt.Lines)
+            {
+                context.CancellationToken.ThrowIfCancellationRequested();
+                string name = line.ToString();
+                if (string.IsNullOrWhiteSpace(name) || name.StartsWith("//", StringComparison.InvariantCulture))
                 {
-                    return;
+                    continue;
                 }
 
-                foreach (TextLine line in nativeMethodsTxt.Lines)
+                name = name.Trim().Trim(ZeroWhiteSpace);
+                var location = Location.Create(nativeMethodsTxtFile.Path, line.Span, nativeMethodsTxt.Lines.GetLinePositionSpan(line.Span));
+                try
                 {
-                    context.CancellationToken.ThrowIfCancellationRequested();
-                    string name = line.ToString();
-                    if (string.IsNullOrWhiteSpace(name) || name.StartsWith("//", StringComparison.InvariantCulture))
+                    if (Generator.GetBannedAPIs(options).TryGetValue(name, out string? reason))
                     {
+                        context.ReportDiagnostic(Diagnostic.Create(BannedApi, location, reason));
                         continue;
                     }
 
-                    name = name.Trim().Trim(ZeroWhiteSpace);
-                    var location = Location.Create(nativeMethodsTxtFile.Path, line.Span, nativeMethodsTxt.Lines.GetLinePositionSpan(line.Span));
-                    try
+                    if (name.EndsWith(".*", StringComparison.Ordinal))
                     {
-                        if (Generator.GetBannedAPIs(options).TryGetValue(name, out string? reason))
-                        {
-                            context.ReportDiagnostic(Diagnostic.Create(BannedApi, location, reason));
-                            continue;
-                        }
-
-                        if (name.EndsWith(".*", StringComparison.Ordinal))
-                        {
-                            string? moduleName = name.Substring(0, name.Length - 2);
-                            int matches = superGenerator.TryGenerateAllExternMethods(moduleName, context.CancellationToken);
-                            switch (matches)
-                            {
-                                case 0:
-                                    context.ReportDiagnostic(Diagnostic.Create(NoMethodsForModule, location, moduleName));
-                                    break;
-                                case > 1:
-                                    // Stop complaining about multiple metadata exporting methods from the same module.
-                                    // https://github.com/microsoft/CsWin32/issues/1201
-                                    ////context.ReportDiagnostic(Diagnostic.Create(AmbiguousMatchError, location, moduleName));
-                                    break;
-                            }
-
-                            continue;
-                        }
-
-                        superGenerator.TryGenerate(name, out IReadOnlyCollection<string> matchingApis, out IReadOnlyCollection<string> redirectedEnums, context.CancellationToken);
-                        foreach (string declaringEnum in redirectedEnums)
-                        {
-                            context.ReportDiagnostic(Diagnostic.Create(UseEnumValueDeclaringType, location, declaringEnum));
-                        }
-
-                        switch (matchingApis.Count)
+                        string? moduleName = name.Substring(0, name.Length - 2);
+                        int matches = superGenerator.TryGenerateAllExternMethods(moduleName, context.CancellationToken);
+                        switch (matches)
                         {
                             case 0:
-                                ReportNoMatch(location, name);
+                                context.ReportDiagnostic(Diagnostic.Create(NoMethodsForModule, location, moduleName));
                                 break;
                             case > 1:
-                                context.ReportDiagnostic(Diagnostic.Create(AmbiguousMatchErrorWithSuggestions, location, name, ConcatSuggestions(matchingApis)));
+                                // Stop complaining about multiple metadata exporting methods from the same module.
+                                // https://github.com/microsoft/CsWin32/issues/1201
+                                ////context.ReportDiagnostic(Diagnostic.Create(AmbiguousMatchError, location, moduleName));
                                 break;
                         }
+
+                        continue;
                     }
-                    catch (GenerationFailedException ex)
+
+                    superGenerator.TryGenerate(name, out IReadOnlyCollection<string> matchingApis, out IReadOnlyCollection<string> redirectedEnums, context.CancellationToken);
+                    foreach (string declaringEnum in redirectedEnums)
                     {
-                        if (Generator.IsPlatformCompatibleException(ex))
-                        {
-                            context.ReportDiagnostic(Diagnostic.Create(CpuArchitectureIncompatibility, location));
-                        }
-                        else
-                        {
-                            // Build up a complete error message.
-                            context.ReportDiagnostic(Diagnostic.Create(InternalError, location, AssembleFullExceptionMessage(ex)));
-                        }
+                        context.ReportDiagnostic(Diagnostic.Create(UseEnumValueDeclaringType, location, declaringEnum));
                     }
-                }
-            }
 
-            foreach (KeyValuePair<string, CompilationUnitSyntax> unit in superGenerator.GetCompilationUnits(context.CancellationToken))
-            {
-                context.AddSource(unit.Key, unit.Value.GetText(Encoding.UTF8));
-            }
-
-            string ConcatSuggestions(IReadOnlyCollection<string> suggestions)
-            {
-                var suggestionBuilder = new StringBuilder();
-                int i = 0;
-                foreach (string suggestion in suggestions)
-                {
-                    if (++i > 0)
+                    switch (matchingApis.Count)
                     {
-                        suggestionBuilder.Append(i < suggestions.Count - 1 ? ", " : " or ");
+                        case 0:
+                            ReportNoMatch(location, name);
+                            break;
+                        case > 1:
+                            context.ReportDiagnostic(Diagnostic.Create(AmbiguousMatchErrorWithSuggestions, location, name, ConcatSuggestions(matchingApis)));
+                            break;
                     }
-
-                    suggestionBuilder.Append('"');
-                    suggestionBuilder.Append(suggestion);
-                    suggestionBuilder.Append('"');
                 }
-
-                return suggestionBuilder.ToString();
-            }
-
-            void ReportNoMatch(Location? location, string failedAttempt)
-            {
-                IReadOnlyList<string> suggestions = superGenerator.GetSuggestions(failedAttempt);
-                if (suggestions.Count > 0)
+                catch (GenerationFailedException ex)
                 {
-                    context.ReportDiagnostic(Diagnostic.Create(NoMatchingMethodOrTypeWithSuggestions, location, failedAttempt, ConcatSuggestions(suggestions)));
-                }
-                else
-                {
-                    context.ReportDiagnostic(Diagnostic.Create(
-                        Generator.ContainsIllegalCharactersForAPIName(failedAttempt) ? NoMatchingMethodOrTypeWithBadCharacters : NoMatchingMethodOrType,
-                        location,
-                        failedAttempt));
+                    if (Generator.IsPlatformCompatibleException(ex))
+                    {
+                        context.ReportDiagnostic(Diagnostic.Create(CpuArchitectureIncompatibility, location));
+                    }
+                    else
+                    {
+                        // Build up a complete error message.
+                        context.ReportDiagnostic(Diagnostic.Create(InternalError, location, AssembleFullExceptionMessage(ex)));
+                    }
                 }
             }
         }
-        finally
+
+        foreach (KeyValuePair<string, CompilationUnitSyntax> unit in superGenerator.GetCompilationUnits(context.CancellationToken))
         {
-            superGenerator.Dispose();
+            context.AddSource(unit.Key, unit.Value.GetText(Encoding.UTF8));
+        }
+
+        string ConcatSuggestions(IReadOnlyCollection<string> suggestions)
+        {
+            var suggestionBuilder = new StringBuilder();
+            int i = 0;
+            foreach (string suggestion in suggestions)
+            {
+                if (++i > 0)
+                {
+                    suggestionBuilder.Append(i < suggestions.Count - 1 ? ", " : " or ");
+                }
+
+                suggestionBuilder.Append('"');
+                suggestionBuilder.Append(suggestion);
+                suggestionBuilder.Append('"');
+            }
+
+            return suggestionBuilder.ToString();
+        }
+
+        void ReportNoMatch(Location? location, string failedAttempt)
+        {
+            IReadOnlyList<string> suggestions = superGenerator.GetSuggestions(failedAttempt);
+            if (suggestions.Count > 0)
+            {
+                context.ReportDiagnostic(Diagnostic.Create(NoMatchingMethodOrTypeWithSuggestions, location, failedAttempt, ConcatSuggestions(suggestions)));
+            }
+            else
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    Generator.ContainsIllegalCharactersForAPIName(failedAttempt) ? NoMatchingMethodOrTypeWithBadCharacters : NoMatchingMethodOrType,
+                    location,
+                    failedAttempt));
+            }
         }
     }
 

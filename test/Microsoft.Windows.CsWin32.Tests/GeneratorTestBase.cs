@@ -129,7 +129,11 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
         this.compilation = this.starterCompilations[DefaultTFM];
     }
 
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    public ValueTask DisposeAsync()
+    {
+        this.Dispose();
+        return ValueTask.CompletedTask;
+    }
 
     public void Dispose()
     {

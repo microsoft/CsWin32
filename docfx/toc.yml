@@ -3,3 +3,5 @@ items:
   href: docs/
 - name: Source Generator API
   href: api/
+- name: GitHub
+  href: https://github.com/microsoft/CsWin32

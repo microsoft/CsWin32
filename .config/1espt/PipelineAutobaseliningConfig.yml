@@ -35,3 +35,14 @@ pipelines:
           lastModifiedDate: 2025-01-17
         binskim:
           lastModifiedDate: 2025-01-17
+  22986:
+    retail:
+      source:
+        credscan:
+          lastModifiedDate: 2025-01-18
+        eslint:
+          lastModifiedDate: 2025-01-18
+        psscriptanalyzer:
+          lastModifiedDate: 2025-01-18
+        armory:
+          lastModifiedDate: 2025-01-18

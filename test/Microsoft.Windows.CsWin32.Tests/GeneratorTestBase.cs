@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+using System.Diagnostics.CodeAnalysis;
+
 public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
 {
     protected const string DefaultTFM = "netstandard2.0";
@@ -215,6 +217,20 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
         return compilation.AddSyntaxTrees(syntaxTrees);
     }
 
+    /// <summary>
+    /// Adds a code file to a compilation.
+    /// </summary>
+    /// <param name="code">The syntax file to add.</param>
+    /// <param name="fileName">The name of the code file to add.</param>
+    /// <param name="compilation">The compilation to add to. When omitted, <see cref="GeneratorTestBase.compilation"/> is assumed.</param>
+    /// <returns>The modified compilation.</returns>
+    protected CSharpCompilation AddCode([StringSyntax("c#-test")] string code, string? fileName = null, CSharpCompilation? compilation = null)
+    {
+        compilation ??= this.compilation;
+        SyntaxTree syntaxTree = CSharpSyntaxTree.ParseText(code, this.parseOptions, fileName ?? $"AdditionalCode{compilation.SyntaxTrees.Length + 1}.cs");
+        return compilation.AddSyntaxTrees(syntaxTree);
+    }
+
     protected void CollectGeneratedCode(IGenerator generator) => this.compilation = this.AddGeneratedCode(this.compilation, generator);
 
     protected IEnumerable<MethodDeclarationSyntax> FindGeneratedMethod(string name, Compilation? compilation = null) => (compilation ?? this.compilation).SyntaxTrees.SelectMany(st => st.GetRoot().DescendantNodes().OfType<MethodDeclarationSyntax>()).Where(md => md.Identifier.ValueText == name);
@@ -243,7 +259,7 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
 
     protected void AssertNoDiagnostics(bool logAllGeneratedCode = true) => this.AssertNoDiagnostics(this.compilation, logAllGeneratedCode);
 
-    protected void AssertNoDiagnostics(CSharpCompilation compilation, bool logAllGeneratedCode = true)
+    protected void AssertNoDiagnostics(CSharpCompilation compilation, bool logAllGeneratedCode = true, Func<Diagnostic, bool>? acceptable = null)
     {
         var diagnostics = FilterDiagnostics(compilation.GetDiagnostics());
         this.logger.WriteLine($"{diagnostics.Length} diagnostics reported.");
@@ -274,7 +290,7 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
             }
         }
 
-        Assert.Empty(diagnostics);
+        Assert.Empty(acceptable is null ? diagnostics : diagnostics.Where(d => !acceptable(d)));
         if (emitSuccessful.HasValue)
         {
             Assert.Empty(emitDiagnostics);

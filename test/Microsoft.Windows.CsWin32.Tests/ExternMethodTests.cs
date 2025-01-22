@@ -86,6 +86,41 @@ public class ExternMethodTests : GeneratorTestBase
         Assert.Empty(this.FindGeneratedType("BITMAPINFO_unmanaged"));
     }
 
+    [Theory, PairwiseData]
+    public void OverloadResolutionAttributeUsage(
+        bool useMatchingLanguageVersion,
+        [CombinatorialMemberData(nameof(TFMDataNoNetFx35))] string tfm)
+    {
+        // Set up the test under the appropriate TFM and either a matching language version or C# 13,
+        // which is the first version that supports the OverloadResolutionPriorityAttribute.
+        this.compilation = this.starterCompilations[tfm];
+        this.parseOptions = this.parseOptions.WithLanguageVersion(
+            useMatchingLanguageVersion ? (GetLanguageVersionForTfm(tfm) ?? LanguageVersion.Latest) : LanguageVersion.CSharp13);
+        this.generator = this.CreateGenerator();
+
+        this.GenerateApi("EnumDisplayMonitors");
+
+        // Emit usage that would be ambiguous without the OverloadResolutionPriorityAttribute.
+        this.compilation = this.AddCode("""
+            using Windows.Win32;
+            using Windows.Win32.Foundation;
+            using Windows.Win32.Graphics.Gdi;
+            
+            class Foo
+            {
+                static void Use()
+                {
+                    PInvoke.EnumDisplayMonitors(default, null, default, default);
+                }
+            }
+            """);
+
+        Func<Diagnostic, bool>? isAcceptable = this.parseOptions.LanguageVersion >= LanguageVersion.CSharp13
+            ? null // C# 13 and later should not produce any diagnostics.
+            : diag => diag.Descriptor.Id == "CS0121";
+        this.AssertNoDiagnostics(this.compilation, logAllGeneratedCode: false, acceptable: isAcceptable);
+    }
+
     private static AttributeSyntax? FindDllImportAttribute(SyntaxList<AttributeListSyntax> attributeLists) => attributeLists.SelectMany(al => al.Attributes).FirstOrDefault(a => a.Name.ToString() == "DllImport");
 
     private IEnumerable<MethodDeclarationSyntax> GenerateMethod(string methodName)

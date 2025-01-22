@@ -463,7 +463,8 @@ public class COMTests : GeneratorTestBase
         this.generator = this.CreateGenerator(new GeneratorOptions { AllowMarshaling = false, FriendlyOverloads = new GeneratorOptions.FriendlyOverloadOptions { Enabled = friendlyOverloads } });
 
         this.GenerateApi("IUnknown");
-        Assert.Contains(this.FindGeneratedMethod("QueryInterface"), m => m.TypeParameterList?.Parameters.Count == 1);
+        bool matchFound = this.FindGeneratedMethod("QueryInterface").Any(m => m.TypeParameterList?.Parameters.Count == 1);
+        Assert.Equal(friendlyOverloads, matchFound);
     }
 
     [Fact]

@@ -14,12 +14,47 @@ public partial class Generator
     private readonly bool canUseUnsafeSkipInit;
     private readonly bool canUseUnmanagedCallersOnlyAttribute;
     private readonly bool canUseSetLastPInvokeError;
+    private readonly bool overloadResolutionPriorityAttributePredefined;
     private readonly bool unscopedRefAttributePredefined;
     private readonly INamedTypeSymbol? runtimeFeatureClass;
     private readonly bool generateSupportedOSPlatformAttributes;
     private readonly bool generateSupportedOSPlatformAttributesOnInterfaces; // only supported on net6.0 (https://github.com/dotnet/runtime/pull/48838)
     private readonly bool generateDefaultDllImportSearchPathsAttribute;
     private readonly Dictionary<Feature, bool> supportedFeatures = new();
+
+    private void DeclareOverloadResolutionPriorityAttributeIfNecessary()
+    {
+        // This attribute may only be applied for C# 13 and later, or else C# errors out.
+        if (this.LanguageVersion < (LanguageVersion)1300)
+        {
+            throw new GenerationFailedException("The OverloadResolutionPriorityAttribute requires C# 13 or later.");
+        }
+
+        if (this.overloadResolutionPriorityAttributePredefined)
+        {
+            return;
+        }
+
+        // Always generate these in the context of the most common metadata so we don't emit it more than once.
+        if (!this.IsWin32Sdk)
+        {
+            this.MainGenerator.volatileCode.GenerationTransaction(() => this.MainGenerator.DeclareOverloadResolutionPriorityAttributeIfNecessary());
+            return;
+        }
+
+        const string name = "OverloadResolutionPriorityAttribute";
+        this.volatileCode.GenerateSpecialType(name, delegate
+        {
+            // This is a polyfill attribute, so never promote visibility to public.
+            if (!TryFetchTemplate(name, this, out CompilationUnitSyntax? compilationUnit))
+            {
+                throw new GenerationFailedException($"Failed to retrieve template: {name}");
+            }
+
+            MemberDeclarationSyntax templateNamespace = compilationUnit.Members.Single();
+            this.volatileCode.AddSpecialType(name, templateNamespace, topLevel: true);
+        });
+    }
 
     private void DeclareUnscopedRefAttributeIfNecessary()
     {
@@ -28,6 +63,7 @@ public partial class Generator
             return;
         }
 
+        // Always generate these in the context of the most common metadata so we don't emit it more than once.
         if (!this.IsWin32Sdk)
         {
             this.MainGenerator.volatileCode.GenerationTransaction(() => this.MainGenerator.DeclareUnscopedRefAttributeIfNecessary());

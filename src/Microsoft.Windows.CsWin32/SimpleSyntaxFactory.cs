@@ -111,6 +111,8 @@ internal static class SimpleSyntaxFactory
     internal static readonly IdentifierNameSyntax ComIIDGuidPropertyName = IdentifierName("Guid");
     internal static readonly AttributeSyntax FieldOffsetAttributeSyntax = Attribute(IdentifierName("FieldOffset"));
 
+    internal static AttributeSyntax OverloadResolutionPriorityAttribute(int priority) => Attribute(ParseName("OverloadResolutionPriority")).AddArgumentListArguments(AttributeArgument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(priority))));
+
     [return: NotNullIfNotNull("marshalAs")]
     internal static AttributeSyntax? MarshalAs(MarshalAsAttribute? marshalAs, Generator.NativeArrayInfo? nativeArrayInfo)
     {

@@ -35,6 +35,27 @@ public partial class Generator
         }
 
         member = generator?.ElevateVisibility(member) ?? member;
+
+        return true;
+    }
+
+    private static bool TryFetchTemplate(string name, Generator? generator, [NotNullWhen(true)] out CompilationUnitSyntax? compilationUnit)
+    {
+        string? template = FetchTemplateText(name);
+        if (template == null)
+        {
+            compilationUnit = null;
+            return false;
+        }
+
+        compilationUnit = SyntaxFactory.ParseCompilationUnit(template, options: generator?.parseOptions) ?? throw new GenerationFailedException($"Unable to parse compilation unit from a template: {name}");
+
+        // Strip out #if/#else/#endif trivia, which was already evaluated with the parse options we passed in.
+        if (generator?.parseOptions is not null)
+        {
+            compilationUnit = (CompilationUnitSyntax)compilationUnit.Accept(DirectiveTriviaRemover.Instance)!;
+        }
+
         return true;
     }
 

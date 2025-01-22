@@ -499,7 +499,7 @@ public partial class Generator
         }
 
         // Add helper methods when appropriate.
-        if (hasIUnknownMembers)
+        if (hasIUnknownMembers && this.Options.FriendlyOverloads.Enabled)
         {
             members.AddRange(this.ExtractMembersFromTemplate("IUnknownHelperMethods"));
         }

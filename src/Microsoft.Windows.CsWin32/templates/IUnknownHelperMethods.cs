@@ -3,7 +3,9 @@
 	internal unsafe global::Windows.Win32.Foundation.HRESULT QueryInterface<T>(out T* ppv)
 		where T : unmanaged
 	{
-		var hr = this.QueryInterface(typeof(T).GUID, out void* pv);
+		Guid guid = typeof(T).GUID;
+		void* pv;
+		var hr = this.QueryInterface(&guid, &pv);
 		if (hr.Succeeded)
 		{
 			ppv = (T*)pv;

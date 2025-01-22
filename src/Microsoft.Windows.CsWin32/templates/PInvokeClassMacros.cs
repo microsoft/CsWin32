@@ -50,7 +50,7 @@ internal class PInvokeClassMacros
 	/// </summary>
 	/// <param name="value">The 32-bit value.</param>
 	/// <returns>The low-order word.</returns>
-	internal static ushort LOWORD(uint value) => (ushort)(value & 0xFFFF);
+	internal static ushort LOWORD(uint value) => unchecked((ushort)value);
 
 	/// <summary>
 	/// Retrieves the high-order word from the specified 32-bit value.

@@ -66,6 +66,8 @@ public partial class Generator
         internal bool IsEmpty => this.modulesAndMembers.Count == 0 && this.types.Count == 0 && this.fieldsToSyntax.Count == 0 && this.safeHandleTypes.Count == 0 && this.specialTypes.Count == 0
             && this.inlineArrayIndexerExtensionsMembers.Count == 0 && this.comInterfaceFriendlyExtensionsMembers.Count == 0 && this.macros.Count == 0 && this.inlineArrays.Count == 0;
 
+        internal bool NeedsWinRTCustomMarshaler { get; private set; }
+
         internal IEnumerable<MemberDeclarationSyntax> GeneratedTypes => this.GetTypesWithInjectedFields()
             .Concat(this.specialTypes.Values.Where(st => !st.TopLevel).Select(st => st.Type))
             .Concat(this.safeHandleTypes)
@@ -111,6 +113,7 @@ public partial class Generator
             }
 
             methodsList.Add(member);
+            this.NeedsWinRTCustomMarshaler |= RequiresWinRTCustomMarshaler(member);
         }
 
         internal void AddMemberToModule(string moduleName, IEnumerable<MemberDeclarationSyntax> members)
@@ -123,6 +126,7 @@ public partial class Generator
             }
 
             methodsList.AddRange(members);
+            this.NeedsWinRTCustomMarshaler |= members.Any(m => RequiresWinRTCustomMarshaler(m));
         }
 
         internal void AddConstant(FieldDefinitionHandle fieldDefHandle, FieldDeclarationSyntax constantDeclaration, TypeDefinitionHandle? fieldType)
@@ -183,6 +187,7 @@ public partial class Generator
         {
             this.ThrowIfNotGenerating();
             this.types.Add((typeDefinitionHandle, hasUnmanagedName), typeDeclaration);
+            this.NeedsWinRTCustomMarshaler |= RequiresWinRTCustomMarshaler(typeDeclaration);
         }
 
         internal void GenerationTransaction(Action generator)
@@ -378,6 +383,10 @@ public partial class Generator
             source.Clear();
         }
 
+        private static bool RequiresWinRTCustomMarshaler(SyntaxNode node)
+            => node.DescendantNodesAndSelf().OfType<AttributeSyntax>()
+                .Any(a => a.Name.ToString() == "MarshalAs" && a.ToString().Contains(WinRTCustomMarshalerFullName));
+
         private void Commit(GeneratedCode? parent)
         {
             foreach (KeyValuePair<string, List<MemberDeclarationSyntax>> item in this.modulesAndMembers)
@@ -407,6 +416,13 @@ public partial class Generator
             Commit(this.releaseMethodsWithSafeHandleTypesGenerating, parent?.releaseMethodsWithSafeHandleTypesGenerating);
             Commit(this.inlineArrayIndexerExtensionsMembers, parent?.inlineArrayIndexerExtensionsMembers);
             Commit(this.comInterfaceFriendlyExtensionsMembers, parent?.comInterfaceFriendlyExtensionsMembers);
+
+            if (parent is not null)
+            {
+                parent.NeedsWinRTCustomMarshaler |= this.NeedsWinRTCustomMarshaler;
+            }
+
+            this.NeedsWinRTCustomMarshaler = false;
         }
 
         private IEnumerable<MemberDeclarationSyntax> GetTypesWithInjectedFields()

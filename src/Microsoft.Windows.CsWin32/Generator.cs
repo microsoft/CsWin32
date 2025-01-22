@@ -47,7 +47,6 @@ public partial class Generator : IGenerator, IDisposable
     private readonly HashSet<string> injectedPInvokeHelperMethods = new();
     private readonly HashSet<string> injectedPInvokeMacros = new();
     private readonly Dictionary<TypeDefinitionHandle, bool> managedTypesCheck = new();
-    private bool needsWinRTCustomMarshaler;
     private MethodDeclarationSyntax? sliceAtNullMethodDecl;
 
     static Generator()
@@ -840,7 +839,7 @@ public partial class Generator : IGenerator, IDisposable
             }
         }
 
-        if (this.needsWinRTCustomMarshaler)
+        if (this.committedCode.NeedsWinRTCustomMarshaler)
         {
             string? marshalerText = FetchTemplateText(WinRTCustomMarshalerClass);
             if (marshalerText == null)
@@ -997,9 +996,6 @@ public partial class Generator : IGenerator, IDisposable
                     typeDeclaration = typeDeclaration.WithAdditionalAnnotations(
                         new SyntaxAnnotation(NamespaceContainerAnnotation, shortNamespace));
                 }
-
-                this.needsWinRTCustomMarshaler |= typeDeclaration.DescendantNodes().OfType<AttributeSyntax>()
-                    .Any(a => a.Name.ToString() == "MarshalAs" && a.ToString().Contains(WinRTCustomMarshalerFullName));
 
                 this.volatileCode.AddInteropType(typeDefHandle, hasUnmanagedName, typeDeclaration);
             }

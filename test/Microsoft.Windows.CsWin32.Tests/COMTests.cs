@@ -35,6 +35,13 @@ public class COMTests : GeneratorTestBase
     }
 
     [Fact]
+    public void CreateDispatcherQueueController_CreatesWinRTCustomMarshaler()
+    {
+        this.GenerateApi("CreateDispatcherQueueController");
+        Assert.Single(this.FindGeneratedType(WinRTCustomMarshalerClass));
+    }
+
+    [Fact]
     public void IInpectableDerivedInterface()
     {
         const string ifaceName = "IUserConsentVerifierInterop";

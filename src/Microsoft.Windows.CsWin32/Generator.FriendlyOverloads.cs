@@ -107,6 +107,26 @@ public partial class Generator
 
             IdentifierNameSyntax origName = IdentifierName(externParam.Identifier.ValueText);
 
+            bool isArray = false;
+            bool isNullTerminated = false; // TODO
+            short? countParamIndex = null;
+            int? countConst = null;
+            if (this.FindInteropDecorativeAttribute(paramAttributes, NativeArrayInfoAttribute) is CustomAttribute nativeArrayInfoAttribute)
+            {
+                isArray = true;
+                NativeArrayInfo nativeArrayInfo = DecodeNativeArrayInfoAttribute(nativeArrayInfoAttribute);
+                countParamIndex = nativeArrayInfo.CountParamIndex;
+                countConst = nativeArrayInfo.CountConst;
+            }
+            else if (externParam.Type is PointerTypeSyntax { ElementType: PredefinedTypeSyntax { Keyword.RawKind: (int)SyntaxKind.ByteKeyword } } && this.FindInteropDecorativeAttribute(paramAttributes, MemorySizeAttribute) is CustomAttribute memorySizeAttribute)
+            {
+                // A very special case as documented in https://github.com/microsoft/win32metadata/issues/1555
+                // where MemorySizeAttribute is applied to byte* parameters to indicate the size of the buffer.
+                isArray = true;
+                MemorySize memorySize = DecodeMemorySizeAttribute(memorySizeAttribute);
+                countParamIndex = memorySize.BytesParamIndex;
+            }
+
             if (mustRemainAsPointer)
             {
                 // This block intentionally left blank, so as to disable further processing that might try to
@@ -243,80 +263,19 @@ public partial class Generator
                     }
                 }
 
-                bool isArray = false;
-                bool isNullTerminated = false; // TODO
-                short? sizeParamIndex = null;
-                int? sizeConst = null;
-                if (this.FindInteropDecorativeAttribute(paramAttributes, NativeArrayInfoAttribute) is CustomAttribute att)
-                {
-                    isArray = true;
-                    NativeArrayInfo nativeArrayInfo = DecodeNativeArrayInfoAttribute(att);
-                    sizeParamIndex = nativeArrayInfo.CountParamIndex;
-                    sizeConst = nativeArrayInfo.CountConst;
-                }
-                else if (externParam.Type is PointerTypeSyntax { ElementType: PredefinedTypeSyntax { Keyword.RawKind: (int)SyntaxKind.ByteKeyword } } && this.FindInteropDecorativeAttribute(paramAttributes, MemorySizeAttribute) is CustomAttribute att2)
-                {
-                    // A very special case as documented in https://github.com/microsoft/win32metadata/issues/1555
-                    // where MemorySizeAttribute is applied to byte* parameters to indicate the size of the buffer.
-                    isArray = true;
-                    MemorySize memorySize = DecodeMemorySizeAttribute(att2);
-                    sizeParamIndex = memorySize.BytesParamIndex;
-                }
-
                 IdentifierNameSyntax localName = IdentifierName(origName + "Local");
                 if (isArray)
                 {
                     // TODO: add support for in/out size parameters. (e.g. RSGetViewports)
                     // TODO: add support for lists of pointers via a generated pointer-wrapping struct (e.g. PSSetSamplers)
 
-                    // It is possible that sizeParamIndex points to a parameter that is not on the extern method
+                    // It is possible that countParamIndex points to a parameter that is not on the extern method
                     // when the parameter is the last one and was moved to a return value.
-                    if (sizeParamIndex.HasValue
-                        && this.canUseSpan
-                        && externMethodDeclaration.ParameterList.Parameters.Count > sizeParamIndex.Value
-                        && !(externMethodDeclaration.ParameterList.Parameters[sizeParamIndex.Value].Type is PointerTypeSyntax)
-                        && !(externMethodDeclaration.ParameterList.Parameters[sizeParamIndex.Value].Modifiers.Any(SyntaxKind.OutKeyword) || externMethodDeclaration.ParameterList.Parameters[sizeParamIndex.Value].Modifiers.Any(SyntaxKind.RefKeyword))
-                        && !isPointerToPointer)
+                    if (!isPointerToPointer && TryHandleCountParam(elementType, nullableSource: true))
                     {
-                        signatureChanged = true;
-                        bool remainsRefType = true;
-                        if (externParam.Type is PointerTypeSyntax)
-                        {
-                            remainsRefType = false;
-                            parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
-                                .WithType((isIn ? MakeReadOnlySpanOfT(elementType) : MakeSpanOfT(elementType)).WithTrailingTrivia(TriviaList(Space)));
-                            fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
-                                VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
-                            arguments[param.SequenceNumber - 1] = Argument(localName);
-                        }
-
-                        if (lengthParamUsedBy.TryGetValue(sizeParamIndex.Value, out int userIndex))
-                        {
-                            // Multiple array parameters share a common 'length' parameter.
-                            // Since we're making this a little less obvious, add a quick if check in the helper method
-                            // that enforces that all such parameters have a common span length.
-                            ExpressionSyntax otherUserName = IdentifierName(parameters[userIndex].Identifier.ValueText);
-                            leadingStatements.Add(IfStatement(
-                                BinaryExpression(
-                                    SyntaxKind.NotEqualsExpression,
-                                    GetSpanLength(otherUserName, parameters[userIndex].Type is ArrayTypeSyntax),
-                                    GetSpanLength(origName, remainsRefType)),
-                                ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentException))).WithArgumentList(ArgumentList()))));
-                        }
-                        else
-                        {
-                            lengthParamUsedBy.Add(sizeParamIndex.Value, param.SequenceNumber - 1);
-                        }
-
-                        ExpressionSyntax sizeArgExpression = GetSpanLength(origName, remainsRefType);
-                        if (!(parameters[sizeParamIndex.Value].Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.IntKeyword } }))
-                        {
-                            sizeArgExpression = CastExpression(parameters[sizeParamIndex.Value].Type!, sizeArgExpression);
-                        }
-
-                        arguments[sizeParamIndex.Value] = Argument(sizeArgExpression);
+                        // This block intentionally left blank.
                     }
-                    else if (sizeConst.HasValue && !isPointerToPointer && this.canUseSpan && externParam.Type is PointerTypeSyntax)
+                    else if (countConst.HasValue && !isPointerToPointer && this.canUseSpan && externParam.Type is PointerTypeSyntax)
                     {
                         // TODO: add support for lists of pointers via a generated pointer-wrapping struct
                         signatureChanged = true;
@@ -333,7 +292,7 @@ public partial class Generator
                             BinaryExpression(
                                 SyntaxKind.LessThanExpression,
                                 GetSpanLength(origName, false /* we've converted it to be a span */),
-                                LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(sizeConst.Value))),
+                                LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(countConst.Value))),
                             ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentException))).WithArgumentList(ArgumentList()))));
                     }
                     else if (isNullTerminated && isConst && parameters[param.SequenceNumber - 1].Type is PointerTypeSyntax { ElementType: PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.CharKeyword } } })
@@ -475,6 +434,24 @@ public partial class Generator
                             Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))),
                             Argument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, localWstrName, IdentifierName("Length"))))))));
             }
+            else if (!isIn && isOut && this.canUseSpan && externParam.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "PWSTR" } } })
+            {
+                IdentifierNameSyntax localName = IdentifierName(origName + "Local");
+                signatureChanged = true;
+                parameters[param.SequenceNumber - 1] = externParam
+                    .WithType(MakeSpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword))));
+
+                // fixed (char* pParam1 = Param1)
+                fixedBlocks.Add(VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword)))).AddVariables(
+                    VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(
+                        origName))));
+
+                // Use the char* pointer as the argument instead of the parameter.
+                arguments[param.SequenceNumber - 1] = Argument(localName);
+
+                // Remove the size parameter if one exists.
+                TryHandleCountParam(PredefinedType(Token(SyntaxKind.CharKeyword)), nullableSource: false);
+            }
             else if (isIn && isOptional && !isOut && isManagedParameterType && parameterTypeInfo is PointerTypeHandleInfo ptrInfo && ptrInfo.ElementType.IsValueType(parameterTypeSyntaxSettings) is true && this.canUseUnsafeAsRef)
             {
                 // The extern method couldn't have exposed the parameter as a pointer because the type is managed.
@@ -503,6 +480,58 @@ public partial class Generator
                     MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName("HasValue")),
                     localName,
                     nullRef));
+            }
+
+            bool TryHandleCountParam(TypeSyntax elementType, bool nullableSource)
+            {
+                IdentifierNameSyntax localName = IdentifierName(origName + "Local");
+                if (countParamIndex.HasValue
+                    && this.canUseSpan
+                    && externMethodDeclaration.ParameterList.Parameters.Count > countParamIndex.Value
+                    && !(externMethodDeclaration.ParameterList.Parameters[countParamIndex.Value].Type is PointerTypeSyntax)
+                    && !(externMethodDeclaration.ParameterList.Parameters[countParamIndex.Value].Modifiers.Any(SyntaxKind.OutKeyword) || externMethodDeclaration.ParameterList.Parameters[countParamIndex.Value].Modifiers.Any(SyntaxKind.RefKeyword)))
+                {
+                    signatureChanged = true;
+                    bool remainsRefType = nullableSource;
+                    if (externParam.Type is PointerTypeSyntax)
+                    {
+                        remainsRefType = false;
+                        parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
+                            .WithType((isIn ? MakeReadOnlySpanOfT(elementType) : MakeSpanOfT(elementType)).WithTrailingTrivia(TriviaList(Space)));
+                        fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
+                            VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
+                        arguments[param.SequenceNumber - 1] = Argument(localName);
+                    }
+
+                    if (lengthParamUsedBy.TryGetValue(countParamIndex.Value, out int userIndex))
+                    {
+                        // Multiple array parameters share a common 'length' parameter.
+                        // Since we're making this a little less obvious, add a quick if check in the helper method
+                        // that enforces that all such parameters have a common span length.
+                        ExpressionSyntax otherUserName = IdentifierName(parameters[userIndex].Identifier.ValueText);
+                        leadingStatements.Add(IfStatement(
+                            BinaryExpression(
+                                SyntaxKind.NotEqualsExpression,
+                                GetSpanLength(otherUserName, parameters[userIndex].Type is ArrayTypeSyntax),
+                                GetSpanLength(origName, remainsRefType)),
+                            ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentException))).WithArgumentList(ArgumentList()))));
+                    }
+                    else
+                    {
+                        lengthParamUsedBy.Add(countParamIndex.Value, param.SequenceNumber - 1);
+                    }
+
+                    ExpressionSyntax sizeArgExpression = GetSpanLength(origName, remainsRefType);
+                    if (!(parameters[countParamIndex.Value].Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.IntKeyword } }))
+                    {
+                        sizeArgExpression = CastExpression(parameters[countParamIndex.Value].Type!, sizeArgExpression);
+                    }
+
+                    arguments[countParamIndex.Value] = Argument(sizeArgExpression);
+                    return true;
+                }
+
+                return false;
             }
         }
 

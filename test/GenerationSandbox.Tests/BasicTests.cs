@@ -204,6 +204,17 @@ public class BasicTests
     }
 
     [Fact]
+    public void GetWindowText_FriendlyOverload()
+    {
+        HWND hwnd = PInvoke.GetForegroundWindow();
+        Span<char> text = stackalloc char[100];
+        int len = PInvoke.GetWindowText(hwnd, text);
+        Assert.NotEqual(0, len);
+        string title = text.Slice(0, len).ToString();
+        this.logger.WriteLine(title);
+    }
+
+    [Fact]
     public void CreateFile()
     {
         var path = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());

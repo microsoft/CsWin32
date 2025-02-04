@@ -10,6 +10,7 @@ DISPLAYCONFIG_VIDEO_SIGNAL_INFO
 EnumWindows
 FILE_ACCESS_RIGHTS
 FLICK_DATA
+GetForegroundWindow
 GetProcAddress
 GetTickCount 
 GetWindowText

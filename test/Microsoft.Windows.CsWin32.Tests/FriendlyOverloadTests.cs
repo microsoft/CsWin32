@@ -57,6 +57,22 @@ public class FriendlyOverloadTests : GeneratorTestBase
         Assert.Equal(3, method.ParameterList.Parameters.Count(p => p.Type is GenericNameSyntax { Identifier.ValueText: "ReadOnlySpan" }));
     }
 
+    [Fact]
+    public void OutPWSTR_Parameters_AsSpan()
+    {
+        const string name = "GetWindowText";
+        this.Generate(name);
+        MethodDeclarationSyntax friendlyOverload = Assert.Single(this.FindGeneratedMethod(name), m => m.ParameterList.Parameters.Count == 2);
+        Assert.Equal("Span<char>", friendlyOverload.ParameterList.Parameters[1].Type?.ToString());
+    }
+
+    [Theory]
+    [InlineData("WSManGetSessionOptionAsString")] // Uses the reserved keyword 'string' as a parameter name
+    public void InterestingAPIs(string name)
+    {
+        this.Generate(name);
+    }
+
     private void Generate(string name)
     {
         this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(Platform.X64));

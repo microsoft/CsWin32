@@ -11,7 +11,7 @@
     <!-- <DiaMetadataVersion>0.2.185-preview-g7e1e6a442c</DiaMetadataVersion> -->
     <ApiDocsVersion>0.1.42-alpha</ApiDocsVersion>
     <CodeAnalysisVersion>4.12.0</CodeAnalysisVersion>
-    <CodeAnalysisVersion Condition="'$(IsTestProject)'!='true'">3.11.0</CodeAnalysisVersion>
+    <CodeAnalysisVersionForAnalyzers>3.11.0</CodeAnalysisVersionForAnalyzers>
   </PropertyGroup>
   <ItemGroup>
     <!-- We have to use the MessagePack version used by win32metadata (https://github.com/microsoft/CsWin32/issues/371) -->
@@ -39,6 +39,9 @@
   </ItemGroup>
   <ItemGroup Condition="'$(IsTestProject)'!='true'">
     <!-- These versions carefully chosen to support VS 2019 Update 11. -->
+    <PackageVersion Update="Microsoft.CodeAnalysis.Common" Version="$(CodeAnalysisVersionForAnalyzers)" />
+    <PackageVersion Update="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="$(CodeAnalysisVersionForAnalyzers)" />
+    <PackageVersion Update="Microsoft.CodeAnalysis.CSharp" Version="$(CodeAnalysisVersionForAnalyzers)" />
     <PackageVersion Update="System.Collections.Immutable" Version="5.0.0" />
     <PackageVersion Update="System.Memory" Version="4.5.4" />
     <PackageVersion Update="System.Reflection.Metadata" Version="5.0.0" />

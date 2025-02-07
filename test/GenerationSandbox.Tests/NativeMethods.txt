@@ -15,6 +15,7 @@ GetProcAddress
 GetTickCount 
 GetWindowText
 GetWindowTextLength
+RmRegisterResources
 HDC_UserSize
 HRESULT_FROM_WIN32
 IDirectorySearch

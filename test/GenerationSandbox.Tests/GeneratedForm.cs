@@ -8,6 +8,7 @@ using Windows.Win32.Foundation;
 using Windows.Win32.Networking.ActiveDirectory;
 using Windows.Win32.System.Com;
 using Windows.Win32.System.Diagnostics.Debug;
+using Windows.Win32.System.RestartManager;
 using Windows.Win32.System.Threading;
 
 #pragma warning disable CA1812 // dead code
@@ -79,6 +80,11 @@ internal static unsafe class GeneratedForm
     {
         uint written = 0;
         PInvoke.WriteFile((SafeHandle?)null, new byte[2], &written, (NativeOverlapped*)null);
+    }
+
+    private static void RmRegisterResources()
+    {
+        PInvoke.RmRegisterResources(0, ["a", "b"], [default(RM_UNIQUE_PROCESS)], ["a", "b"]);
     }
 
     private class MyStream : IStream

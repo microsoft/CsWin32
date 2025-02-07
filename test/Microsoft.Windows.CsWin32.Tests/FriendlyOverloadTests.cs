@@ -68,6 +68,7 @@ public class FriendlyOverloadTests : GeneratorTestBase
 
     [Theory]
     [InlineData("WSManGetSessionOptionAsString")] // Uses the reserved keyword 'string' as a parameter name
+    [InlineData("RmRegisterResources")] // Parameter with PCWSTR* (an array of native strings)
     public void InterestingAPIs(string name)
     {
         this.Generate(name);

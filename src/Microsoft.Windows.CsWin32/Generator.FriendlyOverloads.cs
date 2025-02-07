@@ -5,6 +5,8 @@ namespace Microsoft.Windows.CsWin32;
 
 public partial class Generator
 {
+    private static readonly TypeSyntax PCWSTRTypeSyntax = QualifiedName(QualifiedName(IdentifierName(GlobalWinmdRootNamespaceAlias), IdentifierName("Foundation")), IdentifierName("PCWSTR"));
+
     private enum FriendlyOverloadOf
     {
         ExternMethod,
@@ -268,9 +270,6 @@ public partial class Generator
                 {
                     // TODO: add support for in/out size parameters. (e.g. RSGetViewports)
                     // TODO: add support for lists of pointers via a generated pointer-wrapping struct (e.g. PSSetSamplers)
-
-                    // It is possible that countParamIndex points to a parameter that is not on the extern method
-                    // when the parameter is the last one and was moved to a return value.
                     if (!isPointerToPointer && TryHandleCountParam(elementType, nullableSource: true))
                     {
                         // This block intentionally left blank.
@@ -303,6 +302,136 @@ public partial class Generator
                             .WithType(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword)));
                         fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
                             VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
+                        arguments[param.SequenceNumber - 1] = Argument(localName);
+                    }
+
+                    // Translate ReadOnlySpan<PCWSTR> to ReadOnlySpan<string>
+                    if (isIn && !isOut && isConst && externParam.Type is PointerTypeSyntax { ElementType: QualifiedNameSyntax { Right: { Identifier: { ValueText: "PCWSTR" } } } })
+                    {
+                        signatureChanged = true;
+
+                        // Change the parameter type to ReadOnlySpan<string>
+                        parameters[param.SequenceNumber - 1] = externParam
+                            .WithType(MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.StringKeyword))));
+
+                        IdentifierNameSyntax gcHandlesLocal = IdentifierName($"{origName}GCHandles");
+                        IdentifierNameSyntax pcwstrLocal = IdentifierName($"{origName}Pointers");
+
+                        // var paramNameGCHandles = ArrayPool<GCHandle>.Shared.Rent(paramName.Length);
+                        var gcHandlesArrayDecl = LocalDeclarationStatement(VariableDeclaration(
+                            ArrayType(IdentifierName("var"))).AddVariables(
+                                VariableDeclarator(gcHandlesLocal.Identifier).WithInitializer(EqualsValueClause(
+                                    InvocationExpression(
+                                        MemberAccessExpression(
+                                            SyntaxKind.SimpleMemberAccessExpression,
+                                            MemberAccessExpression(
+                                                SyntaxKind.SimpleMemberAccessExpression,
+                                                ParseTypeName("global::System.Buffers.ArrayPool<global::System.Runtime.InteropServices.GCHandle>"),
+                                                IdentifierName("Shared")),
+                                            IdentifierName("Rent")))
+                                .WithArgumentList(ArgumentList().AddArguments(Argument(GetSpanLength(origName, false))))))));
+
+                        // var paramNamePointers = ArrayPool<PCWSTR>.Shared.Rent(paramName.Length);
+                        var strsArrayDecl = LocalDeclarationStatement(VariableDeclaration(
+                            ArrayType(IdentifierName("var"))).AddVariables(
+                                VariableDeclarator(pcwstrLocal.Identifier).WithInitializer(EqualsValueClause(
+                                    InvocationExpression(
+                                        MemberAccessExpression(
+                                            SyntaxKind.SimpleMemberAccessExpression,
+                                            MemberAccessExpression(
+                                                SyntaxKind.SimpleMemberAccessExpression,
+                                                ParseTypeName($"global::System.Buffers.ArrayPool<{PCWSTRTypeSyntax.ToString()}>"),
+                                                IdentifierName("Shared")),
+                                            IdentifierName("Rent")))
+                                .WithArgumentList(ArgumentList().AddArguments(Argument(GetSpanLength(origName, false))))))));
+
+                        // for (int i = 0; i < paramName.Length; i++)
+                        // {
+                        //     paramNameGCHandles[i] = GCHandle.Alloc(paramName[i], GCHandleType.Pinned);
+                        //     paramNamePointers[i] = (char*)paramNameGCHandles[i].AddrOfPinnedObject();
+                        // }
+                        IdentifierNameSyntax loopVariable = IdentifierName("i");
+                        var forLoop = ForStatement(
+                            VariableDeclaration(PredefinedType(Token(SyntaxKind.IntKeyword))).AddVariables(
+                                VariableDeclarator(loopVariable.Identifier).WithInitializer(EqualsValueClause(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))))),
+                            BinaryExpression(SyntaxKind.LessThanExpression, loopVariable, GetSpanLength(origName, false)),
+                            SingletonSeparatedList<ExpressionSyntax>(PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, loopVariable)),
+                            Block().AddStatements(
+                                ExpressionStatement(AssignmentExpression(
+                                    SyntaxKind.SimpleAssignmentExpression,
+                                    ElementAccessExpression(gcHandlesLocal).AddArgumentListArguments(Argument(loopVariable)),
+                                    InvocationExpression(
+                                        MemberAccessExpression(
+                                            SyntaxKind.SimpleMemberAccessExpression,
+                                            ParseTypeName("global::System.Runtime.InteropServices.GCHandle"),
+                                            IdentifierName("Alloc")))
+                                    .WithArgumentList(ArgumentList().AddArguments(
+                                        Argument(ElementAccessExpression(origName).AddArgumentListArguments(Argument(loopVariable))),
+                                        Argument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseTypeName("global::System.Runtime.InteropServices.GCHandleType"), IdentifierName("Pinned"))))))),
+                                ExpressionStatement(AssignmentExpression(
+                                    SyntaxKind.SimpleAssignmentExpression,
+                                    ElementAccessExpression(pcwstrLocal).AddArgumentListArguments(Argument(loopVariable)),
+                                    CastExpression(
+                                        PointerType(PredefinedType(Token(SyntaxKind.CharKeyword))),
+                                        InvocationExpression(
+                                            MemberAccessExpression(
+                                                SyntaxKind.SimpleMemberAccessExpression,
+                                                ElementAccessExpression(gcHandlesLocal).AddArgumentListArguments(Argument(loopVariable)),
+                                                IdentifierName("AddrOfPinnedObject"))).WithArgumentList(ArgumentList()))))));
+
+                        leadingOutsideTryStatements.AddRange([gcHandlesArrayDecl, strsArrayDecl, forLoop]);
+
+                        // foreach (var gcHandle in paramNameGCHandles) gcHandle.Free();
+                        var freeHandleStatement = ForEachStatement(
+                            IdentifierName("var").WithTrailingTrivia(Space),
+                            Identifier("gcHandle").WithTrailingTrivia(Space),
+                            gcHandlesLocal.WithLeadingTrivia(Space),
+                            ExpressionStatement(
+                                InvocationExpression(
+                                    MemberAccessExpression(
+                                        SyntaxKind.SimpleMemberAccessExpression,
+                                        IdentifierName("gcHandle"),
+                                        IdentifierName("Free")))).WithLeadingTrivia(LineFeed));
+
+                        // ArrayPool<GCHandle>.Shared.Return(gcHandlesArray);
+                        var returnGCHandlesArray = ExpressionStatement(
+                            InvocationExpression(
+                                MemberAccessExpression(
+                                    SyntaxKind.SimpleMemberAccessExpression,
+                                    ParseTypeName("global::System.Buffers.ArrayPool<global::System.Runtime.InteropServices.GCHandle>"),
+                                    IdentifierName("Shared.Return")))
+                            .WithArgumentList(ArgumentList().AddArguments(Argument(gcHandlesLocal))));
+
+                        // ArrayPool<PCWSTR>.Shared.Return(paramNamePointers);
+                        var returnStrsArray = ExpressionStatement(
+                            InvocationExpression(
+                                MemberAccessExpression(
+                                    SyntaxKind.SimpleMemberAccessExpression,
+                                    ParseTypeName($"global::System.Buffers.ArrayPool<{PCWSTRTypeSyntax.ToString()}> "),
+                                    IdentifierName("Shared.Return")))
+                            .WithArgumentList(ArgumentList().AddArguments(Argument(pcwstrLocal))));
+
+                        finallyStatements.AddRange([freeHandleStatement, returnGCHandlesArray, returnStrsArray]);
+
+                        // Update fixed blocks already created to consume our array of pinned pointers
+                        bool found = false;
+                        for (int i = 0; i < fixedBlocks.Count; i++)
+                        {
+                            if (fixedBlocks[i] is VariableDeclarationSyntax { Variables: [VariableDeclaratorSyntax { Initializer: { Value: IdentifierNameSyntax { Identifier: SyntaxToken id } } initializer } variable] } declaration
+                                && id.ValueText == externParam.Identifier.ValueText)
+                            {
+                                // fixed (PCWSTR* paramNamePointersPtr = strsArray)
+                                fixedBlocks[i] = declaration.WithVariables(SingletonSeparatedList(variable.WithInitializer(initializer.WithValue(pcwstrLocal))));
+                                found = true;
+                                break;
+                            }
+                        }
+
+                        if (!found)
+                        {
+                            throw new GenerationFailedException("Unable to find existing fixed block to change.");
+                        }
+
                         arguments[param.SequenceNumber - 1] = Argument(localName);
                     }
                 }
@@ -485,6 +614,9 @@ public partial class Generator
             bool TryHandleCountParam(TypeSyntax elementType, bool nullableSource)
             {
                 IdentifierNameSyntax localName = IdentifierName(origName + "Local");
+
+                // It is possible that countParamIndex points to a parameter that is not on the extern method
+                // when the parameter is the last one and was moved to a return value.
                 if (countParamIndex.HasValue
                     && this.canUseSpan
                     && externMethodDeclaration.ParameterList.Parameters.Count > countParamIndex.Value

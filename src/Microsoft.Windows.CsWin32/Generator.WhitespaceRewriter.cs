@@ -282,6 +282,20 @@ public partial class Generator
             }
         }
 
+        public override SyntaxNode? VisitForEachStatement(ForEachStatementSyntax node)
+        {
+            node = this.WithIndentingTrivia(node);
+            if (node.Statement is BlockSyntax)
+            {
+                return base.VisitForEachStatement(node);
+            }
+            else
+            {
+                using var indent = new Indent(this);
+                return base.VisitForEachStatement(node);
+            }
+        }
+
         public override SyntaxNode? VisitReturnStatement(ReturnStatementSyntax node)
         {
             return base.VisitReturnStatement(this.WithIndentingTrivia(node));

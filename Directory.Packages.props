@@ -29,7 +29,7 @@
     <PackageVersion Include="NuGet.Protocol" Version="6.10.0" />
     <PackageVersion Include="System.Collections.Immutable" Version="8.0.0" />
     <PackageVersion Include="System.Memory" Version="4.6.0" />
-    <PackageVersion Include="System.Reflection.Metadata" Version="8.0.0" />
+    <PackageVersion Include="System.Reflection.Metadata" Version="8.0.1" />
     <PackageVersion Include="System.Runtime.CompilerServices.Unsafe" Version="6.1.0" />
     <PackageVersion Include="System.Text.Encodings.Web" Version="4.7.1" />
     <PackageVersion Include="System.Text.Json" Version="4.7.2" />

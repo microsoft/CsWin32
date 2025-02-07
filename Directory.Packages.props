@@ -35,7 +35,7 @@
     <PackageVersion Include="System.Text.Encodings.Web" Version="4.7.1" />
     <PackageVersion Include="System.Text.Json" Version="4.7.2" />
     <PackageVersion Include="Xunit.Combinatorial" Version="2.0.24" />
-    <PackageVersion Include="Xunit.Assert" Version="2.3.0" />
+    <PackageVersion Include="Xunit.Assert" Version="2.9.3" />
   </ItemGroup>
   <ItemGroup Condition="'$(IsTestProject)'!='true'">
     <!-- These versions carefully chosen to support VS 2019 Update 11. -->

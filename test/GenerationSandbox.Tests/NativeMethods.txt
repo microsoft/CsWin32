@@ -17,6 +17,7 @@ GetWindowText
 GetWindowTextLength
 RmRegisterResources
 HDC_UserSize
+HIWORD
 HRESULT_FROM_WIN32
 IDirectorySearch
 IEnumDebugPropertyInfo
@@ -26,6 +27,7 @@ IShellWindows
 IStream
 KEY_EVENT_RECORD
 LoadLibrary
+LOWORD
 MainAVIHeader
 MAKELPARAM
 MAKELRESULT

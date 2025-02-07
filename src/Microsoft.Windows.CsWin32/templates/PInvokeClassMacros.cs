@@ -44,4 +44,18 @@ internal class PInvokeClassMacros
 	/// <param name="h">The high word.</param>
 	/// <returns>The LRESULT value.</returns>
 	internal static global::Windows.Win32.Foundation.LRESULT MAKELRESULT(ushort l, ushort h) => unchecked((global::Windows.Win32.Foundation.LRESULT)(nint)MAKELONG(l, h));
+
+	/// <summary>
+	/// Retrieves the low-order word from the specified 32-bit value.
+	/// </summary>
+	/// <param name="value">The 32-bit value.</param>
+	/// <returns>The low-order word.</returns>
+	internal static ushort LOWORD(uint value) => unchecked((ushort)value);
+
+	/// <summary>
+	/// Retrieves the high-order word from the specified 32-bit value.
+	/// </summary>
+	/// <param name="value">The 32-bit value.</param>
+	/// <returns>The high-order word.</returns>
+	internal static ushort HIWORD(uint value) => (ushort)(value >> 16);
 }

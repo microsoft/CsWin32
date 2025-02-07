@@ -15,9 +15,8 @@ public class MacrosTests : GeneratorTestBase
         Assert.True(this.generator.TryGenerate("MAKELONG", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
-        var method = Assert.Single(this.FindGeneratedMethod("MAKELONG"));
-
-        Assert.True(method.Modifiers.Any(publicVisibility ? SyntaxKind.PublicKeyword : SyntaxKind.InternalKeyword));
+        var makelongMethod = Assert.Single(this.FindGeneratedMethod("MAKELONG"));
+        Assert.True(makelongMethod.Modifiers.Any(publicVisibility ? SyntaxKind.PublicKeyword : SyntaxKind.InternalKeyword));
     }
 
     [Theory]

@@ -14,7 +14,7 @@
     <CodeAnalysisVersion Condition="'$(IsTestProject)'!='true'">3.11.0</CodeAnalysisVersion>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="MessagePack" Version="2.2.85" />
+    <PackageVersion Include="MessagePack" Version="2.5.192" />
     <PackageVersion Include="MessagePackAnalyzer" Version="2.5.192" />
     <PackageVersion Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="3.3.4" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Common" Version="$(CodeAnalysisVersion)" />

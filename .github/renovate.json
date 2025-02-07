@@ -49,11 +49,11 @@
 			"enabled": false
 		},
 		{
-			"matchPackageNames": ["MessagePack"],
+			"matchPackageNames": ["MessagePack", "MessagePackAnalyzer"],
 			"enabled": false
 		},
 		{
-			"matchJsonata": [ "sharedVariableName='CodeAnalysisVersionForAnalyzers'" ],
+			"matchFileNames": ["Directory.Packages.Analyzers.props"],
 			"enabled": false
 		}
 	]

@@ -12,5 +12,6 @@
     <PackageVersion Update="System.Reflection.Metadata" Version="5.0.0" />
     <PackageVersion Update="System.Runtime.CompilerServices.Unsafe" Version="5.0.0" />
     <PackageVersion Include="System.Text.Encodings.Web" Version="4.7.1" />
+    <PackageVersion Update="System.Text.Json" Version="4.7.2" />
   </ItemGroup>
 </Project>

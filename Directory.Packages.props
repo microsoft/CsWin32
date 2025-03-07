@@ -10,7 +10,7 @@
     <WDKMetadataVersion>0.12.8-experimental</WDKMetadataVersion>
     <!-- <DiaMetadataVersion>0.2.185-preview-g7e1e6a442c</DiaMetadataVersion> -->
     <ApiDocsVersion>0.1.42-alpha</ApiDocsVersion>
-    <CodeAnalysisVersion>4.12.0</CodeAnalysisVersion>
+    <CodeAnalysisVersion>4.13.0</CodeAnalysisVersion>
   </PropertyGroup>
   <ItemGroup>
     <!-- We have to use the MessagePack version used by win32metadata (https://github.com/microsoft/CsWin32/issues/371) -->

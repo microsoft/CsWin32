@@ -144,10 +144,13 @@ public partial class Generator
 ");
 
     /// <summary>
-    /// The set of libraries that are expected to be allowed next to an application instead of being required to load from System32.
+    /// The initial set of libraries that are expected to be allowed next to an application instead of being required to load from System32.
     /// </summary>
+    /// <remarks>
+    /// This list is combined with an MSBuild item list so that 3rd party metadata can document app-local DLLs.
+    /// </remarks>
     /// <see href="https://docs.microsoft.com/en-us/windows/win32/debug/dbghelp-versions" />
-    private static readonly string[] AppLocalLibraries = new[] { "DbgHelp.dll", "SymSrv.dll", "SrcSrv.dll" };
+    private static readonly string[] BuiltInAppLocalLibraries = ["DbgHelp.dll", "SymSrv.dll", "SrcSrv.dll"];
 
     // [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     private static readonly AttributeSyntax DefaultDllImportSearchPathsAttribute =

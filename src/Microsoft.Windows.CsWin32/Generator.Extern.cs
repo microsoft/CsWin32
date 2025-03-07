@@ -147,19 +147,6 @@ public partial class Generator
         this.volatileCode.GenerateMethod(methodDefinitionHandle, () => this.DeclareExternMethod(methodDefinitionHandle));
     }
 
-    private static bool IsLibraryAllowedAppLocal(string libraryName)
-    {
-        for (int i = 0; i < AppLocalLibraries.Length; i++)
-        {
-            if (string.Equals(libraryName, AppLocalLibraries[i], StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     private string GetMethodNamespace(MethodDefinition methodDef) => this.Reader.GetString(this.Reader.GetTypeDefinition(methodDef.GetDeclaringType()).Namespace);
 
     private void DeclareExternMethod(MethodDefinitionHandle methodDefinitionHandle)
@@ -233,7 +220,7 @@ public partial class Generator
                 if (this.generateDefaultDllImportSearchPathsAttribute)
                 {
                     result = result.AddAttributes(
-                        IsLibraryAllowedAppLocal(moduleName)
+                        this.AppLocalLibraries.Contains(moduleName)
                             ? DefaultDllImportSearchPathsAllowAppDirAttribute
                             : DefaultDllImportSearchPathsAttribute);
                 }

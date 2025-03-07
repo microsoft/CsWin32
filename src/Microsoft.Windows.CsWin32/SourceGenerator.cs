@@ -152,6 +152,13 @@ public class SourceGenerator : ISourceGenerator
         '\u200B', // ZERO WIDTH SPACE (U+200B)
     };
 
+    private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
+    {
+        AllowTrailingCommas = true,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
+
     /// <inheritdoc/>
     public void Initialize(GeneratorInitializationContext context)
     {
@@ -173,12 +180,7 @@ public class SourceGenerator : ISourceGenerator
             string optionsJson = nativeMethodsJsonFile.GetText(context.CancellationToken)!.ToString();
             try
             {
-                options = JsonSerializer.Deserialize<GeneratorOptions>(optionsJson, new JsonSerializerOptions
-                {
-                    AllowTrailingCommas = true,
-                    ReadCommentHandling = JsonCommentHandling.Skip,
-                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                });
+                options = JsonSerializer.Deserialize<GeneratorOptions>(optionsJson, JsonOptions);
             }
             catch (JsonException ex)
             {
@@ -210,8 +212,9 @@ public class SourceGenerator : ISourceGenerator
             context.ReportDiagnostic(Diagnostic.Create(MissingRecommendedReference, location: null, "System.Memory"));
         }
 
+        IEnumerable<string> appLocalLibraries = CollectAppLocalAllowedLibraries(context);
         Docs? docs = ParseDocs(context);
-        Generator[] generators = CollectMetadataPaths(context).Select(path => new Generator(path, docs, options, compilation, parseOptions)).ToArray();
+        Generator[] generators = CollectMetadataPaths(context).Select(path => new Generator(path, docs, appLocalLibraries, options, compilation, parseOptions)).ToArray();
         if (TryFindNonUniqueValue(generators, g => g.InputAssemblyName, StringComparer.OrdinalIgnoreCase, out (Generator Item, string Value) nonUniqueGenerator))
         {
             context.ReportDiagnostic(Diagnostic.Create(NonUniqueMetadataInputs, null, nonUniqueGenerator.Value));
@@ -387,6 +390,17 @@ public class SourceGenerator : ISourceGenerator
 
         string[] metadataBasePaths = delimitedMetadataBasePaths.Split('|');
         return metadataBasePaths;
+    }
+
+    private static IEnumerable<string> CollectAppLocalAllowedLibraries(GeneratorExecutionContext context)
+    {
+        if (!context.AnalyzerConfigOptions.GlobalOptions.TryGetValue("build_property.CsWin32AppLocalAllowedLibraries", out string? delimitedAppLocalLibraryPaths) ||
+            string.IsNullOrWhiteSpace(delimitedAppLocalLibraryPaths))
+        {
+            return Array.Empty<string>();
+        }
+
+        return delimitedAppLocalLibraryPaths.Split('|').Select(Path.GetFileName);
     }
 
     private static Docs? ParseDocs(GeneratorExecutionContext context)

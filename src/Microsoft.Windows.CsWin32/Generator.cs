@@ -74,10 +74,11 @@ public partial class Generator : IGenerator, IDisposable
     /// </summary>
     /// <param name="metadataLibraryPath">The path to the winmd metadata to generate APIs from.</param>
     /// <param name="docs">The API docs to include in the generated code.</param>
+    /// <param name="additionalAppLocalLibraries">The library file names (e.g. some.dll) that should be allowed as app-local.</param>
     /// <param name="options">Options that influence the result of generation.</param>
     /// <param name="compilation">The compilation that the generated code will be added to.</param>
     /// <param name="parseOptions">The parse options that will be used for the generated code.</param>
-    public Generator(string metadataLibraryPath, Docs? docs, GeneratorOptions options, CSharpCompilation? compilation = null, CSharpParseOptions? parseOptions = null)
+    public Generator(string metadataLibraryPath, Docs? docs, IEnumerable<string> additionalAppLocalLibraries, GeneratorOptions options, CSharpCompilation? compilation = null, CSharpParseOptions? parseOptions = null)
     {
         if (options is null)
         {
@@ -89,6 +90,9 @@ public partial class Generator : IGenerator, IDisposable
         this.metadataReader = metadataFile.GetMetadataReader();
 
         this.ApiDocs = docs;
+
+        this.AppLocalLibraries = new(BuiltInAppLocalLibraries, StringComparer.OrdinalIgnoreCase);
+        this.AppLocalLibraries.UnionWith(additionalAppLocalLibraries);
 
         this.options = options;
         this.options.Validate();
@@ -290,6 +294,8 @@ public partial class Generator : IGenerator, IDisposable
     /// Gets the default generation context to use.
     /// </summary>
     internal Context DefaultContext => new() { AllowMarshaling = this.options.AllowMarshaling };
+
+    private HashSet<string> AppLocalLibraries { get; }
 
     private bool WideCharOnly => this.options.WideCharOnly;
 

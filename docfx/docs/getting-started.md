@@ -9,8 +9,11 @@ WPF projects have [additional requirements](https://github.com/microsoft/CsWin32
 This source generator generates code compatible with .NET Framework, .NET Standard 2.0, and .NET, as applicable to the project that uses it.
 .NET Framework 4.7.2 is the oldest target framework that is officially supported, but community contributions have made a subset of the generated code work in .NET Framework 3.5 projects.
 
-When targeting .NET Standard or .NET Framework, it is necessary to explicitly update the C# language version to at _least_ C# 9+ (`<LangVersion>9</LangVersion>` in your project file). See [issue #4](https://github.com/microsoft/CsWin32/issues/4) for more on this.
-Newer is generally better. Use the latest C# language version for the best results, regardless of your TargetFramework.
+When targeting .NET Standard or .NET Framework, it is necessary to explicitly update the C# language version to at _least_ C# 9+ (`<LangVersion>9</LangVersion>` in your project file).
+C# 11 is sometimes required depending on the code being generated.
+See [issue #4](https://github.com/microsoft/CsWin32/issues/4) for more on this.
+Newer is generally better.
+Use the latest C# language version for the best results, regardless of your TargetFramework.
 
 ## Installation
 

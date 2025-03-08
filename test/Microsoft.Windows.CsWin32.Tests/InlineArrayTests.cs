@@ -16,7 +16,6 @@ public class InlineArrayTests : GeneratorTestBase
         [CombinatorialValues(/*char*/"RM_PROCESS_INFO", /*custom unmanaged*/"ARRAYDESC")] string api)
     {
         this.compilation = this.starterCompilations[tfm];
-        this.parseOptions = this.parseOptions.WithLanguageVersion(GetLanguageVersionForTfm(tfm) ?? LanguageVersion.CSharp9);
         this.generator = this.CreateGenerator(new GeneratorOptions { AllowMarshaling = allowMarshaling, MultiTargetingFriendlyAPIs = multitargetingAPIs });
 
         // TODO we need to test

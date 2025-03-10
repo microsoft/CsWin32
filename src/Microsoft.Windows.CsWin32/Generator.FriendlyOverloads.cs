@@ -607,8 +607,8 @@ public partial class Generator
                         ArgumentList().AddArguments(Argument(LiteralExpression(SyntaxKind.NullLiteralExpression))));
                 arguments[param.SequenceNumber - 1] = Argument(ConditionalExpression(
                     MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName("HasValue")),
-                    localName,
-                    nullRef));
+                    RefExpression(localName),
+                    RefExpression(nullRef)));
             }
 
             bool TryHandleCountParam(TypeSyntax elementType, bool nullableSource)

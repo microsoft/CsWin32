@@ -78,6 +78,12 @@
       "description": "A value indicating whether to expose the generated APIs publicly (as opposed to internally).",
       "type": "boolean",
       "default": false
+    },
+    "namespace": {
+      "description": "The namespace under which all p/invoke methods and constants are generated.",
+      "type": "string",
+      "default": null,
+      "pattern": "^\\w+(?:\\.\\w+)*$"
     }
   }
 }

@@ -43,7 +43,7 @@ $PDBs |% {
     }
 } |% {
     # Collect the DLLs/EXEs as well.
-    $rootName = "$($_.Directory)/$($_.BaseName)"
+    $rootName = Join-Path $_.Directory $_.BaseName
     if ($rootName.EndsWith('.ni')) {
         $rootName = $rootName.Substring(0, $rootName.Length - 3)
     }
@@ -63,4 +63,8 @@ $PDBs |% {
         Write-Output $BinaryImagePath
         Write-Output $_.FullName
     }
+}
+
+if (!$Tests) {
+    & $PSScriptRoot\Get-3rdPartySymbolFiles.ps1
 }

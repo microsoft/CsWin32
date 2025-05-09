@@ -64,7 +64,3 @@ $PDBs |% {
         Write-Output $_.FullName
     }
 }
-
-if (!$Tests) {
-    & $PSScriptRoot\Get-3rdPartySymbolFiles.ps1
-}

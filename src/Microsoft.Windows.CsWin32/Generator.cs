@@ -299,7 +299,7 @@ public partial class Generator : IGenerator, IDisposable
 
     private bool WideCharOnly => this.options.WideCharOnly;
 
-    private string Namespace => this.MetadataIndex.CommonNamespace;
+    private string Namespace => this.options.Namespace ?? this.MetadataIndex.CommonNamespace;
 
     private SyntaxKind Visibility => this.options.Public ? SyntaxKind.PublicKeyword : SyntaxKind.InternalKeyword;
 
@@ -817,7 +817,7 @@ public partial class Generator : IGenerator, IDisposable
             usingDirectives.Add(UsingDirective(ParseName(GlobalNamespacePrefix + "System.Runtime.Versioning")));
         }
 
-        usingDirectives.Add(UsingDirective(NameEquals(GlobalWinmdRootNamespaceAlias), ParseName(GlobalNamespacePrefix + this.MetadataIndex.CommonNamespace)));
+        usingDirectives.Add(UsingDirective(NameEquals(GlobalWinmdRootNamespaceAlias), ParseName(GlobalNamespacePrefix + this.Namespace)));
 
         var normalizedResults = new Dictionary<string, CompilationUnitSyntax>(StringComparer.OrdinalIgnoreCase);
         results.AsParallel().WithCancellation(cancellationToken).ForAll(kv =>

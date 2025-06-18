@@ -246,7 +246,7 @@ jobs:
           displayName: 💅 Verify formatted code
           env:
             dotnetformat: true # part of a workaround for https://github.com/dotnet/sdk/issues/44951
-  - template: expand-template.yml
+      - template: expand-template.yml
 
   - ${{ if parameters.EnableMacOSBuild }}:
     - job: macOS

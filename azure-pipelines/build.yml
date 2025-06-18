@@ -118,6 +118,7 @@ jobs:
           zipSources: false
           ${{ if parameters.RealSign }}:
             signType: real
+            signWithProd: true
           ${{ else }}:
             signType: test
         sbom:
@@ -223,6 +224,7 @@ jobs:
               signing:
                 enabled: false # enable when building unique artifacts on this agent that must be signed
                 signType: real
+                signWithProd: true
           outputParentDirectory: $(Build.ArtifactStagingDirectory)
           outputs:
           - ${{ each artifact_name in parameters.artifact_names }}:
@@ -258,6 +260,7 @@ jobs:
               signing:
                 enabled: false # enable when building unique artifacts on this agent that must be signed
                 signType: real
+                signWithProd: true
           outputParentDirectory: $(Build.ArtifactStagingDirectory)
           outputs:
           - ${{ each artifact_name in parameters.artifact_names }}:

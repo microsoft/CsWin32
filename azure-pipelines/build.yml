@@ -141,6 +141,9 @@ jobs:
         - ${{ if parameters.EnableOptProf }}:
           - powershell: Write-Host "##vso[task.setvariable variable=PROFILINGINPUTSDROPNAME]$(tools/variables/ProfilingInputsDropName.ps1)"
             displayName: ⚙ Set ProfilingInputsDropName for optprof
+      sdl:
+        binskim:
+          analyzeTargetGlob: $(Build.ArtifactStagingDirectory)\symbols-Windows\**
 
       outputParentDirectory: $(Build.ArtifactStagingDirectory)
       outputs:

@@ -42,9 +42,8 @@ steps:
 
   - task: MicroBuildSigningPlugin@4
     inputs:
-      signType: Real
+      signType: Test
       zipSources: false
-      ConnectedPMEServiceName: 6cc74545-d7b9-4050-9dfa-ebefcc8961ea # devdiv's SC ID
     displayName: 🔧 Install MicroBuild Signing Plugin
 
   - ${{ if parameters.EnableLocalization }}:

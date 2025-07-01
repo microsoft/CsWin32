@@ -15,10 +15,10 @@
 * Static analyzers: default [Code Analysis](https://docs.microsoft.com/dotnet/fundamentals/code-analysis/overview) and [StyleCop](https://github.com/DotNetAnalyzers/StyleCopAnalyzers)
 * Read-only source tree (builds to top-level bin/obj folders)
 * Auto-versioning (via [Nerdbank.GitVersioning](https://github.com/dotnet/nerdbank.gitversioning))
-* Builds with a "pinned" .NET Core SDK to ensure reproducible builds across machines and across time.
+* Builds with a "pinned" .NET SDK to ensure reproducible builds across machines and across time.
 * Automatically pack the library and publish it as an artifact, and even push it to some NuGet feed for consumption.
 * Testing
-  * Testing on .NET Framework, multiple .NET Core versions
+  * Testing on .NET Framework, multiple .NET versions
   * Testing on Windows, Linux and OSX
   * Tests that crash or hang in Azure Pipelines automatically collect dumps and publish as a pipeline artifact for later investigation.
 * Cloud build support

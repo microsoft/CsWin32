@@ -17,9 +17,9 @@ parameters:
 steps:
 - ${{ if and(not(parameters.IsOptProf), ne(variables['Build.Reason'], 'PullRequest')) }}:
   # notice@0 requires CG detection to run first, and non-default branches don't inject it automatically.
-  - ${{ if ne(variables['Build.SourceBranch'], 'refs/heads/main') }}:
-    - task: ComponentGovernanceComponentDetection@0
-      displayName: 🔍 Component Detection
+  # default branch injection (main) is happening too late for notice@0 to run successfully. Adding this as a workaround.
+  - task: ComponentGovernanceComponentDetection@0
+    displayName: 🔍 Component Detection
 
   - task: notice@0
     displayName: 🛠️ Generate NOTICE file

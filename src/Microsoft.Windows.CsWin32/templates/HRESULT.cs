@@ -61,6 +61,19 @@ partial struct HRESULT
 		return this;
 	}
 
+	[DebuggerBrowsable(DebuggerBrowsableState.Never)]
+	private string DebuggerDisplay
+	{
+		get
+		{
+#if NET7_0_OR_GREATER
+			return string.Format("{0} {1}", ToString(), global::System.Runtime.InteropServices.Marshal.GetPInvokeErrorMessage((int)this.Value));
+#else
+			return string.Format("{0} {1}", ToString(), new global::System.ComponentModel.Win32Exception((int)this.Value).Message);
+#endif
+		}
+	}
+
 	public override string ToString() => string.Format(global::System.Globalization.CultureInfo.InvariantCulture, "0x{0:X8}", this.Value);
 
 	internal string ToString(string format, IFormatProvider formatProvider) => ((uint)this.Value).ToString(format, formatProvider);

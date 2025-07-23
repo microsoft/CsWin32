@@ -239,12 +239,22 @@ public partial class Generator
             structModifiers = structModifiers.Add(TokenWithSpace(SyntaxKind.UnsafeKeyword));
         }
 
+        string debuggerDisplay;
+        if (members.Where(x => x is PropertyDeclarationSyntax && ((PropertyDeclarationSyntax)x).Identifier.ValueText == "DebuggerDisplay").Any())
+        {
+            debuggerDisplay = "{DebuggerDisplay,nq}";
+        }
+        else
+        {
+            debuggerDisplay = "{" + fieldName + "}";
+        }
+
         structModifiers = structModifiers.Add(TokenWithSpace(SyntaxKind.ReadOnlyKeyword)).Add(TokenWithSpace(SyntaxKind.PartialKeyword));
         StructDeclarationSyntax result = StructDeclaration(name.Identifier)
             .WithBaseList(BaseList(SingletonSeparatedList<BaseTypeSyntax>(SimpleBaseType(GenericName(nameof(IEquatable<int>), TypeArgumentList().WithGreaterThanToken(TokenWithLineFeed(SyntaxKind.GreaterThanToken))).AddTypeArgumentListArguments(name)))).WithColonToken(TokenWithSpace(SyntaxKind.ColonToken)))
             .WithMembers(members)
             .WithModifiers(structModifiers)
-            .AddAttributeLists(AttributeList().WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken)).AddAttributes(DebuggerDisplay("{" + fieldName + "}")));
+            .AddAttributeLists(AttributeList().WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken)).AddAttributes(DebuggerDisplay(debuggerDisplay)));
 
         result = this.AddApiDocumentation(name.Identifier.ValueText, result);
         return result;

@@ -28,6 +28,8 @@ extends:
   parameters:
     sdl:
       sourceAnalysisPool: VSEngSS-MicroBuild2022-1ES
+      credscan:
+        enabled: false
 
     stages:
     - stage: Build

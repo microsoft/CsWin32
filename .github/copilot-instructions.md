@@ -14,6 +14,7 @@
 
 * There should generally be one test project (under the `test` directory) per shipping project (under the `src` directory). Test projects are named after the project being tested with a `.Test` suffix.
 * Tests should use the Xunit testing framework.
+* Some tests are known to be unstable. When running tests, you should skip the unstable ones by running `dotnet test --filter "TestCategory!=FailsInCloudTest"`.
 
 ## Coding style
 

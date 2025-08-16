@@ -53,9 +53,9 @@ Push the tag.
 When your repo is hosted by GitHub and you are using GitHub Actions, you should create a GitHub Release using the standard GitHub UI.
 Having previously used `nbgv tag` and pushing the tag will help you identify the precise commit and name to use for this release.
 
-After publishing the release, the `.github\workflows\release.yml` workflow will be automatically triggered, which will:
+After publishing the release, the `.github/workflows/release.yml` workflow will be automatically triggered, which will:
 
-1. Find the most recent `.github\workflows\build.yml` GitHub workflow run of the tagged release.
+1. Find the most recent `.github/workflows/build.yml` GitHub workflow run of the tagged release.
 1. Upload the `deployables` artifact from that workflow run to your GitHub Release.
 1. If you have `NUGET_API_KEY` defined as a secret variable for your repo or org, any nuget packages in the `deployables` artifact will be pushed to nuget.org.
 
@@ -92,7 +92,7 @@ The best way to keep your repo in sync with Library.Template's evolving features
 ```ps1
 git fetch
 git checkout origin/main
-.\tools\MergeFrom-Template.ps1
+./tools/MergeFrom-Template.ps1
 # resolve any conflicts, then commit the merge commit.
 git push origin -u HEAD
 ```

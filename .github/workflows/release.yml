@@ -11,13 +11,12 @@ on:
 
 run-name: ${{ github.ref_name }}
 
-permissions:
-  actions: read
-  contents: write
-
 jobs:
   release:
     runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: write
     steps:
     - name: ⚙️ Initialization
       shell: pwsh

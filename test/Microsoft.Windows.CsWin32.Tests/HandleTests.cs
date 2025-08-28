@@ -98,7 +98,7 @@ public class HandleTests : GeneratorTestBase
     public void HandleStructsHaveIsNullProperty(string handleName)
     {
         // A null HGDIOBJ has a specific meaning beyond just the concept of an invalid handle:
-        // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-selectobject#return-value
+        // https://learn.microsoft.com/windows/win32/api/wingdi/nf-wingdi-selectobject#return-value
         this.AssertGeneratedMember(handleName, "IsNull", "internal bool IsNull => Value == default;");
     }
 
@@ -109,7 +109,7 @@ public class HandleTests : GeneratorTestBase
     public void HandleStructsHaveStaticNullMember(string handleName)
     {
         // A null HGDIOBJ has a specific meaning beyond just the concept of an invalid handle:
-        // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-selectobject#return-value
+        // https://learn.microsoft.com/windows/win32/api/wingdi/nf-wingdi-selectobject#return-value
         this.AssertGeneratedMember(handleName, "Null", $"internal static {handleName} Null => default;");
     }
 

@@ -149,7 +149,7 @@ public partial class Generator
     /// <remarks>
     /// This list is combined with an MSBuild item list so that 3rd party metadata can document app-local DLLs.
     /// </remarks>
-    /// <see href="https://learn.microsoft.com/en-us/windows/win32/debug/dbghelp-versions" />
+    /// <see href="https://learn.microsoft.com/windows/win32/debug/dbghelp-versions" />
     private static readonly string[] BuiltInAppLocalLibraries = ["DbgHelp.dll", "SymSrv.dll", "SrcSrv.dll"];
 
     // [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]

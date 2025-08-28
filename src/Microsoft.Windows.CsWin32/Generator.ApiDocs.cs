@@ -104,7 +104,7 @@ public partial class Generator
                 else if (docs.HelpLink is object)
                 {
                     docCommentsBuilder.AppendLine();
-                    docCommentsBuilder.AppendLine($@"/// <para><see href=""{docs.HelpLink}"">Learn more about this API from docs.microsoft.com</see>.</para>");
+                    docCommentsBuilder.AppendLine($@"/// <para><see href=""{docs.HelpLink}"">Learn more about this API from learn.microsoft.com</see>.</para>");
                     docCommentsBuilder.Append("/// ");
                 }
 
@@ -211,7 +211,7 @@ public partial class Generator
 
                 if (docs is object)
                 {
-                    docCommentsBuilder.AppendLine($@"/// <para><see href=""{docs.HelpLink}#{docsAnchor}"">Read more on docs.microsoft.com</see>.</para>");
+                    docCommentsBuilder.AppendLine($@"/// <para><see href=""{docs.HelpLink}#{docsAnchor}"">Read more on learn.microsoft.com</see>.</para>");
                 }
 
                 docCommentsBuilder.Append("/// ");

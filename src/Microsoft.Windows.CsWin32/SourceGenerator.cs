@@ -32,7 +32,7 @@ public class SourceGenerator : ISourceGenerator
     public static readonly DiagnosticDescriptor NoMatchingMethodOrTypeWithBadCharacters = new DiagnosticDescriptor(
         "PInvoke001",
         "No matching method, type or constant found",
-        "Method, type or constant \"{0}\" not found. It contains unexpected characters, possibly including invisible characters, which can happen when copying and pasting from docs.microsoft.com among other places. Try deleting the line and retyping it.",
+        "Method, type or constant \"{0}\" not found. It contains unexpected characters, possibly including invisible characters, which can happen when copying and pasting from learn.microsoft.com among other places. Try deleting the line and retyping it.",
         "Functionality",
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);

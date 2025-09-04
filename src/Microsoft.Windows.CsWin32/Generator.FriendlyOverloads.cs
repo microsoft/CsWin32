@@ -794,7 +794,7 @@ public partial class Generator
             // If we're using C# 13 or later, consider adding the overload resolution attribute if it would likely resolve ambiguities.
             if (this.LanguageVersion >= (LanguageVersion)1300 && parameters.Count == externMethodDeclaration.ParameterList.Parameters.Count)
             {
-                this.DeclareOverloadResolutionPriorityAttributeIfNecessary();
+                this.volatileCode.GenerationTransaction(() => this.DeclareOverloadResolutionPriorityAttributeIfNecessary());
                 friendlyDeclaration = friendlyDeclaration.AddAttributeLists(AttributeList().AddAttributes(OverloadResolutionPriorityAttribute(1)));
             }
 

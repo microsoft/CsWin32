@@ -62,7 +62,7 @@ public partial class Generator
 
             baseTypes = baseTypes.Push(baseTypeDefHandle);
             TypeDefinition baseType = baseTypeDefHandle.Reader.GetTypeDefinition(baseTypeDefHandle.DefinitionHandle);
-            baseTypeHandle = (baseTypeHandle.Generator, baseType.GetInterfaceImplementations().SingleOrDefault());
+            baseTypeHandle = (baseTypeDefHandle.Generator, baseType.GetInterfaceImplementations().SingleOrDefault());
         }
 
         if (this.IsNonCOMInterface(typeDef))
@@ -146,22 +146,23 @@ public partial class Generator
             let methodDefs = methodsByMetadata.Select(qh => qh.Reader.GetMethodDefinition(qh.MethodHandle))
             from property in methodsByMetadata.Key.GetDeclarableProperties(methodDefs, originalIfaceName, allowNonConsecutiveAccessors: true, context)
             select property);
-        ISet<string>? ifaceDeclaredProperties = ccwThisParameter is not null ? this.GetDeclarableProperties(allMethods.Select(qh => qh.Reader.GetMethodDefinition(qh.MethodHandle)), originalIfaceName, allowNonConsecutiveAccessors: false, context) : null;
+        ISet<string>? ifaceDeclaredProperties = ccwThisParameter is not null ? this.GetDeclarableProperties(allMethods.Where(qh => qh.Generator == this).Select(qh => qh.Reader.GetMethodDefinition(qh.MethodHandle)), originalIfaceName, allowNonConsecutiveAccessors: false, context) : null;
 
         foreach (QualifiedMethodDefinitionHandle methodDefHandle in allMethods)
         {
             methodCounter++;
             QualifiedMethodDefinition methodDefinition = methodDefHandle.Resolve();
+            TypeSyntaxSettings methodTypeSettings = typeSettings with { Generator = methodDefinition.Generator };
             string methodName = methodDefinition.Reader.GetString(methodDefinition.Method.Name);
             IdentifierNameSyntax innerMethodName = IdentifierName($"{methodName}_{methodCounter}");
             LiteralExpressionSyntax methodOffset = LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(methodCounter - 1));
 
             MethodSignature<TypeHandleInfo> signature = methodDefinition.Method.DecodeSignature(SignatureHandleProvider.Instance, null);
             CustomAttributeHandleCollection? returnTypeAttributes = methodDefinition.Generator.GetReturnTypeCustomAttributes(methodDefinition.Method);
-            TypeSyntax returnType = signature.ReturnType.ToTypeSyntax(typeSettings, GeneratingElement.InterfaceAsStructMember, returnTypeAttributes).Type;
+            TypeSyntax returnType = signature.ReturnType.ToTypeSyntax(methodTypeSettings, GeneratingElement.InterfaceAsStructMember, returnTypeAttributes).Type;
             TypeSyntax returnTypePreserveSig = returnType;
 
-            ParameterListSyntax parameterList = methodDefinition.Generator.CreateParameterList(methodDefinition.Method, signature, typeSettings with { Generator = methodDefinition.Generator }, GeneratingElement.InterfaceAsStructMember);
+            ParameterListSyntax parameterList = methodDefinition.Generator.CreateParameterList(methodDefinition.Method, signature, methodTypeSettings, GeneratingElement.InterfaceAsStructMember);
             ParameterListSyntax parameterListPreserveSig = parameterList; // preserve a copy that has no mutations.
             bool requiresMarshaling = parameterList.Parameters.Any(p => p.AttributeLists.SelectMany(al => al.Attributes).Any(a => a.Name is IdentifierNameSyntax { Identifier.ValueText: "MarshalAs" }) || p.Modifiers.Any(SyntaxKind.RefKeyword) || p.Modifiers.Any(SyntaxKind.OutKeyword) || p.Modifiers.Any(SyntaxKind.InKeyword));
             FunctionPointerParameterListSyntax funcPtrParameters = FunctionPointerParameterList()

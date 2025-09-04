@@ -60,7 +60,10 @@ public partial class Generator
                 safeHandleType = null;
             }
 
-            this.volatileCode.AddSafeHandleNameForReleaseMethod(releaseMethod, safeHandleType);
+            this.volatileCode.GenerationTransaction(delegate
+            {
+                this.volatileCode.AddSafeHandleNameForReleaseMethod(releaseMethod, safeHandleType);
+            });
 
             if (safeHandleType is null)
             {
@@ -72,7 +75,10 @@ public partial class Generator
                 return safeHandleType;
             }
 
-            this.RequestExternMethod(releaseMethodHandle.Value);
+            this.volatileCode.GenerationTransaction(delegate
+            {
+                this.RequestExternMethod(releaseMethodHandle.Value);
+            });
 
             // Collect all the known invalid values for this handle.
             // If no invalid values are given (e.g. BSTR), we'll just assume 0 is invalid.
@@ -257,7 +263,10 @@ public partial class Generator
 /// </summary>
 "));
 
-            this.volatileCode.AddSafeHandleType(safeHandleDeclaration);
+            this.volatileCode.GenerationTransaction(delegate
+            {
+                this.volatileCode.AddSafeHandleType(safeHandleDeclaration);
+            });
             return safeHandleType;
         }
         catch (Exception ex)

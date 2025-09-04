@@ -1,5 +1,3 @@
 ﻿IEventSubscription
 IPersistFile
 IStream
-
-IUnwrapCompositionHandle

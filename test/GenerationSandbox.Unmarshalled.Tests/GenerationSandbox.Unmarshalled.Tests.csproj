@@ -1,8 +1,3 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <Import Project="..\GenerationSandbox.props" />
-
-  <ItemGroup>
-    <ProjectionMetadataWinmd Include="..\..\PrivateApis.winmd" />
-  </ItemGroup>
-
 </Project>

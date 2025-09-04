@@ -51,18 +51,18 @@ public partial class Generator
     {
         TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefHandle);
         var baseTypes = ImmutableStack.Create<QualifiedTypeDefinitionHandle>();
-        (Generator Generator, InterfaceImplementationHandle Handle) baseTypeHandle = (this, typeDef.GetInterfaceImplementations().SingleOrDefault());
-        while (!baseTypeHandle.Handle.IsNil)
+        (Generator Generator, InterfaceImplementationHandle Handle) baseInterfaceImplHandle = (this, typeDef.GetInterfaceImplementations().SingleOrDefault());
+        while (!baseInterfaceImplHandle.Handle.IsNil)
         {
-            InterfaceImplementation baseTypeImpl = baseTypeHandle.Generator.Reader.GetInterfaceImplementation(baseTypeHandle.Handle);
-            if (!baseTypeHandle.Generator.TryGetTypeDefHandle((TypeReferenceHandle)baseTypeImpl.Interface, out QualifiedTypeDefinitionHandle baseTypeDefHandle))
+            InterfaceImplementation baseTypeImpl = baseInterfaceImplHandle.Generator.Reader.GetInterfaceImplementation(baseInterfaceImplHandle.Handle);
+            if (!baseInterfaceImplHandle.Generator.TryGetTypeDefHandle((TypeReferenceHandle)baseTypeImpl.Interface, out QualifiedTypeDefinitionHandle baseTypeDefHandle))
             {
                 throw new GenerationFailedException("Failed to find base type.");
             }
 
             baseTypes = baseTypes.Push(baseTypeDefHandle);
             TypeDefinition baseType = baseTypeDefHandle.Reader.GetTypeDefinition(baseTypeDefHandle.DefinitionHandle);
-            baseTypeHandle = (baseTypeDefHandle.Generator, baseType.GetInterfaceImplementations().SingleOrDefault());
+            baseInterfaceImplHandle = (baseTypeDefHandle.Generator, baseType.GetInterfaceImplementations().SingleOrDefault());
         }
 
         if (this.IsNonCOMInterface(typeDef))
@@ -152,17 +152,16 @@ public partial class Generator
         {
             methodCounter++;
             QualifiedMethodDefinition methodDefinition = methodDefHandle.Resolve();
-            TypeSyntaxSettings methodTypeSettings = typeSettings with { Generator = methodDefinition.Generator };
             string methodName = methodDefinition.Reader.GetString(methodDefinition.Method.Name);
             IdentifierNameSyntax innerMethodName = IdentifierName($"{methodName}_{methodCounter}");
             LiteralExpressionSyntax methodOffset = LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(methodCounter - 1));
 
             MethodSignature<TypeHandleInfo> signature = methodDefinition.Method.DecodeSignature(SignatureHandleProvider.Instance, null);
             CustomAttributeHandleCollection? returnTypeAttributes = methodDefinition.Generator.GetReturnTypeCustomAttributes(methodDefinition.Method);
-            TypeSyntax returnType = signature.ReturnType.ToTypeSyntax(methodTypeSettings, GeneratingElement.InterfaceAsStructMember, returnTypeAttributes).Type;
+            TypeSyntax returnType = signature.ReturnType.ToTypeSyntax(typeSettings, GeneratingElement.InterfaceAsStructMember, returnTypeAttributes).Type;
             TypeSyntax returnTypePreserveSig = returnType;
 
-            ParameterListSyntax parameterList = methodDefinition.Generator.CreateParameterList(methodDefinition.Method, signature, methodTypeSettings, GeneratingElement.InterfaceAsStructMember);
+            ParameterListSyntax parameterList = methodDefinition.Generator.CreateParameterList(methodDefinition.Method, signature, typeSettings with { Generator = methodDefinition.Generator }, GeneratingElement.InterfaceAsStructMember);
             ParameterListSyntax parameterListPreserveSig = parameterList; // preserve a copy that has no mutations.
             bool requiresMarshaling = parameterList.Parameters.Any(p => p.AttributeLists.SelectMany(al => al.Attributes).Any(a => a.Name is IdentifierNameSyntax { Identifier.ValueText: "MarshalAs" }) || p.Modifiers.Any(SyntaxKind.RefKeyword) || p.Modifiers.Any(SyntaxKind.OutKeyword) || p.Modifiers.Any(SyntaxKind.InKeyword));
             FunctionPointerParameterListSyntax funcPtrParameters = FunctionPointerParameterList()

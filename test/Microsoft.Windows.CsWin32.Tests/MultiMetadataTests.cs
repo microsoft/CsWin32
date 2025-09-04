@@ -12,8 +12,13 @@ public class MultiMetadataTests : GeneratorTestBase
     public void BasicServiceFabric(bool allowMarshaling)
     {
         this.generator = this.CreateSuperGenerator(DefaultMetadataPaths.Concat(new[] { ServiceFabricMetadataPath }).ToArray(), DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling });
-        Assert.True(this.generator.TryGenerate("IFabricStringResult", CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
-        this.AssertNoDiagnostics();
+        this.GenerateApi("IFabricStringResult");
+    }
+
+    [Theory, PairwiseData]
+    public void CrossWinMD_IInspectable(bool allowMarshaling)
+    {
+        this.generator = this.CreateSuperGenerator(DefaultMetadataPaths.Concat(new[] { CustomIInspectableMetadataPath }).ToArray(), DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling });
+        this.GenerateApi("ITestDerivedFromInspectable");
     }
 }

@@ -82,7 +82,7 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
         }
     }
 
-    internal override TypeSyntaxAndMarshaling ToTypeSyntax(TypeSyntaxSettings inputs, Generator.GeneratingElement forElement, CustomAttributeHandleCollection? customAttributes, ParameterAttributes parameterAttributes = default)
+    internal override TypeSyntaxAndMarshaling ToTypeSyntax(TypeSyntaxSettings inputs, Generator.GeneratingElement forElement, QualifiedCustomAttributeHandleCollection? customAttributes, ParameterAttributes parameterAttributes = default)
     {
         NameSyntax? nameSyntax;
         bool isInterface;
@@ -146,8 +146,8 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
 
         if (simpleName is "PWSTR" or "PSTR")
         {
-            bool isConst = this.IsConstantField || MetadataUtilities.FindAttribute(this.reader, customAttributes, Generator.InteropDecorationNamespace, "ConstAttribute").HasValue;
-            bool isEmptyStringTerminatedList = MetadataUtilities.FindAttribute(this.reader, customAttributes, Generator.InteropDecorationNamespace, "NullNullTerminatedAttribute").HasValue;
+            bool isConst = this.IsConstantField || MetadataUtilities.FindAttribute(customAttributes?.Reader!, customAttributes?.Collection, Generator.InteropDecorationNamespace, "ConstAttribute").HasValue;
+            bool isEmptyStringTerminatedList = MetadataUtilities.FindAttribute(customAttributes?.Reader!, customAttributes?.Collection, Generator.InteropDecorationNamespace, "NullNullTerminatedAttribute").HasValue;
             string constChar = isConst ? "C" : string.Empty;
             string listChars = isEmptyStringTerminatedList ? "ZZ" : string.Empty;
             string nameEnding = simpleName.Substring(1);

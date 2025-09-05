@@ -1476,7 +1476,7 @@ public partial class Generator : IGenerator, IDisposable
             // TODO:
             // * Notice [Out][RAIIFree] handle producing parameters. Can we make these provide SafeHandle's?
             bool isReturnOrOutParam = parameter.SequenceNumber == 0 || (parameter.Attributes & ParameterAttributes.Out) == ParameterAttributes.Out;
-            TypeSyntaxAndMarshaling parameterTypeSyntax = parameterInfo.ToTypeSyntax(typeSettings, forElement, parameter.GetCustomAttributes(), parameter.Attributes);
+            TypeSyntaxAndMarshaling parameterTypeSyntax = parameterInfo.ToTypeSyntax(typeSettings, forElement, parameter.GetCustomAttributes().QualifyWith(qualifiedParameter.Generator), parameter.Attributes);
 
             // Determine the custom attributes to apply.
             AttributeListSyntax? attributes = AttributeList();
@@ -1518,7 +1518,7 @@ public partial class Generator : IGenerator, IDisposable
                 @default: null);
             parameterSyntax = parameterTypeSyntax.AddMarshalAs(parameterSyntax);
 
-            if (this.FindInteropDecorativeAttribute(parameter.GetCustomAttributes(), "RetValAttribute") is not null)
+            if (this.FindInteropDecorativeAttribute(parameter.GetCustomAttributes().QualifyWith(qualifiedParameter.Generator), "RetValAttribute") is not null)
             {
                 parameterSyntax = parameterSyntax.WithAdditionalAnnotations(IsRetValAnnotation);
             }

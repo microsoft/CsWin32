@@ -9,7 +9,7 @@ internal record ArrayTypeHandleInfo(TypeHandleInfo ElementType, ArrayShape Shape
 
     internal override Generator? GetGenerator(Generator? inputGenerator) => this.ElementType.GetGenerator(inputGenerator);
 
-    internal override TypeSyntaxAndMarshaling ToTypeSyntax(TypeSyntaxSettings inputs, Generator.GeneratingElement forElement, CustomAttributeHandleCollection? customAttributes, ParameterAttributes parameterAttributes)
+    internal override TypeSyntaxAndMarshaling ToTypeSyntax(TypeSyntaxSettings inputs, Generator.GeneratingElement forElement, QualifiedCustomAttributeHandleCollection? customAttributes, ParameterAttributes parameterAttributes)
     {
         TypeSyntaxAndMarshaling element = this.ElementType.ToTypeSyntax(inputs, forElement, customAttributes);
         if (inputs.AllowMarshaling || inputs.IsField)

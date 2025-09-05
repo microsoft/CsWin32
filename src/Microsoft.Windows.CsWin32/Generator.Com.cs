@@ -112,7 +112,7 @@ public partial class Generator
         BlockSyntax populateVTableBody = Block();
         IdentifierNameSyntax objectLocal = IdentifierName("__object");
         IdentifierNameSyntax hrLocal = IdentifierName("__hr");
-        StatementSyntax returnSOK = ReturnStatement(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, HresultTypeSyntax, IdentifierName("S_OK")));
+        StatementSyntax returnSOK = ReturnStatement(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, this.HresultTypeSyntax, IdentifierName("S_OK")));
 
         this.MainGenerator.RequestInteropType("Windows.Win32.Foundation", "HRESULT", context);
 
@@ -412,10 +412,10 @@ public partial class Generator
                 bool hrReturnType = returnTypePreserveSig is QualifiedNameSyntax { Right.Identifier.ValueText: "HRESULT" };
 
                 //// HRESULT hr = ComHelpers.UnwrapCCW(@this, out Interface? @object);
-                LocalDeclarationStatementSyntax hrDecl = LocalDeclarationStatement(VariableDeclaration(HresultTypeSyntax).AddVariables(
+                LocalDeclarationStatementSyntax hrDecl = LocalDeclarationStatement(VariableDeclaration(this.HresultTypeSyntax).AddVariables(
                     VariableDeclarator(hrLocal.Identifier).WithInitializer(EqualsValueClause(
                         InvocationExpression(
-                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("ComHelpers"), IdentifierName("UnwrapCCW")),
+                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, QualifiedName(this.Win32NamespacePrefix, IdentifierName("ComHelpers")), IdentifierName("UnwrapCCW")),
                             ArgumentList().AddArguments(
                                 Argument(pThisParameterName),
                                 Argument(DeclarationExpression(NestedCOMInterfaceName.WithTrailingTrivia(Space), SingleVariableDesignation(objectLocal.Identifier))).WithRefKindKeyword(Token(SyntaxKind.OutKeyword))))))));
@@ -433,7 +433,7 @@ public partial class Generator
                 if (hrReturnType)
                 {
                     //// return (HRESULT)ex.HResult;
-                    catchBlock = catchBlock.AddStatements(ReturnStatement(CastExpression(HresultTypeSyntax, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, exLocal, IdentifierName(nameof(Exception.HResult))))));
+                    catchBlock = catchBlock.AddStatements(ReturnStatement(CastExpression(this.HresultTypeSyntax, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, exLocal, IdentifierName(nameof(Exception.HResult))))));
                 }
                 else
                 {
@@ -801,7 +801,7 @@ public partial class Generator
         if (populateVtblDeclared && this.IsFeatureAvailable(Feature.InterfaceStaticMembers) && !context.AllowMarshaling && GenerateCcwFor(originalIfaceName))
         {
             this.RequestComHelpers(context);
-            baseTypes.Add(SimpleBaseType(GenericName("IVTable").AddTypeArgumentListArguments(
+            baseTypes.Add(SimpleBaseType(GenericName($"{this.Win32NamespacePrefixString}.IVTable").AddTypeArgumentListArguments(
                 ifaceName,
                 QualifiedName(ifaceName, IdentifierName("Vtbl")))));
         }

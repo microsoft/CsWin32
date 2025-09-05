@@ -15,10 +15,20 @@ public class MultiMetadataTests : GeneratorTestBase
         this.GenerateApi("IFabricStringResult");
     }
 
-    [Theory, PairwiseData]
-    public void CrossWinMD_IInspectable(bool allowMarshaling)
+    [Theory, CombinatorialData]
+    public void CrossWinMD_IInspectable(
+        [CombinatorialValues([false, true])] bool allowMarshaling,
+        [CombinatorialValues([null, "TestPInvoke"])] string pinvokeClassName,
+        [CombinatorialValues(["net472", "net8.0"])] string tfm)
     {
-        this.generator = this.CreateSuperGenerator([.. DefaultMetadataPaths, CustomIInspectableMetadataPath], DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling });
+        this.compilation = this.starterCompilations[tfm];
+        GeneratorOptions options = DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling };
+        if (pinvokeClassName is not null)
+        {
+            options = options with { ClassName = pinvokeClassName };
+        }
+
+        this.generator = this.CreateSuperGenerator([.. DefaultMetadataPaths, CustomIInspectableMetadataPath], options);
         this.GenerateApi("ITestDerivedFromInspectable");
     }
 }

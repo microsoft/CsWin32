@@ -36,7 +36,7 @@ public partial class Generator
             string releaseMethodModule = this.GetNormalizedModuleName(releaseMethodDef.GetImport());
 
             IdentifierNameSyntax? safeHandleTypeIdentifier = IdentifierName(safeHandleClassName);
-            safeHandleType = QualifiedName(ParseName(this.Namespace), safeHandleTypeIdentifier);
+            safeHandleType = QualifiedName(ParseName($"global::{this.Namespace}"), safeHandleTypeIdentifier);
 
             MethodSignature<TypeHandleInfo> releaseMethodSignature = releaseMethodDef.DecodeSignature(SignatureHandleProvider.Instance, null);
             TypeHandleInfo releaseMethodParameterTypeHandleInfo = releaseMethodSignature.ParameterTypes[0];

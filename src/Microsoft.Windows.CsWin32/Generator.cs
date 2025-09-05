@@ -1464,12 +1464,13 @@ public partial class Generator : IGenerator, IDisposable
         }
     }
 
-    private ParameterListSyntax CreateParameterList(MethodDefinition methodDefinition, MethodSignature<TypeHandleInfo> signature, TypeSyntaxSettings typeSettings, GeneratingElement forElement)
-        => FixTrivia(ParameterList().AddParameters(methodDefinition.GetParameters().Select(this.Reader.GetParameter).Where(p => !p.Name.IsNil).Select(p => this.CreateParameter(signature.ParameterTypes[p.SequenceNumber - 1], p, typeSettings, forElement)).ToArray()));
+    private ParameterListSyntax CreateParameterList(QualifiedMethodDefinition qmd, MethodSignature<TypeHandleInfo> signature, TypeSyntaxSettings typeSettings, GeneratingElement forElement)
+        => FixTrivia(ParameterList().AddParameters(qmd.Method.GetParameters().Select(p => new QualifiedParameter(qmd.Generator, qmd.Reader.GetParameter(p))).Where(p => !p.Parameter.Name.IsNil).Select(p => this.CreateParameter(signature.ParameterTypes[p.Parameter.SequenceNumber - 1], p, typeSettings, forElement)).ToArray()));
 
-    private ParameterSyntax CreateParameter(TypeHandleInfo parameterInfo, Parameter parameter, TypeSyntaxSettings typeSettings, GeneratingElement forElement)
+    private ParameterSyntax CreateParameter(TypeHandleInfo parameterInfo, QualifiedParameter qualifiedParameter, TypeSyntaxSettings typeSettings, GeneratingElement forElement)
     {
-        string name = this.Reader.GetString(parameter.Name);
+        Parameter parameter = qualifiedParameter.Parameter;
+        string name = qualifiedParameter.Reader.GetString(parameter.Name);
         try
         {
             // TODO:

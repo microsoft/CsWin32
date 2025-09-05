@@ -18,6 +18,19 @@ public partial class Generator
     internal CustomAttribute? FindAttribute(CustomAttributeHandleCollection? customAttributeHandles, string attributeNamespace, string attributeName)
         => MetadataUtilities.FindAttribute(this.Reader, customAttributeHandles, attributeNamespace, attributeName);
 
+    internal NativeArrayInfo? FindNativeArrayInfoAttribute(QualifiedCustomAttributeHandleCollection customAttributeHandles)
+    {
+        return this.FindInteropDecorativeAttribute(customAttributeHandles, NativeArrayInfoAttribute) is CustomAttribute att
+            ? DecodeNativeArrayInfoAttribute(att)
+            : null;
+    }
+
+    internal CustomAttribute? FindInteropDecorativeAttribute(QualifiedCustomAttributeHandleCollection? customAttributeHandles, string attributeName)
+        => this.FindAttribute(customAttributeHandles, InteropDecorationNamespace, attributeName);
+
+    internal CustomAttribute? FindAttribute(QualifiedCustomAttributeHandleCollection? customAttributeHandles, string attributeNamespace, string attributeName)
+        => MetadataUtilities.FindAttribute(customAttributeHandles?.Reader!, customAttributeHandles?.Collection, attributeNamespace, attributeName);
+
     internal IdentifierNameSyntax? FindAssociatedEnum(CustomAttributeHandleCollection? customAttributeHandles)
     {
         if (this.FindAttribute(customAttributeHandles, InteropDecorationNamespace, AssociatedEnumAttribute) is CustomAttribute att)

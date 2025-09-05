@@ -235,7 +235,7 @@ public partial class Generator
                 explicitInterfaceSpecifier: null!,
                 SafeIdentifier(methodName),
                 null!,
-                this.CreateParameterList(methodDefinition, signature, typeSettings, GeneratingElement.ExternMethod),
+                this.CreateParameterList(new QualifiedMethodDefinition(this, methodDefinition), signature, typeSettings, GeneratingElement.ExternMethod),
                 List<TypeParameterConstraintClauseSyntax>(),
                 body: null!,
                 TokenWithLineFeed(SyntaxKind.SemicolonToken));
@@ -257,7 +257,7 @@ public partial class Generator
             {
                 string ns = this.GetMethodNamespace(methodDefinition);
                 NameSyntax nsSyntax = ParseName(ReplaceCommonNamespaceWithAlias(this, ns));
-                ParameterListSyntax exposedParameterList = this.CreateParameterList(methodDefinition, signature, typeSettings, GeneratingElement.ExternMethod);
+                ParameterListSyntax exposedParameterList = this.CreateParameterList(new QualifiedMethodDefinition(this, methodDefinition), signature, typeSettings, GeneratingElement.ExternMethod);
                 static SyntaxToken RefInOutKeyword(ParameterSyntax p) =>
                     p.Modifiers.Any(SyntaxKind.OutKeyword) ? TokenWithSpace(SyntaxKind.OutKeyword) :
                     p.Modifiers.Any(SyntaxKind.RefKeyword) ? TokenWithSpace(SyntaxKind.RefKeyword) :

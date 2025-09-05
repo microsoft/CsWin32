@@ -161,7 +161,7 @@ public partial class Generator
             TypeSyntax returnType = signature.ReturnType.ToTypeSyntax(typeSettings, GeneratingElement.InterfaceAsStructMember, returnTypeAttributes).Type;
             TypeSyntax returnTypePreserveSig = returnType;
 
-            ParameterListSyntax parameterList = methodDefinition.Generator.CreateParameterList(methodDefinition.Method, signature, typeSettings with { Generator = methodDefinition.Generator }, GeneratingElement.InterfaceAsStructMember);
+            ParameterListSyntax parameterList = this.CreateParameterList(methodDefinition, signature, typeSettings, GeneratingElement.InterfaceAsStructMember);
             ParameterListSyntax parameterListPreserveSig = parameterList; // preserve a copy that has no mutations.
             bool requiresMarshaling = parameterList.Parameters.Any(p => p.AttributeLists.SelectMany(al => al.Attributes).Any(a => a.Name is IdentifierNameSyntax { Identifier.ValueText: "MarshalAs" }) || p.Modifiers.Any(SyntaxKind.RefKeyword) || p.Modifiers.Any(SyntaxKind.OutKeyword) || p.Modifiers.Any(SyntaxKind.InKeyword));
             FunctionPointerParameterListSyntax funcPtrParameters = FunctionPointerParameterList()
@@ -196,7 +196,7 @@ public partial class Generator
 
             // We can declare this method as a property accessor if it represents a property.
             // We must also confirm that the property type is the same in both cases, because sometimes they aren't (e.g. IUIAutomationProxyFactoryEntry.ClassName).
-            if (methodDefinition.Generator.TryGetPropertyAccessorInfo(methodDefinition.Method, originalIfaceName, context, out IdentifierNameSyntax? propertyName, out SyntaxKind? accessorKind, out TypeSyntax? propertyType) &&
+            if (methodDefinition.Generator.TryGetPropertyAccessorInfo(methodDefinition, originalIfaceName, context, out IdentifierNameSyntax? propertyName, out SyntaxKind? accessorKind, out TypeSyntax? propertyType) &&
                 declaredProperties.Contains(propertyName.Identifier.ValueText))
             {
                 StatementSyntax ThrowOnHRFailure(ExpressionSyntax hrExpression) => ExpressionStatement(InvocationExpression(
@@ -342,7 +342,7 @@ public partial class Generator
 
             if (ccwThisParameter is not null && !ccwMethodsToSkip.Contains(methodDefHandle))
             {
-                if (this.TryGetPropertyAccessorInfo(methodDefinition.Method, originalIfaceName, context, out propertyName, out accessorKind, out propertyType) &&
+                if (this.TryGetPropertyAccessorInfo(methodDefinition, originalIfaceName, context, out propertyName, out accessorKind, out propertyType) &&
                     ifaceDeclaredProperties!.Contains(propertyName.Identifier.ValueText))
                 {
                     switch (accessorKind)
@@ -646,7 +646,7 @@ public partial class Generator
                 // Even if it could be represented as a property accessor, we cannot do so if a property by the same name was already declared in anything other than the previous row.
                 // Adding an accessor to a property later than the very next row would screw up the virtual method table ordering.
                 // We must also confirm that the property type is the same in both cases, because sometimes they aren't (e.g. IUIAutomationProxyFactoryEntry.ClassName).
-                if (methodDefinition.Generator.TryGetPropertyAccessorInfo(methodDefinition.Method, actualIfaceName, context, out IdentifierNameSyntax? propertyName, out SyntaxKind? accessorKind, out TypeSyntax? propertyType) && declaredProperties.Contains(propertyName.Identifier.ValueText))
+                if (methodDefinition.Generator.TryGetPropertyAccessorInfo(methodDefinition, actualIfaceName, context, out IdentifierNameSyntax? propertyName, out SyntaxKind? accessorKind, out TypeSyntax? propertyType) && declaredProperties.Contains(propertyName.Identifier.ValueText))
                 {
                     AccessorDeclarationSyntax accessor = AccessorDeclaration(accessorKind.Value).WithSemicolonToken(Semicolon);
 
@@ -679,7 +679,7 @@ public partial class Generator
                     TypeSyntax returnType = returnTypeDetails.Type;
                     AttributeSyntax? returnsAttribute = MarshalAs(returnTypeDetails.MarshalAsAttribute, returnTypeDetails.NativeArrayInfo);
 
-                    ParameterListSyntax? parameterList = this.CreateParameterList(methodDefinition.Method, signature, this.comSignatureTypeSettings, GeneratingElement.InterfaceMember);
+                    ParameterListSyntax? parameterList = this.CreateParameterList(methodDefinition, signature, this.comSignatureTypeSettings, GeneratingElement.InterfaceMember);
 
                     bool preserveSig = interfaceAsSubtype || this.UsePreserveSigForComMethod(methodDefinition.Method, signature, actualIfaceName, methodName);
                     if (!preserveSig)
@@ -895,7 +895,7 @@ public partial class Generator
         foreach (QualifiedMethodDefinition methodDefinition in methods)
         {
             rowIndex++;
-            if (methodDefinition.Generator.TryGetPropertyAccessorInfo(methodDefinition.Method, ifaceName, context, out IdentifierNameSyntax? propertyName, out SyntaxKind? accessorKind, out TypeSyntax? propertyType))
+            if (methodDefinition.Generator.TryGetPropertyAccessorInfo(methodDefinition, ifaceName, context, out IdentifierNameSyntax? propertyName, out SyntaxKind? accessorKind, out TypeSyntax? propertyType))
             {
                 if (badProperties.Contains(propertyName.Identifier.ValueText))
                 {
@@ -931,11 +931,12 @@ public partial class Generator
         return goodProperties.Count == 0 ? ImmutableHashSet<string>.Empty : new HashSet<string>(goodProperties.Keys, StringComparer.Ordinal);
     }
 
-    private bool TryGetPropertyAccessorInfo(MethodDefinition methodDefinition, string ifaceName, Context context, [NotNullWhen(true)] out IdentifierNameSyntax? propertyName, [NotNullWhen(true)] out SyntaxKind? accessorKind, [NotNullWhen(true)] out TypeSyntax? propertyType)
+    private bool TryGetPropertyAccessorInfo(QualifiedMethodDefinition qmd, string ifaceName, Context context, [NotNullWhen(true)] out IdentifierNameSyntax? propertyName, [NotNullWhen(true)] out SyntaxKind? accessorKind, [NotNullWhen(true)] out TypeSyntax? propertyType)
     {
         propertyName = null;
         accessorKind = null;
         propertyType = null;
+        MethodDefinition methodDefinition = qmd.Method;
         TypeSyntaxSettings syntaxSettings = context.Filter(this.comSignatureTypeSettings);
 
         if ((methodDefinition.Attributes & MethodAttributes.SpecialName) != MethodAttributes.SpecialName)
@@ -979,7 +980,7 @@ public partial class Generator
                 return false;
             }
 
-            Parameter propertyTypeParameter = this.Reader.GetParameter(parameters.Skip(1).Single());
+            Parameter propertyTypeParameter = qmd.Reader.GetParameter(parameters.Skip(1).Single());
             TypeHandleInfo propertyTypeInfo = signature.ParameterTypes[0];
             propertyType = propertyTypeInfo.ToTypeSyntax(syntaxSettings, GeneratingElement.Property, propertyTypeParameter.GetCustomAttributes(), propertyTypeParameter.Attributes).Type;
 

@@ -7,9 +7,12 @@ internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleIn
 {
     public override string ToString() => this.ToTypeSyntaxForDisplay().ToString();
 
+    internal override Generator? GetGenerator(Generator? inputGenerator) => this.ElementType.GetGenerator(inputGenerator);
+
     internal override TypeSyntaxAndMarshaling ToTypeSyntax(TypeSyntaxSettings inputs, Generator.GeneratingElement forElement, CustomAttributeHandleCollection? customAttributes, ParameterAttributes parameterAttributes = default)
     {
-        Generator.NativeArrayInfo? nativeArrayInfo = customAttributes.HasValue ? inputs.Generator?.FindNativeArrayInfoAttribute(customAttributes.Value) : null;
+        Generator typeGenerator = this.GetGenerator(inputs.Generator) ?? throw new ArgumentException("Generator required.");
+        Generator.NativeArrayInfo? nativeArrayInfo = customAttributes.HasValue ? inputs.Generator?.FindNativeArrayInfoAttribute(customAttributes.Value.QualifyWith(typeGenerator)) : null;
 
         // We can't marshal a pointer exposed as a field, unless it's a pointer to an array.
         if (inputs.AllowMarshaling && inputs.IsField && (customAttributes is null || nativeArrayInfo is null))

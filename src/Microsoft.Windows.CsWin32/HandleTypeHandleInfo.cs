@@ -6,6 +6,7 @@ namespace Microsoft.Windows.CsWin32;
 internal record HandleTypeHandleInfo : TypeHandleInfo
 {
     private readonly MetadataReader reader;
+    private Generator? generator;
 
     // We just want to see that the identifier starts with I, followed by another upper case letter,
     // followed by a lower case letter. All the WinRT interfaces will match this, and none of the WinRT
@@ -17,6 +18,7 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
         this.reader = reader;
         this.Handle = handle;
         this.RawTypeKind = rawTypeKind;
+        this.generator = null;
     }
 
     internal EntityHandle Handle { get; }
@@ -24,6 +26,16 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
     internal byte? RawTypeKind { get; }
 
     public override string ToString() => this.ToTypeSyntaxForDisplay().ToString();
+
+    internal override Generator? GetGenerator(Generator? inputGenerator)
+    {
+        if (this.generator is null)
+        {
+            inputGenerator?.SuperGenerator?.TryGetGenerator(this.reader, out this.generator);
+        }
+
+        return this.generator;
+    }
 
     internal static NameSyntax GetNestingQualifiedName(Generator? generator, MetadataReader reader, TypeDefinition td, bool hasUnmanagedSuffix, bool isInterfaceNestedInStruct)
     {
@@ -76,31 +88,32 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
         bool isInterface;
         bool isNonCOMConformingInterface;
 
-        Generator? generator = this.TryGetGenerator(inputs.Generator);
-        bool isManagedType = generator?.IsManagedType(this) ?? false;
+        Generator typeGenerator = this.GetGenerator(inputs.Generator) ?? throw new ArgumentException("Generator required.");
+
+        bool isManagedType = typeGenerator.IsManagedType(this);
         QualifiedTypeDefinitionHandle? qtdh = default;
         switch (this.Handle.Kind)
         {
             case HandleKind.TypeDefinition:
                 TypeDefinition td = this.reader.GetTypeDefinition((TypeDefinitionHandle)this.Handle);
-                bool hasUnmanagedSuffix = generator?.HasUnmanagedSuffix(this.reader, td.Name, inputs.AllowMarshaling, isManagedType) ?? false;
+                bool hasUnmanagedSuffix = inputs.Generator?.HasUnmanagedSuffix(typeGenerator.Reader, td.Name, inputs.AllowMarshaling, isManagedType) ?? false;
                 string simpleNameSuffix = hasUnmanagedSuffix ? Generator.UnmanagedInteropSuffix : string.Empty;
-                nameSyntax = inputs.QualifyNames ? GetNestingQualifiedName(generator, this.reader, td, hasUnmanagedSuffix, isInterfaceNestedInStruct: false) : IdentifierName(this.reader.GetString(td.Name) + simpleNameSuffix);
+                nameSyntax = inputs.QualifyNames ? GetNestingQualifiedName(inputs.Generator, this.reader, td, hasUnmanagedSuffix, isInterfaceNestedInStruct: false) : IdentifierName(this.reader.GetString(td.Name) + simpleNameSuffix);
                 isInterface = (td.Attributes & TypeAttributes.Interface) == TypeAttributes.Interface;
-                isNonCOMConformingInterface = isInterface && generator?.IsNonCOMInterface(td) is true;
-                qtdh = generator is not null ? new QualifiedTypeDefinitionHandle(generator, (TypeDefinitionHandle)this.Handle) : default;
+                isNonCOMConformingInterface = isInterface && typeGenerator.IsNonCOMInterface(td) is true;
+                qtdh = new QualifiedTypeDefinitionHandle(typeGenerator, (TypeDefinitionHandle)this.Handle);
                 break;
             case HandleKind.TypeReference:
                 var trh = (TypeReferenceHandle)this.Handle;
                 TypeReference tr = this.reader.GetTypeReference(trh);
-                hasUnmanagedSuffix = generator?.HasUnmanagedSuffix(this.reader, tr.Name, inputs.AllowMarshaling, isManagedType) ?? false;
+                hasUnmanagedSuffix = inputs.Generator?.HasUnmanagedSuffix(typeGenerator.Reader, tr.Name, inputs.AllowMarshaling, isManagedType) ?? false;
                 simpleNameSuffix = hasUnmanagedSuffix ? Generator.UnmanagedInteropSuffix : string.Empty;
                 nameSyntax = inputs.QualifyNames ? GetNestingQualifiedName(inputs, this.reader, tr, hasUnmanagedSuffix) : IdentifierName(this.reader.GetString(tr.Name) + simpleNameSuffix);
-                isInterface = generator?.IsInterface(trh) is true;
-                isNonCOMConformingInterface = isInterface && generator?.IsNonCOMInterface(trh) is true;
-                if (generator is not null)
+                isInterface = typeGenerator.IsInterface(trh) is true;
+                isNonCOMConformingInterface = isInterface && typeGenerator.IsNonCOMInterface(trh) is true;
+                if (typeGenerator is not null)
                 {
-                    if (generator.TryGetTypeDefHandle(this.Handle, out QualifiedTypeDefinitionHandle qtdhTmp))
+                    if (typeGenerator.TryGetTypeDefHandle(this.Handle, out QualifiedTypeDefinitionHandle qtdhTmp))
                     {
                         qtdh = qtdhTmp;
                     }
@@ -139,12 +152,12 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
             string listChars = isEmptyStringTerminatedList ? "ZZ" : string.Empty;
             string nameEnding = simpleName.Substring(1);
             string specialName = $"P{constChar}{listChars}{nameEnding}";
-            if (generator is object)
+            if (inputs.Generator is object)
             {
                 if (Generator.SpecialTypeDefNames.Contains(specialName))
                 {
-                    generator.RequestSpecialTypeDefStruct(specialName, out string fullyQualifiedName);
-                    return new TypeSyntaxAndMarshaling(ParseName(Generator.ReplaceCommonNamespaceWithAlias(generator, fullyQualifiedName)));
+                    inputs.Generator.RequestSpecialTypeDefStruct(specialName, out string fullyQualifiedName);
+                    return new TypeSyntaxAndMarshaling(ParseName(Generator.ReplaceCommonNamespaceWithAlias(inputs.Generator, fullyQualifiedName)));
                 }
                 else
                 {
@@ -160,13 +173,13 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
         {
             return new TypeSyntaxAndMarshaling(PredefinedType(Token(SyntaxKind.ObjectKeyword)), marshalAs, null);
         }
-        else if (!inputs.AllowMarshaling && isDelegate && generator is object && !Generator.IsUntypedDelegate(delegateDefinition.Generator.Reader, delegateDefinition.Definition))
+        else if (!inputs.AllowMarshaling && isDelegate && inputs.Generator is object && !Generator.IsUntypedDelegate(delegateDefinition.Generator.Reader, delegateDefinition.Definition))
         {
-            return new TypeSyntaxAndMarshaling(generator.FunctionPointer(delegateDefinition));
+            return new TypeSyntaxAndMarshaling(inputs.Generator.FunctionPointer(delegateDefinition));
         }
         else
         {
-            this.RequestTypeGeneration(generator, this.GetContext(inputs));
+            this.RequestTypeGeneration(typeGenerator, this.GetContext(inputs));
         }
 
         if (isDelegate)
@@ -209,7 +222,7 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
 
     internal override bool? IsValueType(TypeSyntaxSettings inputs)
     {
-        Generator generator = this.TryGetGenerator(inputs.Generator) ?? throw new ArgumentException("Generator required.");
+        Generator generator = this.GetGenerator(inputs.Generator) ?? throw new ArgumentException("Generator required.");
         TypeDefinitionHandle typeDefHandle = default;
         switch (this.Handle.Kind)
         {
@@ -303,7 +316,7 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
     private bool IsDelegate(TypeSyntaxSettings inputs, out QualifiedTypeDefinition delegateTypeDef)
     {
         TypeDefinitionHandle tdh = default;
-        Generator? generator = this.TryGetGenerator(inputs.Generator);
+        Generator? generator = this.GetGenerator(inputs.Generator);
         switch (this.Handle.Kind)
         {
             case HandleKind.TypeReference when generator is not null:
@@ -351,12 +364,5 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
         {
             generator?.RequestInteropType((TypeReferenceHandle)this.Handle, context);
         }
-    }
-
-    private Generator? TryGetGenerator(Generator? inputGenerator)
-    {
-        Generator? generator = null;
-        inputGenerator?.SuperGenerator?.TryGetGenerator(this.reader, out generator);
-        return generator;
     }
 }

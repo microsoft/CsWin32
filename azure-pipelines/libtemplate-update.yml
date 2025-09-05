@@ -35,6 +35,8 @@ extends:
         name: AzurePipelines-EO
         demands:
         - ImageOverride -equals 1ESPT-Windows2022
+      credscan:
+        enabled: false
 
     stages:
     - stage: Merge

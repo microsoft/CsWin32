@@ -33,7 +33,7 @@ Param(
     [string]$Verbosity='normal'
 )
 
-$nugetPath = & "$PSScriptRoot\..\tools\Get-NuGetTool.ps1"
+$nugetPath = & "$PSScriptRoot\Get-NuGetTool.ps1"
 
 try {
     Write-Verbose "Installing $PackageId..."

@@ -36,7 +36,7 @@ public partial class Generator
             string releaseMethodModule = this.GetNormalizedModuleName(releaseMethodDef.GetImport());
 
             IdentifierNameSyntax? safeHandleTypeIdentifier = IdentifierName(safeHandleClassName);
-            safeHandleType = safeHandleTypeIdentifier;
+            safeHandleType = QualifiedName(ParseName(this.Namespace), safeHandleTypeIdentifier);
 
             MethodSignature<TypeHandleInfo> releaseMethodSignature = releaseMethodDef.DecodeSignature(SignatureHandleProvider.Instance, null);
             TypeHandleInfo releaseMethodParameterTypeHandleInfo = releaseMethodSignature.ParameterTypes[0];
@@ -267,6 +267,7 @@ public partial class Generator
             {
                 this.volatileCode.AddSafeHandleType(safeHandleDeclaration);
             });
+
             return safeHandleType;
         }
         catch (Exception ex)

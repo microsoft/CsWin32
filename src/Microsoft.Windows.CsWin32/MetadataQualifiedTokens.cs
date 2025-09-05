@@ -40,20 +40,24 @@ internal record struct QualifiedMethodDefinition(Generator Generator, MethodDefi
 
     internal StringHandle Name => this.Method.Name;
 
-    internal QualifiedCustomAttributeHandleCollection? GetReturnTypeCustomAttributes() => this.Generator.GetReturnTypeCustomAttributes(this);
+    internal QualifiedCustomAttributeHandleCollection? GetReturnTypeCustomAttributes() => this.Generator.GetReturnTypeCustomAttributes(this.Method)?.QualifyWith(this.Generator);
 
     internal IEnumerable<QualifiedParameterHandle> GetParameters()
     {
-        List<QualifiedParameterHandle> parameters = new();
         foreach (ParameterHandle parameterHandle in this.Method.GetParameters())
         {
-            parameters.Add(new QualifiedParameterHandle(this.Generator, parameterHandle));
+            yield return new QualifiedParameterHandle(this.Generator, parameterHandle);
         }
-
-        return parameters;
     }
 
     internal QualifiedCustomAttributeHandleCollection GetCustomAttributes() => this.Method.GetCustomAttributes().QualifyWith(this.Generator);
+}
+
+internal record struct QualifiedCustomAttributeHandle(Generator Generator, CustomAttributeHandle CustomAttributeHandle)
+{
+    internal MetadataReader Reader => this.Generator.Reader;
+
+    internal QualifiedCustomAttribute Resolve() => new(this.Generator, this.Generator.Reader.GetCustomAttribute(this.CustomAttributeHandle));
 }
 
 internal record struct QualifiedParameterHandle(Generator Generator, ParameterHandle ParameterHandle)
@@ -68,15 +72,15 @@ internal record struct QualifiedParameter(Generator Generator, Parameter Paramet
     internal MetadataReader Reader => this.Generator.Reader;
 }
 
-internal record struct QualifiedCustomAttributeHandleCollection(Generator Generator, CustomAttributeHandleCollection Collection) : IEnumerable<QualifiedCustomAttribute>
+internal record struct QualifiedCustomAttributeHandleCollection(Generator Generator, CustomAttributeHandleCollection Collection) : IEnumerable<QualifiedCustomAttributeHandle>
 {
     internal MetadataReader Reader => this.Generator.Reader;
 
-    public IEnumerator<QualifiedCustomAttribute> GetEnumerator()
+    public IEnumerator<QualifiedCustomAttributeHandle> GetEnumerator()
     {
-        foreach (var handle in this.Collection)
+        foreach (CustomAttributeHandle handle in this.Collection)
         {
-            yield return new QualifiedCustomAttribute(this.Generator, this.Reader.GetCustomAttribute(handle));
+            yield return new QualifiedCustomAttributeHandle(this.Generator, handle);
         }
     }
 
@@ -93,6 +97,8 @@ internal static class QualifiedExtensions
     internal static QualifiedMethodDefinition QualifyWith(this MethodDefinition method, Generator generator) => new(generator, method);
 
     internal static QualifiedParameter QualifyWith(this Parameter parameter, Generator generator) => new(generator, parameter);
+
+    internal static QualifiedParameterHandle QualifyWith(this ParameterHandle parameterHandle, Generator generator) => new(generator, parameterHandle);
 
     internal static QualifiedCustomAttributeHandleCollection QualifyWith(this CustomAttributeHandleCollection collection, Generator generator) => new(generator, collection);
 }

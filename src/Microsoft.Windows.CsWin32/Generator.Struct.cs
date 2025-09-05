@@ -128,7 +128,7 @@ public partial class Generator
                 }
                 else
                 {
-                    QualifiedCustomAttributeHandleCollection fieldAttributes = fieldDef.GetCustomAttributes().QualifyWith(this);
+                    CustomAttributeHandleCollection fieldAttributes = fieldDef.GetCustomAttributes();
                     TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null);
                     hasUtf16CharField |= fieldTypeInfo is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.Char };
                     TypeSyntaxSettings thisFieldTypeSettings = typeSettings;
@@ -152,7 +152,7 @@ public partial class Generator
                         }
                     }
 
-                    TypeSyntaxAndMarshaling fieldTypeSyntax = fieldTypeInfo.ToTypeSyntax(thisFieldTypeSettings, GeneratingElement.StructMember, fieldAttributes);
+                    TypeSyntaxAndMarshaling fieldTypeSyntax = fieldTypeInfo.ToTypeSyntax(thisFieldTypeSettings, GeneratingElement.StructMember, fieldAttributes.QualifyWith(this));
                     (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? MarshalAsAttribute) fieldInfo = this.ReinterpretFieldType(fieldDef, fieldTypeSyntax.Type, fieldAttributes, context);
                     additionalMembers = additionalMembers.AddRange(fieldInfo.AdditionalMembers);
 
@@ -511,7 +511,7 @@ public partial class Generator
         return sizeOfMethod;
     }
 
-    private (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? MarshalAsAttribute) ReinterpretFieldType(FieldDefinition fieldDef, TypeSyntax originalType, QualifiedCustomAttributeHandleCollection customAttributes, Context context)
+    private (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? MarshalAsAttribute) ReinterpretFieldType(FieldDefinition fieldDef, TypeSyntax originalType, CustomAttributeHandleCollection customAttributes, Context context)
     {
         TypeSyntaxSettings typeSettings = context.Filter(this.fieldTypeSettings);
         TypeHandleInfo fieldTypeHandleInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null);

@@ -85,8 +85,8 @@ public partial class Generator
             HashSet<IntPtr> invalidHandleValues = this.GetInvalidHandleValues(((HandleTypeHandleInfo)releaseMethodParameterTypeHandleInfo).Handle);
             IntPtr preferredInvalidValue = GetPreferredInvalidHandleValue(invalidHandleValues, new IntPtr(-1));
 
-            QualifiedCustomAttributeHandleCollection? atts = this.GetReturnTypeCustomAttributes(releaseMethodDef.QualifyWith(this));
-            TypeSyntaxAndMarshaling releaseMethodReturnType = releaseMethodSignature.ReturnType.ToTypeSyntax(this.externSignatureTypeSettings, GeneratingElement.HelperClassMember, atts);
+            CustomAttributeHandleCollection? atts = this.GetReturnTypeCustomAttributes(releaseMethodDef);
+            TypeSyntaxAndMarshaling releaseMethodReturnType = releaseMethodSignature.ReturnType.ToTypeSyntax(this.externSignatureTypeSettings, GeneratingElement.HelperClassMember, atts?.QualifyWith(this));
 
             this.TryGetRenamedMethod(releaseMethod, out string? renamedReleaseMethod);
 

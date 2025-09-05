@@ -16,7 +16,7 @@ internal record PrimitiveTypeHandleInfo(PrimitiveTypeCode PrimitiveTypeCode) : T
         // Even if the lengths match, if the enum's underlying base type conflicts with the primitive's signed type (e.g. int != uint),
         // certain CPU architectures can fail as well.
         // So we just have to use the primitive type when marshaling is not allowed.
-        if (inputs.AllowMarshaling && customAttributes?.Generator.FindAssociatedEnum(customAttributes) is NameSyntax enumTypeName && inputs.Generator!.TryGenerateType(enumTypeName.ToString(), out IReadOnlyCollection<string> preciseMatch))
+        if (inputs.AllowMarshaling && customAttributes?.Generator.FindAssociatedEnum(customAttributes.Value.Collection) is NameSyntax enumTypeName && inputs.Generator!.TryGenerateType(enumTypeName.ToString(), out IReadOnlyCollection<string> preciseMatch))
         {
             // Use the qualified name.
             enumTypeName = ParseName(Generator.ReplaceCommonNamespaceWithAlias(inputs.Generator, preciseMatch.First()));

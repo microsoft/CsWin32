@@ -23,7 +23,7 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
 
     internal EntityHandle Handle { get; }
 
-    internal MetadataReader Reader { get => reader; }
+    internal MetadataReader Reader { get => this.reader; }
 
     internal byte? RawTypeKind { get; }
 

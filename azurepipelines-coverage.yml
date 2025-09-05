@@ -1,4 +1,4 @@
-# https://learn.microsoft.com/azure/devops/pipelines/test/codecoverage-for-pullrequests?view=azure-devops
+# https://learn.microsoft.com/azure/devops/pipelines/test/codecoverage-for-pullrequests
 coverage:
   status:
     comments: on    # add comment to PRs reporting diff in coverage of modified files

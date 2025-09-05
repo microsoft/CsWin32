@@ -8,7 +8,7 @@ param(
     $CommentState='Active'
 )
 
-# See https://docs.microsoft.com/en-us/dotnet/api/microsoft.teamfoundation.sourcecontrol.webapi.commentthreadstatus?view=azure-devops-dotnet
+# See https://learn.microsoft.com/dotnet/api/microsoft.teamfoundation.sourcecontrol.webapi.commentthreadstatus
 if ($CommentState -eq 'Active') {
     $StatusCode = 1
 } elseif ($CommentState -eq 'ByDesign') {
@@ -38,7 +38,7 @@ $body = ConvertTo-Json @{
 Write-Verbose "Posting JSON payload: `n$Body"
 
 # Post the message to the Pull Request
-# https://docs.microsoft.com/en-us/rest/api/azure/devops/git/pull%20request%20threads?view=azure-devops-rest-5.1
+# https://learn.microsoft.com/rest/api/azure/devops/git/pull-request-threads
 $url = "$($env:SYSTEM_TEAMFOUNDATIONCOLLECTIONURI)$env:SYSTEM_TEAMPROJECTID/_apis/git/repositories/$($env:BUILD_REPOSITORY_NAME)/pullRequests/$($env:SYSTEM_PULLREQUEST_PULLREQUESTID)/threads?api-version=5.1"
 if ($PSCmdlet.ShouldProcess($url, 'Post comment via REST call')) {
     try {

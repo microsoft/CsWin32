@@ -12,7 +12,7 @@
 * Rapidly add P/Invoke methods and supporting types to your C# project.
 * No bulky assemblies to ship alongside your application.
 * `SafeHandle`-types automatically generated.
-* Generates xml documentation based on and links back to docs.microsoft.com
+* Generates xml documentation based on and links back to learn.microsoft.com
 
 ![Animation demonstrating p/invoke code generation](docfx/images/demo.gif)
 

@@ -31,7 +31,7 @@ public partial class Generator
     internal CustomAttribute? FindAttribute(QualifiedCustomAttributeHandleCollection? customAttributeHandles, string attributeNamespace, string attributeName)
         => MetadataUtilities.FindAttribute(customAttributeHandles?.Reader!, customAttributeHandles?.Collection, attributeNamespace, attributeName);
 
-    internal IdentifierNameSyntax? FindAssociatedEnum(QualifiedCustomAttributeHandleCollection? customAttributeHandles)
+    internal IdentifierNameSyntax? FindAssociatedEnum(CustomAttributeHandleCollection? customAttributeHandles)
     {
         if (this.FindAttribute(customAttributeHandles, InteropDecorationNamespace, AssociatedEnumAttribute) is CustomAttribute att)
         {
@@ -258,15 +258,15 @@ public partial class Generator
         throw new GenerationFailedException("Unrecognized type: " + elementType.GetType().Name);
     }
 
-    internal QualifiedCustomAttributeHandleCollection? GetReturnTypeCustomAttributes(QualifiedMethodDefinition methodDefinition)
+    internal CustomAttributeHandleCollection? GetReturnTypeCustomAttributes(MethodDefinition methodDefinition)
     {
-        QualifiedCustomAttributeHandleCollection? returnTypeAttributes = null;
-        foreach (QualifiedParameterHandle parameterHandle in methodDefinition.GetParameters())
+        CustomAttributeHandleCollection? returnTypeAttributes = null;
+        foreach (ParameterHandle parameterHandle in methodDefinition.GetParameters())
         {
-            QualifiedParameter parameter = parameterHandle.Resolve();
-            if (parameter.Parameter.Name.IsNil)
+            Parameter parameter = this.Reader.GetParameter(parameterHandle);
+            if (parameter.Name.IsNil)
             {
-                returnTypeAttributes = parameter.Parameter.GetCustomAttributes().QualifyWith(parameter.Generator);
+                returnTypeAttributes = parameter.GetCustomAttributes();
             }
 
             // What we're looking for would always be the first element in the collection.

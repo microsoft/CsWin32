@@ -187,8 +187,8 @@ public partial class Generator
             MethodSignature<TypeHandleInfo> signature = methodDefinition.DecodeSignature(SignatureHandleProvider.Instance, null);
             bool requiresUnicodeCharSet = signature.ParameterTypes.Any(p => p is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.Char });
 
-            QualifiedCustomAttributeHandleCollection? returnTypeAttributes = this.GetReturnTypeCustomAttributes(methodDefinition.QualifyWith(this));
-            TypeSyntaxAndMarshaling returnType = signature.ReturnType.ToTypeSyntax(typeSettings, GeneratingElement.ExternMethod, returnTypeAttributes, ParameterAttributes.Out);
+            CustomAttributeHandleCollection? returnTypeAttributes = this.GetReturnTypeCustomAttributes(methodDefinition);
+            TypeSyntaxAndMarshaling returnType = signature.ReturnType.ToTypeSyntax(typeSettings, GeneratingElement.ExternMethod, returnTypeAttributes?.QualifyWith(this), ParameterAttributes.Out);
 
             // Search for any enum substitutions.
             TypeSyntax? returnTypeEnumName = this.FindAssociatedEnum(returnTypeAttributes);
@@ -201,7 +201,7 @@ public partial class Generator
                     continue;
                 }
 
-                if (this.FindAssociatedEnum(parameter.GetCustomAttributes().QualifyWith(this)) is IdentifierNameSyntax parameterEnumName)
+                if (this.FindAssociatedEnum(parameter.GetCustomAttributes()) is IdentifierNameSyntax parameterEnumName)
                 {
                     parameterEnumType ??= new TypeSyntax?[signature.ParameterTypes.Length];
                     parameterEnumType[parameter.SequenceNumber - 1] = parameterEnumName;

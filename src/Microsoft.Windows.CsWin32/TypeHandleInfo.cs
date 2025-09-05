@@ -9,14 +9,7 @@ internal abstract record TypeHandleInfo
 
     internal bool IsConstantField { get; init; }
 
-    [OverloadResolutionPriority(1)]
     internal abstract TypeSyntaxAndMarshaling ToTypeSyntax(TypeSyntaxSettings inputs, Generator.GeneratingElement forElement, QualifiedCustomAttributeHandleCollection? customAttributes, ParameterAttributes parameterAttributes = default);
-
-    internal TypeSyntaxAndMarshaling ToTypeSyntax(TypeSyntaxSettings inputs, Generator.GeneratingElement forElement, CustomAttributeHandleCollection? customAttributes, ParameterAttributes parameterAttributes = default)
-    {
-        QualifiedCustomAttributeHandleCollection? qualifiedCollection = customAttributes is null ? null : new QualifiedCustomAttributeHandleCollection(this.GetGenerator(inputs.Generator) ?? throw new ArgumentException("Generator required."), customAttributes.Value);
-        return this.ToTypeSyntax(inputs, forElement, qualifiedCollection, parameterAttributes);
-    }
 
     internal abstract bool? IsValueType(TypeSyntaxSettings inputs);
 

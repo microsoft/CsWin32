@@ -37,6 +37,30 @@ internal record struct QualifiedMethodDefinitionHandle(Generator Generator, Meth
 internal record struct QualifiedMethodDefinition(Generator Generator, MethodDefinition Method)
 {
     internal MetadataReader Reader => this.Generator.Reader;
+
+    internal StringHandle Name => this.Method.Name;
+
+    internal QualifiedCustomAttributeHandleCollection? GetReturnTypeCustomAttributes() => this.Generator.GetReturnTypeCustomAttributes(this);
+
+    internal IEnumerable<QualifiedParameterHandle> GetParameters()
+    {
+        List<QualifiedParameterHandle> parameters = new();
+        foreach (ParameterHandle parameterHandle in this.Method.GetParameters())
+        {
+            parameters.Add(new QualifiedParameterHandle(this.Generator, parameterHandle));
+        }
+
+        return parameters;
+    }
+
+    internal QualifiedCustomAttributeHandleCollection GetCustomAttributes() => this.Method.GetCustomAttributes().QualifyWith(this.Generator);
+}
+
+internal record struct QualifiedParameterHandle(Generator Generator, ParameterHandle ParameterHandle)
+{
+    internal MetadataReader Reader => this.Generator.Reader;
+
+    internal QualifiedParameter Resolve() => new(this.Generator, this.Generator.Reader.GetParameter(this.ParameterHandle));
 }
 
 internal record struct QualifiedParameter(Generator Generator, Parameter Parameter)
@@ -66,7 +90,9 @@ internal record struct QualifiedCustomAttribute(Generator Generator, CustomAttri
 
 internal static class QualifiedExtensions
 {
-    internal static QualifiedParameter QualifyWith(this Parameter parameter, Generator generator) => new QualifiedParameter(generator, parameter);
+    internal static QualifiedMethodDefinition QualifyWith(this MethodDefinition method, Generator generator) => new(generator, method);
 
-    internal static QualifiedCustomAttributeHandleCollection QualifyWith(this CustomAttributeHandleCollection collection, Generator generator) => new QualifiedCustomAttributeHandleCollection(generator, collection);
+    internal static QualifiedParameter QualifyWith(this Parameter parameter, Generator generator) => new(generator, parameter);
+
+    internal static QualifiedCustomAttributeHandleCollection QualifyWith(this CustomAttributeHandleCollection collection, Generator generator) => new(generator, collection);
 }

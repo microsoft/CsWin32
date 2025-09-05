@@ -157,7 +157,7 @@ public partial class Generator
             LiteralExpressionSyntax methodOffset = LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(methodCounter - 1));
 
             MethodSignature<TypeHandleInfo> signature = methodDefinition.Method.DecodeSignature(SignatureHandleProvider.Instance, null);
-            CustomAttributeHandleCollection? returnTypeAttributes = methodDefinition.Generator.GetReturnTypeCustomAttributes(methodDefinition.Method);
+            QualifiedCustomAttributeHandleCollection? returnTypeAttributes = methodDefinition.GetReturnTypeCustomAttributes();
             TypeSyntax returnType = signature.ReturnType.ToTypeSyntax(typeSettings, GeneratingElement.InterfaceAsStructMember, returnTypeAttributes).Type;
             TypeSyntax returnTypePreserveSig = returnType;
 
@@ -337,7 +337,7 @@ public partial class Generator
 
                 propertyOrMethod = methodDeclaration;
 
-                members.AddRange(methodDefinition.Generator.DeclareFriendlyOverloads(methodDefinition.Method, methodDeclaration, IdentifierName(ifaceName.Identifier.ValueText), FriendlyOverloadOf.StructMethod, helperMethodsInStruct));
+                members.AddRange(this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, IdentifierName(ifaceName.Identifier.ValueText), FriendlyOverloadOf.StructMethod, helperMethodsInStruct));
             }
 
             if (ccwThisParameter is not null && !ccwMethodsToSkip.Contains(methodDefHandle))
@@ -552,7 +552,7 @@ public partial class Generator
             iface = iface.AddAttributeLists(AttributeList().AddAttributes(GUID(DecodeGuidFromAttribute(guidAttribute.Value))));
         }
 
-        if (this.GetSupportedOSPlatformAttribute(typeDef.GetCustomAttributes()) is AttributeSyntax supportedOSPlatformAttribute)
+        if (this.GetSupportedOSPlatformAttribute(typeDef.GetCustomAttributes().QualifyWith(this)) is AttributeSyntax supportedOSPlatformAttribute)
         {
             iface = iface.AddAttributeLists(AttributeList().AddAttributes(supportedOSPlatformAttribute));
         }
@@ -674,7 +674,7 @@ public partial class Generator
                 {
                     MethodSignature<TypeHandleInfo> signature = methodDefinition.Method.DecodeSignature(SignatureHandleProvider.Instance, null);
 
-                    CustomAttributeHandleCollection? returnTypeAttributes = this.GetReturnTypeCustomAttributes(methodDefinition.Method);
+                    QualifiedCustomAttributeHandleCollection? returnTypeAttributes = this.GetReturnTypeCustomAttributes(methodDefinition);
                     TypeSyntaxAndMarshaling returnTypeDetails = signature.ReturnType.ToTypeSyntax(typeSettings, GeneratingElement.InterfaceMember, returnTypeAttributes);
                     TypeSyntax returnType = returnTypeDetails.Type;
                     AttributeSyntax? returnsAttribute = MarshalAs(returnTypeDetails.MarshalAsAttribute, returnTypeDetails.NativeArrayInfo);
@@ -734,7 +734,7 @@ public partial class Generator
                 {
                     NameSyntax declaringTypeName = HandleTypeHandleInfo.GetNestingQualifiedName(this, this.Reader, typeDef, hasUnmanagedSuffix: false, isInterfaceNestedInStruct: interfaceAsSubtype);
                     friendlyOverloads.AddRange(
-                        this.DeclareFriendlyOverloads(methodDefinition.Method, methodDeclaration, declaringTypeName, FriendlyOverloadOf.InterfaceMethod, this.injectedPInvokeHelperMethodsToFriendlyOverloadsExtensions));
+                        this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, declaringTypeName, FriendlyOverloadOf.InterfaceMethod, this.injectedPInvokeHelperMethodsToFriendlyOverloadsExtensions));
                 }
             }
             catch (Exception ex)
@@ -761,7 +761,7 @@ public partial class Generator
                 .WithBaseList(BaseList(SeparatedList(baseTypeSyntaxList)));
         }
 
-        if (this.generateSupportedOSPlatformAttributesOnInterfaces && this.GetSupportedOSPlatformAttribute(typeDef.GetCustomAttributes()) is AttributeSyntax supportedOSPlatformAttribute)
+        if (this.generateSupportedOSPlatformAttributesOnInterfaces && this.GetSupportedOSPlatformAttribute(typeDef.GetCustomAttributes().QualifyWith(this)) is AttributeSyntax supportedOSPlatformAttribute)
         {
             ifaceDeclaration = ifaceDeclaration.AddAttributeLists(AttributeList().AddAttributes(supportedOSPlatformAttribute));
         }
@@ -982,7 +982,7 @@ public partial class Generator
 
             Parameter propertyTypeParameter = qmd.Reader.GetParameter(parameters.Skip(1).Single());
             TypeHandleInfo propertyTypeInfo = signature.ParameterTypes[0];
-            propertyType = propertyTypeInfo.ToTypeSyntax(syntaxSettings, GeneratingElement.Property, propertyTypeParameter.GetCustomAttributes(), propertyTypeParameter.Attributes).Type;
+            propertyType = propertyTypeInfo.ToTypeSyntax(syntaxSettings, GeneratingElement.Property, propertyTypeParameter.GetCustomAttributes().QualifyWith(qmd.Generator), propertyTypeParameter.Attributes).Type;
 
             if (isGetter)
             {

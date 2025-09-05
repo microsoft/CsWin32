@@ -355,7 +355,7 @@ public partial class Generator
         try
         {
             TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null) with { IsConstantField = true };
-            CustomAttributeHandleCollection customAttributes = fieldDef.GetCustomAttributes();
+            QualifiedCustomAttributeHandleCollection customAttributes = fieldDef.GetCustomAttributes().QualifyWith(this);
             TypeSyntaxAndMarshaling fieldType = fieldTypeInfo.ToTypeSyntax(this.fieldTypeSettings, GeneratingElement.Constant, customAttributes);
             bool requiresUnsafe = false;
             ExpressionSyntax value =

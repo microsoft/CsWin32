@@ -31,7 +31,7 @@ public partial class Generator
     internal CustomAttribute? FindAttribute(QualifiedCustomAttributeHandleCollection? customAttributeHandles, string attributeNamespace, string attributeName)
         => MetadataUtilities.FindAttribute(customAttributeHandles?.Reader!, customAttributeHandles?.Collection, attributeNamespace, attributeName);
 
-    internal IdentifierNameSyntax? FindAssociatedEnum(CustomAttributeHandleCollection? customAttributeHandles)
+    internal IdentifierNameSyntax? FindAssociatedEnum(QualifiedCustomAttributeHandleCollection? customAttributeHandles)
     {
         if (this.FindAttribute(customAttributeHandles, InteropDecorationNamespace, AssociatedEnumAttribute) is CustomAttribute att)
         {
@@ -161,14 +161,15 @@ public partial class Generator
         if (typeInfo.Handle.Kind == HandleKind.TypeReference)
         {
             var trh = (TypeReferenceHandle)typeInfo.Handle;
-            this.TryGetTypeDefHandle(trh, out tdh);
+            Generator typeInfoGenerator = typeInfo.GetGenerator(this) ?? throw new InvalidOperationException("Type info has no generator.");
+            typeInfoGenerator.TryGetTypeDefHandle(trh, out tdh);
         }
         else if (typeInfo.Handle.Kind == HandleKind.TypeDefinition)
         {
             tdh = (TypeDefinitionHandle)typeInfo.Handle;
         }
 
-        return !tdh.IsNil && (this.Reader.GetTypeDefinition(tdh).Attributes & TypeAttributes.Interface) == TypeAttributes.Interface;
+        return !tdh.IsNil && (typeInfo.Reader.GetTypeDefinition(tdh).Attributes & TypeAttributes.Interface) == TypeAttributes.Interface;
     }
 
     internal bool IsInterface(TypeHandleInfo handleInfo)
@@ -255,6 +256,24 @@ public partial class Generator
         }
 
         throw new GenerationFailedException("Unrecognized type: " + elementType.GetType().Name);
+    }
+
+    internal QualifiedCustomAttributeHandleCollection? GetReturnTypeCustomAttributes(QualifiedMethodDefinition methodDefinition)
+    {
+        QualifiedCustomAttributeHandleCollection? returnTypeAttributes = null;
+        foreach (QualifiedParameterHandle parameterHandle in methodDefinition.GetParameters())
+        {
+            QualifiedParameter parameter = parameterHandle.Resolve();
+            if (parameter.Parameter.Name.IsNil)
+            {
+                returnTypeAttributes = parameter.Parameter.GetCustomAttributes().QualifyWith(parameter.Generator);
+            }
+
+            // What we're looking for would always be the first element in the collection.
+            break;
+        }
+
+        return returnTypeAttributes;
     }
 
     private static bool IsWideFunction(string methodName)
@@ -520,24 +539,6 @@ public partial class Generator
 
     private bool HasObsoleteAttribute(CustomAttributeHandleCollection attributes) => this.FindAttribute(attributes, nameof(System), nameof(ObsoleteAttribute)).HasValue;
 
-    private CustomAttributeHandleCollection? GetReturnTypeCustomAttributes(MethodDefinition methodDefinition)
-    {
-        CustomAttributeHandleCollection? returnTypeAttributes = null;
-        foreach (ParameterHandle parameterHandle in methodDefinition.GetParameters())
-        {
-            Parameter parameter = this.Reader.GetParameter(parameterHandle);
-            if (parameter.Name.IsNil)
-            {
-                returnTypeAttributes = parameter.GetCustomAttributes();
-            }
-
-            // What we're looking for would always be the first element in the collection.
-            break;
-        }
-
-        return returnTypeAttributes;
-    }
-
     private bool IsUntypedDelegate(TypeDefinition typeDef) => IsUntypedDelegate(this.Reader, typeDef);
 
     private bool IsTypeDefStruct(TypeDefinition typeDef) => this.FindInteropDecorativeAttribute(typeDef.GetCustomAttributes(), NativeTypedefAttribute).HasValue || this.FindInteropDecorativeAttribute(typeDef.GetCustomAttributes(), MetadataTypedefAttribute).HasValue;
@@ -548,7 +549,7 @@ public partial class Generator
             && typeDef.GetFields().Count == 0;
     }
 
-    private AttributeSyntax? GetSupportedOSPlatformAttribute(CustomAttributeHandleCollection attributes)
+    private AttributeSyntax? GetSupportedOSPlatformAttribute(QualifiedCustomAttributeHandleCollection attributes)
     {
         AttributeSyntax? supportedOSPlatformAttribute = null;
         if (this.generateSupportedOSPlatformAttributes && this.FindInteropDecorativeAttribute(attributes, "SupportedOSPlatformAttribute") is CustomAttribute templateOSPlatformAttribute)

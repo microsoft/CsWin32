@@ -85,7 +85,7 @@ public partial class Generator
                 }
                 else if (fieldDefHandle == flexibleArrayFieldHandle)
                 {
-                    CustomAttributeHandleCollection fieldAttributes = fieldDef.GetCustomAttributes();
+                    QualifiedCustomAttributeHandleCollection fieldAttributes = fieldDef.GetCustomAttributes().QualifyWith(this);
                     var fieldTypeInfo = (ArrayTypeHandleInfo)fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null);
                     TypeSyntax fieldType = fieldTypeInfo.ElementType.ToTypeSyntax(typeSettings, GeneratingElement.StructMember, fieldAttributes).Type;
 
@@ -128,7 +128,7 @@ public partial class Generator
                 }
                 else
                 {
-                    CustomAttributeHandleCollection fieldAttributes = fieldDef.GetCustomAttributes();
+                    QualifiedCustomAttributeHandleCollection fieldAttributes = fieldDef.GetCustomAttributes().QualifyWith(this);
                     TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null);
                     hasUtf16CharField |= fieldTypeInfo is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.Char };
                     TypeSyntaxSettings thisFieldTypeSettings = typeSettings;
@@ -511,7 +511,7 @@ public partial class Generator
         return sizeOfMethod;
     }
 
-    private (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? MarshalAsAttribute) ReinterpretFieldType(FieldDefinition fieldDef, TypeSyntax originalType, CustomAttributeHandleCollection customAttributes, Context context)
+    private (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? MarshalAsAttribute) ReinterpretFieldType(FieldDefinition fieldDef, TypeSyntax originalType, QualifiedCustomAttributeHandleCollection customAttributes, Context context)
     {
         TypeSyntaxSettings typeSettings = context.Filter(this.fieldTypeSettings);
         TypeHandleInfo fieldTypeHandleInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null);

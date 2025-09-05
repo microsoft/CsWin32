@@ -187,7 +187,7 @@ public partial class Generator
             MethodSignature<TypeHandleInfo> signature = methodDefinition.DecodeSignature(SignatureHandleProvider.Instance, null);
             bool requiresUnicodeCharSet = signature.ParameterTypes.Any(p => p is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.Char });
 
-            CustomAttributeHandleCollection? returnTypeAttributes = this.GetReturnTypeCustomAttributes(methodDefinition);
+            QualifiedCustomAttributeHandleCollection? returnTypeAttributes = this.GetReturnTypeCustomAttributes(methodDefinition.QualifyWith(this));
             TypeSyntaxAndMarshaling returnType = signature.ReturnType.ToTypeSyntax(typeSettings, GeneratingElement.ExternMethod, returnTypeAttributes, ParameterAttributes.Out);
 
             // Search for any enum substitutions.
@@ -201,7 +201,7 @@ public partial class Generator
                     continue;
                 }
 
-                if (this.FindAssociatedEnum(parameter.GetCustomAttributes()) is IdentifierNameSyntax parameterEnumName)
+                if (this.FindAssociatedEnum(parameter.GetCustomAttributes().QualifyWith(this)) is IdentifierNameSyntax parameterEnumName)
                 {
                     parameterEnumType ??= new TypeSyntax?[signature.ParameterTypes.Length];
                     parameterEnumType[parameter.SequenceNumber - 1] = parameterEnumName;
@@ -347,7 +347,7 @@ public partial class Generator
                 }
             }
 
-            if (this.GetSupportedOSPlatformAttribute(methodDefinition.GetCustomAttributes()) is AttributeSyntax supportedOSPlatformAttribute)
+            if (this.GetSupportedOSPlatformAttribute(methodDefinition.GetCustomAttributes().QualifyWith(this)) is AttributeSyntax supportedOSPlatformAttribute)
             {
                 exposedMethod = exposedMethod.AddAttributeLists(AttributeList().AddAttributes(supportedOSPlatformAttribute));
             }
@@ -355,7 +355,7 @@ public partial class Generator
             // Add documentation if we can find it.
             exposedMethod = this.AddApiDocumentation(entrypoint ?? methodName, exposedMethod);
 
-            this.volatileCode.AddMemberToModule(moduleName, this.DeclareFriendlyOverloads(methodDefinition, exposedMethod, this.methodsAndConstantsClassName, FriendlyOverloadOf.ExternMethod, this.injectedPInvokeHelperMethods));
+            this.volatileCode.AddMemberToModule(moduleName, this.DeclareFriendlyOverloads(methodDefinition.QualifyWith(this), exposedMethod, this.methodsAndConstantsClassName, FriendlyOverloadOf.ExternMethod, this.injectedPInvokeHelperMethods));
             this.volatileCode.AddMemberToModule(moduleName, exposedMethod);
         }
         catch (Exception ex)

@@ -97,7 +97,7 @@ public partial class Generator
         string fieldName = this.Reader.GetString(fieldDef.Name);
         IdentifierNameSyntax fieldIdentifierName = SafeIdentifierName(fieldName);
         VariableDeclaratorSyntax fieldDeclarator = VariableDeclarator(fieldIdentifierName.Identifier);
-        CustomAttributeHandleCollection fieldAttributes = fieldDef.GetCustomAttributes();
+        QualifiedCustomAttributeHandleCollection fieldAttributes = fieldDef.GetCustomAttributes().QualifyWith(this);
         TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null);
         TypeSyntaxAndMarshaling fieldType = fieldTypeInfo.ToTypeSyntax(typeSettings, GeneratingElement.Field, fieldAttributes);
         (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? _) fieldInfo =

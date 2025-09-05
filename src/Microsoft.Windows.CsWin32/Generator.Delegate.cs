@@ -27,7 +27,7 @@ public partial class Generator
         CustomAttributeValue<TypeSyntax> attArgs = ufpAtt.DecodeValue(CustomAttributeTypeProvider.Instance);
         var callingConvention = (CallingConvention)attArgs.FixedArguments[0].Value!;
 
-        this.GetSignatureForDelegate(delegateType, out MethodDefinition invokeMethodDef, out MethodSignature<TypeHandleInfo> signature, out CustomAttributeHandleCollection? returnTypeAttributes);
+        this.GetSignatureForDelegate(delegateType, out MethodDefinition invokeMethodDef, out MethodSignature<TypeHandleInfo> signature, out QualifiedCustomAttributeHandleCollection? returnTypeAttributes);
         if (this.FindAttribute(returnTypeAttributes, SystemRuntimeInteropServices, nameof(MarshalAsAttribute)).HasValue)
         {
             throw new NotSupportedException("Marshaling is not supported for function pointers.");
@@ -53,7 +53,7 @@ public partial class Generator
             callingConvention = (CallingConvention)(int)args.FixedArguments[0].Value!;
         }
 
-        this.GetSignatureForDelegate(typeDef, out MethodDefinition invokeMethodDef, out MethodSignature<TypeHandleInfo> signature, out CustomAttributeHandleCollection? returnTypeAttributes);
+        this.GetSignatureForDelegate(typeDef, out MethodDefinition invokeMethodDef, out MethodSignature<TypeHandleInfo> signature, out QualifiedCustomAttributeHandleCollection? returnTypeAttributes);
         TypeSyntaxAndMarshaling returnValue = signature.ReturnType.ToTypeSyntax(typeSettings, GeneratingElement.Delegate, returnTypeAttributes);
 
         DelegateDeclarationSyntax result = DelegateDeclaration(returnValue.Type, Identifier(name))
@@ -110,11 +110,11 @@ public partial class Generator
         return typedefStruct;
     }
 
-    private void GetSignatureForDelegate(TypeDefinition typeDef, out MethodDefinition invokeMethodDef, out MethodSignature<TypeHandleInfo> signature, out CustomAttributeHandleCollection? returnTypeAttributes)
+    private void GetSignatureForDelegate(TypeDefinition typeDef, out MethodDefinition invokeMethodDef, out MethodSignature<TypeHandleInfo> signature, out QualifiedCustomAttributeHandleCollection? returnTypeAttributes)
     {
         invokeMethodDef = typeDef.GetMethods().Select(this.Reader.GetMethodDefinition).Single(def => this.Reader.StringComparer.Equals(def.Name, "Invoke"));
         signature = invokeMethodDef.DecodeSignature(SignatureHandleProvider.Instance, null);
-        returnTypeAttributes = this.GetReturnTypeCustomAttributes(invokeMethodDef);
+        returnTypeAttributes = this.GetReturnTypeCustomAttributes(invokeMethodDef.QualifyWith(this));
     }
 
     private FunctionPointerTypeSyntax FunctionPointer(MethodDefinition methodDefinition, MethodSignature<TypeHandleInfo> signature)
@@ -134,15 +134,15 @@ public partial class Generator
             }
 
             TypeHandleInfo? parameterTypeInfo = signature.ParameterTypes[parameter.SequenceNumber - 1];
-            parametersList = parametersList.AddParameters(this.TranslateDelegateToFunctionPointer(parameterTypeInfo, parameter.GetCustomAttributes()));
+            parametersList = parametersList.AddParameters(this.TranslateDelegateToFunctionPointer(parameterTypeInfo, parameter.GetCustomAttributes().QualifyWith(this)));
         }
 
-        parametersList = parametersList.AddParameters(this.TranslateDelegateToFunctionPointer(signature.ReturnType, this.GetReturnTypeCustomAttributes(methodDefinition)));
+        parametersList = parametersList.AddParameters(this.TranslateDelegateToFunctionPointer(signature.ReturnType, this.GetReturnTypeCustomAttributes(methodDefinition.QualifyWith(this))));
 
         return FunctionPointerType(callingConventionSyntax, parametersList);
     }
 
-    private FunctionPointerParameterSyntax TranslateDelegateToFunctionPointer(TypeHandleInfo parameterTypeInfo, CustomAttributeHandleCollection? customAttributeHandles)
+    private FunctionPointerParameterSyntax TranslateDelegateToFunctionPointer(TypeHandleInfo parameterTypeInfo, QualifiedCustomAttributeHandleCollection? customAttributeHandles)
     {
         if (this.IsDelegateReference(parameterTypeInfo, out QualifiedTypeDefinition delegateTypeDef))
         {

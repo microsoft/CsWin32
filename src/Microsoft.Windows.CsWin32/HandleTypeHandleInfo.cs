@@ -23,6 +23,8 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
 
     internal EntityHandle Handle { get; }
 
+    internal MetadataReader Reader { get => reader; }
+
     internal byte? RawTypeKind { get; }
 
     public override string ToString() => this.ToTypeSyntaxForDisplay().ToString();

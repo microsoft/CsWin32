@@ -39,7 +39,7 @@ This repository can be built on Windows, Linux, and OSX.
 
 Building, testing, and packing this repository can be done by using the standard dotnet CLI commands (e.g. `dotnet build`, `dotnet test`, `dotnet pack`, etc.).
 
-[pwsh]: https://docs.microsoft.com/powershell/scripting/install/installing-powershell?view=powershell-6
+[pwsh]: https://learn.microsoft.com/powershell/scripting/install/installing-powershell
 
 ## Releases
 

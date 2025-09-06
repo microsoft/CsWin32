@@ -148,8 +148,7 @@ public partial class Generator
         if (typeInfo.Handle.Kind == HandleKind.TypeReference)
         {
             var trh = (TypeReferenceHandle)typeInfo.Handle;
-            Generator typeInfoGenerator = typeInfo.Generator ?? throw new InvalidOperationException("Type info has no generator.");
-            typeInfoGenerator.TryGetTypeDefHandle(trh, out tdh);
+            typeInfo.Generator.TryGetTypeDefHandle(trh, out tdh);
         }
         else if (typeInfo.Handle.Kind == HandleKind.TypeDefinition)
         {

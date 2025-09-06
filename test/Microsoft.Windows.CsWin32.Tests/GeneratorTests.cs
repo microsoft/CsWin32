@@ -622,7 +622,6 @@ public class GeneratorTests : GeneratorTestBase
     [Fact]
     public void MultipleEntrypointsToOmittedArchSpecificApis()
     {
-        System.Threading.Thread.Sleep(TimeSpan.FromSeconds(10));
         this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(Platform.AnyCpu));
         this.generator = this.CreateGenerator();
 

@@ -38,7 +38,7 @@ public partial class Generator
             IdentifierNameSyntax? safeHandleTypeIdentifier = IdentifierName(safeHandleClassName);
             safeHandleType = QualifiedName(ParseName($"global::{this.Namespace}"), safeHandleTypeIdentifier);
 
-            MethodSignature<TypeHandleInfo> releaseMethodSignature = releaseMethodDef.DecodeSignature(SignatureHandleProvider.Instance, null);
+            MethodSignature<TypeHandleInfo> releaseMethodSignature = releaseMethodDef.DecodeSignature(this.SignatureHandleProvider, null);
             TypeHandleInfo releaseMethodParameterTypeHandleInfo = releaseMethodSignature.ParameterTypes[0];
             TypeSyntaxAndMarshaling releaseMethodParameterType = releaseMethodParameterTypeHandleInfo.ToTypeSyntax(this.externSignatureTypeSettings, GeneratingElement.HelperClassMember, default);
 
@@ -276,7 +276,7 @@ public partial class Generator
         }
     }
 
-    internal bool TryGetHandleReleaseMethod(EntityHandle handleStructDefHandle, QualifiedCustomAttributeHandleCollection? handleReferenceAttributes, [NotNullWhen(true)] out string? releaseMethod)
+    internal bool TryGetHandleReleaseMethod(EntityHandle handleStructDefHandle, CustomAttributeHandleCollection? handleReferenceAttributes, [NotNullWhen(true)] out string? releaseMethod)
     {
         if (handleStructDefHandle.IsNil)
         {
@@ -300,7 +300,7 @@ public partial class Generator
         return false;
     }
 
-    internal bool TryGetHandleReleaseMethod(TypeDefinitionHandle handleStructDefHandle, QualifiedCustomAttributeHandleCollection? handleReferenceAttributes, [NotNullWhen(true)] out string? releaseMethod)
+    internal bool TryGetHandleReleaseMethod(TypeDefinitionHandle handleStructDefHandle, CustomAttributeHandleCollection? handleReferenceAttributes, [NotNullWhen(true)] out string? releaseMethod)
     {
         // Prefer direct attributes on the type reference over the default release method for the struct type.
         if (this.FindAttribute(handleReferenceAttributes, InteropDecorationNamespace, RAIIFreeAttribute) is CustomAttribute raii)

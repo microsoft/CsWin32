@@ -18,19 +18,6 @@ public partial class Generator
     internal CustomAttribute? FindAttribute(CustomAttributeHandleCollection? customAttributeHandles, string attributeNamespace, string attributeName)
         => MetadataUtilities.FindAttribute(this.Reader, customAttributeHandles, attributeNamespace, attributeName);
 
-    internal NativeArrayInfo? FindNativeArrayInfoAttribute(QualifiedCustomAttributeHandleCollection customAttributeHandles)
-    {
-        return this.FindInteropDecorativeAttribute(customAttributeHandles, NativeArrayInfoAttribute) is CustomAttribute att
-            ? DecodeNativeArrayInfoAttribute(att)
-            : null;
-    }
-
-    internal CustomAttribute? FindInteropDecorativeAttribute(QualifiedCustomAttributeHandleCollection? customAttributeHandles, string attributeName)
-        => this.FindAttribute(customAttributeHandles, InteropDecorationNamespace, attributeName);
-
-    internal CustomAttribute? FindAttribute(QualifiedCustomAttributeHandleCollection? customAttributeHandles, string attributeNamespace, string attributeName)
-        => MetadataUtilities.FindAttribute(customAttributeHandles?.Reader!, customAttributeHandles?.Collection, attributeNamespace, attributeName);
-
     internal IdentifierNameSyntax? FindAssociatedEnum(CustomAttributeHandleCollection? customAttributeHandles)
     {
         if (this.FindAttribute(customAttributeHandles, InteropDecorationNamespace, AssociatedEnumAttribute) is CustomAttribute att)
@@ -161,7 +148,7 @@ public partial class Generator
         if (typeInfo.Handle.Kind == HandleKind.TypeReference)
         {
             var trh = (TypeReferenceHandle)typeInfo.Handle;
-            Generator typeInfoGenerator = typeInfo.GetGenerator(this) ?? throw new InvalidOperationException("Type info has no generator.");
+            Generator typeInfoGenerator = typeInfo.Generator ?? throw new InvalidOperationException("Type info has no generator.");
             typeInfoGenerator.TryGetTypeDefHandle(trh, out tdh);
         }
         else if (typeInfo.Handle.Kind == HandleKind.TypeDefinition)
@@ -201,7 +188,7 @@ public partial class Generator
 
     internal bool IsStructWithFlexibleArray(HandleTypeHandleInfo typeInfo)
     {
-        return this.TryGetTypeDefHandle(typeInfo.Handle, out QualifiedTypeDefinitionHandle typeHandle)
+        return typeInfo.Generator.TryGetTypeDefHandle(typeInfo.Handle, out QualifiedTypeDefinitionHandle typeHandle)
             && typeHandle.Generator.IsStructWithFlexibleArray(typeHandle.DefinitionHandle);
     }
 
@@ -234,20 +221,20 @@ public partial class Generator
         {
             return false;
         }
-        else if (elementType is HandleTypeHandleInfo { Handle: { Kind: HandleKind.TypeDefinition } typeDefHandle })
+        else if (elementType is HandleTypeHandleInfo { Handle: { Kind: HandleKind.TypeDefinition } typeDefHandle } handleTypeDef)
         {
-            return this.IsManagedType((TypeDefinitionHandle)typeDefHandle);
+            return handleTypeDef.Generator.IsManagedType((TypeDefinitionHandle)typeDefHandle);
         }
         else if (elementType is HandleTypeHandleInfo { Handle: { Kind: HandleKind.TypeReference } typeRefHandle } handleElement)
         {
             var trh = (TypeReferenceHandle)typeRefHandle;
-            if (this.TryGetTypeDefHandle(trh, out QualifiedTypeDefinitionHandle qtdr))
+            if (handleElement.Generator.TryGetTypeDefHandle(trh, out QualifiedTypeDefinitionHandle qtdr))
             {
                 return qtdr.Generator.IsManagedType(qtdr.DefinitionHandle);
             }
 
             // If the type comes from an external assembly, assume that structs are blittable and anything else is not.
-            TypeReference tr = this.Reader.GetTypeReference(trh);
+            TypeReference tr = handleElement.Reader.GetTypeReference(trh);
             if (tr.ResolutionScope.Kind == HandleKind.AssemblyReference && handleElement.RawTypeKind is byte kind)
             {
                 // Structs set 0x1, classes set 0x2.
@@ -430,7 +417,7 @@ public partial class Generator
                             FieldDefinition fieldDef = this.Reader.GetFieldDefinition(fieldHandle);
                             try
                             {
-                                TypeHandleInfo fieldType = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null);
+                                TypeHandleInfo fieldType = fieldDef.DecodeSignature(this.SignatureHandleProvider, null);
                                 TypeHandleInfo elementType = fieldType;
                                 while (elementType is ITypeHandleContainer container)
                                 {
@@ -516,9 +503,13 @@ public partial class Generator
 
                 throw new NotSupportedException();
             }
+            catch (GenerationFailedException)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
-                throw new GenerationFailedException($"Unable to determine if {new HandleTypeHandleInfo(this.Reader, typeDefinitionHandle).ToTypeSyntax(this.errorMessageTypeSettings, GeneratingElement.Other, null)} is a managed type.", ex);
+                throw new GenerationFailedException($"Unable to determine if {new HandleTypeHandleInfo(this, this.Reader, typeDefinitionHandle).ToTypeSyntax(this.errorMessageTypeSettings, GeneratingElement.Other, null)} is a managed type.", ex);
             }
         }
     }
@@ -549,7 +540,7 @@ public partial class Generator
             && typeDef.GetFields().Count == 0;
     }
 
-    private AttributeSyntax? GetSupportedOSPlatformAttribute(QualifiedCustomAttributeHandleCollection attributes)
+    private AttributeSyntax? GetSupportedOSPlatformAttribute(CustomAttributeHandleCollection attributes)
     {
         AttributeSyntax? supportedOSPlatformAttribute = null;
         if (this.generateSupportedOSPlatformAttributes && this.FindInteropDecorativeAttribute(attributes, "SupportedOSPlatformAttribute") is CustomAttribute templateOSPlatformAttribute)

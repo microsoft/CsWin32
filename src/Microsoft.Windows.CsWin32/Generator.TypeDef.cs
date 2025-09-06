@@ -29,7 +29,7 @@ public partial class Generator
             foreach (FieldDefinitionHandle fdh in td.GetFields())
             {
                 FieldDefinition fd = this.Reader.GetFieldDefinition(fdh);
-                fieldType = fd.DecodeSignature(SignatureHandleProvider.Instance, null);
+                fieldType = fd.DecodeSignature(this.SignatureHandleProvider, null);
                 return true;
             }
 
@@ -98,7 +98,7 @@ public partial class Generator
         IdentifierNameSyntax fieldIdentifierName = SafeIdentifierName(fieldName);
         VariableDeclaratorSyntax fieldDeclarator = VariableDeclarator(fieldIdentifierName.Identifier);
         CustomAttributeHandleCollection fieldAttributes = fieldDef.GetCustomAttributes();
-        TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null);
+        TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(this.SignatureHandleProvider, null);
         TypeSyntaxAndMarshaling fieldType = fieldTypeInfo.ToTypeSyntax(typeSettings, GeneratingElement.Field, fieldAttributes.QualifyWith(this));
         (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? _) fieldInfo =
             this.ReinterpretFieldType(fieldDef, fieldType.Type, fieldAttributes, this.DefaultContext);

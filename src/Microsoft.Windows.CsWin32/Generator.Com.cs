@@ -156,12 +156,12 @@ public partial class Generator
             IdentifierNameSyntax innerMethodName = IdentifierName($"{methodName}_{methodCounter}");
             LiteralExpressionSyntax methodOffset = LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(methodCounter - 1));
 
-            MethodSignature<TypeHandleInfo> signature = methodDefinition.Method.DecodeSignature(SignatureHandleProvider.Instance, null);
+            MethodSignature<TypeHandleInfo> signature = methodDefinition.Method.DecodeSignature(this.SignatureHandleProvider, null);
             QualifiedCustomAttributeHandleCollection? returnTypeAttributes = methodDefinition.GetReturnTypeCustomAttributes();
             TypeSyntax returnType = signature.ReturnType.ToTypeSyntax(typeSettings, GeneratingElement.InterfaceAsStructMember, returnTypeAttributes).Type;
             TypeSyntax returnTypePreserveSig = returnType;
 
-            ParameterListSyntax parameterList = this.CreateParameterList(methodDefinition, signature, typeSettings, GeneratingElement.InterfaceAsStructMember);
+            ParameterListSyntax parameterList = methodDefinition.Generator.CreateParameterList(methodDefinition.Method, signature, typeSettings, GeneratingElement.InterfaceAsStructMember);
             ParameterListSyntax parameterListPreserveSig = parameterList; // preserve a copy that has no mutations.
             bool requiresMarshaling = parameterList.Parameters.Any(p => p.AttributeLists.SelectMany(al => al.Attributes).Any(a => a.Name is IdentifierNameSyntax { Identifier.ValueText: "MarshalAs" }) || p.Modifiers.Any(SyntaxKind.RefKeyword) || p.Modifiers.Any(SyntaxKind.OutKeyword) || p.Modifiers.Any(SyntaxKind.InKeyword));
             FunctionPointerParameterListSyntax funcPtrParameters = FunctionPointerParameterList()
@@ -337,7 +337,8 @@ public partial class Generator
 
                 propertyOrMethod = methodDeclaration;
 
-                members.AddRange(this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, IdentifierName(ifaceName.Identifier.ValueText), FriendlyOverloadOf.StructMethod, helperMethodsInStruct));
+                bool avoidWinmdRootAlias = this != methodDefinition.Generator;
+                members.AddRange(methodDefinition.Generator.DeclareFriendlyOverloads(methodDefinition.Method, methodDeclaration, IdentifierName(ifaceName.Identifier.ValueText), FriendlyOverloadOf.StructMethod, helperMethodsInStruct, avoidWinmdRootAlias));
             }
 
             if (ccwThisParameter is not null && !ccwMethodsToSkip.Contains(methodDefHandle))
@@ -552,7 +553,7 @@ public partial class Generator
             iface = iface.AddAttributeLists(AttributeList().AddAttributes(GUID(DecodeGuidFromAttribute(guidAttribute.Value))));
         }
 
-        if (this.GetSupportedOSPlatformAttribute(typeDef.GetCustomAttributes().QualifyWith(this)) is AttributeSyntax supportedOSPlatformAttribute)
+        if (this.GetSupportedOSPlatformAttribute(typeDef.GetCustomAttributes()) is AttributeSyntax supportedOSPlatformAttribute)
         {
             iface = iface.AddAttributeLists(AttributeList().AddAttributes(supportedOSPlatformAttribute));
         }
@@ -605,7 +606,7 @@ public partial class Generator
                 else
                 {
                     baseTypeHandle.Generator.RequestInteropType(baseTypeHandle.DefinitionHandle, context);
-                    TypeSyntax baseTypeSyntax = new HandleTypeHandleInfo(baseTypeHandle.Reader, baseTypeHandle.DefinitionHandle).ToTypeSyntax(this.comSignatureTypeSettings, GeneratingElement.InterfaceMember, null).Type;
+                    TypeSyntax baseTypeSyntax = new HandleTypeHandleInfo(baseTypeHandle.Generator, baseTypeHandle.Reader, baseTypeHandle.DefinitionHandle).ToTypeSyntax(this.comSignatureTypeSettings, GeneratingElement.InterfaceMember, null).Type;
                     if (interfaceAsSubtype)
                     {
                         baseTypeSyntax = QualifiedName(
@@ -672,14 +673,14 @@ public partial class Generator
                 }
                 else
                 {
-                    MethodSignature<TypeHandleInfo> signature = methodDefinition.Method.DecodeSignature(SignatureHandleProvider.Instance, null);
+                    MethodSignature<TypeHandleInfo> signature = methodDefinition.Method.DecodeSignature(this.SignatureHandleProvider, null);
 
                     CustomAttributeHandleCollection? returnTypeAttributes = methodDefinition.Generator.GetReturnTypeCustomAttributes(methodDefinition.Method);
                     TypeSyntaxAndMarshaling returnTypeDetails = signature.ReturnType.ToTypeSyntax(typeSettings, GeneratingElement.InterfaceMember, returnTypeAttributes?.QualifyWith(methodDefinition.Generator));
                     TypeSyntax returnType = returnTypeDetails.Type;
                     AttributeSyntax? returnsAttribute = MarshalAs(returnTypeDetails.MarshalAsAttribute, returnTypeDetails.NativeArrayInfo);
 
-                    ParameterListSyntax? parameterList = this.CreateParameterList(methodDefinition, signature, this.comSignatureTypeSettings, GeneratingElement.InterfaceMember);
+                    ParameterListSyntax? parameterList = methodDefinition.Generator.CreateParameterList(methodDefinition.Method, signature, this.comSignatureTypeSettings, GeneratingElement.InterfaceMember);
 
                     bool preserveSig = interfaceAsSubtype || this.UsePreserveSigForComMethod(methodDefinition.Method, signature, actualIfaceName, methodName);
                     if (!preserveSig)
@@ -732,9 +733,10 @@ public partial class Generator
 
                 if (methodDeclaration is not null)
                 {
+                    bool avoidWinmdRootAlias = this != methodDefinition.Generator;
                     NameSyntax declaringTypeName = HandleTypeHandleInfo.GetNestingQualifiedName(this, this.Reader, typeDef, hasUnmanagedSuffix: false, isInterfaceNestedInStruct: interfaceAsSubtype);
                     friendlyOverloads.AddRange(
-                        this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, declaringTypeName, FriendlyOverloadOf.InterfaceMethod, this.injectedPInvokeHelperMethodsToFriendlyOverloadsExtensions));
+                        methodDefinition.Generator.DeclareFriendlyOverloads(methodDefinition.Method, methodDeclaration, declaringTypeName, FriendlyOverloadOf.InterfaceMethod, this.injectedPInvokeHelperMethodsToFriendlyOverloadsExtensions, avoidWinmdRootAlias));
                 }
             }
             catch (Exception ex)
@@ -761,7 +763,7 @@ public partial class Generator
                 .WithBaseList(BaseList(SeparatedList(baseTypeSyntaxList)));
         }
 
-        if (this.generateSupportedOSPlatformAttributesOnInterfaces && this.GetSupportedOSPlatformAttribute(typeDef.GetCustomAttributes().QualifyWith(this)) is AttributeSyntax supportedOSPlatformAttribute)
+        if (this.generateSupportedOSPlatformAttributesOnInterfaces && this.GetSupportedOSPlatformAttribute(typeDef.GetCustomAttributes()) is AttributeSyntax supportedOSPlatformAttribute)
         {
             ifaceDeclaration = ifaceDeclaration.AddAttributeLists(AttributeList().AddAttributes(supportedOSPlatformAttribute));
         }
@@ -953,7 +955,7 @@ public partial class Generator
             return false;
         }
 
-        MethodSignature<TypeHandleInfo> signature = methodDefinition.DecodeSignature(SignatureHandleProvider.Instance, null);
+        MethodSignature<TypeHandleInfo> signature = methodDefinition.DecodeSignature(this.SignatureHandleProvider, null);
         string methodName = this.Reader.GetString(methodDefinition.Name);
         if (this.UsePreserveSigForComMethod(methodDefinition, signature, ifaceName, methodName))
         {

@@ -184,7 +184,7 @@ public partial class Generator
 
             // If this method releases a handle, recreate the method signature such that we take the struct rather than the SafeHandle as a parameter.
             TypeSyntaxSettings typeSettings = this.MetadataIndex.ReleaseMethods.Contains(entrypoint ?? methodName) ? this.externReleaseSignatureTypeSettings : this.externSignatureTypeSettings;
-            MethodSignature<TypeHandleInfo> signature = methodDefinition.DecodeSignature(SignatureHandleProvider.Instance, null);
+            MethodSignature<TypeHandleInfo> signature = methodDefinition.DecodeSignature(this.SignatureHandleProvider, null);
             bool requiresUnicodeCharSet = signature.ParameterTypes.Any(p => p is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.Char });
 
             CustomAttributeHandleCollection? returnTypeAttributes = this.GetReturnTypeCustomAttributes(methodDefinition);
@@ -235,7 +235,7 @@ public partial class Generator
                 explicitInterfaceSpecifier: null!,
                 SafeIdentifier(methodName),
                 null!,
-                this.CreateParameterList(new QualifiedMethodDefinition(this, methodDefinition), signature, typeSettings, GeneratingElement.ExternMethod),
+                this.CreateParameterList(methodDefinition, signature, typeSettings, GeneratingElement.ExternMethod),
                 List<TypeParameterConstraintClauseSyntax>(),
                 body: null!,
                 TokenWithLineFeed(SyntaxKind.SemicolonToken));
@@ -257,7 +257,7 @@ public partial class Generator
             {
                 string ns = this.GetMethodNamespace(methodDefinition);
                 NameSyntax nsSyntax = ParseName(ReplaceCommonNamespaceWithAlias(this, ns));
-                ParameterListSyntax exposedParameterList = this.CreateParameterList(new QualifiedMethodDefinition(this, methodDefinition), signature, typeSettings, GeneratingElement.ExternMethod);
+                ParameterListSyntax exposedParameterList = this.CreateParameterList(methodDefinition, signature, typeSettings, GeneratingElement.ExternMethod);
                 static SyntaxToken RefInOutKeyword(ParameterSyntax p) =>
                     p.Modifiers.Any(SyntaxKind.OutKeyword) ? TokenWithSpace(SyntaxKind.OutKeyword) :
                     p.Modifiers.Any(SyntaxKind.RefKeyword) ? TokenWithSpace(SyntaxKind.RefKeyword) :
@@ -347,7 +347,7 @@ public partial class Generator
                 }
             }
 
-            if (this.GetSupportedOSPlatformAttribute(methodDefinition.GetCustomAttributes().QualifyWith(this)) is AttributeSyntax supportedOSPlatformAttribute)
+            if (this.GetSupportedOSPlatformAttribute(methodDefinition.GetCustomAttributes()) is AttributeSyntax supportedOSPlatformAttribute)
             {
                 exposedMethod = exposedMethod.AddAttributeLists(AttributeList().AddAttributes(supportedOSPlatformAttribute));
             }
@@ -355,7 +355,7 @@ public partial class Generator
             // Add documentation if we can find it.
             exposedMethod = this.AddApiDocumentation(entrypoint ?? methodName, exposedMethod);
 
-            this.volatileCode.AddMemberToModule(moduleName, this.DeclareFriendlyOverloads(methodDefinition.QualifyWith(this), exposedMethod, this.methodsAndConstantsClassName, FriendlyOverloadOf.ExternMethod, this.injectedPInvokeHelperMethods));
+            this.volatileCode.AddMemberToModule(moduleName, this.DeclareFriendlyOverloads(methodDefinition, exposedMethod, this.methodsAndConstantsClassName, FriendlyOverloadOf.ExternMethod, this.injectedPInvokeHelperMethods, avoidWinmdRootAlias: false));
             this.volatileCode.AddMemberToModule(moduleName, exposedMethod);
         }
         catch (Exception ex)

@@ -14,7 +14,7 @@ public partial class Generator
         InterfaceMethod,
     }
 
-    private IEnumerable<MethodDeclarationSyntax> DeclareFriendlyOverloads(QualifiedMethodDefinition methodDefinition, MethodDeclarationSyntax externMethodDeclaration, NameSyntax declaringTypeName, FriendlyOverloadOf overloadOf, HashSet<string> helperMethodsAdded)
+    private IEnumerable<MethodDeclarationSyntax> DeclareFriendlyOverloads(MethodDefinition methodDefinition, MethodDeclarationSyntax externMethodDeclaration, NameSyntax declaringTypeName, FriendlyOverloadOf overloadOf, HashSet<string> helperMethodsAdded, bool avoidWinmdRootAlias)
     {
         if (!this.options.FriendlyOverloads.Enabled)
         {
@@ -49,7 +49,7 @@ public partial class Generator
         static ParameterSyntax StripAttributes(ParameterSyntax parameter) => parameter.WithAttributeLists(List<AttributeListSyntax>());
         static ExpressionSyntax GetSpanLength(ExpressionSyntax span, bool isRefType) => isRefType ? ParenthesizedExpression(BinaryExpression(SyntaxKind.CoalesceExpression, ConditionalAccessExpression(span, IdentifierName(nameof(Span<int>.Length))), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)))) : MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, span, IdentifierName(nameof(Span<int>.Length)));
         bool isReleaseMethod = this.MetadataIndex.ReleaseMethods.Contains(externMethodDeclaration.Identifier.ValueText);
-        bool doNotRelease = this.FindInteropDecorativeAttribute(methodDefinition.GetReturnTypeCustomAttributes(), DoNotReleaseAttribute) is not null;
+        bool doNotRelease = this.FindInteropDecorativeAttribute(this.GetReturnTypeCustomAttributes(methodDefinition), DoNotReleaseAttribute) is not null;
 
         TypeSyntaxSettings parameterTypeSyntaxSettings = overloadOf switch
         {
@@ -59,8 +59,13 @@ public partial class Generator
             _ => throw new NotSupportedException(overloadOf.ToString()),
         };
 
-        MethodSignature<TypeHandleInfo> originalSignature = methodDefinition.Method.DecodeSignature(SignatureHandleProvider.Instance, null);
-        QualifiedCustomAttributeHandleCollection? returnTypeAttributes = null;
+        if (avoidWinmdRootAlias)
+        {
+            parameterTypeSyntaxSettings = parameterTypeSyntaxSettings with { AvoidWinmdRootAlias = true };
+        }
+
+        MethodSignature<TypeHandleInfo> originalSignature = methodDefinition.DecodeSignature(this.SignatureHandleProvider, null);
+        CustomAttributeHandleCollection? returnTypeAttributes = null;
         var parameters = externMethodDeclaration.ParameterList.Parameters.Select(StripAttributes).ToList();
         var lengthParamUsedBy = new Dictionary<int, int>();
         var parametersToRemove = new List<int>();
@@ -72,13 +77,12 @@ public partial class Generator
         var trailingStatements = new List<StatementSyntax>();
         var finallyStatements = new List<StatementSyntax>();
         bool signatureChanged = false;
-        foreach (QualifiedParameterHandle paramHandle in methodDefinition.GetParameters())
+        foreach (ParameterHandle paramHandle in methodDefinition.GetParameters())
         {
-            QualifiedParameter qp = paramHandle.Resolve();
-            Parameter param = qp.Parameter;
+            Parameter param = this.Reader.GetParameter(paramHandle);
             if (param.SequenceNumber == 0)
             {
-                returnTypeAttributes = param.GetCustomAttributes().QualifyWith(qp.Generator);
+                returnTypeAttributes = param.GetCustomAttributes();
             }
 
             if (param.SequenceNumber == 0 || param.SequenceNumber - 1 >= parameters.Count)
@@ -87,7 +91,7 @@ public partial class Generator
             }
 
             bool isOptional = (param.Attributes & ParameterAttributes.Optional) == ParameterAttributes.Optional;
-            QualifiedCustomAttributeHandleCollection paramAttributes = param.GetCustomAttributes().QualifyWith(qp.Generator);
+            CustomAttributeHandleCollection paramAttributes = param.GetCustomAttributes();
             bool isReserved = this.FindInteropDecorativeAttribute(paramAttributes, "ReservedAttribute") is not null;
             isOptional |= isReserved; // Per metadata decision made at https://github.com/microsoft/win32metadata/issues/1421#issuecomment-1372608090
             bool isIn = (param.Attributes & ParameterAttributes.In) == ParameterAttributes.In;
@@ -105,9 +109,8 @@ public partial class Generator
             }
 
             TypeHandleInfo parameterTypeInfo = originalSignature.ParameterTypes[param.SequenceNumber - 1];
-            Generator parameterGenerator = parameterTypeInfo.GetGenerator(this) ?? throw new InvalidOperationException("No generator associated with parameter type.");
-            bool isManagedParameterType = parameterTypeInfo.GetGenerator(this)?.IsManagedType(parameterTypeInfo) ?? false;
-            bool mustRemainAsPointer = parameterTypeInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo pointedElement } && parameterGenerator.IsStructWithFlexibleArray(pointedElement);
+            bool isManagedParameterType = this.IsManagedType(parameterTypeInfo);
+            bool mustRemainAsPointer = parameterTypeInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo pointedElement } && pointedElement.Generator.IsStructWithFlexibleArray(pointedElement);
 
             IdentifierNameSyntax origName = IdentifierName(externParam.Identifier.ValueText);
 
@@ -148,9 +151,9 @@ public partial class Generator
                 bool hasOut = externParam.Modifiers.Any(SyntaxKind.OutKeyword);
                 arguments[param.SequenceNumber - 1] = arguments[param.SequenceNumber - 1].WithRefKindKeyword(TokenWithSpace(hasOut ? SyntaxKind.OutKeyword : SyntaxKind.RefKeyword));
             }
-            else if (isOut && !isIn && !isReleaseMethod && parameterTypeInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo pointedElementInfo } && parameterGenerator.TryGetHandleReleaseMethod(pointedElementInfo.Handle, paramAttributes, out string? outReleaseMethod) && !methodDefinition.Reader.StringComparer.Equals(methodDefinition.Name, outReleaseMethod))
+            else if (isOut && !isIn && !isReleaseMethod && parameterTypeInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo pointedElementInfo } && pointedElementInfo.Generator.TryGetHandleReleaseMethod(pointedElementInfo.Handle, paramAttributes, out string? outReleaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, outReleaseMethod))
             {
-                if (methodDefinition.Generator.RequestSafeHandle(outReleaseMethod) is TypeSyntax safeHandleType)
+                if (this.RequestSafeHandle(outReleaseMethod) is TypeSyntax safeHandleType)
                 {
                     signatureChanged = true;
 
@@ -670,7 +673,7 @@ public partial class Generator
         }
 
         TypeSyntax? returnSafeHandleType = originalSignature.ReturnType is HandleTypeHandleInfo returnTypeHandleInfo
-            && returnTypeHandleInfo.GetGenerator(this)!.TryGetHandleReleaseMethod(returnTypeHandleInfo.Handle, returnTypeAttributes, out string? returnReleaseMethod)
+            && returnTypeHandleInfo.Generator.TryGetHandleReleaseMethod(returnTypeHandleInfo.Handle, returnTypeAttributes, out string? returnReleaseMethod)
             ? this.RequestSafeHandle(returnReleaseMethod) : null;
         SyntaxToken friendlyMethodName = externMethodDeclaration.Identifier;
 
@@ -809,8 +812,7 @@ public partial class Generator
         ExpressionSyntax GetIntPtrFromTypeDef(ExpressionSyntax typedefValue, TypeHandleInfo typeDefTypeInfo)
         {
             ExpressionSyntax intPtrValue = typedefValue;
-            Generator typeDefGenerator = typeDefTypeInfo.GetGenerator(this) ?? throw new ArgumentException("Generator required.");
-            if (typeDefGenerator.TryGetTypeDefFieldType(typeDefTypeInfo, out TypeHandleInfo? returnTypeField) && returnTypeField is PrimitiveTypeHandleInfo primitiveReturnField)
+            if (this.TryGetTypeDefFieldType(typeDefTypeInfo, out TypeHandleInfo? returnTypeField) && returnTypeField is PrimitiveTypeHandleInfo primitiveReturnField)
             {
                 switch (primitiveReturnField.PrimitiveTypeCode)
                 {

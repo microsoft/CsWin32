@@ -7,8 +7,6 @@ internal record PrimitiveTypeHandleInfo(PrimitiveTypeCode PrimitiveTypeCode) : T
 {
     public override string ToString() => this.ToTypeSyntaxForDisplay().ToString();
 
-    internal override Generator? GetGenerator(Generator? inputGenerator) => inputGenerator;
-
     internal override TypeSyntaxAndMarshaling ToTypeSyntax(TypeSyntaxSettings inputs, Generator.GeneratingElement forElement, QualifiedCustomAttributeHandleCollection? customAttributes, ParameterAttributes parameterAttributes)
     {
         // We want to expose the enum type when there is one, but doing it *properly* requires marshaling to the underlying type.

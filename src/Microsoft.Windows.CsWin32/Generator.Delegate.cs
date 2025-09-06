@@ -57,7 +57,7 @@ public partial class Generator
         TypeSyntaxAndMarshaling returnValue = signature.ReturnType.ToTypeSyntax(typeSettings, GeneratingElement.Delegate, returnTypeAttributes?.QualifyWith(this));
 
         DelegateDeclarationSyntax result = DelegateDeclaration(returnValue.Type, Identifier(name))
-            .WithParameterList(FixTrivia(this.CreateParameterList(new QualifiedMethodDefinition(this, invokeMethodDef), signature, typeSettings, GeneratingElement.Delegate)))
+            .WithParameterList(FixTrivia(this.CreateParameterList(invokeMethodDef, signature, typeSettings, GeneratingElement.Delegate)))
             .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword));
         result = returnValue.AddReturnMarshalAs(result);
 
@@ -113,7 +113,7 @@ public partial class Generator
     private void GetSignatureForDelegate(TypeDefinition typeDef, out MethodDefinition invokeMethodDef, out MethodSignature<TypeHandleInfo> signature, out CustomAttributeHandleCollection? returnTypeAttributes)
     {
         invokeMethodDef = typeDef.GetMethods().Select(this.Reader.GetMethodDefinition).Single(def => this.Reader.StringComparer.Equals(def.Name, "Invoke"));
-        signature = invokeMethodDef.DecodeSignature(SignatureHandleProvider.Instance, null);
+        signature = invokeMethodDef.DecodeSignature(this.SignatureHandleProvider, null);
         returnTypeAttributes = this.GetReturnTypeCustomAttributes(invokeMethodDef);
     }
 

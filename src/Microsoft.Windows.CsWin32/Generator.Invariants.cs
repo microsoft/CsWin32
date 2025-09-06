@@ -347,7 +347,7 @@ public partial class Generator
     {
         get
         {
-            return QualifiedName(QualifiedName(Win32NamespacePrefix, IdentifierName("Foundation")), IdentifierName("HRESULT"));
+            return QualifiedName(QualifiedName(this.Win32NamespacePrefix, IdentifierName("Foundation")), IdentifierName("HRESULT"));
         }
     }
 }

@@ -13,8 +13,6 @@ internal abstract record TypeHandleInfo
 
     internal abstract bool? IsValueType(TypeSyntaxSettings inputs);
 
-    internal abstract Generator? GetGenerator(Generator? inputGenerator);
-
     protected static bool TryGetSimpleName(TypeSyntax nameSyntax, [NotNullWhen(true)] out string? simpleName)
     {
         if (nameSyntax is QualifiedNameSyntax qname)

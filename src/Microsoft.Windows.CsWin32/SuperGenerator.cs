@@ -250,10 +250,9 @@ public class SuperGenerator : IGenerator, IDisposable
         return this.Generators.TryGetValue(winmdName, out targetGenerator);
     }
 
-    internal bool TryGetGenerator(MetadataReader reader, [NotNullWhen(true)] out Generator? targetGenerator)
+    internal Generator GetGeneratorFromReader(MetadataReader reader)
     {
-        targetGenerator = this.Generators.FirstOrDefault(kv => kv.Value.Reader == reader).Value;
-        return targetGenerator is not null;
+        return this.Generators.FirstOrDefault(kv => kv.Value.Reader == reader).Value ?? throw new InvalidOperationException("No generator found for the specified reader.");
     }
 
     internal bool TryGetTypeDefinitionHandle(QualifiedTypeReferenceHandle typeRefHandle, out QualifiedTypeDefinitionHandle typeDefHandle)

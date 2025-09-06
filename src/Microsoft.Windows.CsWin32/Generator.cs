@@ -85,7 +85,8 @@ public partial class Generator : IGenerator, IDisposable
             throw new ArgumentNullException(nameof(options));
         }
 
-        MetadataFile metadataFile = MetadataCache.Default.GetMetadataFile(metadataLibraryPath);
+        MetadataFile metadataFile = MetadataCache.Default.GetMetadataFile(metadataLibraryPath, this);
+        this.SignatureHandleProvider = new(this);
         this.MetadataIndex = metadataFile.GetMetadataIndex(compilation?.Options.Platform);
         this.metadataReader = metadataFile.GetMetadataReader();
 
@@ -285,6 +286,8 @@ public partial class Generator : IGenerator, IDisposable
     internal string InputAssemblyName => this.MetadataIndex.MetadataName;
 
     internal MetadataIndex MetadataIndex { get; }
+
+    internal SignatureHandleProvider SignatureHandleProvider { get; }
 
     internal MetadataReader Reader => this.metadataReader.Value;
 
@@ -1167,6 +1170,20 @@ public partial class Generator : IGenerator, IDisposable
     internal string GetMangledIdentifier(string normalIdentifier, bool allowMarshaling, bool isManagedType) =>
         this.HasUnmanagedSuffix(normalIdentifier, allowMarshaling, isManagedType) ? normalIdentifier + UnmanagedInteropSuffix : normalIdentifier;
 
+    internal Generator GetGeneratorFromReader(MetadataReader reader)
+    {
+        if (this.SuperGenerator is object)
+        {
+            return this.SuperGenerator.GetGeneratorFromReader(reader);
+        }
+        else if (reader == this.Reader)
+        {
+            return this;
+        }
+
+        throw new InvalidOperationException("Encountered a reader not associated with an active generator");
+    }
+
     /// <summary>
     /// Disposes of managed and unmanaged resources.
     /// </summary>
@@ -1464,19 +1481,18 @@ public partial class Generator : IGenerator, IDisposable
         }
     }
 
-    private ParameterListSyntax CreateParameterList(QualifiedMethodDefinition qmd, MethodSignature<TypeHandleInfo> signature, TypeSyntaxSettings typeSettings, GeneratingElement forElement)
-        => FixTrivia(ParameterList().AddParameters(qmd.Method.GetParameters().Select(p => new QualifiedParameter(qmd.Generator, qmd.Reader.GetParameter(p))).Where(p => !p.Parameter.Name.IsNil).Select(p => this.CreateParameter(signature.ParameterTypes[p.Parameter.SequenceNumber - 1], p, typeSettings, forElement)).ToArray()));
+    private ParameterListSyntax CreateParameterList(MethodDefinition methodDefinition, MethodSignature<TypeHandleInfo> signature, TypeSyntaxSettings typeSettings, GeneratingElement forElement)
+        => FixTrivia(ParameterList().AddParameters(methodDefinition.GetParameters().Select(this.Reader.GetParameter).Where(p => !p.Name.IsNil).Select(p => this.CreateParameter(signature.ParameterTypes[p.SequenceNumber - 1], p, typeSettings, forElement)).ToArray()));
 
-    private ParameterSyntax CreateParameter(TypeHandleInfo parameterInfo, QualifiedParameter qualifiedParameter, TypeSyntaxSettings typeSettings, GeneratingElement forElement)
+    private ParameterSyntax CreateParameter(TypeHandleInfo parameterInfo, Parameter parameter, TypeSyntaxSettings typeSettings, GeneratingElement forElement)
     {
-        Parameter parameter = qualifiedParameter.Parameter;
-        string name = qualifiedParameter.Reader.GetString(parameter.Name);
+        string name = this.Reader.GetString(parameter.Name);
         try
         {
             // TODO:
             // * Notice [Out][RAIIFree] handle producing parameters. Can we make these provide SafeHandle's?
             bool isReturnOrOutParam = parameter.SequenceNumber == 0 || (parameter.Attributes & ParameterAttributes.Out) == ParameterAttributes.Out;
-            TypeSyntaxAndMarshaling parameterTypeSyntax = parameterInfo.ToTypeSyntax(typeSettings, forElement, parameter.GetCustomAttributes().QualifyWith(qualifiedParameter.Generator), parameter.Attributes);
+            TypeSyntaxAndMarshaling parameterTypeSyntax = parameterInfo.ToTypeSyntax(typeSettings, forElement, parameter.GetCustomAttributes().QualifyWith(this), parameter.Attributes);
 
             // Determine the custom attributes to apply.
             AttributeListSyntax? attributes = AttributeList();
@@ -1518,7 +1534,7 @@ public partial class Generator : IGenerator, IDisposable
                 @default: null);
             parameterSyntax = parameterTypeSyntax.AddMarshalAs(parameterSyntax);
 
-            if (this.FindInteropDecorativeAttribute(parameter.GetCustomAttributes().QualifyWith(qualifiedParameter.Generator), "RetValAttribute") is not null)
+            if (this.FindInteropDecorativeAttribute(parameter.GetCustomAttributes(), "RetValAttribute") is not null)
             {
                 parameterSyntax = parameterSyntax.WithAdditionalAnnotations(IsRetValAnnotation);
             }

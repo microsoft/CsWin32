@@ -20,6 +20,14 @@ public record GeneratorOptions
     public string ClassName { get; init; } = "PInvoke";
 
     /// <summary>
+    /// Gets the root namespace to use for the generated code. This is used to determine the namespace of the generated types.
+    /// </summary>
+    /// <value>
+    /// The default namespace is the namespace of the metadata assembly that the generator generates interop code for, e.g. "Windows.Win32".
+    /// </value>
+    public string? Namespace { get; init; }
+
+    /// <summary>
     /// Gets a value indicating whether to emit a single source file as opposed to types spread across many files.
     /// </summary>
     /// <value>The default value is <see langword="false" />.</value>

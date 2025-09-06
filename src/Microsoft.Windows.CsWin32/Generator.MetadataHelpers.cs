@@ -148,14 +148,14 @@ public partial class Generator
         if (typeInfo.Handle.Kind == HandleKind.TypeReference)
         {
             var trh = (TypeReferenceHandle)typeInfo.Handle;
-            this.TryGetTypeDefHandle(trh, out tdh);
+            typeInfo.Generator.TryGetTypeDefHandle(trh, out tdh);
         }
         else if (typeInfo.Handle.Kind == HandleKind.TypeDefinition)
         {
             tdh = (TypeDefinitionHandle)typeInfo.Handle;
         }
 
-        return !tdh.IsNil && (this.Reader.GetTypeDefinition(tdh).Attributes & TypeAttributes.Interface) == TypeAttributes.Interface;
+        return !tdh.IsNil && (typeInfo.Reader.GetTypeDefinition(tdh).Attributes & TypeAttributes.Interface) == TypeAttributes.Interface;
     }
 
     internal bool IsInterface(TypeHandleInfo handleInfo)
@@ -187,7 +187,7 @@ public partial class Generator
 
     internal bool IsStructWithFlexibleArray(HandleTypeHandleInfo typeInfo)
     {
-        return this.TryGetTypeDefHandle(typeInfo.Handle, out QualifiedTypeDefinitionHandle typeHandle)
+        return typeInfo.Generator.TryGetTypeDefHandle(typeInfo.Handle, out QualifiedTypeDefinitionHandle typeHandle)
             && typeHandle.Generator.IsStructWithFlexibleArray(typeHandle.DefinitionHandle);
     }
 
@@ -220,20 +220,20 @@ public partial class Generator
         {
             return false;
         }
-        else if (elementType is HandleTypeHandleInfo { Handle: { Kind: HandleKind.TypeDefinition } typeDefHandle })
+        else if (elementType is HandleTypeHandleInfo { Handle: { Kind: HandleKind.TypeDefinition } typeDefHandle } handleTypeDef)
         {
-            return this.IsManagedType((TypeDefinitionHandle)typeDefHandle);
+            return handleTypeDef.Generator.IsManagedType((TypeDefinitionHandle)typeDefHandle);
         }
         else if (elementType is HandleTypeHandleInfo { Handle: { Kind: HandleKind.TypeReference } typeRefHandle } handleElement)
         {
             var trh = (TypeReferenceHandle)typeRefHandle;
-            if (this.TryGetTypeDefHandle(trh, out QualifiedTypeDefinitionHandle qtdr))
+            if (handleElement.Generator.TryGetTypeDefHandle(trh, out QualifiedTypeDefinitionHandle qtdr))
             {
                 return qtdr.Generator.IsManagedType(qtdr.DefinitionHandle);
             }
 
             // If the type comes from an external assembly, assume that structs are blittable and anything else is not.
-            TypeReference tr = this.Reader.GetTypeReference(trh);
+            TypeReference tr = handleElement.Reader.GetTypeReference(trh);
             if (tr.ResolutionScope.Kind == HandleKind.AssemblyReference && handleElement.RawTypeKind is byte kind)
             {
                 // Structs set 0x1, classes set 0x2.
@@ -242,6 +242,24 @@ public partial class Generator
         }
 
         throw new GenerationFailedException("Unrecognized type: " + elementType.GetType().Name);
+    }
+
+    internal CustomAttributeHandleCollection? GetReturnTypeCustomAttributes(MethodDefinition methodDefinition)
+    {
+        CustomAttributeHandleCollection? returnTypeAttributes = null;
+        foreach (ParameterHandle parameterHandle in methodDefinition.GetParameters())
+        {
+            Parameter parameter = this.Reader.GetParameter(parameterHandle);
+            if (parameter.Name.IsNil)
+            {
+                returnTypeAttributes = parameter.GetCustomAttributes();
+            }
+
+            // What we're looking for would always be the first element in the collection.
+            break;
+        }
+
+        return returnTypeAttributes;
     }
 
     private static bool IsWideFunction(string methodName)
@@ -398,7 +416,7 @@ public partial class Generator
                             FieldDefinition fieldDef = this.Reader.GetFieldDefinition(fieldHandle);
                             try
                             {
-                                TypeHandleInfo fieldType = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null);
+                                TypeHandleInfo fieldType = fieldDef.DecodeSignature(this.SignatureHandleProvider, null);
                                 TypeHandleInfo elementType = fieldType;
                                 while (elementType is ITypeHandleContainer container)
                                 {
@@ -484,9 +502,13 @@ public partial class Generator
 
                 throw new NotSupportedException();
             }
+            catch (GenerationFailedException)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
-                throw new GenerationFailedException($"Unable to determine if {new HandleTypeHandleInfo(this.Reader, typeDefinitionHandle).ToTypeSyntax(this.errorMessageTypeSettings, GeneratingElement.Other, null)} is a managed type.", ex);
+                throw new GenerationFailedException($"Unable to determine if {new HandleTypeHandleInfo(this, this.Reader, typeDefinitionHandle).ToTypeSyntax(this.errorMessageTypeSettings, GeneratingElement.Other, null)} is a managed type.", ex);
             }
         }
     }
@@ -506,24 +528,6 @@ public partial class Generator
     private bool IsCompilerGenerated(TypeDefinition typeDef) => this.FindAttribute(typeDef.GetCustomAttributes(), SystemRuntimeCompilerServices, nameof(CompilerGeneratedAttribute)).HasValue;
 
     private bool HasObsoleteAttribute(CustomAttributeHandleCollection attributes) => this.FindAttribute(attributes, nameof(System), nameof(ObsoleteAttribute)).HasValue;
-
-    private CustomAttributeHandleCollection? GetReturnTypeCustomAttributes(MethodDefinition methodDefinition)
-    {
-        CustomAttributeHandleCollection? returnTypeAttributes = null;
-        foreach (ParameterHandle parameterHandle in methodDefinition.GetParameters())
-        {
-            Parameter parameter = this.Reader.GetParameter(parameterHandle);
-            if (parameter.Name.IsNil)
-            {
-                returnTypeAttributes = parameter.GetCustomAttributes();
-            }
-
-            // What we're looking for would always be the first element in the collection.
-            break;
-        }
-
-        return returnTypeAttributes;
-    }
 
     private bool IsUntypedDelegate(TypeDefinition typeDef) => IsUntypedDelegate(this.Reader, typeDef);
 

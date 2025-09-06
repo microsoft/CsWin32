@@ -139,7 +139,7 @@ public partial class Generator
             FieldDefinition fieldDef = this.Reader.GetFieldDefinition(fieldDefHandle);
             FieldDeclarationSyntax constantDeclaration = this.DeclareConstant(fieldDef);
 
-            TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature<TypeHandleInfo, SignatureHandleProvider.IGenericContext?>(SignatureHandleProvider.Instance, null) with { IsConstantField = true };
+            TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature<TypeHandleInfo, SignatureHandleProvider.IGenericContext?>(this.SignatureHandleProvider, null) with { IsConstantField = true };
             TypeDefinitionHandle? fieldType = null;
             if (fieldTypeInfo is HandleTypeHandleInfo handleInfo && this.IsTypeDefStruct(handleInfo) && handleInfo.Handle.Kind == HandleKind.TypeReference)
             {
@@ -213,7 +213,7 @@ public partial class Generator
             MethodDefinition methodDef = this.Reader.GetMethodDefinition(methodDefHandle);
             if (this.Reader.StringComparer.Equals(methodDef.Name, ".ctor") && methodDef.GetParameters().Count == args.Count)
             {
-                MethodSignature<TypeHandleInfo> ctorSignature = methodDef.DecodeSignature(SignatureHandleProvider.Instance, null);
+                MethodSignature<TypeHandleInfo> ctorSignature = methodDef.DecodeSignature(this.SignatureHandleProvider, null);
                 var argExpressions = new ArgumentSyntax[args.Count];
 
                 for (int i = 0; i < args.Count; i++)
@@ -245,7 +245,7 @@ public partial class Generator
         {
             FieldDefinition fieldDef = this.Reader.GetFieldDefinition(fieldDefHandle);
             string fieldName = this.Reader.GetString(fieldDef.Name);
-            TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null) with { IsConstantField = true };
+            TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(this.SignatureHandleProvider, null) with { IsConstantField = true };
             fieldAssignmentExpressions[i] = AssignmentExpression(
                 SyntaxKind.SimpleAssignmentExpression,
                 IdentifierName(fieldName),
@@ -354,9 +354,9 @@ public partial class Generator
         string name = this.Reader.GetString(fieldDef.Name);
         try
         {
-            TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null) with { IsConstantField = true };
+            TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(this.SignatureHandleProvider, null) with { IsConstantField = true };
             CustomAttributeHandleCollection customAttributes = fieldDef.GetCustomAttributes();
-            TypeSyntaxAndMarshaling fieldType = fieldTypeInfo.ToTypeSyntax(this.fieldTypeSettings, GeneratingElement.Constant, customAttributes);
+            TypeSyntaxAndMarshaling fieldType = fieldTypeInfo.ToTypeSyntax(this.fieldTypeSettings, GeneratingElement.Constant, customAttributes.QualifyWith(this));
             bool requiresUnsafe = false;
             ExpressionSyntax value =
                 fieldDef.GetDefaultValue() is { IsNil: false } constantHandle ? ToExpressionSyntax(this.Reader, constantHandle) :

@@ -1,0 +1,29 @@
+//  Copyright (c) Microsoft Corporation. All rights reserved.
+import "objidl.idl";
+import "inspectable.idl";
+
+cpp_quote("#ifdef __cplusplus")
+cpp_quote("namespace TestApis {")
+cpp_quote("#endif // __cplusplus")
+
+[local, object, uuid(03861681-b74a-4581-8648-2a2cee7d8a8a)]
+interface ITestDerivedFromInspectable : IInspectable
+{
+    [annotation("_Pre_satisfies_(*pHandleToAttach != nullptr) "
+        "_Post_satisfies_(*pHandleToAttach == nullptr) "
+        "_On_failure_(_Unchanged_(*pHandleToAttach))")]
+    HRESULT CreateAndAttachHandle(
+            [in, annotation("_Inout_")] HANDLE* pHandleToAttach,
+            [in] REFIID iid,
+            [out, iid_is(iid), annotation("_COM_Outptr_")] void** ppv);
+
+    HRESULT CreateWithDuplicatedHandle(
+            [in, annotation("_In_")] HANDLE handleToDuplicate,
+            [in] REFIID iid,
+            [out, iid_is(iid), annotation("_COM_Outptr_")] void** ppv);
+};
+
+cpp_quote("#ifdef __cplusplus")
+cpp_quote("} ")
+cpp_quote("#endif // __cplusplus")
+

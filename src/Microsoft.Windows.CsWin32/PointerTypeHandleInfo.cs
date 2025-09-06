@@ -7,9 +7,9 @@ internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleIn
 {
     public override string ToString() => this.ToTypeSyntaxForDisplay().ToString();
 
-    internal override TypeSyntaxAndMarshaling ToTypeSyntax(TypeSyntaxSettings inputs, Generator.GeneratingElement forElement, CustomAttributeHandleCollection? customAttributes, ParameterAttributes parameterAttributes = default)
+    internal override TypeSyntaxAndMarshaling ToTypeSyntax(TypeSyntaxSettings inputs, Generator.GeneratingElement forElement, QualifiedCustomAttributeHandleCollection? customAttributes, ParameterAttributes parameterAttributes = default)
     {
-        Generator.NativeArrayInfo? nativeArrayInfo = customAttributes.HasValue ? inputs.Generator?.FindNativeArrayInfoAttribute(customAttributes.Value) : null;
+        Generator.NativeArrayInfo? nativeArrayInfo = customAttributes.HasValue ? customAttributes.Value.Generator.FindNativeArrayInfoAttribute(customAttributes.Value.Collection) : null;
 
         // We can't marshal a pointer exposed as a field, unless it's a pointer to an array.
         if (inputs.AllowMarshaling && inputs.IsField && (customAttributes is null || nativeArrayInfo is null))
@@ -19,7 +19,7 @@ internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleIn
 
         bool xOptional = (parameterAttributes & ParameterAttributes.Optional) == ParameterAttributes.Optional;
         bool mustUsePointers = xOptional && forElement == Generator.GeneratingElement.InterfaceMember && nativeArrayInfo is null;
-        mustUsePointers |= this.ElementType is HandleTypeHandleInfo handleElementType && inputs.Generator?.IsStructWithFlexibleArray(handleElementType) is true;
+        mustUsePointers |= this.ElementType is HandleTypeHandleInfo handleElementType && handleElementType.Generator.IsStructWithFlexibleArray(handleElementType) is true;
         if (mustUsePointers)
         {
             // Disable marshaling because pointers to optional parameters cannot be passed by reference when used as parameters of a COM interface method.
@@ -56,7 +56,7 @@ internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleIn
             {
                 if (elementTypeDetails.Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.ObjectKeyword } } && inputs.Generator is not null && inputs.Generator.Options.ComInterop.UseIntPtrForComOutPointers)
                 {
-                    bool isComOutPtr = inputs.Generator.FindInteropDecorativeAttribute(customAttributes, "ComOutPtrAttribute").HasValue;
+                    bool isComOutPtr = customAttributes?.Generator.FindInteropDecorativeAttribute(customAttributes.Value.Collection, "ComOutPtrAttribute").HasValue ?? false;
                     return new TypeSyntaxAndMarshaling(IdentifierName(nameof(IntPtr)))
                     {
                         ParameterModifier = Token(SyntaxKind.OutKeyword),
@@ -88,7 +88,7 @@ internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleIn
                     elementTypeDetails.NativeArrayInfo);
             }
         }
-        else if (inputs.AllowMarshaling && inputs.Generator?.FindInteropDecorativeAttribute(customAttributes, "ComOutPtrAttribute") is not null)
+        else if (inputs.AllowMarshaling && customAttributes is object && customAttributes.Value.Generator.FindInteropDecorativeAttribute(customAttributes.Value.Collection, "ComOutPtrAttribute") is not null)
         {
             return new TypeSyntaxAndMarshaling(PredefinedType(Token(SyntaxKind.ObjectKeyword)), new MarshalAsAttribute(UnmanagedType.IUnknown), null);
         }

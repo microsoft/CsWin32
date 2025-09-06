@@ -13,8 +13,9 @@ internal class MetadataCache
     /// Gets a file accessor for the given path that supports many concurrent readers.
     /// </summary>
     /// <param name="path">The path to the .winmd file.</param>
+    /// <param name="owner">The generator that is requesting the file and will own it.</param>
     /// <returns>The file accessor.</returns>
-    internal MetadataFile GetMetadataFile(string path)
+    internal MetadataFile GetMetadataFile(string path, Generator owner)
     {
         lock (this.metadataFiles)
         {
@@ -34,7 +35,7 @@ internal class MetadataCache
             }
 
             // New or updated file. Re-open.
-            this.metadataFiles.Add(path, metadataFile = new MetadataFile(path));
+            this.metadataFiles.Add(path, metadataFile = new MetadataFile(path, owner));
             return metadataFile;
         }
     }

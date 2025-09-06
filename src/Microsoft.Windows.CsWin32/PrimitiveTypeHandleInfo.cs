@@ -7,14 +7,14 @@ internal record PrimitiveTypeHandleInfo(PrimitiveTypeCode PrimitiveTypeCode) : T
 {
     public override string ToString() => this.ToTypeSyntaxForDisplay().ToString();
 
-    internal override TypeSyntaxAndMarshaling ToTypeSyntax(TypeSyntaxSettings inputs, Generator.GeneratingElement forElement, CustomAttributeHandleCollection? customAttributes, ParameterAttributes parameterAttributes)
+    internal override TypeSyntaxAndMarshaling ToTypeSyntax(TypeSyntaxSettings inputs, Generator.GeneratingElement forElement, QualifiedCustomAttributeHandleCollection? customAttributes, ParameterAttributes parameterAttributes)
     {
         // We want to expose the enum type when there is one, but doing it *properly* requires marshaling to the underlying type.
         // The length of the enum may differ from the length of the primitive type, which means we can't just use the enum type directly.
         // Even if the lengths match, if the enum's underlying base type conflicts with the primitive's signed type (e.g. int != uint),
         // certain CPU architectures can fail as well.
         // So we just have to use the primitive type when marshaling is not allowed.
-        if (inputs.AllowMarshaling && inputs.Generator?.FindAssociatedEnum(customAttributes) is NameSyntax enumTypeName && inputs.Generator.TryGenerateType(enumTypeName.ToString(), out IReadOnlyCollection<string> preciseMatch))
+        if (inputs.AllowMarshaling && customAttributes?.Generator.FindAssociatedEnum(customAttributes.Value.Collection) is NameSyntax enumTypeName && inputs.Generator!.TryGenerateType(enumTypeName.ToString(), out IReadOnlyCollection<string> preciseMatch))
         {
             // Use the qualified name.
             enumTypeName = ParseName(Generator.ReplaceCommonNamespaceWithAlias(inputs.Generator, preciseMatch.First()));

@@ -34,7 +34,7 @@ public class FriendlyOverloadTests : GeneratorTestBase
         this.GenerateApi(Method);
 
         MethodDeclarationSyntax method = Assert.Single(this.FindGeneratedMethod(Method), m => !IsOrContainsExternMethod(m));
-        Assert.Equal("ReleaseActCtxSafeHandle", Assert.IsType<IdentifierNameSyntax>(method.ReturnType).Identifier.ValueText);
+        Assert.Equal("ReleaseActCtxSafeHandle", Assert.IsType<QualifiedNameSyntax>(method.ReturnType).Right.Identifier.ValueText);
     }
 
     [Fact]
@@ -44,7 +44,7 @@ public class FriendlyOverloadTests : GeneratorTestBase
         this.GenerateApi(Method);
 
         MethodDeclarationSyntax method = Assert.Single(this.FindGeneratedMethod(Method), m => !IsOrContainsExternMethod(m));
-        Assert.Equal("DsGetDcCloseWSafeHandle", Assert.IsType<IdentifierNameSyntax>(method.ParameterList.Parameters.Last().Type).Identifier.ValueText);
+        Assert.Equal("DsGetDcCloseWSafeHandle", Assert.IsType<QualifiedNameSyntax>(method.ParameterList.Parameters.Last().Type).Right.Identifier.ValueText);
     }
 
     [Fact]

@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.Build.NoTargets;Microsoft.Windows.WinmdGenerator/0.63.31-preview">
+
+  <!--<Import Sdk="Microsoft.Windows.WinmdGenerator" Project="Sdk.props" />-->
+
+  <PropertyGroup Label="Globals">
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+
+    <!-- Turn off some things commonly set by the SDK.props stuff -->
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <IsAotCompatible>false</IsAotCompatible>
+    <UseUwp>false</UseUwp>
+
+    <OutputWinmd>CustomIInspectable.winmd</OutputWinmd>
+    <WinmdVersion>255.255.255.255</WinmdVersion>
+    <TargetPlatformVersion>10.0.19041.0</TargetPlatformVersion>
+    <ShowEmitWinmdOutputDetails>true</ShowEmitWinmdOutputDetails>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Windows.WinmdGenerator" GeneratePathProperty="true" Version="0.63.31-preview" />
+    <PackageReference Include="Microsoft.Windows.SDK.CPP" GeneratePathProperty="true" Version="10.0.22621.3233"/>
+    <PackageReference Include="Microsoft.Windows.SDK.Win32Metadata" GeneratePathProperty="true" Version="63.0.31-preview"/>
+  </ItemGroup>
+  <PropertyGroup>
+    <AdditionalIncludes>$(AdditionalIncludes);$(Pkg_MicrosoftWindowsSDKCPP)\c\Include\10.0.22621.0\shared</AdditionalIncludes>
+    <AdditionalIncludes>$(AdditionalIncludes);$(CompiledHeadersDir)</AdditionalIncludes>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ScraperRsp Include="libMappings.rsp"/>
+  </ItemGroup>
+
+  <Target Name="BuildPartitions" BeforeTargets="BeforeBuild">
+    <ItemGroup>
+      <Headers Include="$(CompiledHeadersDir)\customiinspectable.h" />
+      <TraverseFiles Include="%(Headers.FullPath)"/>
+      <None Include="main.cpp" />
+      <Idls Include="customiinspectable.idl"/>
+      <Partition Include="main.cpp">
+        <TraverseFiles>@(TraverseFiles)</TraverseFiles>
+        <Namespace>CustomIInspectable</Namespace>
+      </Partition>
+    </ItemGroup>
+  </Target>
+
+  <!--<Import Sdk="Microsoft.Windows.WinmdGenerator" Project="Sdk.targets" />-->
+
+</Project>

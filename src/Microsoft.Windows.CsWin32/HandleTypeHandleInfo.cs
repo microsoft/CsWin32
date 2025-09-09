@@ -23,9 +23,9 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
 
     internal EntityHandle Handle { get; }
 
-    internal MetadataReader Reader { get => this.reader; }
+    internal MetadataReader Reader => this.reader;
 
-    internal Generator Generator { get => this.generator; }
+    internal Generator Generator => this.generator;
 
     internal byte? RawTypeKind { get; }
 
@@ -135,8 +135,8 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
 
         if (simpleName is "PWSTR" or "PSTR")
         {
-            bool isConst = this.IsConstantField || MetadataUtilities.FindAttribute(customAttributes?.Reader!, customAttributes?.Collection, Generator.InteropDecorationNamespace, "ConstAttribute").HasValue;
-            bool isEmptyStringTerminatedList = MetadataUtilities.FindAttribute(customAttributes?.Reader!, customAttributes?.Collection, Generator.InteropDecorationNamespace, "NullNullTerminatedAttribute").HasValue;
+            bool isConst = this.IsConstantField || ((customAttributes is object) && MetadataUtilities.FindAttribute(customAttributes.Value.Reader, customAttributes.Value.Collection, Generator.InteropDecorationNamespace, "ConstAttribute").HasValue);
+            bool isEmptyStringTerminatedList = (customAttributes is object) && MetadataUtilities.FindAttribute(customAttributes.Value.Reader, customAttributes.Value.Collection, Generator.InteropDecorationNamespace, "NullNullTerminatedAttribute").HasValue;
             string constChar = isConst ? "C" : string.Empty;
             string listChars = isEmptyStringTerminatedList ? "ZZ" : string.Empty;
             string nameEnding = simpleName.Substring(1);

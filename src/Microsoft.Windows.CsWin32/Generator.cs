@@ -85,7 +85,7 @@ public partial class Generator : IGenerator, IDisposable
             throw new ArgumentNullException(nameof(options));
         }
 
-        MetadataFile metadataFile = MetadataCache.Default.GetMetadataFile(metadataLibraryPath, this);
+        MetadataFile metadataFile = MetadataCache.Default.GetMetadataFile(metadataLibraryPath);
         this.SignatureHandleProvider = new(this);
         this.MetadataIndex = metadataFile.GetMetadataIndex(compilation?.Options.Platform);
         this.metadataReader = metadataFile.GetMetadataReader();

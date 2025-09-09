@@ -16,11 +16,10 @@ internal class MetadataFile : IDisposable
     private MemoryMappedFile file;
     private bool obsolete;
 
-    internal MetadataFile(string path, Generator owner)
+    internal MetadataFile(string path)
     {
         this.Path = path;
         this.LastWriteTimeUtc = File.GetLastWriteTimeUtc(path);
-        this.Generator = owner;
 
         // When using FileShare.Delete, the OS will allow the file to be deleted, but it does not disrupt
         // our ability to read the file while our handle is open.
@@ -34,8 +33,6 @@ internal class MetadataFile : IDisposable
     internal string Path { get; }
 
     internal DateTime LastWriteTimeUtc { get; }
-
-    internal Generator Generator { get; }
 
     private string DebuggerDisplay => $"\"{this.Path}\" ({this.LastWriteTimeUtc})";
 

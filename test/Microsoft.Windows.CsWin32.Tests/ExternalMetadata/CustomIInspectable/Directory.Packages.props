@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Packages.props', '$(MSBuildThisFileDirectory)\..'))" />
+  <ItemGroup>
+    <PackageVersion Update="Microsoft.Windows.SDK.cpp" Version="10.0.22621.3233" />
+    <PackageVersion Update="Microsoft.Windows.SDK.cpp.arm64" Version="10.0.22621.3233" />
+    <PackageVersion Update="Microsoft.Windows.SDK.cpp.x64" Version="10.0.22621.3233" />
+    <PackageVersion Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.22621.3233" />
+  </ItemGroup>
+</Project>

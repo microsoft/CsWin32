@@ -688,7 +688,7 @@ public class GeneratorTests : GeneratorTestBase
         Assert.Throws<NotSupportedException>(() => this.generator.TryGenerate("GetLastError", CancellationToken.None));
     }
 
-    [Fact(Skip = "https://github.com/microsoft/win32metadata/issues/129")]
+    [Fact]
     public void DeleteObject_TakesTypeDefStruct()
     {
         this.generator = this.CreateGenerator();
@@ -697,7 +697,7 @@ public class GeneratorTests : GeneratorTestBase
         this.AssertNoDiagnostics();
         MethodDeclarationSyntax? deleteObjectMethod = this.FindGeneratedMethod("DeleteObject").FirstOrDefault();
         Assert.NotNull(deleteObjectMethod);
-        Assert.Equal("HGDIOBJ", Assert.IsType<IdentifierNameSyntax>(deleteObjectMethod!.ParameterList.Parameters[0].Type).Identifier.ValueText);
+        Assert.Equal("HGDIOBJ", Assert.IsType<QualifiedNameSyntax>(deleteObjectMethod!.ParameterList.Parameters[0].Type).Right.Identifier.ValueText);
     }
 
     [Theory]

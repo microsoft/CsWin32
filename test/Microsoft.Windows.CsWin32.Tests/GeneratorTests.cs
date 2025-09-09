@@ -950,7 +950,7 @@ class Program
     public void ContainsIllegalCharactersForAPIName_InvisibleCharacters()
     {
         // You can't see them, but there are invisible hyphens in this name.
-        // Copy-paste from docs.microsoft.com has been known to include these invisible characters and break matching in NativeMethods.txt.
+        // Copy-paste from learn.microsoft.com has been known to include these invisible characters and break matching in NativeMethods.txt.
         Assert.True(Generator.ContainsIllegalCharactersForAPIName("SHGet­Known­Folder­Item"));
     }
 

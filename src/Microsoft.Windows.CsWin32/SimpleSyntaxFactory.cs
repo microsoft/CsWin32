@@ -9,7 +9,7 @@ internal static class SimpleSyntaxFactory
     /// C# keywords that must be escaped or changed when they appear as identifiers from metadata.
     /// </summary>
     /// <remarks>
-    /// This list comes from <see href="https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/keywords/">this documentation</see>.
+    /// This list comes from <see href="https://learn.microsoft.com/dotnet/csharp/language-reference/keywords/">this documentation</see>.
     /// </remarks>
     internal static readonly HashSet<string> CSharpKeywords = new HashSet<string>(StringComparer.Ordinal)
     {

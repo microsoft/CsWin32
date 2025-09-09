@@ -17,7 +17,6 @@ using VARDESC = Windows.Win32.System.Com.VARDESC;
 [Trait("WindowsOnly", "true")]
 public class BasicTests
 {
-    private const int FILE_FLAG_DELETE_ON_CLOSE = 0x04000000; // remove when https://github.com/microsoft/win32metadata/issues/98 is fixed.
     private readonly ITestOutputHelper logger;
 
     public BasicTests(ITestOutputHelper logger)
@@ -224,7 +223,7 @@ public class BasicTests
             FILE_SHARE_MODE.FILE_SHARE_NONE,
             lpSecurityAttributes: default,
             FILE_CREATION_DISPOSITION.CREATE_NEW,
-            FILE_FLAGS_AND_ATTRIBUTES.FILE_ATTRIBUTE_TEMPORARY | (FILE_FLAGS_AND_ATTRIBUTES)FILE_FLAG_DELETE_ON_CLOSE,
+            FILE_FLAGS_AND_ATTRIBUTES.FILE_ATTRIBUTE_TEMPORARY | FILE_FLAGS_AND_ATTRIBUTES.FILE_FLAG_DELETE_ON_CLOSE,
             hTemplateFile: null);
         Assert.True(File.Exists(path));
         fileHandle.Dispose();

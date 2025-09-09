@@ -149,7 +149,7 @@ public partial class Generator
     /// <remarks>
     /// This list is combined with an MSBuild item list so that 3rd party metadata can document app-local DLLs.
     /// </remarks>
-    /// <see href="https://docs.microsoft.com/en-us/windows/win32/debug/dbghelp-versions" />
+    /// <see href="https://learn.microsoft.com/windows/win32/debug/dbghelp-versions" />
     private static readonly string[] BuiltInAppLocalLibraries = ["DbgHelp.dll", "SymSrv.dll", "SrcSrv.dll"];
 
     // [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
@@ -321,7 +321,7 @@ public partial class Generator
     /// Gets a map of interop APIs that should never be generated, whether marshaling is allowed or not, and messages to emit in diagnostics if these APIs are ever directly requested.
     /// </summary>
     internal static ImmutableDictionary<string, string> BannedAPIsWithoutMarshaling { get; } = ImmutableDictionary<string, string>.Empty
-        .Add("GetLastError", "Do not generate GetLastError. Call Marshal.GetLastWin32Error() instead. Learn more from https://docs.microsoft.com/dotnet/api/system.runtime.interopservices.marshal.getlastwin32error")
+        .Add("GetLastError", "Do not generate GetLastError. Call Marshal.GetLastWin32Error() instead. Learn more from https://learn.microsoft.com/dotnet/api/system.runtime.interopservices.marshal.getlastwin32error")
         .Add("OLD_LARGE_INTEGER", "Use the C# long keyword instead.")
         .Add("LARGE_INTEGER", "Use the C# long keyword instead.")
         .Add("ULARGE_INTEGER", "Use the C# ulong keyword instead.")

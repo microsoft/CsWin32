@@ -28,14 +28,15 @@ extends:
   parameters:
     sdl:
       sourceAnalysisPool: VSEngSS-MicroBuild2022-1ES
+      credscan:
+        enabled: false
 
     stages:
     - stage: Build
       variables:
-        DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
-        NUGET_PACKAGES: $(Agent.TempDirectory)/.nuget/packages/
-        BuildConfiguration: Release
-        SkipCodesignVerify: true
+      - template: /azure-pipelines/BuildStageVariables.yml@self
+      - name: SkipCodesignVerify
+        value: true
 
       jobs:
       - template: /azure-pipelines/build.yml@self

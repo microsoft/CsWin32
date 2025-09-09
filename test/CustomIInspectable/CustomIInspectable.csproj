@@ -1,7 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<Project Sdk="Microsoft.Build.NoTargets;Microsoft.Windows.WinmdGenerator/0.63.31-preview">
-
-  <!--<Import Sdk="Microsoft.Windows.WinmdGenerator" Project="Sdk.props" />-->
+<Project Sdk="Microsoft.Build.NoTargets;Microsoft.Windows.WinmdGenerator">
 
   <PropertyGroup Label="Globals">
     <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
@@ -43,7 +41,5 @@
       </Partition>
     </ItemGroup>
   </Target>
-
-  <!--<Import Sdk="Microsoft.Windows.WinmdGenerator" Project="Sdk.targets" />-->
 
 </Project>

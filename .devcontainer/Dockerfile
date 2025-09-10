@@ -1,5 +1,5 @@
 # Refer to https://hub.docker.com/_/microsoft-dotnet-sdk for available versions
-FROM mcr.microsoft.com/dotnet/sdk:9.0.305-noble@sha256:66a9fb34b06fe16c8a656327d6dd765b38bcb60577ce9af4bf08c6c63ea98702
+FROM mcr.microsoft.com/dotnet/sdk:9.0.305-noble@sha256:802e64ab9e113bdfa5d476ae00c7b40ab5c42da1792731c41a47f43bc4e74bdb
 
 # Installing mono makes `dotnet test` work without errors even for net472.
 # But installing it takes a long time, so it's excluded by default.

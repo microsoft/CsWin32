@@ -88,7 +88,7 @@ If Renovate is not creating pull requests when you expect it to, check that the 
 ### Maintaining your repo based on this template
 
 The best way to keep your repo in sync with Library.Template's evolving features and best practices is to periodically merge the template into your repo:
-`
+
 ```ps1
 git fetch
 git checkout origin/main

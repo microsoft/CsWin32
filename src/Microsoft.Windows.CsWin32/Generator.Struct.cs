@@ -85,8 +85,8 @@ public partial class Generator
                 }
                 else if (fieldDefHandle == flexibleArrayFieldHandle)
                 {
-                    CustomAttributeHandleCollection fieldAttributes = fieldDef.GetCustomAttributes();
-                    var fieldTypeInfo = (ArrayTypeHandleInfo)fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null);
+                    QualifiedCustomAttributeHandleCollection fieldAttributes = fieldDef.GetCustomAttributes().QualifyWith(this);
+                    var fieldTypeInfo = (ArrayTypeHandleInfo)fieldDef.DecodeSignature(this.SignatureHandleProvider, null);
                     TypeSyntax fieldType = fieldTypeInfo.ElementType.ToTypeSyntax(typeSettings, GeneratingElement.StructMember, fieldAttributes).Type;
 
                     if (fieldType is PointerTypeSyntax or FunctionPointerTypeSyntax)
@@ -129,7 +129,7 @@ public partial class Generator
                 else
                 {
                     CustomAttributeHandleCollection fieldAttributes = fieldDef.GetCustomAttributes();
-                    TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null);
+                    TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(this.SignatureHandleProvider, null);
                     hasUtf16CharField |= fieldTypeInfo is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.Char };
                     TypeSyntaxSettings thisFieldTypeSettings = typeSettings;
 
@@ -152,7 +152,7 @@ public partial class Generator
                         }
                     }
 
-                    TypeSyntaxAndMarshaling fieldTypeSyntax = fieldTypeInfo.ToTypeSyntax(thisFieldTypeSettings, GeneratingElement.StructMember, fieldAttributes);
+                    TypeSyntaxAndMarshaling fieldTypeSyntax = fieldTypeInfo.ToTypeSyntax(thisFieldTypeSettings, GeneratingElement.StructMember, fieldAttributes.QualifyWith(this));
                     (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? MarshalAsAttribute) fieldInfo = this.ReinterpretFieldType(fieldDef, fieldTypeSyntax.Type, fieldAttributes, context);
                     additionalMembers = additionalMembers.AddRange(fieldInfo.AdditionalMembers);
 
@@ -215,7 +215,7 @@ public partial class Generator
 
                 foreach (CustomAttribute bitfieldAttribute in MetadataUtilities.FindAttributes(this.Reader, fieldDef.GetCustomAttributes(), InteropDecorationNamespace, NativeBitfieldAttribute))
                 {
-                    var fieldTypeInfo = (PrimitiveTypeHandleInfo)fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null);
+                    var fieldTypeInfo = (PrimitiveTypeHandleInfo)fieldDef.DecodeSignature(this.SignatureHandleProvider, null);
 
                     CustomAttributeValue<TypeSyntax> decodedAttribute = bitfieldAttribute.DecodeValue(CustomAttributeTypeProvider.Instance);
                     (int? fieldBitLength, bool signed) = fieldTypeInfo.PrimitiveTypeCode switch
@@ -514,7 +514,7 @@ public partial class Generator
     private (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? MarshalAsAttribute) ReinterpretFieldType(FieldDefinition fieldDef, TypeSyntax originalType, CustomAttributeHandleCollection customAttributes, Context context)
     {
         TypeSyntaxSettings typeSettings = context.Filter(this.fieldTypeSettings);
-        TypeHandleInfo fieldTypeHandleInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null);
+        TypeHandleInfo fieldTypeHandleInfo = fieldDef.DecodeSignature(this.SignatureHandleProvider, null);
         AttributeSyntax? marshalAs = null;
 
         // If the field is a fixed length array, we have to work some code gen magic since C# does not allow those.

@@ -155,7 +155,7 @@ internal class MetadataIndex
                                     fieldEnum.MoveNext();
                                     FieldDefinitionHandle fieldHandle = fieldEnum.Current;
                                     FieldDefinition fieldDef = mr.GetFieldDefinition(fieldHandle);
-                                    if (fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null) is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.IntPtr or PrimitiveTypeCode.UIntPtr })
+                                    if (fieldDef.DecodeSignature(PrimitiveSignatureHandleProvider.Instance, null) is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.IntPtr or PrimitiveTypeCode.UIntPtr })
                                     {
                                         this.handleTypeStructsWithIntPtrSizeFields.Add(typeName);
                                     }

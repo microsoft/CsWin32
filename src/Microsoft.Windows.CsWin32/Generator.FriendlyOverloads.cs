@@ -14,7 +14,7 @@ public partial class Generator
         InterfaceMethod,
     }
 
-    private IEnumerable<MethodDeclarationSyntax> DeclareFriendlyOverloads(MethodDefinition methodDefinition, MethodDeclarationSyntax externMethodDeclaration, NameSyntax declaringTypeName, FriendlyOverloadOf overloadOf, HashSet<string> helperMethodsAdded)
+    private IEnumerable<MethodDeclarationSyntax> DeclareFriendlyOverloads(MethodDefinition methodDefinition, MethodDeclarationSyntax externMethodDeclaration, NameSyntax declaringTypeName, FriendlyOverloadOf overloadOf, HashSet<string> helperMethodsAdded, bool avoidWinmdRootAlias)
     {
         if (!this.options.FriendlyOverloads.Enabled)
         {
@@ -59,7 +59,12 @@ public partial class Generator
             _ => throw new NotSupportedException(overloadOf.ToString()),
         };
 
-        MethodSignature<TypeHandleInfo> originalSignature = methodDefinition.DecodeSignature(SignatureHandleProvider.Instance, null);
+        if (avoidWinmdRootAlias)
+        {
+            parameterTypeSyntaxSettings = parameterTypeSyntaxSettings with { AvoidWinmdRootAlias = true };
+        }
+
+        MethodSignature<TypeHandleInfo> originalSignature = methodDefinition.DecodeSignature(this.SignatureHandleProvider, null);
         CustomAttributeHandleCollection? returnTypeAttributes = null;
         var parameters = externMethodDeclaration.ParameterList.Parameters.Select(StripAttributes).ToList();
         var lengthParamUsedBy = new Dictionary<int, int>();
@@ -105,7 +110,7 @@ public partial class Generator
 
             TypeHandleInfo parameterTypeInfo = originalSignature.ParameterTypes[param.SequenceNumber - 1];
             bool isManagedParameterType = this.IsManagedType(parameterTypeInfo);
-            bool mustRemainAsPointer = parameterTypeInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo pointedElement } && this.IsStructWithFlexibleArray(pointedElement);
+            bool mustRemainAsPointer = parameterTypeInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo pointedElement } && pointedElement.Generator.IsStructWithFlexibleArray(pointedElement);
 
             IdentifierNameSyntax origName = IdentifierName(externParam.Identifier.ValueText);
 
@@ -146,7 +151,7 @@ public partial class Generator
                 bool hasOut = externParam.Modifiers.Any(SyntaxKind.OutKeyword);
                 arguments[param.SequenceNumber - 1] = arguments[param.SequenceNumber - 1].WithRefKindKeyword(TokenWithSpace(hasOut ? SyntaxKind.OutKeyword : SyntaxKind.RefKeyword));
             }
-            else if (isOut && !isIn && !isReleaseMethod && parameterTypeInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo pointedElementInfo } && this.TryGetHandleReleaseMethod(pointedElementInfo.Handle, paramAttributes, out string? outReleaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, outReleaseMethod))
+            else if (isOut && !isIn && !isReleaseMethod && parameterTypeInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo pointedElementInfo } && pointedElementInfo.Generator.TryGetHandleReleaseMethod(pointedElementInfo.Handle, paramAttributes, out string? outReleaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, outReleaseMethod))
             {
                 if (this.RequestSafeHandle(outReleaseMethod) is TypeSyntax safeHandleType)
                 {
@@ -668,7 +673,7 @@ public partial class Generator
         }
 
         TypeSyntax? returnSafeHandleType = originalSignature.ReturnType is HandleTypeHandleInfo returnTypeHandleInfo
-            && this.TryGetHandleReleaseMethod(returnTypeHandleInfo.Handle, returnTypeAttributes, out string? returnReleaseMethod)
+            && returnTypeHandleInfo.Generator.TryGetHandleReleaseMethod(returnTypeHandleInfo.Handle, returnTypeAttributes, out string? returnReleaseMethod)
             ? this.RequestSafeHandle(returnReleaseMethod) : null;
         SyntaxToken friendlyMethodName = externMethodDeclaration.Identifier;
 
@@ -794,7 +799,7 @@ public partial class Generator
             // If we're using C# 13 or later, consider adding the overload resolution attribute if it would likely resolve ambiguities.
             if (this.LanguageVersion >= (LanguageVersion)1300 && parameters.Count == externMethodDeclaration.ParameterList.Parameters.Count)
             {
-                this.DeclareOverloadResolutionPriorityAttributeIfNecessary();
+                this.volatileCode.GenerationTransaction(() => this.DeclareOverloadResolutionPriorityAttributeIfNecessary());
                 friendlyDeclaration = friendlyDeclaration.AddAttributeLists(AttributeList().AddAttributes(OverloadResolutionPriorityAttribute(1)));
             }
 

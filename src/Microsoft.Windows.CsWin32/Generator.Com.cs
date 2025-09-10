@@ -51,18 +51,18 @@ public partial class Generator
     {
         TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefHandle);
         var baseTypes = ImmutableStack.Create<QualifiedTypeDefinitionHandle>();
-        (Generator Generator, InterfaceImplementationHandle Handle) baseTypeHandle = (this, typeDef.GetInterfaceImplementations().SingleOrDefault());
-        while (!baseTypeHandle.Handle.IsNil)
+        (Generator Generator, InterfaceImplementationHandle Handle) baseInterfaceImplHandle = (this, typeDef.GetInterfaceImplementations().SingleOrDefault());
+        while (!baseInterfaceImplHandle.Handle.IsNil)
         {
-            InterfaceImplementation baseTypeImpl = baseTypeHandle.Generator.Reader.GetInterfaceImplementation(baseTypeHandle.Handle);
-            if (!baseTypeHandle.Generator.TryGetTypeDefHandle((TypeReferenceHandle)baseTypeImpl.Interface, out QualifiedTypeDefinitionHandle baseTypeDefHandle))
+            InterfaceImplementation baseTypeImpl = baseInterfaceImplHandle.Generator.Reader.GetInterfaceImplementation(baseInterfaceImplHandle.Handle);
+            if (!baseInterfaceImplHandle.Generator.TryGetTypeDefHandle((TypeReferenceHandle)baseTypeImpl.Interface, out QualifiedTypeDefinitionHandle baseTypeDefHandle))
             {
                 throw new GenerationFailedException("Failed to find base type.");
             }
 
             baseTypes = baseTypes.Push(baseTypeDefHandle);
             TypeDefinition baseType = baseTypeDefHandle.Reader.GetTypeDefinition(baseTypeDefHandle.DefinitionHandle);
-            baseTypeHandle = (baseTypeHandle.Generator, baseType.GetInterfaceImplementations().SingleOrDefault());
+            baseInterfaceImplHandle = (baseTypeDefHandle.Generator, baseType.GetInterfaceImplementations().SingleOrDefault());
         }
 
         if (this.IsNonCOMInterface(typeDef))
@@ -112,7 +112,7 @@ public partial class Generator
         BlockSyntax populateVTableBody = Block();
         IdentifierNameSyntax objectLocal = IdentifierName("__object");
         IdentifierNameSyntax hrLocal = IdentifierName("__hr");
-        StatementSyntax returnSOK = ReturnStatement(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, HresultTypeSyntax, IdentifierName("S_OK")));
+        StatementSyntax returnSOK = ReturnStatement(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, this.HresultTypeSyntax, IdentifierName("S_OK")));
 
         this.MainGenerator.RequestInteropType("Windows.Win32.Foundation", "HRESULT", context);
 
@@ -143,10 +143,10 @@ public partial class Generator
         declaredProperties.UnionWith(
             from method in allMethods
             group method by method.Generator into methodsByMetadata
-            let methodDefs = methodsByMetadata.Select(qh => qh.Reader.GetMethodDefinition(qh.MethodHandle))
+            let methodDefs = methodsByMetadata.Select(qh => qh.Resolve())
             from property in methodsByMetadata.Key.GetDeclarableProperties(methodDefs, originalIfaceName, allowNonConsecutiveAccessors: true, context)
             select property);
-        ISet<string>? ifaceDeclaredProperties = ccwThisParameter is not null ? this.GetDeclarableProperties(allMethods.Select(qh => qh.Reader.GetMethodDefinition(qh.MethodHandle)), originalIfaceName, allowNonConsecutiveAccessors: false, context) : null;
+        ISet<string>? ifaceDeclaredProperties = ccwThisParameter is not null ? this.GetDeclarableProperties(allMethods.Select(qh => qh.Resolve()), originalIfaceName, allowNonConsecutiveAccessors: false, context) : null;
 
         foreach (QualifiedMethodDefinitionHandle methodDefHandle in allMethods)
         {
@@ -156,12 +156,12 @@ public partial class Generator
             IdentifierNameSyntax innerMethodName = IdentifierName($"{methodName}_{methodCounter}");
             LiteralExpressionSyntax methodOffset = LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(methodCounter - 1));
 
-            MethodSignature<TypeHandleInfo> signature = methodDefinition.Method.DecodeSignature(SignatureHandleProvider.Instance, null);
-            CustomAttributeHandleCollection? returnTypeAttributes = methodDefinition.Generator.GetReturnTypeCustomAttributes(methodDefinition.Method);
+            MethodSignature<TypeHandleInfo> signature = methodDefinition.Method.DecodeSignature(this.SignatureHandleProvider, null);
+            QualifiedCustomAttributeHandleCollection? returnTypeAttributes = methodDefinition.GetReturnTypeCustomAttributes();
             TypeSyntax returnType = signature.ReturnType.ToTypeSyntax(typeSettings, GeneratingElement.InterfaceAsStructMember, returnTypeAttributes).Type;
             TypeSyntax returnTypePreserveSig = returnType;
 
-            ParameterListSyntax parameterList = methodDefinition.Generator.CreateParameterList(methodDefinition.Method, signature, typeSettings with { Generator = methodDefinition.Generator }, GeneratingElement.InterfaceAsStructMember);
+            ParameterListSyntax parameterList = methodDefinition.Generator.CreateParameterList(methodDefinition.Method, signature, typeSettings, GeneratingElement.InterfaceAsStructMember);
             ParameterListSyntax parameterListPreserveSig = parameterList; // preserve a copy that has no mutations.
             bool requiresMarshaling = parameterList.Parameters.Any(p => p.AttributeLists.SelectMany(al => al.Attributes).Any(a => a.Name is IdentifierNameSyntax { Identifier.ValueText: "MarshalAs" }) || p.Modifiers.Any(SyntaxKind.RefKeyword) || p.Modifiers.Any(SyntaxKind.OutKeyword) || p.Modifiers.Any(SyntaxKind.InKeyword));
             FunctionPointerParameterListSyntax funcPtrParameters = FunctionPointerParameterList()
@@ -196,7 +196,7 @@ public partial class Generator
 
             // We can declare this method as a property accessor if it represents a property.
             // We must also confirm that the property type is the same in both cases, because sometimes they aren't (e.g. IUIAutomationProxyFactoryEntry.ClassName).
-            if (methodDefinition.Generator.TryGetPropertyAccessorInfo(methodDefinition.Method, originalIfaceName, context, out IdentifierNameSyntax? propertyName, out SyntaxKind? accessorKind, out TypeSyntax? propertyType) &&
+            if (methodDefinition.Generator.TryGetPropertyAccessorInfo(methodDefinition, originalIfaceName, context, out IdentifierNameSyntax? propertyName, out SyntaxKind? accessorKind, out TypeSyntax? propertyType) &&
                 declaredProperties.Contains(propertyName.Identifier.ValueText))
             {
                 StatementSyntax ThrowOnHRFailure(ExpressionSyntax hrExpression) => ExpressionStatement(InvocationExpression(
@@ -337,12 +337,13 @@ public partial class Generator
 
                 propertyOrMethod = methodDeclaration;
 
-                members.AddRange(methodDefinition.Generator.DeclareFriendlyOverloads(methodDefinition.Method, methodDeclaration, IdentifierName(ifaceName.Identifier.ValueText), FriendlyOverloadOf.StructMethod, helperMethodsInStruct));
+                bool avoidWinmdRootAlias = this != methodDefinition.Generator;
+                members.AddRange(methodDefinition.Generator.DeclareFriendlyOverloads(methodDefinition.Method, methodDeclaration, IdentifierName(ifaceName.Identifier.ValueText), FriendlyOverloadOf.StructMethod, helperMethodsInStruct, avoidWinmdRootAlias));
             }
 
             if (ccwThisParameter is not null && !ccwMethodsToSkip.Contains(methodDefHandle))
             {
-                if (this.TryGetPropertyAccessorInfo(methodDefinition.Method, originalIfaceName, context, out propertyName, out accessorKind, out propertyType) &&
+                if (this.TryGetPropertyAccessorInfo(methodDefinition, originalIfaceName, context, out propertyName, out accessorKind, out propertyType) &&
                     ifaceDeclaredProperties!.Contains(propertyName.Identifier.ValueText))
                 {
                     switch (accessorKind)
@@ -412,10 +413,10 @@ public partial class Generator
                 bool hrReturnType = returnTypePreserveSig is QualifiedNameSyntax { Right.Identifier.ValueText: "HRESULT" };
 
                 //// HRESULT hr = ComHelpers.UnwrapCCW(@this, out Interface? @object);
-                LocalDeclarationStatementSyntax hrDecl = LocalDeclarationStatement(VariableDeclaration(HresultTypeSyntax).AddVariables(
+                LocalDeclarationStatementSyntax hrDecl = LocalDeclarationStatement(VariableDeclaration(this.HresultTypeSyntax).AddVariables(
                     VariableDeclarator(hrLocal.Identifier).WithInitializer(EqualsValueClause(
                         InvocationExpression(
-                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("ComHelpers"), IdentifierName("UnwrapCCW")),
+                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, QualifiedName(this.Win32NamespacePrefix, IdentifierName("ComHelpers")), IdentifierName("UnwrapCCW")),
                             ArgumentList().AddArguments(
                                 Argument(pThisParameterName),
                                 Argument(DeclarationExpression(NestedCOMInterfaceName.WithTrailingTrivia(Space), SingleVariableDesignation(objectLocal.Identifier))).WithRefKindKeyword(Token(SyntaxKind.OutKeyword))))))));
@@ -433,7 +434,7 @@ public partial class Generator
                 if (hrReturnType)
                 {
                     //// return (HRESULT)ex.HResult;
-                    catchBlock = catchBlock.AddStatements(ReturnStatement(CastExpression(HresultTypeSyntax, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, exLocal, IdentifierName(nameof(Exception.HResult))))));
+                    catchBlock = catchBlock.AddStatements(ReturnStatement(CastExpression(this.HresultTypeSyntax, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, exLocal, IdentifierName(nameof(Exception.HResult))))));
                 }
                 else
                 {
@@ -573,7 +574,7 @@ public partial class Generator
         TypeSyntaxSettings typeSettings = this.comSignatureTypeSettings;
 
         // It is imperative that we generate methods for all base interfaces as well, ahead of any implemented by *this* interface.
-        var allMethods = new List<MethodDefinitionHandle>();
+        var allMethods = new List<QualifiedMethodDefinitionHandle>();
         bool foundIUnknown = false;
         bool foundIDispatch = false;
         bool foundIInspectable = false;
@@ -582,30 +583,30 @@ public partial class Generator
         {
             QualifiedTypeDefinitionHandle baseTypeHandle = baseTypes.Peek();
             baseTypes = baseTypes.Pop();
-            TypeDefinition baseType = baseTypeHandle.Reader.GetTypeDefinition(baseTypeHandle.DefinitionHandle);
+            QualifiedTypeDefinition baseType = baseTypeHandle.Resolve();
             if (!foundIUnknown)
             {
-                if (!baseTypeHandle.Reader.StringComparer.Equals(baseType.Name, "IUnknown"))
+                if (!baseTypeHandle.Reader.StringComparer.Equals(baseType.Definition.Name, "IUnknown"))
                 {
-                    throw new NotSupportedException("Unsupported base COM interface type: " + baseTypeHandle.Reader.GetString(baseType.Name));
+                    throw new NotSupportedException("Unsupported base COM interface type: " + baseTypeHandle.Reader.GetString(baseType.Definition.Name));
                 }
 
                 foundIUnknown = true;
             }
             else
             {
-                if (baseTypeHandle.Reader.StringComparer.Equals(baseType.Name, "IDispatch"))
+                if (baseTypeHandle.Reader.StringComparer.Equals(baseType.Definition.Name, "IDispatch"))
                 {
                     foundIDispatch = true;
                 }
-                else if (baseTypeHandle.Reader.StringComparer.Equals(baseType.Name, "IInspectable"))
+                else if (baseTypeHandle.Reader.StringComparer.Equals(baseType.Definition.Name, "IInspectable"))
                 {
                     foundIInspectable = true;
                 }
                 else
                 {
                     baseTypeHandle.Generator.RequestInteropType(baseTypeHandle.DefinitionHandle, context);
-                    TypeSyntax baseTypeSyntax = new HandleTypeHandleInfo(baseTypeHandle.Reader, baseTypeHandle.DefinitionHandle).ToTypeSyntax(this.comSignatureTypeSettings, GeneratingElement.InterfaceMember, null).Type;
+                    TypeSyntax baseTypeSyntax = new HandleTypeHandleInfo(baseTypeHandle.Generator, baseTypeHandle.Reader, baseTypeHandle.DefinitionHandle).ToTypeSyntax(this.comSignatureTypeSettings, GeneratingElement.InterfaceMember, null).Type;
                     if (interfaceAsSubtype)
                     {
                         baseTypeSyntax = QualifiedName(
@@ -614,13 +615,13 @@ public partial class Generator
                     }
 
                     baseTypeSyntaxList.Add(SimpleBaseType(baseTypeSyntax));
-                    allMethods.AddRange(baseType.GetMethods());
+                    allMethods.AddRange(baseType.Definition.GetMethods().Select(methodHandle => new QualifiedMethodDefinitionHandle(baseType.Generator, methodHandle)));
                 }
             }
         }
 
         int inheritedMethods = allMethods.Count;
-        allMethods.AddRange(typeDef.GetMethods());
+        allMethods.AddRange(typeDef.GetMethods().Select(methodHandle => new QualifiedMethodDefinitionHandle(this, methodHandle)));
 
         AttributeSyntax ifaceType = InterfaceType(
             foundIInspectable ? ComInterfaceType.InterfaceIsIInspectable :
@@ -630,12 +631,12 @@ public partial class Generator
 
         var members = new List<MemberDeclarationSyntax>();
         var friendlyOverloads = new List<MethodDeclarationSyntax>();
-        ISet<string> declaredProperties = this.GetDeclarableProperties(allMethods.Select(this.Reader.GetMethodDefinition), actualIfaceName, allowNonConsecutiveAccessors: false, context);
+        ISet<string> declaredProperties = this.GetDeclarableProperties(allMethods.Select(method => method.Resolve()), actualIfaceName, allowNonConsecutiveAccessors: false, context);
 
-        foreach (MethodDefinitionHandle methodDefHandle in allMethods)
+        foreach (QualifiedMethodDefinitionHandle methodDefHandle in allMethods)
         {
-            MethodDefinition methodDefinition = this.Reader.GetMethodDefinition(methodDefHandle);
-            string methodName = this.Reader.GetString(methodDefinition.Name);
+            QualifiedMethodDefinition methodDefinition = methodDefHandle.Resolve();
+            string methodName = methodDefinition.Reader.GetString(methodDefinition.Method.Name);
             inheritedMethods--;
             try
             {
@@ -646,7 +647,7 @@ public partial class Generator
                 // Even if it could be represented as a property accessor, we cannot do so if a property by the same name was already declared in anything other than the previous row.
                 // Adding an accessor to a property later than the very next row would screw up the virtual method table ordering.
                 // We must also confirm that the property type is the same in both cases, because sometimes they aren't (e.g. IUIAutomationProxyFactoryEntry.ClassName).
-                if (this.TryGetPropertyAccessorInfo(methodDefinition, actualIfaceName, context, out IdentifierNameSyntax? propertyName, out SyntaxKind? accessorKind, out TypeSyntax? propertyType) && declaredProperties.Contains(propertyName.Identifier.ValueText))
+                if (methodDefinition.Generator.TryGetPropertyAccessorInfo(methodDefinition, actualIfaceName, context, out IdentifierNameSyntax? propertyName, out SyntaxKind? accessorKind, out TypeSyntax? propertyType) && declaredProperties.Contains(propertyName.Identifier.ValueText))
                 {
                     AccessorDeclarationSyntax accessor = AccessorDeclaration(accessorKind.Value).WithSemicolonToken(Semicolon);
 
@@ -672,16 +673,16 @@ public partial class Generator
                 }
                 else
                 {
-                    MethodSignature<TypeHandleInfo> signature = methodDefinition.DecodeSignature(SignatureHandleProvider.Instance, null);
+                    MethodSignature<TypeHandleInfo> signature = methodDefinition.Method.DecodeSignature(this.SignatureHandleProvider, null);
 
-                    CustomAttributeHandleCollection? returnTypeAttributes = this.GetReturnTypeCustomAttributes(methodDefinition);
-                    TypeSyntaxAndMarshaling returnTypeDetails = signature.ReturnType.ToTypeSyntax(typeSettings, GeneratingElement.InterfaceMember, returnTypeAttributes);
+                    CustomAttributeHandleCollection? returnTypeAttributes = methodDefinition.Generator.GetReturnTypeCustomAttributes(methodDefinition.Method);
+                    TypeSyntaxAndMarshaling returnTypeDetails = signature.ReturnType.ToTypeSyntax(typeSettings, GeneratingElement.InterfaceMember, returnTypeAttributes?.QualifyWith(methodDefinition.Generator));
                     TypeSyntax returnType = returnTypeDetails.Type;
                     AttributeSyntax? returnsAttribute = MarshalAs(returnTypeDetails.MarshalAsAttribute, returnTypeDetails.NativeArrayInfo);
 
-                    ParameterListSyntax? parameterList = this.CreateParameterList(methodDefinition, signature, this.comSignatureTypeSettings, GeneratingElement.InterfaceMember);
+                    ParameterListSyntax? parameterList = methodDefinition.Generator.CreateParameterList(methodDefinition.Method, signature, this.comSignatureTypeSettings, GeneratingElement.InterfaceMember);
 
-                    bool preserveSig = interfaceAsSubtype || this.UsePreserveSigForComMethod(methodDefinition, signature, actualIfaceName, methodName);
+                    bool preserveSig = interfaceAsSubtype || this.UsePreserveSigForComMethod(methodDefinition.Method, signature, actualIfaceName, methodName);
                     if (!preserveSig)
                     {
                         ParameterSyntax? lastParameter = parameterList.Parameters.Count > 0 ? parameterList.Parameters[parameterList.Parameters.Count - 1] : null;
@@ -732,9 +733,10 @@ public partial class Generator
 
                 if (methodDeclaration is not null)
                 {
+                    bool avoidWinmdRootAlias = this != methodDefinition.Generator;
                     NameSyntax declaringTypeName = HandleTypeHandleInfo.GetNestingQualifiedName(this, this.Reader, typeDef, hasUnmanagedSuffix: false, isInterfaceNestedInStruct: interfaceAsSubtype);
                     friendlyOverloads.AddRange(
-                        this.DeclareFriendlyOverloads(methodDefinition, methodDeclaration, declaringTypeName, FriendlyOverloadOf.InterfaceMethod, this.injectedPInvokeHelperMethodsToFriendlyOverloadsExtensions));
+                        methodDefinition.Generator.DeclareFriendlyOverloads(methodDefinition.Method, methodDeclaration, declaringTypeName, FriendlyOverloadOf.InterfaceMethod, this.injectedPInvokeHelperMethodsToFriendlyOverloadsExtensions, avoidWinmdRootAlias));
                 }
             }
             catch (Exception ex)
@@ -801,7 +803,7 @@ public partial class Generator
         if (populateVtblDeclared && this.IsFeatureAvailable(Feature.InterfaceStaticMembers) && !context.AllowMarshaling && GenerateCcwFor(originalIfaceName))
         {
             this.RequestComHelpers(context);
-            baseTypes.Add(SimpleBaseType(GenericName("IVTable").AddTypeArgumentListArguments(
+            baseTypes.Add(SimpleBaseType(GenericName($"{this.Win32NamespacePrefixString}.IVTable").AddTypeArgumentListArguments(
                 ifaceName,
                 QualifiedName(ifaceName, IdentifierName("Vtbl")))));
         }
@@ -887,15 +889,15 @@ public partial class Generator
             || this.options.ComInterop.PreserveSigMethods.Contains(ifaceName.ToString());
     }
 
-    private ISet<string> GetDeclarableProperties(IEnumerable<MethodDefinition> methods, string ifaceName, bool allowNonConsecutiveAccessors, Context context)
+    private ISet<string> GetDeclarableProperties(IEnumerable<QualifiedMethodDefinition> methods, string ifaceName, bool allowNonConsecutiveAccessors, Context context)
     {
         Dictionary<string, (TypeSyntax Type, int Index)> goodProperties = new(StringComparer.Ordinal);
         HashSet<string> badProperties = new(StringComparer.Ordinal);
         int rowIndex = -1;
-        foreach (MethodDefinition methodDefinition in methods)
+        foreach (QualifiedMethodDefinition methodDefinition in methods)
         {
             rowIndex++;
-            if (this.TryGetPropertyAccessorInfo(methodDefinition, ifaceName, context, out IdentifierNameSyntax? propertyName, out SyntaxKind? accessorKind, out TypeSyntax? propertyType))
+            if (methodDefinition.Generator.TryGetPropertyAccessorInfo(methodDefinition, ifaceName, context, out IdentifierNameSyntax? propertyName, out SyntaxKind? accessorKind, out TypeSyntax? propertyType))
             {
                 if (badProperties.Contains(propertyName.Identifier.ValueText))
                 {
@@ -931,11 +933,12 @@ public partial class Generator
         return goodProperties.Count == 0 ? ImmutableHashSet<string>.Empty : new HashSet<string>(goodProperties.Keys, StringComparer.Ordinal);
     }
 
-    private bool TryGetPropertyAccessorInfo(MethodDefinition methodDefinition, string ifaceName, Context context, [NotNullWhen(true)] out IdentifierNameSyntax? propertyName, [NotNullWhen(true)] out SyntaxKind? accessorKind, [NotNullWhen(true)] out TypeSyntax? propertyType)
+    private bool TryGetPropertyAccessorInfo(QualifiedMethodDefinition qmd, string ifaceName, Context context, [NotNullWhen(true)] out IdentifierNameSyntax? propertyName, [NotNullWhen(true)] out SyntaxKind? accessorKind, [NotNullWhen(true)] out TypeSyntax? propertyType)
     {
         propertyName = null;
         accessorKind = null;
         propertyType = null;
+        MethodDefinition methodDefinition = qmd.Method;
         TypeSyntaxSettings syntaxSettings = context.Filter(this.comSignatureTypeSettings);
 
         if ((methodDefinition.Attributes & MethodAttributes.SpecialName) != MethodAttributes.SpecialName)
@@ -952,7 +955,7 @@ public partial class Generator
             return false;
         }
 
-        MethodSignature<TypeHandleInfo> signature = methodDefinition.DecodeSignature(SignatureHandleProvider.Instance, null);
+        MethodSignature<TypeHandleInfo> signature = methodDefinition.DecodeSignature(this.SignatureHandleProvider, null);
         string methodName = this.Reader.GetString(methodDefinition.Name);
         if (this.UsePreserveSigForComMethod(methodDefinition, signature, ifaceName, methodName))
         {
@@ -979,9 +982,9 @@ public partial class Generator
                 return false;
             }
 
-            Parameter propertyTypeParameter = this.Reader.GetParameter(parameters.Skip(1).Single());
+            Parameter propertyTypeParameter = qmd.Reader.GetParameter(parameters.Skip(1).Single());
             TypeHandleInfo propertyTypeInfo = signature.ParameterTypes[0];
-            propertyType = propertyTypeInfo.ToTypeSyntax(syntaxSettings, GeneratingElement.Property, propertyTypeParameter.GetCustomAttributes(), propertyTypeParameter.Attributes).Type;
+            propertyType = propertyTypeInfo.ToTypeSyntax(syntaxSettings, GeneratingElement.Property, propertyTypeParameter.GetCustomAttributes().QualifyWith(qmd.Generator), propertyTypeParameter.Attributes).Type;
 
             if (isGetter)
             {

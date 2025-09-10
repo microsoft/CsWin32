@@ -9,7 +9,7 @@ internal abstract record TypeHandleInfo
 
     internal bool IsConstantField { get; init; }
 
-    internal abstract TypeSyntaxAndMarshaling ToTypeSyntax(TypeSyntaxSettings inputs, Generator.GeneratingElement forElement, CustomAttributeHandleCollection? customAttributes, ParameterAttributes parameterAttributes = default);
+    internal abstract TypeSyntaxAndMarshaling ToTypeSyntax(TypeSyntaxSettings inputs, Generator.GeneratingElement forElement, QualifiedCustomAttributeHandleCollection? customAttributes, ParameterAttributes parameterAttributes = default);
 
     internal abstract bool? IsValueType(TypeSyntaxSettings inputs);
 

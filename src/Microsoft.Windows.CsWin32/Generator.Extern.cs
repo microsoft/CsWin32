@@ -184,11 +184,11 @@ public partial class Generator
 
             // If this method releases a handle, recreate the method signature such that we take the struct rather than the SafeHandle as a parameter.
             TypeSyntaxSettings typeSettings = this.MetadataIndex.ReleaseMethods.Contains(entrypoint ?? methodName) ? this.externReleaseSignatureTypeSettings : this.externSignatureTypeSettings;
-            MethodSignature<TypeHandleInfo> signature = methodDefinition.DecodeSignature(SignatureHandleProvider.Instance, null);
+            MethodSignature<TypeHandleInfo> signature = methodDefinition.DecodeSignature(this.SignatureHandleProvider, null);
             bool requiresUnicodeCharSet = signature.ParameterTypes.Any(p => p is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.Char });
 
             CustomAttributeHandleCollection? returnTypeAttributes = this.GetReturnTypeCustomAttributes(methodDefinition);
-            TypeSyntaxAndMarshaling returnType = signature.ReturnType.ToTypeSyntax(typeSettings, GeneratingElement.ExternMethod, returnTypeAttributes, ParameterAttributes.Out);
+            TypeSyntaxAndMarshaling returnType = signature.ReturnType.ToTypeSyntax(typeSettings, GeneratingElement.ExternMethod, returnTypeAttributes?.QualifyWith(this), ParameterAttributes.Out);
 
             // Search for any enum substitutions.
             TypeSyntax? returnTypeEnumName = this.FindAssociatedEnum(returnTypeAttributes);
@@ -355,7 +355,7 @@ public partial class Generator
             // Add documentation if we can find it.
             exposedMethod = this.AddApiDocumentation(entrypoint ?? methodName, exposedMethod);
 
-            this.volatileCode.AddMemberToModule(moduleName, this.DeclareFriendlyOverloads(methodDefinition, exposedMethod, this.methodsAndConstantsClassName, FriendlyOverloadOf.ExternMethod, this.injectedPInvokeHelperMethods));
+            this.volatileCode.AddMemberToModule(moduleName, this.DeclareFriendlyOverloads(methodDefinition, exposedMethod, this.methodsAndConstantsClassName, FriendlyOverloadOf.ExternMethod, this.injectedPInvokeHelperMethods, avoidWinmdRootAlias: false));
             this.volatileCode.AddMemberToModule(moduleName, exposedMethod);
         }
         catch (Exception ex)

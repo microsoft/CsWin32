@@ -3,13 +3,13 @@
 
 namespace Microsoft.Windows.CsWin32;
 
-internal class SignatureHandleProvider : ISignatureTypeProvider<TypeHandleInfo, SignatureHandleProvider.IGenericContext?>
+// Like SignatureHandleProvider, but has no generator so can't bind complex types to a Generator.
+internal class PrimitiveSignatureHandleProvider : ISignatureTypeProvider<TypeHandleInfo, PrimitiveSignatureHandleProvider.IGenericContext?>
 {
-    private readonly Generator generator;
+    internal static readonly PrimitiveSignatureHandleProvider Instance = new();
 
-    internal SignatureHandleProvider(Generator generator)
+    internal PrimitiveSignatureHandleProvider()
     {
-        this.generator = generator;
     }
 
     internal interface IGenericContext
@@ -22,9 +22,9 @@ internal class SignatureHandleProvider : ISignatureTypeProvider<TypeHandleInfo, 
 
     public TypeHandleInfo GetPrimitiveType(PrimitiveTypeCode typeCode) => new PrimitiveTypeHandleInfo(typeCode);
 
-    public TypeHandleInfo GetTypeFromDefinition(MetadataReader reader, TypeDefinitionHandle handle, byte rawTypeKind) => new HandleTypeHandleInfo(this.generator.GetGeneratorFromReader(reader), reader, handle, rawTypeKind);
+    public TypeHandleInfo GetTypeFromDefinition(MetadataReader reader, TypeDefinitionHandle handle, byte rawTypeKind) => throw new NotImplementedException();
 
-    public TypeHandleInfo GetTypeFromReference(MetadataReader reader, TypeReferenceHandle handle, byte rawTypeKind) => new HandleTypeHandleInfo(this.generator.GetGeneratorFromReader(reader), reader, handle, rawTypeKind);
+    public TypeHandleInfo GetTypeFromReference(MetadataReader reader, TypeReferenceHandle handle, byte rawTypeKind) => throw new NotImplementedException();
 
     /// <inheritdoc/>
     public TypeHandleInfo GetSZArrayType(TypeHandleInfo elementType) => throw new NotImplementedException();

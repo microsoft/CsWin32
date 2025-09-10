@@ -86,7 +86,7 @@ public class HandleTests : GeneratorTestBase
 
         Assert.Contains(
             this.FindGeneratedMethod("MsiGetLastErrorRecord_SafeHandle"),
-            method => method!.ReturnType?.ToString() == "MsiCloseHandleSafeHandle");
+            method => method!.ReturnType?.ToString() == "global::Windows.Win32.MsiCloseHandleSafeHandle");
 
         MethodDeclarationSyntax releaseMethod = this.FindGeneratedMethod("MsiCloseHandle").Single();
         Assert.Equal("MSIHANDLE", Assert.IsType<QualifiedNameSyntax>(releaseMethod!.ParameterList.Parameters[0].Type).Right.Identifier.ValueText);

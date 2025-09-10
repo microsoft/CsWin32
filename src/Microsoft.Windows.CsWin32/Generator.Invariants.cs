@@ -312,8 +312,6 @@ public partial class Generator
             AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(ThisAssembly.AssemblyName))),
             AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(ThisAssembly.AssemblyInformationalVersion)))));
 
-    private static readonly TypeSyntax HresultTypeSyntax = QualifiedName(QualifiedName(IdentifierName(GlobalWinmdRootNamespaceAlias), IdentifierName("Foundation")), IdentifierName("HRESULT"));
-
     /// <summary>
     /// Gets the set of macros that can be generated.
     /// </summary>
@@ -340,4 +338,16 @@ public partial class Generator
         .Add("IUnknown", "This COM interface is implicit in the runtime. Interfaces that derive from it should apply the [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)] attribute instead.")
         .Add("IDispatch", "This COM interface is implicit in the runtime. Interfaces that derive from it should apply the [InterfaceType(ComInterfaceType.InterfaceIsIDispatch)] attribute instead.")
         .Add("VARIANT", "Use `object` instead of VARIANT when in COM interface mode. VARIANT can only be emitted when emitting COM interfaces as structs.");
+
+    private string Win32NamespacePrefixString => this.IsWin32Sdk ? GlobalWinmdRootNamespaceAlias : "global::Windows.Win32";
+
+    private IdentifierNameSyntax Win32NamespacePrefix => IdentifierName(this.Win32NamespacePrefixString);
+
+    private TypeSyntax HresultTypeSyntax
+    {
+        get
+        {
+            return QualifiedName(QualifiedName(this.Win32NamespacePrefix, IdentifierName("Foundation")), IdentifierName("HRESULT"));
+        }
+    }
 }

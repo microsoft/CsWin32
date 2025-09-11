@@ -1,9 +1,5 @@
 parameters:
-- name: RunTests
-  type: boolean
-- name: EnableApiCompatCheck
-  type: boolean
-  default: false
+  RunTests:
 
 steps:
 
@@ -13,11 +9,6 @@ steps:
 - powershell: tools/dotnet-test-cloud.ps1 -Configuration $(BuildConfiguration) -Agent $(Agent.JobName) -PublishResults
   displayName: 🧪 dotnet test
   condition: and(succeeded(), ${{ parameters.RunTests }})
-
-- ${{ if parameters.EnableApiCompatCheck }}:
-  - powershell: tools/Check-ApiCompat.ps1 -Configuration $(BuildConfiguration)
-    displayName: 📋 API compat test
-    condition: and(succeeded(), ${{ parameters.RunTests }})
 
 - powershell: tools/variables/_define.ps1
   failOnStderr: true

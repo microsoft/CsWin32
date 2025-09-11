@@ -29,13 +29,6 @@
         "docfx"
       ],
       "rollForward": false
-    },
-    "microsoft.dotnet.apicompat.tool": {
-      "version": "9.0.305",
-      "commands": [
-        "apicompat"
-      ],
-      "rollForward": false
     }
   }
 }

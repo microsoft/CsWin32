@@ -50,6 +50,10 @@ jobs:
     - name: 🧪 test
       run: tools/dotnet-test-cloud.ps1 -Configuration ${{ env.BUILDCONFIGURATION }} -Agent ${{ runner.os }}
       shell: pwsh
+    - name: 📋 API compat test
+      run: tools/Check-ApiCompat.ps1 -Configuration ${{ env.BUILDCONFIGURATION }}
+      shell: pwsh
+      if: runner.os == 'Linux'
     - name: 💅🏻 Verify formatted code
       run: dotnet format --verify-no-changes --no-restore
       shell: pwsh

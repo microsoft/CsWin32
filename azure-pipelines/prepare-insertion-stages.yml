@@ -30,12 +30,15 @@ stages:
         - download: current
           artifact: symbols-legacy
           displayName: 🔻 Download symbols-legacy artifact
-        - task: MicroBuildArchiveSymbols@5
+        - task: MicroBuildArchiveSymbols@6
           displayName: 🔣 Archive symbols to Symweb
           inputs:
             SymbolsFeatureName: $(SymbolsFeatureName)
             SymbolsProject: VS
             SymbolsAgentPath: $(Pipeline.Workspace)/symbols-legacy
+            azureSubscription: Vseng-SymbolsUpload
+          env:
+            SYSTEM_ACCESSTOKEN: $(System.AccessToken)
 
     - ${{ if parameters.PackagePush }}:
       - job: push

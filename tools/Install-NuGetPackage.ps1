@@ -45,23 +45,19 @@ Param(
 
 $nugetPath = & "$PSScriptRoot\Get-NuGetTool.ps1"
 
-try {
-    Write-Verbose "Installing $PackageId..."
-    $nugetArgs = "Install",$PackageId,"-OutputDirectory",$PackagesDir,'-ConfigFile',$ConfigFile
-    if ($Version) { $nugetArgs += "-Version",$Version }
-    if ($Source) { $nugetArgs += "-FallbackSource",$Source }
-    if ($Prerelease) { $nugetArgs += "-Prerelease" }
-    if ($ExcludeVersion) { $nugetArgs += '-ExcludeVersion' }
-    if ($DirectDownload) { $nugetArgs += '-DirectDownload' }
-    $nugetArgs += '-Verbosity',$Verbosity
+Write-Verbose "Installing $PackageId..."
+$nugetArgs = "Install",$PackageId,"-OutputDirectory",$PackagesDir,'-ConfigFile',$ConfigFile
+if ($Version) { $nugetArgs += "-Version",$Version }
+if ($Source) { $nugetArgs += "-FallbackSource",$Source }
+if ($Prerelease) { $nugetArgs += "-Prerelease" }
+if ($ExcludeVersion) { $nugetArgs += '-ExcludeVersion' }
+if ($DirectDownload) { $nugetArgs += '-DirectDownload' }
+$nugetArgs += '-Verbosity',$Verbosity
 
-    if ($PSCmdlet.ShouldProcess($PackageId, 'nuget install')) {
-        $p = Start-Process $nugetPath $nugetArgs -NoNewWindow -Wait -PassThru
-        if ($null -ne $p.ExitCode -and $p.ExitCode -ne 0) { throw }
-    }
-
-    # Provide the path to the installed package directory to our caller.
-    Write-Output (Get-ChildItem "$PackagesDir\$PackageId.*")[0].FullName
-} finally {
-    Pop-Location
+if ($PSCmdlet.ShouldProcess($PackageId, 'nuget install')) {
+    $p = Start-Process $nugetPath $nugetArgs -NoNewWindow -Wait -PassThru
+    if ($null -ne $p.ExitCode -and $p.ExitCode -ne 0) { throw }
 }
+
+# Provide the path to the installed package directory to our caller.
+Write-Output (Get-ChildItem "$PackagesDir\$PackageId.*")[0].FullName

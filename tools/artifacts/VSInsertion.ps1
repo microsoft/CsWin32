@@ -20,8 +20,8 @@ $PackagesRoot = "$RepoRoot/bin/Packages/$BuildConfiguration"
 $NuGetPackages = "$PackagesRoot/NuGet"
 $VsixPackages = "$PackagesRoot/Vsix"
 
-if (!(Test-Path $NuGetPackages)) {
-    Write-Warning "Skipping because NuGet packages haven't been built yet."
+if (!(Test-Path $NuGetPackages) -and !(Test-Path $VsixPackages)) {
+    Write-Warning "Skipping because NuGet and VSIX packages haven't been built yet."
     return @{}
 }
 

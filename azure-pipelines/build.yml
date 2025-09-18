@@ -123,6 +123,7 @@ jobs:
             signType: test
         sbom:
           enabled: true
+          sbomToolVersion: 5.0.3
         localization:
           enabled: ${{ parameters.EnableLocalization }}
           ${{ if eq(variables['Build.Reason'], 'pullRequest') }}:

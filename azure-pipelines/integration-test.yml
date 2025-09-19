@@ -1,13 +1,10 @@
 jobs:
-# Matrix over VS 2019 and VS 2022
+# Matrix over VS 2022 (and eventually VS 2026)
 
 - job: integrationtest
   displayName: 🧪 Integration tests
   strategy:
     matrix:
-      vs2019:
-        vmImage: windows-2019
-        currentSdk: false
       vs2022:
         vmImage: windows-2022
         currentSdk: true

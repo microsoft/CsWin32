@@ -35,7 +35,6 @@
       <TfmSpecificPackageFile Include="@(ReferencePath)" PackagePath="analyzers\cs\" Condition=" '%(FileName)%(Extension)' == 'System.Threading.Tasks.Extensions.dll' " />
       <TfmSpecificPackageFile Include="@(ReferencePath)" PackagePath="analyzers\cs\" Condition=" '%(FileName)%(Extension)' == 'System.Memory.dll' " />
       <TfmSpecificPackageFile Include="@(ReferencePath)" PackagePath="analyzers\cs\" Condition=" '%(FileName)%(Extension)' == 'System.Buffers.dll' " />
-      <TfmSpecificPackageFile Include="@(ReferencePath)" PackagePath="analyzers\cs\" Condition=" '%(FileName)%(Extension)' == 'System.Runtime.CompilerServices.Unsafe.dll' " />
       <TfmSpecificPackageFile Include="@(SatelliteDllsProjectOutputGroupDependency)" PackagePath="analyzers\cs\%(SatelliteDllsProjectOutputGroupDependency.DestinationSubDirectory)" Condition=" '%(SatelliteDllsProjectOutputGroupDependency.DestinationSubDirectory)' != '' " />
       <TfmSpecificPackageFile Include="@(SatelliteDllsProjectOutputGroupOutput->'%(FinalOutputPath)')" PackagePath="analyzers\cs\%(SatelliteDllsProjectOutputGroupOutput.Culture)\" />
       <TfmSpecificPackageFile Include="%(_ResolvedProjectReferencePaths.Identity)" PackagePath="analyzers\cs\" />

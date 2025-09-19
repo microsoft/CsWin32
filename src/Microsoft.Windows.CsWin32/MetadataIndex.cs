@@ -21,7 +21,9 @@ namespace Microsoft.Windows.CsWin32;
 [DebuggerDisplay("{" + nameof(DebuggerDisplay) + ",nq}")]
 internal class MetadataIndex
 {
+#pragma warning disable RS1035 // Do not use APIs banned for analyzers
     private static readonly int MaxPooledObjectCount = Math.Max(Environment.ProcessorCount, 4);
+#pragma warning restore RS1035 // Do not use APIs banned for analyzers
 
     private readonly MetadataFile metadataFile;
 

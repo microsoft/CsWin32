@@ -14,8 +14,7 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- We have to use the MessagePack version used by win32metadata (https://github.com/microsoft/CsWin32/issues/371) -->
-    <PackageVersion Include="MessagePack" Version="2.2.85" />
-    <PackageVersion Include="MessagePackAnalyzer" Version="2.5.192" />
+    <PackageVersion Include="MessagePack.Annotations" Version="2.2.85" />
     <PackageVersion Include="Microsoft.Bcl.AsyncInterfaces" Version="9.0.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="3.3.4" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Common" Version="$(CodeAnalysisVersion)" />
@@ -23,10 +22,12 @@
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="$(CodeAnalysisVersion)" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="$(CodeAnalysisVersion)" />
     <!-- <PackageVersion Include="Microsoft.Dia.Win32Metadata" Version="0.2.185-preview-g7e1e6a442c" /> -->
+    <PackageVersion Include="Microsoft.VisualStudio.Validation" Version="17.13.22" />
     <PackageVersion Include="Microsoft.Win32.Registry" Version="5.0.0" />
     <PackageVersion Include="Microsoft.Windows.SDK.Win32Docs" Version="$(ApiDocsVersion)" />
     <PackageVersion Include="Microsoft.Windows.SDK.Win32Metadata" Version="$(MetadataVersion)" />
     <PackageVersion Include="Microsoft.Windows.WDK.Win32Metadata" Version="$(WDKMetadataVersion)" />
+    <PackageVersion Include="Nerdbank.MessagePack" Version="0.10.25-rc" />
     <PackageVersion Include="NuGet.Protocol" Version="6.13.2" />
     <PackageVersion Include="System.Collections.Immutable" Version="9.0.0" />
     <PackageVersion Include="System.Memory" Version="4.6.0" />

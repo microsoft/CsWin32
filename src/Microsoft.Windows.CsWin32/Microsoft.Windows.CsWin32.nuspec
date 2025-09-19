@@ -45,9 +45,10 @@
   <files>
     <file src="$BaseOutputPath$Microsoft.Windows.SDK.Win32Docs.dll" target="analyzers\cs\Microsoft.Windows.SDK.Win32Docs.dll" />
     <file src="$BaseOutputPath$Microsoft.Windows.CsWin32.dll" target="analyzers\cs\Microsoft.Windows.CsWin32.dll" />
-    <file src="$SignedOutputPath$MessagePack.dll" target="analyzers\cs\MessagePack.dll" />
-    <file src="$SignedOutputPath$MessagePack.Annotations.dll" target="analyzers\cs\MessagePack.Annotations.dll" />
     <file src="$BaseOutputPath$Microsoft.Bcl.AsyncInterfaces.dll" target="analyzers\cs\Microsoft.Bcl.AsyncInterfaces.dll" />
+    <file src="$BaseOutputPath$Microsoft.VisualStudio.Validation.dll" target="analyzers\cs\Microsoft.VisualStudio.Validation.dll" />
+    <file src="$SignedOutputPath$Nerdbank.MessagePack.dll" target="analyzers\cs\Nerdbank.MessagePack.dll" />
+    <file src="$SignedOutputPath$PolyType.dll" target="analyzers\cs\PolyType.dll" />
     <file src="$BaseOutputPath$System.Text.Json.dll" target="analyzers\cs\System.Text.Json.dll" />
     <file src="$BaseOutputPath$System.Text.Encodings.Web.dll" target="analyzers\cs\System.Text.Encodings.Web.dll" />
     <file src="readme.txt" target="readme.txt" />

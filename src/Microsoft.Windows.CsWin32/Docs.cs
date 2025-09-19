@@ -1,22 +1,21 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-using MessagePack;
-using MessagePack.Formatters;
-using MessagePack.Resolvers;
+using Microsoft.Windows.CsWin32;
+using Nerdbank.MessagePack;
+using PolyType;
+
+[assembly: TypeShapeExtension(typeof(ApiDetails), Marshaler = typeof(Docs.ApiDetailsMarshaler))]
 
 namespace Microsoft.Windows.CsWin32;
 
 /// <summary>
 /// An in-memory representation of API documentation.
 /// </summary>
-public class Docs
+public partial class Docs
 {
     private static readonly Dictionary<string, Docs> DocsByPath = new Dictionary<string, Docs>(StringComparer.OrdinalIgnoreCase);
-    private static readonly MessagePackSerializerOptions MsgPackOptions = MessagePackSerializerOptions.Standard.WithResolver(
-        CompositeResolver.Create(
-            new IMessagePackFormatter[] { new ApiDetailsFormatter() },
-            new IFormatterResolver[] { StandardResolver.Instance }));
+    private static readonly MessagePackSerializer Serializer = new();
 
     private readonly Dictionary<string, ApiDetails> apisAndDocs;
 
@@ -43,7 +42,7 @@ public class Docs
 #pragma warning disable RS1035 // Do not use APIs banned for analyzers
         using FileStream docsStream = File.OpenRead(docsPath);
 #pragma warning restore RS1035 // Do not use APIs banned for analyzers
-        Dictionary<string, ApiDetails>? data = MessagePackSerializer.Deserialize<Dictionary<string, ApiDetails>>(docsStream, MsgPackOptions);
+        Dictionary<string, ApiDetails> data = Serializer.Deserialize<Dictionary<string, ApiDetails>>(docsStream, Witness.GeneratedTypeShapeProvider) ?? throw new InvalidOperationException("Unable to read API docs.");
         var docs = new Docs(data);
 
         lock (DocsByPath)
@@ -94,66 +93,50 @@ public class Docs
 
     internal bool TryGetApiDocs(string apiName, [NotNullWhen(true)] out ApiDetails? docs) => this.apisAndDocs.TryGetValue(apiName, out docs);
 
-    /// <summary>
-    /// Formatter for <see cref="ApiDetails"/>.
-    /// </summary>
-    /// <remarks>
-    /// We have to manually write this to avoid using the <see cref="DynamicObjectResolver"/> since newer C# compiler versions fail
-    /// when that dynamic type creator creates a non-collectible assembly that our own evidently collectible assembly references.
-    /// </remarks>
-    private class ApiDetailsFormatter : IMessagePackFormatter<ApiDetails>
+    internal class ApiDetailsMarshaler : IMarshaler<ApiDetails, ApiDetailsMarshaler.Surrogate>
     {
-        public ApiDetails Deserialize(ref MessagePackReader reader, MessagePackSerializerOptions options)
+        public Surrogate? Marshal(ApiDetails? value) => throw new NotImplementedException();
+
+        public ApiDetails? Unmarshal(Surrogate? value)
         {
-            string? helpLink = null;
-            string? description = null;
-            string? remarks = null;
-            Dictionary<string, string>? parameters = null;
-            Dictionary<string, string>? fields = null;
-            string? returnValue = null;
-            int count = reader.ReadArrayHeader();
-            for (int i = 0; i < count; i++)
+            if (value is null)
             {
-                switch (i)
-                {
-                    case 0:
-                        helpLink = reader.ReadString();
-                        break;
-                    case 1:
-                        description = reader.ReadString();
-                        break;
-                    case 2:
-                        remarks = reader.ReadString();
-                        break;
-                    case 3:
-                        parameters = options.Resolver.GetFormatterWithVerify<Dictionary<string, string>>().Deserialize(ref reader, options);
-                        break;
-                    case 4:
-                        fields = options.Resolver.GetFormatterWithVerify<Dictionary<string, string>>().Deserialize(ref reader, options);
-                        break;
-                    case 5:
-                        returnValue = reader.ReadString();
-                        break;
-                    default:
-                        reader.Skip();
-                        break;
-                }
+                return null;
             }
 
             return new ApiDetails
             {
-                HelpLink = helpLink is null ? null : new Uri(helpLink),
-                Description = description,
-                Remarks = remarks,
-                Parameters = parameters ?? new Dictionary<string, string>(),
-                Fields = fields ?? new Dictionary<string, string>(),
-                ReturnValue = returnValue,
+                HelpLink = value.HelpLink,
+                Description = value.Description,
+                Remarks = value.Remarks,
+                Parameters = value.Parameters,
+                Fields = value.Fields,
+                ReturnValue = value.ReturnValue,
             };
         }
 
-        public void Serialize(ref MessagePackWriter writer, ApiDetails value, MessagePackSerializerOptions options)
+        public class Surrogate
         {
-            throw new NotImplementedException();
+            [Key(0)]
+            public Uri? HelpLink { get; set; }
+
+            [Key(1)]
+            public string? Description { get; set; }
+
+            [Key(2)]
+            public string? Remarks { get; set; }
+
+            [Key(3)]
+            public Dictionary<string, string> Parameters { get; set; } = new Dictionary<string, string>();
+
+            [Key(4)]
+            public Dictionary<string, string> Fields { get; set; } = new Dictionary<string, string>();
+
+            [Key(5)]
+            public string? ReturnValue { get; set; }
         }
     }
+
+    [GenerateShapeFor<Dictionary<string, ApiDetails>>]
+    private partial class Witness;
 }

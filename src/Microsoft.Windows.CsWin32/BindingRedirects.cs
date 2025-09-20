@@ -10,8 +10,10 @@ internal static class BindingRedirects
 
     static BindingRedirects()
     {
+#pragma warning disable RS1035 // Do not use APIs banned for analyzers
         LocalAssemblies = new Lazy<Dictionary<string, string>>(
             () => Directory.GetFiles(SourceGeneratorAssemblyDirectory, "*.dll").ToDictionary(Path.GetFileNameWithoutExtension, StringComparer.OrdinalIgnoreCase));
+#pragma warning restore RS1035 // Do not use APIs banned for analyzers
     }
 
     private static bool IsNetFramework => RuntimeInformation.FrameworkDescription.StartsWith(".NET Framework", StringComparison.OrdinalIgnoreCase);

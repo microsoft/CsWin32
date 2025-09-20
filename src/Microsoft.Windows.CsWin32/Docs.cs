@@ -40,7 +40,9 @@ public class Docs
             }
         }
 
+#pragma warning disable RS1035 // Do not use APIs banned for analyzers
         using FileStream docsStream = File.OpenRead(docsPath);
+#pragma warning restore RS1035 // Do not use APIs banned for analyzers
         Dictionary<string, ApiDetails>? data = MessagePackSerializer.Deserialize<Dictionary<string, ApiDetails>>(docsStream, MsgPackOptions);
         var docs = new Docs(data);
 

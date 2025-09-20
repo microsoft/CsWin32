@@ -1,6 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+#pragma warning disable RS1035 // Do not use APIs banned for analyzers (old style source generator)
+#pragma warning disable RS1042 // Deprecated interface
+
 using System.Text.Json;
 using Microsoft.CodeAnalysis.Text;
 
@@ -172,7 +175,7 @@ public class SourceGenerator : ISourceGenerator
             return;
         }
 
-        GeneratorOptions options;
+        GeneratorOptions? options;
         AdditionalText? nativeMethodsJsonFile = context.AdditionalFiles
             .FirstOrDefault(af => string.Equals(Path.GetFileName(af.Path), NativeMethodsJsonAdditionalFileName, StringComparison.OrdinalIgnoreCase));
         if (nativeMethodsJsonFile is object)
@@ -180,7 +183,7 @@ public class SourceGenerator : ISourceGenerator
             string optionsJson = nativeMethodsJsonFile.GetText(context.CancellationToken)!.ToString();
             try
             {
-                options = JsonSerializer.Deserialize<GeneratorOptions>(optionsJson, JsonOptions);
+                options = JsonSerializer.Deserialize<GeneratorOptions>(optionsJson, JsonOptions) ?? new();
             }
             catch (JsonException ex)
             {

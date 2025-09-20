@@ -19,7 +19,9 @@ internal class MetadataFile : IDisposable
     internal MetadataFile(string path)
     {
         this.Path = path;
+#pragma warning disable RS1035 // Do not use APIs banned for analyzers
         this.LastWriteTimeUtc = File.GetLastWriteTimeUtc(path);
+#pragma warning restore RS1035 // Do not use APIs banned for analyzers
 
         // When using FileShare.Delete, the OS will allow the file to be deleted, but it does not disrupt
         // our ability to read the file while our handle is open.

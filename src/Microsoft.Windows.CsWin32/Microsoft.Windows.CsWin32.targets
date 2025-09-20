@@ -8,6 +8,7 @@
 
   <Target Name="SetNuSpecProperties" BeforeTargets="GenerateNuspec" DependsOnTargets="GetBuildVersion">
     <PropertyGroup>
+      <CsWin32GeneratorBasePath>$([MSBuild]::NormalizePath('$(BaseOutputPath)..\CsWin32Generator\$(Configuration)\net9.0\'))</CsWin32GeneratorBasePath>
       <NuspecProperties>
         $(NuspecProperties);
         Version=$(Version);
@@ -18,6 +19,7 @@
         PackageReleaseNotes=$(PackageReleaseNotes);
         SignedOutputPath=$(IntermediateOutputPath)signed\;
         commit=$(GitCommitId);
+        CsWin32GeneratorBasePath=$(CsWin32GeneratorBasePath);
       </NuspecProperties>
     </PropertyGroup>
   </Target>
@@ -38,6 +40,22 @@
       <TfmSpecificPackageFile Include="@(SatelliteDllsProjectOutputGroupDependency)" PackagePath="analyzers\cs\%(SatelliteDllsProjectOutputGroupDependency.DestinationSubDirectory)" Condition=" '%(SatelliteDllsProjectOutputGroupDependency.DestinationSubDirectory)' != '' " />
       <TfmSpecificPackageFile Include="@(SatelliteDllsProjectOutputGroupOutput->'%(FinalOutputPath)')" PackagePath="analyzers\cs\%(SatelliteDllsProjectOutputGroupOutput.Culture)\" />
       <TfmSpecificPackageFile Include="%(_ResolvedProjectReferencePaths.Identity)" PackagePath="analyzers\cs\" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="PublishCsWin32Generator" BeforeTargets="GenerateNuspec">
+    <ItemGroup>
+      <_CsWin32GeneratorPublish Include="x64" Properties="RuntimeIdentifier=win-x64" RuntimeIdentifier="win-x64"/>
+      <_CsWin32GeneratorPublish Include="arm64" Properties="RuntimeIdentifier=win-arm64" RuntimeIdentifier="win-arm64"/>
+    </ItemGroup>
+
+    <MSBuild Projects="..\CsWin32Generator\CsWin32Generator.csproj" Targets="Publish"
+             Properties="%(_CsWin32GeneratorPublish.Properties)"/>
+
+    <ItemGroup>
+      <_PackageFiles Include="$(BaseOutputPath)\..\CsWin32Generator\$(Configuration)\net9.0\%(_CsWin32GeneratorPublish.RuntimeIdentifier)\publish\CsWin32Generator.*">
+        <PackagePath>tools\%(_CsWin32GeneratorPublish.RuntimeIdentifier)\</PackagePath>
+      </_PackageFiles>
     </ItemGroup>
   </Target>
 

@@ -8,7 +8,24 @@
     <AssemblyName>CsWin32Generator</AssemblyName>
     <PublishAot>true</PublishAot>
 
-    <TrimmerSingleWarn>false</TrimmerSingleWarn>
+    <IsPackable>false</IsPackable>
+
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+
+    <SelfContained>true</SelfContained>
+    <PublishProtocol>FileSystem</PublishProtocol>
+
+    <!-- Enable generating files to inspect the binary size with sizoscope (https://github.com/MichalStrehovsky/sizoscope) -->
+    <IlcGenerateMstatFile>true</IlcGenerateMstatFile>
+    <IlcGenerateDgmlFile>true</IlcGenerateDgmlFile>
+
+    <!-- <TrimmerSingleWarn>false</TrimmerSingleWarn> -->
+
+    <Platform Condition="'$(RuntimeIdentifier)'=='win-x64'">x64</Platform>
+    <Platform Condition="'$(RuntimeIdentifier)'=='win-arm64'">arm64</Platform>
+
+    <!-- <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);IL2075;IL2026;IL2091;IL2060;IL2080;IL2070;IL3050</MSBuildWarningsAsMessages> -->
+    <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);IL2104;IL3053</MSBuildWarningsAsMessages>
   </PropertyGroup>
 
   <ItemGroup>

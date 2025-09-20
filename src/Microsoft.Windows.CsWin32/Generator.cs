@@ -87,7 +87,7 @@ public partial class Generator : IGenerator, IDisposable
 
         MetadataFile metadataFile = MetadataCache.Default.GetMetadataFile(metadataLibraryPath);
         this.SignatureHandleProvider = new(this);
-        this.MetadataIndex = metadataFile.GetMetadataIndex(compilation?.Options.Platform);
+        this.MetadataIndex = metadataFile.GetMetadataIndex(compilation?.Options.Platform ?? Platform.AnyCpu);
         this.metadataReader = metadataFile.GetMetadataReader();
 
         this.ApiDocs = docs;
@@ -106,6 +106,9 @@ public partial class Generator : IGenerator, IDisposable
         // compiler version, we use language version instead.
         this.canUseUnscopedRef = this.parseOptions?.LanguageVersion >= (LanguageVersion)1100; // C# 11.0
 
+#if NET9_0_OR_GREATER
+#pragma warning disable CS8604
+#endif
         this.canUseSpan = this.compilation?.GetTypeByMetadataName(typeof(Span<>).FullName) is not null;
         this.canCallCreateSpan = this.compilation?.GetTypeByMetadataName(typeof(MemoryMarshal).FullName)?.GetMembers("CreateSpan").Any() is true;
         this.canUseUnsafeAsRef = this.compilation?.GetTypeByMetadataName(typeof(Unsafe).FullName)?.GetMembers("Add").Any() is true;
@@ -683,7 +686,7 @@ public partial class Generator : IGenerator, IDisposable
             throw new ArgumentNullException(nameof(macroName));
         }
 
-        if (!this.IsWin32Sdk || !Win32SdkMacros.TryGetValue(macroName, out MethodDeclarationSyntax macro))
+        if (!this.IsWin32Sdk || !Win32SdkMacros.TryGetValue(macroName, out MethodDeclarationSyntax? macro))
         {
             preciseApi = Array.Empty<string>();
             return false;

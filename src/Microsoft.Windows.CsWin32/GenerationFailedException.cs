@@ -34,6 +34,7 @@ public class GenerationFailedException : Exception
     {
     }
 
+#if NETSTANDARD2_0
     /// <summary>
     /// Initializes a new instance of the <see cref="GenerationFailedException"/> class.
     /// </summary>
@@ -44,4 +45,5 @@ public class GenerationFailedException : Exception
         : base(info, context)
     {
     }
+#endif
 }

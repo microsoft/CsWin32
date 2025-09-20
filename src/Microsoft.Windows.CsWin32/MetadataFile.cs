@@ -11,7 +11,7 @@ internal class MetadataFile : IDisposable
 {
     private readonly object syncObject = new();
     private readonly Stack<(PEReader PEReader, MetadataReader MDReader)> peReaders = new();
-    private readonly Dictionary<Platform?, MetadataIndex> indexes = new();
+    private readonly Dictionary<Platform, MetadataIndex> indexes = new();
     private int readersRentedOut;
     private MemoryMappedFile file;
     private bool obsolete;
@@ -87,7 +87,7 @@ internal class MetadataFile : IDisposable
         }
     }
 
-    internal MetadataIndex GetMetadataIndex(Platform? platform)
+    internal MetadataIndex GetMetadataIndex(Platform platform)
     {
         lock (this.syncObject)
         {

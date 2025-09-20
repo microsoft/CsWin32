@@ -42,7 +42,7 @@ public record GeneratorOptions
     public bool AllowMarshaling { get; set; } = true;
 
     /// <summary>
-    /// Gets options related to friendly overloads.
+    /// Gets or sets options related to friendly overloads.
     /// </summary>
     public FriendlyOverloadOptions FriendlyOverloads { get; set; } = new();
 

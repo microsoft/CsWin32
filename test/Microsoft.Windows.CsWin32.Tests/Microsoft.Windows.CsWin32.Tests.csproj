@@ -1,12 +1,22 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net9.0</TargetFrameworks>
+    <TargetFrameworks>net8.0</TargetFrameworks>
     <OutputType>Exe</OutputType>
     <RootNamespace />
-    <IsPackable>false</IsPackable>
-    <SignAssembly>false</SignAssembly>
   </PropertyGroup>
+
+  <ItemGroup>
+    <_AssemblyMetadata1 Include="@(ProjectionMetadataWinmd)">
+      <Value>%(Identity)</Value>
+    </_AssemblyMetadata1>
+    <AssemblyMetadata Include="@(_AssemblyMetadata1->'ProjectionMetadataWinmd')" />
+
+    <_AssemblyMetadata2 Include="@(ProjectionDocs)">
+      <Value>%(Identity)</Value>
+    </_AssemblyMetadata2>
+    <AssemblyMetadata Include="@(_AssemblyMetadata2->'ProjectionDocs')" />
+  </ItemGroup>
 
   <ItemGroup>
     <None Include="@(ProjectionMetadataWinmd)">
@@ -35,7 +45,7 @@
     <PackageReference Include="System.Reflection.Metadata" />
     <PackageReference Include="System.Text.Json" />
     <PackageReference Include="xunit.v3" />
-    <PackageReference Include="xunit.assert" ExcludeAssets="compile" />
+    <PackageReference Include="xunit.assert" ExcludeAssets="compile"/>
     <PackageReference Include="Xunit.Combinatorial" />
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>

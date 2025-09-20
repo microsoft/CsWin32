@@ -15,7 +15,9 @@ namespace Microsoft.Windows.CsWin32;
 /// <summary>
 /// Generates the source code for the p/invoke methods and supporting types into some C# project.
 /// </summary>
+#pragma warning disable RS1041
 [Generator]
+#pragma warning restore RS1041
 public partial class SourceGenerator : ISourceGenerator
 {
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member

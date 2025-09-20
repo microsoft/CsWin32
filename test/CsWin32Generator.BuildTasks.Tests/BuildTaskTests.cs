@@ -6,7 +6,6 @@ using Microsoft.Build.Utilities;
 using Microsoft.Windows.CsWin32.BuildTasks;
 using Moq;
 using Xunit;
-using Xunit.Runner.InProc.SystemConsole;
 
 #pragma warning disable SA1116
 
@@ -187,6 +186,7 @@ public class BuildTaskTests
 
         var task = CreateTaskWithMockBuildEngine(mockExecutor.Object);
         SetupRequiredParameters(task);
+
         // MSBuild executor expects the tool file to exist, so set it to ourselves for now.
         task.ToolExe = typeof(CsWin32CodeGeneratorTask).Assembly.Location;
         task.ToolPath = null;
@@ -202,8 +202,7 @@ public class BuildTaskTests
             It.Is<string>(rspCommands =>
             rspCommands.Contains("--native-methods-txt") &&
             rspCommands.Contains("--output-path") &&
-            rspCommands.Contains("--metadata-paths")
-            )));
+            rspCommands.Contains("--metadata-paths"))));
     }
 
     [Theory]
@@ -316,7 +315,7 @@ public class BuildTaskTests
         Assert.Contains("--metadata-paths", commandLine);
     }
 
-    private static CsWin32CodeGeneratorTask CreateTaskWithMockBuildEngine(IToolExecutor toolExecutor = null)
+    private static CsWin32CodeGeneratorTask CreateTaskWithMockBuildEngine(IToolExecutor? toolExecutor = null)
     {
         var buildEngine = new Mock<IBuildEngine>();
         buildEngine.Setup(x => x.LogErrorEvent(It.IsAny<BuildErrorEventArgs>()));

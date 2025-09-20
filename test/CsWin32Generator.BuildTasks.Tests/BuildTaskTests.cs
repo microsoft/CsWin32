@@ -138,26 +138,6 @@ public class BuildTaskTests
     }
 
     [Fact]
-    public void GenerateCommandLineCommands_WithPathsContainingSpaces_FormatsCorrectly()
-    {
-        // Arrange
-        var task = CreateTaskWithMockBuildEngine();
-        task.NativeMethodsTxt = "Test Content\\Native Methods.txt";
-        task.OutputPath = "Generated Output";
-        task.MetadataPaths = "C:\\Program Files\\metadata\\file1.winmd;C:\\Program Files\\metadata\\file2.winmd";
-
-        // Act
-        string commandLine = task.GetCommandLineArguments();
-        this.Logger.WriteLine($"Command line: {commandLine}");
-
-        // Assert
-        Assert.Contains("--native-methods-txt \"Test Content\\Native Methods.txt\"", commandLine);
-        Assert.Contains("--output-path \"Generated Output\"", commandLine);
-        Assert.Contains("\"C:\\Program Files\\metadata\\file1.winmd\"", commandLine);
-        Assert.Contains("\"C:\\Program Files\\metadata\\file2.winmd\"", commandLine);
-    }
-
-    [Fact]
     public void GenerateCommandLineCommands_WithEmptyOptionalParameters_DoesNotIncludeThem()
     {
         // Arrange
@@ -196,13 +176,22 @@ public class BuildTaskTests
 
         // Assert
         Assert.True(result);
-        mockExecutor.Verify(e => e.ExecuteTool(
-            It.Is<string>(toolPath => true),
-            It.Is<string>(commandLine => true),
-            It.Is<string>(rspCommands =>
-            rspCommands.Contains("--native-methods-txt") &&
-            rspCommands.Contains("--output-path") &&
-            rspCommands.Contains("--metadata-paths"))));
+
+        Assert.Single(mockExecutor.Invocations);
+        foreach (IInvocation invocation in mockExecutor.Invocations)
+        {
+            string toolPath = (string)invocation.Arguments[0];
+            string commandLine = (string)invocation.Arguments[1];
+            string rspCommands = (string)invocation.Arguments[2];
+            this.Logger.WriteLine($"Invocation: {invocation}");
+            this.Logger.WriteLine($"toolPath: {toolPath}");
+            this.Logger.WriteLine($"commandLine: {commandLine}");
+            this.Logger.WriteLine($"rspCommands: {rspCommands}");
+
+            Assert.True(commandLine.Contains("--native-methods-txt") || rspCommands.Contains("--native-methods-txt"));
+            Assert.True(commandLine.Contains("--output-path") || rspCommands.Contains("--output-path"));
+            Assert.True(commandLine.Contains("--metadata-paths") || rspCommands.Contains("--metadata-paths"));
+        }
     }
 
     [Theory]

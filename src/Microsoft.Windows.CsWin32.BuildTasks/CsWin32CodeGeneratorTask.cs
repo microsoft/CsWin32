@@ -209,12 +209,6 @@ public class CsWin32CodeGeneratorTask : ToolTask
             return false;
         }
 
-        if (!File.Exists(this.NativeMethodsTxt))
-        {
-            this.Log.LogError($"NativeMethods.txt file not found: {this.NativeMethodsTxt}");
-            return false;
-        }
-
         if (string.IsNullOrEmpty(this.MetadataPaths))
         {
             this.Log.LogError("MetadataPaths property must be specified.");

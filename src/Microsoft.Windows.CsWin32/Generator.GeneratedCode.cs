@@ -361,6 +361,7 @@ public partial class Generator
         }
 
         private static void Commit<TKey, TValue>(Dictionary<TKey, TValue> source, Dictionary<TKey, TValue>? target)
+            where TKey : notnull
         {
             if (target is object)
             {
@@ -427,6 +428,7 @@ public partial class Generator
 
         private IEnumerable<MemberDeclarationSyntax> GetTypesWithInjectedFields()
         {
+#pragma warning disable CS8714
             var fieldsByType =
                 (from field in this.fieldsToSyntax
                  where field.Value.FieldType is not null
@@ -449,6 +451,7 @@ public partial class Generator
 
                 yield return type;
             }
+#pragma warning restore CS8714
         }
 
         private void ThrowIfNotGenerating()

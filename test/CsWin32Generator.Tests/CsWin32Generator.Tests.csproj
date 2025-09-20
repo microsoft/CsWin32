@@ -12,16 +12,24 @@
     <None Include="@(ProjectionMetadataWinmd)">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="@(ProjectionDocs)">
+    <None Include="..\Microsoft.Windows.CsWin32.Tests\ExternalMetadata\*.winmd">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Include="ExternalMetadata\*.winmd">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>ExternalMetadata\%(FileName)%(Extension)</Link>
     </None>
   </ItemGroup>
 
   <ItemGroup>
+    <AdditionalFiles Include="TestContent\BasicNativeMethods.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </AdditionalFiles>
+    <AdditionalFiles Include="TestContent\NativeMethods.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </AdditionalFiles>
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Microsoft.Windows.CsWin32\Microsoft.Windows.CsWin32.csproj" />
+    <ProjectReference Include="..\..\src\CsWin32Generator\CsWin32Generator.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -38,6 +46,12 @@
     <PackageReference Include="xunit.assert" ExcludeAssets="compile" />
     <PackageReference Include="Xunit.Combinatorial" />
     <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="TestContent\NativeMethods.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

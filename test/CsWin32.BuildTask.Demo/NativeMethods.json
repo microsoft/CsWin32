@@ -1,0 +1,5 @@
+{
+  "allowMarshaling": true,
+  "className": "NativeMethods",
+  "public": false
+}

@@ -1,0 +1,5 @@
+// Demo APIs to generate
+GetCurrentProcess
+GetProcessId
+SetWindowText
+MessageBoxW

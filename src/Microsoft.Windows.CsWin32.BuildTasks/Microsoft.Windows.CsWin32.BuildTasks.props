@@ -1,3 +1,0 @@
-<Project>
-  <Import Project="Microsoft.Windows.CsWin32.BuildTasks.targets" />
-</Project>

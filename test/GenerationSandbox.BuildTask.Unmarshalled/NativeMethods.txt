@@ -2,3 +2,4 @@
 IPersistFile
 IStream
 CreateFile
+OpenFile

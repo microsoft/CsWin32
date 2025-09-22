@@ -59,7 +59,7 @@
   </Target>
 
   <Target Name="GenerateCsWin32Code" BeforeTargets="BeforeCompile"
-          Inputs="@(AdditionalFiles);@(ProjectionMetadataWinmd);@(ProjectionDocs);@(CsWin32AppLocalAllowedLibraries);@(ReferencePath)"
+          Inputs="@(AdditionalFiles);@(ProjectionMetadataWinmd);@(ProjectionDocs);@(CsWin32AppLocalAllowedLibraries);@(ReferencePath);$(CsWin32GeneratorToolPath)"
           Outputs="$(CsWin32GeneratorGeneratedFilesList);@(CsWin32GeneratorPreviousOutputs)"
           Condition="'$(CsWin32RunAsBuildTask)'=='true'">
     <ItemGroup>

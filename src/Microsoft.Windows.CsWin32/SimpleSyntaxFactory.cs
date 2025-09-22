@@ -234,6 +234,38 @@ internal static class SimpleSyntaxFactory
         return dllImportAttribute;
     }
 
+    internal static AttributeSyntax LibraryImport(MethodImport import, string moduleName, string? entrypoint, bool setLastError, CharSet charSet = CharSet.Ansi)
+    {
+#if NET9_0_OR_GREATER
+        List<AttributeArgumentSyntax> args = new();
+        AttributeSyntax? libraryImportAttribute = Attribute(IdentifierName("LibraryImport"));
+        args.Add(AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(moduleName))));
+
+        if (entrypoint is not null)
+        {
+            args.Add(AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(entrypoint)))
+                    .WithNameEquals(NameEquals(nameof(DllImportAttribute.EntryPoint))));
+        }
+
+        if (setLastError)
+        {
+            args.Add(AttributeArgument(LiteralExpression(SyntaxKind.TrueLiteralExpression))
+                    .WithNameEquals(NameEquals(nameof(DllImportAttribute.SetLastError))));
+        }
+
+        if (charSet != CharSet.Ansi)
+        {
+            args.Add(AttributeArgument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(CharSet)), IdentifierName(Enum.GetName(typeof(CharSet), charSet)!)))
+                .WithNameEquals(NameEquals(IdentifierName(nameof(DllImportAttribute.CharSet)))));
+        }
+
+        libraryImportAttribute = libraryImportAttribute.WithArgumentList(FixTrivia(AttributeArgumentList().AddArguments(args.ToArray())));
+        return libraryImportAttribute;
+#else
+        return DllImport(import, moduleName, entrypoint, setLastError, charSet);
+#endif
+    }
+
     internal static AttributeSyntax UnmanagedFunctionPointer(CallingConvention callingConvention)
     {
         return Attribute(IdentifierName(nameof(UnmanagedFunctionPointerAttribute)))

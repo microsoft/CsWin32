@@ -2,6 +2,7 @@
   <Import Project="..\GenerationSandbox.props" />
 
   <PropertyGroup>
+    <TargetFrameworks>net9.0-windows7.0</TargetFrameworks>
     <CsWin32RunAsBuildTask>true</CsWin32RunAsBuildTask>
   </PropertyGroup>
 

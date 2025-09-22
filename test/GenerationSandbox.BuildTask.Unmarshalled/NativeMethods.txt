@@ -3,3 +3,4 @@ IPersistFile
 IStream
 CreateFile
 OpenFile
+//LoadIFilter

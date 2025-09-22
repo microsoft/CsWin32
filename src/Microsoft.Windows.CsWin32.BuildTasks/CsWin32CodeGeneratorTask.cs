@@ -111,7 +111,7 @@ public class CsWin32CodeGeneratorTask : ToolTask
     public string GeneratorToolPath { get; set; } = string.Empty;
 
     /// <inheritdoc />
-    protected override string ToolName => "dotnet.exe";
+    protected override string ToolName => "dotnet";
 
     /// <inheritdoc/>
     public override bool Execute()

@@ -46,8 +46,13 @@
     <PropertyGroup>
       <CsWin32GeneratorGeneratedFilesPath>$(IntermediateOutputPath)Generated\CsWin32\</CsWin32GeneratorGeneratedFilesPath>
       <CsWin32GeneratorGeneratedFilesList>$(IntermediateOutputPath)Generated\CsWin32\GeneratedFiles.txt</CsWin32GeneratorGeneratedFilesList>
-      <CsWin32GeneratorToolPath Condition="'$(CsWin32GeneratorToolPath)'==''">$(MSBuildThisFileDirectory)tools\CsWin32Generator.dll</CsWin32GeneratorToolPath>
+      <CsWin32GeneratorToolPath Condition="'$(CsWin32GeneratorToolPath)'==''">$(MSBuildThisFileDirectory)tools\</CsWin32GeneratorToolPath>
     </PropertyGroup>
+
+    <ItemGroup>
+      <CsWin32GeneratorInputs Include="$(CsWin32GeneratorToolPath)\CsWin32Generator.dll"/>
+      <CsWin32GeneratorInputs Include="$(CsWin32GeneratorToolPath)\Microsoft.Windows.CsWin32.dll"/>
+    </ItemGroup>
 
     <!-- If the GeneratedFiles.txt file exists, add all the previously written files to the outputs list so that
          if any of them don't exist or are out of date then the GenerateCsWin32Code target will re-run. -->
@@ -59,7 +64,7 @@
   </Target>
 
   <Target Name="GenerateCsWin32Code" BeforeTargets="BeforeCompile"
-          Inputs="@(AdditionalFiles);@(ProjectionMetadataWinmd);@(ProjectionDocs);@(CsWin32AppLocalAllowedLibraries);@(ReferencePath);$(CsWin32GeneratorToolPath)"
+          Inputs="@(AdditionalFiles);@(ProjectionMetadataWinmd);@(ProjectionDocs);@(CsWin32AppLocalAllowedLibraries);@(ReferencePath);@(CsWin32GeneratorInputs)"
           Outputs="$(CsWin32GeneratorGeneratedFilesList);@(CsWin32GeneratorPreviousOutputs)"
           Condition="'$(CsWin32RunAsBuildTask)'=='true'">
     <ItemGroup>
@@ -76,7 +81,7 @@
       DocPaths="@(ProjectionDocs)"
       AppLocalAllowedLibraries="@(CsWin32AppLocalAllowedLibraries)"
       OutputPath="$(CsWin32GeneratorGeneratedFilesPath)"
-      GeneratorToolPath="$(CsWin32GeneratorToolPath)"
+      GeneratorToolPath="$(CsWin32GeneratorToolPath)CsWin32Generator.dll"
       AllowUnsafeBlocks="$(AllowUnsafeBlocks)"
       TargetFramework="$(TargetFramework)"
       Platform="$(Platform)"

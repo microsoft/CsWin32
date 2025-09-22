@@ -168,8 +168,8 @@ public class BuildTaskTests
         SetupRequiredParameters(task);
 
         // MSBuild executor expects the tool file to exist, so set it to ourselves for now.
-        task.ToolExe = typeof(CsWin32CodeGeneratorTask).Assembly.Location;
-        task.ToolPath = null;
+        //task.ToolExe = typeof(CsWin32CodeGeneratorTask).Assembly.Location;
+        //task.ToolPath = null;
 
         // Act
         bool result = task.Execute();
@@ -181,16 +181,17 @@ public class BuildTaskTests
         foreach (IInvocation invocation in mockExecutor.Invocations)
         {
             string toolPath = (string)invocation.Arguments[0];
-            string commandLine = (string)invocation.Arguments[1];
-            string rspCommands = (string)invocation.Arguments[2];
+            string rspCommands = (string)invocation.Arguments[1];
+            string commandLine = (string)invocation.Arguments[2];
             this.Logger.WriteLine($"Invocation: {invocation}");
             this.Logger.WriteLine($"toolPath: {toolPath}");
             this.Logger.WriteLine($"commandLine: {commandLine}");
             this.Logger.WriteLine($"rspCommands: {rspCommands}");
 
-            Assert.True(commandLine.Contains("--native-methods-txt") || rspCommands.Contains("--native-methods-txt"));
-            Assert.True(commandLine.Contains("--output-path") || rspCommands.Contains("--output-path"));
-            Assert.True(commandLine.Contains("--metadata-paths") || rspCommands.Contains("--metadata-paths"));
+            Assert.Contains("CsWin32Generator.dll", commandLine);
+            Assert.Contains("--native-methods-txt", rspCommands);
+            Assert.Contains("--output-path", rspCommands);
+            Assert.Contains("--metadata-paths", rspCommands);
         }
     }
 
@@ -313,6 +314,7 @@ public class BuildTaskTests
         return new CsWin32CodeGeneratorTask(toolExecutor)
         {
             BuildEngine = buildEngine.Object,
+            GeneratorToolPath = "CsWin32Generator.dll",
         };
     }
 

@@ -50,7 +50,7 @@
     <file src="$BaseOutputPath$Microsoft.Bcl.AsyncInterfaces.dll" target="analyzers\cs\Microsoft.Bcl.AsyncInterfaces.dll" />
     <file src="$BaseOutputPath$System.Text.Json.dll" target="analyzers\cs\System.Text.Json.dll" />
     <file src="$BaseOutputPath$System.Text.Encodings.Web.dll" target="analyzers\cs\System.Text.Encodings.Web.dll" />
-    <file src="$CsWin32GeneratorBasePath$\**" target="tools\" />
+    <file src="$CsWin32GeneratorBasePath$**" target="build\tools\" />
     <file src="readme.txt" target="readme.txt" />
     <file src="README.md" target="README.md" />
     <file src="..\..\NOTICE.txt" target="NOTICE.txt" />

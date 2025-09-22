@@ -1,7 +1,7 @@
 ﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <CsWin32RunAsBuildTask>false</CsWin32RunAsBuildTask>
+    <CsWin32RunAsBuildTask Condition="'$(CsWin32RunAsBuildTask)'==''">false</CsWin32RunAsBuildTask>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,7 +19,7 @@
     <CompilerVisibleProperty Include="CsWin32RunAsBuildTask" />
   </ItemGroup>
 
-  <UsingTask TaskName="Microsoft.Windows.CsWin32.BuildTasks.CsWin32CodeGeneratorTask" AssemblyFile="$(MSBuildThisFileDirectory)..\..\Microsoft.Windows.CsWin32.BuildTasks\bin\$(Configuration)\netstandard2.0\Microsoft.Windows.CsWin32.BuildTasks.dll" />
+  <UsingTask TaskName="Microsoft.Windows.CsWin32.BuildTasks.CsWin32CodeGeneratorTask" AssemblyFile="$(MSBuildThisFileDirectory)Microsoft.Windows.CsWin32.BuildTasks.dll" />
 
   <Target Name="AssembleCsWin32InputPaths" BeforeTargets="GenerateMSBuildEditorConfigFileCore">
     <!-- Roslyn only allows source generators to see msbuild properties, to lift msbuild items into semicolon-delimited properties. -->
@@ -30,9 +30,27 @@
     </PropertyGroup>
   </Target>
 
-  <Target Name="GenerateCsWin32Code" BeforeTargets="CoreCompile" 
-          Inputs="@(AdditionalFiles);@(ProjectionMetadataWinmd);@(ProjectionDocs);@(CsWin32AppLocalAllowedLibraries);@(ReferencePath)" 
-          Outputs="@(GeneratedFiles)"
+  <Target
+    Name="PrepareToGenerateCsWin32Code"
+    BeforeTargets="GenerateCsWin32Code"
+    Condition="'$(CsWin32RunAsBuildTask)'=='true'">
+    <PropertyGroup>
+      <CsWin32GeneratorGeneratedFilesPath>$(IntermediateOutputPath)Generated\CsWin32\</CsWin32GeneratorGeneratedFilesPath>
+      <CsWin32GeneratorGeneratedFilesList>$(IntermediateOutputPath)Generated\CsWin32\GeneratedFiles.txt</CsWin32GeneratorGeneratedFilesList>
+    </PropertyGroup>
+
+    <!-- If the GeneratedFiles.txt file exists, add all the previously written files to the outputs list so that
+         if any of them don't exist or are out of date then the GenerateCsWin32Code target will re-run. -->
+    <ReadLinesFromFile
+      File="$(CsWin32GeneratorGeneratedFilesList)"
+      Condition="Exists('$(CsWin32GeneratorGeneratedFilesList)')">
+      <Output TaskParameter="Lines" ItemName="CsWin32GeneratorPreviousOutputs" />
+    </ReadLinesFromFile>
+  </Target>
+
+  <Target Name="GenerateCsWin32Code" BeforeTargets="BeforeCompile"
+          Inputs="@(AdditionalFiles);@(ProjectionMetadataWinmd);@(ProjectionDocs);@(CsWin32AppLocalAllowedLibraries);@(ReferencePath)"
+          Outputs="$(CsWin32GeneratorGeneratedFilesList);@(CsWin32GeneratorPreviousOutputs)"
           Condition="'$(CsWin32RunAsBuildTask)'=='true'">
     <ItemGroup>
       <CsWin32NativeMethodsTxt Include="@(AdditionalFiles)" Condition="'%(FileName)%(Extension)'=='NativeMethods.txt'" />
@@ -45,18 +63,30 @@
       MetadataPaths="@(ProjectionMetadataWinmd)"
       DocPaths="@(ProjectionDocs)"
       AppLocalAllowedLibraries="@(CsWin32AppLocalAllowedLibraries)"
-      OutputPath="$(IntermediateOutputPath)Generated\CsWin32"
-      GeneratorToolPath="$(MSBuildThisFileDirectory)..\tool\CsWin32GeneratorTask.dll"
+      OutputPath="$(CsWin32GeneratorGeneratedFilesPath)"
+      GeneratorToolPath="$(MSBuildThisFileDirectory)tools\CsWin32Generator.dll"
       AllowUnsafeBlocks="$(AllowUnsafeBlocks)"
       TargetFramework="$(TargetFramework)"
       Platform="$(Platform)"
       References="@(ReferencePath)">
-      <Output TaskParameter="GeneratedFiles" ItemName="GeneratedFiles" />
+      <Output TaskParameter="GeneratedFiles" ItemName="CsWin32GeneratedFiles" />
     </CsWin32CodeGeneratorTask>
 
     <ItemGroup>
-      <Compile Include="@(GeneratedFiles)" />
-      <FileWrites Include="@(GeneratedFiles)" />
+      <FileWrites Include="@(CsWin32GeneratedFiles)" />
+    </ItemGroup>
+
+    <WriteLinesToFile
+      File="$(CsWin32GeneratorGeneratedFilesList)"
+      Lines="@(CsWin32GeneratedFiles->'%(FullPath)')" Overwrite="true" />
+  </Target>
+
+  <Target
+    Name="AddGeneratedCsWin32FilesToCompile"
+    AfterTargets="GenerateCsWin32Code"
+    Condition="'$(CsWin32RunAsBuildTask)'=='true'">
+    <ItemGroup>
+      <Compile Include="$(CsWin32GeneratorGeneratedFilesPath)*.cs" />
     </ItemGroup>
   </Target>
 </Project>

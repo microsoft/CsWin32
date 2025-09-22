@@ -16,10 +16,10 @@ public interface IToolExecutor
     /// Should return the process exit code (0 indicates success).
     /// </summary>
     /// <param name="pathToTool">Path to the executable.</param>
-    /// <param name="commandLineCommands">Command line (excluding response file commands).</param>
     /// <param name="responseFileCommands">Content that would be written to the response file (if any).</param>
+    /// <param name="commandLineCommands">Command line (excluding response file commands).</param>
     /// <returns>The exit code (0 for success).</returns>
-    int ExecuteTool(string pathToTool, string commandLineCommands, string responseFileCommands);
+    int ExecuteTool(string pathToTool, string responseFileCommands, string commandLineCommands);
 }
 
 /// <summary>
@@ -134,13 +134,17 @@ public class CsWin32CodeGeneratorTask : ToolTask
     /// <inheritdoc />
     protected override string GenerateFullPathToTool()
     {
-        string assemblyLocation = typeof(CsWin32CodeGeneratorTask).Assembly.Location;
-        string assemblyDirectory = Path.GetDirectoryName(assemblyLocation)!;
-        return Path.Combine(assemblyDirectory, this.ToolExe);
+        return this.ToolExe;
     }
 
     /// <inheritdoc />
     protected override string GenerateCommandLineCommands()
+    {
+        return this.GeneratorToolPath;
+    }
+
+    /// <inheritdoc />
+    protected override string GenerateResponseFileCommands()
     {
         var commandLine = new CommandLineBuilder();
 
@@ -231,14 +235,14 @@ public class CsWin32CodeGeneratorTask : ToolTask
     }
 
     /// <inheritdoc />
-    protected override int ExecuteTool(string pathToTool, string commandLineCommands, string responseFileCommands)
+    protected override int ExecuteTool(string pathToTool, string responseFileCommands, string commandLineCommands)
     {
         if (this.toolExecutor is object)
         {
-            return this.toolExecutor.ExecuteTool(pathToTool, commandLineCommands, responseFileCommands);
+            return this.toolExecutor.ExecuteTool(pathToTool, responseFileCommands, commandLineCommands);
         }
 
-        return base.ExecuteTool(pathToTool, commandLineCommands, responseFileCommands);
+        return base.ExecuteTool(pathToTool, responseFileCommands, commandLineCommands);
     }
 
     private static string[] SplitPaths(string paths) => paths.Split(new char[] { ';' }, StringSplitOptions.RemoveEmptyEntries);

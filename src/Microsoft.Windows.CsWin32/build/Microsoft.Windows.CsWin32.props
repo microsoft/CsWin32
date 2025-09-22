@@ -2,13 +2,20 @@
   <PropertyGroup>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <CsWin32RunAsBuildTask Condition="'$(CsWin32RunAsBuildTask)'==''">false</CsWin32RunAsBuildTask>
+    <GeneratorBuildTasksPath Condition="'$(GeneratorBuildTasksPath)'==''">$(MSBuildThisFileDirectory)</GeneratorBuildTasksPath>
+    <GeneratorBuildTasksTaskFactory Condition="'$(GeneratorBuildTasksTaskFactory)'==''">AssemblyTaskFactory</GeneratorBuildTasksTaskFactory>
   </PropertyGroup>
 
   <ItemGroup>
     <None Remove="NativeMethods.json" />
     <None Remove="NativeMethods.txt" />
-    <AdditionalFiles Include="NativeMethods.json" Condition="Exists('NativeMethods.json')" />
-    <AdditionalFiles Include="NativeMethods.txt" Condition="Exists('NativeMethods.txt')" />
+    <AdditionalFiles Include="NativeMethods.json" Condition="Exists('NativeMethods.json')">
+      <!-- Add this metadata to trigger a design-time build to re-run the generator for CsWin32RunAsBuildTask=true scenarios. -->
+      <Generator Condition="'$(CsWin32RunAsBuildTask)'=='true'">MSBuild:Compile</Generator>
+    </AdditionalFiles>
+    <AdditionalFiles Include="NativeMethods.txt" Condition="Exists('NativeMethods.txt')">
+      <Generator Condition="'$(CsWin32RunAsBuildTask)'=='true'">MSBuild:Compile</Generator>
+    </AdditionalFiles>
   </ItemGroup>
 
   <ItemGroup>
@@ -19,7 +26,9 @@
     <CompilerVisibleProperty Include="CsWin32RunAsBuildTask" />
   </ItemGroup>
 
-  <UsingTask TaskName="Microsoft.Windows.CsWin32.BuildTasks.CsWin32CodeGeneratorTask" AssemblyFile="$(MSBuildThisFileDirectory)Microsoft.Windows.CsWin32.BuildTasks.dll" />
+  <UsingTask TaskName="Microsoft.Windows.CsWin32.BuildTasks.CsWin32CodeGeneratorTask"
+    AssemblyFile="$(GeneratorBuildTasksPath)Microsoft.Windows.CsWin32.BuildTasks.dll"
+    TaskFactory="$(GeneratorBuildTasksTaskFactory)"/>
 
   <Target Name="AssembleCsWin32InputPaths" BeforeTargets="GenerateMSBuildEditorConfigFileCore">
     <!-- Roslyn only allows source generators to see msbuild properties, to lift msbuild items into semicolon-delimited properties. -->
@@ -37,6 +46,7 @@
     <PropertyGroup>
       <CsWin32GeneratorGeneratedFilesPath>$(IntermediateOutputPath)Generated\CsWin32\</CsWin32GeneratorGeneratedFilesPath>
       <CsWin32GeneratorGeneratedFilesList>$(IntermediateOutputPath)Generated\CsWin32\GeneratedFiles.txt</CsWin32GeneratorGeneratedFilesList>
+      <CsWin32GeneratorToolPath Condition="'$(CsWin32GeneratorToolPath)'==''">$(MSBuildThisFileDirectory)tools\CsWin32Generator.dll</CsWin32GeneratorToolPath>
     </PropertyGroup>
 
     <!-- If the GeneratedFiles.txt file exists, add all the previously written files to the outputs list so that
@@ -57,6 +67,8 @@
       <CsWin32NativeMethodsJson Include="@(AdditionalFiles)" Condition="'%(FileName)%(Extension)'=='NativeMethods.json'" />
     </ItemGroup>
 
+    <Delete Files="@(CsWin32GeneratorPreviousOutputs)" Condition="@(CsWin32GeneratorPreviousOutputs->Count()) > 0" />
+
     <CsWin32CodeGeneratorTask
       NativeMethodsTxt="@(CsWin32NativeMethodsTxt)"
       NativeMethodsJson="@(CsWin32NativeMethodsJson)"
@@ -64,7 +76,7 @@
       DocPaths="@(ProjectionDocs)"
       AppLocalAllowedLibraries="@(CsWin32AppLocalAllowedLibraries)"
       OutputPath="$(CsWin32GeneratorGeneratedFilesPath)"
-      GeneratorToolPath="$(MSBuildThisFileDirectory)tools\CsWin32Generator.dll"
+      GeneratorToolPath="$(CsWin32GeneratorToolPath)"
       AllowUnsafeBlocks="$(AllowUnsafeBlocks)"
       TargetFramework="$(TargetFramework)"
       Platform="$(Platform)"

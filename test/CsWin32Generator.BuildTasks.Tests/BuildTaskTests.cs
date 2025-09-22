@@ -167,10 +167,6 @@ public class BuildTaskTests
         var task = CreateTaskWithMockBuildEngine(mockExecutor.Object);
         SetupRequiredParameters(task);
 
-        // MSBuild executor expects the tool file to exist, so set it to ourselves for now.
-        //task.ToolExe = typeof(CsWin32CodeGeneratorTask).Assembly.Location;
-        //task.ToolPath = null;
-
         // Act
         bool result = task.Execute();
 

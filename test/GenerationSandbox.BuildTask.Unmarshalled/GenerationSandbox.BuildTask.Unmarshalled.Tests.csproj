@@ -1,0 +1,12 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\GenerationSandbox.props" />
+
+  <PropertyGroup>
+    <CsWin32RunAsBuildTask>true</CsWin32RunAsBuildTask>
+  </PropertyGroup>
+
+  <!-- For browsing, add the .cs files as None items -->
+  <ItemGroup>
+    <None Include="$(IntermediateOutputPath)Generated\CsWin32\*.cs" Link="Generated\%(Filename)%(Extension)"/>
+  </ItemGroup>
+</Project>

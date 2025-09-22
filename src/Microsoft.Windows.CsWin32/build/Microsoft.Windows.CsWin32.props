@@ -1,6 +1,7 @@
 ﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <CsWin32RunAsBuildTask>false</CsWin32RunAsBuildTask>
   </PropertyGroup>
 
   <ItemGroup>
@@ -15,7 +16,10 @@
     <CompilerVisibleProperty Include="CsWin32InputMetadataPaths" />
     <CompilerVisibleProperty Include="CsWin32InputDocPaths" />
     <CompilerVisibleProperty Include="CsWin32AppLocalAllowedLibraries" />
+    <CompilerVisibleProperty Include="CsWin32RunAsBuildTask" />
   </ItemGroup>
+
+  <UsingTask TaskName="Microsoft.Windows.CsWin32.BuildTasks.CsWin32CodeGeneratorTask" AssemblyFile="$(MSBuildThisFileDirectory)..\..\Microsoft.Windows.CsWin32.BuildTasks\bin\$(Configuration)\netstandard2.0\Microsoft.Windows.CsWin32.BuildTasks.dll" />
 
   <Target Name="AssembleCsWin32InputPaths" BeforeTargets="GenerateMSBuildEditorConfigFileCore">
     <!-- Roslyn only allows source generators to see msbuild properties, to lift msbuild items into semicolon-delimited properties. -->
@@ -24,5 +28,35 @@
       <CsWin32InputDocPaths>@(ProjectionDocs->'%(FullPath)','|')</CsWin32InputDocPaths>
       <CsWin32AppLocalAllowedLibraries>@(AppLocalAllowedLibraries->'%(FullPath)','|')</CsWin32AppLocalAllowedLibraries>
     </PropertyGroup>
+  </Target>
+
+  <Target Name="GenerateCsWin32Code" BeforeTargets="CoreCompile" 
+          Inputs="@(AdditionalFiles);@(ProjectionMetadataWinmd);@(ProjectionDocs);@(CsWin32AppLocalAllowedLibraries);@(ReferencePath)" 
+          Outputs="@(GeneratedFiles)"
+          Condition="'$(CsWin32RunAsBuildTask)'=='true'">
+    <ItemGroup>
+      <CsWin32NativeMethodsTxt Include="@(AdditionalFiles)" Condition="'%(FileName)%(Extension)'=='NativeMethods.txt'" />
+      <CsWin32NativeMethodsJson Include="@(AdditionalFiles)" Condition="'%(FileName)%(Extension)'=='NativeMethods.json'" />
+    </ItemGroup>
+
+    <CsWin32CodeGeneratorTask
+      NativeMethodsTxt="@(CsWin32NativeMethodsTxt)"
+      NativeMethodsJson="@(CsWin32NativeMethodsJson)"
+      MetadataPaths="@(ProjectionMetadataWinmd)"
+      DocPaths="@(ProjectionDocs)"
+      AppLocalAllowedLibraries="@(CsWin32AppLocalAllowedLibraries)"
+      OutputPath="$(IntermediateOutputPath)Generated\CsWin32"
+      GeneratorToolPath="$(MSBuildThisFileDirectory)..\tool\CsWin32GeneratorTask.dll"
+      AllowUnsafeBlocks="$(AllowUnsafeBlocks)"
+      TargetFramework="$(TargetFramework)"
+      Platform="$(Platform)"
+      References="@(ReferencePath)">
+      <Output TaskParameter="GeneratedFiles" ItemName="GeneratedFiles" />
+    </CsWin32CodeGeneratorTask>
+
+    <ItemGroup>
+      <Compile Include="@(GeneratedFiles)" />
+      <FileWrites Include="@(GeneratedFiles)" />
+    </ItemGroup>
   </Target>
 </Project>

@@ -104,8 +104,14 @@ public class CsWin32CodeGeneratorTask : ToolTask
     [Output]
     public ITaskItem[]? GeneratedFiles { get; set; }
 
+    /// <summary>
+    /// Gets or sets the path to the generator tool.
+    /// </summary>
+    [Required]
+    public string GeneratorToolPath { get; set; } = string.Empty;
+
     /// <inheritdoc />
-    protected override string ToolName => "CsWin32Generator.exe";
+    protected override string ToolName => "dotnet.exe";
 
     /// <inheritdoc/>
     public override bool Execute()

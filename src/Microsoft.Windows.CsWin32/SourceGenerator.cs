@@ -180,6 +180,12 @@ public partial class SourceGenerator : ISourceGenerator
             return;
         }
 
+        if (GetRunAsBuildTaskProperty(context))
+        {
+            // When running as a build task, we don't want to generate anything here.
+            return;
+        }
+
         GeneratorOptions? options;
         AdditionalText? nativeMethodsJsonFile = context.AdditionalFiles
             .FirstOrDefault(af => string.Equals(Path.GetFileName(af.Path), NativeMethodsJsonAdditionalFileName, StringComparison.OrdinalIgnoreCase));
@@ -442,6 +448,17 @@ public partial class SourceGenerator : ISourceGenerator
         }
 
         return docs;
+    }
+
+    private static bool GetRunAsBuildTaskProperty(GeneratorExecutionContext context)
+    {
+        if (!context.AnalyzerConfigOptions.GlobalOptions.TryGetValue("build_property.CsWin32RunAsBuildTask", out string? runAsBuildTask) ||
+            string.IsNullOrWhiteSpace(runAsBuildTask))
+        {
+            return false;
+        }
+
+        return bool.TryParse(runAsBuildTask, out bool result) && result;
     }
 
 #if NET9_0_OR_GREATER

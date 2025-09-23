@@ -1,7 +1,7 @@
-﻿IEventSubscription
-IPersistFile
-IStream
+﻿//IEventSubscription
+//IPersistFile
+//IStream
 CreateFile
 OpenFile
 //LoadIFilter
-IUnknown
+//IUnknown

@@ -208,9 +208,9 @@ public partial class Program
         GeneratorOptions options = LoadGeneratorOptions(nativeMethodsJson);
 
         // If unspecified, default to using other source generators.
-        if (!options.UseOtherSourceGenerators.HasValue && targetFramework != "net472")
+        if (!options.ComInterop.UseComSourceGenerators.HasValue && targetFramework != "net472")
         {
-            options.UseOtherSourceGenerators = true;
+            options.ComInterop.UseComSourceGenerators = true;
         }
 
         Console.WriteLine($"Loaded generator options. AllowMarshaling: {options.AllowMarshaling}, ClassName: {options.ClassName}");

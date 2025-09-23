@@ -818,6 +818,11 @@ public partial class Generator : IGenerator, IDisposable
             UsingDirective(ParseName(GlobalNamespacePrefix + SystemRuntimeInteropServices)),
         };
 
+        if (this.options.ComInterop.ShouldUseComSourceGenerators)
+        {
+            usingDirectives.Add(UsingDirective(ParseName(GlobalNamespacePrefix + SystemRuntimeInteropServicesMarshalling)));
+        }
+
         if (this.generateSupportedOSPlatformAttributes)
         {
             usingDirectives.Add(UsingDirective(ParseName(GlobalNamespacePrefix + "System.Runtime.Versioning")));

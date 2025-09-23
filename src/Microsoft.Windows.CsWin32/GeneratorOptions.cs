@@ -42,12 +42,6 @@ public record GeneratorOptions
     public bool AllowMarshaling { get; set; } = true;
 
     /// <summary>
-    /// Gets or sets a value indicating whether to emit code that relies on other source generators.
-    /// </summary>
-    /// <value>The default value is <see langword="true"/>.</value>
-    public bool? UseOtherSourceGenerators { get; set; } = null;
-
-    /// <summary>
     /// Gets or sets options related to friendly overloads.
     /// </summary>
     public FriendlyOverloadOptions FriendlyOverloads { get; set; } = new();
@@ -93,6 +87,14 @@ public record GeneratorOptions
         /// This may be useful on .NET when using ComWrappers. See <see href="https://github.com/microsoft/CsWin32/issues/328">this issue</see> for more details.
         /// </remarks>
         public bool UseIntPtrForComOutPointers { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value indicating whether to emit code that relies on [GeneratedComInterface] and [GeneratedComClass].
+        /// </summary>
+        /// <value>The default value is <see langword="false"/>.</value>
+        public bool? UseComSourceGenerators { get; set; } = null;
+
+        internal bool ShouldUseComSourceGenerators => this.UseComSourceGenerators ?? false;
     }
 
     /// <summary>

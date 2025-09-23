@@ -212,15 +212,11 @@ public partial class Generator
             bool setLastErrorViaMarshaling = setLastError && (this.Options.AllowMarshaling || !this.canUseSetLastPInvokeError);
             bool setLastErrorManually = setLastError && !setLastErrorViaMarshaling;
 
-            bool useLibraryImport = this.options.UseOtherSourceGenerators ?? false;
-
             AttributeListSyntax CreateDllImportAttributeList()
             {
                 AttributeListSyntax result = AttributeList()
                     .WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken))
                     .AddAttributes(
-                    useLibraryImport ?
-                        LibraryImport(import, moduleName, entrypoint, setLastErrorViaMarshaling, requiresUnicodeCharSet ? CharSet.Unicode : CharSet.Ansi) :
                         DllImport(import, moduleName, entrypoint, setLastErrorViaMarshaling, requiresUnicodeCharSet ? CharSet.Unicode : CharSet.Ansi));
                 if (this.generateDefaultDllImportSearchPathsAttribute)
                 {
@@ -233,13 +229,9 @@ public partial class Generator
                 return result;
             }
 
-            SyntaxTokenList modifiers =
-                useLibraryImport ?
-                TokenList(TokenWithSpace(SyntaxKind.StaticKeyword)) :
-                TokenList(TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.ExternKeyword));
             MethodDeclarationSyntax externDeclaration = MethodDeclaration(
                 List<AttributeListSyntax>().Add(CreateDllImportAttributeList()),
-                modifiers: modifiers,
+                modifiers: TokenList(TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.ExternKeyword)),
                 returnType.Type.WithTrailingTrivia(TriviaList(Space)),
                 explicitInterfaceSpecifier: null!,
                 SafeIdentifier(methodName),
@@ -254,11 +246,6 @@ public partial class Generator
             if (requiresUnsafe)
             {
                 externDeclaration = externDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));
-            }
-
-            if (useLibraryImport)
-            {
-                externDeclaration = externDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.PartialKeyword));
             }
 
             MethodDeclarationSyntax exposedMethod;

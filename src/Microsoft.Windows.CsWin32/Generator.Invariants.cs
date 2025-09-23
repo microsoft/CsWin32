@@ -72,6 +72,7 @@ public partial class Generator
 
     private const string SystemRuntimeCompilerServices = "System.Runtime.CompilerServices";
     private const string SystemRuntimeInteropServices = "System.Runtime.InteropServices";
+    private const string SystemRuntimeInteropServicesMarshalling = "System.Runtime.InteropServices.Marshalling";
     private const string NativeTypedefAttribute = "NativeTypedefAttribute";
     private const string MetadataTypedefAttribute = "MetadataTypedefAttribute";
     private const string AlsoUsableForAttribute = "AlsoUsableForAttribute";

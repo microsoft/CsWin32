@@ -19,12 +19,12 @@ public partial class COMTests
     {
     }
 
-    [LibraryImport("query.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    internal static unsafe partial HRESULT LoadIFilter(PCWSTR pwcsPath, IUnknown pUnkOuter, void** ppIUnk);
+    //[LibraryImport("query.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    //internal static unsafe partial HRESULT LoadIFilter(PCWSTR pwcsPath, IUnknown pUnkOuter, void** ppIUnk);
 
-    [GeneratedComInterface]
-    [Guid("00000000-0000-0000-C000-000000000046")]
-    internal partial interface IUnknown
-    {
-    }
+    //[GeneratedComInterface]
+    //[Guid("00000000-0000-0000-C000-000000000046")]
+    //internal partial interface IUnknown
+    //{
+    //}
 }

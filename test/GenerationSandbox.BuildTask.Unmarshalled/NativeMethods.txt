@@ -4,3 +4,4 @@ IStream
 CreateFile
 OpenFile
 //LoadIFilter
+IUnknown

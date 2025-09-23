@@ -752,9 +752,15 @@ public partial class Generator
             .AddModifiers(TokenWithSpace(this.Visibility))
             .AddMembers(members.ToArray());
 
+        if (this.options.ComInterop.ShouldUseComSourceGenerators)
+        {
+            ifaceDeclaration = ifaceDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.PartialKeyword));
+        }
+
         if (guidAttribute.HasValue)
         {
-            ifaceDeclaration = ifaceDeclaration.AddAttributeLists(AttributeList().AddAttributes(GUID(DecodeGuidFromAttribute(guidAttribute.Value)), ifaceType, ComImportAttributeSyntax));
+            AttributeSyntax comImportAttribute = this.options.ComInterop.ShouldUseComSourceGenerators ? GeneratedComInterfaceAttributeSyntax : ComImportAttributeSyntax;
+            ifaceDeclaration = ifaceDeclaration.AddAttributeLists(AttributeList().AddAttributes(GUID(DecodeGuidFromAttribute(guidAttribute.Value)), ifaceType, comImportAttribute));
         }
 
         if (baseTypeSyntaxList.Count > 0)

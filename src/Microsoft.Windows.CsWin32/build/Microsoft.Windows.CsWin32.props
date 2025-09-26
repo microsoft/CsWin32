@@ -66,7 +66,7 @@
   <Target Name="GenerateCsWin32Code" BeforeTargets="BeforeCompile"
           Inputs="@(AdditionalFiles);@(ProjectionMetadataWinmd);@(ProjectionDocs);@(CsWin32AppLocalAllowedLibraries);@(ReferencePath);@(CsWin32GeneratorInputs)"
           Outputs="$(CsWin32GeneratorGeneratedFilesList);@(CsWin32GeneratorPreviousOutputs)"
-          Condition="'$(CsWin32RunAsBuildTask)'=='true' and '$(CsWin32MetadataPaths)'!=''">
+          Condition="'$(CsWin32RunAsBuildTask)'=='true' and '@(ProjectionMetadataWinmd)'!=''">
     <ItemGroup>
       <CsWin32NativeMethodsTxt Include="%(AdditionalFiles.FullPath)" Condition="'%(FileName)%(Extension)'=='NativeMethods.txt'" />
       <CsWin32NativeMethodsJson Include="%(AdditionalFiles.FullPath)" Condition="'%(FileName)%(Extension)'=='NativeMethods.json'" />
@@ -99,7 +99,6 @@
 
     <ItemGroup>
       <FileWrites Include="@(CsWin32GeneratedFiles)" />
-      <FileWrites Include="$(CsWin32GeneratorGeneratedFilesList)" />
     </ItemGroup>
   </Target>
 

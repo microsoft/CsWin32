@@ -68,8 +68,8 @@
           Outputs="$(CsWin32GeneratorGeneratedFilesList);@(CsWin32GeneratorPreviousOutputs)"
           Condition="'$(CsWin32RunAsBuildTask)'=='true'">
     <ItemGroup>
-      <CsWin32NativeMethodsTxt Include="@(AdditionalFiles)" Condition="'%(FileName)%(Extension)'=='NativeMethods.txt'" />
-      <CsWin32NativeMethodsJson Include="@(AdditionalFiles)" Condition="'%(FileName)%(Extension)'=='NativeMethods.json'" />
+      <CsWin32NativeMethodsTxt Include="%(AdditionalFiles.FullPath)" Condition="'%(FileName)%(Extension)'=='NativeMethods.txt'" />
+      <CsWin32NativeMethodsJson Include="%(AdditionalFiles.FullPath)" Condition="'%(FileName)%(Extension)'=='NativeMethods.json'" />
     </ItemGroup>
 
     <Delete Files="@(CsWin32GeneratorPreviousOutputs)" Condition="@(CsWin32GeneratorPreviousOutputs->Count()) > 0" />

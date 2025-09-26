@@ -520,6 +520,7 @@ public partial class Program
         }
     }
 
+    [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
     [JsonSerializable(typeof(GeneratorOptions))]
     internal partial class GeneratorOptionsSerializerContext : JsonSerializerContext
     {

@@ -66,18 +66,22 @@
   <Target Name="GenerateCsWin32Code" BeforeTargets="BeforeCompile"
           Inputs="@(AdditionalFiles);@(ProjectionMetadataWinmd);@(ProjectionDocs);@(CsWin32AppLocalAllowedLibraries);@(ReferencePath);@(CsWin32GeneratorInputs)"
           Outputs="$(CsWin32GeneratorGeneratedFilesList);@(CsWin32GeneratorPreviousOutputs)"
-          Condition="'$(CsWin32RunAsBuildTask)'=='true'">
+          Condition="'$(CsWin32RunAsBuildTask)'=='true' and '$(CsWin32MetadataPaths)'!=''">
     <ItemGroup>
       <CsWin32NativeMethodsTxt Include="%(AdditionalFiles.FullPath)" Condition="'%(FileName)%(Extension)'=='NativeMethods.txt'" />
       <CsWin32NativeMethodsJson Include="%(AdditionalFiles.FullPath)" Condition="'%(FileName)%(Extension)'=='NativeMethods.json'" />
     </ItemGroup>
+
+    <PropertyGroup>
+      <CsWin32MetadataPaths>@(ProjectionMetadataWinmd)</CsWin32MetadataPaths>
+    </PropertyGroup>
 
     <Delete Files="@(CsWin32GeneratorPreviousOutputs)" Condition="@(CsWin32GeneratorPreviousOutputs->Count()) > 0" />
 
     <CsWin32CodeGeneratorTask
       NativeMethodsTxt="@(CsWin32NativeMethodsTxt)"
       NativeMethodsJson="@(CsWin32NativeMethodsJson)"
-      MetadataPaths="@(ProjectionMetadataWinmd)"
+      MetadataPaths="$(CsWin32MetadataPaths)"
       DocPaths="@(ProjectionDocs)"
       AppLocalAllowedLibraries="@(CsWin32AppLocalAllowedLibraries)"
       OutputPath="$(CsWin32GeneratorGeneratedFilesPath)"
@@ -89,13 +93,14 @@
       <Output TaskParameter="GeneratedFiles" ItemName="CsWin32GeneratedFiles" />
     </CsWin32CodeGeneratorTask>
 
-    <ItemGroup>
-      <FileWrites Include="@(CsWin32GeneratedFiles)" />
-    </ItemGroup>
-
     <WriteLinesToFile
       File="$(CsWin32GeneratorGeneratedFilesList)"
       Lines="@(CsWin32GeneratedFiles->'%(FullPath)')" Overwrite="true" />
+
+    <ItemGroup>
+      <FileWrites Include="@(CsWin32GeneratedFiles)" />
+      <FileWrites Include="$(CsWin32GeneratorGeneratedFilesList)" />
+    </ItemGroup>
   </Target>
 
   <Target

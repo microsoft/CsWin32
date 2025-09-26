@@ -625,11 +625,11 @@ public class GeneratorTests : GeneratorTestBase
         this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(Platform.AnyCpu));
         this.generator = this.CreateGenerator();
 
-        // Request a struct that depends on arch-specific IP6_ADDRESS.
-        Assert.ThrowsAny<GenerationFailedException>(() => this.generator.TryGenerate("DNS_SERVICE_INSTANCE", CancellationToken.None));
+        // Request a struct that depends on arch-specific SP_DEVINFO_DATA.
+        Assert.ThrowsAny<GenerationFailedException>(() => this.generator.TryGenerate("SP_PROPSHEETPAGE_REQUEST", CancellationToken.None));
 
-        // Request a struct that depends on DNS_SERVICE_INSTANCE.
-        Assert.ThrowsAny<GenerationFailedException>(() => this.generator.TryGenerate("DNS_SERVICE_REGISTER_REQUEST", CancellationToken.None));
+        // Request a method that depends on the same arch-specific struct.
+        Assert.ThrowsAny<GenerationFailedException>(() => this.generator.TryGenerate("SetupDiSetSelectedDevice", CancellationToken.None));
 
         // Verify that no uncompilable code was generated.
         this.CollectGeneratedCode(this.generator);

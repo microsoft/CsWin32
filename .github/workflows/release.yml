@@ -15,17 +15,10 @@ jobs:
   release:
     runs-on: ubuntu-24.04
     permissions:
-      actions: read
-      contents: write
+      actions: read # Required to download artifacts
+      contents: write # Upload artifacts to Release
+      id-token: write # Required for NuGet CLI Login
     steps:
-    - name: ⚙️ Initialization
-      shell: pwsh
-      run: |
-        if ('${{ secrets.NUGET_API_KEY }}') {
-          Write-Host "NUGET_API_KEY secret detected. NuGet packages will be pushed."
-          echo "NUGET_API_KEY_DEFINED=true" >> $env:GITHUB_ENV
-        }
-
     - name: 🔎 Search for build of ${{ github.ref }}
       shell: pwsh
       id: findrunid
@@ -82,6 +75,11 @@ jobs:
           gh release -R ${{ github.repository }} upload "${{ github.ref_name }}" $_.FullName
         }
 
+    - name: 🪪 Authorize NuGet package push
+      uses: NuGet/login@d22cc5f58ff5b88bf9bd452535b4335137e24544 # v1
+      id: nuget-login
+      with:
+        user: ${{ secrets.NUGET_USER }}
+
     - name: 🚀 Push NuGet packages
-      run: dotnet nuget push ${{ runner.temp }}/deployables/*.nupkg --source https://api.nuget.org/v3/index.json -k '${{ secrets.NUGET_API_KEY }}'
-      if: ${{ env.NUGET_API_KEY_DEFINED == 'true' }}
+      run: dotnet nuget push ${{ runner.temp }}/deployables/*.nupkg --source https://api.nuget.org/v3/index.json -k '${{ steps.nuget-login.outputs.NUGET_API_KEY }}'

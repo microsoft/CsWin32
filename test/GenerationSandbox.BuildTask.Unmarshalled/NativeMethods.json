@@ -1,11 +1,9 @@
 ﻿{
   "$schema": "..\\..\\src\\Microsoft.Windows.CsWin32\\settings.schema.json",
-  "emitSingleFile": true,
-  "allowMarshaling": false,
+  "emitSingleFile": false,
+  "allowMarshaling": true,
+  "public": false,
   "comInterop": {
-    //"preserveSigMethods": [
-    //  "IEventSubscription.GetSubscriberProperty",
-    //  "IEventSubscription.get_MachineName"
-    //]
+    "useComSourceGenerators": true
   }
 }

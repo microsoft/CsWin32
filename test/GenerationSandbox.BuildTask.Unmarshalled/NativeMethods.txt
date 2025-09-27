@@ -1,7 +1,13 @@
-﻿//IEventSubscription
+﻿IEventSubscription
 //IPersistFile
-//IStream
+IStream
 CreateFile
 OpenFile
-//LoadIFilter
+LoadIFilter
 //IUnknown
+STGC
+LOCKTYPE
+STATSTG
+STATFLAG
+HANDLE
+WNDCLASSW

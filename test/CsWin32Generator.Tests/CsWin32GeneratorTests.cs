@@ -3,9 +3,10 @@
 
 using System.Runtime.CompilerServices;
 using System.Text;
+using Microsoft.CodeAnalysis.CSharp;
 using Xunit;
 
-namespace Microsoft.Windows.CsWin32.Tests;
+namespace CsWin32Generator.Tests;
 
 public class CsWin32GeneratorTests
 {
@@ -33,6 +34,8 @@ public class CsWin32GeneratorTests
         File.WriteAllLines(nativeMethodsTxt, ["RmRegisterResources"]);
 
         await this.InvokeGenerator(nativeMethodsTxt);
+
+        
     }
 
     [Fact]
@@ -84,7 +87,7 @@ public class CsWin32GeneratorTests
             args.AddRange(["--native-methods-json", nativeMethodsJsonPath]);
         }
 
-        foreach (System.Reflection.Assembly reference in AppDomain.CurrentDomain.GetAssemblies().Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location)))
+        foreach (System.Reflection.Assembly reference in this.GetCompilerReferences())
         {
             args.AddRange(["--references", reference.Location]);
         }
@@ -97,6 +100,11 @@ public class CsWin32GeneratorTests
         // Assert
         Assert.Equal(0, exitCode);
         Assert.True(Directory.GetFiles(outputPath, "*.g.cs").Any(), "No generated files found.");
+    }
+
+    private IEnumerable<System.Reflection.Assembly> GetCompilerReferences()
+    {
+        return AppDomain.CurrentDomain.GetAssemblies().Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location));
     }
 
     private string GetTestCaseOutputDirectory([CallerMemberName] string testCase = "")

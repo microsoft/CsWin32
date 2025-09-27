@@ -30,6 +30,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Microsoft.Windows.CsWin32\Microsoft.Windows.CsWin32.csproj" />
     <ProjectReference Include="..\..\src\CsWin32Generator\CsWin32Generator.csproj" />
+    <ProjectReference Include="..\Microsoft.Windows.CsWin32.Tests\Microsoft.Windows.CsWin32.Tests.csproj" />
   </ItemGroup>
 
   <ItemGroup>

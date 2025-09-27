@@ -9,9 +9,10 @@ using Xunit;
 
 namespace CsWin32Generator.Tests;
 
-public partial class CsWin32GeneratorTests
+public partial class CsWin32GeneratorTests : GeneratorTestBase
 {
-    public CsWin32GeneratorTests()
+    public CsWin32GeneratorTests(ITestOutputHelper logger)
+        : base(logger)
     {
         string outputPath = this.GetOutputDirectory();
         if (Directory.Exists(outputPath))
@@ -82,6 +83,8 @@ public partial class CsWin32GeneratorTests
     {
         this.Logger.WriteLine("Compiling generated files with source generators...");
 
+        this.compilation = this.starterCompilations["net9.0"];
+
         // Create syntax trees from the generated files
         var syntaxTrees = new List<SyntaxTree>();
         foreach (string filePath in generatedFiles)
@@ -91,25 +94,7 @@ public partial class CsWin32GeneratorTests
             syntaxTrees.Add(syntaxTree);
         }
 
-        // Get references from the current compilation context - use the same references
-        // that are available to the test project
-        var references = this.GetCompilerReferences()
-            .Where(assembly => !assembly.IsDynamic && !string.IsNullOrEmpty(assembly.Location))
-            .Select(assembly => MetadataReference.CreateFromFile(assembly.Location))
-            .ToList();
-
-        // Create compilation options
-        var compilationOptions = new CSharpCompilationOptions(
-            OutputKind.DynamicallyLinkedLibrary,
-            allowUnsafe: true,
-            platform: Platform.X64);
-
-        // Create the compilation
-        var compilation = CSharpCompilation.Create(
-            "GeneratedCode",
-            syntaxTrees,
-            references,
-            compilationOptions);
+        this.compilation = this.compilation.AddSyntaxTrees(syntaxTrees);
 
         // Get source generators from the static analyzers list
         var sourceGenerators = this.GetAvailableSourceGenerators();
@@ -126,8 +111,8 @@ public partial class CsWin32GeneratorTests
             var driver = CSharpGeneratorDriver.Create(sourceGenerators.Where(x => x is IIncrementalGenerator).Select(x => (IIncrementalGenerator)x).ToArray());
 
             // Run the source generators
-            var generatorDriver = driver.RunGeneratorsAndUpdateCompilation(compilation, out var newCompilation, out var diagnostics);
-            compilation = (CSharpCompilation)newCompilation;
+            var generatorDriver = driver.RunGeneratorsAndUpdateCompilation(this.compilation, out var newCompilation, out var diagnostics);
+            this.compilation = (CSharpCompilation)newCompilation;
 
             // Log any diagnostics from source generation
             foreach (var diagnostic in diagnostics)
@@ -141,7 +126,7 @@ public partial class CsWin32GeneratorTests
         }
 
         // Get compilation diagnostics
-        var compilationDiagnostics = compilation.GetDiagnostics();
+        var compilationDiagnostics = this.compilation.GetDiagnostics();
 
         // Log diagnostics
         foreach (var diagnostic in compilationDiagnostics)
@@ -162,7 +147,7 @@ public partial class CsWin32GeneratorTests
 
         // Optionally, emit the assembly to verify it's valid
         using var stream = new MemoryStream();
-        var emitResult = compilation.Emit(stream);
+        var emitResult = this.compilation.Emit(stream);
 
         Assert.True(emitResult.Success, "Emitting the assembly failed.");
     }

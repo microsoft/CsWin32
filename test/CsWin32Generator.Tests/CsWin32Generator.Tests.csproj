@@ -54,4 +54,30 @@
     </None>
   </ItemGroup>
 
+  <!-- Make a list of the analyzers we have available at compile time -->
+  <Target Name="WriteAnalyzers" BeforeTargets="BeforeCompile">
+    <ItemGroup>
+      <AnalyzerList Include="@&quot;%(Analyzer.FullPath)&quot;" />
+    </ItemGroup>
+
+    <PropertyGroup>
+      <AnalyzerListCsSource>
+namespace CsWin32Generator.Tests%3b
+
+public partial class CsWin32GeneratorTests
+{
+  private static string[] analyzers = new [] {
+    @(AnalyzerList, ',%0d%0A')
+  }%3b
+}
+      </AnalyzerListCsSource>
+    </PropertyGroup>
+
+    <WriteLinesToFile File="$(IntermediateOutputPath)AnalyzerList.g.cs" Lines="$(AnalyzerListCsSource)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+
+    <ItemGroup>
+      <Compile Include="$(IntermediateOutputPath)AnalyzerList.g.cs" />
+    </ItemGroup>
+  </Target>
+
 </Project>

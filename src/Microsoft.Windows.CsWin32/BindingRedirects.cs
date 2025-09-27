@@ -3,6 +3,7 @@
 
 namespace Microsoft.Windows.CsWin32;
 
+#if NETSTANDARD2_0
 internal static class BindingRedirects
 {
     private static readonly string SourceGeneratorAssemblyDirectory = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
@@ -44,3 +45,4 @@ internal static class BindingRedirects
         return null;
     }
 }
+#endif

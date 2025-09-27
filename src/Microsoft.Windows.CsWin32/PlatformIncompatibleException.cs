@@ -34,6 +34,7 @@ public class PlatformIncompatibleException : GenerationFailedException
     {
     }
 
+#if NETSTANDARD2_0
     /// <summary>
     /// Initializes a new instance of the <see cref="PlatformIncompatibleException"/> class.
     /// </summary>
@@ -44,4 +45,5 @@ public class PlatformIncompatibleException : GenerationFailedException
         : base(info, context)
     {
     }
+#endif
 }

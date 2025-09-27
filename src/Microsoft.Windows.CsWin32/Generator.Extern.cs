@@ -216,7 +216,8 @@ public partial class Generator
             {
                 AttributeListSyntax result = AttributeList()
                     .WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken))
-                    .AddAttributes(DllImport(import, moduleName, entrypoint, setLastErrorViaMarshaling, requiresUnicodeCharSet ? CharSet.Unicode : CharSet.Ansi));
+                    .AddAttributes(
+                        DllImport(import, moduleName, entrypoint, setLastErrorViaMarshaling, requiresUnicodeCharSet ? CharSet.Unicode : CharSet.Ansi));
                 if (this.generateDefaultDllImportSearchPathsAttribute)
                 {
                     result = result.AddAttributes(

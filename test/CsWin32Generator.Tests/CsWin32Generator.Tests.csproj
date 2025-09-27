@@ -19,9 +19,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <AdditionalFiles Include="TestContent\BasicNativeMethods.txt">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </AdditionalFiles>
     <AdditionalFiles Include="TestContent\NativeMethods.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </AdditionalFiles>

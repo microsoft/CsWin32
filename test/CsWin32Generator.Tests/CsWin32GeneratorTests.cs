@@ -11,6 +11,10 @@ namespace CsWin32Generator.Tests;
 
 public partial class CsWin32GeneratorTests : GeneratorTestBase
 {
+    private string? nativeMethodsTxt;
+    private List<string> nativeMethods = new();
+    private string? nativeMethodsJson;
+
     public CsWin32GeneratorTests(ITestOutputHelper logger)
         : base(logger)
     {
@@ -26,38 +30,29 @@ public partial class CsWin32GeneratorTests : GeneratorTestBase
     [Fact]
     public async Task BasicNativeMethods()
     {
-        await this.InvokeGenerator("BasicNativeMethods.txt");
+        this.nativeMethods.Add("CHAR");
+        await this.InvokeGeneratorAndCompile();
     }
 
     [Fact]
     public async Task Generate_RmRegisterResources()
     {
-        string nativeMethodsTxt = Path.Combine(this.GetTestCaseOutputDirectory(), "RmRegisterResources.txt");
-        File.WriteAllLines(nativeMethodsTxt, ["RmRegisterResources"]);
+        this.nativeMethods.Add("RmRegisterResources");
+        await this.InvokeGeneratorAndCompile();
+    }
 
-        await this.InvokeGenerator(nativeMethodsTxt);
-
-        // Collect all generated .cs files from the output directory
-        string outputPath = this.GetTestCaseOutputDirectory();
-        string[] generatedFiles = Directory.GetFiles(outputPath, "*.g.cs");
-
-        this.Logger.WriteLine($"Found {generatedFiles.Length} generated files:");
-        foreach (string file in generatedFiles)
-        {
-            this.Logger.WriteLine($"  - {Path.GetFileName(file)}");
-        }
-
-        // Create a compilation with the generated files
-        if (generatedFiles.Length > 0)
-        {
-            await this.CompileGeneratedFilesWithSourceGenerators(generatedFiles);
-        }
+    [Fact]
+    public async Task TestArrayMarshalling()
+    {
+        this.nativeMethods.Add("IEnumEventObject");
+        await this.InvokeGeneratorAndCompile();
     }
 
     [Fact]
     public async Task TestNativeMethods()
     {
-        await this.InvokeGenerator("NativeMethods.txt", "NativeMethods.json");
+        this.nativeMethodsTxt = "NativeMethods.txt";
+        await this.InvokeGeneratorAndCompile();
     }
 
     [Fact]
@@ -77,6 +72,82 @@ public partial class CsWin32GeneratorTests : GeneratorTestBase
 
         // Assert
         Assert.NotEqual(0, exitCode);
+    }
+
+    private async Task InvokeGeneratorAndCompile([CallerMemberName] string testCase = "")
+    {
+        await this.InvokeGenerator(testCase);
+
+        // Collect all generated .cs files from the output directory
+        string outputPath = this.GetTestCaseOutputDirectory(testCase);
+        string[] generatedFiles = Directory.GetFiles(outputPath, "*.g.cs");
+
+        this.Logger.WriteLine($"Found {generatedFiles.Length} generated files:");
+        foreach (string file in generatedFiles)
+        {
+            this.Logger.WriteLine($"  - {Path.GetFileName(file)}");
+        }
+
+        // Create a compilation with the generated files
+        if (generatedFiles.Length > 0)
+        {
+            await this.CompileGeneratedFilesWithSourceGenerators(generatedFiles);
+        }
+    }
+
+    private async Task InvokeGenerator(string testCase)
+    {
+        Console.SetOut(new TestOutputWriter(this.Logger));
+
+        string nativeMethodsTxtPath;
+        if (this.nativeMethodsTxt is string)
+        {
+            Assert.Empty(this.nativeMethods);
+            nativeMethodsTxtPath = Path.Combine(Path.GetDirectoryName(typeof(CsWin32GeneratorTests).Assembly.Location)!, "TestContent", this.nativeMethodsTxt);
+        }
+        else
+        {
+            nativeMethodsTxtPath = Path.Combine(this.GetTestCaseOutputDirectory(testCase), "NativeMethods.txt");
+            File.WriteAllLines(nativeMethodsTxtPath, this.nativeMethods);
+        }
+
+        // Arrange
+        string win32winmd = Path.Combine(Path.GetDirectoryName(typeof(CsWin32GeneratorTests).Assembly.Location)!, "Windows.Win32.winmd");
+        string outputPath = this.GetTestCaseOutputDirectory(testCase);
+
+        Directory.CreateDirectory(outputPath);
+
+        this.Logger.WriteLine($"OutputPath: {outputPath}");
+
+        List<string> args = new();
+        args.AddRange(["--native-methods-txt", nativeMethodsTxtPath]);
+        args.AddRange(["--metadata-paths", win32winmd]);
+        args.AddRange(["--output-path", outputPath]);
+        args.AddRange(["--platform", "x64"]);
+        if (this.nativeMethodsJson is string)
+        {
+            string nativeMethodsJsonPath = Path.Combine(Path.GetDirectoryName(typeof(CsWin32GeneratorTests).Assembly.Location)!, "TestContent", this.nativeMethodsJson);
+            args.AddRange(["--native-methods-json", nativeMethodsJsonPath]);
+        }
+
+        foreach (System.Reflection.Assembly reference in this.GetCompilerReferences())
+        {
+            args.AddRange(["--references", reference.Location]);
+        }
+
+        this.Logger.WriteLine($"CsWin32Generator {string.Join(" ", args)}");
+
+        // Act
+        int exitCode = await CsWin32Generator.Program.Main(args.ToArray());
+
+        // Assert
+        Assert.Equal(0, exitCode);
+        Assert.True(Directory.GetFiles(outputPath, "*.g.cs").Any(), "No generated files found.");
+    }
+
+    private IEnumerable<System.Reflection.Assembly> GetCompilerReferences()
+    {
+        return AppDomain.CurrentDomain.GetAssemblies().Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location));
     }
 
     private async Task CompileGeneratedFilesWithSourceGenerators(string[] generatedFiles)
@@ -117,8 +188,10 @@ public partial class CsWin32GeneratorTests : GeneratorTestBase
             // Log any diagnostics from source generation
             foreach (var diagnostic in diagnostics)
             {
-                this.Logger.WriteLine($"Source generator diagnostic: {diagnostic}");
+                this.Logger.WriteLine($"Diagnostic: {diagnostic}");
             }
+
+            Assert.Empty(diagnostics);
         }
         else
         {
@@ -176,51 +249,7 @@ public partial class CsWin32GeneratorTests : GeneratorTestBase
         return generators;
     }
 
-    private async Task InvokeGenerator(string nativeMethodsTxt, string? nativeMethodsJson = null, [CallerMemberName] string testCase = "")
-    {
-        Console.SetOut(new TestOutputWriter(this.Logger));
-
-        // Arrange
-        string nativeMethodsTxtPath = Path.Combine(Path.GetDirectoryName(typeof(CsWin32GeneratorTests).Assembly.Location)!, "TestContent", nativeMethodsTxt);
-        string win32winmd = Path.Combine(Path.GetDirectoryName(typeof(CsWin32GeneratorTests).Assembly.Location)!, "Windows.Win32.winmd");
-        string outputPath = this.GetTestCaseOutputDirectory(testCase);
-
-        Directory.CreateDirectory(outputPath);
-
-        this.Logger.WriteLine($"OutputPath: {outputPath}");
-
-        List<string> args = new();
-        args.AddRange(["--native-methods-txt", nativeMethodsTxtPath]);
-        args.AddRange(["--metadata-paths", win32winmd]);
-        args.AddRange(["--output-path", outputPath]);
-        args.AddRange(["--platform", "x64"]);
-        if (nativeMethodsJson is string)
-        {
-            string nativeMethodsJsonPath = Path.Combine(Path.GetDirectoryName(typeof(CsWin32GeneratorTests).Assembly.Location)!, "TestContent", nativeMethodsJson);
-            args.AddRange(["--native-methods-json", nativeMethodsJsonPath]);
-        }
-
-        foreach (System.Reflection.Assembly reference in this.GetCompilerReferences())
-        {
-            args.AddRange(["--references", reference.Location]);
-        }
-
-        this.Logger.WriteLine($"CsWin32Generator {string.Join(" ", args)}");
-
-        // Act
-        int exitCode = await CsWin32Generator.Program.Main(args.ToArray());
-
-        // Assert
-        Assert.Equal(0, exitCode);
-        Assert.True(Directory.GetFiles(outputPath, "*.g.cs").Any(), "No generated files found.");
-    }
-
-    private IEnumerable<System.Reflection.Assembly> GetCompilerReferences()
-    {
-        return AppDomain.CurrentDomain.GetAssemblies().Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location));
-    }
-
-    private string GetTestCaseOutputDirectory([CallerMemberName] string testCase = "")
+    private string GetTestCaseOutputDirectory(string testCase)
     {
         string outputPath = Path.Combine(this.GetOutputDirectory(), testCase);
         if (!Directory.Exists(outputPath))

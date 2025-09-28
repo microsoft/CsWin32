@@ -13,6 +13,7 @@ public partial class Generator
             .WithNameEquals(NameEquals(IdentifierName("CallConvs")))));
 
     private readonly HashSet<string> injectedPInvokeHelperMethodsToFriendlyOverloadsExtensions = new();
+    private bool GenerateIDispatch => this.options.ComInterop.ShouldUseComSourceGenerators;
 
     private static Guid DecodeGuidFromAttribute(CustomAttribute guidAttribute)
     {
@@ -33,9 +34,35 @@ public partial class Generator
 
     private static bool IsHresult(TypeHandleInfo? typeHandleInfo) => typeHandleInfo is HandleTypeHandleInfo handleInfo && handleInfo.IsType("HRESULT");
 
-    private static bool GenerateCcwFor(string interfaceName) => interfaceName is not ("IUnknown" or "IDispatch" or "IInspectable");
+    private static bool GenerateCcwFor(string interfaceName, bool generateIDispatch)
+    {
+        if (interfaceName is "IUnknown" or "IInspectable")
+        {
+            return false;
+        }
 
-    private static bool GenerateCcwFor(MetadataReader reader, StringHandle typeName) => !(reader.StringComparer.Equals(typeName, "IUnknown") || reader.StringComparer.Equals(typeName, "IDispatch") || reader.StringComparer.Equals(typeName, "IInspectable"));
+        if (interfaceName is "IDispatch" && !generateIDispatch)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool GenerateCcwFor(MetadataReader reader, StringHandle typeName, bool generateIDispatch)
+    {
+        if (reader.StringComparer.Equals(typeName, "IUnknown") || reader.StringComparer.Equals(typeName, "IInspectable"))
+        {
+            return false;
+        }
+
+        if (reader.StringComparer.Equals(typeName, "IDispatch") && !generateIDispatch)
+        {
+            return false;
+        }
+
+        return true;
+    }
 
     /// <summary>
     /// Generates a type to represent a COM interface.
@@ -105,7 +132,7 @@ public partial class Generator
         TypeSyntaxSettings typeSettings = context.Filter(this.comSignatureTypeSettings);
         IdentifierNameSyntax pThisParameterName = IdentifierName("pThis");
         ExpressionSyntax pThis = ThisPointer(PointerType(ifaceName));
-        ParameterSyntax? ccwThisParameter = this.canUseUnmanagedCallersOnlyAttribute && !this.options.AllowMarshaling && originalIfaceName != "IUnknown" && originalIfaceName != "IDispatch" && !this.IsNonCOMInterface(typeDef) ? Parameter(pThisParameterName.Identifier).WithType(PointerType(ifaceName).WithTrailingTrivia(Space)) : null;
+        ParameterSyntax? ccwThisParameter = this.canUseUnmanagedCallersOnlyAttribute && !this.options.AllowMarshaling && originalIfaceName != "IUnknown" && (originalIfaceName != "IDispatch" && !this.GenerateIDispatch) && !this.IsNonCOMInterface(typeDef) ? Parameter(pThisParameterName.Identifier).WithType(PointerType(ifaceName).WithTrailingTrivia(Space)) : null;
         List<QualifiedMethodDefinitionHandle> ccwMethodsToSkip = new();
         List<MemberDeclarationSyntax> ccwEntrypointMethods = new();
         IdentifierNameSyntax vtblParamName = IdentifierName("vtable");
@@ -130,7 +157,7 @@ public partial class Generator
             hasIUnknownMembers |= qualifiedBaseType.Reader.StringComparer.Equals(baseType.Name, "IUnknown");
 
             // We do *not* emit CCW methods for IUnknown, because those are provided by ComWrappers.
-            if (ccwThisParameter is not null && !GenerateCcwFor(qualifiedBaseType.Reader, baseType.Name))
+            if (ccwThisParameter is not null && !GenerateCcwFor(qualifiedBaseType.Reader, baseType.Name, this.GenerateIDispatch))
             {
                 ccwMethodsToSkip.AddRange(methodsThisType);
             }
@@ -563,10 +590,15 @@ public partial class Generator
 
     private TypeDeclarationSyntax? DeclareInterfaceAsInterface(TypeDefinition typeDef, ImmutableStack<QualifiedTypeDefinitionHandle> baseTypes, Context context, bool interfaceAsSubtype = false)
     {
-        if (this.Reader.StringComparer.Equals(typeDef.Name, "IUnknown") || this.Reader.StringComparer.Equals(typeDef.Name, "IDispatch"))
+        if (this.Reader.StringComparer.Equals(typeDef.Name, "IUnknown"))
         {
             // We do not generate interfaces for these COM base types.
             return null;
+        }
+
+        if (this.Reader.StringComparer.Equals(typeDef.Name, "IDispatch"))
+        {
+            return this.GenerateIDispatch ? CreateIDispatchTypeDeclarationSyntax() : null;
         }
 
         string actualIfaceName = this.Reader.GetString(typeDef.Name);
@@ -595,7 +627,7 @@ public partial class Generator
             }
             else
             {
-                if (baseTypeHandle.Reader.StringComparer.Equals(baseType.Definition.Name, "IDispatch"))
+                if (baseTypeHandle.Reader.StringComparer.Equals(baseType.Definition.Name, "IDispatch") && !this.GenerateIDispatch)
                 {
                     foundIDispatch = true;
                 }
@@ -647,7 +679,8 @@ public partial class Generator
                 // Even if it could be represented as a property accessor, we cannot do so if a property by the same name was already declared in anything other than the previous row.
                 // Adding an accessor to a property later than the very next row would screw up the virtual method table ordering.
                 // We must also confirm that the property type is the same in both cases, because sometimes they aren't (e.g. IUIAutomationProxyFactoryEntry.ClassName).
-                if (methodDefinition.Generator.TryGetPropertyAccessorInfo(methodDefinition, actualIfaceName, context, out IdentifierNameSyntax? propertyName, out SyntaxKind? accessorKind, out TypeSyntax? propertyType) && declaredProperties.Contains(propertyName.Identifier.ValueText))
+                // Don't do this if we are using GeneratedComInterface because that doesn't support properties yet.
+                if (methodDefinition.Generator.TryGetPropertyAccessorInfo(methodDefinition, actualIfaceName, context, out IdentifierNameSyntax? propertyName, out SyntaxKind? accessorKind, out TypeSyntax? propertyType) && declaredProperties.Contains(propertyName.Identifier.ValueText) && !this.options.ComInterop.ShouldUseComSourceGenerators)
                 {
                     AccessorDeclarationSyntax accessor = AccessorDeclaration(accessorKind.Value).WithSemicolonToken(Semicolon);
 
@@ -794,6 +827,11 @@ public partial class Generator
         return ifaceDeclaration;
     }
 
+    private TypeDeclarationSyntax? CreateIDispatchTypeDeclarationSyntax()
+    {
+        throw new NotImplementedException();
+    }
+
     private unsafe (IReadOnlyList<MemberDeclarationSyntax> Members, IReadOnlyList<BaseTypeSyntax> BaseTypes) DeclareStaticCOMInterfaceMembers(
         string originalIfaceName,
         IdentifierNameSyntax ifaceName,
@@ -806,7 +844,7 @@ public partial class Generator
 
         // IVTable<ComStructType, ComStructType.Vtbl>
         // Static interface members require C# 11 and .NET 7 at minimum.
-        if (populateVtblDeclared && this.IsFeatureAvailable(Feature.InterfaceStaticMembers) && !context.AllowMarshaling && GenerateCcwFor(originalIfaceName))
+        if (populateVtblDeclared && this.IsFeatureAvailable(Feature.InterfaceStaticMembers) && !context.AllowMarshaling && GenerateCcwFor(originalIfaceName, this.GenerateIDispatch))
         {
             this.RequestComHelpers(context);
             baseTypes.Add(SimpleBaseType(GenericName($"{this.Win32NamespacePrefixString}.IVTable").AddTypeArgumentListArguments(

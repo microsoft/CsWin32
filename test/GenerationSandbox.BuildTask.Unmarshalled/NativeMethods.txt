@@ -1,4 +1,5 @@
-﻿IEventSubscription
+﻿IShellWindows
+IEventSubscription
 //IPersistFile
 IStream
 CreateFile
@@ -11,3 +12,5 @@ STATSTG
 STATFLAG
 HANDLE
 WNDCLASSW
+RmRegisterResources
+IDispatch

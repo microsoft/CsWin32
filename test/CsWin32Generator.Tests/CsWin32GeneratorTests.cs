@@ -18,11 +18,6 @@ public partial class CsWin32GeneratorTests : GeneratorTestBase
     public CsWin32GeneratorTests(ITestOutputHelper logger)
         : base(logger)
     {
-        string outputPath = this.GetOutputDirectory();
-        if (Directory.Exists(outputPath))
-        {
-            Directory.Delete(outputPath, true);
-        }
     }
 
     public ITestOutputHelper Logger => TestContext.Current.TestOutputHelper!;
@@ -42,9 +37,23 @@ public partial class CsWin32GeneratorTests : GeneratorTestBase
     }
 
     [Fact]
+    public async Task TestGenerateIDispatch()
+    {
+        this.nativeMethods.Add("IDispatch");
+        await this.InvokeGeneratorAndCompile();
+    }
+
+    [Fact]
     public async Task TestArrayMarshalling()
     {
         this.nativeMethods.Add("IEnumEventObject");
+        await this.InvokeGeneratorAndCompile();
+    }
+
+    [Fact]
+    public async Task TestPropertyOnInterface()
+    {
+        this.nativeMethods.Add("IShellWindows");
         await this.InvokeGeneratorAndCompile();
     }
 
@@ -97,6 +106,12 @@ public partial class CsWin32GeneratorTests : GeneratorTestBase
 
     private async Task InvokeGenerator(string testCase)
     {
+        string outputPath = this.GetTestCaseOutputDirectory(testCase);
+        if (Directory.Exists(outputPath))
+        {
+            Directory.Delete(outputPath, true);
+        }
+
         Console.SetOut(new TestOutputWriter(this.Logger));
 
         string nativeMethodsTxtPath;
@@ -113,7 +128,6 @@ public partial class CsWin32GeneratorTests : GeneratorTestBase
 
         // Arrange
         string win32winmd = Path.Combine(Path.GetDirectoryName(typeof(CsWin32GeneratorTests).Assembly.Location)!, "Windows.Win32.winmd");
-        string outputPath = this.GetTestCaseOutputDirectory(testCase);
 
         Directory.CreateDirectory(outputPath);
 

@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Xunit;
 
 namespace CsWin32Generator.Tests;
@@ -37,23 +38,56 @@ public partial class CsWin32GeneratorTests : GeneratorTestBase
     }
 
     [Fact]
-    public async Task TestGenerateIDispatch()
+    public async Task TestGenerateIStream()
     {
-        this.nativeMethods.Add("IDispatch");
+        // IStream exercises enum parameters that need to be marshalled as U4.
+        this.nativeMethods.Add("IStream");
         await this.InvokeGeneratorAndCompile();
     }
 
     [Fact]
-    public async Task TestArrayMarshalling()
+    public async Task TestGenerateIDispatch()
     {
+        // IDispatch is not normally emitted, but we need it for source generated com so check that it got generated.
+        this.nativeMethods.Add("IDispatch");
+        await this.InvokeGeneratorAndCompile();
+
+        var idispatchType = this.FindGeneratedType("IDispatch");
+        Assert.NotEmpty(idispatchType);
+    }
+
+    [Fact]
+    public async Task TestIEnumEventObject()
+    {
+        // IEnumEventObject derives from IDispatch
         this.nativeMethods.Add("IEnumEventObject");
         await this.InvokeGeneratorAndCompile();
     }
 
     [Fact]
-    public async Task TestPropertyOnInterface()
+    public async Task TestGenerateIShellWindows()
     {
         this.nativeMethods.Add("IShellWindows");
+        await this.InvokeGeneratorAndCompile();
+
+        var ishellWindowsType = this.FindGeneratedType("IShellWindows");
+        Assert.NotEmpty(ishellWindowsType);
+
+        // Check that IShellWindows has IDispatch as a base
+        Assert.Contains(ishellWindowsType, x => x.BaseList?.Types.Any(t => t.Type.ToString().Contains("IDispatch")) ?? false);
+    }
+
+    [Fact]
+    public async Task TestGenerateSetLastError()
+    {
+        this.nativeMethods.Add("DestroyIcon");
+        await this.InvokeGeneratorAndCompile();
+    }
+
+    [Fact]
+    public async Task TestDebugPropertyInfo()
+    {
+        this.nativeMethods.Add("IDebugProperty");
         await this.InvokeGeneratorAndCompile();
     }
 

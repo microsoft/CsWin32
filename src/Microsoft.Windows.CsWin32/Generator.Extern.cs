@@ -211,12 +211,15 @@ public partial class Generator
             bool setLastError = (import.Attributes & MethodImportAttributes.SetLastError) == MethodImportAttributes.SetLastError;
             bool setLastErrorViaMarshaling = setLastError && (this.Options.AllowMarshaling || !this.canUseSetLastPInvokeError);
             bool setLastErrorManually = setLastError && !setLastErrorViaMarshaling;
+            bool useGenerator = this.options.ComInterop.ShouldUseComSourceGenerators;
 
             AttributeListSyntax CreateDllImportAttributeList()
             {
                 AttributeListSyntax result = AttributeList()
                     .WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken))
                     .AddAttributes(
+                    useGenerator ?
+                        LibraryImport(import, moduleName, entrypoint, setLastErrorViaMarshaling, requiresUnicodeCharSet ? CharSet.Unicode : CharSet.Ansi) :
                         DllImport(import, moduleName, entrypoint, setLastErrorViaMarshaling, requiresUnicodeCharSet ? CharSet.Unicode : CharSet.Ansi));
                 if (this.generateDefaultDllImportSearchPathsAttribute)
                 {
@@ -231,7 +234,7 @@ public partial class Generator
 
             MethodDeclarationSyntax externDeclaration = MethodDeclaration(
                 List<AttributeListSyntax>().Add(CreateDllImportAttributeList()),
-                modifiers: TokenList(TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.ExternKeyword)),
+                modifiers: TokenList(TokenWithSpace(SyntaxKind.StaticKeyword)),
                 returnType.Type.WithTrailingTrivia(TriviaList(Space)),
                 explicitInterfaceSpecifier: null!,
                 SafeIdentifier(methodName),
@@ -241,6 +244,11 @@ public partial class Generator
                 body: null!,
                 TokenWithLineFeed(SyntaxKind.SemicolonToken));
             externDeclaration = returnType.AddReturnMarshalAs(externDeclaration);
+
+            if (!useGenerator)
+            {
+                externDeclaration = externDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.ExternKeyword));
+            }
 
             bool requiresUnsafe = RequiresUnsafe(externDeclaration.ReturnType) || externDeclaration.ParameterList.Parameters.Any(p => RequiresUnsafe(p.Type));
             if (requiresUnsafe)
@@ -346,6 +354,12 @@ public partial class Generator
                 {
                     exposedMethod = exposedMethod.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));
                 }
+            }
+
+            // Partial is the last keyword if it's present.
+            if (useGenerator)
+            {
+                exposedMethod = exposedMethod.AddModifiers(TokenWithSpace(SyntaxKind.PartialKeyword));
             }
 
             if (this.GetSupportedOSPlatformAttribute(methodDefinition.GetCustomAttributes()) is AttributeSyntax supportedOSPlatformAttribute)

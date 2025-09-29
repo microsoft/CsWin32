@@ -279,6 +279,7 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
                     {
                         marshalAs = new MarshalAsAttribute(UnmanagedType.IUnknown);
                     }
+
                     return true;
                 case "IDispatch":
                     marshalAs = new MarshalAsAttribute(UnmanagedType.IDispatch);

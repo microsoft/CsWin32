@@ -2,7 +2,7 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 #pragma warning disable IDE0005
-#pragma warning disable SA1201, SA1512, SA1005, SA1507, SA1515, SA1403, SA1402, SA1411, SA1300, SA1313, SA1134
+#pragma warning disable SA1201, SA1512, SA1005, SA1507, SA1515, SA1403, SA1402, SA1411, SA1300, SA1313, SA1134, SA1307, SA1308
 
 using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
@@ -14,6 +14,79 @@ using Windows.Win32.System.Com;
 //using Windows.Win32.System.Com;
 
 
+namespace Windows.Win32.System.Diagnostics.Debug
+{
+    [NativeMarshalling(typeof(DebugPropertyInfoMarshaller))]
+    internal partial struct DebugPropertyInfo
+    {
+        internal unsafe struct __Native
+        {
+            internal uint m_dwValidFields;
+
+            internal BSTR m_bstrName;
+
+            internal BSTR m_bstrType;
+
+            internal BSTR m_bstrValue;
+
+            internal BSTR m_bstrFullName;
+
+            internal uint m_dwAttrib;
+
+            internal void* m_pDebugProp;
+        }
+    }
+
+    [CustomMarshaller(typeof(DebugPropertyInfo), MarshalMode.ManagedToUnmanagedIn, typeof(DebugPropertyInfoMarshaller))]
+    [CustomMarshaller(typeof(DebugPropertyInfo), MarshalMode.ManagedToUnmanagedOut, typeof(DebugPropertyInfoMarshaller))]
+    internal static unsafe class DebugPropertyInfoMarshaller
+    {
+        public static DebugPropertyInfo ConvertToManaged(DebugPropertyInfo.__Native unmanaged)
+        {
+            try
+            {
+                DebugPropertyInfo managed = new()
+                {
+                    m_dwValidFields = unmanaged.m_dwValidFields,
+                    m_bstrName = unmanaged.m_bstrName,
+                    m_bstrType = unmanaged.m_bstrType,
+                    m_bstrValue = unmanaged.m_bstrValue,
+                    m_bstrFullName = unmanaged.m_bstrFullName,
+                    m_dwAttrib = unmanaged.m_dwAttrib,
+                    m_pDebugProp = ComInterfaceMarshaller<IDebugProperty>.ConvertToManaged(unmanaged.m_pDebugProp),
+                };
+
+                return managed;
+            }
+            finally
+            {
+                ComInterfaceMarshaller<IDebugProperty>.Free(unmanaged.m_pDebugProp);
+            }
+        }
+
+        public static DebugPropertyInfo.__Native ConvertToUnmanaged(DebugPropertyInfo managed)
+        {
+            DebugPropertyInfo.__Native unmanaged = new()
+            {
+                m_dwValidFields = managed.m_dwValidFields,
+                m_bstrName = managed.m_bstrName,
+                m_bstrType = managed.m_bstrType,
+                m_bstrValue = managed.m_bstrValue,
+                m_bstrFullName = managed.m_bstrFullName,
+                m_dwAttrib = managed.m_dwAttrib,
+                m_pDebugProp = ComInterfaceMarshaller<IDebugProperty>.ConvertToUnmanaged(managed.m_pDebugProp),
+            };
+            return unmanaged;
+        }
+
+        public static void Free(DebugPropertyInfo.__Native unmanaged)
+        {
+            ComInterfaceMarshaller<IDebugProperty>.Free(unmanaged.m_pDebugProp);
+        }
+    }
+
+}
+
 public partial class COMTests
 {
     [Fact]
@@ -21,8 +94,8 @@ public partial class COMTests
     {
     }
 
-    //[LibraryImport("query.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    //internal static unsafe partial void LoadIFilter(PCWSTR pwcsPath, Com.ISequentialStream pUnkOuter, out Com.ISequentialStream ppIUnk);
+    [LibraryImport("query.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    internal static unsafe partial void LoadIFilter(PCWSTR pwcsPath, ISequentialStream pUnkOuter, out ISequentialStream ppIUnk);
 
     ////[LibraryImport("query.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     ////internal static unsafe partial void LoadIFilter2([MarshalUsing(typeof(SpanMarshaller<int, int>))] Span<int> x);

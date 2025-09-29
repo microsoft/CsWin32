@@ -45,6 +45,14 @@ public partial class CsWin32GeneratorTests : GeneratorTestBase
     }
 
     [Fact]
+    public async Task TestGenerateIServiceProvider()
+    {
+        // IServiceProvider exercises out parameter of type IUnknown marshaled to object.
+        this.nativeMethods.Add("IServiceProvider");
+        await this.InvokeGeneratorAndCompile();
+    }
+
+    [Fact]
     public async Task TestGenerateIDispatch()
     {
         // IDispatch is not normally emitted, but we need it for source generated com so check that it got generated.

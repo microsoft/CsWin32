@@ -90,7 +90,14 @@ internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleIn
         }
         else if (inputs.AllowMarshaling && customAttributes is object && customAttributes.Value.Generator.FindInteropDecorativeAttribute(customAttributes.Value.Collection, "ComOutPtrAttribute") is not null)
         {
-            return new TypeSyntaxAndMarshaling(PredefinedType(Token(SyntaxKind.ObjectKeyword)), new MarshalAsAttribute(UnmanagedType.IUnknown), null);
+            if (inputs.Generator?.Options.ComInterop.ShouldUseComSourceGenerators == true)
+            {
+                return new TypeSyntaxAndMarshaling(PredefinedType(Token(SyntaxKind.ObjectKeyword)), new MarshalAsAttribute(UnmanagedType.Interface), null);
+            }
+            else
+            {
+                return new TypeSyntaxAndMarshaling(PredefinedType(Token(SyntaxKind.ObjectKeyword)), new MarshalAsAttribute(UnmanagedType.IUnknown), null);
+            }
         }
 
         return new TypeSyntaxAndMarshaling(PointerType(elementTypeDetails.Type));

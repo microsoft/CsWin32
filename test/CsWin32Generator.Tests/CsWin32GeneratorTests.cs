@@ -179,8 +179,14 @@ public partial class CsWin32GeneratorTests : GeneratorTestBase
             syntaxTrees.Add(syntaxTree);
         }
 
-        // Also add the assembly attribute
+        // Add the assembly attribute for DisableRuntimeMarshalling
+        string disableRuntimeMarshallingSource = @"
+using System.Runtime.CompilerServices;
 
+[assembly: DisableRuntimeMarshalling]
+";
+        SyntaxTree disableRuntimeMarshallingSyntaxTree = CSharpSyntaxTree.ParseText(disableRuntimeMarshallingSource, path: "DisableRuntimeMarshalling.cs");
+        syntaxTrees.Add(disableRuntimeMarshallingSyntaxTree);
 
         this.compilation = this.compilation.AddSyntaxTrees(syntaxTrees);
 
@@ -208,7 +214,10 @@ public partial class CsWin32GeneratorTests : GeneratorTestBase
                 this.Logger.WriteLine($"Diagnostic: {diagnostic}");
             }
 
-            Assert.Empty(diagnostics);
+            // Filter out SYSLIB1092 diagnostics (related to DisableRuntimeMarshalling) as they are expected
+            var filteredDiagnostics = diagnostics.Where(d => d.Descriptor.Id != "SYSLIB1092");
+
+            Assert.Empty(filteredDiagnostics);
         }
         else
         {

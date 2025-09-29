@@ -1081,7 +1081,7 @@ public partial class Generator : IGenerator, IDisposable
         });
     }
 
-    internal string RequestCustomMarshaler(string enumTypeName, UnmanagedType unmanagedType)
+    internal string RequestCustomMarshaler(string enumTypeName, string ns, UnmanagedType unmanagedType)
     {
         if (unmanagedType != UnmanagedType.U4)
         {
@@ -1162,6 +1162,8 @@ public partial class Generator : IGenerator, IDisposable
                 .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword))
                 .AddAttributeLists(customMarshallerAttributes.Select(attr => AttributeList().AddAttributes(attr)).ToArray())
                 .AddMembers(convertToManagedMethod, convertToUnmanagedMethod, freeMethod);
+
+            marshalerClass = marshalerClass.WithAdditionalAnnotations(new SyntaxAnnotation(NamespaceContainerAnnotation, ns));
 
             this.volatileCode.AddCustomTypeMarshaler(customTypeMarshalerName, marshalerClass);
 
@@ -1624,9 +1626,10 @@ public partial class Generator : IGenerator, IDisposable
 
             if (parameterTypeSyntax.MarshalUsingType is string marshalUsingType)
             {
-
+                attributes = attributes.AddAttributes(
+                    Attribute(ParseName("global::System.Runtime.InteropServices.Marshalling.MarshalUsing"))
+                        .AddArgumentListArguments(AttributeArgument(TypeOfExpression(ParseName(marshalUsingType)))));
             }
-
 
             ParameterSyntax parameterSyntax = Parameter(
                 attributes.Attributes.Count > 0 ? List<AttributeListSyntax>().Add(attributes) : List<AttributeListSyntax>(),

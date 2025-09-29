@@ -18,77 +18,77 @@ using Windows.Win32.System.Com;
 //[CustomMarshaller(typeof(T), MarshalMode.ManagedToUnmanagedOut, typeof(EnumToUintMarshaller<T>))]
 //[CustomMarshaller(typeof(T), MarshalMode.UnmanagedToManagedIn, typeof(EnumToUintMarshaller<T>))]
 //[CustomMarshaller(typeof(T), MarshalMode.UnmanagedToManagedOut, typeof(EnumToUintMarshaller<T>))]
-internal static class EnumToUintMarshaller<T>
-    where T : unmanaged, Enum
-{
-    public static unsafe T ConvertToManaged(uint unmanaged)
-    {
-        return System.Runtime.CompilerServices.Unsafe.BitCast<uint, T>(unmanaged);
-    }
+//internal static class EnumToUintMarshaller<T>
+//    where T : unmanaged, Enum
+//{
+//    public static unsafe T ConvertToManaged(uint unmanaged)
+//    {
+//        return System.Runtime.CompilerServices.Unsafe.BitCast<uint, T>(unmanaged);
+//    }
 
-    public static uint ConvertToUnmanaged(T managed)
-    {
-        return System.Runtime.CompilerServices.Unsafe.BitCast<T, uint>(managed);
-    }
+//    public static uint ConvertToUnmanaged(T managed)
+//    {
+//        return System.Runtime.CompilerServices.Unsafe.BitCast<T, uint>(managed);
+//    }
 
-    public static void Free(uint unmanaged)
-    {
-    }
-}
+//    public static void Free(uint unmanaged)
+//    {
+//    }
+//}
 
-[Guid("0000000C-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown), GeneratedComInterface()]
-[SupportedOSPlatform("windows5.0")]
-[global::System.CodeDom.Compiler.GeneratedCode("Microsoft.Windows.CsWin32", "0.3.235+132ca681b2.D")]
-internal partial interface IStream2
-    : Windows.Win32.System.Com.ISequentialStream
-{
-    [PreserveSig()]
-    unsafe new Windows.Win32.Foundation.HRESULT Read(void* pv, uint cb, [Optional] uint* pcbRead);
+//[Guid("0000000C-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown), GeneratedComInterface()]
+//[SupportedOSPlatform("windows5.0")]
+//[global::System.CodeDom.Compiler.GeneratedCode("Microsoft.Windows.CsWin32", "0.3.235+132ca681b2.D")]
+//internal partial interface IStream2
+//    : Windows.Win32.System.Com.ISequentialStream
+//{
+//    [PreserveSig()]
+//    unsafe new Windows.Win32.Foundation.HRESULT Read(void* pv, uint cb, [Optional] uint* pcbRead);
 
-    [PreserveSig()]
-    unsafe new Windows.Win32.Foundation.HRESULT Write(void* pv, uint cb, [Optional] uint* pcbWritten);
+//    [PreserveSig()]
+//    unsafe new Windows.Win32.Foundation.HRESULT Write(void* pv, uint cb, [Optional] uint* pcbWritten);
 
-    unsafe void Seek(long dlibMove, global::System.IO.SeekOrigin dwOrigin, [Optional] ulong* plibNewPosition);
+//    unsafe void Seek(long dlibMove, global::System.IO.SeekOrigin dwOrigin, [Optional] ulong* plibNewPosition);
 
-    void SetSize(ulong libNewSize);
+//    void SetSize(ulong libNewSize);
 
-    unsafe void CopyTo(IStream2 pstm, ulong cb, [Optional] ulong* pcbRead, [Optional] ulong* pcbWritten);
+//    unsafe void CopyTo(IStream2 pstm, ulong cb, [Optional] ulong* pcbRead, [Optional] ulong* pcbWritten);
 
-    void Commit([MarshalUsing(typeof(STGCToUintMarshaller))] Windows.Win32.System.Com.STGC grfCommitFlags);
+//    void Commit([MarshalUsing(typeof(STGCToUintMarshaller))] Windows.Win32.System.Com.STGC grfCommitFlags);
 
-    void Revert();
+//    void Revert();
 
-    void LockRegion(ulong libOffset, ulong cb, [MarshalUsing(typeof(EnumToUintMarshaller<Windows.Win32.System.Com.LOCKTYPE>))] Windows.Win32.System.Com.LOCKTYPE dwLockType);
+//    void LockRegion(ulong libOffset, ulong cb, [MarshalUsing(typeof(EnumToUintMarshaller<Windows.Win32.System.Com.LOCKTYPE>))] Windows.Win32.System.Com.LOCKTYPE dwLockType);
 
-    void UnlockRegion(ulong libOffset, ulong cb, uint dwLockType);
+//    void UnlockRegion(ulong libOffset, ulong cb, uint dwLockType);
 
-    unsafe void Stat(Windows.Win32.System.Com.STATSTG* pstatstg, [MarshalUsing(typeof(EnumToUintMarshaller<Windows.Win32.System.Com.STATFLAG>))] Windows.Win32.System.Com.STATFLAG grfStatFlag);
+//    unsafe void Stat(Windows.Win32.System.Com.STATSTG* pstatstg, [MarshalUsing(typeof(EnumToUintMarshaller<Windows.Win32.System.Com.STATFLAG>))] Windows.Win32.System.Com.STATFLAG grfStatFlag);
 
-    void Clone(out IStream2 ppstm);
-}
+//    void Clone(out IStream2 ppstm);
+//}
 
-[CustomMarshaller(typeof(STGC), MarshalMode.ManagedToUnmanagedIn, typeof(STGCToUintMarshaller))]
-[CustomMarshaller(typeof(STGC), MarshalMode.ManagedToUnmanagedOut, typeof(STGCToUintMarshaller))]
-[CustomMarshaller(typeof(STGC), MarshalMode.UnmanagedToManagedIn, typeof(STGCToUintMarshaller))]
-[CustomMarshaller(typeof(STGC), MarshalMode.UnmanagedToManagedOut, typeof(STGCToUintMarshaller))]
-[CustomMarshaller(typeof(STGC), MarshalMode.ElementIn, typeof(STGCToUintMarshaller))]
-[CustomMarshaller(typeof(STGC), MarshalMode.ElementOut, typeof(STGCToUintMarshaller))]
-internal static class STGCToUintMarshaller
-{
-    public static unsafe STGC ConvertToManaged(uint unmanaged)
-    {
-        return (STGC)unmanaged;
-    }
+//[CustomMarshaller(typeof(STGC), MarshalMode.ManagedToUnmanagedIn, typeof(STGCToUintMarshaller))]
+//[CustomMarshaller(typeof(STGC), MarshalMode.ManagedToUnmanagedOut, typeof(STGCToUintMarshaller))]
+//[CustomMarshaller(typeof(STGC), MarshalMode.UnmanagedToManagedIn, typeof(STGCToUintMarshaller))]
+//[CustomMarshaller(typeof(STGC), MarshalMode.UnmanagedToManagedOut, typeof(STGCToUintMarshaller))]
+//[CustomMarshaller(typeof(STGC), MarshalMode.ElementIn, typeof(STGCToUintMarshaller))]
+//[CustomMarshaller(typeof(STGC), MarshalMode.ElementOut, typeof(STGCToUintMarshaller))]
+//internal static class STGCToUintMarshaller
+//{
+//    public static unsafe STGC ConvertToManaged(uint unmanaged)
+//    {
+//        return (STGC)unmanaged;
+//    }
 
-    public static uint ConvertToUnmanaged(STGC managed)
-    {
-        return (uint)managed;
-    }
+//    public static uint ConvertToUnmanaged(STGC managed)
+//    {
+//        return (uint)managed;
+//    }
 
-    public static void Free(uint unmanaged)
-    {
-    }
-}
+//    public static void Free(uint unmanaged)
+//    {
+//    }
+//}
 
 namespace Windows.Win32.System.Diagnostics.Debug
 {

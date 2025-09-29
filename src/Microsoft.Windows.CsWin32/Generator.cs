@@ -1081,6 +1081,22 @@ public partial class Generator : IGenerator, IDisposable
         });
     }
 
+    internal void RequestCustomMarshaler(TypeDefinition enumTypeDef, UnmanagedType unmanagedType)
+    {
+        if (unmanagedType != UnmanagedType.U4)
+        {
+            throw new InvalidOperationException("Only UnmanagedType.U4 is supported for enum marshaling.");
+        }
+
+        string typeName = this.Reader.GetString(enumTypeDef.Name);
+        string customTypeMarshalerName = $"{typeName}To{unmanagedType}Marshaler";
+
+        this.volatileCode.GenerateCustomTypeMarshaler(customTypeMarshalerName, delegate
+        {
+
+        });
+    }
+
     internal void GetBaseTypeInfo(TypeDefinition typeDef, out StringHandle baseTypeName, out StringHandle baseTypeNamespace)
     {
         if (typeDef.BaseType.IsNil)

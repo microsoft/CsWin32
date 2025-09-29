@@ -1,7 +1,7 @@
 ﻿IShellWindows
 IEventSubscription
 //IPersistFile
-IStream
+//IStream
 //CreateFile
 //OpenFile
 //LoadIFilter
@@ -21,3 +21,4 @@ WINTRUST_DATA
 WINTRUST_FILE_INFO
 MAX_PATH
 DebugPropertyInfo
+ISequentialStream

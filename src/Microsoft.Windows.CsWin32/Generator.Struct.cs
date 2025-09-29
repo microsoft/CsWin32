@@ -536,6 +536,11 @@ public partial class Generator
             return (ArrayType(ptr3.ElementType.ToTypeSyntax(typeSettings, GeneratingElement.Field, null).Type).AddRankSpecifiers(ArrayRankSpecifier()), default(SyntaxList<MemberDeclarationSyntax>), marshalAs);
         }
 
+        if (context.AllowMarshaling && this.options.ComInterop.ShouldUseComSourceGenerators && this.IsManagedType(fieldTypeHandleInfo))
+        {
+            return (PointerType(ParseTypeName("void")), default(SyntaxList<MemberDeclarationSyntax>), marshalAs);
+        }
+
         return (originalType, default(SyntaxList<MemberDeclarationSyntax>), marshalAs);
     }
 

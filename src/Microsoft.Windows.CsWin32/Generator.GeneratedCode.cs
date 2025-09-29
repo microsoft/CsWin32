@@ -24,6 +24,8 @@ public partial class Generator
 
         private readonly Dictionary<string, MethodDeclarationSyntax> macros = new(StringComparer.Ordinal);
 
+        private readonly Dictionary<string, ClassDeclarationSyntax> customTypeMarshalers = new();
+
         /// <summary>
         /// The set of types that are or have been generated so we don't stack overflow for self-referencing types.
         /// </summary>
@@ -64,14 +66,15 @@ public partial class Generator
         }
 
         internal bool IsEmpty => this.modulesAndMembers.Count == 0 && this.types.Count == 0 && this.fieldsToSyntax.Count == 0 && this.safeHandleTypes.Count == 0 && this.specialTypes.Count == 0
-            && this.inlineArrayIndexerExtensionsMembers.Count == 0 && this.comInterfaceFriendlyExtensionsMembers.Count == 0 && this.macros.Count == 0 && this.inlineArrays.Count == 0;
+            && this.inlineArrayIndexerExtensionsMembers.Count == 0 && this.comInterfaceFriendlyExtensionsMembers.Count == 0 && this.macros.Count == 0 && this.inlineArrays.Count == 0 && this.customTypeMarshalers.Count == 0;
 
         internal bool NeedsWinRTCustomMarshaler { get; private set; }
 
         internal IEnumerable<MemberDeclarationSyntax> GeneratedTypes => this.GetTypesWithInjectedFields()
             .Concat(this.specialTypes.Values.Where(st => !st.TopLevel).Select(st => st.Type))
             .Concat(this.safeHandleTypes)
-            .Concat(this.inlineArrays.Values);
+            .Concat(this.inlineArrays.Values)
+            .Concat(this.customTypeMarshalers.Values);
 
         internal IEnumerable<MemberDeclarationSyntax> GeneratedTopLevelTypes => this.specialTypes.Values.Where(st => st.TopLevel).Select(st => st.Type);
 
@@ -139,6 +142,12 @@ public partial class Generator
         {
             this.ThrowIfNotGenerating();
             this.macros.Add(macroName, macro);
+        }
+
+        internal void AddCustomTypeMarshaler(string marshalerName, ClassDeclarationSyntax marshaler)
+        {
+            this.ThrowIfNotGenerating();
+            this.customTypeMarshalers.Add(marshalerName, marshaler);
         }
 
         internal void AddInlineArrayIndexerExtension(MethodDeclarationSyntax inlineIndexer)
@@ -347,6 +356,18 @@ public partial class Generator
             generator();
         }
 
+        internal void GenerateCustomTypeMarshaler(string marshalerName, Action generator)
+        {
+            this.ThrowIfNotGenerating();
+
+            if (this.customTypeMarshalers.ContainsKey(marshalerName) || this.parent?.customTypeMarshalers.ContainsKey(marshalerName) is true)
+            {
+                return;
+            }
+
+            generator();
+        }
+
         internal bool TryGetSafeHandleForReleaseMethod(string releaseMethod, out TypeSyntax? safeHandleType)
         {
             return this.releaseMethodsWithSafeHandleTypesGenerating.TryGetValue(releaseMethod, out safeHandleType)
@@ -417,6 +438,7 @@ public partial class Generator
             Commit(this.releaseMethodsWithSafeHandleTypesGenerating, parent?.releaseMethodsWithSafeHandleTypesGenerating);
             Commit(this.inlineArrayIndexerExtensionsMembers, parent?.inlineArrayIndexerExtensionsMembers);
             Commit(this.comInterfaceFriendlyExtensionsMembers, parent?.comInterfaceFriendlyExtensionsMembers);
+            Commit(this.customTypeMarshalers, parent?.customTypeMarshalers);
 
             if (parent is not null)
             {

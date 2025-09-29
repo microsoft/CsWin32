@@ -13,6 +13,7 @@ public partial class Generator
             .WithNameEquals(NameEquals(IdentifierName("CallConvs")))));
 
     private readonly HashSet<string> injectedPInvokeHelperMethodsToFriendlyOverloadsExtensions = new();
+
     private bool GenerateIDispatch => this.options.ComInterop.ShouldUseComSourceGenerators;
 
     private static Guid DecodeGuidFromAttribute(CustomAttribute guidAttribute)
@@ -598,7 +599,7 @@ public partial class Generator
 
         if (this.Reader.StringComparer.Equals(typeDef.Name, "IDispatch"))
         {
-            return this.GenerateIDispatch ? CreateIDispatchTypeDeclarationSyntax() : null;
+            return this.GenerateIDispatch ? this.CreateIDispatchTypeDeclarationSyntax() : null;
         }
 
         string actualIfaceName = this.Reader.GetString(typeDef.Name);
@@ -627,9 +628,15 @@ public partial class Generator
             }
             else
             {
-                if (baseTypeHandle.Reader.StringComparer.Equals(baseType.Definition.Name, "IDispatch") && !this.GenerateIDispatch)
+                if (baseTypeHandle.Reader.StringComparer.Equals(baseType.Definition.Name, "IDispatch"))
                 {
                     foundIDispatch = true;
+
+                    if (this.GenerateIDispatch)
+                    {
+                        this.RequestInteropType("Windows.Win32.System.Com", "IDispatch", context);
+                        baseTypeSyntaxList.Add(SimpleBaseType(QualifiedName(ParseName("global::Windows.Win32.System.Com"), IdentifierName("IDispatch"))));
+                    }
                 }
                 else if (baseTypeHandle.Reader.StringComparer.Equals(baseType.Definition.Name, "IInspectable"))
                 {
@@ -657,7 +664,7 @@ public partial class Generator
 
         AttributeSyntax ifaceType = InterfaceType(
             foundIInspectable ? ComInterfaceType.InterfaceIsIInspectable :
-            foundIDispatch ? (allMethods.Count == 0 ? ComInterfaceType.InterfaceIsIDispatch : ComInterfaceType.InterfaceIsDual) :
+            foundIDispatch ? (this.GenerateIDispatch ? ComInterfaceType.InterfaceIsIUnknown : (allMethods.Count == 0 ? ComInterfaceType.InterfaceIsIDispatch : ComInterfaceType.InterfaceIsDual)) :
             foundIUnknown ? ComInterfaceType.InterfaceIsIUnknown :
             throw new NotSupportedException("No COM interface base type found."));
 
@@ -829,7 +836,40 @@ public partial class Generator
 
     private TypeDeclarationSyntax? CreateIDispatchTypeDeclarationSyntax()
     {
-        throw new NotImplementedException();
+        // IDispatch GUID: 00020400-0000-0000-C000-000000000046
+        Guid iDispatchGuid = new Guid(0x00020400, 0x0000, 0x0000, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46);
+
+        // Create the four placeholder methods
+        var members = new List<MemberDeclarationSyntax>
+        {
+            MethodDeclaration(PredefinedType(Token(SyntaxKind.VoidKeyword)), Identifier("__IDispatchPlaceholder1"))
+                .WithSemicolonToken(SemicolonWithLineFeed),
+            MethodDeclaration(PredefinedType(Token(SyntaxKind.VoidKeyword)), Identifier("__IDispatchPlaceholder2"))
+                .WithSemicolonToken(SemicolonWithLineFeed),
+            MethodDeclaration(PredefinedType(Token(SyntaxKind.VoidKeyword)), Identifier("__IDispatchPlaceholder3"))
+                .WithSemicolonToken(SemicolonWithLineFeed),
+            MethodDeclaration(PredefinedType(Token(SyntaxKind.VoidKeyword)), Identifier("__IDispatchPlaceholder4"))
+                .WithSemicolonToken(SemicolonWithLineFeed),
+        };
+
+        // Create the interface declaration
+        InterfaceDeclarationSyntax ifaceDeclaration = InterfaceDeclaration(Identifier("IDispatch"))
+            .WithKeyword(TokenWithSpace(SyntaxKind.InterfaceKeyword))
+            .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.PartialKeyword))
+            .AddMembers(members.ToArray());
+
+        // Add the attributes: Guid, InterfaceType, and GeneratedComInterface/ComImport
+        AttributeSyntax guidAttribute = GUID(iDispatchGuid);
+        AttributeSyntax interfaceTypeAttribute = InterfaceType(ComInterfaceType.InterfaceIsIUnknown);
+        AttributeSyntax comImportAttribute = this.options.ComInterop.ShouldUseComSourceGenerators
+            ? GeneratedComInterfaceAttributeSyntax
+            : ComImportAttributeSyntax;
+
+        ifaceDeclaration = ifaceDeclaration.AddAttributeLists(
+            AttributeList().AddAttributes(guidAttribute, interfaceTypeAttribute, comImportAttribute)
+                .WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken)));
+
+        return ifaceDeclaration;
     }
 
     private unsafe (IReadOnlyList<MemberDeclarationSyntax> Members, IReadOnlyList<BaseTypeSyntax> BaseTypes) DeclareStaticCOMInterfaceMembers(

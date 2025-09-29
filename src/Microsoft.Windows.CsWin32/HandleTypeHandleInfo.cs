@@ -158,6 +158,14 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
                 return new TypeSyntaxAndMarshaling(IdentifierName(specialName));
             }
         }
+        else if (simpleName is "VARIANT" && this.generator.Options.ComInterop.ShouldUseComSourceGenerators)
+        {
+            return new TypeSyntaxAndMarshaling(QualifiedName(ParseName("global::System.Runtime.InteropServices.Marshalling"), IdentifierName("ComVariant")));
+        }
+        else if (simpleName is "IDispatch" && this.generator.Options.ComInterop.ShouldUseComSourceGenerators)
+        {
+            return new TypeSyntaxAndMarshaling(QualifiedName(ParseName("global::Windows.Win32.System.Com"), IdentifierName("IDispatch")));
+        }
         else if (TryMarshalAsObject(inputs, simpleName, out marshalAs))
         {
             return new TypeSyntaxAndMarshaling(PredefinedType(Token(SyntaxKind.ObjectKeyword)), marshalAs, null);
@@ -263,7 +271,14 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
             switch (name)
             {
                 case "IUnknown":
-                    marshalAs = new MarshalAsAttribute(UnmanagedType.IUnknown);
+                    if (inputs.Generator?.Options.ComInterop.ShouldUseComSourceGenerators == true)
+                    {
+                        marshalAs = new MarshalAsAttribute(UnmanagedType.Interface);
+                    }
+                    else
+                    {
+                        marshalAs = new MarshalAsAttribute(UnmanagedType.IUnknown);
+                    }
                     return true;
                 case "IDispatch":
                     marshalAs = new MarshalAsAttribute(UnmanagedType.IDispatch);

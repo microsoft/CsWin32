@@ -21,15 +21,15 @@ public partial class COMTests
     {
     }
 
-    [LibraryImport("query.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    internal static unsafe partial void LoadIFilter(PCWSTR pwcsPath, Com.ISequentialStream pUnkOuter, out Com.ISequentialStream ppIUnk);
-
     //[LibraryImport("query.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    //internal static unsafe partial void LoadIFilter2([MarshalUsing(typeof(SpanMarshaller<int, int>))] Span<int> x);
+    //internal static unsafe partial void LoadIFilter(PCWSTR pwcsPath, Com.ISequentialStream pUnkOuter, out Com.ISequentialStream ppIUnk);
 
-    [LibraryImport("bcrypt.dll")]
-    internal static partial int BCryptFinishHash(int hHash, Span<byte> pbOutput, int cbOutput, int dwFlags);
-    //internal static unsafe partial HRESULT LoadIFilter(PCWSTR pwcsPath, IUnknown pUnkOuter, void** ppIUnk);
+    ////[LibraryImport("query.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    ////internal static unsafe partial void LoadIFilter2([MarshalUsing(typeof(SpanMarshaller<int, int>))] Span<int> x);
+
+    //[LibraryImport("bcrypt.dll")]
+    //internal static partial int BCryptFinishHash(int hHash, Span<byte> pbOutput, int cbOutput, int dwFlags);
+    ////internal static unsafe partial HRESULT LoadIFilter(PCWSTR pwcsPath, IUnknown pUnkOuter, void** ppIUnk);
 
     //[GeneratedComInterface]
     //[Guid("00000000-0000-0000-C000-000000000046")]
@@ -38,6 +38,7 @@ public partial class COMTests
     //}
 }
 
+/*
 namespace Com
 {
     [Guid("0C733A30-2A1C-11CE-ADE5-00AA0044773D"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown), GeneratedComInterface()]
@@ -129,3 +130,4 @@ namespace Com
         void put_SubscriptionID([MarshalAs(UnmanagedType.BStr)] string SubscriptionID);
     }
 }
+*/

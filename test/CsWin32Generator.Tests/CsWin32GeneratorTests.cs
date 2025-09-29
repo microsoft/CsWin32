@@ -179,6 +179,9 @@ public partial class CsWin32GeneratorTests : GeneratorTestBase
             syntaxTrees.Add(syntaxTree);
         }
 
+        // Also add the assembly attribute
+
+
         this.compilation = this.compilation.AddSyntaxTrees(syntaxTrees);
 
         // Get source generators from the static analyzers list

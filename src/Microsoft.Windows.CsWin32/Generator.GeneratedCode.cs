@@ -356,16 +356,21 @@ public partial class Generator
             generator();
         }
 
-        internal void GenerateCustomTypeMarshaler(string marshalerName, Action generator)
+        internal string GenerateCustomTypeMarshaler(string marshalerName, Func<ClassDeclarationSyntax> generator)
         {
             this.ThrowIfNotGenerating();
 
-            if (this.customTypeMarshalers.ContainsKey(marshalerName) || this.parent?.customTypeMarshalers.ContainsKey(marshalerName) is true)
+            if (this.customTypeMarshalers.TryGetValue(marshalerName, out ClassDeclarationSyntax? marshalerType) ||
+                (this.parent?.customTypeMarshalers.TryGetValue(marshalerName, out marshalerType) ?? false))
             {
-                return;
+                // Result is in marshalerType
+            }
+            else
+            {
+                marshalerType = generator();
             }
 
-            generator();
+            return marshalerType.Identifier.ToString();
         }
 
         internal bool TryGetSafeHandleForReleaseMethod(string releaseMethod, out TypeSyntax? safeHandleType)

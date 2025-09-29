@@ -16,9 +16,19 @@ internal record PrimitiveTypeHandleInfo(PrimitiveTypeCode PrimitiveTypeCode) : T
         // So we just have to use the primitive type when marshaling is not allowed.
         if (inputs.AllowMarshaling && customAttributes?.Generator.FindAssociatedEnum(customAttributes.Value.Collection) is NameSyntax enumTypeName && inputs.Generator!.TryGenerateType(enumTypeName.ToString(), out IReadOnlyCollection<string> preciseMatch))
         {
+            string originalEnumTypeName = enumTypeName.ToString();
+
             // Use the qualified name.
             enumTypeName = ParseName(Generator.ReplaceCommonNamespaceWithAlias(inputs.Generator, preciseMatch.First()));
-            MarshalAsAttribute marshalAs = new(GetUnmanagedType(this.PrimitiveTypeCode));
+            UnmanagedType unmanagedType = GetUnmanagedType(this.PrimitiveTypeCode);
+
+            if (inputs.AllowMarshaling && inputs.Generator.Options.ComInterop.ShouldUseComSourceGenerators)
+            {
+                string marshalerTypeName = inputs.Generator!.RequestCustomMarshaler(originalEnumTypeName, unmanagedType);
+                return new TypeSyntaxAndMarshaling(enumTypeName) { MarshalUsingType = marshalerTypeName };
+            }
+
+            MarshalAsAttribute marshalAs = new(unmanagedType);
             return new TypeSyntaxAndMarshaling(enumTypeName, marshalAs, nativeArrayInfo: null);
         }
         else

@@ -24,7 +24,7 @@ public partial class Generator
 
         private readonly Dictionary<string, MethodDeclarationSyntax> macros = new(StringComparer.Ordinal);
 
-        private readonly Dictionary<string, ClassDeclarationSyntax> customTypeMarshalers = new();
+        private readonly Dictionary<string, CustomMarshalerTypeRecord> customTypeMarshalers = new();
 
         /// <summary>
         /// The set of types that are or have been generated so we don't stack overflow for self-referencing types.
@@ -74,7 +74,7 @@ public partial class Generator
             .Concat(this.specialTypes.Values.Where(st => !st.TopLevel).Select(st => st.Type))
             .Concat(this.safeHandleTypes)
             .Concat(this.inlineArrays.Values)
-            .Concat(this.customTypeMarshalers.Values);
+            .Concat(this.customTypeMarshalers.Values.Select(x => x.ClassDeclaration));
 
         internal IEnumerable<MemberDeclarationSyntax> GeneratedTopLevelTypes => this.specialTypes.Values.Where(st => st.TopLevel).Select(st => st.Type);
 
@@ -144,10 +144,10 @@ public partial class Generator
             this.macros.Add(macroName, macro);
         }
 
-        internal void AddCustomTypeMarshaler(string marshalerName, ClassDeclarationSyntax marshaler)
+        internal void AddCustomTypeMarshaler(string marshalerName, CustomMarshalerTypeRecord typeRecord)
         {
             this.ThrowIfNotGenerating();
-            this.customTypeMarshalers.Add(marshalerName, marshaler);
+            this.customTypeMarshalers.Add(marshalerName, typeRecord);
         }
 
         internal void AddInlineArrayIndexerExtension(MethodDeclarationSyntax inlineIndexer)
@@ -356,11 +356,11 @@ public partial class Generator
             generator();
         }
 
-        internal string GenerateCustomTypeMarshaler(string marshalerName, Func<ClassDeclarationSyntax> generator)
+        internal string GenerateCustomTypeMarshaler(string marshalerName, Func<CustomMarshalerTypeRecord> generator)
         {
             this.ThrowIfNotGenerating();
 
-            if (this.customTypeMarshalers.TryGetValue(marshalerName, out ClassDeclarationSyntax? marshalerType) ||
+            if (this.customTypeMarshalers.TryGetValue(marshalerName, out CustomMarshalerTypeRecord? marshalerType) ||
                 (this.parent?.customTypeMarshalers.TryGetValue(marshalerName, out marshalerType) ?? false))
             {
                 // Result is in marshalerType
@@ -370,7 +370,7 @@ public partial class Generator
                 marshalerType = generator();
             }
 
-            return marshalerType.Identifier.ToString();
+            return marshalerType.QualifiedName;
         }
 
         internal bool TryGetSafeHandleForReleaseMethod(string releaseMethod, out TypeSyntax? safeHandleType)

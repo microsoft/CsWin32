@@ -28,7 +28,7 @@
     <PackageVersion Include="Microsoft.Windows.SDK.Win32Docs" Version="$(ApiDocsVersion)" />
     <PackageVersion Include="Microsoft.Windows.SDK.Win32Metadata" Version="$(MetadataVersion)" />
     <PackageVersion Include="Microsoft.Windows.WDK.Win32Metadata" Version="$(WDKMetadataVersion)" />
-    <PackageVersion Include="Microsoft.Windows.SDK.Contracts" Version="10.0.22621.2428" />
+    <PackageVersion Include="Microsoft.Windows.CsWinRT" Version="2.2.0" />
     <PackageVersion Include="Moq" Version="4.20.72" />
     <PackageVersion Include="NuGet.Protocol" Version="6.13.2" />
     <PackageVersion Include="System.CommandLine" Version="2.0.0-beta4.22272.1" />

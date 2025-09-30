@@ -201,9 +201,9 @@ public partial class COMTests
     internal static unsafe partial void LoadIFilter(PCWSTR pwcsPath, Windows.Win32.System.Diagnostics.Debug.IDebugProperty pUnkOuter, out Windows.Win32.System.Diagnostics.Debug.IDebugProperty ppIUnk);
 
 
-    [LibraryImport("CoreMessaging.dll")]
-    internal static partial HRESULT CreateDispatcherQueueController(int options,
-        [MarshalUsing(typeof(WinRTMarshaler<DispatcherQueueController>))] out DispatcherQueueController dispatcherQueueController);
+    //[LibraryImport("CoreMessaging.dll")]
+    //internal static partial HRESULT CreateDispatcherQueueController(int options,
+    //    [MarshalUsing(typeof(WinRTMarshaler<DispatcherQueueController>))] out DispatcherQueueController dispatcherQueueController);
 
     ////[LibraryImport("query.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     ////internal static unsafe partial void LoadIFilter2([MarshalUsing(typeof(SpanMarshaller<int, int>))] Span<int> x);

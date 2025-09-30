@@ -53,7 +53,6 @@ public partial class CsWin32GeneratorTests : GeneratorTestBase
         await this.InvokeGeneratorAndCompile();
     }
 
-
     [Fact]
     public async Task TestGenerateCreateDispatcherQueueController()
     {
@@ -208,7 +207,6 @@ public partial class CsWin32GeneratorTests : GeneratorTestBase
         }
 
         CSharpCompilation baseCompilation = this.starterCompilations["net9.0"];
-
         foreach (MetadataReference reference in baseCompilation.References)
         {
             if (reference is PortableExecutableReference peRef && peRef.FilePath is not null)
@@ -217,7 +215,11 @@ public partial class CsWin32GeneratorTests : GeneratorTestBase
             }
         }
 
-        this.Logger.WriteLine($"CsWin32Generator {string.Join(" ", args)}");
+        // Also add the WinRT.Runtime.dll reference
+        foreach (string assemblyPath in winrtReferences)
+        {
+            args.AddRange(["--references", assemblyPath]);
+        }
 
         // Act
         int exitCode = await CsWin32Generator.Program.Main(args.ToArray());
@@ -237,6 +239,8 @@ public partial class CsWin32GeneratorTests : GeneratorTestBase
         this.Logger.WriteLine("Compiling generated files with source generators...");
 
         this.compilation = this.starterCompilations["net9.0"];
+
+        this.compilation = this.compilation.AddReferences(winrtReferences.Select(x => MetadataReference.CreateFromFile(x)));
 
         // Create syntax trees from the generated files
         var syntaxTrees = new List<SyntaxTree>();

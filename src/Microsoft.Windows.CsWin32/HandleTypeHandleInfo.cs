@@ -188,6 +188,8 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
             ? PointerType(nameSyntax)
             : nameSyntax;
 
+        string? marshalUsingType = null;
+
         if (nameSyntax is QualifiedNameSyntax qualifiedName)
         {
             string? ns = qualifiedName.Left.ToString();
@@ -195,26 +197,35 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
             // Look for WinRT namespaces
             if (ns.StartsWith("global::Windows.Foundation") || ns.StartsWith("global::Windows.UI") || ns.StartsWith("global::Windows.Graphics") || ns.StartsWith("global::Windows.System"))
             {
-                // We only want to marshal WinRT objects, not interfaces. We don't have a good way of knowing
-                // whether it's an interface or an object. "isInterface" comes back as false for a WinRT interface,
-                // so that doesn't help. Looking at the name should be good enough, but if we needed to, the
-                // Win32 projection could give us an attribute to make sure.
-                string? objName = qualifiedName.Right.ToString();
-                bool isInterfaceName = InterfaceNameMatcher.IsMatch(objName);
-                if (!isInterfaceName)
+                // Always generate a custom marshaler for WinRT type
+                if (inputs.AllowMarshaling && (inputs.Generator?.Options.ComInterop.ShouldUseComSourceGenerators ?? false))
                 {
-                    string marshalCookie = nameSyntax.ToString();
-                    if (marshalCookie.StartsWith(Generator.GlobalNamespacePrefix, StringComparison.Ordinal))
+                    string fullTypeName = qualifiedName.ToString();
+                    marshalUsingType = inputs.Generator.RequestCustomWinRTMarshaler(fullTypeName);
+                }
+                else
+                {
+                    // We only want to marshal WinRT objects, not interfaces. We don't have a good way of knowing
+                    // whether it's an interface or an object. "isInterface" comes back as false for a WinRT interface,
+                    // so that doesn't help. Looking at the name should be good enough, but if we needed to, the
+                    // Win32 projection could give us an attribute to make sure.
+                    string? objName = qualifiedName.Right.ToString();
+                    bool isInterfaceName = InterfaceNameMatcher.IsMatch(objName);
+                    if (!isInterfaceName)
                     {
-                        marshalCookie = marshalCookie.Substring(Generator.GlobalNamespacePrefix.Length);
-                    }
+                        string marshalCookie = nameSyntax.ToString();
+                        if (marshalCookie.StartsWith(Generator.GlobalNamespacePrefix, StringComparison.Ordinal))
+                        {
+                            marshalCookie = marshalCookie.Substring(Generator.GlobalNamespacePrefix.Length);
+                        }
 
-                    marshalAs = new MarshalAsAttribute(UnmanagedType.CustomMarshaler) { MarshalCookie = marshalCookie, MarshalType = Generator.WinRTCustomMarshalerFullName };
+                        marshalAs = new MarshalAsAttribute(UnmanagedType.CustomMarshaler) { MarshalCookie = marshalCookie, MarshalType = Generator.WinRTCustomMarshalerFullName };
+                    }
                 }
             }
         }
 
-        return new TypeSyntaxAndMarshaling(syntax, marshalAs, null);
+        return new TypeSyntaxAndMarshaling(syntax, marshalAs, null) { MarshalUsingType = marshalUsingType };
     }
 
     internal override bool? IsValueType(TypeSyntaxSettings inputs)

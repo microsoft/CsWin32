@@ -22,4 +22,4 @@ WINTRUST_FILE_INFO
 MAX_PATH
 DebugPropertyInfo
 ISequentialStream
-//CreateDispatcherQueueController
+CreateDispatcherQueueController

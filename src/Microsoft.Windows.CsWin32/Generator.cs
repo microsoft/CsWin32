@@ -1081,11 +1081,17 @@ public partial class Generator : IGenerator, IDisposable
         });
     }
 
-    internal string RequestCustomMarshaler(string enumTypeName, string ns, UnmanagedType unmanagedType)
+    internal string RequestCustomMarshaler(string qualifiedEnumTypeName, UnmanagedType unmanagedType)
     {
         if (unmanagedType != UnmanagedType.U4)
         {
             throw new InvalidOperationException("Only UnmanagedType.U4 is supported for enum marshaling.");
+        }
+
+        TrySplitPossiblyQualifiedName(qualifiedEnumTypeName, out string @namespace, out string enumTypeName);
+        if (!this.TryStripCommonNamespace(@namespace, out string? shortNamespace))
+        {
+            throw new InvalidOperationException($"This generator doesn't share a prefix with this enum {qualifiedEnumTypeName}");
         }
 
         string customTypeMarshalerName = $"{enumTypeName}To{unmanagedType}Marshaler";
@@ -1135,7 +1141,7 @@ public partial class Generator : IGenerator, IDisposable
                 .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword))
                 .AddParameterListParameters(Parameter(Identifier("unmanaged")).WithType(unmanagedTypeSyntax.WithTrailingTrivia(Space)))
                 .WithBody(Block().AddStatements(
-                    ReturnStatement(CastExpression(enumTypeSyntax, IdentifierName("unmanaged")))));
+                    ReturnStatement(UncheckedExpression(CastExpression(enumTypeSyntax, IdentifierName("unmanaged"))))));
 
             // Create ConvertToUnmanaged method
             // public static uint ConvertToUnmanaged(Enum managed)
@@ -1146,7 +1152,7 @@ public partial class Generator : IGenerator, IDisposable
                 .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))
                 .AddParameterListParameters(Parameter(Identifier("managed")).WithType(enumTypeSyntax.WithTrailingTrivia(Space)))
                 .WithBody(Block().AddStatements(
-                    ReturnStatement(CastExpression(unmanagedTypeSyntax, IdentifierName("managed")))));
+                    ReturnStatement(UncheckedExpression(CastExpression(unmanagedTypeSyntax, IdentifierName("managed"))))));
 
             // Create Free method
             // public static void Free(uint unmanaged)
@@ -1163,7 +1169,7 @@ public partial class Generator : IGenerator, IDisposable
                 .AddAttributeLists(customMarshallerAttributes.Select(attr => AttributeList().AddAttributes(attr)).ToArray())
                 .AddMembers(convertToManagedMethod, convertToUnmanagedMethod, freeMethod);
 
-            marshalerClass = marshalerClass.WithAdditionalAnnotations(new SyntaxAnnotation(NamespaceContainerAnnotation, ns));
+            marshalerClass = marshalerClass.WithAdditionalAnnotations(new SyntaxAnnotation(NamespaceContainerAnnotation, shortNamespace));
 
             this.volatileCode.AddCustomTypeMarshaler(customTypeMarshalerName, marshalerClass);
 

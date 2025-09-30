@@ -8,33 +8,57 @@ using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
 using System.Runtime.Versioning;
+using Windows.System;
 using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.System.Com;
 //using Windows.Win32.System.Com;
 
 
-//[CustomMarshaller(typeof(T), MarshalMode.ManagedToUnmanagedIn, typeof(EnumToUintMarshaller<T>))]
-//[CustomMarshaller(typeof(T), MarshalMode.ManagedToUnmanagedOut, typeof(EnumToUintMarshaller<T>))]
-//[CustomMarshaller(typeof(T), MarshalMode.UnmanagedToManagedIn, typeof(EnumToUintMarshaller<T>))]
-//[CustomMarshaller(typeof(T), MarshalMode.UnmanagedToManagedOut, typeof(EnumToUintMarshaller<T>))]
-//internal static class EnumToUintMarshaller<T>
-//    where T : unmanaged, Enum
+//[CustomMarshaller(typeof(T), MarshalMode.ManagedToUnmanagedIn, typeof(WinRTMarshaler<T>))]
+//[CustomMarshaller(typeof(T), MarshalMode.ManagedToUnmanagedOut, typeof(WinRTMarshaler<T>))]
+//[CustomMarshaller(typeof(T), MarshalMode.UnmanagedToManagedIn, typeof(WinRTMarshaler<T>))]
+//[CustomMarshaller(typeof(T), MarshalMode.UnmanagedToManagedOut, typeof(WinRTMarshaler<T>))]
+//internal static class WinRTMarshaler<T>
 //{
-//    public static unsafe T ConvertToManaged(uint unmanaged)
+//    public static unsafe T ConvertToManaged(nint unmanaged)
 //    {
-//        return System.Runtime.CompilerServices.Unsafe.BitCast<uint, T>(unmanaged);
+//        return WinRT.MarshalInterface<T>.FromAbi(unmanaged);
 //    }
 
-//    public static uint ConvertToUnmanaged(T managed)
+//    public static nint ConvertToUnmanaged(T managed)
 //    {
-//        return System.Runtime.CompilerServices.Unsafe.BitCast<T, uint>(managed);
+//        return WinRT.MarshalInterface<T>.FromManaged(managed);
 //    }
 
-//    public static void Free(uint unmanaged)
+//    public static void Free(nint unmanaged)
 //    {
+//        WinRT.MarshalInterface<T>.DisposeAbi(unmanaged);
 //    }
 //}
+
+//[CustomMarshaller(typeof(DispatcherQueueController), MarshalMode.ManagedToUnmanagedIn, typeof(WinRTMarshalerDispatcherQueueController))]
+//[CustomMarshaller(typeof(DispatcherQueueController), MarshalMode.ManagedToUnmanagedOut, typeof(WinRTMarshalerDispatcherQueueController))]
+//[CustomMarshaller(typeof(DispatcherQueueController), MarshalMode.UnmanagedToManagedIn, typeof(WinRTMarshalerDispatcherQueueController))]
+//[CustomMarshaller(typeof(DispatcherQueueController), MarshalMode.UnmanagedToManagedOut, typeof(WinRTMarshalerDispatcherQueueController))]
+//internal static class WinRTMarshalerDispatcherQueueController
+//{
+//    public static unsafe DispatcherQueueController ConvertToManaged(nint unmanaged)
+//    {
+//        return WinRT.MarshalInterface<DispatcherQueueController>.FromAbi(unmanaged);
+//    }
+
+//    public static nint ConvertToUnmanaged(DispatcherQueueController managed)
+//    {
+//        return WinRT.MarshalInterface<DispatcherQueueController>.FromManaged(managed);
+//    }
+
+//    public static void Free(nint unmanaged)
+//    {
+//        WinRT.MarshalInterface<DispatcherQueueController>.DisposeAbi(unmanaged);
+//    }
+//}
+
 
 //[Guid("0000000C-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown), GeneratedComInterface()]
 //[SupportedOSPlatform("windows5.0")]
@@ -177,8 +201,9 @@ public partial class COMTests
     internal static unsafe partial void LoadIFilter(PCWSTR pwcsPath, Windows.Win32.System.Diagnostics.Debug.IDebugProperty pUnkOuter, out Windows.Win32.System.Diagnostics.Debug.IDebugProperty ppIUnk);
 
 
-    [LibraryImport("CoreMessaging.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    internal static partial HRESULT CreateDispatcherQueueController(int options, out global::Windows.System.DispatcherQueueController dispatcherQueueController);
+    [LibraryImport("CoreMessaging.dll")]
+    internal static partial HRESULT CreateDispatcherQueueController(int options,
+        [MarshalUsing(typeof(WinRTMarshaler<DispatcherQueueController>))] out DispatcherQueueController dispatcherQueueController);
 
     ////[LibraryImport("query.dll"), DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     ////internal static unsafe partial void LoadIFilter2([MarshalUsing(typeof(SpanMarshaller<int, int>))] Span<int> x);

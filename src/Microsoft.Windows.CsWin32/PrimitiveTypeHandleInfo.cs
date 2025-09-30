@@ -20,12 +20,10 @@ internal record PrimitiveTypeHandleInfo(PrimitiveTypeCode PrimitiveTypeCode) : T
             enumTypeName = ParseName(Generator.ReplaceCommonNamespaceWithAlias(inputs.Generator, preciseMatch.First()));
             UnmanagedType unmanagedType = GetUnmanagedType(this.PrimitiveTypeCode);
 
+            // If marshaling using source generators, we need to generate a custom marshaler and a MarshalUsing(...) attribute.
             if (inputs.AllowMarshaling && inputs.Generator.Options.ComInterop.ShouldUseComSourceGenerators)
             {
-                string enumTypeNameString = enumTypeName.ToString();
-                string enumTypeNamePlain = enumTypeNameString.Split('.').Last();
-                string enumTypeShortNamespace = enumTypeNameString.Replace("winmdroot.", string.Empty).Replace($".{enumTypeNamePlain}", string.Empty);
-                string marshalerTypeName = inputs.Generator!.RequestCustomMarshaler(enumTypeNamePlain, enumTypeShortNamespace, unmanagedType);
+                string marshalerTypeName = inputs.Generator!.RequestCustomMarshaler(preciseMatch.First(), unmanagedType);
                 return new TypeSyntaxAndMarshaling(enumTypeName) { MarshalUsingType = marshalerTypeName };
             }
 

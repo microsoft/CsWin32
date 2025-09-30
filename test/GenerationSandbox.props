@@ -8,7 +8,7 @@
   <Import Project="CsWin32User.props" />
 
   <PropertyGroup>
-    <TargetFrameworks>net9.0-windows7.0;net8.0-windows7.0;net472</TargetFrameworks>
+    <TargetFrameworks Condition="'$(TargetFrameworks)'==''">net9.0-windows7.0;net8.0-windows7.0;net472</TargetFrameworks>
     <OutputType>Exe</OutputType>
     <RootNamespace />
     <PlatformTarget>x64</PlatformTarget>

@@ -89,7 +89,8 @@
       AllowUnsafeBlocks="$(AllowUnsafeBlocks)"
       TargetFramework="$(TargetFramework)"
       Platform="$(Platform)"
-      References="@(ReferencePath)">
+      References="@(ReferencePath)"
+      ContinueOnError="WarnAndContinue">
       <Output TaskParameter="GeneratedFiles" ItemName="CsWin32GeneratedFiles" />
     </CsWin32CodeGeneratorTask>
 

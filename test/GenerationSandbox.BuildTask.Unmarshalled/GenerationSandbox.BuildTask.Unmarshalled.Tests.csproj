@@ -10,5 +10,7 @@
   <!-- For browsing, add the .cs files as None items -->
   <ItemGroup>
     <None Include="$(IntermediateOutputPath)Generated\CsWin32\*.cs" Link="Generated\%(Filename)%(Extension)"/>
+
+    <PackageReference Include="Microsoft.Windows.SDK.Contracts" />
   </ItemGroup>
 </Project>

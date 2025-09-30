@@ -14,6 +14,7 @@ public partial class CsWin32GeneratorTests : GeneratorTestBase
     private string? nativeMethodsTxt;
     private List<string> nativeMethods = new();
     private string? nativeMethodsJson;
+    private bool fullGeneration;
 
     public CsWin32GeneratorTests(ITestOutputHelper logger)
         : base(logger)
@@ -49,6 +50,15 @@ public partial class CsWin32GeneratorTests : GeneratorTestBase
     {
         // IServiceProvider exercises out parameter of type IUnknown marshaled to object.
         this.nativeMethods.Add("IServiceProvider");
+        await this.InvokeGeneratorAndCompile();
+    }
+
+
+    [Fact]
+    public async Task TestGenerateCreateDispatcherQueueController()
+    {
+        // CreateDispatcherQueueController has a parameter that's a WinRT type.
+        this.nativeMethods.Add("CreateDispatcherQueueController");
         await this.InvokeGeneratorAndCompile();
     }
 
@@ -102,6 +112,13 @@ public partial class CsWin32GeneratorTests : GeneratorTestBase
     public async Task TestNativeMethods()
     {
         this.nativeMethodsTxt = "NativeMethods.txt";
+        await this.InvokeGeneratorAndCompile();
+    }
+
+    //[Fact]
+    public async Task FullGeneration()
+    {
+        this.fullGeneration = true;
         await this.InvokeGeneratorAndCompile();
     }
 
@@ -185,9 +202,19 @@ public partial class CsWin32GeneratorTests : GeneratorTestBase
             args.AddRange(["--native-methods-json", nativeMethodsJsonPath]);
         }
 
-        foreach (System.Reflection.Assembly reference in this.GetCompilerReferences())
+        if (this.fullGeneration)
         {
-            args.AddRange(["--references", reference.Location]);
+            CsWin32Generator.Program.FullGeneration = true;
+        }
+
+        CSharpCompilation baseCompilation = this.starterCompilations["net9.0"];
+
+        foreach (MetadataReference reference in baseCompilation.References)
+        {
+            if (reference is PortableExecutableReference peRef && peRef.FilePath is not null)
+            {
+                args.AddRange(["--references", peRef.FilePath]);
+            }
         }
 
         this.Logger.WriteLine($"CsWin32Generator {string.Join(" ", args)}");

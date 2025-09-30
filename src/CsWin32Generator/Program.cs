@@ -32,6 +32,11 @@ public partial class Program
     };
 
     /// <summary>
+    /// Gets or sets a value indicating whether to generate the full set of APIs, including those not explicitly requested.
+    /// </summary>
+    public static bool FullGeneration { get; set; }
+
+    /// <summary>
     /// Entry point for the command line application.
     /// </summary>
     /// <param name="args">Command line arguments.</param>
@@ -259,6 +264,11 @@ public partial class Program
         if (!ProcessNativeMethodsFile(superGenerator, nativeMethodsTxt))
         {
             return Task.FromResult(false);
+        }
+
+        if (FullGeneration)
+        {
+            superGenerator.GenerateAll(CancellationToken.None);
         }
 
         // Generate compilation units and write to files

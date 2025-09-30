@@ -23,3 +23,6 @@ MAX_PATH
 DebugPropertyInfo
 ISequentialStream
 CreateDispatcherQueueController
+GetThemeColor
+S_OK
+WM_HOTKEY

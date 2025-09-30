@@ -5,14 +5,15 @@ namespace Microsoft.Windows.CsWin32;
 
 public partial class Generator
 {
-    private record CustomMarshalerTypeRecord(ClassDeclarationSyntax ClassDeclaration, string QualifiedName);
-
     internal string RequestCustomEnumMarshaler(string qualifiedEnumTypeName, UnmanagedType unmanagedType)
     {
-        if (unmanagedType != UnmanagedType.U4)
+        // Create type syntax for the unmanaged type (uint for U4)
+        TypeSyntax unmanagedTypeSyntax = unmanagedType switch
         {
-            throw new InvalidOperationException("Only UnmanagedType.U4 is supported for enum marshaling.");
-        }
+            UnmanagedType.U4 => PredefinedType(Token(SyntaxKind.UIntKeyword)),
+            UnmanagedType.I4 => PredefinedType(Token(SyntaxKind.IntKeyword)),
+            _ => throw new InvalidOperationException($"Unsupported unmanaged type: {unmanagedType}"),
+        };
 
         if (!TrySplitPossiblyQualifiedName(qualifiedEnumTypeName, out string? @namespace, out string enumTypeName) ||
             !this.TryStripCommonNamespace(@namespace, out string? shortNamespace))
@@ -26,9 +27,6 @@ public partial class Generator
         {
             // Create type syntax for the enum type
             TypeSyntax enumTypeSyntax = IdentifierName(enumTypeName);
-
-            // Create type syntax for the unmanaged type (uint for U4)
-            TypeSyntax unmanagedTypeSyntax = PredefinedType(Token(SyntaxKind.UIntKeyword));
 
             // Create the CustomMarshaller attributes for all required marshal modes
             var marshalModes = new[]
@@ -222,4 +220,6 @@ public partial class Generator
             return typeRecord;
         });
     }
+
+    private record CustomMarshalerTypeRecord(ClassDeclarationSyntax ClassDeclaration, string QualifiedName);
 }

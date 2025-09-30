@@ -114,7 +114,14 @@ public partial class CsWin32GeneratorTests : GeneratorTestBase
         await this.InvokeGeneratorAndCompile();
     }
 
-    //[Fact]
+    [Fact]
+    public async Task TestGenerateI4Marshaler()
+    {
+        this.nativeMethods.Add("GetThemeColor");
+        await this.InvokeGeneratorAndCompile();
+    }
+
+    [Fact]
     public async Task FullGeneration()
     {
         this.fullGeneration = true;

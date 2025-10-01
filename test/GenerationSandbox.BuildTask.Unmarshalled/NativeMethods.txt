@@ -30,3 +30,4 @@ ChoosePixelFormat
 IGraphicsEffectD2D1Interop
 Folder3
 IAudioProcessingObjectConfiguration
+IBDA_EasMessage

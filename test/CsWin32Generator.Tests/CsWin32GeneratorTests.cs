@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+#pragma warning disable SA1402
+
 using System.Runtime.CompilerServices;
 using System.Text;
 using Microsoft.CodeAnalysis;
@@ -11,10 +13,10 @@ namespace CsWin32Generator.Tests;
 
 public partial class CsWin32GeneratorTests : GeneratorTestBase
 {
+    protected bool fullGeneration;
     private string? nativeMethodsTxt;
     private List<string> nativeMethods = new();
     private string? nativeMethodsJson;
-    private bool fullGeneration;
 
     public CsWin32GeneratorTests(ITestOutputHelper logger)
         : base(logger)
@@ -54,6 +56,28 @@ public partial class CsWin32GeneratorTests : GeneratorTestBase
         await this.InvokeGeneratorAndCompile();
     }
 
+    [Fact]
+    public async Task CheckITypeCompIsNotUnmanaged()
+    {
+        // Request DebugPropertyInfo and we should not see ITypeComp_unmanaged get generated.
+        this.nativeMethods.Add("DebugPropertyInfo");
+        await this.InvokeGeneratorAndCompile();
+
+        var iface = this.FindGeneratedType("ITypeComp_unmanaged");
+        Assert.Empty(iface);
+    }
+
+    [Fact]
+    public async Task CheckIAudioProcessingObjectConfigurationDoesNotGenerateUnmanagedTypes()
+    {
+        // Request DebugPropertyInfo and we should not see ITypeComp_unmanaged get generated.
+        this.nativeMethods.Add("IAudioProcessingObjectConfiguration");
+        await this.InvokeGeneratorAndCompile();
+
+        var iface = this.FindGeneratedType("IAudioMediaType_unmanaged");
+        Assert.Empty(iface);
+    }
+
     [Theory]
     [InlineData("CHAR", "Simple type")]
     [InlineData("RmRegisterResources", "Simple function")]
@@ -68,18 +92,13 @@ public partial class CsWin32GeneratorTests : GeneratorTestBase
     [InlineData("IGraphicsEffectD2D1Interop", "Uses Uses IPropertyValue (not accessible in C#)")]
     [InlineData("Folder3", "Derives from multiple interfaces")]
     [InlineData("IAudioProcessingObjectConfiguration", "Test struct** parameter marshalling")]
+    [InlineData("IBDA_EasMessage", "[In][Out] should not be added")]
+    [InlineData("ITypeComp", "ITypeComp should not be unmanaged")]
     public async Task TestGenerateApi(string api, string purpose)
     {
         this.Logger.WriteLine($"Testing {api} - {purpose}");
         this.nativeMethods.Add(api);
         await this.InvokeGeneratorAndCompile($"Test_{api}");
-    }
-
-    [Fact]
-    public async Task FullGeneration()
-    {
-        this.fullGeneration = true;
-        await this.InvokeGeneratorAndCompile();
     }
 
     [Fact]
@@ -101,7 +120,7 @@ public partial class CsWin32GeneratorTests : GeneratorTestBase
         Assert.NotEqual(0, exitCode);
     }
 
-    private async Task InvokeGeneratorAndCompile([CallerMemberName] string testCase = "")
+    protected async Task InvokeGeneratorAndCompile([CallerMemberName] string testCase = "")
     {
         await this.InvokeGenerator(testCase);
 
@@ -339,5 +358,20 @@ using System.Runtime.CompilerServices;
         {
             this.outputHelper.Write(new string(buffer, index, count));
         }
+    }
+}
+
+public partial class CsWin32FullGeneratorTests : CsWin32GeneratorTests
+{
+    public CsWin32FullGeneratorTests(ITestOutputHelper logger)
+        : base(logger)
+    {
+    }
+
+    [Fact]
+    public async Task FullGeneration()
+    {
+        this.fullGeneration = true;
+        await this.InvokeGeneratorAndCompile();
     }
 }

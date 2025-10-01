@@ -17,7 +17,9 @@ internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleIn
             inputs = inputs with { AllowMarshaling = false };
         }
 
-        if (inputs.AllowMarshaling && (inputs.Generator?.Options.ComInterop.ShouldUseComSourceGenerators ?? false) && (nativeArrayInfo?.CountParamIndex is not null))
+        if (inputs.AllowMarshaling && (inputs.Generator?.Options.ComInterop.ShouldUseComSourceGenerators ?? false)
+            && (this.ElementType is PointerTypeHandleInfo)
+            && (nativeArrayInfo?.CountParamIndex is not null))
         {
             inputs = inputs with { AllowMarshaling = false };
         }

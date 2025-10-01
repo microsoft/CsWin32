@@ -1520,16 +1520,20 @@ public partial class Generator : IGenerator, IDisposable
 
             if (parameterTypeSyntax.MarshalAsAttribute is object)
             {
-                if ((parameter.Attributes & ParameterAttributes.Out) == ParameterAttributes.Out)
+                // Source generated com does not want [In] [Out] attributes.
+                if (!this.Options.ComInterop.ShouldUseComSourceGenerators)
                 {
-                    if ((parameter.Attributes & ParameterAttributes.In) == ParameterAttributes.In)
+                    if ((parameter.Attributes & ParameterAttributes.Out) == ParameterAttributes.Out)
                     {
-                        attributes = attributes.AddAttributes(InAttributeSyntax);
-                    }
+                        if ((parameter.Attributes & ParameterAttributes.In) == ParameterAttributes.In)
+                        {
+                            attributes = attributes.AddAttributes(InAttributeSyntax);
+                        }
 
-                    if (!modifiers.Any(SyntaxKind.OutKeyword))
-                    {
-                        attributes = attributes.AddAttributes(OutAttributeSyntax);
+                        if (!modifiers.Any(SyntaxKind.OutKeyword))
+                        {
+                            attributes = attributes.AddAttributes(OutAttributeSyntax);
+                        }
                     }
                 }
             }

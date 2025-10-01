@@ -132,6 +132,7 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
         MarshalAsAttribute? marshalAs = null;
         bool isDelegate = this.IsDelegate(inputs, out QualifiedTypeDefinition delegateDefinition)
             && (qtdh is null || !Generator.IsUntypedDelegate(qtdh.Value.Reader, qtdh.Value.Reader.GetTypeDefinition(qtdh.Value.DefinitionHandle)));
+        bool useComSourceGenerators = this.generator.Options.ComInterop.ShouldUseComSourceGenerators;
 
         if (simpleName is "PWSTR" or "PSTR")
         {
@@ -158,13 +159,20 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
                 return new TypeSyntaxAndMarshaling(IdentifierName(specialName));
             }
         }
-        else if (simpleName is "VARIANT" && this.generator.Options.ComInterop.ShouldUseComSourceGenerators)
+        else if (simpleName is "VARIANT" && useComSourceGenerators)
         {
             return new TypeSyntaxAndMarshaling(QualifiedName(ParseName("global::System.Runtime.InteropServices.Marshalling"), IdentifierName("ComVariant")));
         }
-        else if (simpleName is "IDispatch" && this.generator.Options.ComInterop.ShouldUseComSourceGenerators)
+        else if (simpleName is "IDispatch" && useComSourceGenerators)
         {
             return new TypeSyntaxAndMarshaling(QualifiedName(ParseName("global::Windows.Win32.System.Com"), IdentifierName("IDispatch")));
+        }
+        else if (isManagedType && forElement == Generator.GeneratingElement.StructMember && !inputs.AllowMarshaling && useComSourceGenerators)
+        {
+            // Managed type members in structs need custom marshaling. For now, put them in as void* to hold their proper place.
+            // If we let this go through as an "unmanaged" struct then the generator produces a bunch of delegates which require
+            // runtime marshaling, so we can't have that.
+            return new TypeSyntaxAndMarshaling(PointerType(PredefinedType(Token(SyntaxKind.VoidKeyword))));
         }
         else if (TryMarshalAsObject(inputs, simpleName, out marshalAs))
         {

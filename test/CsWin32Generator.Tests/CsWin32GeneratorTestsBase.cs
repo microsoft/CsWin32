@@ -165,15 +165,15 @@ using System.Runtime.CompilerServices;
             var generatorDriver = driver.RunGeneratorsAndUpdateCompilation(this.compilation, out var newCompilation, out var diagnostics);
             this.compilation = (CSharpCompilation)newCompilation;
 
-            // Log any diagnostics from source generation
-            foreach (var diagnostic in diagnostics)
-            {
-                this.Logger.WriteLine($"Diagnostic: {diagnostic}");
-            }
-
             // Filter out SYSLIB1092 diagnostics (related to DisableRuntimeMarshalling) as they are expected
             var filteredDiagnostics = diagnostics.Where(d =>
                 !(d.Descriptor.Id == "SYSLIB1092" && d.Descriptor.Title.ToString().Contains("The return value in the managed definition will be converted to an additional 'out' parameter at the end of the parameter list when calling the unmanaged COM method.", StringComparison.OrdinalIgnoreCase)));
+
+            // Log any diagnostics from source generation (that we aren't suppressing)
+            foreach (var diagnostic in filteredDiagnostics)
+            {
+                this.Logger.WriteLine($"Diagnostic: {diagnostic}");
+            }
 
             Assert.Empty(filteredDiagnostics);
         }

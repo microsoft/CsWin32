@@ -24,44 +24,6 @@ public partial class CsWin32GeneratorTests : GeneratorTestBase
     public ITestOutputHelper Logger => TestContext.Current.TestOutputHelper!;
 
     [Fact]
-    public async Task BasicNativeMethods()
-    {
-        this.nativeMethods.Add("CHAR");
-        await this.InvokeGeneratorAndCompile();
-    }
-
-    [Fact]
-    public async Task Generate_RmRegisterResources()
-    {
-        this.nativeMethods.Add("RmRegisterResources");
-        await this.InvokeGeneratorAndCompile();
-    }
-
-    [Fact]
-    public async Task TestGenerateIStream()
-    {
-        // IStream exercises enum parameters that need to be marshalled as U4.
-        this.nativeMethods.Add("IStream");
-        await this.InvokeGeneratorAndCompile();
-    }
-
-    [Fact]
-    public async Task TestGenerateIServiceProvider()
-    {
-        // IServiceProvider exercises out parameter of type IUnknown marshaled to object.
-        this.nativeMethods.Add("IServiceProvider");
-        await this.InvokeGeneratorAndCompile();
-    }
-
-    [Fact]
-    public async Task TestGenerateCreateDispatcherQueueController()
-    {
-        // CreateDispatcherQueueController has a parameter that's a WinRT type.
-        this.nativeMethods.Add("CreateDispatcherQueueController");
-        await this.InvokeGeneratorAndCompile();
-    }
-
-    [Fact]
     public async Task TestGenerateIDispatch()
     {
         // IDispatch is not normally emitted, but we need it for source generated com so check that it got generated.
@@ -70,14 +32,6 @@ public partial class CsWin32GeneratorTests : GeneratorTestBase
 
         var idispatchType = this.FindGeneratedType("IDispatch");
         Assert.NotEmpty(idispatchType);
-    }
-
-    [Fact]
-    public async Task TestIEnumEventObject()
-    {
-        // IEnumEventObject derives from IDispatch
-        this.nativeMethods.Add("IEnumEventObject");
-        await this.InvokeGeneratorAndCompile();
     }
 
     [Fact]
@@ -94,31 +48,30 @@ public partial class CsWin32GeneratorTests : GeneratorTestBase
     }
 
     [Fact]
-    public async Task TestGenerateSetLastError()
-    {
-        this.nativeMethods.Add("DestroyIcon");
-        await this.InvokeGeneratorAndCompile();
-    }
-
-    [Fact]
-    public async Task TestDebugPropertyInfo()
-    {
-        this.nativeMethods.Add("IDebugProperty");
-        await this.InvokeGeneratorAndCompile();
-    }
-
-    [Fact]
     public async Task TestNativeMethods()
     {
         this.nativeMethodsTxt = "NativeMethods.txt";
         await this.InvokeGeneratorAndCompile();
     }
 
-    [Fact]
-    public async Task TestGenerateI4Marshaler()
+    [Theory]
+    [InlineData("CHAR", "Simple type")]
+    [InlineData("RmRegisterResources", "Simple function")]
+    [InlineData("IStream", "Interface with enum parameters that need to be marshaled as U4")]
+    [InlineData("IServiceProvider", "exercises out parameter of type IUnknown marshaled to object")]
+    [InlineData("CreateDispatcherQueueController", "Has WinRT object parameter which needs marshalling")]
+    [InlineData("IEnumEventObject", "Derives from IDispatch")]
+    [InlineData("DestroyIcon", "Exercise SetLastError on import")]
+    [InlineData("IDebugProperty", "DebugPropertyInfo is weird")]
+    [InlineData("GetThemeColor", "Tests enum marshaling to I4")]
+    [InlineData("ChoosePixelFormat", "Tests marshaled field in struct")]
+    [InlineData("IGraphicsEffectD2D1Interop", "Uses Uses IPropertyValue (not accessible in C#)")]
+    [InlineData("Folder3", "Derives from multiple interfaces")]
+    public async Task TestGenerateApi(string api, string purpose)
     {
-        this.nativeMethods.Add("GetThemeColor");
-        await this.InvokeGeneratorAndCompile();
+        this.Logger.WriteLine($"Testing {api} - {purpose}");
+        this.nativeMethods.Add(api);
+        await this.InvokeGeneratorAndCompile($"Test_{api}");
     }
 
     [Fact]

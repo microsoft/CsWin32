@@ -292,6 +292,14 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
                     }
 
                     return true;
+                case "IPropertyValue":
+                    if (inputs.Generator?.Options.ComInterop.ShouldUseComSourceGenerators == true)
+                    {
+                        marshalAs = new MarshalAsAttribute(UnmanagedType.Interface);
+                        return true;
+                    }
+
+                    break;
                 case "IDispatch":
                     marshalAs = new MarshalAsAttribute(UnmanagedType.IDispatch);
                     return true;

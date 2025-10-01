@@ -190,8 +190,10 @@ public partial class Generator
             CustomAttributeHandleCollection? returnTypeAttributes = this.GetReturnTypeCustomAttributes(methodDefinition);
             TypeSyntaxAndMarshaling returnType = signature.ReturnType.ToTypeSyntax(typeSettings, GeneratingElement.ExternMethod, returnTypeAttributes?.QualifyWith(this), ParameterAttributes.Out);
 
+            bool customMarshaling = this.options.AllowMarshaling && this.options.ComInterop.ShouldUseComSourceGenerators;
+
             // Search for any enum substitutions.
-            TypeSyntax? returnTypeEnumName = this.FindAssociatedEnum(returnTypeAttributes);
+            TypeSyntax? returnTypeEnumName = customMarshaling ? null : this.FindAssociatedEnum(returnTypeAttributes);
             TypeSyntax?[]? parameterEnumType = null;
             foreach (ParameterHandle parameterHandle in methodDefinition.GetParameters())
             {
@@ -201,7 +203,7 @@ public partial class Generator
                     continue;
                 }
 
-                if (this.FindAssociatedEnum(parameter.GetCustomAttributes()) is IdentifierNameSyntax parameterEnumName)
+                if (this.FindAssociatedEnum(parameter.GetCustomAttributes()) is IdentifierNameSyntax parameterEnumName && !customMarshaling)
                 {
                     parameterEnumType ??= new TypeSyntax?[signature.ParameterTypes.Length];
                     parameterEnumType[parameter.SequenceNumber - 1] = parameterEnumName;

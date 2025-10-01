@@ -12,6 +12,7 @@ public partial class Generator
         {
             UnmanagedType.U4 => PredefinedType(Token(SyntaxKind.UIntKeyword)),
             UnmanagedType.I4 => PredefinedType(Token(SyntaxKind.IntKeyword)),
+            UnmanagedType.U1 => PredefinedType(Token(SyntaxKind.ByteKeyword)),
             _ => throw new InvalidOperationException($"Unsupported unmanaged type: {unmanagedType}"),
         };
 
@@ -20,6 +21,9 @@ public partial class Generator
         {
             throw new InvalidOperationException($"This generator doesn't share a prefix with this enum {qualifiedEnumTypeName}");
         }
+
+        // Custom marshalers should go in a InteropServices sub-namespace.
+        shortNamespace += ".InteropServices";
 
         string customTypeMarshalerName = $"{enumTypeName}To{unmanagedType}Marshaler";
 

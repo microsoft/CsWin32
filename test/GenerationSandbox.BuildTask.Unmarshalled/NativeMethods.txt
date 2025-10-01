@@ -29,3 +29,4 @@ WM_HOTKEY
 ChoosePixelFormat
 IGraphicsEffectD2D1Interop
 Folder3
+IAudioProcessingObjectConfiguration

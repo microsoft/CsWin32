@@ -67,6 +67,7 @@ public partial class CsWin32GeneratorTests : GeneratorTestBase
     [InlineData("ChoosePixelFormat", "Tests marshaled field in struct")]
     [InlineData("IGraphicsEffectD2D1Interop", "Uses Uses IPropertyValue (not accessible in C#)")]
     [InlineData("Folder3", "Derives from multiple interfaces")]
+    [InlineData("IAudioProcessingObjectConfiguration", "Test struct** parameter marshalling")]
     public async Task TestGenerateApi(string api, string purpose)
     {
         this.Logger.WriteLine($"Testing {api} - {purpose}");

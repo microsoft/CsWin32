@@ -17,6 +17,11 @@ internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleIn
             inputs = inputs with { AllowMarshaling = false };
         }
 
+        if (inputs.AllowMarshaling && (inputs.Generator?.Options.ComInterop.ShouldUseComSourceGenerators ?? false) && (nativeArrayInfo?.CountParamIndex is not null))
+        {
+            inputs = inputs with { AllowMarshaling = false };
+        }
+
         bool xOptional = (parameterAttributes & ParameterAttributes.Optional) == ParameterAttributes.Optional;
         bool mustUsePointers = xOptional && forElement == Generator.GeneratingElement.InterfaceMember && nativeArrayInfo is null;
         mustUsePointers |= this.ElementType is HandleTypeHandleInfo handleElementType && handleElementType.Generator.IsStructWithFlexibleArray(handleElementType) is true;

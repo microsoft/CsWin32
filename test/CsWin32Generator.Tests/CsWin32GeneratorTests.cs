@@ -83,6 +83,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
     [InlineData("IAudioProcessingObjectConfiguration", "Test struct** parameter marshalling")]
     [InlineData("IBDA_EasMessage", "[In][Out] should not be added")]
     [InlineData("ITypeComp", "ITypeComp should not be unmanaged")]
+    [InlineData("AsyncIConnectedIdentityProvider", "Needs [In][Out] on array parameter")]
     public async Task TestGenerateApi(string api, string purpose)
     {
         this.Logger.WriteLine($"Testing {api} - {purpose}");

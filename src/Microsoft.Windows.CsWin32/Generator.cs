@@ -1520,15 +1520,23 @@ public partial class Generator : IGenerator, IDisposable
 
             if (parameterTypeSyntax.MarshalAsAttribute is object)
             {
-                bool useInOutAttributes = true;
-
                 if (this.Options.ComInterop.ShouldUseComSourceGenerators)
                 {
                     // Source generated com does not want [In] [Out] attributes except on array parameters.
-                    useInOutAttributes = parameterTypeSyntax.MarshalAsAttribute?.Value == UnmanagedType.LPArray;
-                }
+                    if (parameterTypeSyntax.MarshalAsAttribute?.Value == UnmanagedType.LPArray)
+                    {
+                        if ((parameter.Attributes & ParameterAttributes.Out) == ParameterAttributes.Out)
+                        {
+                            attributes = attributes.AddAttributes(OutAttributeSyntax);
+                        }
 
-                if (useInOutAttributes)
+                        if ((parameter.Attributes & ParameterAttributes.In) == ParameterAttributes.In)
+                        {
+                            attributes = attributes.AddAttributes(InAttributeSyntax);
+                        }
+                    }
+                }
+                else
                 {
                     if ((parameter.Attributes & ParameterAttributes.Out) == ParameterAttributes.Out)
                     {

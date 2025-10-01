@@ -58,3 +58,4 @@ wglGetProcAddress
 WPARAM
 WriteFile
 ChoosePixelFormat
+AsyncIConnectedIdentityProvider

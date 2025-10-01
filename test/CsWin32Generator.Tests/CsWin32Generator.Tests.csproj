@@ -6,6 +6,7 @@
     <RootNamespace />
     <IsPackable>false</IsPackable>
     <SignAssembly>false</SignAssembly>
+    <CsWinRTGenerateProjection>false</CsWinRTGenerateProjection>
   </PropertyGroup>
 
   <ItemGroup>
@@ -62,15 +63,16 @@
 
     <PropertyGroup>
       <AnalyzerListCsSource>
+#pragma warning disable CS1591
 namespace CsWin32Generator.Tests%3b
 
-public partial class CsWin32GeneratorTests
+public partial class CsWin32GeneratorTestsBase
 {
-  private static string[] analyzers = new [] {
+  protected static string[] analyzers = new [] {
     @(AnalyzerList, ',%0d%0A')
   }%3b
   
-  private static string[] winrtReferences = new [] {
+  protected static string[] winrtReferences = new [] {
     @(WinRTRuntimeList, ',%0d%0A')
   }%3b
 }

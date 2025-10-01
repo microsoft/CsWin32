@@ -754,6 +754,22 @@ public partial class Generator
                     if (preserveSig)
                     {
                         methodDeclaration = methodDeclaration.AddAttributeLists(AttributeList().AddAttributes(PreserveSigAttributeSyntax));
+
+                        // GeneratedComInterface wants [return: MarshalAs(UnmanagedType.Error)] on methods that return HRESULT and are [PreserveSig].
+                        if (this.options.ComInterop.ShouldUseComSourceGenerators && IsHresult(signature.ReturnType))
+                        {
+                            var attrib =
+                                Attribute(IdentifierName("MarshalAs"))
+                                    .AddArgumentListArguments(AttributeArgument(
+                                        MemberAccessExpression(
+                                            SyntaxKind.SimpleMemberAccessExpression,
+                                            IdentifierName(nameof(UnmanagedType)),
+                                            IdentifierName("Error"))));
+                            methodDeclaration = methodDeclaration.AddAttributeLists(
+                                AttributeList()
+                                    .WithTarget(AttributeTargetSpecifier(Token(SyntaxKind.ReturnKeyword)))
+                                    .AddAttributes(attrib));
+                        }
                     }
 
                     if (methodDeclaration.ReturnType is PointerTypeSyntax || methodDeclaration.ParameterList.Parameters.Any(p => p.Type is PointerTypeSyntax))

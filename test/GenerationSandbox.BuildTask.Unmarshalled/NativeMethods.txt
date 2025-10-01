@@ -1,10 +1,10 @@
 ﻿IShellWindows
 IEventSubscription
-//IPersistFile
+IPersistFile
 IStream
-//CreateFile
-//OpenFile
-//LoadIFilter
+CreateFile
+OpenFile
+LoadIFilter
 IUnknown
 STGC
 LOCKTYPE
@@ -14,7 +14,7 @@ HANDLE
 WNDCLASSW
 RmRegisterResources
 IDispatch
-//IDebugProperty
+IDebugProperty
 GetPackagePathByFullName2
 WinVerifyTrust
 WINTRUST_DATA

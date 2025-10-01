@@ -611,7 +611,9 @@ public partial class Generator
         bool foundIUnknown = false;
         bool foundIDispatch = false;
         bool foundIInspectable = false;
-        var baseTypeSyntaxList = new List<BaseTypeSyntax>();
+
+        // For marshaling, just derive from the top-most interface.
+        BaseTypeSyntax? topMostBaseTypeSyntax = null;
         while (!baseTypes.IsEmpty)
         {
             QualifiedTypeDefinitionHandle baseTypeHandle = baseTypes.Peek();
@@ -635,7 +637,7 @@ public partial class Generator
                     if (this.GenerateIDispatch)
                     {
                         this.RequestInteropType("Windows.Win32.System.Com", "IDispatch", context);
-                        baseTypeSyntaxList.Add(SimpleBaseType(QualifiedName(ParseName("global::Windows.Win32.System.Com"), IdentifierName("IDispatch"))));
+                        topMostBaseTypeSyntax = SimpleBaseType(QualifiedName(ParseName("global::Windows.Win32.System.Com"), IdentifierName("IDispatch")));
                     }
                 }
                 else if (baseTypeHandle.Reader.StringComparer.Equals(baseType.Definition.Name, "IInspectable"))
@@ -653,7 +655,7 @@ public partial class Generator
                             NestedCOMInterfaceName);
                     }
 
-                    baseTypeSyntaxList.Add(SimpleBaseType(baseTypeSyntax));
+                    topMostBaseTypeSyntax = SimpleBaseType(baseTypeSyntax);
                     allMethods.AddRange(baseType.Definition.GetMethods().Select(methodHandle => new QualifiedMethodDefinitionHandle(baseType.Generator, methodHandle)));
                 }
             }
@@ -803,10 +805,10 @@ public partial class Generator
             ifaceDeclaration = ifaceDeclaration.AddAttributeLists(AttributeList().AddAttributes(GUID(DecodeGuidFromAttribute(guidAttribute.Value)), ifaceType, comImportAttribute));
         }
 
-        if (baseTypeSyntaxList.Count > 0)
+        if (topMostBaseTypeSyntax is object)
         {
             ifaceDeclaration = ifaceDeclaration
-                .WithBaseList(BaseList(SeparatedList(baseTypeSyntaxList)));
+                .WithBaseList(BaseList([topMostBaseTypeSyntax]));
         }
 
         if (this.generateSupportedOSPlatformAttributesOnInterfaces && this.GetSupportedOSPlatformAttribute(typeDef.GetCustomAttributes()) is AttributeSyntax supportedOSPlatformAttribute)

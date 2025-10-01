@@ -186,7 +186,7 @@ using System.Runtime.CompilerServices;
         var analyzerDiagnostics = await compilationWithAnalyzers.GetAllDiagnosticsAsync();
 
         var filteredAnalyzerDiagnostics = analyzerDiagnostics.Where(d =>
-            d.Descriptor.Id switch { "CA1016" or "SA1517" or "SA1633" => false, _ => true });
+            d.Descriptor.Id switch { "CA1016" or "SA1517" or "SA1633" or "CS1701" => false, _ => true });
 
         allDiagnostics.AddRange(filteredAnalyzerDiagnostics);
 

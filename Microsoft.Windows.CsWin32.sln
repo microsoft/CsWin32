@@ -52,7 +52,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CsWin32Generator.Tests", "t
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CsWin32Generator.BuildTasks.Tests", "test\CsWin32Generator.BuildTasks.Tests\CsWin32Generator.BuildTasks.Tests.csproj", "{DC26E9DC-DFB1-19BD-6BAA-38B23E99C3C6}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GenerationSandbox.BuildTask.Unmarshalled.Tests", "test\GenerationSandbox.BuildTask.Unmarshalled\GenerationSandbox.BuildTask.Unmarshalled.Tests.csproj", "{A0253377-BC40-63BD-F41A-AC7EBA7A3C54}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GenerationSandbox.BuildTask.Tests", "test\GenerationSandbox.BuildTask.Tests\GenerationSandbox.BuildTask.Tests.csproj", "{A0253377-BC40-63BD-F41A-AC7EBA7A3C54}"
 	ProjectSection(ProjectDependencies) = postProject
 		{D3363193-DE88-5AFE-BA2D-CAF66280F243} = {D3363193-DE88-5AFE-BA2D-CAF66280F243}
 		{DBA19B76-E786-297A-C44F-6121CA5FFCDC} = {DBA19B76-E786-297A-C44F-6121CA5FFCDC}

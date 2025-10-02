@@ -129,7 +129,7 @@ public class CsWin32CodeGeneratorTask : ToolTask
     /// Exposes the generated command line arguments (for tests).
     /// </summary>
     /// <returns>Command line arguments.</returns>
-    public string GetCommandLineArguments() => this.GenerateCommandLineCommands();
+    public string GetCommandLineArguments() => this.GenerateCommandLineCommands() + this.GenerateResponseFileCommands();
 
     /// <inheritdoc />
     protected override string GenerateFullPathToTool()

@@ -390,6 +390,12 @@ public partial class Generator
                 if ((typeDef.Attributes & TypeAttributes.Interface) == TypeAttributes.Interface)
                 {
                     result = this.options.AllowMarshaling && !this.IsNonCOMInterface(typeDef);
+                    if (this.options.ComInterop.ShouldUseComSourceGenerators && this.FindGuidFromAttribute(typeDef) is null)
+                    {
+                        // When using ComSourceGenerators, interfaces must have a GUID. If they don't, they must always be unmanaged.
+                        result = false;
+                    }
+
                     this.managedTypesCheck.Add(typeDefinitionHandle, result);
                     return result;
                 }

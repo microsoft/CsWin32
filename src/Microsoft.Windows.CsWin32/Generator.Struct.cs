@@ -523,6 +523,8 @@ public partial class Generator
             return this.DeclareFixedLengthArrayStruct(fieldDef, customAttributes, fieldTypeHandleInfo, arrayType, context);
         }
 
+        bool useComSourceGenerators = this.options.ComInterop.ShouldUseComSourceGenerators;
+
         // If the field is a delegate type, we have to replace that with a native function pointer to avoid the struct becoming a 'managed type'.
         if ((!context.AllowMarshaling) && this.IsDelegateReference(fieldTypeHandleInfo, out QualifiedTypeDefinition typeDef) && !typeDef.Generator.IsUntypedDelegate(typeDef.Definition))
         {

@@ -3,3 +3,4 @@ IPersistFile
 IStream
 ITypeComp
 ITypeInfo
+IAsyncGetSendNotificationCookie

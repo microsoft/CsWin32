@@ -32,3 +32,4 @@ Folder3
 IAudioProcessingObjectConfiguration
 IBDA_EasMessage
 ITypeComp
+IBidiAsyncNotifyChannel

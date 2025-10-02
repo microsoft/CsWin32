@@ -101,8 +101,16 @@ public partial class Generator
 
         if (context.AllowMarshaling)
         {
-            // Marshaling is allowed here, and generally. Just emit the interface.
-            return this.DeclareInterfaceAsInterface(typeDef, baseTypes, context);
+            CustomAttribute? guidAttribute = this.FindGuidAttribute(typeDef.GetCustomAttributes());
+
+            // When using ComSourceGenerators, we can only declare the interface as an interface if it has a GUID.
+            bool canDeclareAsInterface = !this.options.ComInterop.ShouldUseComSourceGenerators || guidAttribute is not null;
+
+            if (canDeclareAsInterface)
+            {
+                // Marshaling is allowed here, and generally. Just emit the interface.
+                return this.DeclareInterfaceAsInterface(typeDef, baseTypes, context);
+            }
         }
 
         // Marshaling of this interface is not allowed here. Emit the struct.
@@ -123,6 +131,11 @@ public partial class Generator
 
     private TypeDeclarationSyntax DeclareInterfaceAsStruct(TypeDefinitionHandle typeDefHandle, ImmutableStack<QualifiedTypeDefinitionHandle> baseTypes, Context context)
     {
+        if (this.options.ComInterop.ShouldUseComSourceGenerators)
+        {
+            context = context with { AllowMarshaling = false };
+        }
+
         TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefHandle);
         string originalIfaceName = this.Reader.GetString(typeDef.Name);
         bool isManagedType = this.IsManagedType(typeDefHandle);
@@ -810,7 +823,9 @@ public partial class Generator
             .AddModifiers(TokenWithSpace(this.Visibility))
             .AddMembers(members.ToArray());
 
-        if (this.options.ComInterop.ShouldUseComSourceGenerators)
+        bool useComSourceGenerators = this.options.ComInterop.ShouldUseComSourceGenerators;
+
+        if (useComSourceGenerators)
         {
             ifaceDeclaration = ifaceDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.PartialKeyword));
         }
@@ -819,6 +834,10 @@ public partial class Generator
         {
             AttributeSyntax comImportAttribute = this.options.ComInterop.ShouldUseComSourceGenerators ? GeneratedComInterfaceAttributeSyntax : ComImportAttributeSyntax;
             ifaceDeclaration = ifaceDeclaration.AddAttributeLists(AttributeList().AddAttributes(GUID(DecodeGuidFromAttribute(guidAttribute.Value)), ifaceType, comImportAttribute));
+        }
+        else if (useComSourceGenerators)
+        {
+            throw new InvalidOperationException("Cannot generate a COM interface without a GUID when using COM source generators.");
         }
 
         if (topMostBaseTypeSyntax is object)

@@ -178,7 +178,7 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
         {
             return new TypeSyntaxAndMarshaling(PredefinedType(Token(SyntaxKind.ObjectKeyword)), marshalAs, null);
         }
-        else if (!inputs.AllowMarshaling && isDelegate && inputs.Generator is object && !Generator.IsUntypedDelegate(delegateDefinition.Generator.Reader, delegateDefinition.Definition))
+        else if ((!inputs.AllowMarshaling || useComSourceGenerators) && isDelegate && inputs.Generator is object && !Generator.IsUntypedDelegate(delegateDefinition.Generator.Reader, delegateDefinition.Definition))
         {
             return new TypeSyntaxAndMarshaling(inputs.Generator.FunctionPointer(delegateDefinition));
         }

@@ -86,6 +86,8 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
     [InlineData("AsyncIConnectedIdentityProvider", "Needs [In][Out] on array parameter")]
     [InlineData("Column", "SYSLIB1092 that needs to be suppressed")]
     [InlineData("IBidiAsyncNotifyChannel", "Parameter that needs special marshaling help")]
+    [InlineData("ID3D11Texture1D", "Unmanaged interface needs to not use `out` for any params")]
+    [InlineData("ID3D11DeviceContext", "Problem with ppClassInstances parameter")]
     public async Task TestGenerateApi(string api, string purpose)
     {
         this.Logger.WriteLine($"Testing {api} - {purpose}");

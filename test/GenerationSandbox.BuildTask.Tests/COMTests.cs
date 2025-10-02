@@ -19,4 +19,12 @@ public partial class COMTests
     public void Placeholder()
     {
     }
+
+    [LibraryImport("blah")]
+    internal static unsafe partial void Test(int count, [In][MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 0)] int[] ppBuffer);
+
+    //[LibraryImport("blah.dll")]
+    //internal static unsafe partial void TestOptional(out Nullable<int*> ppBuffer);
+
+    //unsafe void CreateBuffer(winmdroot.Graphics.Direct3D11.D3D11_BUFFER_DESC* pDesc, [Optional] winmdroot.Graphics.Direct3D11.D3D11_SUBRESOURCE_DATA* pInitialData, [Optional] winmdroot.Graphics.Direct3D11.ID3D11Buffer_unmanaged** ppBuffer);
 }

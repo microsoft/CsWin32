@@ -202,12 +202,30 @@ public partial class Generator
             TypeSyntax returnType = signature.ReturnType.ToTypeSyntax(typeSettings, GeneratingElement.InterfaceAsStructMember, returnTypeAttributes).Type;
             TypeSyntax returnTypePreserveSig = returnType;
 
+            static FunctionPointerParameterSyntax ToFunctionPointerParameter(ParameterSyntax p)
+            {
+                if (p.Modifiers.Count <= 1)
+                {
+                    if (p.Modifiers.Any(SyntaxKind.OutKeyword) || p.Modifiers.Any(SyntaxKind.RefKeyword))
+                    {
+                        return FunctionPointerParameter(PointerType(p.Type!));
+                    }
+
+                    if (p.Modifiers.Count == 0 || p.Modifiers.Any(SyntaxKind.InKeyword))
+                    {
+                        return FunctionPointerParameter(p.Type!);
+                    }
+                }
+
+                throw new InvalidOperationException("Unsupported modifier for native delegate");
+            }
+
             ParameterListSyntax parameterList = methodDefinition.Generator.CreateParameterList(methodDefinition.Method, signature, typeSettings, GeneratingElement.InterfaceAsStructMember);
             ParameterListSyntax parameterListPreserveSig = parameterList; // preserve a copy that has no mutations.
             bool requiresMarshaling = parameterList.Parameters.Any(p => p.AttributeLists.SelectMany(al => al.Attributes).Any(a => a.Name is IdentifierNameSyntax { Identifier.ValueText: "MarshalAs" }) || p.Modifiers.Any(SyntaxKind.RefKeyword) || p.Modifiers.Any(SyntaxKind.OutKeyword) || p.Modifiers.Any(SyntaxKind.InKeyword));
             FunctionPointerParameterListSyntax funcPtrParameters = FunctionPointerParameterList()
                 .AddParameters(FunctionPointerParameter(PointerType(ifaceName)))
-                .AddParameters(parameterList.Parameters.Select(p => FunctionPointerParameter(p.Type!).WithModifiers(p.Modifiers)).ToArray())
+                .AddParameters(parameterList.Parameters.Select(p => ToFunctionPointerParameter(p)).ToArray())
                 .AddParameters(FunctionPointerParameter(returnType));
 
             TypeSyntax unmanagedDelegateType = FunctionPointerType().WithCallingConvention(
@@ -227,10 +245,33 @@ public partial class Generator
             //// ((delegate *unmanaged [Stdcall]<IPersist*,global::System.Guid* ,winmdroot.Foundation.HRESULT>)lpVtbl[3])(pThis, pClassID)
             ExpressionSyntax vtblIndexingExpression = ParenthesizedExpression(
                 CastExpression(unmanagedDelegateType, ElementAccessExpression(vtblFieldName).AddArgumentListArguments(Argument(methodOffset))));
-            InvocationExpressionSyntax vtblInvocation = InvocationExpression(vtblIndexingExpression)
-                .WithArgumentList(FixTrivia(ArgumentList()
-                    .AddArguments(Argument(pThis))
-                    .AddArguments(parameterList.Parameters.Select(p => Argument(IdentifierName(p.Identifier.ValueText)).WithRefKindKeyword(p.Modifiers.Count > 0 ? p.Modifiers[0] : default)).ToArray())));
+
+            List<ArgumentSyntax> arguments = [Argument(pThis)];
+            var fixedBlocks = new List<VariableDeclarationSyntax>();
+
+            foreach (ParameterSyntax p in parameterList.Parameters)
+            {
+                ArgumentSyntax arg;
+                if (p.Modifiers.Any(SyntaxKind.OutKeyword) || p.Modifiers.Any(SyntaxKind.RefKeyword))
+                {
+                    // Can't use "out" or "ref" with runtime marshaling disabled. We're in an unsafe context so just use fixed + pointers like friendly overloads.
+                    string origName = p.Identifier.ValueText;
+                    IdentifierNameSyntax localName = IdentifierName(origName + "Local");
+                    arg = Argument(localName);
+
+                    fixedBlocks.Add(VariableDeclaration(PointerType(p.Type!)).AddVariables(
+                        VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(
+                            PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName(origName))))));
+                }
+                else
+                {
+                    arg = Argument(IdentifierName(p.Identifier.ValueText));
+                }
+
+                arguments.Add(arg);
+            }
+
+            InvocationExpressionSyntax vtblInvocation = InvocationExpression(vtblIndexingExpression).WithArgumentList(FixTrivia(ArgumentList().AddArguments(arguments.ToArray())));
 
             MemberDeclarationSyntax? propertyOrMethod;
             MethodDeclarationSyntax? methodDeclaration = null;
@@ -352,6 +393,12 @@ public partial class Generator
 
                         body = Block().AddStatements(InvokeVtblAndThrow());
                     }
+                }
+
+                // Wrap the body in fixed statements.
+                foreach (VariableDeclarationSyntax? fixedExpression in fixedBlocks)
+                {
+                    body = Block(FixedStatement(fixedExpression, body).WithFixedKeyword(TokenWithSpace(SyntaxKind.FixedKeyword)));
                 }
 
                 methodDeclaration = MethodDeclaration(

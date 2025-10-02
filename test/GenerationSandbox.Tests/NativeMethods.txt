@@ -60,3 +60,4 @@ WriteFile
 ChoosePixelFormat
 AsyncIConnectedIdentityProvider
 ITypeComp
+ID3D11DeviceContext

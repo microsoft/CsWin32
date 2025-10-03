@@ -67,6 +67,15 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         Assert.Empty(iface);
     }
 
+    [Fact]
+    public async Task TestGenerateIUnknownAndID3D11DeviceContext()
+    {
+        // If IUnknown is requested first and then it's needed as an unmanaged type, we fail to generate it.
+        this.nativeMethods.Add("IUnknown");
+        this.nativeMethods.Add("ID3D11DeviceContext");
+        await this.InvokeGeneratorAndCompile();
+    }
+
     [Theory]
     [InlineData("CHAR", "Simple type")]
     [InlineData("RmRegisterResources", "Simple function")]

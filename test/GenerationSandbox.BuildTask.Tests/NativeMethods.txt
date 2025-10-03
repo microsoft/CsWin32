@@ -33,4 +33,4 @@ IAudioProcessingObjectConfiguration
 IBDA_EasMessage
 ITypeComp
 IBidiAsyncNotifyChannel
-//ID3D11DeviceContext
+ID3D11DeviceContext

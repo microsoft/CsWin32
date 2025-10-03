@@ -104,7 +104,9 @@ public partial class Generator
             CustomAttribute? guidAttribute = this.FindGuidAttribute(typeDef.GetCustomAttributes());
 
             // When using ComSourceGenerators, we can only declare the interface as an interface if it has a GUID.
-            bool canDeclareAsInterface = !this.options.ComInterop.ShouldUseComSourceGenerators || guidAttribute is not null;
+            // And IUnknown is always special and can never be generated as [GeneratedComInterface]
+            bool canDeclareAsInterface = !this.options.ComInterop.ShouldUseComSourceGenerators ||
+                (guidAttribute is not null && !this.Reader.StringComparer.Equals(typeDef.Name, "IUnknown"));
 
             if (canDeclareAsInterface)
             {

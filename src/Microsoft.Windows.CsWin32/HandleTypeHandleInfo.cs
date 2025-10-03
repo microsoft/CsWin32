@@ -167,13 +167,13 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
         {
             return new TypeSyntaxAndMarshaling(QualifiedName(ParseName("global::Windows.Win32.System.Com"), IdentifierName("IDispatch")));
         }
-        else if (isManagedType && forElement == Generator.GeneratingElement.StructMember && !inputs.AllowMarshaling && useComSourceGenerators)
-        {
-            // Managed type members in structs need custom marshaling. For now, put them in as void* to hold their proper place.
-            // If we let this go through as an "unmanaged" struct then the generator produces a bunch of delegates which require
-            // runtime marshaling, so we can't have that.
-            return new TypeSyntaxAndMarshaling(PointerType(PredefinedType(Token(SyntaxKind.VoidKeyword))));
-        }
+        //else if (isManagedType && forElement == Generator.GeneratingElement.StructMember && !inputs.AllowMarshaling && useComSourceGenerators)
+        //{
+        //    // Managed type members in structs need custom marshaling. For now, put them in as void* to hold their proper place.
+        //    // If we let this go through as an "unmanaged" struct then the generator produces a bunch of delegates which require
+        //    // runtime marshaling, so we can't have that.
+        //    return new TypeSyntaxAndMarshaling(PointerType(PredefinedType(Token(SyntaxKind.VoidKeyword))));
+        //}
         else if (TryMarshalAsObject(inputs, simpleName, out marshalAs))
         {
             return new TypeSyntaxAndMarshaling(PredefinedType(Token(SyntaxKind.ObjectKeyword)), marshalAs, null);

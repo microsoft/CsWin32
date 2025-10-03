@@ -254,9 +254,11 @@ public partial class Generator
             foreach (ParameterSyntax p in parameterList.Parameters)
             {
                 ArgumentSyntax arg;
-                if (p.Modifiers.Any(SyntaxKind.OutKeyword) || p.Modifiers.Any(SyntaxKind.RefKeyword))
+
+                // Can't use "out" or "ref" with runtime marshaling disabled. We're in an unsafe context so just use fixed + pointers like friendly overloads.
+                // Only do this for parameters, not the parameter that will be moved to the return value.
+                if ((p.Modifiers.Any(SyntaxKind.OutKeyword) || p.Modifiers.Any(SyntaxKind.RefKeyword)) && !p.HasAnnotation(IsRetValAnnotation))
                 {
-                    // Can't use "out" or "ref" with runtime marshaling disabled. We're in an unsafe context so just use fixed + pointers like friendly overloads.
                     string origName = p.Identifier.ValueText;
                     IdentifierNameSyntax localName = IdentifierName(origName + "Local");
                     arg = Argument(localName);
@@ -377,9 +379,7 @@ public partial class Generator
                             VariableDeclarator(retValLocalName.Identifier).WithInitializer(EqualsValueClause(DefaultExpression(returnType)))));
 
                         // Modify the vtbl invocation's last argument to point to our own local variable.
-                        ArgumentSyntax lastArgument = lastParameter.Modifiers.Any(SyntaxKind.OutKeyword)
-                            ? Argument(retValLocalName).WithRefKindKeyword(TokenWithSpace(SyntaxKind.OutKeyword))
-                            : Argument(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, retValLocalName));
+                        ArgumentSyntax lastArgument = Argument(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, retValLocalName));
                         vtblInvocation = vtblInvocation.WithArgumentList(
                             vtblInvocation.ArgumentList.WithArguments(vtblInvocation.ArgumentList.Arguments.Replace(vtblInvocation.ArgumentList.Arguments.Last(), lastArgument)));
 
@@ -780,7 +780,17 @@ public partial class Generator
                     MethodSignature<TypeHandleInfo> signature = methodDefinition.Method.DecodeSignature(this.SignatureHandleProvider, null);
 
                     CustomAttributeHandleCollection? returnTypeAttributes = methodDefinition.Generator.GetReturnTypeCustomAttributes(methodDefinition.Method);
-                    TypeSyntaxAndMarshaling returnTypeDetails = signature.ReturnType.ToTypeSyntax(typeSettings, GeneratingElement.InterfaceMember, returnTypeAttributes?.QualifyWith(methodDefinition.Generator));
+                    TypeSyntaxSettings returnTypeSettings = typeSettings;
+                    if (this.options.ComInterop.ShouldUseComSourceGenerators)
+                    {
+                        // Array and pointer return values can't be marshaled.
+                        if (signature.ReturnType is ArrayTypeHandleInfo || signature.ReturnType is PointerTypeHandleInfo)
+                        {
+                            returnTypeSettings = returnTypeSettings with { AllowMarshaling = false };
+                        }
+                    }
+
+                    TypeSyntaxAndMarshaling returnTypeDetails = signature.ReturnType.ToTypeSyntax(returnTypeSettings, GeneratingElement.InterfaceMember, returnTypeAttributes?.QualifyWith(methodDefinition.Generator));
                     TypeSyntax returnType = returnTypeDetails.Type;
                     AttributeSyntax? returnsAttribute = MarshalAs(returnTypeDetails.MarshalAsAttribute, returnTypeDetails.NativeArrayInfo);
 
@@ -835,7 +845,7 @@ public partial class Generator
                         }
                     }
 
-                    if (methodDeclaration.ReturnType is PointerTypeSyntax || methodDeclaration.ParameterList.Parameters.Any(p => p.Type is PointerTypeSyntax))
+                    if (methodDeclaration.ReturnType is PointerTypeSyntax || methodDeclaration.ParameterList.Parameters.Any(p => p.Type is PointerTypeSyntax || p.Type is FunctionPointerTypeSyntax))
                     {
                         methodDeclaration = methodDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));
                     }

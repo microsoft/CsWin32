@@ -782,7 +782,49 @@ public partial class Generator
                     TypeSyntax returnType = returnTypeDetails.Type;
                     AttributeSyntax? returnsAttribute = MarshalAs(returnTypeDetails.MarshalAsAttribute, returnTypeDetails.NativeArrayInfo);
 
-                    ParameterListSyntax? parameterList = methodDefinition.Generator.CreateParameterList(methodDefinition.Method, signature, this.comSignatureTypeSettings, GeneratingElement.InterfaceMember);
+                    TypeSyntaxSettings functionSignatureSettings = this.comSignatureTypeSettings;
+                    ParameterListSyntax? parameterList = methodDefinition.Generator.CreateParameterList(methodDefinition.Method, signature, functionSignatureSettings, GeneratingElement.InterfaceMember);
+
+                    if (this.options.ComInterop.ShouldUseComSourceGenerators)
+                    {
+                        bool fallbackToUnmarshalled = false;
+
+                        foreach (ParameterSyntax p in parameterList.Parameters)
+                        {
+                            foreach (AttributeListSyntax attributeList in p.AttributeLists)
+                            {
+                                foreach (AttributeSyntax attrib in attributeList.Attributes)
+                                {
+                                    if (attrib.Name.ToString() == "MarshalAs" && attrib.ArgumentList is object)
+                                    {
+                                        foreach (AttributeArgumentSyntax attribArg in attrib.ArgumentList.Arguments)
+                                        {
+                                            // Check if this is SizeParamIndex and then get the parameter the index and look up the parameter it refers to
+                                            if (attribArg.NameEquals is NameEqualsSyntax nameEqualsSyntax && nameEqualsSyntax.Name.Identifier.ValueText == "SizeParamIndex"
+                                                && attribArg.Expression is LiteralExpressionSyntax { Token: var valueToken }
+                                                && valueToken.Value is int sizeParamIndex)
+                                            {
+                                                // Some functions like ID3D11DeviceContext.PSGetShader have a parameter annotated as _Out_writes_opt_(*pNumClassInstances),
+                                                // which means the SizeParamIndex refers to a pointer-typed parameter which GeneratedComInterface doesn't handle.
+                                                // In these cases we must fall back to allowMarshaling=false for this method.
+                                                var parameterSizeParam = parameterList.Parameters[sizeParamIndex];
+                                                if (parameterSizeParam.Type is PointerTypeSyntax)
+                                                {
+                                                    fallbackToUnmarshalled = true;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if (fallbackToUnmarshalled)
+                        {
+                            functionSignatureSettings = functionSignatureSettings with { AllowMarshaling = false };
+                            parameterList = methodDefinition.Generator.CreateParameterList(methodDefinition.Method, signature, functionSignatureSettings, GeneratingElement.InterfaceMember);
+                        }
+                    }
 
                     bool preserveSig = interfaceAsSubtype || this.UsePreserveSigForComMethod(methodDefinition.Method, signature, actualIfaceName, methodName);
                     if (!preserveSig)
@@ -884,6 +926,7 @@ public partial class Generator
         }
         else if (useComSourceGenerators)
         {
+            // We should have detected earlier that this interface must be emitted as blittable (struct).
             throw new InvalidOperationException("Cannot generate a COM interface without a GUID when using COM source generators.");
         }
 

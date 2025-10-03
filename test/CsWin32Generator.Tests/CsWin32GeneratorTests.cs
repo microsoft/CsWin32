@@ -88,6 +88,11 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
     [InlineData("IBidiAsyncNotifyChannel", "Parameter that needs special marshaling help")]
     [InlineData("ID3D11Texture1D", "Unmanaged interface needs to not use `out` for any params")]
     [InlineData("ID3D11DeviceContext", "Problem with ppClassInstances parameter")]
+    [InlineData("IBrowserService2", "Array return type needs marshaling attribute")]
+    [InlineData("ID3D11VideoContext", "Parameter not properly annotated as marshaled")]
+    [InlineData("ID2D1Factory4", "Function matches more than one interface member. Which interface member is actually chosen is implementation-dependent. Consider using a non-explicit implementation instead")]
+    [InlineData("IDWriteFontFace5", "Pointers may only be used in an unsafe context")]
+    [InlineData("ICorProfilerCallback11", "already defines a member called 'SurvivingReferences' with the same parameter types")]
     public async Task TestGenerateApi(string api, string purpose)
     {
         this.Logger.WriteLine($"Testing {api} - {purpose}");

@@ -9,6 +9,7 @@
     <CsWin32RunAsBuildTask>true</CsWin32RunAsBuildTask>
     <DisableRuntimeMarshalling>true</DisableRuntimeMarshalling>
     <WarningsAsErrors>$(WarningsAsErrors);CA1420</WarningsAsErrors>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
   </PropertyGroup>
 
   <!-- For browsing, add the .cs files as None items -->

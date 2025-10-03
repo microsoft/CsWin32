@@ -102,6 +102,8 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
     [InlineData("ID2D1Factory4", "Function matches more than one interface member. Which interface member is actually chosen is implementation-dependent. Consider using a non-explicit implementation instead")]
     [InlineData("IDWriteFontFace5", "Pointers may only be used in an unsafe context")]
     [InlineData("ICorProfilerCallback11", "already defines a member called 'SurvivingReferences' with the same parameter types")]
+    [InlineData("D3D11_VIDEO_DECODER_BUFFER_DESC1", "struct with pointer to struct")]
+    [InlineData("D3D11_VIDEO_DECODER_EXTENSION", "struct with array of managed types")]
     public async Task TestGenerateApi(string api, string purpose)
     {
         this.Logger.WriteLine($"Testing {api} - {purpose}");

@@ -34,3 +34,5 @@ IBDA_EasMessage
 ITypeComp
 IBidiAsyncNotifyChannel
 ID3D11DeviceContext
+//ID2D1Factory4
+ID3D11VideoContext

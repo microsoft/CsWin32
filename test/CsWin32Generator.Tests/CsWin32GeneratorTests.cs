@@ -59,12 +59,12 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
     [Fact]
     public async Task CheckIAudioProcessingObjectConfigurationDoesNotGenerateUnmanagedTypes()
     {
-        // Request DebugPropertyInfo and we should not see ITypeComp_unmanaged get generated.
+        // Request IAudioProcessingObjectConfiguration and it should request IAudioMediaType_unmanaged that's embedded in a struct
         this.nativeMethods.Add("IAudioProcessingObjectConfiguration");
         await this.InvokeGeneratorAndCompile();
 
         var iface = this.FindGeneratedType("IAudioMediaType_unmanaged");
-        Assert.Empty(iface);
+        Assert.True(iface.Any());
     }
 
     [Fact]
@@ -84,7 +84,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
     [InlineData("CreateDispatcherQueueController", "Has WinRT object parameter which needs marshalling")]
     [InlineData("IEnumEventObject", "Derives from IDispatch")]
     [InlineData("DestroyIcon", "Exercise SetLastError on import")]
-    [InlineData("IDebugProperty", "DebugPropertyInfo is weird")]
+    [InlineData("IDebugProperty", "DebugPropertyInfo has a managed field")]
     [InlineData("GetThemeColor", "Tests enum marshaling to I4")]
     [InlineData("ChoosePixelFormat", "Tests marshaled field in struct")]
     [InlineData("IGraphicsEffectD2D1Interop", "Uses Uses IPropertyValue (not accessible in C#)")]
@@ -96,7 +96,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
     [InlineData("Column", "SYSLIB1092 that needs to be suppressed")]
     [InlineData("IBidiAsyncNotifyChannel", "Parameter that needs special marshaling help")]
     [InlineData("ID3D11Texture1D", "Unmanaged interface needs to not use `out` for any params")]
-    [InlineData("ID3D11DeviceContext", "Problem with ppClassInstances parameter")]
+    [InlineData("ID3D11DeviceContext", "ppClassInstances parameter is annotated to have a size from uint* parameter")]
     [InlineData("IBrowserService2", "Array return type needs marshaling attribute")]
     [InlineData("ID3D11VideoContext", "Parameter not properly annotated as marshaled")]
     [InlineData("ID2D1Factory4", "Function matches more than one interface member. Which interface member is actually chosen is implementation-dependent. Consider using a non-explicit implementation instead")]

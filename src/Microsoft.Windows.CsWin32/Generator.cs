@@ -1490,9 +1490,9 @@ public partial class Generator : IGenerator, IDisposable
     }
 
     private ParameterListSyntax CreateParameterList(MethodDefinition methodDefinition, MethodSignature<TypeHandleInfo> signature, TypeSyntaxSettings typeSettings, GeneratingElement forElement)
-        => FixTrivia(ParameterList().AddParameters(methodDefinition.GetParameters().Select(this.Reader.GetParameter).Where(p => !p.Name.IsNil).Select(p => this.CreateParameter(signature.ParameterTypes[p.SequenceNumber - 1], p, typeSettings, forElement)).ToArray()));
+        => FixTrivia(ParameterList().AddParameters(methodDefinition.GetParameters().Select(this.Reader.GetParameter).Where(p => !p.Name.IsNil).Select(p => this.CreateParameter(signature, signature.ParameterTypes[p.SequenceNumber - 1], p, typeSettings, forElement)).ToArray()));
 
-    private ParameterSyntax CreateParameter(TypeHandleInfo parameterInfo, Parameter parameter, TypeSyntaxSettings typeSettings, GeneratingElement forElement)
+    private ParameterSyntax CreateParameter(MethodSignature<TypeHandleInfo> signature, TypeHandleInfo parameterInfo, Parameter parameter, TypeSyntaxSettings typeSettings, GeneratingElement forElement)
     {
         string name = this.Reader.GetString(parameter.Name);
         try
@@ -1501,6 +1501,19 @@ public partial class Generator : IGenerator, IDisposable
             // * Notice [Out][RAIIFree] handle producing parameters. Can we make these provide SafeHandle's?
             bool isReturnOrOutParam = parameter.SequenceNumber == 0 || (parameter.Attributes & ParameterAttributes.Out) == ParameterAttributes.Out;
             TypeSyntaxAndMarshaling parameterTypeSyntax = parameterInfo.ToTypeSyntax(typeSettings, forElement, parameter.GetCustomAttributes().QualifyWith(this), parameter.Attributes);
+
+            // Check that CountParamIndex is valid.
+            if (this.options.ComInterop.ShouldUseComSourceGenerators && forElement == GeneratingElement.InterfaceMember &&
+                parameterTypeSyntax.NativeArrayInfo is { CountParamIndex: short countParamIndex })
+            {
+                // TODO: File a bug for this issue with ComGeneratedInterface
+                // If the CountParamIndex refers to a pointer-typed parameter, we have to fall back to unmanaged for this parameter.
+                if (signature.ParameterTypes[countParamIndex] is PointerTypeHandleInfo)
+                {
+                    typeSettings = typeSettings with { AllowMarshaling = false };
+                    parameterTypeSyntax = parameterInfo.ToTypeSyntax(typeSettings, forElement, parameter.GetCustomAttributes().QualifyWith(this), parameter.Attributes);
+                }
+            }
 
             // Determine the custom attributes to apply.
             AttributeListSyntax? attributes = AttributeList();

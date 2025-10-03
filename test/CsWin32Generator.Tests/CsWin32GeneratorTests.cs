@@ -104,6 +104,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
     [InlineData("ICorProfilerCallback11", "already defines a member called 'SurvivingReferences' with the same parameter types")]
     [InlineData("D3D11_VIDEO_DECODER_BUFFER_DESC1", "struct with pointer to struct")]
     [InlineData("D3D11_VIDEO_DECODER_EXTENSION", "struct with array of managed types")]
+    [InlineData("IWICBitmap", "Interface with multiple methods with same name")]
     public async Task TestGenerateApi(string api, string purpose)
     {
         this.Logger.WriteLine($"Testing {api} - {purpose}");

@@ -10,6 +10,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Diagnostics;
 using Xunit;
+using Xunit.Internal;
 
 namespace CsWin32Generator.Tests;
 
@@ -29,10 +30,15 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
 
     protected async Task InvokeGeneratorAndCompile([CallerMemberName] string testCase = "")
     {
-        await this.InvokeGenerator(testCase);
+        string outputPath = this.GetTestCaseOutputDirectory(testCase);
+        if (Directory.Exists(outputPath))
+        {
+            Directory.Delete(outputPath, true);
+        }
+
+        await this.InvokeGenerator(outputPath, testCase);
 
         // Collect all generated .cs files from the output directory
-        string outputPath = this.GetTestCaseOutputDirectory(testCase);
         string[] generatedFiles = Directory.GetFiles(outputPath, "*.g.cs");
 
         this.Logger.WriteLine($"Found {generatedFiles.Length} generated files:");
@@ -44,18 +50,12 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
         // Create a compilation with the generated files
         if (generatedFiles.Length > 0)
         {
-            await this.CompileGeneratedFilesWithSourceGenerators(generatedFiles);
+            await this.CompileGeneratedFilesWithSourceGenerators(outputPath, generatedFiles);
         }
     }
 
-    protected async Task InvokeGenerator(string testCase)
+    protected async Task InvokeGenerator(string outputPath, string testCase)
     {
-        string outputPath = this.GetTestCaseOutputDirectory(testCase);
-        if (Directory.Exists(outputPath))
-        {
-            Directory.Delete(outputPath, true);
-        }
-
         Console.SetOut(new TestOutputWriter(this.Logger));
 
         string nativeMethodsTxtPath;
@@ -121,7 +121,7 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
         return AppDomain.CurrentDomain.GetAssemblies().Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location));
     }
 
-    private async Task CompileGeneratedFilesWithSourceGenerators(string[] generatedFiles)
+    private async Task CompileGeneratedFilesWithSourceGenerators(string outputPath, string[] generatedFiles)
     {
         this.Logger.WriteLine("Compiling generated files with source generators...");
 
@@ -168,6 +168,23 @@ using System.Runtime.CompilerServices;
             // Run the source generators
             var generatorDriver = driver.RunGeneratorsAndUpdateCompilation(this.compilation, out var newCompilation, out var generatorDiagnostics);
             this.compilation = (CSharpCompilation)newCompilation;
+
+            // Write out all generated files
+            foreach (SyntaxTree generatedFile in this.compilation.SyntaxTrees)
+            {
+                if (!Path.IsPathRooted(generatedFile.FilePath))
+                {
+                    string generatedFilePath = Path.Combine(outputPath, generatedFile.FilePath);
+                    string? generatedFileDirectory = Path.GetDirectoryName(generatedFilePath);
+                    if (generatedFileDirectory is not null && !Directory.Exists(generatedFileDirectory))
+                    {
+                        Directory.CreateDirectory(generatedFileDirectory);
+                    }
+
+                    this.Logger.WriteLine("Writing generated file: " + generatedFilePath);
+                    File.WriteAllText(generatedFilePath, generatedFile.GetCompilationUnitRoot().GetText(Encoding.UTF8).ToString());
+                }
+            }
 
             // Filter out SYSLIB1092 diagnostics (related to DisableRuntimeMarshalling) as they are expected
             var filteredGeneratorDiagnostics = generatorDiagnostics.Where(d =>

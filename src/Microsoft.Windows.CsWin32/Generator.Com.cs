@@ -673,6 +673,7 @@ public partial class Generator
         bool foundIUnknown = false;
         bool foundIDispatch = false;
         bool foundIInspectable = false;
+        bool useComSourceGenerators = this.options.ComInterop.ShouldUseComSourceGenerators;
 
         // For marshaling, just derive from the top-most interface.
         BaseTypeSyntax? topMostBaseTypeSyntax = null;
@@ -718,7 +719,12 @@ public partial class Generator
                     }
 
                     topMostBaseTypeSyntax = SimpleBaseType(baseTypeSyntax);
-                    allMethods.AddRange(baseType.Definition.GetMethods().Select(methodHandle => new QualifiedMethodDefinitionHandle(baseType.Generator, methodHandle)));
+
+                    // ComInterop requires that you re-declare all base methods. GeneratedComInterface fixes this so you just declare the derived interface.
+                    if (!useComSourceGenerators)
+                    {
+                        allMethods.AddRange(baseType.Definition.GetMethods().Select(methodHandle => new QualifiedMethodDefinitionHandle(baseType.Generator, methodHandle)));
+                    }
                 }
             }
         }
@@ -882,8 +888,6 @@ public partial class Generator
             .WithKeyword(TokenWithSpace(SyntaxKind.InterfaceKeyword))
             .AddModifiers(TokenWithSpace(this.Visibility))
             .AddMembers(members.ToArray());
-
-        bool useComSourceGenerators = this.options.ComInterop.ShouldUseComSourceGenerators;
 
         if (useComSourceGenerators)
         {

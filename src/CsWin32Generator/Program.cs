@@ -218,6 +218,8 @@ public partial class Program
             options.ComInterop.UseComSourceGenerators = true;
         }
 
+        options.FriendlyOverloads = new() { Enabled = false };
+
         Console.WriteLine($"Loaded generator options. AllowMarshaling: {options.AllowMarshaling}, ClassName: {options.ClassName}");
 
         // Validate metadata files exist

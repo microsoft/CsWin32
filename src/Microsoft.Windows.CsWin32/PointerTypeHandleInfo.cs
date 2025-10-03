@@ -10,6 +10,7 @@ internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleIn
     internal override TypeSyntaxAndMarshaling ToTypeSyntax(TypeSyntaxSettings inputs, Generator.GeneratingElement forElement, QualifiedCustomAttributeHandleCollection? customAttributes, ParameterAttributes parameterAttributes = default)
     {
         Generator.NativeArrayInfo? nativeArrayInfo = customAttributes.HasValue ? customAttributes.Value.Generator.FindNativeArrayInfoAttribute(customAttributes.Value.Collection) : null;
+        bool useComSourceGenerators = inputs.Generator?.Options.ComInterop.ShouldUseComSourceGenerators == true;
 
         // We can't marshal a pointer exposed as a field, unless it's a pointer to an array.
         if (inputs.AllowMarshaling && inputs.IsField && (customAttributes is null || nativeArrayInfo is null))
@@ -100,7 +101,7 @@ internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleIn
         }
         else if (inputs.AllowMarshaling && customAttributes is object && customAttributes.Value.Generator.FindInteropDecorativeAttribute(customAttributes.Value.Collection, "ComOutPtrAttribute") is not null)
         {
-            if (inputs.Generator?.Options.ComInterop.ShouldUseComSourceGenerators == true)
+            if (useComSourceGenerators)
             {
                 return new TypeSyntaxAndMarshaling(PredefinedType(Token(SyntaxKind.ObjectKeyword)), new MarshalAsAttribute(UnmanagedType.Interface), null);
             }

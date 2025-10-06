@@ -14,6 +14,11 @@ public partial class Generator
 
     private readonly HashSet<string> injectedPInvokeHelperMethodsToFriendlyOverloadsExtensions = new();
 
+    // With runtime marshaling, IDispatch is implicitly generated when using InterfaceIsDual. The COM source generators
+    // don't support this, so we generate a dummy IDispatch when using source generators mode. We don't generate a "real"
+    // IDispatch because the interface would be expensive and not very useful. We just need to have placeholder vtable slots.
+    private bool GenerateIDispatch => this.useSourceGenerators;
+
     private static Guid DecodeGuidFromAttribute(CustomAttribute guidAttribute)
     {
         CustomAttributeValue<TypeSyntax> args = guidAttribute.DecodeValue(CustomAttributeTypeProvider.Instance);
@@ -33,9 +38,35 @@ public partial class Generator
 
     private static bool IsHresult(TypeHandleInfo? typeHandleInfo) => typeHandleInfo is HandleTypeHandleInfo handleInfo && handleInfo.IsType("HRESULT");
 
-    private static bool GenerateCcwFor(string interfaceName) => interfaceName is not ("IUnknown" or "IDispatch" or "IInspectable");
+    private static bool GenerateCcwFor(string interfaceName, bool generateIDispatch)
+    {
+        if (interfaceName is "IUnknown" or "IInspectable")
+        {
+            return false;
+        }
 
-    private static bool GenerateCcwFor(MetadataReader reader, StringHandle typeName) => !(reader.StringComparer.Equals(typeName, "IUnknown") || reader.StringComparer.Equals(typeName, "IDispatch") || reader.StringComparer.Equals(typeName, "IInspectable"));
+        if (interfaceName is "IDispatch" && !generateIDispatch)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool GenerateCcwFor(MetadataReader reader, StringHandle typeName, bool generateIDispatch)
+    {
+        if (reader.StringComparer.Equals(typeName, "IUnknown") || reader.StringComparer.Equals(typeName, "IInspectable"))
+        {
+            return false;
+        }
+
+        if (reader.StringComparer.Equals(typeName, "IDispatch") && !generateIDispatch)
+        {
+            return false;
+        }
+
+        return true;
+    }
 
     /// <summary>
     /// Generates a type to represent a COM interface.
@@ -73,8 +104,36 @@ public partial class Generator
 
         if (context.AllowMarshaling)
         {
-            // Marshaling is allowed here, and generally. Just emit the interface.
-            return this.DeclareInterfaceAsInterface(typeDef, baseTypes, context);
+            // When using ComSourceGenerators, we can only declare the interface as an interface if it has a GUID.
+            // And IUnknown is always special and can never be generated as [GeneratedComInterface]
+            bool canDeclareAsInterface = true;
+            if (this.useSourceGenerators)
+            {
+                CustomAttribute? guidAttribute = this.FindGuidAttribute(typeDef.GetCustomAttributes());
+                if (guidAttribute is null || this.Reader.StringComparer.Equals(typeDef.Name, "IUnknown"))
+                {
+                    canDeclareAsInterface = false;
+                }
+                else
+                {
+                    // And then also if any bases are missing guids.
+                    foreach (QualifiedTypeDefinitionHandle baseType in baseTypes)
+                    {
+                        TypeDefinition baseTypeDef = baseType.Generator.Reader.GetTypeDefinition(baseType.DefinitionHandle);
+                        if (this.FindGuidAttribute(baseTypeDef.GetCustomAttributes()) is null)
+                        {
+                            canDeclareAsInterface = false;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (canDeclareAsInterface)
+            {
+                // Marshaling is allowed here, and generally. Just emit the interface.
+                return this.DeclareInterfaceAsInterface(typeDef, baseTypes, context);
+            }
         }
 
         // Marshaling of this interface is not allowed here. Emit the struct.
@@ -95,6 +154,12 @@ public partial class Generator
 
     private TypeDeclarationSyntax DeclareInterfaceAsStruct(TypeDefinitionHandle typeDefHandle, ImmutableStack<QualifiedTypeDefinitionHandle> baseTypes, Context context)
     {
+        // When using source generators, structs must always be fully blittable.
+        if (this.useSourceGenerators)
+        {
+            context = context with { AllowMarshaling = false };
+        }
+
         TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefHandle);
         string originalIfaceName = this.Reader.GetString(typeDef.Name);
         bool isManagedType = this.IsManagedType(typeDefHandle);
@@ -105,7 +170,7 @@ public partial class Generator
         TypeSyntaxSettings typeSettings = context.Filter(this.comSignatureTypeSettings);
         IdentifierNameSyntax pThisParameterName = IdentifierName("pThis");
         ExpressionSyntax pThis = ThisPointer(PointerType(ifaceName));
-        ParameterSyntax? ccwThisParameter = this.canUseUnmanagedCallersOnlyAttribute && !this.options.AllowMarshaling && originalIfaceName != "IUnknown" && originalIfaceName != "IDispatch" && !this.IsNonCOMInterface(typeDef) ? Parameter(pThisParameterName.Identifier).WithType(PointerType(ifaceName).WithTrailingTrivia(Space)) : null;
+        ParameterSyntax? ccwThisParameter = this.canUseUnmanagedCallersOnlyAttribute && !this.options.AllowMarshaling && originalIfaceName != "IUnknown" && (originalIfaceName != "IDispatch" && !this.GenerateIDispatch) && !this.IsNonCOMInterface(typeDef) ? Parameter(pThisParameterName.Identifier).WithType(PointerType(ifaceName).WithTrailingTrivia(Space)) : null;
         List<QualifiedMethodDefinitionHandle> ccwMethodsToSkip = new();
         List<MemberDeclarationSyntax> ccwEntrypointMethods = new();
         IdentifierNameSyntax vtblParamName = IdentifierName("vtable");
@@ -130,7 +195,7 @@ public partial class Generator
             hasIUnknownMembers |= qualifiedBaseType.Reader.StringComparer.Equals(baseType.Name, "IUnknown");
 
             // We do *not* emit CCW methods for IUnknown, because those are provided by ComWrappers.
-            if (ccwThisParameter is not null && !GenerateCcwFor(qualifiedBaseType.Reader, baseType.Name))
+            if (ccwThisParameter is not null && !GenerateCcwFor(qualifiedBaseType.Reader, baseType.Name, this.GenerateIDispatch))
             {
                 ccwMethodsToSkip.AddRange(methodsThisType);
             }
@@ -161,12 +226,39 @@ public partial class Generator
             TypeSyntax returnType = signature.ReturnType.ToTypeSyntax(typeSettings, GeneratingElement.InterfaceAsStructMember, returnTypeAttributes).Type;
             TypeSyntax returnTypePreserveSig = returnType;
 
+            FunctionPointerParameterSyntax ToFunctionPointerParameter(ParameterSyntax p)
+            {
+                if (this.canMarshalNativeDelegateParams)
+                {
+                    // With runtime marshaling, native delegates can have in/out/ref params.
+                    return FunctionPointerParameter(p.Type!).WithModifiers(p.Modifiers);
+                }
+                else
+                {
+                    // Without runtime marshaling, modifiers must be changed to pointers.
+                    if (p.Modifiers.Count <= 1)
+                    {
+                        if (p.Modifiers.Any(SyntaxKind.OutKeyword) || p.Modifiers.Any(SyntaxKind.RefKeyword))
+                        {
+                            return FunctionPointerParameter(PointerType(p.Type!));
+                        }
+
+                        if (p.Modifiers.Count == 0 || p.Modifiers.Any(SyntaxKind.InKeyword))
+                        {
+                            return FunctionPointerParameter(p.Type!);
+                        }
+                    }
+
+                    throw new InvalidOperationException("Unsupported modifier for native delegate");
+                }
+            }
+
             ParameterListSyntax parameterList = methodDefinition.Generator.CreateParameterList(methodDefinition.Method, signature, typeSettings, GeneratingElement.InterfaceAsStructMember);
             ParameterListSyntax parameterListPreserveSig = parameterList; // preserve a copy that has no mutations.
             bool requiresMarshaling = parameterList.Parameters.Any(p => p.AttributeLists.SelectMany(al => al.Attributes).Any(a => a.Name is IdentifierNameSyntax { Identifier.ValueText: "MarshalAs" }) || p.Modifiers.Any(SyntaxKind.RefKeyword) || p.Modifiers.Any(SyntaxKind.OutKeyword) || p.Modifiers.Any(SyntaxKind.InKeyword));
             FunctionPointerParameterListSyntax funcPtrParameters = FunctionPointerParameterList()
                 .AddParameters(FunctionPointerParameter(PointerType(ifaceName)))
-                .AddParameters(parameterList.Parameters.Select(p => FunctionPointerParameter(p.Type!).WithModifiers(p.Modifiers)).ToArray())
+                .AddParameters(parameterList.Parameters.Select(p => ToFunctionPointerParameter(p)).ToArray())
                 .AddParameters(FunctionPointerParameter(returnType));
 
             TypeSyntax unmanagedDelegateType = FunctionPointerType().WithCallingConvention(
@@ -186,10 +278,46 @@ public partial class Generator
             //// ((delegate *unmanaged [Stdcall]<IPersist*,global::System.Guid* ,winmdroot.Foundation.HRESULT>)lpVtbl[3])(pThis, pClassID)
             ExpressionSyntax vtblIndexingExpression = ParenthesizedExpression(
                 CastExpression(unmanagedDelegateType, ElementAccessExpression(vtblFieldName).AddArgumentListArguments(Argument(methodOffset))));
-            InvocationExpressionSyntax vtblInvocation = InvocationExpression(vtblIndexingExpression)
-                .WithArgumentList(FixTrivia(ArgumentList()
-                    .AddArguments(Argument(pThis))
-                    .AddArguments(parameterList.Parameters.Select(p => Argument(IdentifierName(p.Identifier.ValueText)).WithRefKindKeyword(p.Modifiers.Count > 0 ? p.Modifiers[0] : default)).ToArray())));
+            var fixedBlocks = new List<VariableDeclarationSyntax>();
+            InvocationExpressionSyntax vtblInvocation;
+            if (this.canMarshalNativeDelegateParams)
+            {
+                vtblInvocation = InvocationExpression(vtblIndexingExpression)
+                    .WithArgumentList(FixTrivia(ArgumentList()
+                        .AddArguments(Argument(pThis))
+                        .AddArguments(parameterList.Parameters.Select(p => Argument(IdentifierName(p.Identifier.ValueText)).WithRefKindKeyword(p.Modifiers.Count > 0 ? p.Modifiers[0] : default)).ToArray())));
+            }
+            else
+            {
+                // When we can't use in/out/ref on arguments we must pass by pointers so we also need fixed blocks.
+                List<ArgumentSyntax> arguments = [Argument(pThis)];
+
+                foreach (ParameterSyntax p in parameterList.Parameters)
+                {
+                    ArgumentSyntax arg;
+
+                    // Can't use "out" or "ref" with runtime marshaling disabled. We're in an unsafe context so just use fixed + pointers like friendly overloads.
+                    // Only do this for parameters, not the parameter that will be moved to the return value.
+                    if ((p.Modifiers.Any(SyntaxKind.OutKeyword) || p.Modifiers.Any(SyntaxKind.RefKeyword)) && !p.HasAnnotation(IsRetValAnnotation))
+                    {
+                        string origName = p.Identifier.ValueText;
+                        IdentifierNameSyntax localName = IdentifierName(origName + "Local");
+                        arg = Argument(localName);
+
+                        fixedBlocks.Add(VariableDeclaration(PointerType(p.Type!)).AddVariables(
+                            VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(
+                                PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName(origName))))));
+                    }
+                    else
+                    {
+                        arg = Argument(IdentifierName(p.Identifier.ValueText));
+                    }
+
+                    arguments.Add(arg);
+                }
+
+                vtblInvocation = InvocationExpression(vtblIndexingExpression).WithArgumentList(FixTrivia(ArgumentList().AddArguments(arguments.ToArray())));
+            }
 
             MemberDeclarationSyntax? propertyOrMethod;
             MethodDeclarationSyntax? methodDeclaration = null;
@@ -293,8 +421,10 @@ public partial class Generator
                             VariableDeclarator(retValLocalName.Identifier).WithInitializer(EqualsValueClause(DefaultExpression(returnType)))));
 
                         // Modify the vtbl invocation's last argument to point to our own local variable.
-                        ArgumentSyntax lastArgument = lastParameter.Modifiers.Any(SyntaxKind.OutKeyword)
-                            ? Argument(retValLocalName).WithRefKindKeyword(TokenWithSpace(SyntaxKind.OutKeyword))
+                        ArgumentSyntax lastArgument = this.canMarshalNativeDelegateParams ?
+                            (lastParameter.Modifiers.Any(SyntaxKind.OutKeyword)
+                                ? Argument(retValLocalName).WithRefKindKeyword(TokenWithSpace(SyntaxKind.OutKeyword))
+                                : Argument(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, retValLocalName)))
                             : Argument(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, retValLocalName));
                         vtblInvocation = vtblInvocation.WithArgumentList(
                             vtblInvocation.ArgumentList.WithArguments(vtblInvocation.ArgumentList.Arguments.Replace(vtblInvocation.ArgumentList.Arguments.Last(), lastArgument)));
@@ -311,6 +441,12 @@ public partial class Generator
 
                         body = Block().AddStatements(InvokeVtblAndThrow());
                     }
+                }
+
+                // Wrap the body in fixed statements.
+                foreach (VariableDeclarationSyntax? fixedExpression in fixedBlocks)
+                {
+                    body = Block(FixedStatement(fixedExpression, body).WithFixedKeyword(TokenWithSpace(SyntaxKind.FixedKeyword)));
                 }
 
                 methodDeclaration = MethodDeclaration(
@@ -563,10 +699,15 @@ public partial class Generator
 
     private TypeDeclarationSyntax? DeclareInterfaceAsInterface(TypeDefinition typeDef, ImmutableStack<QualifiedTypeDefinitionHandle> baseTypes, Context context, bool interfaceAsSubtype = false)
     {
-        if (this.Reader.StringComparer.Equals(typeDef.Name, "IUnknown") || this.Reader.StringComparer.Equals(typeDef.Name, "IDispatch"))
+        if (this.Reader.StringComparer.Equals(typeDef.Name, "IUnknown"))
         {
             // We do not generate interfaces for these COM base types.
             return null;
+        }
+
+        if (this.Reader.StringComparer.Equals(typeDef.Name, "IDispatch"))
+        {
+            return this.GenerateIDispatch ? this.CreateIDispatchTypeDeclarationSyntax() : null;
         }
 
         string actualIfaceName = this.Reader.GetString(typeDef.Name);
@@ -578,7 +719,9 @@ public partial class Generator
         bool foundIUnknown = false;
         bool foundIDispatch = false;
         bool foundIInspectable = false;
-        var baseTypeSyntaxList = new List<BaseTypeSyntax>();
+
+        // For marshaling, just derive from the top-most interface.
+        BaseTypeSyntax? topMostBaseTypeSyntax = null;
         while (!baseTypes.IsEmpty)
         {
             QualifiedTypeDefinitionHandle baseTypeHandle = baseTypes.Peek();
@@ -598,6 +741,12 @@ public partial class Generator
                 if (baseTypeHandle.Reader.StringComparer.Equals(baseType.Definition.Name, "IDispatch"))
                 {
                     foundIDispatch = true;
+
+                    if (this.GenerateIDispatch)
+                    {
+                        this.RequestInteropType("Windows.Win32.System.Com", "IDispatch", context);
+                        topMostBaseTypeSyntax = SimpleBaseType(QualifiedName(ParseName("global::Windows.Win32.System.Com"), IdentifierName("IDispatch")));
+                    }
                 }
                 else if (baseTypeHandle.Reader.StringComparer.Equals(baseType.Definition.Name, "IInspectable"))
                 {
@@ -614,8 +763,13 @@ public partial class Generator
                             NestedCOMInterfaceName);
                     }
 
-                    baseTypeSyntaxList.Add(SimpleBaseType(baseTypeSyntax));
-                    allMethods.AddRange(baseType.Definition.GetMethods().Select(methodHandle => new QualifiedMethodDefinitionHandle(baseType.Generator, methodHandle)));
+                    topMostBaseTypeSyntax = SimpleBaseType(baseTypeSyntax);
+
+                    // ComInterop requires that you re-declare all base methods. GeneratedComInterface fixes this so you just declare the derived interface.
+                    if (!this.useSourceGenerators)
+                    {
+                        allMethods.AddRange(baseType.Definition.GetMethods().Select(methodHandle => new QualifiedMethodDefinitionHandle(baseType.Generator, methodHandle)));
+                    }
                 }
             }
         }
@@ -625,7 +779,7 @@ public partial class Generator
 
         AttributeSyntax ifaceType = InterfaceType(
             foundIInspectable ? ComInterfaceType.InterfaceIsIInspectable :
-            foundIDispatch ? (allMethods.Count == 0 ? ComInterfaceType.InterfaceIsIDispatch : ComInterfaceType.InterfaceIsDual) :
+            foundIDispatch ? (this.GenerateIDispatch ? ComInterfaceType.InterfaceIsIUnknown : (allMethods.Count == 0 ? ComInterfaceType.InterfaceIsIDispatch : ComInterfaceType.InterfaceIsDual)) :
             foundIUnknown ? ComInterfaceType.InterfaceIsIUnknown :
             throw new NotSupportedException("No COM interface base type found."));
 
@@ -647,7 +801,9 @@ public partial class Generator
                 // Even if it could be represented as a property accessor, we cannot do so if a property by the same name was already declared in anything other than the previous row.
                 // Adding an accessor to a property later than the very next row would screw up the virtual method table ordering.
                 // We must also confirm that the property type is the same in both cases, because sometimes they aren't (e.g. IUIAutomationProxyFactoryEntry.ClassName).
-                if (methodDefinition.Generator.TryGetPropertyAccessorInfo(methodDefinition, actualIfaceName, context, out IdentifierNameSyntax? propertyName, out SyntaxKind? accessorKind, out TypeSyntax? propertyType) && declaredProperties.Contains(propertyName.Identifier.ValueText))
+                // Don't do this if we are using GeneratedComInterface because that doesn't support properties yet. https://github.com/dotnet/runtime/issues/96502
+                if (methodDefinition.Generator.TryGetPropertyAccessorInfo(methodDefinition, actualIfaceName, context, out IdentifierNameSyntax? propertyName, out SyntaxKind? accessorKind, out TypeSyntax? propertyType) &&
+                    declaredProperties.Contains(propertyName.Identifier.ValueText))
                 {
                     AccessorDeclarationSyntax accessor = AccessorDeclaration(accessorKind.Value).WithSemicolonToken(Semicolon);
 
@@ -676,11 +832,22 @@ public partial class Generator
                     MethodSignature<TypeHandleInfo> signature = methodDefinition.Method.DecodeSignature(this.SignatureHandleProvider, null);
 
                     CustomAttributeHandleCollection? returnTypeAttributes = methodDefinition.Generator.GetReturnTypeCustomAttributes(methodDefinition.Method);
-                    TypeSyntaxAndMarshaling returnTypeDetails = signature.ReturnType.ToTypeSyntax(typeSettings, GeneratingElement.InterfaceMember, returnTypeAttributes?.QualifyWith(methodDefinition.Generator));
+                    TypeSyntaxSettings returnTypeSettings = typeSettings;
+                    if (this.useSourceGenerators)
+                    {
+                        // Array and pointer return values can't be marshaled.
+                        if (signature.ReturnType is ArrayTypeHandleInfo || signature.ReturnType is PointerTypeHandleInfo)
+                        {
+                            returnTypeSettings = returnTypeSettings with { AllowMarshaling = false };
+                        }
+                    }
+
+                    TypeSyntaxAndMarshaling returnTypeDetails = signature.ReturnType.ToTypeSyntax(returnTypeSettings, GeneratingElement.InterfaceMember, returnTypeAttributes?.QualifyWith(methodDefinition.Generator));
                     TypeSyntax returnType = returnTypeDetails.Type;
                     AttributeSyntax? returnsAttribute = MarshalAs(returnTypeDetails.MarshalAsAttribute, returnTypeDetails.NativeArrayInfo);
 
-                    ParameterListSyntax? parameterList = methodDefinition.Generator.CreateParameterList(methodDefinition.Method, signature, this.comSignatureTypeSettings, GeneratingElement.InterfaceMember);
+                    TypeSyntaxSettings functionSignatureSettings = this.comSignatureTypeSettings;
+                    ParameterListSyntax? parameterList = methodDefinition.Generator.CreateParameterList(methodDefinition.Method, signature, functionSignatureSettings, GeneratingElement.InterfaceMember);
 
                     bool preserveSig = interfaceAsSubtype || this.UsePreserveSigForComMethod(methodDefinition.Method, signature, actualIfaceName, methodName);
                     if (!preserveSig)
@@ -712,9 +879,25 @@ public partial class Generator
                     if (preserveSig)
                     {
                         methodDeclaration = methodDeclaration.AddAttributeLists(AttributeList().AddAttributes(PreserveSigAttributeSyntax));
+
+                        // GeneratedComInterface wants [return: MarshalAs(UnmanagedType.Error)] on methods that return HRESULT and are [PreserveSig].
+                        if (this.useSourceGenerators && IsHresult(signature.ReturnType))
+                        {
+                            var attrib =
+                                Attribute(IdentifierName("MarshalAs"))
+                                    .AddArgumentListArguments(AttributeArgument(
+                                        MemberAccessExpression(
+                                            SyntaxKind.SimpleMemberAccessExpression,
+                                            IdentifierName(nameof(UnmanagedType)),
+                                            IdentifierName("Error"))));
+                            methodDeclaration = methodDeclaration.AddAttributeLists(
+                                AttributeList()
+                                    .WithTarget(AttributeTargetSpecifier(Token(SyntaxKind.ReturnKeyword)))
+                                    .AddAttributes(attrib));
+                        }
                     }
 
-                    if (methodDeclaration.ReturnType is PointerTypeSyntax || methodDeclaration.ParameterList.Parameters.Any(p => p.Type is PointerTypeSyntax))
+                    if (methodDeclaration.ReturnType is PointerTypeSyntax || methodDeclaration.ParameterList.Parameters.Any(p => p.Type is PointerTypeSyntax || p.Type is FunctionPointerTypeSyntax))
                     {
                         methodDeclaration = methodDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));
                     }
@@ -752,15 +935,27 @@ public partial class Generator
             .AddModifiers(TokenWithSpace(this.Visibility))
             .AddMembers(members.ToArray());
 
-        if (guidAttribute.HasValue)
+        if (this.useSourceGenerators)
         {
-            ifaceDeclaration = ifaceDeclaration.AddAttributeLists(AttributeList().AddAttributes(GUID(DecodeGuidFromAttribute(guidAttribute.Value)), ifaceType, ComImportAttributeSyntax));
+            ifaceDeclaration = ifaceDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword)); // Workaround for https://github.com/dotnet/runtime/issues/120388
+            ifaceDeclaration = ifaceDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.PartialKeyword));
         }
 
-        if (baseTypeSyntaxList.Count > 0)
+        if (guidAttribute.HasValue)
+        {
+            AttributeSyntax comImportAttribute = this.useSourceGenerators ? GeneratedComInterfaceAttributeSyntax : ComImportAttributeSyntax;
+            ifaceDeclaration = ifaceDeclaration.AddAttributeLists(AttributeList().AddAttributes(GUID(DecodeGuidFromAttribute(guidAttribute.Value)), ifaceType, comImportAttribute));
+        }
+        else if (this.useSourceGenerators)
+        {
+            // We should have detected earlier that this interface must be emitted as blittable (struct).
+            throw new InvalidOperationException("Cannot generate a COM interface without a GUID when using COM source generators.");
+        }
+
+        if (topMostBaseTypeSyntax is object)
         {
             ifaceDeclaration = ifaceDeclaration
-                .WithBaseList(BaseList(SeparatedList(baseTypeSyntaxList)));
+                .WithBaseList(BaseList([topMostBaseTypeSyntax]));
         }
 
         if (this.generateSupportedOSPlatformAttributesOnInterfaces && this.GetSupportedOSPlatformAttribute(typeDef.GetCustomAttributes()) is AttributeSyntax supportedOSPlatformAttribute)
@@ -788,6 +983,44 @@ public partial class Generator
         return ifaceDeclaration;
     }
 
+    private TypeDeclarationSyntax? CreateIDispatchTypeDeclarationSyntax()
+    {
+        // IDispatch GUID: 00020400-0000-0000-C000-000000000046
+        Guid iDispatchGuid = new Guid(0x00020400, 0x0000, 0x0000, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46);
+
+        // Create the four placeholder methods
+        var members = new List<MemberDeclarationSyntax>
+        {
+            MethodDeclaration(PredefinedType(Token(SyntaxKind.VoidKeyword)), Identifier("__IDispatchPlaceholder1"))
+                .WithSemicolonToken(SemicolonWithLineFeed),
+            MethodDeclaration(PredefinedType(Token(SyntaxKind.VoidKeyword)), Identifier("__IDispatchPlaceholder2"))
+                .WithSemicolonToken(SemicolonWithLineFeed),
+            MethodDeclaration(PredefinedType(Token(SyntaxKind.VoidKeyword)), Identifier("__IDispatchPlaceholder3"))
+                .WithSemicolonToken(SemicolonWithLineFeed),
+            MethodDeclaration(PredefinedType(Token(SyntaxKind.VoidKeyword)), Identifier("__IDispatchPlaceholder4"))
+                .WithSemicolonToken(SemicolonWithLineFeed),
+        };
+
+        // Create the interface declaration
+        InterfaceDeclarationSyntax ifaceDeclaration = InterfaceDeclaration(Identifier("IDispatch"))
+            .WithKeyword(TokenWithSpace(SyntaxKind.InterfaceKeyword))
+            .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.PartialKeyword))
+            .AddMembers(members.ToArray());
+
+        // Add the attributes: Guid, InterfaceType, and GeneratedComInterface/ComImport
+        AttributeSyntax guidAttribute = GUID(iDispatchGuid);
+        AttributeSyntax interfaceTypeAttribute = InterfaceType(ComInterfaceType.InterfaceIsIUnknown);
+        AttributeSyntax comImportAttribute = this.useSourceGenerators
+            ? GeneratedComInterfaceAttributeSyntax
+            : ComImportAttributeSyntax;
+
+        ifaceDeclaration = ifaceDeclaration.AddAttributeLists(
+            AttributeList().AddAttributes(guidAttribute, interfaceTypeAttribute, comImportAttribute)
+                .WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken)));
+
+        return ifaceDeclaration;
+    }
+
     private unsafe (IReadOnlyList<MemberDeclarationSyntax> Members, IReadOnlyList<BaseTypeSyntax> BaseTypes) DeclareStaticCOMInterfaceMembers(
         string originalIfaceName,
         IdentifierNameSyntax ifaceName,
@@ -800,7 +1033,7 @@ public partial class Generator
 
         // IVTable<ComStructType, ComStructType.Vtbl>
         // Static interface members require C# 11 and .NET 7 at minimum.
-        if (populateVtblDeclared && this.IsFeatureAvailable(Feature.InterfaceStaticMembers) && !context.AllowMarshaling && GenerateCcwFor(originalIfaceName))
+        if (populateVtblDeclared && this.IsFeatureAvailable(Feature.InterfaceStaticMembers) && !context.AllowMarshaling && GenerateCcwFor(originalIfaceName, this.GenerateIDispatch))
         {
             this.RequestComHelpers(context);
             baseTypes.Add(SimpleBaseType(GenericName($"{this.Win32NamespacePrefixString}.IVTable").AddTypeArgumentListArguments(
@@ -891,6 +1124,11 @@ public partial class Generator
 
     private ISet<string> GetDeclarableProperties(IEnumerable<QualifiedMethodDefinition> methods, string ifaceName, bool allowNonConsecutiveAccessors, Context context)
     {
+        if (!this.canDeclareProperties)
+        {
+            return new HashSet<string>();
+        }
+
         Dictionary<string, (TypeSyntax Type, int Index)> goodProperties = new(StringComparer.Ordinal);
         HashSet<string> badProperties = new(StringComparer.Ordinal);
         int rowIndex = -1;
@@ -938,6 +1176,12 @@ public partial class Generator
         propertyName = null;
         accessorKind = null;
         propertyType = null;
+
+        if (!this.canDeclareProperties)
+        {
+            return false;
+        }
+
         MethodDefinition methodDefinition = qmd.Method;
         TypeSyntaxSettings syntaxSettings = context.Filter(this.comSignatureTypeSettings);
 

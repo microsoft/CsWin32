@@ -102,6 +102,7 @@ internal static class SimpleSyntaxFactory
     internal static readonly IdentifierNameSyntax IntPtrTypeSyntax = IdentifierName(nameof(IntPtr));
     internal static readonly IdentifierNameSyntax UIntPtrTypeSyntax = IdentifierName(nameof(UIntPtr));
     internal static readonly AttributeSyntax ComImportAttributeSyntax = Attribute(IdentifierName("ComImport"));
+    internal static readonly AttributeSyntax GeneratedComInterfaceAttributeSyntax = Attribute(IdentifierName("GeneratedComInterface"));
     internal static readonly AttributeSyntax PreserveSigAttributeSyntax = Attribute(IdentifierName("PreserveSig"));
     internal static readonly AttributeSyntax ObsoleteAttributeSyntax = Attribute(IdentifierName("Obsolete")).WithArgumentList(null);
     internal static readonly AttributeSyntax SupportedOSPlatformAttributeSyntax = Attribute(IdentifierName("SupportedOSPlatform"));
@@ -232,6 +233,46 @@ internal static class SimpleSyntaxFactory
 
         dllImportAttribute = dllImportAttribute.WithArgumentList(FixTrivia(AttributeArgumentList().AddArguments(args.ToArray())));
         return dllImportAttribute;
+    }
+
+    internal static AttributeSyntax LibraryImport(MethodImport import, string moduleName, string? entrypoint, bool setLastError, CharSet charSet = CharSet.Ansi)
+    {
+#if NET9_0_OR_GREATER
+        List<AttributeArgumentSyntax> args = new();
+        AttributeSyntax? libraryImportAttribute = Attribute(IdentifierName("LibraryImport"));
+        args.Add(AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(moduleName))));
+
+        if (entrypoint is not null)
+        {
+            args.Add(AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(entrypoint)))
+                    .WithNameEquals(NameEquals(nameof(LibraryImportAttribute.EntryPoint))));
+        }
+
+        if (setLastError)
+        {
+            args.Add(AttributeArgument(LiteralExpression(SyntaxKind.TrueLiteralExpression))
+                    .WithNameEquals(NameEquals(nameof(LibraryImportAttribute.SetLastError))));
+        }
+
+        if (charSet != CharSet.Ansi)
+        {
+            if (charSet == CharSet.Unicode)
+            {
+                args.Add(AttributeArgument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(StringMarshalling)), IdentifierName(nameof(StringMarshalling.Utf16))))
+                    .WithNameEquals(NameEquals(IdentifierName(nameof(LibraryImportAttribute.StringMarshalling)))));
+            }
+            else if (charSet != CharSet.Auto)
+            {
+                // Do nothing for Auto and everything else is invalid.
+                throw new InvalidOperationException($"Unsupported CharSet {charSet} generating {entrypoint}");
+            }
+        }
+
+        libraryImportAttribute = libraryImportAttribute.WithArgumentList(FixTrivia(AttributeArgumentList().AddArguments(args.ToArray())));
+        return libraryImportAttribute;
+#else
+        return DllImport(import, moduleName, entrypoint, setLastError, charSet);
+#endif
     }
 
     internal static AttributeSyntax UnmanagedFunctionPointer(CallingConvention callingConvention)

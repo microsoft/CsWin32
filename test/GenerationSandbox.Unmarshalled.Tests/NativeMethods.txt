@@ -1,3 +1,7 @@
 ﻿IEventSubscription
 IPersistFile
 IStream
+ITypeComp
+ITypeInfo
+IAsyncGetSendNotificationCookie
+ID3D11DeviceContext

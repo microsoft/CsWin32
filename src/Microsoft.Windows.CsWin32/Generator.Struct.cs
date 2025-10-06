@@ -533,7 +533,21 @@ public partial class Generator
         // then we must type it as an array.
         if (context.AllowMarshaling && fieldTypeHandleInfo is PointerTypeHandleInfo ptr3 && this.IsInterface(ptr3.ElementType))
         {
-            return (ArrayType(ptr3.ElementType.ToTypeSyntax(typeSettings, GeneratingElement.Field, null).Type).AddRankSpecifiers(ArrayRankSpecifier()), default(SyntaxList<MemberDeclarationSyntax>), marshalAs);
+            if (this.useSourceGenerators)
+            {
+                // TODO: support for marshaling structs with arrays. For now emit Type_unmanaged**.
+                return (PointerType(ptr3.ElementType.ToTypeSyntax(typeSettings with { AllowMarshaling = false }, GeneratingElement.Field, null).Type), default(SyntaxList<MemberDeclarationSyntax>), marshalAs);
+            }
+            else
+            {
+                return (ArrayType(ptr3.ElementType.ToTypeSyntax(typeSettings, GeneratingElement.Field, null).Type).AddRankSpecifiers(ArrayRankSpecifier()), default(SyntaxList<MemberDeclarationSyntax>), marshalAs);
+            }
+        }
+
+        if (context.AllowMarshaling && this.useSourceGenerators && this.IsManagedType(fieldTypeHandleInfo))
+        {
+            // TODO: support for marshaling structs with pointers to managed types. For now emit Type_unmanaged*.
+            return (fieldTypeHandleInfo.ToTypeSyntax(typeSettings with { AllowMarshaling = false }, GeneratingElement.Field, null).Type, default(SyntaxList<MemberDeclarationSyntax>), marshalAs);
         }
 
         return (originalType, default(SyntaxList<MemberDeclarationSyntax>), marshalAs);

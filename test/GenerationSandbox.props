@@ -1,8 +1,14 @@
 <Project>
+  <PropertyGroup>
+    <GeneratorBuildTasksPath>$(RepoRootPath)bin\Microsoft.Windows.CsWin32.BuildTasks\$(Configuration)\netstandard2.0\</GeneratorBuildTasksPath>
+    <CsWin32GeneratorToolPath>$(RepoRootPath)bin\CsWin32Generator\$(Configuration)\net9.0\</CsWin32GeneratorToolPath>
+    <GeneratorBuildTasksTaskFactory>TaskHostFactory</GeneratorBuildTasksTaskFactory>
+  </PropertyGroup>
+
   <Import Project="CsWin32User.props" />
 
   <PropertyGroup>
-    <TargetFrameworks>net9.0-windows7.0;net8.0-windows7.0;net472</TargetFrameworks>
+    <TargetFrameworks Condition="'$(TargetFrameworks)'==''">net9.0-windows7.0;net8.0-windows7.0;net472</TargetFrameworks>
     <OutputType>Exe</OutputType>
     <RootNamespace />
     <PlatformTarget>x64</PlatformTarget>

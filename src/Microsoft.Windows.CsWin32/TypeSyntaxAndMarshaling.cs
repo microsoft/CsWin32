@@ -25,6 +25,8 @@ internal struct TypeSyntaxAndMarshaling
 
     internal MarshalAsAttribute? MarshalAsAttribute { get; init; }
 
+    internal string? MarshalUsingType { get; init; }
+
     internal Generator.NativeArrayInfo? NativeArrayInfo { get; }
 
     internal SyntaxToken? ParameterModifier { get; init; }

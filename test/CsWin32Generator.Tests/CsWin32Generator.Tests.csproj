@@ -1,0 +1,84 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net9.0</TargetFrameworks>
+    <OutputType>Exe</OutputType>
+    <RootNamespace />
+    <IsPackable>false</IsPackable>
+    <SignAssembly>false</SignAssembly>
+    <CsWinRTGenerateProjection>false</CsWinRTGenerateProjection>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="@(ProjectionMetadataWinmd)">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\Microsoft.Windows.CsWin32.Tests\ExternalMetadata\*.winmd">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>ExternalMetadata\%(FileName)%(Extension)</Link>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="TestContent\NativeMethods.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </AdditionalFiles>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Microsoft.Windows.CsWin32\Microsoft.Windows.CsWin32.csproj" />
+    <ProjectReference Include="..\..\src\CsWin32Generator\CsWin32Generator.csproj" />
+    <ProjectReference Include="..\Microsoft.Windows.CsWin32.Tests\Microsoft.Windows.CsWin32.Tests.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MessagePack" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.SourceGenerators.Testing.XUnit" />
+    <PackageReference Include="NuGet.Protocol" />
+    <!-- <PackageReference Include="Microsoft.Dia.Win32Metadata" PrivateAssets="none" /> -->
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="System.Collections.Immutable" />
+    <PackageReference Include="System.Reflection.Metadata" />
+    <PackageReference Include="System.Text.Json" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.assert" ExcludeAssets="compile" />
+    <PackageReference Include="Xunit.Combinatorial" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Microsoft.Windows.CsWinRT" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="TestContent\NativeMethods.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <!-- Make a list of the analyzers we have available at compile time -->
+  <Target Name="WriteAnalyzers" BeforeTargets="BeforeCompile">
+    <ItemGroup>
+      <AnalyzerList Include="@&quot;%(Analyzer.FullPath)&quot;" />
+    </ItemGroup>
+
+    <PropertyGroup>
+      <AnalyzerListCsSource>
+#pragma warning disable CS1591
+namespace CsWin32Generator.Tests%3b
+
+public partial class CsWin32GeneratorTestsBase
+{
+  protected static string[] analyzers = new [] {
+    @(AnalyzerList, ',%0d%0A')
+  }%3b  
+}
+      </AnalyzerListCsSource>
+    </PropertyGroup>
+
+    <WriteLinesToFile File="$(IntermediateOutputPath)AnalyzerList.g.cs" Lines="$(AnalyzerListCsSource)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+
+    <ItemGroup>
+      <Compile Include="$(IntermediateOutputPath)AnalyzerList.g.cs" />
+    </ItemGroup>
+  </Target>
+
+</Project>

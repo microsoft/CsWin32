@@ -5,6 +5,9 @@
 #pragma warning disable RS1042 // Deprecated interface
 
 using System.Text.Json;
+#if NET9_0_OR_GREATER
+using System.Text.Json.Serialization;
+#endif
 using Microsoft.CodeAnalysis.Text;
 
 namespace Microsoft.Windows.CsWin32;
@@ -12,8 +15,10 @@ namespace Microsoft.Windows.CsWin32;
 /// <summary>
 /// Generates the source code for the p/invoke methods and supporting types into some C# project.
 /// </summary>
+#pragma warning disable RS1041
 [Generator]
-public class SourceGenerator : ISourceGenerator
+#pragma warning restore RS1041
+public partial class SourceGenerator : ISourceGenerator
 {
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
     public static readonly DiagnosticDescriptor InternalError = new DiagnosticDescriptor(
@@ -175,6 +180,12 @@ public class SourceGenerator : ISourceGenerator
             return;
         }
 
+        if (GetRunAsBuildTaskProperty(context))
+        {
+            // When running as a build task, we don't want to generate anything here.
+            return;
+        }
+
         GeneratorOptions? options;
         AdditionalText? nativeMethodsJsonFile = context.AdditionalFiles
             .FirstOrDefault(af => string.Equals(Path.GetFileName(af.Path), NativeMethodsJsonAdditionalFileName, StringComparison.OrdinalIgnoreCase));
@@ -183,7 +194,11 @@ public class SourceGenerator : ISourceGenerator
             string optionsJson = nativeMethodsJsonFile.GetText(context.CancellationToken)!.ToString();
             try
             {
+#if NET9_0_OR_GREATER
+                options = JsonSerializer.Deserialize(optionsJson, GeneratorOptionsSerializerContext.Default.GeneratorOptions) ?? new();
+#else
                 options = JsonSerializer.Deserialize<GeneratorOptions>(optionsJson, JsonOptions) ?? new();
+#endif
             }
             catch (JsonException ex)
             {
@@ -403,7 +418,7 @@ public class SourceGenerator : ISourceGenerator
             return Array.Empty<string>();
         }
 
-        return delimitedAppLocalLibraryPaths.Split('|').Select(Path.GetFileName);
+        return delimitedAppLocalLibraryPaths?.Split('|').Select(x => Path.GetFileName(x)!) ?? Array.Empty<string>();
     }
 
     private static Docs? ParseDocs(GeneratorExecutionContext context)
@@ -434,4 +449,24 @@ public class SourceGenerator : ISourceGenerator
 
         return docs;
     }
+
+    private static bool GetRunAsBuildTaskProperty(GeneratorExecutionContext context)
+    {
+        if (!context.AnalyzerConfigOptions.GlobalOptions.TryGetValue("build_property.CsWin32RunAsBuildTask", out string? runAsBuildTask) ||
+            string.IsNullOrWhiteSpace(runAsBuildTask))
+        {
+            return false;
+        }
+
+        return bool.TryParse(runAsBuildTask, out bool result) && result;
+    }
+
+#if NET9_0_OR_GREATER
+    [JsonSourceGenerationOptions(
+        AllowTrailingCommas = true,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+    [JsonSerializable(typeof(GeneratorOptions))]
+    private partial class GeneratorOptionsSerializerContext : JsonSerializerContext;
+#endif
 }

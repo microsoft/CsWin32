@@ -25,12 +25,6 @@ public partial class Program
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
 
-    private static readonly char[] ZeroWhiteSpace = new char[]
-    {
-        '\uFEFF', // ZERO WIDTH NO-BREAK SPACE (U+FEFF)
-        '\u200B', // ZERO WIDTH SPACE (U+200B)
-    };
-
     /// <summary>
     /// Entry point for the command line application.
     /// </summary>
@@ -362,10 +356,10 @@ public partial class Program
         // Determine language version based on target framework
         LanguageVersion languageVersion = targetFramework switch
         {
-            var tf when tf?.StartsWith("net9.0", StringComparison.Ordinal) == true => LanguageVersion.Latest,
-            var tf when tf?.StartsWith("net8.0", StringComparison.Ordinal) == true => LanguageVersion.Latest,
-            var tf when tf?.StartsWith("net7.0", StringComparison.Ordinal) == true => LanguageVersion.Latest,
-            var tf when tf?.StartsWith("net6.0", StringComparison.Ordinal) == true => LanguageVersion.CSharp9,
+            var tfm when tfm?.StartsWith("net9.0", StringComparison.Ordinal) == true => LanguageVersion.Latest,
+            var tfm when tfm?.StartsWith("net8.0", StringComparison.Ordinal) == true => LanguageVersion.Latest,
+            var tfm when tfm?.StartsWith("net7.0", StringComparison.Ordinal) == true => LanguageVersion.Latest,
+            var tfm when tfm?.StartsWith("net6.0", StringComparison.Ordinal) == true => LanguageVersion.CSharp9,
             _ => LanguageVersion.CSharp9,
         };
 
@@ -409,7 +403,7 @@ public partial class Program
     /// <param name="superGenerator">The super generator instance.</param>
     /// <param name="nativeMethodsTxt">Path to the NativeMethods.txt file.</param>
     /// <returns>True if processing succeeded, false otherwise.</returns>
-    private static bool ProcessNativeMethodsFile(SuperGenerator superGenerator, FileInfo nativeMethodsTxt)
+    private static unsafe bool ProcessNativeMethodsFile(SuperGenerator superGenerator, FileInfo nativeMethodsTxt)
     {
         try
         {
@@ -422,7 +416,7 @@ public partial class Program
 
             foreach (string line in lines)
             {
-                string name = line.Trim().Trim(ZeroWhiteSpace);
+                string name = line.Trim();
                 if (string.IsNullOrWhiteSpace(name) || name.StartsWith("//", StringComparison.InvariantCulture))
                 {
                     skippedCount++;

@@ -38,3 +38,6 @@ ChoosePixelFormat
 //ID3D11VideoContext
 RoCreatePropertySetSerializer
 RoRegisterActivationFactories
+D3D11CreateDevice
+ICompositorInterop
+D3D11_SDK_VERSION

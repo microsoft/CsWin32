@@ -13,6 +13,7 @@ public partial class CsWin32GeneratorFullTests : CsWin32GeneratorTestsBase
     }
 
     [Fact]
+    [Trait("TestCategory", "FailsInCloudTest")] // these take ~4GB of memory to run.
     public async Task FullGeneration()
     {
         this.fullGeneration = true;

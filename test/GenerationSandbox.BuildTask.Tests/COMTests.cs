@@ -8,23 +8,57 @@ using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
 using System.Runtime.Versioning;
+using System.Threading.Tasks;
 using Windows.System;
+using Windows.UI.Composition;
 using Windows.Win32;
 using Windows.Win32.Foundation;
+using Windows.Win32.Graphics.Direct3D;
+using Windows.Win32.Graphics.Direct3D11;
 using Windows.Win32.System.Com;
+using Windows.Win32.System.WinRT.Composition;
 
 public partial class COMTests
 {
     [Fact]
-    public void Placeholder()
+    public async Task CanInteropWithICompositorInterop()
     {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            var controller = DispatcherQueueController.CreateOnDedicatedThread();
+            TaskCompletionSource tcs = new();
+            controller.DispatcherQueue.TryEnqueue(() =>
+            {
+                try
+                {
+                    unsafe // Optional parameters use unsafe
+                    {
+                        Compositor compositor = new();
+
+                        PInvoke.D3D11CreateDevice(
+                            null,
+                            D3D_DRIVER_TYPE.D3D_DRIVER_TYPE_HARDWARE,
+                            HINSTANCE.Null,
+                            D3D11_CREATE_DEVICE_FLAG.D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+                            null,
+                            0,
+                            PInvoke.D3D11_SDK_VERSION,
+                            out var device,
+                            null,
+                            out var deviceContext);
+
+                        var interop = (ICompositorInterop)(object)compositor;
+                        interop.CreateGraphicsDevice(device, out var graphicsDevice);
+                        tcs.SetResult();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    tcs.SetException(ex);
+                }
+            });
+
+            await tcs.Task;
+        }
     }
-
-    [LibraryImport("blah")]
-    internal static unsafe partial void Test(int count, [In][MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 0)] int[] ppBuffer);
-
-    //[LibraryImport("blah.dll")]
-    //internal static unsafe partial void TestOptional(out Nullable<int*> ppBuffer);
-
-    //unsafe void CreateBuffer(winmdroot.Graphics.Direct3D11.D3D11_BUFFER_DESC* pDesc, [Optional] winmdroot.Graphics.Direct3D11.D3D11_SUBRESOURCE_DATA* pInitialData, [Optional] winmdroot.Graphics.Direct3D11.ID3D11Buffer_unmanaged** ppBuffer);
 }

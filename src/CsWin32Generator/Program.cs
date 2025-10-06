@@ -131,7 +131,7 @@ public partial class Program
         {
             foreach (ParseError error in parseResult.Errors)
             {
-                Console.Error.WriteLine($"cswin32 : error : {error.Message}");
+                ReportError($"{error.Message}");
             }
 
             return 1;
@@ -156,10 +156,10 @@ public partial class Program
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"CsWin32 : error : {ex.Message}");
+            ReportError($"{ex.Message}");
             if (ex.InnerException != null)
             {
-                Console.Error.WriteLine($"CsWin32 : error : Inner exception: {ex.InnerException.Message}");
+                ReportError($"Inner exception: {ex.InnerException.Message}");
             }
 
             return 1;
@@ -198,13 +198,13 @@ public partial class Program
 
         if (!nativeMethodsTxt.Exists)
         {
-            Console.Error.WriteLine($"NativeMethods.txt file not found: {nativeMethodsTxt.FullName}");
+            ReportError($"NativeMethods.txt file not found: {nativeMethodsTxt.FullName}");
             return Task.FromResult(false);
         }
 
         if (metadataPaths.Length == 0)
         {
-            Console.Error.WriteLine("At least one metadata path must be provided.");
+            ReportError("At least one metadata path must be provided.");
             return Task.FromResult(false);
         }
 
@@ -224,7 +224,7 @@ public partial class Program
         {
             if (!metadataPath.Exists)
             {
-                Console.Error.WriteLine($"Metadata file not found: {metadataPath.FullName}");
+                ReportError($"Metadata file not found: {metadataPath.FullName}");
                 return Task.FromResult(false);
             }
         }
@@ -298,7 +298,7 @@ public partial class Program
         }
         catch (JsonException ex)
         {
-            Console.Error.WriteLine($"Failed to parse NativeMethods.json: {ex.Message}");
+            ReportError($"Failed to parse NativeMethods.json: {ex.Message}");
             return new GeneratorOptions();
         }
     }
@@ -448,13 +448,13 @@ public partial class Program
 
                     foreach (string declaringEnum in redirectedEnums)
                     {
-                        Console.WriteLine($"Warning: Use the name of the enum that declares this constant: {declaringEnum}");
+                        Console.WriteLine($"Warning: Using the name of the enum that declares this constant: {declaringEnum}");
                     }
 
                     switch (matchingApis.Count)
                     {
                         case 0:
-                            Console.WriteLine($"Warning: Method, type or constant '{name}' not found");
+                            ReportError($"Method, type or constant '{name}' not found");
                             errorCount++;
                             break;
                         case 1:
@@ -462,19 +462,19 @@ public partial class Program
                             processedCount++;
                             break;
                         case > 1:
-                            Console.Error.WriteLine($"Error: The API '{name}' is ambiguous. Please specify one of: {string.Join(", ", matchingApis.Select(api => $"\"{api}\""))}");
+                            ReportError($"The API '{name}' is ambiguous. Please specify one of: {string.Join(", ", matchingApis.Select(api => $"\"{api}\""))}");
                             errorCount++;
                             break;
                     }
                 }
                 catch (PlatformIncompatibleException)
                 {
-                    Console.WriteLine($"Warning: API '{name}' is not available for the target platform");
-                    skippedCount++;
+                    ReportError($"API '{name}' is not available for the target platform");
+                    errorCount++;
                 }
                 catch (Exception ex)
                 {
-                    Console.Error.WriteLine($"CsWin32 : error : '{name}': {ex.Message}");
+                    ReportError($"'{name}': {ex.Message}");
                     errorCount++;
                 }
             }
@@ -484,7 +484,7 @@ public partial class Program
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"Failed to process NativeMethods.txt file: {ex.Message}");
+            ReportError($"Failed to process NativeMethods.txt file: {ex.Message}");
             return false;
         }
     }
@@ -527,6 +527,11 @@ public partial class Program
             Console.Error.WriteLine($"Failed to generate and write files: {ex.Message}");
             return false;
         }
+    }
+
+    private static void ReportError(string message)
+    {
+        Console.Error.WriteLine($"CsWin32 : error : {message}");
     }
 
     [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]

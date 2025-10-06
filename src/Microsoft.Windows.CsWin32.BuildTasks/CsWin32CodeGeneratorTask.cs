@@ -110,6 +110,12 @@ public class CsWin32CodeGeneratorTask : ToolTask
     [Required]
     public string GeneratorToolPath { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Gets a value indicating whether the tool execution succeeded.
+    /// </summary>
+    [Output]
+    public bool Succeeded { get; private set; }
+
     /// <inheritdoc />
     protected override string ToolName => "dotnet";
 
@@ -122,6 +128,7 @@ public class CsWin32CodeGeneratorTask : ToolTask
             this.PopulateGeneratedFiles();
         }
 
+        this.Succeeded = baseSuccess;
         return baseSuccess;
     }
 

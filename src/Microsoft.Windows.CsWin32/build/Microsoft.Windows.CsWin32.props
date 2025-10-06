@@ -65,7 +65,7 @@
 
   <Target Name="GenerateCsWin32Code" BeforeTargets="BeforeCompile"
           Inputs="@(AdditionalFiles);@(ProjectionMetadataWinmd);@(ProjectionDocs);@(CsWin32AppLocalAllowedLibraries);@(ReferencePath);@(CsWin32GeneratorInputs)"
-          Outputs="$(CsWin32GeneratorGeneratedFilesList);@(CsWin32GeneratorPreviousOutputs)"
+          Outputs="$(CsWin32GeneratorGeneratedFilesList);@(CsWin32GeneratorPreviousOutputs);$(CsWin32GeneratorSucceededMarker)"
           Condition="'$(CsWin32RunAsBuildTask)'=='true' and '@(ProjectionMetadataWinmd)'!=''">
     <ItemGroup>
       <CsWin32NativeMethodsTxt Include="%(AdditionalFiles.FullPath)" Condition="'%(FileName)%(Extension)'=='NativeMethods.txt'" />
@@ -74,6 +74,8 @@
 
     <PropertyGroup>
       <CsWin32MetadataPaths>@(ProjectionMetadataWinmd)</CsWin32MetadataPaths>
+      <CsWin32ContinueOnError>false</CsWin32ContinueOnError>
+      <CsWin32ContinueOnError Condition="'$(DesignTimeBuild)'=='true'">ErrorAndContinue</CsWin32ContinueOnError>
     </PropertyGroup>
 
     <Delete Files="@(CsWin32GeneratorPreviousOutputs)" Condition="@(CsWin32GeneratorPreviousOutputs->Count()) > 0" />
@@ -90,14 +92,18 @@
       TargetFramework="$(TargetFramework)"
       Platform="$(Platform)"
       References="@(ReferencePath)"
-      ContinueOnError="WarnAndContinue">
+      ContinueOnError="$(CsWin32ContinueOnError)">
       <Output TaskParameter="GeneratedFiles" ItemName="CsWin32GeneratedFiles" />
+      <Output TaskParameter="Succeeded" PropertyName="CsWin32GeneratorSuccess" />
     </CsWin32CodeGeneratorTask>
 
+    <!-- Online write the generated files .txt file if we succeeded, that way if we fail during DesignTimeBuild we'll run again during build -->
     <WriteLinesToFile
       File="$(CsWin32GeneratorGeneratedFilesList)"
-      Lines="@(CsWin32GeneratedFiles->'%(FullPath)')" Overwrite="true" />
-
+      Lines="@(CsWin32GeneratedFiles->'%(FullPath)')" 
+      Overwrite="true" 
+      Condition="'$(CsWin32GeneratorSuccess)'=='true'"/>
+    
     <ItemGroup>
       <FileWrites Include="@(CsWin32GeneratedFiles)" />
     </ItemGroup>

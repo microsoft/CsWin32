@@ -96,7 +96,8 @@
       TargetFramework="$(TargetFramework)"
       Platform="$(Platform)"
       References="@(ReferencePath)"
-      ContinueOnError="$(CsWin32ContinueOnError)">
+      ContinueOnError="$(CsWin32ContinueOnError)"
+      Condition="@(CsWin32NativeMethodsTxt->Count()) > 0">
       <Output TaskParameter="GeneratedFiles" ItemName="CsWin32GeneratedFiles" />
       <Output TaskParameter="Succeeded" PropertyName="CsWin32GeneratorSuccess" />
     </CsWin32CodeGeneratorTask>

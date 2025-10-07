@@ -253,7 +253,7 @@ public partial class Generator
             members.Add(releaseHandleDeclaration);
 
             ClassDeclarationSyntax safeHandleDeclaration = ClassDeclaration(Identifier(safeHandleClassName))
-                .AddModifiers(TokenWithSpace(this.Visibility))
+                .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.PartialKeyword))
                 .WithBaseList(BaseList(SingletonSeparatedList<BaseTypeSyntax>(SimpleBaseType(SafeHandleTypeSyntax))))
                 .AddMembers(members.ToArray())
                 .AddAttributeLists(AttributeList().AddAttributes(GeneratedCodeAttribute))

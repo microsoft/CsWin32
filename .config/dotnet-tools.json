@@ -29,6 +29,13 @@
         "docfx"
       ],
       "rollForward": false
+    },
+    "nerdbank.dotnetrepotools": {
+      "version": "1.0.92",
+      "commands": [
+        "repo"
+      ],
+      "rollForward": false
     }
   }
 }

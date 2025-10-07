@@ -48,3 +48,13 @@ jobs:
     displayName: 🧪 dotnet build
     workingDirectory: $(Pipeline.Workspace)\integration-tests\sdk
     condition: eq(variables.currentSdk, 'true')
+  - task: MSBuild@1
+    displayName: 🧪 MSBuild buildtask-sdk-style
+    inputs:
+      solution: $(Pipeline.Workspace)\integration-tests\buildtask-sdk\buildtask-sdk.csproj
+      msbuildArguments: /r
+    condition: eq(variables.currentSdk, 'true')
+  - pwsh: dotnet build
+    displayName: 🧪 dotnet build
+    workingDirectory: $(Pipeline.Workspace)\integration-tests\buildtask-sdk
+    condition: eq(variables.currentSdk, 'true')

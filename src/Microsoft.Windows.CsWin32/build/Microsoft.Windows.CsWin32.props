@@ -39,6 +39,10 @@
     </PropertyGroup>
   </Target>
 
+  <PropertyGroup>
+    <CoreCompileDependsOn>$(CoreCompileDependsOn);GenerateCsWin32Code</CoreCompileDependsOn>
+  </PropertyGroup>
+
   <Target
     Name="PrepareToGenerateCsWin32Code"
     BeforeTargets="GenerateCsWin32Code"
@@ -63,7 +67,7 @@
     </ReadLinesFromFile>
   </Target>
 
-  <Target Name="GenerateCsWin32Code" BeforeTargets="BeforeCompile"
+  <Target Name="GenerateCsWin32Code"
           Inputs="@(AdditionalFiles);@(ProjectionMetadataWinmd);@(ProjectionDocs);@(CsWin32AppLocalAllowedLibraries);@(ReferencePath);@(CsWin32GeneratorInputs)"
           Outputs="$(CsWin32GeneratorGeneratedFilesList);@(CsWin32GeneratorPreviousOutputs);$(CsWin32GeneratorSucceededMarker)"
           Condition="'$(CsWin32RunAsBuildTask)'=='true' and '@(ProjectionMetadataWinmd)'!=''">
@@ -100,10 +104,10 @@
     <!-- Online write the generated files .txt file if we succeeded, that way if we fail during DesignTimeBuild we'll run again during build -->
     <WriteLinesToFile
       File="$(CsWin32GeneratorGeneratedFilesList)"
-      Lines="@(CsWin32GeneratedFiles->'%(FullPath)')" 
-      Overwrite="true" 
+      Lines="@(CsWin32GeneratedFiles->'%(FullPath)')"
+      Overwrite="true"
       Condition="'$(CsWin32GeneratorSuccess)'=='true'"/>
-    
+
     <ItemGroup>
       <FileWrites Include="@(CsWin32GeneratedFiles)" />
     </ItemGroup>

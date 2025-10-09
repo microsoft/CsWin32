@@ -285,8 +285,13 @@ public partial class Program
     /// <returns>Generator options instance.</returns>
     private static GeneratorOptions LoadGeneratorOptions(FileInfo? nativeMethodsJson)
     {
-        string optionsJson = File.ReadAllText(nativeMethodsJson.FullName);
-        return JsonSerializer.Deserialize(optionsJson, GeneratorOptionsSerializerContext.Default.GeneratorOptions) ?? new GeneratorOptions();
+        if (nativeMethodsJson is object)
+        {
+            string optionsJson = File.ReadAllText(nativeMethodsJson.FullName);
+            return JsonSerializer.Deserialize(optionsJson, GeneratorOptionsSerializerContext.Default.GeneratorOptions) ?? new GeneratorOptions();
+        }
+
+        return new();
     }
 
     /// <summary>

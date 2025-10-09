@@ -63,6 +63,7 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
     protected async Task InvokeGenerator(string outputPath, string testCase, TestOptions options)
     {
         Console.SetOut(new TestOutputWriter(this.Logger));
+        Console.SetError(new TestOutputWriter(this.Logger));
 
         string nativeMethodsTxtPath;
         if (this.nativeMethodsTxt is string)

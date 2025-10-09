@@ -18,13 +18,6 @@ namespace CsWin32Generator;
 /// </summary>
 public partial class Program
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        AllowTrailingCommas = true,
-        ReadCommentHandling = JsonCommentHandling.Skip,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    };
-
     /// <summary>
     /// Entry point for the command line application.
     /// </summary>
@@ -202,6 +195,12 @@ public partial class Program
             return Task.FromResult(false);
         }
 
+        if (nativeMethodsJson is object && !nativeMethodsJson.Exists)
+        {
+            ReportError($"NativeMethods.json file not found: {nativeMethodsJson.FullName}");
+            return Task.FromResult(false);
+        }
+
         if (metadataPaths.Length == 0)
         {
             ReportError("At least one metadata path must be provided.");
@@ -286,21 +285,8 @@ public partial class Program
     /// <returns>Generator options instance.</returns>
     private static GeneratorOptions LoadGeneratorOptions(FileInfo? nativeMethodsJson)
     {
-        if (nativeMethodsJson?.Exists != true)
-        {
-            return new GeneratorOptions();
-        }
-
-        try
-        {
-            string optionsJson = File.ReadAllText(nativeMethodsJson.FullName);
-            return JsonSerializer.Deserialize(optionsJson, GeneratorOptionsSerializerContext.Default.GeneratorOptions) ?? new GeneratorOptions();
-        }
-        catch (JsonException ex)
-        {
-            ReportError($"Failed to parse NativeMethods.json: {ex.Message}");
-            return new GeneratorOptions();
-        }
+        string optionsJson = File.ReadAllText(nativeMethodsJson.FullName);
+        return JsonSerializer.Deserialize(optionsJson, GeneratorOptionsSerializerContext.Default.GeneratorOptions) ?? new GeneratorOptions();
     }
 
     /// <summary>
@@ -534,7 +520,10 @@ public partial class Program
         Console.Error.WriteLine($"CsWin32 : error : {message}");
     }
 
-    [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+    [JsonSourceGenerationOptions(
+        PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true)]
     [JsonSerializable(typeof(GeneratorOptions))]
     internal partial class GeneratorOptionsSerializerContext : JsonSerializerContext
     {

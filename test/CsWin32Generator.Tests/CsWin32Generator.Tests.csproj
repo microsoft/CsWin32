@@ -20,7 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <AdditionalFiles Include="TestContent\NativeMethods.txt">
+    <AdditionalFiles Include="TestContent\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </AdditionalFiles>
   </ItemGroup>
@@ -46,12 +46,6 @@
     <PackageReference Include="Xunit.Combinatorial" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="Microsoft.Windows.CsWinRT" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Update="TestContent\NativeMethods.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
   </ItemGroup>
 
   <!-- Make a list of the analyzers we have available at compile time -->

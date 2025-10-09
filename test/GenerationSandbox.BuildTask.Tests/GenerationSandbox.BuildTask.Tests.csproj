@@ -14,6 +14,6 @@
 
   <!-- For browsing, add the .cs files as None items -->
   <ItemGroup>
-    <None Include="$(IntermediateOutputPath)Generated\CsWin32\*.cs" Link="Generated\%(Filename)%(Extension)" />
+    <None Include="$(IntermediateOutputPath)Generated\CsWin32\*.cs" />
   </ItemGroup>
 </Project>

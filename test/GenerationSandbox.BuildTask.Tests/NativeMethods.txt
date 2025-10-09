@@ -41,3 +41,6 @@ RoRegisterActivationFactories
 D3D11CreateDevice
 ICompositorInterop
 D3D11_SDK_VERSION
+ID2D1RenderTarget
+CreateThread
+SetTimer

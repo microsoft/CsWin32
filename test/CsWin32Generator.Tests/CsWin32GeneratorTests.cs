@@ -170,4 +170,15 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         // Assert
         Assert.NotEqual(0, exitCode);
     }
+
+    [Fact]
+    public async Task GenerateCommandLineCommands_WithNativeMethodsJsonContainingCommentAndTrailingComma_HandlesCorrectly()
+    {
+        // Arrange
+        this.nativeMethodsJson = "NativeMethodsWithCommentAndComma.json";
+        this.nativeMethods.Add("IUnknown"); // Add a method to ensure generation occurs
+
+        // Act
+        await this.InvokeGeneratorAndCompile();
+    }
 }

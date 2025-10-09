@@ -14,8 +14,8 @@ public partial class Generator
     private readonly bool canUseUnsafeSkipInit;
     private readonly bool canUseUnmanagedCallersOnlyAttribute;
     private readonly bool canUseSetLastPInvokeError;
-    private readonly bool canDeclareProperties;
     private readonly bool canUseIPropertyValue;
+    private readonly bool canDeclareProperties;
     private readonly bool useSourceGenerators;
     private readonly bool canMarshalNativeDelegateParams;
     private readonly bool overloadResolutionPriorityAttributePredefined;

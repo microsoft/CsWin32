@@ -42,6 +42,16 @@ public class COMTests : GeneratorTestBase
     }
 
     [Fact]
+    public void IGraphicsEffectD2D1Interop_ProjectsIPropertyValueParameter()
+    {
+        this.GenerateApi("IGraphicsEffectD2D1Interop");
+        InterfaceDeclarationSyntax iface = (InterfaceDeclarationSyntax)this.FindGeneratedType("IGraphicsEffectD2D1Interop").Single();
+        MethodDeclarationSyntax getPropertyMember = (MethodDeclarationSyntax)iface.Members[3];
+        ParameterSyntax iPropertyValueParameter = getPropertyMember.ParameterList.Parameters[1];
+        Assert.Equal("global::Windows.Foundation.IPropertyValue", iPropertyValueParameter.Type?.ToString());
+    }
+
+    [Fact]
     public void IInpectableDerivedInterface()
     {
         const string ifaceName = "IUserConsentVerifierInterop";

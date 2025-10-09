@@ -14,6 +14,7 @@ public partial class Generator
     private readonly bool canUseUnsafeSkipInit;
     private readonly bool canUseUnmanagedCallersOnlyAttribute;
     private readonly bool canUseSetLastPInvokeError;
+    private readonly bool canUseIPropertyValue;
     private readonly bool overloadResolutionPriorityAttributePredefined;
     private readonly bool unscopedRefAttributePredefined;
     private readonly INamedTypeSymbol? runtimeFeatureClass;
@@ -21,6 +22,8 @@ public partial class Generator
     private readonly bool generateSupportedOSPlatformAttributesOnInterfaces; // only supported on net6.0 (https://github.com/dotnet/runtime/pull/48838)
     private readonly bool generateDefaultDllImportSearchPathsAttribute;
     private readonly Dictionary<Feature, bool> supportedFeatures = new();
+
+    internal bool CanUseIPropertyValue => this.canUseIPropertyValue;
 
     private void DeclareOverloadResolutionPriorityAttributeIfNecessary()
     {

@@ -158,6 +158,11 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
                 return new TypeSyntaxAndMarshaling(IdentifierName(specialName));
             }
         }
+        else if (inputs.Generator?.CanUseIPropertyValue != true && simpleName is "IPropertyValue")
+        {
+            marshalAs = new MarshalAsAttribute(UnmanagedType.Interface);
+            return new TypeSyntaxAndMarshaling(PredefinedType(Token(SyntaxKind.ObjectKeyword)), marshalAs, null);
+        }
         else if (TryMarshalAsObject(inputs, simpleName, out marshalAs))
         {
             return new TypeSyntaxAndMarshaling(PredefinedType(Token(SyntaxKind.ObjectKeyword)), marshalAs, null);

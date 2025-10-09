@@ -62,8 +62,6 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
 
     protected async Task InvokeGenerator(string outputPath, string testCase, TestOptions options)
     {
-        Console.SetOut(new TestOutputWriter(this.Logger));
-
         string nativeMethodsTxtPath;
         if (this.nativeMethodsTxt is string)
         {
@@ -94,11 +92,6 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
             args.AddRange(["--native-methods-json", nativeMethodsJsonPath]);
         }
 
-        if (this.fullGeneration)
-        {
-            args.Add("--full-generation");
-        }
-
         CSharpCompilation baseCompilation = this.starterCompilations["net9.0"];
         foreach (MetadataReference reference in baseCompilation.References)
         {
@@ -109,7 +102,9 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
         }
 
         // Act
-        int exitCode = await CsWin32Generator.Program.Main(args.ToArray());
+        var loggerWriter = new TestOutputWriter(this.Logger);
+        var program = new Program(loggerWriter, loggerWriter);
+        int exitCode = await program.Main(args.ToArray(), this.fullGeneration);
 
         // Assert
         Assert.Equal(0, exitCode);

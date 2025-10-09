@@ -18,12 +18,39 @@ namespace CsWin32Generator;
 /// </summary>
 public partial class Program
 {
+    private readonly TextWriter output;
+    private readonly TextWriter error;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="Program"/> class.
+    /// </summary>
+    /// <param name="output">output.</param>
+    /// <param name="error">error.</param>
+    public Program(TextWriter output, TextWriter error)
+    {
+        this.output = output;
+        this.error = error;
+    }
+
     /// <summary>
     /// Entry point for the command line application.
     /// </summary>
     /// <param name="args">Command line arguments.</param>
     /// <returns>Exit code (0 for success, 1 for failure).</returns>
     public static async Task<int> Main(string[] args)
+    {
+        return await new Program(Console.Out, Console.Error).Main(args);
+    }
+
+    /// <summary>
+    /// Test entry point.
+    /// </summary>
+    /// <param name="args">args.</param>
+    /// <param name="fullGeneration">fullGeneration.</param>
+    /// <returns>exit code.</returns>
+    public async Task<int> Main(
+        string[] args,
+        bool fullGeneration = false)
     {
         var nativeMethodsTxtOption = new Option<FileInfo>(
             name: "--native-methods-txt",
@@ -86,11 +113,6 @@ public partial class Program
             AllowMultipleArgumentsPerToken = true,
         };
 
-        var fullGenerationOption = new Option<bool>(
-            name: "--full-generation",
-            getDefaultValue: () => false,
-            description: "Generate the full set of APIs (not recommended).");
-
         var rootCommand = new RootCommand("CsWin32 Code Generator - Generates P/Invoke methods and supporting types from Windows metadata.")
         {
             nativeMethodsTxtOption,
@@ -103,7 +125,6 @@ public partial class Program
             targetFrameworkOption,
             platformOption,
             referencesOption,
-            fullGenerationOption,
         };
 
         ParseResult parseResult = rootCommand.Parse(args);
@@ -117,14 +138,13 @@ public partial class Program
         var targetFramework = parseResult.GetValueForOption(targetFrameworkOption);
         var platform = parseResult.GetValueForOption(platformOption);
         var references = parseResult.GetValueForOption(referencesOption);
-        var fullGeneration = parseResult.GetValueForOption(fullGenerationOption);
 
         // Check for errors before continuing.
         if (parseResult.Errors.Count > 0)
         {
             foreach (ParseError error in parseResult.Errors)
             {
-                ReportError($"{error.Message}");
+                this.ReportError($"{error.Message}");
             }
 
             return 1;
@@ -132,7 +152,7 @@ public partial class Program
 
         try
         {
-            var result = await GenerateCode(
+            var result = await this.GenerateCode(
                 nativeMethodsTxt,
                 nativeMethodsJson,
                 metadataPaths,
@@ -149,10 +169,10 @@ public partial class Program
         }
         catch (Exception ex)
         {
-            ReportError($"{ex.Message}");
+            this.ReportError($"{ex.Message}");
             if (ex.InnerException != null)
             {
-                ReportError($"Inner exception: {ex.InnerException.Message}");
+                this.ReportError($"Inner exception: {ex.InnerException.Message}");
             }
 
             return 1;
@@ -174,7 +194,7 @@ public partial class Program
     /// <param name="references">Additional assembly references (optional).</param>
     /// <param name="fullGeneration">Whether to generate the full set of APIs.</param>
     /// <returns>True if successful, false otherwise.</returns>
-    private static Task<bool> GenerateCode(
+    private Task<bool> GenerateCode(
         FileInfo nativeMethodsTxt,
         FileInfo? nativeMethodsJson,
         FileInfo[] metadataPaths,
@@ -187,28 +207,28 @@ public partial class Program
         FileInfo[]? references,
         bool fullGeneration)
     {
-        Console.WriteLine("Starting CsWin32 code generation...");
+        this.output.WriteLine("Starting CsWin32 code generation...");
 
         if (!nativeMethodsTxt.Exists)
         {
-            ReportError($"NativeMethods.txt file not found: {nativeMethodsTxt.FullName}");
+            this.ReportError($"NativeMethods.txt file not found: {nativeMethodsTxt.FullName}");
             return Task.FromResult(false);
         }
 
         if (nativeMethodsJson is object && !nativeMethodsJson.Exists)
         {
-            ReportError($"NativeMethods.json file not found: {nativeMethodsJson.FullName}");
+            this.ReportError($"NativeMethods.json file not found: {nativeMethodsJson.FullName}");
             return Task.FromResult(false);
         }
 
         if (metadataPaths.Length == 0)
         {
-            ReportError("At least one metadata path must be provided.");
+            this.ReportError("At least one metadata path must be provided.");
             return Task.FromResult(false);
         }
 
         // Load generator options from NativeMethods.json if provided
-        GeneratorOptions options = LoadGeneratorOptions(nativeMethodsJson);
+        GeneratorOptions options = this.LoadGeneratorOptions(nativeMethodsJson);
 
         // If unspecified, default to using other source generators.
         if (!options.ComInterop.UseComSourceGenerators.HasValue && targetFramework != "net472")
@@ -216,28 +236,28 @@ public partial class Program
             options.ComInterop.UseComSourceGenerators = true;
         }
 
-        Console.WriteLine($"Loaded generator options. AllowMarshaling: {options.AllowMarshaling}, ClassName: {options.ClassName}");
+        this.output.WriteLine($"Loaded generator options. AllowMarshaling: {options.AllowMarshaling}, ClassName: {options.ClassName}");
 
         // Validate metadata files exist
         foreach (var metadataPath in metadataPaths)
         {
             if (!metadataPath.Exists)
             {
-                ReportError($"Metadata file not found: {metadataPath.FullName}");
+                this.ReportError($"Metadata file not found: {metadataPath.FullName}");
                 return Task.FromResult(false);
             }
         }
 
         // Create compilation context
-        CSharpCompilation? compilation = CreateCompilation(allowUnsafeBlocks, platform, references);
-        CSharpParseOptions? parseOptions = CreateParseOptions(targetFramework);
-        Console.WriteLine($"Created compilation context with platform: {platform}, language version: {parseOptions?.LanguageVersion}");
+        CSharpCompilation? compilation = this.CreateCompilation(allowUnsafeBlocks, platform, references);
+        CSharpParseOptions? parseOptions = this.CreateParseOptions(targetFramework);
+        this.output.WriteLine($"Created compilation context with platform: {platform}, language version: {parseOptions?.LanguageVersion}");
 
         // Load docs if available
-        Docs? docs = LoadDocs(docPaths);
+        Docs? docs = this.LoadDocs(docPaths);
         if (docs != null)
         {
-            Console.WriteLine("Loaded API documentation.");
+            this.output.WriteLine("Loaded API documentation.");
         }
 
         // Process app-local libraries
@@ -247,7 +267,7 @@ public partial class Program
         var generators = new List<Generator>();
         foreach (var metadataPath in metadataPaths)
         {
-            Console.WriteLine($"Creating generator for: {metadataPath.Name}");
+            this.output.WriteLine($"Creating generator for: {metadataPath.Name}");
             generators.Add(new Generator(metadataPath.FullName, docs, appLocalLibrariesNames, options, compilation, parseOptions));
         }
 
@@ -256,10 +276,10 @@ public partial class Program
             ? SuperGenerator.Combine(generators[0])
             : SuperGenerator.Combine(generators.ToArray());
 
-        Console.WriteLine($"Created super generator with {generators.Count} generator(s).");
+        this.output.WriteLine($"Created super generator with {generators.Count} generator(s).");
 
         // Process NativeMethods.txt file
-        if (!ProcessNativeMethodsFile(superGenerator, nativeMethodsTxt))
+        if (!this.ProcessNativeMethodsFile(superGenerator, nativeMethodsTxt))
         {
             return Task.FromResult(false);
         }
@@ -270,7 +290,7 @@ public partial class Program
         }
 
         // Generate compilation units and write to files
-        if (!GenerateAndWriteFiles(superGenerator, outputPath))
+        if (!this.GenerateAndWriteFiles(superGenerator, outputPath))
         {
             return Task.FromResult(false);
         }
@@ -283,7 +303,7 @@ public partial class Program
     /// </summary>
     /// <param name="nativeMethodsJson">Path to the NativeMethods.json file (optional).</param>
     /// <returns>Generator options instance.</returns>
-    private static GeneratorOptions LoadGeneratorOptions(FileInfo? nativeMethodsJson)
+    private GeneratorOptions LoadGeneratorOptions(FileInfo? nativeMethodsJson)
     {
         if (nativeMethodsJson is object)
         {
@@ -301,7 +321,7 @@ public partial class Program
     /// <param name="platform">Target platform.</param>
     /// <param name="references">Additional assembly references (optional).</param>
     /// <returns>C# compilation instance or null if creation fails.</returns>
-    private static CSharpCompilation? CreateCompilation(bool allowUnsafeBlocks, string platform, FileInfo[]? references)
+    private CSharpCompilation? CreateCompilation(bool allowUnsafeBlocks, string platform, FileInfo[]? references)
     {
         var metadataReferences = new List<MetadataReference>();
 
@@ -342,7 +362,7 @@ public partial class Program
     /// </summary>
     /// <param name="targetFramework">Target framework version (optional).</param>
     /// <returns>C# parse options instance or null if creation fails.</returns>
-    private static CSharpParseOptions? CreateParseOptions(string? targetFramework)
+    private CSharpParseOptions? CreateParseOptions(string? targetFramework)
     {
         // Determine language version based on target framework
         LanguageVersion languageVersion = targetFramework switch
@@ -362,7 +382,7 @@ public partial class Program
     /// </summary>
     /// <param name="docPaths">Paths to documentation files (optional).</param>
     /// <returns>Merged documentation instance or null if none available.</returns>
-    private static Docs? LoadDocs(FileInfo[]? docPaths)
+    private Docs? LoadDocs(FileInfo[]? docPaths)
     {
         if (docPaths?.Length > 0)
         {
@@ -378,7 +398,7 @@ public partial class Program
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Warning: Failed to load documentation from {docPath.FullName}: {ex.Message}");
+                    this.output.WriteLine($"Warning: Failed to load documentation from {docPath.FullName}: {ex.Message}");
                 }
             }
 
@@ -394,12 +414,12 @@ public partial class Program
     /// <param name="superGenerator">The super generator instance.</param>
     /// <param name="nativeMethodsTxt">Path to the NativeMethods.txt file.</param>
     /// <returns>True if processing succeeded, false otherwise.</returns>
-    private static unsafe bool ProcessNativeMethodsFile(SuperGenerator superGenerator, FileInfo nativeMethodsTxt)
+    private unsafe bool ProcessNativeMethodsFile(SuperGenerator superGenerator, FileInfo nativeMethodsTxt)
     {
         try
         {
             var lines = File.ReadAllLines(nativeMethodsTxt.FullName);
-            Console.WriteLine($"Processing {lines.Length} lines from {nativeMethodsTxt.Name}");
+            this.output.WriteLine($"Processing {lines.Length} lines from {nativeMethodsTxt.Name}");
 
             int processedCount = 0;
             int skippedCount = 0;
@@ -424,11 +444,11 @@ public partial class Program
                         int matches = superGenerator.TryGenerateAllExternMethods(moduleName, CancellationToken.None);
                         if (matches == 0)
                         {
-                            Console.WriteLine($"Warning: No methods found under module '{moduleName}'");
+                            this.output.WriteLine($"Warning: No methods found under module '{moduleName}'");
                         }
                         else
                         {
-                            Console.WriteLine($"Generated {matches} methods from module '{moduleName}'");
+                            this.output.WriteLine($"Generated {matches} methods from module '{moduleName}'");
                         }
 
                         processedCount++;
@@ -439,43 +459,43 @@ public partial class Program
 
                     foreach (string declaringEnum in redirectedEnums)
                     {
-                        Console.WriteLine($"Warning: Using the name of the enum that declares this constant: {declaringEnum}");
+                        this.output.WriteLine($"Warning: Using the name of the enum that declares this constant: {declaringEnum}");
                     }
 
                     switch (matchingApis.Count)
                     {
                         case 0:
-                            ReportError($"Method, type or constant '{name}' not found");
+                            this.ReportError($"Method, type or constant '{name}' not found");
                             errorCount++;
                             break;
                         case 1:
-                            Console.WriteLine($"Generated: {name}");
+                            this.output.WriteLine($"Generated: {name}");
                             processedCount++;
                             break;
                         case > 1:
-                            ReportError($"The API '{name}' is ambiguous. Please specify one of: {string.Join(", ", matchingApis.Select(api => $"\"{api}\""))}");
+                            this.ReportError($"The API '{name}' is ambiguous. Please specify one of: {string.Join(", ", matchingApis.Select(api => $"\"{api}\""))}");
                             errorCount++;
                             break;
                     }
                 }
                 catch (PlatformIncompatibleException)
                 {
-                    ReportError($"API '{name}' is not available for the target platform");
+                    this.ReportError($"API '{name}' is not available for the target platform");
                     errorCount++;
                 }
                 catch (Exception ex)
                 {
-                    ReportError($"'{name}': {ex.Message}");
+                    this.ReportError($"'{name}': {ex.Message}");
                     errorCount++;
                 }
             }
 
-            Console.WriteLine($"Processing complete. Processed: {processedCount}, Skipped: {skippedCount}, Errors: {errorCount}");
+            this.output.WriteLine($"Processing complete. Processed: {processedCount}, Skipped: {skippedCount}, Errors: {errorCount}");
             return errorCount == 0;
         }
         catch (Exception ex)
         {
-            ReportError($"Failed to process NativeMethods.txt file: {ex.Message}");
+            this.ReportError($"Failed to process NativeMethods.txt file: {ex.Message}");
             return false;
         }
     }
@@ -486,13 +506,13 @@ public partial class Program
     /// <param name="superGenerator">The super generator instance.</param>
     /// <param name="outputPath">Output directory for generated files.</param>
     /// <returns>True if generation succeeded, false otherwise.</returns>
-    private static bool GenerateAndWriteFiles(SuperGenerator superGenerator, DirectoryInfo outputPath)
+    private bool GenerateAndWriteFiles(SuperGenerator superGenerator, DirectoryInfo outputPath)
     {
         try
         {
             // Ensure output directory exists
             outputPath.Create();
-            Console.WriteLine($"Output directory: {outputPath.FullName}");
+            this.output.WriteLine($"Output directory: {outputPath.FullName}");
 
             var compilationUnits = superGenerator.GetCompilationUnits(CancellationToken.None);
             int fileCount = 0;
@@ -506,23 +526,23 @@ public partial class Program
                 string sourceText = unit.Value.GetText(Encoding.UTF8).ToString();
                 File.WriteAllText(filePath, sourceText, Encoding.UTF8);
 
-                Console.WriteLine($"Generated: {fileName} ({sourceText.Length} characters)");
+                this.output.WriteLine($"Generated: {fileName} ({sourceText.Length} characters)");
                 fileCount++;
             }
 
-            Console.WriteLine($"Successfully generated {fileCount} source files.");
+            this.output.WriteLine($"Successfully generated {fileCount} source files.");
             return true;
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"Failed to generate and write files: {ex.Message}");
+            this.output.WriteLine($"Failed to generate and write files: {ex.Message}");
             return false;
         }
     }
 
-    private static void ReportError(string message)
+    private void ReportError(string message)
     {
-        Console.Error.WriteLine($"CsWin32 : error : {message}");
+        this.error.WriteLine($"CsWin32 : error : {message}");
     }
 
     [JsonSourceGenerationOptions(

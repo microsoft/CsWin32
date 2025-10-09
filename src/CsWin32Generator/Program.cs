@@ -500,7 +500,9 @@ public partial class Program
         {
             // Ensure output directory exists
             outputPath.Create();
-            this.output.WriteLine($"Output directory: {outputPath.FullName}");
+            this.VerboseWriteLine($"Output directory: {outputPath.FullName}");
+
+            List<string> outputFiles = new();
 
             var compilationUnits = superGenerator.GetCompilationUnits(CancellationToken.None);
             int fileCount = 0;
@@ -514,16 +516,22 @@ public partial class Program
                 string sourceText = unit.Value.GetText(Encoding.UTF8).ToString();
                 File.WriteAllText(filePath, sourceText, Encoding.UTF8);
 
-                this.output.WriteLine($"Generated: {fileName} ({sourceText.Length} characters)");
+                outputFiles.Add(filePath);
+
+                this.VerboseWriteLine($"Generated: {fileName} ({sourceText.Length} characters)");
                 fileCount++;
             }
 
-            this.output.WriteLine($"Successfully generated {fileCount} source files.");
+            var generatedFilesTxt = Path.Combine(outputPath.FullName, "CsWin32GeneratedFiles.txt");
+
+            File.WriteAllLines(generatedFilesTxt, outputFiles);
+
+            this.VerboseWriteLine($"Successfully generated {fileCount} source files.");
             return true;
         }
         catch (Exception ex)
         {
-            this.output.WriteLine($"Failed to generate and write files: {ex.Message}");
+            this.VerboseWriteLine($"Failed to generate and write files: {ex.Message}");
             return false;
         }
     }

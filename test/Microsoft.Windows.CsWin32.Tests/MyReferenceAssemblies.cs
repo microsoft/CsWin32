@@ -16,7 +16,7 @@ internal static class MyReferenceAssemblies
     ];
 
     private static readonly ImmutableArray<PackageIdentity> AdditionalLegacyPackagesNET = [
-        new PackageIdentity("Microsoft.Windows.SDK.NET.Ref", "10.0.22621.57"),
+        new PackageIdentity("Microsoft.Windows.SDK.NET.Ref", "10.0.26100.57"),
     ];
 
     internal static readonly ReferenceAssemblies NetStandard20 = ReferenceAssemblies.NetStandard.NetStandard20.AddPackages([.. AdditionalLegacyPackagesNetFX, .. AdditionalModernPackages]);

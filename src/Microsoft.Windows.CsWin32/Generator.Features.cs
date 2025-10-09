@@ -22,6 +22,7 @@ public partial class Generator
     private readonly bool generateSupportedOSPlatformAttributesOnInterfaces; // only supported on net6.0 (https://github.com/dotnet/runtime/pull/48838)
     private readonly bool generateDefaultDllImportSearchPathsAttribute;
     private readonly Dictionary<Feature, bool> supportedFeatures = new();
+
     internal bool CanUseIPropertyValue => this.canUseIPropertyValue;
 
     private void DeclareOverloadResolutionPriorityAttributeIfNecessary()

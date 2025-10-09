@@ -10,7 +10,7 @@
       "rollForward": false
     },
     "dotnet-coverage": {
-      "version": "18.0.4",
+      "version": "18.1.0",
       "commands": [
         "dotnet-coverage"
       ],

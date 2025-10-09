@@ -226,8 +226,11 @@ public class GeneratorTests : GeneratorTestBase
             "ID3D12Resource", // COM interface with base types
             "OpenTrace", // the CloseTrace method called by the SafeHandle returns WIN32_ERROR. The handle is ALWAYS 64-bits.
             "QueryTraceProcessingHandle", // uses a handle that is always 64-bits, even in 32-bit processes
-            "ID2D1RectangleGeometry")] // COM interface with base types
+            "ID2D1RectangleGeometry", // COM interface with base types
+            "IGraphicsEffectD2D1Interop")] // COM interface that refers to C#/WinRT types
         string api,
+        [CombinatorialValues("netstandard2.0", "net9.0")]
+        string tfm,
         bool allowMarshaling)
     {
         var options = DefaultTestGeneratorOptions with
@@ -235,7 +238,7 @@ public class GeneratorTests : GeneratorTestBase
             WideCharOnly = false,
             AllowMarshaling = allowMarshaling,
         };
-        this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(Platform.X64));
+        this.compilation = this.starterCompilations[tfm].WithOptions(this.compilation.Options.WithPlatform(Platform.X64));
         this.generator = this.CreateGenerator(options);
         Assert.True(this.generator.TryGenerate(api, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);

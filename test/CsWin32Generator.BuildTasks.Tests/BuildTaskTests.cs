@@ -60,7 +60,6 @@ public class BuildTaskTests
         task.NativeMethodsJson = "TestContent\\NativeMethods.json";
         task.DocPaths = "doc1.xml;doc2.xml";
         task.AppLocalAllowedLibraries = "lib1.dll;lib2.dll";
-        task.AllowUnsafeBlocks = false;
         task.TargetFramework = "net6.0";
         task.Platform = "x64";
 
@@ -76,7 +75,6 @@ public class BuildTaskTests
         Assert.Contains("--app-local-allowed-libraries", commandLine);
         Assert.Contains("lib1.dll", commandLine);
         Assert.Contains("lib2.dll", commandLine);
-        Assert.Contains("--allow-unsafe-blocks false", commandLine);
         Assert.Contains("--target-framework net6.0", commandLine);
         Assert.Contains("--platform x64", commandLine);
     }
@@ -103,22 +101,6 @@ public class BuildTaskTests
         Assert.Contains("System.dll", commandLine);
         Assert.Contains("System.Core.dll", commandLine);
         Assert.Contains("Microsoft.Win32.dll", commandLine);
-    }
-
-    [Fact]
-    public void GenerateCommandLineCommands_WithDefaultAllowUnsafeBlocks_FormatsCorrectly()
-    {
-        // Arrange
-        var task = CreateTaskWithMockBuildEngine();
-        SetupRequiredParameters(task);
-
-        // AllowUnsafeBlocks defaults to true
-
-        // Act
-        string commandLine = task.GetCommandLineArguments();
-
-        // Assert
-        Assert.Contains("--allow-unsafe-blocks true", commandLine);
     }
 
     [Fact]
@@ -281,7 +263,6 @@ public class BuildTaskTests
         task.MetadataPaths = "file1.winmd;file2.winmd";
         task.DocPaths = "doc1.xml;doc2.xml";
         task.AppLocalAllowedLibraries = "lib1.dll;lib2.dll";
-        task.AllowUnsafeBlocks = true;
         task.TargetFramework = "net8.0";
         task.Platform = "x64";
         task.References = new ITaskItem[]

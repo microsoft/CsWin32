@@ -92,7 +92,6 @@
       AppLocalAllowedLibraries="@(CsWin32AppLocalAllowedLibraries)"
       OutputPath="$(CsWin32GeneratorGeneratedFilesPath)"
       GeneratorToolPath="$(CsWin32GeneratorToolPath)CsWin32Generator.dll"
-      AllowUnsafeBlocks="$(AllowUnsafeBlocks)"
       TargetFramework="$(TargetFramework)"
       Platform="$(Platform)"
       References="@(ReferencePath)"
@@ -102,7 +101,7 @@
       <Output TaskParameter="Succeeded" PropertyName="CsWin32GeneratorSuccess" />
     </CsWin32CodeGeneratorTask>
 
-    <!-- Online write the generated files .txt file if we succeeded, that way if we fail during DesignTimeBuild we'll run again during build -->
+    <!-- Only write the generated files .txt file if we succeeded, that way if we fail during DesignTimeBuild we'll run again during build -->
     <WriteLinesToFile
       File="$(CsWin32GeneratorGeneratedFilesList)"
       Lines="@(CsWin32GeneratedFiles->'%(FullPath)')"

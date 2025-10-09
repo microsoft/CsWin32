@@ -2,8 +2,7 @@
   <Import Project="$(RepoRootPath)src\Microsoft.Windows.CsWin32\build\Microsoft.Windows.CsWin32.props" />
 
   <ItemGroup>
-    <ProjectReference Include="$(RepoRootPath)src\Microsoft.Windows.CsWin32\Microsoft.Windows.CsWin32.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false"
-       AdditionalProperties="TargetFramework=netstandard2.0"/>
+    <ProjectReference Include="$(RepoRootPath)src\Microsoft.Windows.CsWin32\Microsoft.Windows.CsWin32.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <Analyzer Include="$(RepoRootPath)bin\Microsoft.Windows.CsWin32\$(Configuration)\netstandard2.0\System.Text.Json.dll" />
     <Analyzer Include="$(RepoRootPath)bin\Microsoft.Windows.CsWin32\$(Configuration)\netstandard2.0\Microsoft.Bcl.AsyncInterfaces.dll" />
     <Analyzer Include="$(RepoRootPath)bin\Microsoft.Windows.CsWin32\$(Configuration)\netstandard2.0\System.Text.Encodings.Web.dll" />

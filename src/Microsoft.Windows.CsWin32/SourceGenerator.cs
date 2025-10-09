@@ -5,9 +5,6 @@
 #pragma warning disable RS1042 // Deprecated interface
 
 using System.Text.Json;
-#if NET9_0_OR_GREATER
-using System.Text.Json.Serialization;
-#endif
 using Microsoft.CodeAnalysis.Text;
 
 namespace Microsoft.Windows.CsWin32;
@@ -194,11 +191,7 @@ public partial class SourceGenerator : ISourceGenerator
             string optionsJson = nativeMethodsJsonFile.GetText(context.CancellationToken)!.ToString();
             try
             {
-#if NET9_0_OR_GREATER
-                options = JsonSerializer.Deserialize(optionsJson, GeneratorOptionsSerializerContext.Default.GeneratorOptions) ?? new();
-#else
                 options = JsonSerializer.Deserialize<GeneratorOptions>(optionsJson, JsonOptions) ?? new();
-#endif
             }
             catch (JsonException ex)
             {
@@ -460,13 +453,4 @@ public partial class SourceGenerator : ISourceGenerator
 
         return bool.TryParse(runAsBuildTask, out bool result) && result;
     }
-
-#if NET9_0_OR_GREATER
-    [JsonSourceGenerationOptions(
-        AllowTrailingCommas = true,
-        ReadCommentHandling = JsonCommentHandling.Skip,
-        PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
-    [JsonSerializable(typeof(GeneratorOptions))]
-    private partial class GeneratorOptionsSerializerContext : JsonSerializerContext;
-#endif
 }

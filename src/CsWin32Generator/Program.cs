@@ -20,6 +20,7 @@ public partial class Program
 {
     private readonly TextWriter output;
     private readonly TextWriter error;
+    private bool verbose;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="Program"/> class.
@@ -52,66 +53,60 @@ public partial class Program
         string[] args,
         bool fullGeneration = false)
     {
-        var nativeMethodsTxtOption = new Option<FileInfo>(
-            name: "--native-methods-txt",
-            description: "Path to the NativeMethods.txt file containing API names to generate.")
+        var nativeMethodsTxtOption = new Option<FileInfo[]>("--native-methods-txt")
         {
-            IsRequired = true,
-        };
-
-        var nativeMethodsJsonOption = new Option<FileInfo?>(
-            name: "--native-methods-json",
-            description: "Path to the NativeMethods.json file containing generation options.");
-
-        var metadataPathsOption = new Option<FileInfo[]>(
-            name: "--metadata-paths",
-            description: "Paths to Windows metadata files (.winmd).")
-        {
-            IsRequired = true,
+            Description = "Path to the NativeMethods.txt file(s) containing API names to generate.",
+            Required = true,
             AllowMultipleArgumentsPerToken = true,
         };
 
-        var docPathsOption = new Option<FileInfo[]?>(
-            name: "--doc-paths",
-            description: "Paths to documentation files.")
+        var nativeMethodsJsonOption = new Option<FileInfo?>("--native-methods-json")
         {
+            Description = "Path to the NativeMethods.json file containing generation options.",
+        };
+
+        var metadataPathsOption = new Option<FileInfo[]>("--metadata-paths")
+        {
+            Description = "Paths to Windows metadata files (.winmd).",
             AllowMultipleArgumentsPerToken = true,
         };
 
-        var appLocalAllowedLibrariesOption = new Option<FileInfo[]?>(
-            name: "--app-local-allowed-libraries",
-            description: "Paths to app-local allowed libraries.")
+        var docPathsOption = new Option<FileInfo[]?>("--doc-paths")
         {
+            Description = "Paths to documentation files.",
             AllowMultipleArgumentsPerToken = true,
         };
 
-        var outputPathOption = new Option<DirectoryInfo>(
-            name: "--output-path",
-            description: "Output directory where generated files will be written.")
+        var appLocalAllowedLibrariesOption = new Option<FileInfo[]?>("--app-local-allowed-libraries")
         {
-            IsRequired = true,
-        };
-
-        var allowUnsafeBlocksOption = new Option<bool>(
-            name: "--allow-unsafe-blocks",
-            getDefaultValue: () => true,
-            description: "Whether unsafe code is allowed.");
-
-        var targetFrameworkOption = new Option<string?>(
-            name: "--target-framework",
-            description: "Target framework version (affects available features).");
-
-        var platformOption = new Option<string>(
-            name: "--platform",
-            getDefaultValue: () => "AnyCPU",
-            description: "Target platform (e.g., x86, x64, AnyCPU).");
-
-        var referencesOption = new Option<FileInfo[]?>(
-            name: "--references",
-            description: "Additional references to be included in the compilation context.")
-        {
+            Description = "Paths to app-local allowed libraries.",
             AllowMultipleArgumentsPerToken = true,
         };
+
+        var outputPathOption = new Option<DirectoryInfo>("--output-path")
+        {
+            Description = "Output directory where generated files will be written.",
+            Required = true,
+        };
+
+        var targetFrameworkOption = new Option<string?>("--target-framework")
+        {
+            Description = "Target framework version (affects available features).",
+        };
+
+        var platformOption = new Option<string>("--platform")
+        {
+            Description = "Target platform (e.g., x86, x64, AnyCPU).",
+            DefaultValueFactory = (x) => "AnyCPU",
+        };
+
+        var referencesOption = new Option<FileInfo[]?>("--references")
+        {
+            Description = "Additional references to be included in the compilation context.",
+            AllowMultipleArgumentsPerToken = true,
+        };
+
+        var verboseOption = new Option<bool>("--verbose");
 
         var rootCommand = new RootCommand("CsWin32 Code Generator - Generates P/Invoke methods and supporting types from Windows metadata.")
         {
@@ -121,23 +116,23 @@ public partial class Program
             docPathsOption,
             appLocalAllowedLibrariesOption,
             outputPathOption,
-            allowUnsafeBlocksOption,
             targetFrameworkOption,
             platformOption,
             referencesOption,
+            verboseOption,
         };
 
         ParseResult parseResult = rootCommand.Parse(args);
-        var nativeMethodsTxt = parseResult.GetValueForOption(nativeMethodsTxtOption)!;
-        var nativeMethodsJson = parseResult.GetValueForOption(nativeMethodsJsonOption);
-        var metadataPaths = parseResult.GetValueForOption(metadataPathsOption)!;
-        var docPaths = parseResult.GetValueForOption(docPathsOption);
-        var appLocalAllowedLibraries = parseResult.GetValueForOption(appLocalAllowedLibrariesOption);
-        var outputPath = parseResult.GetValueForOption(outputPathOption)!;
-        var allowUnsafeBlocks = parseResult.GetValueForOption(allowUnsafeBlocksOption);
-        var targetFramework = parseResult.GetValueForOption(targetFrameworkOption);
-        var platform = parseResult.GetValueForOption(platformOption);
-        var references = parseResult.GetValueForOption(referencesOption);
+        var nativeMethodsTxtFiles = parseResult.GetValue(nativeMethodsTxtOption)!;
+        var nativeMethodsJson = parseResult.GetValue(nativeMethodsJsonOption);
+        var metadataPaths = parseResult.GetValue(metadataPathsOption)!;
+        var docPaths = parseResult.GetValue(docPathsOption);
+        var appLocalAllowedLibraries = parseResult.GetValue(appLocalAllowedLibrariesOption);
+        var outputPath = parseResult.GetValue(outputPathOption)!;
+        var targetFramework = parseResult.GetValue(targetFrameworkOption);
+        var platform = parseResult.GetValue(platformOption);
+        var references = parseResult.GetValue(referencesOption);
+        this.verbose = parseResult.GetValue(verboseOption);
 
         // Check for errors before continuing.
         if (parseResult.Errors.Count > 0)
@@ -153,13 +148,12 @@ public partial class Program
         try
         {
             var result = await this.GenerateCode(
-                nativeMethodsTxt,
+                nativeMethodsTxtFiles,
                 nativeMethodsJson,
                 metadataPaths,
                 docPaths,
                 appLocalAllowedLibraries,
                 outputPath,
-                allowUnsafeBlocks,
                 targetFramework,
                 platform ?? "AnyCPU", // Provide default value for platform
                 references,
@@ -182,37 +176,38 @@ public partial class Program
     /// <summary>
     /// Generates code using the CsWin32 generator.
     /// </summary>
-    /// <param name="nativeMethodsTxt">Path to the NativeMethods.txt file.</param>
+    /// <param name="nativeMethodsTxtFiles">Path to the NativeMethods.txt file.</param>
     /// <param name="nativeMethodsJson">Path to the NativeMethods.json file (optional).</param>
     /// <param name="metadataPaths">Paths to Windows metadata files.</param>
     /// <param name="docPaths">Paths to documentation files (optional).</param>
     /// <param name="appLocalAllowedLibraries">Paths to app-local allowed libraries (optional).</param>
     /// <param name="outputPath">Output directory for generated files.</param>
-    /// <param name="allowUnsafeBlocks">Whether unsafe code is allowed.</param>
     /// <param name="targetFramework">Target framework version.</param>
     /// <param name="platform">Target platform.</param>
     /// <param name="references">Additional assembly references (optional).</param>
     /// <param name="fullGeneration">Whether to generate the full set of APIs.</param>
     /// <returns>True if successful, false otherwise.</returns>
     private Task<bool> GenerateCode(
-        FileInfo nativeMethodsTxt,
+        FileInfo[] nativeMethodsTxtFiles,
         FileInfo? nativeMethodsJson,
         FileInfo[] metadataPaths,
         FileInfo[]? docPaths,
         FileInfo[]? appLocalAllowedLibraries,
         DirectoryInfo outputPath,
-        bool allowUnsafeBlocks,
         string? targetFramework,
         string platform,
         FileInfo[]? references,
         bool fullGeneration)
     {
-        this.output.WriteLine("Starting CsWin32 code generation...");
+        this.VerboseWriteLine("Starting CsWin32 code generation...");
 
-        if (!nativeMethodsTxt.Exists)
+        foreach (var nativeMethodsTxtFile in nativeMethodsTxtFiles)
         {
-            this.ReportError($"NativeMethods.txt file not found: {nativeMethodsTxt.FullName}");
-            return Task.FromResult(false);
+            if (!nativeMethodsTxtFile.Exists)
+            {
+                this.ReportError($"NativeMethods.txt file not found: {nativeMethodsTxtFile.FullName}");
+                return Task.FromResult(false);
+            }
         }
 
         if (nativeMethodsJson is object && !nativeMethodsJson.Exists)
@@ -236,7 +231,7 @@ public partial class Program
             options.ComInterop.UseComSourceGenerators = true;
         }
 
-        this.output.WriteLine($"Loaded generator options. AllowMarshaling: {options.AllowMarshaling}, ClassName: {options.ClassName}");
+        this.VerboseWriteLine($"Loaded generator options. AllowMarshaling: {options.AllowMarshaling}, ClassName: {options.ClassName}");
 
         // Validate metadata files exist
         foreach (var metadataPath in metadataPaths)
@@ -249,15 +244,15 @@ public partial class Program
         }
 
         // Create compilation context
-        CSharpCompilation? compilation = this.CreateCompilation(allowUnsafeBlocks, platform, references);
+        CSharpCompilation? compilation = this.CreateCompilation(allowUnsafeBlocks: true, platform, references);
         CSharpParseOptions? parseOptions = this.CreateParseOptions(targetFramework);
-        this.output.WriteLine($"Created compilation context with platform: {platform}, language version: {parseOptions?.LanguageVersion}");
+        this.VerboseWriteLine($"Created compilation context with platform: {platform}, language version: {parseOptions?.LanguageVersion}");
 
         // Load docs if available
         Docs? docs = this.LoadDocs(docPaths);
         if (docs != null)
         {
-            this.output.WriteLine("Loaded API documentation.");
+            this.VerboseWriteLine("Loaded API documentation.");
         }
 
         // Process app-local libraries
@@ -267,7 +262,7 @@ public partial class Program
         var generators = new List<Generator>();
         foreach (var metadataPath in metadataPaths)
         {
-            this.output.WriteLine($"Creating generator for: {metadataPath.Name}");
+            this.VerboseWriteLine($"Creating generator for: {metadataPath.Name}");
             generators.Add(new Generator(metadataPath.FullName, docs, appLocalLibrariesNames, options, compilation, parseOptions));
         }
 
@@ -276,12 +271,15 @@ public partial class Program
             ? SuperGenerator.Combine(generators[0])
             : SuperGenerator.Combine(generators.ToArray());
 
-        this.output.WriteLine($"Created super generator with {generators.Count} generator(s).");
+        this.VerboseWriteLine($"Created super generator with {generators.Count} generator(s).");
 
-        // Process NativeMethods.txt file
-        if (!this.ProcessNativeMethodsFile(superGenerator, nativeMethodsTxt))
+        foreach (var nativeMethodsTxtFile in nativeMethodsTxtFiles)
         {
-            return Task.FromResult(false);
+            // Process NativeMethods.txt file
+            if (!this.ProcessNativeMethodsFile(superGenerator, nativeMethodsTxtFile))
+            {
+                return Task.FromResult(false);
+            }
         }
 
         if (fullGeneration)
@@ -364,17 +362,7 @@ public partial class Program
     /// <returns>C# parse options instance or null if creation fails.</returns>
     private CSharpParseOptions? CreateParseOptions(string? targetFramework)
     {
-        // Determine language version based on target framework
-        LanguageVersion languageVersion = targetFramework switch
-        {
-            var tfm when tfm?.StartsWith("net9.0", StringComparison.Ordinal) == true => LanguageVersion.Latest,
-            var tfm when tfm?.StartsWith("net8.0", StringComparison.Ordinal) == true => LanguageVersion.Latest,
-            var tfm when tfm?.StartsWith("net7.0", StringComparison.Ordinal) == true => LanguageVersion.Latest,
-            var tfm when tfm?.StartsWith("net6.0", StringComparison.Ordinal) == true => LanguageVersion.CSharp9,
-            _ => LanguageVersion.CSharp9,
-        };
-
-        return new CSharpParseOptions(languageVersion: languageVersion);
+        return new CSharpParseOptions(languageVersion: LanguageVersion.CSharp13);
     }
 
     /// <summary>
@@ -398,7 +386,7 @@ public partial class Program
                 }
                 catch (Exception ex)
                 {
-                    this.output.WriteLine($"Warning: Failed to load documentation from {docPath.FullName}: {ex.Message}");
+                    this.ReportWarning($"Failed to load documentation from {docPath.FullName}: {ex.Message}");
                 }
             }
 
@@ -419,7 +407,7 @@ public partial class Program
         try
         {
             var lines = File.ReadAllLines(nativeMethodsTxt.FullName);
-            this.output.WriteLine($"Processing {lines.Length} lines from {nativeMethodsTxt.Name}");
+            this.VerboseWriteLine($"Processing {lines.Length} lines from {nativeMethodsTxt.Name}");
 
             int processedCount = 0;
             int skippedCount = 0;
@@ -444,11 +432,11 @@ public partial class Program
                         int matches = superGenerator.TryGenerateAllExternMethods(moduleName, CancellationToken.None);
                         if (matches == 0)
                         {
-                            this.output.WriteLine($"Warning: No methods found under module '{moduleName}'");
+                            this.ReportWarning($"No methods found under module '{moduleName}'");
                         }
                         else
                         {
-                            this.output.WriteLine($"Generated {matches} methods from module '{moduleName}'");
+                            this.VerboseWriteLine($"Generated {matches} methods from module '{moduleName}'");
                         }
 
                         processedCount++;
@@ -459,7 +447,7 @@ public partial class Program
 
                     foreach (string declaringEnum in redirectedEnums)
                     {
-                        this.output.WriteLine($"Warning: Using the name of the enum that declares this constant: {declaringEnum}");
+                        this.ReportWarning($"Using the name of the enum that declares this constant: {declaringEnum}");
                     }
 
                     switch (matchingApis.Count)
@@ -469,7 +457,7 @@ public partial class Program
                             errorCount++;
                             break;
                         case 1:
-                            this.output.WriteLine($"Generated: {name}");
+                            this.InfoWriteLine($"Generated: {name}");
                             processedCount++;
                             break;
                         case > 1:
@@ -490,7 +478,7 @@ public partial class Program
                 }
             }
 
-            this.output.WriteLine($"Processing complete. Processed: {processedCount}, Skipped: {skippedCount}, Errors: {errorCount}");
+            this.VerboseWriteLine($"Processing complete. Processed: {processedCount}, Skipped: {skippedCount}, Errors: {errorCount}");
             return errorCount == 0;
         }
         catch (Exception ex)
@@ -543,6 +531,24 @@ public partial class Program
     private void ReportError(string message)
     {
         this.error.WriteLine($"CsWin32 : error : {message}");
+    }
+
+    private void ReportWarning(string message)
+    {
+        this.output.WriteLine($"CsWin32 : warning : {message}");
+    }
+
+    private void InfoWriteLine(string message)
+    {
+        this.output.WriteLine(message);
+    }
+
+    private void VerboseWriteLine(string message)
+    {
+        if (this.verbose)
+        {
+            this.output.WriteLine(message);
+        }
     }
 
     [JsonSourceGenerationOptions(

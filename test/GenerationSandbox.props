@@ -1,7 +1,7 @@
 <Project>
   <PropertyGroup>
     <GeneratorBuildTasksPath>$(RepoRootPath)bin\Microsoft.Windows.CsWin32.BuildTasks\$(Configuration)\netstandard2.0\</GeneratorBuildTasksPath>
-    <CsWin32GeneratorToolPath>$(RepoRootPath)bin\CsWin32Generator\$(Configuration)\net9.0\</CsWin32GeneratorToolPath>
+    <CsWin32GeneratorToolPath>$(RepoRootPath)bin\CsWin32Generator\$(Configuration)\$(CsWin32GeneratorTargetFramework)\</CsWin32GeneratorToolPath>
     <GeneratorBuildTasksTaskFactory>TaskHostFactory</GeneratorBuildTasksTaskFactory>
   </PropertyGroup>
 

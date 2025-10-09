@@ -79,11 +79,6 @@ public class CsWin32CodeGeneratorTask : ToolTask
     public string? OutputPath { get; set; }
 
     /// <summary>
-    /// Gets or sets a value indicating whether unsafe code is allowed.
-    /// </summary>
-    public bool AllowUnsafeBlocks { get; set; } = true;
-
-    /// <summary>
     /// Gets or sets the target framework version (affects available features).
     /// </summary>
     public string? TargetFramework { get; set; }
@@ -201,9 +196,9 @@ public class CsWin32CodeGeneratorTask : ToolTask
             }
         }
 
-        commandLine.AppendSwitchIfNotNull("--allow-unsafe-blocks ", this.AllowUnsafeBlocks.ToString().ToLowerInvariant());
         commandLine.AppendSwitchIfNotNull("--target-framework ", this.TargetFramework);
         commandLine.AppendSwitchIfNotNull("--platform ", this.Platform);
+        commandLine.AppendSwitch("--verbose ");
 
         if (this.References != null && this.References.Length > 0)
         {

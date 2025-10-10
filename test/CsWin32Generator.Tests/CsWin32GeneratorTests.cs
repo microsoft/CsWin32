@@ -145,6 +145,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
     [InlineData("IMFMediaKeys", "cannot convert from 'Windows.Win32.Foundation.BSTR*' to 'object'")]
     [InlineData("ICompositorInterop2", "Needs type from UAP contract that isn't available")]
     [InlineData("SECURITY_NULL_SID_AUTHORITY", "static struct with embedded array incorrectly initialized")]
+    [InlineData("CreateThreadpoolWork", "Friendly overload differs only on return type and 'in' modifiers on attributes")]
     public async Task TestGenerateApi(string api, string purpose, TestOptions options = TestOptions.None)
     {
         this.Logger.WriteLine($"Testing {api} - {purpose}");

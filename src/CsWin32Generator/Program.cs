@@ -273,10 +273,26 @@ public partial class Program
 
         this.VerboseWriteLine($"Created super generator with {generators.Count} generator(s).");
 
+        List<(FileInfo, string[])> nativeMethodTxts = new();
         foreach (var nativeMethodsTxtFile in nativeMethodsTxtFiles)
         {
+            var lines = File.ReadAllLines(nativeMethodsTxtFile.FullName);
+            nativeMethodTxts.Add((nativeMethodsTxtFile, lines));
+
+            foreach (var line in lines)
+            {
+                string trimmedLine = line.Trim();
+                if (trimmedLine.StartsWith("-", StringComparison.Ordinal))
+                {
+                    superGenerator.AddGeneratorExclusion(trimmedLine[1..]);
+                }
+            }
+        }
+
+        foreach (var (nativeMethodsTxtFile, lines) in nativeMethodTxts)
+        {
             // Process NativeMethods.txt file
-            if (!this.ProcessNativeMethodsFile(superGenerator, nativeMethodsTxtFile))
+            if (!this.ProcessNativeMethodsFile(superGenerator, nativeMethodsTxtFile, lines))
             {
                 return Task.FromResult(false);
             }
@@ -401,12 +417,12 @@ public partial class Program
     /// </summary>
     /// <param name="superGenerator">The super generator instance.</param>
     /// <param name="nativeMethodsTxt">Path to the NativeMethods.txt file.</param>
+    /// <param name="lines">Lines from the NativeMethods.txt file.</param>
     /// <returns>True if processing succeeded, false otherwise.</returns>
-    private unsafe bool ProcessNativeMethodsFile(SuperGenerator superGenerator, FileInfo nativeMethodsTxt)
+    private unsafe bool ProcessNativeMethodsFile(SuperGenerator superGenerator, FileInfo nativeMethodsTxt, string[] lines)
     {
         try
         {
-            var lines = File.ReadAllLines(nativeMethodsTxt.FullName);
             this.VerboseWriteLine($"Processing {lines.Length} lines from {nativeMethodsTxt.Name}");
 
             int processedCount = 0;
@@ -416,7 +432,7 @@ public partial class Program
             foreach (string line in lines)
             {
                 string name = line.Trim();
-                if (string.IsNullOrWhiteSpace(name) || name.StartsWith("//", StringComparison.InvariantCulture))
+                if (string.IsNullOrWhiteSpace(name) || name.StartsWith("//", StringComparison.Ordinal) || name.StartsWith("-", StringComparison.Ordinal))
                 {
                     skippedCount++;
                     continue;

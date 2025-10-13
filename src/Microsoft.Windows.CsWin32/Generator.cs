@@ -35,6 +35,9 @@ public partial class Generator : IGenerator, IDisposable
     private readonly StructDeclarationSyntax variableLengthInlineArrayStruct2;
 
     private readonly Dictionary<string, IReadOnlyList<ISymbol>> findTypeSymbolIfAlreadyAvailableCache = new(StringComparer.Ordinal);
+    private readonly List<string> nameExclusions = new();
+    private readonly List<string> fullNameExclusions = new();
+    private readonly List<string> wildCardExclusions = new();
     private readonly MetadataFile.Rental metadataReader;
     private readonly GeneratorOptions options;
     private readonly CSharpCompilation? compilation;
@@ -1202,6 +1205,62 @@ public partial class Generator : IGenerator, IDisposable
         throw new InvalidOperationException("Encountered a reader not associated with an active generator");
     }
 
+    internal void AddGeneratorExclusion(string exclusionLine)
+    {
+        if (exclusionLine.Contains("."))
+        {
+            if (exclusionLine.EndsWith(".*", StringComparison.Ordinal))
+            {
+                this.wildCardExclusions.Add(exclusionLine[..^2]);
+            }
+            else
+            {
+                this.fullNameExclusions.Add(exclusionLine);
+            }
+        }
+        else
+        {
+            this.nameExclusions.Add(exclusionLine);
+        }
+    }
+
+    internal bool IsExcludedName(string fullyQualifiedMetadataName)
+    {
+        // Check the exclusion lists
+        if (this.nameExclusions.Count > 0)
+        {
+            int fullyQualifiedMetadataNameLastDot = fullyQualifiedMetadataName.LastIndexOf(".");
+            string namePortionWithDot = (fullyQualifiedMetadataNameLastDot != -1) ?
+                fullyQualifiedMetadataName[fullyQualifiedMetadataNameLastDot..] :
+                fullyQualifiedMetadataName;
+            foreach (string exclusion in this.nameExclusions)
+            {
+                if (fullyQualifiedMetadataName.EndsWith(exclusion, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+        }
+
+        foreach (string exclusion in this.fullNameExclusions)
+        {
+            if (fullyQualifiedMetadataName == exclusion)
+            {
+                return true;
+            }
+        }
+
+        foreach (string exclusion in this.wildCardExclusions)
+        {
+            if (fullyQualifiedMetadataName.StartsWith(exclusion, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>
     /// Disposes of managed and unmanaged resources.
     /// </summary>
@@ -1271,7 +1330,7 @@ public partial class Generator : IGenerator, IDisposable
     /// But if we have more than one match, the compiler won't be able to resolve our type references.
     /// In such a case, we'll prefer to just declare our own local symbol.
     /// </remarks>
-    private bool IsTypeAlreadyFullyDeclared(string fullyQualifiedMetadataName) => this.FindTypeSymbolsIfAlreadyAvailable(fullyQualifiedMetadataName).Count == 1;
+    private bool IsTypeAlreadyFullyDeclared(string fullyQualifiedMetadataName) => this.FindTypeSymbolsIfAlreadyAvailable(fullyQualifiedMetadataName).Count == 1 || this.IsExcludedName(fullyQualifiedMetadataName);
 
     private ISymbol? FindTypeSymbolIfAlreadyAvailable(string fullyQualifiedMetadataName) => this.FindTypeSymbolsIfAlreadyAvailable(fullyQualifiedMetadataName).FirstOrDefault();
 

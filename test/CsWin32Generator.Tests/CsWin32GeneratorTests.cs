@@ -146,6 +146,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
     [InlineData("ICompositorInterop2", "Needs type from UAP contract that isn't available")]
     [InlineData("SECURITY_NULL_SID_AUTHORITY", "static struct with embedded array incorrectly initialized")]
     [InlineData("CreateThreadpoolWork", "Friendly overload differs only on return type and 'in' modifiers on attributes")]
+    [InlineData("GetModuleFileName", "Should have a friendly Span overload")]
     public async Task TestGenerateApi(string api, string purpose, TestOptions options = TestOptions.None)
     {
         this.Logger.WriteLine($"Testing {api} - {purpose}");
@@ -181,5 +182,34 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
 
         // Act
         await this.InvokeGeneratorAndCompile();
+    }
+
+    [Theory]
+    [InlineData("BSTR", new[] { "BSTR" }, new[] { "BSTR" }, "BSTR")]
+    [InlineData("BSTR_full", new[] { "BSTR" }, new[] { "Windows.Win32.Foundation.BSTR" }, "BSTR")]
+    [InlineData("Column_without_BSTR", new[] { "Column" }, new[] { "BSTR" }, "BSTR")]
+    [InlineData("ChoosePixelFormat_without_PFD", new[] { "ChoosePixelFormat" }, new[] { "Windows.Win32.Graphics.OpenGL.PFD.*" }, "PFD_FLAGS")]
+    [InlineData("GetModuleHandle_without_SafeHandle", new[] { "GetModuleHandle" }, new[] { "FreeLibrarySafeHandle" }, "FreeLibrarySafeHandle")]
+    public async Task TestNativeMethodsExclusion(string scenario, string[] includes, string[] excludes, string checkNotPresent)
+    {
+        this.nativeMethodsJson = "NativeMethods.json";
+
+        // Add includes to nativeMethods
+        foreach (var include in includes)
+        {
+            this.nativeMethods.Add(include);
+        }
+
+        // Add excludes to nativeMethods with "-" prefix
+        foreach (var exclude in excludes)
+        {
+            this.nativeMethods.Add($"-{exclude}");
+        }
+
+        // Invoke the generator and compile
+        await this.InvokeGeneratorAndCompile(TestOptions.GeneratesNothing | TestOptions.DoNotFailOnDiagnostics, $"TestNativeMethodsExclusion_{scenario}");
+
+        // Verify the results based on includes and excludes
+        Assert.Empty(this.FindGeneratedType(checkNotPresent));
     }
 }

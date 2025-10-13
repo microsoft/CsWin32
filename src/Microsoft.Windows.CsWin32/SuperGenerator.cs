@@ -221,6 +221,18 @@ public class SuperGenerator : IGenerator, IDisposable
     }
 
     /// <summary>
+    /// Adds a generator exclusion to all contained generators.
+    /// </summary>
+    /// <param name="exclusion">exclusion line (without the "-").</param>
+    public void AddGeneratorExclusion(string exclusion)
+    {
+        foreach (Generator generator in this.Generators.Values)
+        {
+            generator.AddGeneratorExclusion(exclusion);
+        }
+    }
+
+    /// <summary>
     /// Looks up the <see cref="Generator"/> that owns a referenced type.
     /// </summary>
     /// <param name="typeRef">The generator and type reference from the requesting generator.</param>

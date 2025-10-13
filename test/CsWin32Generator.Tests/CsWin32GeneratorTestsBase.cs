@@ -18,6 +18,7 @@ public enum TestOptions
 {
     None = 0,
     GeneratesNothing = 1,
+    DoNotFailOnDiagnostics = 2,
 }
 
 public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
@@ -56,7 +57,7 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
         // Create a compilation with the generated files
         if (generatedFiles.Length > 0)
         {
-            await this.CompileGeneratedFilesWithSourceGenerators(outputPath, generatedFiles);
+            await this.CompileGeneratedFilesWithSourceGenerators(outputPath, generatedFiles, options);
         }
     }
 
@@ -114,7 +115,7 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
         }
     }
 
-    protected async Task CompileGeneratedFilesWithSourceGenerators(string outputPath, string[] generatedFiles)
+    protected async Task CompileGeneratedFilesWithSourceGenerators(string outputPath, string[] generatedFiles, TestOptions options)
     {
         this.Logger.WriteLine("Compiling generated files with source generators...");
 
@@ -211,13 +212,16 @@ using System.Runtime.CompilerServices;
             this.Logger.WriteLine($"Diagnostic: {diagnostic}");
         }
 
-        Assert.Empty(allDiagnostics);
+        if (!options.HasFlag(TestOptions.DoNotFailOnDiagnostics))
+        {
+            Assert.Empty(allDiagnostics);
 
-        // Optionally, emit the assembly to verify it's valid
-        using var stream = new MemoryStream();
-        var emitResult = this.compilation.Emit(stream);
+            // Optionally, emit the assembly to verify it's valid
+            using var stream = new MemoryStream();
+            var emitResult = this.compilation.Emit(stream);
 
-        Assert.True(emitResult.Success, "Emitting the assembly failed.");
+            Assert.True(emitResult.Success, "Emitting the assembly failed.");
+        }
     }
 
     protected void GetAvailableAnalyzers(out List<IIncrementalGenerator> generators, out List<DiagnosticAnalyzer> diagnosticAnalyzers)

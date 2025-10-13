@@ -233,6 +233,9 @@ public partial class SourceGenerator : ISourceGenerator
         }
 
         using SuperGenerator superGenerator = SuperGenerator.Combine(generators);
+
+        List<(AdditionalText, SourceText)> nativeMethodsTxts = new();
+
         foreach (AdditionalText nativeMethodsTxtFile in nativeMethodsTxtFiles)
         {
             SourceText? nativeMethodsTxt = nativeMethodsTxtFile.GetText(context.CancellationToken);
@@ -243,9 +246,23 @@ public partial class SourceGenerator : ISourceGenerator
 
             foreach (TextLine line in nativeMethodsTxt.Lines)
             {
+                string name = line.ToString();
+                if (name.StartsWith("-", StringComparison.InvariantCulture))
+                {
+                    superGenerator.AddGeneratorExclusion(name.Substring(1).Trim());
+                }
+            }
+
+            nativeMethodsTxts.Add((nativeMethodsTxtFile, nativeMethodsTxt));
+        }
+
+        foreach (var (nativeMethodsTxtFile, nativeMethodsTxt) in nativeMethodsTxts)
+        {
+            foreach (TextLine line in nativeMethodsTxt.Lines)
+            {
                 context.CancellationToken.ThrowIfCancellationRequested();
                 string name = line.ToString();
-                if (string.IsNullOrWhiteSpace(name) || name.StartsWith("//", StringComparison.InvariantCulture))
+                if (string.IsNullOrWhiteSpace(name) || name.StartsWith("//", StringComparison.InvariantCulture) || name.StartsWith("-", StringComparison.InvariantCulture))
                 {
                     continue;
                 }

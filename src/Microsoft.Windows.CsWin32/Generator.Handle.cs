@@ -70,7 +70,7 @@ public partial class Generator
                 return safeHandleType;
             }
 
-            if (this.FindTypeSymbolIfAlreadyAvailable($"{this.Namespace}.{safeHandleType}") is not null)
+            if (this.IsTypeAlreadyFullyDeclared($"{this.Namespace}.{safeHandleType}"))
             {
                 return safeHandleType;
             }

@@ -518,13 +518,15 @@ public partial class Program
 
                 outputFiles.Add(filePath);
 
-                this.VerboseWriteLine($"Generated: {fileName} ({sourceText.Length} characters)");
+                this.InfoWriteLine($"Generated: {fileName}");
                 fileCount++;
             }
 
             var generatedFilesTxt = Path.Combine(outputPath.FullName, "CsWin32GeneratedFiles.txt");
 
             File.WriteAllLines(generatedFilesTxt, outputFiles);
+
+            this.InfoWriteLine($"Generated: {generatedFilesTxt}");
 
             this.VerboseWriteLine($"Successfully generated {fileCount} source files.");
             return true;

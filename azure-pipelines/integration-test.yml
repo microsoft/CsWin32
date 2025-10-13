@@ -54,7 +54,7 @@ jobs:
       solution: $(Pipeline.Workspace)\integration-tests\buildtask-sdk\buildtask-sdk.csproj
       msbuildArguments: /r
     condition: eq(variables.currentSdk, 'true')
-  - pwsh: dotnet build
-    displayName: 🧪 dotnet build
+  - pwsh: dotnet publish
+    displayName: 🧪 dotnet publish
     workingDirectory: $(Pipeline.Workspace)\integration-tests\buildtask-sdk
     condition: eq(variables.currentSdk, 'true')

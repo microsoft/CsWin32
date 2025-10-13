@@ -8,13 +8,11 @@
   <PropertyGroup>
     <CsWin32RunAsBuildTask>true</CsWin32RunAsBuildTask>
     <DisableRuntimeMarshalling>true</DisableRuntimeMarshalling>
-    <WarningsAsErrors>$(WarningsAsErrors);CA1420</WarningsAsErrors>
-    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
   </PropertyGroup>
 
   <!-- For browsing, add the .cs files as None items -->
   <ItemGroup>
-    <None Include="$(IntermediateOutputPath)Generated\CsWin32\*.cs" Link="Generated\%(FileName)%(Extension)" />
-    <None Include="$(IntermediateOutputPath)Generated\CsWin32\*.txt" Link="Generated\%(FileName)%(Extension)" />
+    <None Include="$(IntermediateOutputPath)Generated\CsWin32\*.cs" LinkBase="Generated" />
+    <None Include="$(IntermediateOutputPath)Generated\CsWin32\*.txt" LinkBase="Generated" />
   </ItemGroup>
 </Project>

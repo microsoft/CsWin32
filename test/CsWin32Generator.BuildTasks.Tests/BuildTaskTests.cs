@@ -21,7 +21,13 @@ public class BuildTaskTests
         Mock<IBuildEngine> buildEngine = new();
         buildEngine.Setup(x => x.LogErrorEvent(It.IsAny<BuildErrorEventArgs>())).Callback<BuildErrorEventArgs>(e => this.Logger.WriteLine(e.Message));
 
-        CsWin32CodeGeneratorTask task = new();
+        CsWin32CodeGeneratorTask task = new()
+        {
+            NativeMethodsTxt = [],
+            MetadataPaths = [],
+            OutputPath = "OutputDir",
+            GeneratorToolPath = "CsWin32Generator.dll",
+        };
         task.BuildEngine = buildEngine.Object;
 
         // This test verifies validation behavior - without required parameters, it should fail
@@ -35,9 +41,9 @@ public class BuildTaskTests
     {
         // Arrange
         var task = CreateTaskWithMockBuildEngine();
-        task.NativeMethodsTxt = "TestContent\\NativeMethods.txt";
+        task.NativeMethodsTxt = ["TestContent\\NativeMethods.txt"];
         task.OutputPath = "Generated";
-        task.MetadataPaths = "metadata1.winmd;metadata2.winmd";
+        task.MetadataPaths = ["metadata1.winmd", "metadata2.winmd"];
 
         // Act
         string commandLine = task.GetCommandLineArguments();
@@ -58,8 +64,8 @@ public class BuildTaskTests
         var task = CreateTaskWithMockBuildEngine();
         SetupRequiredParameters(task);
         task.NativeMethodsJson = "TestContent\\NativeMethods.json";
-        task.DocPaths = "doc1.xml;doc2.xml";
-        task.AppLocalAllowedLibraries = "lib1.dll;lib2.dll";
+        task.DocPaths = ["doc1.xml", "doc2.xml"];
+        task.AppLocalAllowedLibraries = ["lib1.dll", "lib2.dll"];
         task.TargetFramework = "net6.0";
         task.Platform = "x64";
 
@@ -126,8 +132,6 @@ public class BuildTaskTests
         var task = CreateTaskWithMockBuildEngine();
         SetupRequiredParameters(task);
         task.NativeMethodsJson = null;
-        task.DocPaths = string.Empty;
-        task.AppLocalAllowedLibraries = string.Empty;
         task.TargetFramework = null;
 
         // Act
@@ -216,8 +220,8 @@ public class BuildTaskTests
         // Arrange
         var task = CreateTaskWithMockBuildEngine();
         SetupRequiredParameters(task);
-        task.MetadataPaths = "single-metadata.winmd";
-        task.DocPaths = "single-doc.xml";
+        task.MetadataPaths = ["single-metadata.winmd"];
+        task.DocPaths = ["single-doc.xml"];
 
         // Act
         string commandLine = task.GetCommandLineArguments();
@@ -235,8 +239,8 @@ public class BuildTaskTests
         // Arrange
         var task = CreateTaskWithMockBuildEngine();
         SetupRequiredParameters(task);
-        task.MetadataPaths = " metadata1.winmd ; metadata2.winmd ";
-        task.DocPaths = " doc1.xml ; doc2.xml ";
+        task.MetadataPaths = [" metadata1.winmd ", " metadata2.winmd "];
+        task.DocPaths = [" doc1.xml ", " doc2.xml "];
 
         // Act
         string commandLine = task.GetCommandLineArguments();
@@ -257,12 +261,12 @@ public class BuildTaskTests
     {
         // Arrange
         var task = CreateTaskWithMockBuildEngine();
-        task.NativeMethodsTxt = "Methods.txt";
+        task.NativeMethodsTxt = ["Methods.txt"];
         task.NativeMethodsJson = "Methods.json";
         task.OutputPath = "Output";
-        task.MetadataPaths = "file1.winmd;file2.winmd";
-        task.DocPaths = "doc1.xml;doc2.xml";
-        task.AppLocalAllowedLibraries = "lib1.dll;lib2.dll";
+        task.MetadataPaths = ["file1.winmd", "file2.winmd"];
+        task.DocPaths = ["doc1.xml", "doc2.xml"];
+        task.AppLocalAllowedLibraries = ["lib1.dll", "lib2.dll"];
         task.TargetFramework = "net8.0";
         task.Platform = "x64";
         task.References = new ITaskItem[]
@@ -292,13 +296,16 @@ public class BuildTaskTests
         {
             BuildEngine = buildEngine.Object,
             GeneratorToolPath = "CsWin32Generator.dll",
+            NativeMethodsTxt = [],
+            MetadataPaths = [],
+            OutputPath = "OutputDir",
         };
     }
 
     private static void SetupRequiredParameters(CsWin32CodeGeneratorTask task)
     {
-        task.NativeMethodsTxt = "TestContent\\NativeMethods.txt";
+        task.NativeMethodsTxt = ["TestContent\\NativeMethods.txt"];
         task.OutputPath = "Generated";
-        task.MetadataPaths = "metadata.winmd";
+        task.MetadataPaths = ["metadata.winmd"];
     }
 }

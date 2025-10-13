@@ -28,6 +28,7 @@ public interface IToolExecutor
 public class CsWin32CodeGeneratorTask : ToolTask
 {
     private IToolExecutor? toolExecutor;
+    private List<ITaskItem> generatedFiles = new();
 
     /// <summary>
     /// Initializes a new instance of the <see cref="CsWin32CodeGeneratorTask"/> class.
@@ -49,7 +50,7 @@ public class CsWin32CodeGeneratorTask : ToolTask
     /// Gets or sets the path to the NativeMethods.txt file containing API names to generate.
     /// </summary>
     [Required]
-    public string? NativeMethodsTxt { get; set; }
+    public required string[] NativeMethodsTxt { get; set; }
 
     /// <summary>
     /// Gets or sets the path to the NativeMethods.json file containing generation options.
@@ -60,17 +61,17 @@ public class CsWin32CodeGeneratorTask : ToolTask
     /// Gets or sets the semicolon-separated paths to Windows metadata files (.winmd).
     /// </summary>
     [Required]
-    public string? MetadataPaths { get; set; }
+    public required string[] MetadataPaths { get; set; }
 
     /// <summary>
     /// Gets or sets the semicolon-separated paths to documentation files.
     /// </summary>
-    public string? DocPaths { get; set; }
+    public string[]? DocPaths { get; set; }
 
     /// <summary>
     /// Gets or sets the semicolon-separated paths to app-local allowed libraries.
     /// </summary>
-    public string? AppLocalAllowedLibraries { get; set; }
+    public string[]? AppLocalAllowedLibraries { get; set; }
 
     /// <summary>
     /// Gets or sets the output directory where generated files will be written.
@@ -94,16 +95,16 @@ public class CsWin32CodeGeneratorTask : ToolTask
     public ITaskItem[]? References { get; set; }
 
     /// <summary>
-    /// Gets or sets the generated source files.
+    /// Gets the generated source files.
     /// </summary>
     [Output]
-    public ITaskItem[]? GeneratedFiles { get; set; }
+    public ITaskItem[] GeneratedFiles => this.generatedFiles.ToArray();
 
     /// <summary>
     /// Gets or sets the path to the generator tool.
     /// </summary>
     [Required]
-    public string GeneratorToolPath { get; set; } = string.Empty;
+    public required string GeneratorToolPath { get; set; }
 
     /// <summary>
     /// Gets a value indicating whether the tool execution succeeded.
@@ -113,19 +114,6 @@ public class CsWin32CodeGeneratorTask : ToolTask
 
     /// <inheritdoc />
     protected override string ToolName => "dotnet";
-
-    /// <inheritdoc/>
-    public override bool Execute()
-    {
-        bool baseSuccess = base.Execute();
-        if (baseSuccess && !string.IsNullOrEmpty(this.OutputPath))
-        {
-            this.PopulateGeneratedFiles();
-        }
-
-        this.Succeeded = baseSuccess;
-        return baseSuccess;
-    }
 
     /// <summary>
     /// Exposes the generated command line arguments (for tests).
@@ -151,48 +139,41 @@ public class CsWin32CodeGeneratorTask : ToolTask
         var commandLine = new CommandLineBuilder();
 
         // Required parameters
-        commandLine.AppendSwitchIfNotNull("--native-methods-txt ", this.NativeMethodsTxt);
+        commandLine.AppendSwitch("--native-methods-txt ");
+        foreach (string nativeMethodsTxt in this.NativeMethodsTxt)
+        {
+            commandLine.AppendFileNameIfNotNull(nativeMethodsTxt);
+        }
+
         commandLine.AppendSwitchIfNotNull("--output-path ", this.OutputPath);
 
-        if (!string.IsNullOrEmpty(this.MetadataPaths))
+        if (this.MetadataPaths?.Length > 0)
         {
-            string[] paths = SplitPaths(this.MetadataPaths!);
-            if (paths.Length > 0)
+            commandLine.AppendSwitch("--metadata-paths");
+            foreach (string path in this.MetadataPaths)
             {
-                commandLine.AppendSwitch("--metadata-paths");
-                foreach (string path in paths)
-                {
-                    commandLine.AppendFileNameIfNotNull(path.Trim());
-                }
+                commandLine.AppendFileNameIfNotNull(path.Trim());
             }
         }
 
         // Optional parameters
         commandLine.AppendSwitchIfNotNull("--native-methods-json ", this.NativeMethodsJson);
 
-        if (!string.IsNullOrEmpty(this.DocPaths))
+        if (this.DocPaths?.Length > 0)
         {
-            string[] paths = SplitPaths(this.DocPaths!);
-            if (paths.Length > 0)
+            commandLine.AppendSwitch("--doc-paths");
+            foreach (string path in this.DocPaths)
             {
-                commandLine.AppendSwitch("--doc-paths");
-                foreach (string path in paths)
-                {
-                    commandLine.AppendFileNameIfNotNull(path.Trim());
-                }
+                commandLine.AppendFileNameIfNotNull(path.Trim());
             }
         }
 
-        if (!string.IsNullOrEmpty(this.AppLocalAllowedLibraries))
+        if (this.AppLocalAllowedLibraries?.Length > 0)
         {
-            string[] paths = SplitPaths(this.AppLocalAllowedLibraries!);
-            if (paths.Length > 0)
+            commandLine.AppendSwitch("--app-local-allowed-libraries");
+            foreach (string path in this.AppLocalAllowedLibraries)
             {
-                commandLine.AppendSwitch("--app-local-allowed-libraries");
-                foreach (string path in paths)
-                {
-                    commandLine.AppendFileNameIfNotNull(path.Trim());
-                }
+                commandLine.AppendFileNameIfNotNull(path.Trim());
             }
         }
 
@@ -200,7 +181,7 @@ public class CsWin32CodeGeneratorTask : ToolTask
         commandLine.AppendSwitchIfNotNull("--platform ", this.Platform);
         commandLine.AppendSwitch("--verbose ");
 
-        if (this.References != null && this.References.Length > 0)
+        if (this.References?.Length > 0)
         {
             commandLine.AppendSwitch("--references");
             foreach (ITaskItem reference in this.References)
@@ -215,21 +196,21 @@ public class CsWin32CodeGeneratorTask : ToolTask
     /// <inheritdoc />
     protected override bool ValidateParameters()
     {
-        if (string.IsNullOrEmpty(this.NativeMethodsTxt))
+        if (this.NativeMethodsTxt.Length == 0)
         {
-            this.Log.LogError("NativeMethodsTxt property must be specified.");
+            this.Log.LogError($"{nameof(this.NativeMethodsTxt)} property must be specified.");
             return false;
         }
 
-        if (string.IsNullOrEmpty(this.MetadataPaths))
+        if (this.MetadataPaths.Length == 0)
         {
-            this.Log.LogError("MetadataPaths property must be specified.");
+            this.Log.LogError($"{nameof(this.MetadataPaths)} property must be specified.");
             return false;
         }
 
         if (string.IsNullOrEmpty(this.OutputPath))
         {
-            this.Log.LogError("OutputPath property must be specified.");
+            this.Log.LogError($"{nameof(this.OutputPath)} property must be specified.");
             return false;
         }
 
@@ -247,22 +228,18 @@ public class CsWin32CodeGeneratorTask : ToolTask
         return base.ExecuteTool(pathToTool, responseFileCommands, commandLineCommands);
     }
 
-    private static string[] SplitPaths(string paths) => paths.Split(new char[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
-
-    private void PopulateGeneratedFiles()
+    /// <inheritdoc/>
+    protected override void LogEventsFromTextOutput(string singleLine, MessageImportance messageImportance)
     {
-        var generatedFiles = new List<ITaskItem>();
-        if (Directory.Exists(this.OutputPath))
-        {
-            foreach (string filePath in Directory.GetFiles(this.OutputPath, "*.g.cs", SearchOption.TopDirectoryOnly))
-            {
-                var taskItem = new TaskItem(filePath);
-                taskItem.SetMetadata("Generator", "CsWin32");
-                generatedFiles.Add(taskItem);
-            }
-        }
+        base.LogEventsFromTextOutput(singleLine, messageImportance);
 
-        this.GeneratedFiles = generatedFiles.ToArray();
-        this.Log.LogMessage(MessageImportance.Normal, $"Successfully generated {this.GeneratedFiles.Length} source files.");
+        // If this output is telling us about a generated file, record it.
+        if (singleLine.StartsWith("Generated: "))
+        {
+            string generatedFile = singleLine.Replace("Generated: ", string.Empty).Trim();
+            TaskItem generatedFileTaskItem = new(generatedFile);
+            generatedFileTaskItem.SetMetadata("Generator", "CsWin32");
+            this.generatedFiles.Add(generatedFileTaskItem);
+        }
     }
 }

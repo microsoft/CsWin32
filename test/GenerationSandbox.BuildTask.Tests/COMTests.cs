@@ -23,42 +23,41 @@ public partial class COMTests
     [Fact]
     public async Task CanInteropWithICompositorInterop()
     {
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
+
+        var controller = DispatcherQueueController.CreateOnDedicatedThread();
+        TaskCompletionSource tcs = new();
+        controller.DispatcherQueue.TryEnqueue(() =>
         {
-            var controller = DispatcherQueueController.CreateOnDedicatedThread();
-            TaskCompletionSource tcs = new();
-            controller.DispatcherQueue.TryEnqueue(() =>
+            try
             {
-                try
+                unsafe // Optional parameters use unsafe
                 {
-                    unsafe // Optional parameters use unsafe
-                    {
-                        Compositor compositor = new();
+                    Compositor compositor = new();
 
-                        PInvoke.D3D11CreateDevice(
-                            null,
-                            D3D_DRIVER_TYPE.D3D_DRIVER_TYPE_HARDWARE,
-                            HINSTANCE.Null,
-                            D3D11_CREATE_DEVICE_FLAG.D3D11_CREATE_DEVICE_BGRA_SUPPORT,
-                            null,
-                            0,
-                            PInvoke.D3D11_SDK_VERSION,
-                            out var device,
-                            null,
-                            out var deviceContext);
+                    PInvoke.D3D11CreateDevice(
+                        null,
+                        D3D_DRIVER_TYPE.D3D_DRIVER_TYPE_HARDWARE,
+                        HINSTANCE.Null,
+                        D3D11_CREATE_DEVICE_FLAG.D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+                        null,
+                        0,
+                        PInvoke.D3D11_SDK_VERSION,
+                        out var device,
+                        null,
+                        out var deviceContext);
 
-                        var interop = (ICompositorInterop)(object)compositor;
-                        interop.CreateGraphicsDevice(device, out var graphicsDevice);
-                        tcs.SetResult();
-                    }
+                    var interop = (ICompositorInterop)(object)compositor;
+                    interop.CreateGraphicsDevice(device, out var graphicsDevice);
+                    tcs.SetResult();
                 }
-                catch (Exception ex)
-                {
-                    tcs.SetException(ex);
-                }
-            });
+            }
+            catch (Exception ex)
+            {
+                tcs.SetException(ex);
+            }
+        });
 
-            await tcs.Task;
-        }
+        await tcs.Task;
     }
 }

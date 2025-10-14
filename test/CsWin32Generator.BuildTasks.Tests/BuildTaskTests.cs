@@ -41,7 +41,7 @@ public class BuildTaskTests
     {
         // Arrange
         var task = CreateTaskWithMockBuildEngine();
-        task.NativeMethodsTxt = ["TestContent\\NativeMethods.txt"];
+        task.NativeMethodsTxt = ["NativeMethods.txt"];
         task.OutputPath = "Generated";
         task.MetadataPaths = ["metadata1.winmd", "metadata2.winmd"];
 
@@ -50,7 +50,7 @@ public class BuildTaskTests
         this.Logger.WriteLine($"Command line: {commandLine}");
 
         // Assert
-        Assert.Contains("--native-methods-txt TestContent\\NativeMethods.txt", commandLine);
+        Assert.Contains("--native-methods-txt NativeMethods.txt", commandLine);
         Assert.Contains("--output-path Generated", commandLine);
         Assert.Contains("--metadata-paths", commandLine);
         Assert.Contains("metadata1.winmd", commandLine);

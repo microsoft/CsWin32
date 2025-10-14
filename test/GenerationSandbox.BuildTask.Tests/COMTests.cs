@@ -18,6 +18,7 @@ using Windows.Win32.Graphics.Direct3D11;
 using Windows.Win32.System.Com;
 using Windows.Win32.System.WinRT.Composition;
 
+[Trait("WindowsOnly", "true")]
 public partial class COMTests
 {
     [Fact]

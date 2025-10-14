@@ -220,10 +220,7 @@ public class SuperGenerator : IGenerator, IDisposable
         }
     }
 
-    /// <summary>
-    /// Adds a generator exclusion to all contained generators.
-    /// </summary>
-    /// <param name="exclusion">exclusion line (without the "-").</param>
+    /// <inheritdoc/>
     public void AddGeneratorExclusion(string exclusion)
     {
         foreach (Generator generator in this.Generators.Values)

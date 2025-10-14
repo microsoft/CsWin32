@@ -892,6 +892,26 @@ public partial class Generator : IGenerator, IDisposable
         return normalizedResults;
     }
 
+    /// <inheritdoc/>
+    public void AddGeneratorExclusion(string exclusionLine)
+    {
+        if (exclusionLine.Contains("."))
+        {
+            if (exclusionLine.EndsWith(".*", StringComparison.Ordinal))
+            {
+                this.wildCardExclusions.Add(exclusionLine[..^2]);
+            }
+            else
+            {
+                this.fullNameExclusions.Add(exclusionLine);
+            }
+        }
+        else
+        {
+            this.nameExclusions.Add(exclusionLine);
+        }
+    }
+
     internal static ImmutableDictionary<string, string> GetBannedAPIs(GeneratorOptions options) => options.AllowMarshaling ? BannedAPIsWithMarshaling : BannedAPIsWithoutMarshaling;
 
     /// <summary>
@@ -1203,25 +1223,6 @@ public partial class Generator : IGenerator, IDisposable
         }
 
         throw new InvalidOperationException("Encountered a reader not associated with an active generator");
-    }
-
-    internal void AddGeneratorExclusion(string exclusionLine)
-    {
-        if (exclusionLine.Contains("."))
-        {
-            if (exclusionLine.EndsWith(".*", StringComparison.Ordinal))
-            {
-                this.wildCardExclusions.Add(exclusionLine[..^2]);
-            }
-            else
-            {
-                this.fullNameExclusions.Add(exclusionLine);
-            }
-        }
-        else
-        {
-            this.nameExclusions.Add(exclusionLine);
-        }
     }
 
     internal bool IsExcludedName(string fullyQualifiedMetadataName)

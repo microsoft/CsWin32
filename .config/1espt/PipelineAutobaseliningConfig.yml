@@ -48,3 +48,5 @@ pipelines:
           lastModifiedDate: 2025-01-18
         armory:
           lastModifiedDate: 2025-01-18
+        accessibilityinsights:
+          lastModifiedDate: 2025-10-14

@@ -31,7 +31,7 @@
           "default": false
         },
         "useComSourceGenerators": {
-          "description": "Use COM source generators to support COM marshalling code. Only has an effect if MSBuild property <CsWin32RunAsBuildTask>true</CsWin32RunAsBuildTask>.",
+          "description": "Use COM source generators to support COM marshalling code. Only has an effect with MSBuild property <CsWin32RunAsBuildTask>true</CsWin32RunAsBuildTask>.",
           "type": "boolean",
           "default": false
         }

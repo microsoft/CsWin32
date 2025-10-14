@@ -13,7 +13,7 @@
       <NuspecProperties>
         $(NuspecProperties);
         Version=$(Version);
-        BaseOutputPath=$(OutputPath)netstandard2.0\;
+        BaseOutputPath=$(OutputPath);
         MetadataVersion=$(MetadataVersion);
         WDKMetadataVersion=$(WDKMetadataVersion);
         ApiDocsVersion=$(ApiDocsVersion);

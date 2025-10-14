@@ -90,9 +90,10 @@ public record GeneratorOptions
 
         /// <summary>
         /// Gets or sets a value indicating whether to emit code that relies on [GeneratedComInterface] and [GeneratedComClass].
+        /// Only takes effect if MSBuild property '&lt;CsWin32RunAsBuildTask&gt;true&lt;/CsWin32RunAsBuildTask&gt;' is set.
         /// </summary>
-        /// <value>The default value is <see langword="false"/>.</value>
-        public bool? UseComSourceGenerators { get; set; } = null;
+        /// <value>The default value is <see langword="null"/>.</value>
+        public bool? UseComSourceGenerators { get; set; }
     }
 
     /// <summary>

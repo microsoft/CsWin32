@@ -27,7 +27,7 @@ public partial class COMTests
         Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
 
         var controller = DispatcherQueueController.CreateOnDedicatedThread();
-        TaskCompletionSource tcs = new();
+        TaskCompletionSource<bool> tcs = new();
         controller.DispatcherQueue.TryEnqueue(() =>
         {
             try
@@ -50,14 +50,14 @@ public partial class COMTests
 
                     var interop = (ICompositorInterop)(object)compositor;
                     interop.CreateGraphicsDevice(device, out var graphicsDevice);
-                    tcs.SetResult();
+                    tcs.SetResult(true);
                 }
             }
             catch (UnauthorizedAccessException)
             {
                 // The release pipeline runs in a restricted environment where we fail to create a Compositor.
                 // Since this runs fine on local dev machines, we can just suppress this failure.
-                tcs.SetResult();
+                tcs.SetResult(false);
             }
             catch (Exception ex)
             {
@@ -65,6 +65,9 @@ public partial class COMTests
             }
         });
 
-        await tcs.Task;
+        if (!await tcs.Task)
+        {
+            Assert.Skip("Skipping due to UnauthorizedAccessException.");
+        }
     }
 }

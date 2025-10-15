@@ -42,6 +42,8 @@
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
     <IncludeSymbols Condition=" '$(DebugType)' != 'embedded' ">true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+
+    <CsWin32GeneratorTargetFramework>net8.0</CsWin32GeneratorTargetFramework>
   </PropertyGroup>
 
   <PropertyGroup>

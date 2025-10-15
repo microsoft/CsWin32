@@ -1030,4 +1030,16 @@ class Program
         QualifiedNameSyntax seekParamType = Assert.IsType<QualifiedNameSyntax>(seekMethod.ParameterList.Parameters[1].Type);
         Assert.Equal(nameof(SeekOrigin), seekParamType.Right.Identifier.ValueText);
     }
+
+    [Fact]
+    public void TestExcludingBSTRFromISensorGeneration()
+    {
+        this.generator = this.CreateGenerator();
+        this.generator.AddGeneratorExclusion("BSTR");
+
+        // Don't call GenerateApi because we will encounter diagnostics
+        Assert.True(this.generator.TryGenerate("ISensor", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        Assert.Empty(this.FindGeneratedType("BSTR"));
+    }
 }

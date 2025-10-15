@@ -9,6 +9,14 @@ internal record ArrayTypeHandleInfo(TypeHandleInfo ElementType, ArrayShape Shape
 
     internal override TypeSyntaxAndMarshaling ToTypeSyntax(TypeSyntaxSettings inputs, Generator.GeneratingElement forElement, QualifiedCustomAttributeHandleCollection? customAttributes, ParameterAttributes parameterAttributes)
     {
+        bool useSourceGenerators = inputs.Generator?.UseSourceGenerators == true;
+
+        // If this is a field, we need to emit as blittable if using source generators.
+        if (useSourceGenerators && inputs.IsField)
+        {
+            inputs = inputs with { AllowMarshaling = false };
+        }
+
         TypeSyntaxAndMarshaling element = this.ElementType.ToTypeSyntax(inputs, forElement, customAttributes);
         if (inputs.AllowMarshaling || inputs.IsField)
         {

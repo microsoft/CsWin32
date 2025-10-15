@@ -12,8 +12,10 @@ namespace Microsoft.Windows.CsWin32;
 /// <summary>
 /// Generates the source code for the p/invoke methods and supporting types into some C# project.
 /// </summary>
+#pragma warning disable RS1041
 [Generator]
-public class SourceGenerator : ISourceGenerator
+#pragma warning restore RS1041
+public partial class SourceGenerator : ISourceGenerator
 {
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
     public static readonly DiagnosticDescriptor InternalError = new DiagnosticDescriptor(
@@ -175,6 +177,12 @@ public class SourceGenerator : ISourceGenerator
             return;
         }
 
+        if (GetRunAsBuildTaskProperty(context))
+        {
+            // When running as a build task, we don't want to generate anything here.
+            return;
+        }
+
         GeneratorOptions? options;
         AdditionalText? nativeMethodsJsonFile = context.AdditionalFiles
             .FirstOrDefault(af => string.Equals(Path.GetFileName(af.Path), NativeMethodsJsonAdditionalFileName, StringComparison.OrdinalIgnoreCase));
@@ -225,6 +233,9 @@ public class SourceGenerator : ISourceGenerator
         }
 
         using SuperGenerator superGenerator = SuperGenerator.Combine(generators);
+
+        List<(AdditionalText, SourceText)> nativeMethodsTxts = new();
+
         foreach (AdditionalText nativeMethodsTxtFile in nativeMethodsTxtFiles)
         {
             SourceText? nativeMethodsTxt = nativeMethodsTxtFile.GetText(context.CancellationToken);
@@ -235,9 +246,23 @@ public class SourceGenerator : ISourceGenerator
 
             foreach (TextLine line in nativeMethodsTxt.Lines)
             {
+                string name = line.ToString();
+                if (name.StartsWith("-", StringComparison.InvariantCulture))
+                {
+                    superGenerator.AddGeneratorExclusion(name.Substring(1).Trim());
+                }
+            }
+
+            nativeMethodsTxts.Add((nativeMethodsTxtFile, nativeMethodsTxt));
+        }
+
+        foreach (var (nativeMethodsTxtFile, nativeMethodsTxt) in nativeMethodsTxts)
+        {
+            foreach (TextLine line in nativeMethodsTxt.Lines)
+            {
                 context.CancellationToken.ThrowIfCancellationRequested();
                 string name = line.ToString();
-                if (string.IsNullOrWhiteSpace(name) || name.StartsWith("//", StringComparison.InvariantCulture))
+                if (string.IsNullOrWhiteSpace(name) || name.StartsWith("//", StringComparison.InvariantCulture) || name.StartsWith("-", StringComparison.InvariantCulture))
                 {
                     continue;
                 }
@@ -403,7 +428,7 @@ public class SourceGenerator : ISourceGenerator
             return Array.Empty<string>();
         }
 
-        return delimitedAppLocalLibraryPaths.Split('|').Select(Path.GetFileName);
+        return delimitedAppLocalLibraryPaths?.Split('|').Select(x => Path.GetFileName(x)!) ?? Array.Empty<string>();
     }
 
     private static Docs? ParseDocs(GeneratorExecutionContext context)
@@ -433,5 +458,16 @@ public class SourceGenerator : ISourceGenerator
         }
 
         return docs;
+    }
+
+    private static bool GetRunAsBuildTaskProperty(GeneratorExecutionContext context)
+    {
+        if (!context.AnalyzerConfigOptions.GlobalOptions.TryGetValue("build_property.CsWin32RunAsBuildTask", out string? runAsBuildTask) ||
+            string.IsNullOrWhiteSpace(runAsBuildTask))
+        {
+            return false;
+        }
+
+        return bool.TryParse(runAsBuildTask, out bool result) && result;
     }
 }

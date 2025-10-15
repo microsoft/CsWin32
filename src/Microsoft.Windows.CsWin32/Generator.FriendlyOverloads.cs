@@ -76,7 +76,9 @@ public partial class Generator
         var leadingStatements = new List<StatementSyntax>();
         var trailingStatements = new List<StatementSyntax>();
         var finallyStatements = new List<StatementSyntax>();
-        bool signatureChanged = false;
+        bool signatureChanged = false; // Did the signature change with fundamentally different types?
+        bool minorSignatureChange = false; // Did the signature change but not enough that overload resolution would be confused?
+
         foreach (ParameterHandle paramHandle in methodDefinition.GetParameters())
         {
             Parameter param = this.Reader.GetParameter(paramHandle);
@@ -590,7 +592,7 @@ public partial class Generator
             {
                 // The extern method couldn't have exposed the parameter as a pointer because the type is managed.
                 // It would have exposed as an `in` modifier, and non-optional. But we can expose as optional anyway.
-                signatureChanged = true;
+                minorSignatureChange = true;
                 IdentifierNameSyntax localName = IdentifierName(origName + "Local");
                 parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
                     .WithType(NullableType(externParam.Type).WithTrailingTrivia(TriviaList(Space)))
@@ -677,7 +679,7 @@ public partial class Generator
             ? this.RequestSafeHandle(returnReleaseMethod) : null;
         SyntaxToken friendlyMethodName = externMethodDeclaration.Identifier;
 
-        if (returnSafeHandleType is object && !signatureChanged)
+        if ((returnSafeHandleType is object || minorSignatureChange) && !signatureChanged)
         {
             // The parameter types are all the same, but we need a friendly overload with a different return type.
             // Our only choice is to rename the friendly overload.

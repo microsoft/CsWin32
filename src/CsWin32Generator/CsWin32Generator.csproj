@@ -1,0 +1,28 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>$(CsWin32GeneratorTargetFramework)</TargetFramework>
+    <OutputType>Exe</OutputType>
+
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Microsoft.Windows.CsWin32\Microsoft.Windows.CsWin32.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+  <!-- The test projects are using CsWin32Generator.dll and we transitively have a reference to Microsoft.Windows.CsWin32.dll but only the ref dll.
+      If you make a logic change to Microsoft.Windows.CsWin32.dll the ref dll doesn't change but the lib dll does change and then our output
+      directory doesn't get the updated lib dll. This makes sure that MSBuild gets invoked to copy this to the output dir in that case. -->
+    <UpToDateCheckInput Include="$(BaseOutputPath)..\Microsoft.Windows.CsWin32\$(Configuration)\netstandard2.0\Microsoft.Windows.CsWin32.dll" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.Common" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+    <PackageReference Include="System.CommandLine" />
+    <PackageReference Include="System.Text.Json" />
+  </ItemGroup>
+
+</Project>

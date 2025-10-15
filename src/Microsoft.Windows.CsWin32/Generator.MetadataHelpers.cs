@@ -137,6 +137,13 @@ public partial class Generator
             return false;
         }
 
+        // [GeneratedComInterface] doesn't handle overloading on parameters https://github.com/dotnet/runtime/issues/101242.
+        // Currently only this interface is non-conformant so not going to the trouble of implementing the full checks on methods.
+        if (this.useSourceGenerators && this.Reader.StringComparer.Equals(interfaceTypeDef.Name, "IDWriteGdiInterop1"))
+        {
+            return true;
+        }
+
         return this.IsNonCOMInterface(this.Reader.GetTypeDefinition(baseIFaceTypeDefHandle));
     }
 
@@ -390,6 +397,12 @@ public partial class Generator
                 if ((typeDef.Attributes & TypeAttributes.Interface) == TypeAttributes.Interface)
                 {
                     result = this.options.AllowMarshaling && !this.IsNonCOMInterface(typeDef);
+                    if (this.useSourceGenerators && this.FindGuidFromAttribute(typeDef) is null)
+                    {
+                        // When using ComSourceGenerators, interfaces must have a GUID. If they don't, they must always be unmanaged.
+                        result = false;
+                    }
+
                     this.managedTypesCheck.Add(typeDefinitionHandle, result);
                     return result;
                 }

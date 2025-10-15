@@ -58,6 +58,7 @@ Each line may consist of *one* of the following:
 * The name of a struct, enum, constant or interface to generate. This *may* be qualified with a namespace but is only recommended in cases of ambiguity, which CsWin32 will prompt where appropriate.
 * A prefix shared by many constants, followed by `*`, to generate all constants that share that prefix (e.g. `ALG_SID_MD*`).
 * A comment (i.e. any line starting with `//`) or white space line, which will be ignored.
+* A prefix `-` to indicate a name that should not be generated. The rest of the line can be a name (e.g. `BSTR`), fully namespaced name (e.g. `Windows.Win32.Foundation.BSTR`), or name ending in wildcard (e.g. `Windows.Win32.Foundation..*`)
 
 When generating any type or member, all supporting types will also be generated.
 

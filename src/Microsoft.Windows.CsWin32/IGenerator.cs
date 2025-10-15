@@ -79,4 +79,10 @@ public interface IGenerator : IDisposable
     /// <param name="name">The user-supplied name.</param>
     /// <returns>A sequence of API names.</returns>
     IReadOnlyList<string> GetSuggestions(string name);
+
+    /// <summary>
+    /// Tells the generator to exclude the specified API from generation.
+    /// </summary>
+    /// <param name="exclusion">exclusion line (without the "-").</param>
+    void AddGeneratorExclusion(string exclusion);
 }

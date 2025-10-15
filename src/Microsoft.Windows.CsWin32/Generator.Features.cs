@@ -15,6 +15,9 @@ public partial class Generator
     private readonly bool canUseUnmanagedCallersOnlyAttribute;
     private readonly bool canUseSetLastPInvokeError;
     private readonly bool canUseIPropertyValue;
+    private readonly bool canDeclareProperties;
+    private readonly bool useSourceGenerators;
+    private readonly bool canMarshalNativeDelegateParams;
     private readonly bool overloadResolutionPriorityAttributePredefined;
     private readonly bool unscopedRefAttributePredefined;
     private readonly INamedTypeSymbol? runtimeFeatureClass;
@@ -22,6 +25,8 @@ public partial class Generator
     private readonly bool generateSupportedOSPlatformAttributesOnInterfaces; // only supported on net6.0 (https://github.com/dotnet/runtime/pull/48838)
     private readonly bool generateDefaultDllImportSearchPathsAttribute;
     private readonly Dictionary<Feature, bool> supportedFeatures = new();
+
+    internal bool UseSourceGenerators => this.useSourceGenerators;
 
     internal bool CanUseIPropertyValue => this.canUseIPropertyValue;
 
@@ -95,6 +100,29 @@ public partial class Generator
                 .AddMembers(attrDecl);
 
             this.volatileCode.AddSpecialType(name, nsDeclaration, topLevel: true);
+        });
+    }
+
+    private void DeclareCharSetWorkaroundIfNecessary()
+    {
+        // Always generate these in the context of the most common metadata so we don't emit it more than once.
+        if (!this.IsWin32Sdk)
+        {
+            this.MainGenerator.volatileCode.GenerationTransaction(() => this.MainGenerator.DeclareCharSetWorkaroundIfNecessary());
+            return;
+        }
+
+        const string name = "CharSet_Workaround";
+        this.volatileCode.GenerateSpecialType(name, delegate
+        {
+            // This is a polyfill attribute, so never promote visibility to public.
+            if (!TryFetchTemplate(name, this, out CompilationUnitSyntax? compilationUnit))
+            {
+                throw new GenerationFailedException($"Failed to retrieve template: {name}");
+            }
+
+            MemberDeclarationSyntax templateNamespace = compilationUnit.Members.Single();
+            this.volatileCode.AddSpecialType(name, templateNamespace, topLevel: true);
         });
     }
 

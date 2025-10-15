@@ -1,0 +1,5 @@
+{
+  "$schema": "..\\..\\..\\src\\Microsoft.Windows.CsWin32\\settings.schema.json",
+  "allowMarshaling": true,
+  "useSafeHandles": true
+}

@@ -1,5 +1,6 @@
 <Project>
   <Import Project="$(RepoRootPath)src\Microsoft.Windows.CsWin32\build\Microsoft.Windows.CsWin32.props" />
+  <Import Project="$(RepoRootPath)src\Microsoft.Windows.CsWin32\build\Microsoft.Windows.CsWin32.targets" />
 
   <ItemGroup>
     <ProjectReference Include="$(RepoRootPath)src\Microsoft.Windows.CsWin32\Microsoft.Windows.CsWin32.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />

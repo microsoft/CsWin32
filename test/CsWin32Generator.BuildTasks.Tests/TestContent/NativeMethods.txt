@@ -1,0 +1,4 @@
+CreateFile
+ReadFile
+WriteFile
+CloseHandle

@@ -220,6 +220,15 @@ public class SuperGenerator : IGenerator, IDisposable
         }
     }
 
+    /// <inheritdoc/>
+    public void AddGeneratorExclusion(string exclusion)
+    {
+        foreach (Generator generator in this.Generators.Values)
+        {
+            generator.AddGeneratorExclusion(exclusion);
+        }
+    }
+
     /// <summary>
     /// Looks up the <see cref="Generator"/> that owns a referenced type.
     /// </summary>

@@ -81,6 +81,7 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
         NameSyntax? nameSyntax;
         bool isInterface;
         bool isNonCOMConformingInterface;
+        bool useComSourceGenerators = this.generator.UseSourceGenerators;
 
         bool isManagedType = this.generator.IsManagedType(this);
         QualifiedTypeDefinitionHandle? qtdh = default;
@@ -124,7 +125,7 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
             return new TypeSyntaxAndMarshaling(bclType);
         }
 
-        if (inputs.PreferMarshaledTypes && Generator.AdditionalBclInteropStructsMarshaled.TryGetValue(simpleName, out bclType))
+        if (inputs.PreferMarshaledTypes && Generator.AdditionalBclInteropStructsMarshaled.TryGetValue(simpleName, out bclType) && !useComSourceGenerators)
         {
             return new TypeSyntaxAndMarshaling(bclType);
         }
@@ -158,6 +159,14 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
                 return new TypeSyntaxAndMarshaling(IdentifierName(specialName));
             }
         }
+        else if (useComSourceGenerators && simpleName is "VARIANT")
+        {
+            return new TypeSyntaxAndMarshaling(QualifiedName(ParseName("global::System.Runtime.InteropServices.Marshalling"), IdentifierName("ComVariant")));
+        }
+        else if (useComSourceGenerators && simpleName is "IDispatch")
+        {
+            return new TypeSyntaxAndMarshaling(QualifiedName(ParseName("global::Windows.Win32.System.Com"), IdentifierName("IDispatch")));
+        }
         else if (inputs.Generator?.CanUseIPropertyValue != true && simpleName is "IPropertyValue")
         {
             marshalAs = new MarshalAsAttribute(UnmanagedType.Interface);
@@ -167,7 +176,7 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
         {
             return new TypeSyntaxAndMarshaling(PredefinedType(Token(SyntaxKind.ObjectKeyword)), marshalAs, null);
         }
-        else if (!inputs.AllowMarshaling && isDelegate && inputs.Generator is object && !Generator.IsUntypedDelegate(delegateDefinition.Generator.Reader, delegateDefinition.Definition))
+        else if ((!inputs.AllowMarshaling || useComSourceGenerators) && isDelegate && inputs.Generator is object && !Generator.IsUntypedDelegate(delegateDefinition.Generator.Reader, delegateDefinition.Definition))
         {
             return new TypeSyntaxAndMarshaling(inputs.Generator.FunctionPointer(delegateDefinition));
         }
@@ -185,33 +194,44 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
             ? PointerType(nameSyntax)
             : nameSyntax;
 
+        string? marshalUsingType = null;
+
         if (nameSyntax is QualifiedNameSyntax qualifiedName)
         {
             string? ns = qualifiedName.Left.ToString();
 
             // Look for WinRT namespaces
-            if (ns.StartsWith("global::Windows.Foundation") || ns.StartsWith("global::Windows.UI") || ns.StartsWith("global::Windows.Graphics") || ns.StartsWith("global::Windows.System"))
+            if (ns.StartsWith("global::Windows.Foundation") || ns.StartsWith("global::Windows.UI") || ns.StartsWith("global::Windows.Graphics") || ns.StartsWith("global::Windows.System") || ns.StartsWith("global::Windows.Storage"))
             {
-                // We only want to marshal WinRT objects, not interfaces. We don't have a good way of knowing
-                // whether it's an interface or an object. "isInterface" comes back as false for a WinRT interface,
-                // so that doesn't help. Looking at the name should be good enough, but if we needed to, the
-                // Win32 projection could give us an attribute to make sure.
-                string? objName = qualifiedName.Right.ToString();
-                bool isInterfaceName = InterfaceNameMatcher.IsMatch(objName);
-                if (!isInterfaceName)
+                // Always generate a custom marshaler for WinRT type
+                if (inputs.AllowMarshaling && this.generator.UseSourceGenerators)
                 {
-                    string marshalCookie = nameSyntax.ToString();
-                    if (marshalCookie.StartsWith(Generator.GlobalNamespacePrefix, StringComparison.Ordinal))
+                    string fullTypeName = qualifiedName.ToString();
+                    marshalUsingType = this.generator.RequestCustomWinRTMarshaler(fullTypeName);
+                }
+                else
+                {
+                    // We only want to marshal WinRT objects, not interfaces. We don't have a good way of knowing
+                    // whether it's an interface or an object. "isInterface" comes back as false for a WinRT interface,
+                    // so that doesn't help. Looking at the name should be good enough, but if we needed to, the
+                    // Win32 projection could give us an attribute to make sure.
+                    string? objName = qualifiedName.Right.ToString();
+                    bool isInterfaceName = InterfaceNameMatcher.IsMatch(objName);
+                    if (!isInterfaceName)
                     {
-                        marshalCookie = marshalCookie.Substring(Generator.GlobalNamespacePrefix.Length);
-                    }
+                        string marshalCookie = nameSyntax.ToString();
+                        if (marshalCookie.StartsWith(Generator.GlobalNamespacePrefix, StringComparison.Ordinal))
+                        {
+                            marshalCookie = marshalCookie.Substring(Generator.GlobalNamespacePrefix.Length);
+                        }
 
-                    marshalAs = new MarshalAsAttribute(UnmanagedType.CustomMarshaler) { MarshalCookie = marshalCookie, MarshalType = Generator.WinRTCustomMarshalerFullName };
+                        marshalAs = new MarshalAsAttribute(UnmanagedType.CustomMarshaler) { MarshalCookie = marshalCookie, MarshalType = Generator.WinRTCustomMarshalerFullName };
+                    }
                 }
             }
         }
 
-        return new TypeSyntaxAndMarshaling(syntax, marshalAs, null);
+        return new TypeSyntaxAndMarshaling(syntax, marshalAs, null) { MarshalUsingType = marshalUsingType };
     }
 
     internal override bool? IsValueType(TypeSyntaxSettings inputs)
@@ -268,8 +288,25 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
             switch (name)
             {
                 case "IUnknown":
-                    marshalAs = new MarshalAsAttribute(UnmanagedType.IUnknown);
+                    if (inputs.Generator?.UseSourceGenerators == true)
+                    {
+                        marshalAs = new MarshalAsAttribute(UnmanagedType.Interface);
+                    }
+                    else
+                    {
+                        marshalAs = new MarshalAsAttribute(UnmanagedType.IUnknown);
+                    }
+
                     return true;
+                case "IPropertyValue":
+                    // If IPropertyValue isn't public, just marshal to Interface.
+                    if (inputs.Generator?.CanUseIPropertyValue != true)
+                    {
+                        marshalAs = new MarshalAsAttribute(UnmanagedType.Interface);
+                        return true;
+                    }
+
+                    break;
                 case "IDispatch":
                     marshalAs = new MarshalAsAttribute(UnmanagedType.IDispatch);
                     return true;

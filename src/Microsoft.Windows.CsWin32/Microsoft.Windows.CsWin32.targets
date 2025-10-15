@@ -8,6 +8,8 @@
 
   <Target Name="SetNuSpecProperties" BeforeTargets="GenerateNuspec" DependsOnTargets="GetBuildVersion">
     <PropertyGroup>
+      <CsWin32GeneratorBasePath>$([MSBuild]::NormalizePath('$(BaseOutputPath)..\CsWin32Generator\$(Configuration)\$(CsWin32GeneratorTargetFramework)\'))</CsWin32GeneratorBasePath>
+      <CsWin32GeneratorBuildTasksPath>$([MSBuild]::NormalizePath('$(BaseOutputPath)..\Microsoft.Windows.CsWin32.BuildTasks\$(Configuration)\netstandard2.0\'))</CsWin32GeneratorBuildTasksPath>
       <NuspecProperties>
         $(NuspecProperties);
         Version=$(Version);
@@ -18,11 +20,13 @@
         PackageReleaseNotes=$(PackageReleaseNotes);
         SignedOutputPath=$(IntermediateOutputPath)signed\;
         commit=$(GitCommitId);
+        CsWin32GeneratorBasePath=$(CsWin32GeneratorBasePath);
+        CsWin32GeneratorBuildTasksPath=$(CsWin32GeneratorBuildTasksPath);
       </NuspecProperties>
     </PropertyGroup>
   </Target>
 
-  <Target Name="PackBuildOutputs" DependsOnTargets="ResolveProjectReferences;SatelliteDllsProjectOutputGroup;SatelliteDllsProjectOutputGroupDependencies">
+  <Target Name="PackBuildOutputs" DependsOnTargets="ResolveProjectReferences;SatelliteDllsProjectOutputGroup;SatelliteDllsProjectOutputGroupDependencies" Condition="$(TargetFramework)=='netstandard2.0'">
     <ItemGroup>
       <!-- Analysis of C# projects -->
       <TfmSpecificPackageFile Include="$(TargetPath)" PackagePath="analyzers\cs\" />
@@ -42,6 +46,10 @@
   </Target>
 
   <Target Name="Sign3rdPartyDependencies" DependsOnTargets="PackBuildOutputs" BeforeTargets="GenerateNuspec">
+    <!-- When multi-targeting, we can't see the TfmSpecificPackageFile group we populated above. Make it from the _PackageFiles output -->
+    <ItemGroup Condition="'@(TfmSpecificPackageFile)'==''">
+      <TfmSpecificPackageFile Include="@(_PackageFiles)" Condition="%(_PackageFiles.MSBuildSourceTargetName) == '_GetTfmSpecificContentForPackage'" />
+    </ItemGroup>
     <ItemGroup>
       <PowershellScriptsToSign Include="tools\*.ps1">
         <StrongName>None</StrongName>

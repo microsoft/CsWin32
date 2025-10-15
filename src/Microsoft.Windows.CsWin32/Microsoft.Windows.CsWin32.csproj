@@ -4,7 +4,7 @@
     <IsPackable>true</IsPackable>
     <TargetFramework>netstandard2.0</TargetFramework>
     <Nullable>enable</Nullable>
-
+    
     <!-- Special properties for analyzer packages. -->
     <IncludeBuildOutput>false</IncludeBuildOutput>
     <IncludeSymbols>false</IncludeSymbols>

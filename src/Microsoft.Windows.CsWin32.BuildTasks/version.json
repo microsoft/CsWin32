@@ -1,0 +1,6 @@
+{
+  "inherit": true,
+  "assemblyVersion": {
+    "precision": "revision"
+  }
+}

@@ -18,11 +18,26 @@ internal record PrimitiveTypeHandleInfo(PrimitiveTypeCode PrimitiveTypeCode) : T
         {
             // Use the qualified name.
             enumTypeName = ParseName(Generator.ReplaceCommonNamespaceWithAlias(inputs.Generator, preciseMatch.First()));
-            MarshalAsAttribute marshalAs = new(GetUnmanagedType(this.PrimitiveTypeCode));
+            UnmanagedType unmanagedType = GetUnmanagedType(this.PrimitiveTypeCode);
+
+            // If marshaling using source generators, we need to generate a custom marshaler and a MarshalUsing(...) attribute.
+            if (inputs.AllowMarshaling && inputs.Generator?.UseSourceGenerators == true)
+            {
+                string marshalerTypeName = inputs.Generator!.RequestCustomEnumMarshaler(preciseMatch.First(), unmanagedType);
+                return new TypeSyntaxAndMarshaling(enumTypeName) { MarshalUsingType = marshalerTypeName };
+            }
+
+            MarshalAsAttribute marshalAs = new(unmanagedType);
             return new TypeSyntaxAndMarshaling(enumTypeName, marshalAs, nativeArrayInfo: null);
         }
         else
         {
+            if (inputs.AllowMarshaling && inputs.Generator?.UseSourceGenerators == true &&
+                this.PrimitiveTypeCode == PrimitiveTypeCode.Boolean)
+            {
+                return new TypeSyntaxAndMarshaling(ToTypeSyntax(this.PrimitiveTypeCode, inputs.PreferNativeInt), new(UnmanagedType.Bool), null);
+            }
+
             return new TypeSyntaxAndMarshaling(ToTypeSyntax(this.PrimitiveTypeCode, inputs.PreferNativeInt));
         }
     }

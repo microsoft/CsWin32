@@ -130,7 +130,6 @@ public class ExternMethodTests : GeneratorTestBase
         Assert.Contains("(winmdroot.Foundation.PWSTR pName, uint Level, byte* pPrinter)", methodSignatures);
     }
 
-
     private static AttributeSyntax? FindDllImportAttribute(SyntaxList<AttributeListSyntax> attributeLists) => attributeLists.SelectMany(al => al.Attributes).FirstOrDefault(a => a.Name.ToString() == "DllImport");
 
     private IEnumerable<MethodDeclarationSyntax> GenerateMethod(string methodName)

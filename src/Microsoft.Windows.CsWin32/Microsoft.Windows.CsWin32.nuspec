@@ -50,7 +50,17 @@
     <file src="$BaseOutputPath$Microsoft.Bcl.AsyncInterfaces.dll" target="analyzers\cs\Microsoft.Bcl.AsyncInterfaces.dll" />
     <file src="$BaseOutputPath$System.Text.Json.dll" target="analyzers\cs\System.Text.Json.dll" />
     <file src="$BaseOutputPath$System.Text.Encodings.Web.dll" target="analyzers\cs\System.Text.Encodings.Web.dll" />
-    <file src="$CsWin32GeneratorBasePath$**" target="build\tools\" />
+    <file src="$CsWin32GeneratorBasePath$CsWin32Generator.dll" target="build\tools\" />
+    <file src="$CsWin32GeneratorBasePath$Microsoft.CodeAnalysis.CSharp.dll" target="build\tools\" />
+    <file src="$CsWin32GeneratorBasePath$Microsoft.CodeAnalysis.dll" target="build\tools\" />
+    <file src="$CsWin32GeneratorBasePath$Microsoft.Windows.CsWin32.dll" target="build\tools\" />
+    <file src="$CsWin32GeneratorBasePath$Microsoft.Windows.SDK.Win32Docs.dll" target="build\tools\" />
+    <file src="$CsWin32GeneratorBasePath$System.Collections.Immutable.dll" target="build\tools\" />
+    <file src="$CsWin32GeneratorBasePath$System.CommandLine.dll" target="build\tools\" />
+    <file src="$CsWin32GeneratorBasePath$System.Reflection.Metadata.dll" target="build\tools\" />
+    <file src="$CsWin32GeneratorBasePath$System.Text.Encodings.Web.dll" target="build\tools\" />
+    <file src="$SignedOutputPath$MessagePack.dll" target="build\tools\" />
+    <file src="$SignedOutputPath$MessagePack.Annotations.dll" target="build\tools\" />
     <file src="readme.txt" target="readme.txt" />
     <file src="README.md" target="README.md" />
     <file src="..\..\NOTICE.txt" target="NOTICE.txt" />

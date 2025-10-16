@@ -127,13 +127,18 @@ public partial class Generator
                 countParamIndex = nativeArrayInfo.CountParamIndex;
                 countConst = nativeArrayInfo.CountConst;
             }
-            else if (externParam.Type is PointerTypeSyntax { ElementType: PredefinedTypeSyntax { Keyword.RawKind: (int)SyntaxKind.ByteKeyword } } && this.FindInteropDecorativeAttribute(paramAttributes, MemorySizeAttribute) is CustomAttribute memorySizeAttribute)
+            else if (externParam.Type is PointerTypeSyntax { ElementType: PredefinedTypeSyntax { Keyword.RawKind: (int)SyntaxKind.ByteKeyword } })
             {
                 // A very special case as documented in https://github.com/microsoft/win32metadata/issues/1555
                 // where MemorySizeAttribute is applied to byte* parameters to indicate the size of the buffer.
+                // Also https://github.com/microsoft/CsWin32/issues/1487 showed that byte* parameters are very unlikely to be a
+                // single byte so it's safer to assume it's an un-annotated array.
                 isArray = true;
-                MemorySize memorySize = DecodeMemorySizeAttribute(memorySizeAttribute);
-                countParamIndex = memorySize.BytesParamIndex;
+                if (this.FindInteropDecorativeAttribute(paramAttributes, MemorySizeAttribute) is CustomAttribute memorySizeAttribute)
+                {
+                    MemorySize memorySize = DecodeMemorySizeAttribute(memorySizeAttribute);
+                    countParamIndex = memorySize.BytesParamIndex;
+                }
             }
 
             if (mustRemainAsPointer)
@@ -300,6 +305,17 @@ public partial class Generator
                                 GetSpanLength(origName, false /* we've converted it to be a span */),
                                 LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(countConst.Value))),
                             ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentException))).WithArgumentList(ArgumentList()))));
+                    }
+                    else if (!isPointerToPointer && this.canUseSpan && externParam.Type is PointerTypeSyntax)
+                    {
+                        signatureChanged = true;
+
+                        // Handle the byte* => Span<byte> mapping
+                        parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
+                            .WithType((isConst ? MakeReadOnlySpanOfT(elementType) : MakeSpanOfT(elementType)).WithTrailingTrivia(TriviaList(Space)));
+                        fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
+                            VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
+                        arguments[param.SequenceNumber - 1] = Argument(localName);
                     }
                     else if (isNullTerminated && isConst && parameters[param.SequenceNumber - 1].Type is PointerTypeSyntax { ElementType: PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.CharKeyword } } })
                     {

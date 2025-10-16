@@ -87,6 +87,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
 
     [Theory]
     [InlineData("IMFMediaKeySession", "get_KeySystem", "winmdroot.Foundation.BSTR* keySystem")]
+    [InlineData("AddPrinterW", "AddPrinter", "winmdroot.Foundation.PWSTR pName, uint Level, Span<byte> pPrinter")]
     public async Task VerifySignature(string api, string member, string signature)
     {
         // If we need CharSet _and_ we generate something in Windows.Win32.System, the partially qualified reference breaks.

@@ -121,6 +121,15 @@ public class ExternMethodTests : GeneratorTestBase
         this.AssertNoDiagnostics(this.compilation, logAllGeneratedCode: false, acceptable: isAcceptable);
     }
 
+    [Fact]
+    public void PrinterApiProjectsBytePointerParameter()
+    {
+        this.compilation = this.starterCompilations["net35"];
+        this.GenerateApi("AddPrinter");
+        var methodSignatures = this.FindGeneratedMethod("AddPrinter_SafeHandle").Select(x => x.ParameterList.ToString());
+        Assert.Contains("(winmdroot.Foundation.PWSTR pName, uint Level, byte* pPrinter)", methodSignatures);
+    }
+
     private static AttributeSyntax? FindDllImportAttribute(SyntaxList<AttributeListSyntax> attributeLists) => attributeLists.SelectMany(al => al.Attributes).FirstOrDefault(a => a.Name.ToString() == "DllImport");
 
     private IEnumerable<MethodDeclarationSyntax> GenerateMethod(string methodName)

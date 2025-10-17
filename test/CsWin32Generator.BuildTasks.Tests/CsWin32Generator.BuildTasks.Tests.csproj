@@ -37,10 +37,6 @@
     <PackageReference Include="xunit.assert" ExcludeAssets="compile" />
     <PackageReference Include="Xunit.Combinatorial" />
     <PackageReference Include="xunit.runner.visualstudio" />
-
-    <!-- Pull STJ version forward to 9.0.0 to avoid conflict resolution problem where the 8.0.0 assemblies conflict 
-         with assembly version 8.0.0.0 on the netstandard side and 8.0.0.5 on the net472 side. -->
-    <PackageVersion Update="System.Text.Json" Version="9.0.0" />
   </ItemGroup>
 
   <ItemGroup>

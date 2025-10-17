@@ -15,6 +15,12 @@ jobs:
   - checkout: self
     fetchDepth: 1 # no need for git history here
     clean: true
+  - task: UseDotNet@2
+    displayName: 'Install .NET 8 SDK'
+    inputs:
+      packageType: 'sdk'
+      version: '8.x'
+      installationPath: $(Agent.ToolsDirectory)/dotnet
   - task: CopyFiles@2
     inputs:
       SourceFolder: integration-tests

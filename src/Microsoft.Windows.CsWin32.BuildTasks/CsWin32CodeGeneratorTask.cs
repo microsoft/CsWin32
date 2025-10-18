@@ -95,6 +95,11 @@ public class CsWin32CodeGeneratorTask : ToolTask
     public ITaskItem[]? References { get; set; }
 
     /// <summary>
+    /// Gets or sets the name of the assembly being generated for.
+    /// </summary>
+    public string? AssemblyName { get; set; }
+
+    /// <summary>
     /// Gets the generated source files.
     /// </summary>
     [Output]
@@ -179,6 +184,7 @@ public class CsWin32CodeGeneratorTask : ToolTask
 
         commandLine.AppendSwitchIfNotNull("--target-framework ", this.TargetFramework);
         commandLine.AppendSwitchIfNotNull("--platform ", this.Platform);
+        commandLine.AppendSwitchIfNotNull("--assembly-name ", this.AssemblyName);
         commandLine.AppendSwitch("--verbose ");
 
         if (this.References?.Length > 0)

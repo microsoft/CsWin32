@@ -106,6 +106,11 @@ public partial class Program
             AllowMultipleArgumentsPerToken = true,
         };
 
+        var assemblyNameOption = new Option<string?>("--assembly-name")
+        {
+            Description = "The name of the assembly being generated for.",
+        };
+
         var verboseOption = new Option<bool>("--verbose");
 
         var rootCommand = new RootCommand("CsWin32 Code Generator - Generates P/Invoke methods and supporting types from Windows metadata.")
@@ -119,6 +124,7 @@ public partial class Program
             targetFrameworkOption,
             platformOption,
             referencesOption,
+            assemblyNameOption,
             verboseOption,
         };
 
@@ -132,6 +138,7 @@ public partial class Program
         var targetFramework = parseResult.GetValue(targetFrameworkOption);
         var platform = parseResult.GetValue(platformOption);
         var references = parseResult.GetValue(referencesOption);
+        var assemblyName = parseResult.GetValue(assemblyNameOption);
         this.verbose = parseResult.GetValue(verboseOption);
 
         // Check for errors before continuing.
@@ -157,6 +164,7 @@ public partial class Program
                 targetFramework,
                 platform ?? "AnyCPU", // Provide default value for platform
                 references,
+                assemblyName,
                 fullGeneration);
 
             return result ? 0 : 1;
@@ -185,6 +193,7 @@ public partial class Program
     /// <param name="targetFramework">Target framework version.</param>
     /// <param name="platform">Target platform.</param>
     /// <param name="references">Additional assembly references (optional).</param>
+    /// <param name="assemblyName">The name of the assembly being generated for (optional).</param>
     /// <param name="fullGeneration">Whether to generate the full set of APIs.</param>
     /// <returns>True if successful, false otherwise.</returns>
     private Task<bool> GenerateCode(
@@ -197,6 +206,7 @@ public partial class Program
         string? targetFramework,
         string platform,
         FileInfo[]? references,
+        string? assemblyName,
         bool fullGeneration)
     {
         this.VerboseWriteLine("Starting CsWin32 code generation...");
@@ -244,7 +254,7 @@ public partial class Program
         }
 
         // Create compilation context
-        CSharpCompilation? compilation = this.CreateCompilation(allowUnsafeBlocks: true, platform, references);
+        CSharpCompilation? compilation = this.CreateCompilation(allowUnsafeBlocks: true, platform, references, assemblyName);
         CSharpParseOptions? parseOptions = this.CreateParseOptions(targetFramework);
         this.VerboseWriteLine($"Created compilation context with platform: {platform}, language version: {parseOptions?.LanguageVersion}");
 
@@ -334,8 +344,9 @@ public partial class Program
     /// <param name="allowUnsafeBlocks">Whether unsafe code is allowed.</param>
     /// <param name="platform">Target platform.</param>
     /// <param name="references">Additional assembly references (optional).</param>
+    /// <param name="assemblyName">The name of the assembly being generated for (optional).</param>
     /// <returns>C# compilation instance or null if creation fails.</returns>
-    private CSharpCompilation? CreateCompilation(bool allowUnsafeBlocks, string platform, FileInfo[]? references)
+    private CSharpCompilation? CreateCompilation(bool allowUnsafeBlocks, string platform, FileInfo[]? references, string? assemblyName)
     {
         var metadataReferences = new List<MetadataReference>();
 
@@ -348,15 +359,19 @@ public partial class Program
                 {
                     metadataReferences.Add(MetadataReference.CreateFromFile(reference.FullName));
                 }
+                else
+                {
+                    this.ReportError($"Reference path not found {reference.FullName}");
+                }
             }
         }
 
-        Microsoft.CodeAnalysis.Platform compilationPlatform = platform switch
+        Platform compilationPlatform = platform switch
         {
-            "x86" => Microsoft.CodeAnalysis.Platform.X86,
-            "x64" => Microsoft.CodeAnalysis.Platform.X64,
-            "arm64" => Microsoft.CodeAnalysis.Platform.Arm64,
-            _ => Microsoft.CodeAnalysis.Platform.AnyCpu,
+            "x86" => Platform.X86,
+            "x64" => Platform.X64,
+            "arm64" => Platform.Arm64,
+            _ => Platform.AnyCpu,
         };
 
         var compilationOptions = new CSharpCompilationOptions(
@@ -365,7 +380,7 @@ public partial class Program
             platform: compilationPlatform);
 
         return CSharpCompilation.Create(
-            assemblyName: "GeneratedCode",
+            assemblyName: assemblyName ?? "GeneratedCode",
             syntaxTrees: null,
             references: metadataReferences,
             options: compilationOptions);

@@ -3,6 +3,8 @@
 
 #pragma warning disable SA1402
 
+using System.Text;
+using Microsoft.CodeAnalysis.CSharp;
 using Xunit;
 
 namespace CsWin32Generator.Tests;
@@ -212,5 +214,49 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
 
         // Verify the results based on includes and excludes
         Assert.Empty(this.FindGeneratedType(checkNotPresent));
+    }
+
+    [Fact]
+    public async Task DoNotEmitTypesFromInternalsVisibleToReferences()
+    {
+        // Create a reference assembly with an internal type that has InternalsVisibleTo
+        string referencedAssemblyName = "ReferencedAssembly";
+        string referencingAssemblyName = "TestAssembly";
+
+        // Create a compilation for the referenced assembly with internal PCWSTR type and InternalsVisibleTo
+        CSharpCompilation referencedCompilation = this.compilation
+            .WithAssemblyName(referencedAssemblyName)
+            .AddSyntaxTrees(
+                CSharpSyntaxTree.ParseText(
+                    $@"
+                    [assembly: System.Runtime.CompilerServices.InternalsVisibleTo(""{referencingAssemblyName}"")]
+
+                    namespace Windows.Win32.Foundation
+                    {{
+                        internal struct PCWSTR
+                        {{        
+                            // Field exists solely to validate that the containing type is considered non-struct-like.
+                            internal unsafe byte* Value;
+                        }}
+                    }}
+                    ",
+                    this.parseOptions,
+                    cancellationToken: TestContext.Current.CancellationToken));
+
+        // Verify the referenced assembly compiles
+        string referencedAssemblyPath = $"{Path.GetTempFileName()}-{referencedAssemblyName}.dll";
+        var referencedEmitResult = referencedCompilation.Emit(referencedAssemblyPath, cancellationToken: TestContext.Current.CancellationToken);
+        Assert.True(referencedEmitResult.Success, "Referenced assembly should compile successfully");
+
+        this.nativeMethods.Add("PCWSTR");
+        this.nativeMethods.Add("GetTickCount");
+        this.additionalReferences.Add(referencedAssemblyPath);
+        this.assemblyName = referencingAssemblyName;
+
+        await this.InvokeGeneratorAndCompile();
+
+        File.Delete(referencedAssemblyPath);
+
+        Assert.Empty(this.FindGeneratedType("PCWSTR"));
     }
 }

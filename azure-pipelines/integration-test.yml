@@ -51,7 +51,7 @@ jobs:
   - task: MSBuild@1
     displayName: 🧪 MSBuild buildtask-sdk-style
     inputs:
-      solution: $(Pipeline.Workspace)\integration-tests\buildtask-sdk\buildtask-sdk.csproj
+      solution: $(Pipeline.Workspace)\integration-tests\buildtask-sdk\buildtask-sdk.sln
       msbuildArguments: /r
     condition: eq(variables.currentSdk, 'true')
   - pwsh: dotnet publish

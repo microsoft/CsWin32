@@ -21,6 +21,8 @@ public partial class Program
     private readonly TextWriter output;
     private readonly TextWriter error;
     private bool verbose;
+    private string? assemblyName;
+    private FileInfo? assemblyOriginatorKeyFile;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="Program"/> class.
@@ -111,6 +113,11 @@ public partial class Program
             Description = "The name of the assembly being generated for.",
         };
 
+        var keyFileOption = new Option<FileInfo?>("--key-file")
+        {
+            Description = "Path to the strong name key file (.snk) for signing.",
+        };
+
         var verboseOption = new Option<bool>("--verbose");
 
         var rootCommand = new RootCommand("CsWin32 Code Generator - Generates P/Invoke methods and supporting types from Windows metadata.")
@@ -125,6 +132,7 @@ public partial class Program
             platformOption,
             referencesOption,
             assemblyNameOption,
+            keyFileOption,
             verboseOption,
         };
 
@@ -138,7 +146,8 @@ public partial class Program
         var targetFramework = parseResult.GetValue(targetFrameworkOption);
         var platform = parseResult.GetValue(platformOption);
         var references = parseResult.GetValue(referencesOption);
-        var assemblyName = parseResult.GetValue(assemblyNameOption);
+        this.assemblyName = parseResult.GetValue(assemblyNameOption);
+        this.assemblyOriginatorKeyFile = parseResult.GetValue(keyFileOption);
         this.verbose = parseResult.GetValue(verboseOption);
 
         // Check for errors before continuing.
@@ -162,9 +171,8 @@ public partial class Program
                 appLocalAllowedLibraries,
                 outputPath,
                 targetFramework,
-                platform ?? "AnyCPU", // Provide default value for platform
+                platform ?? "AnyCPU",
                 references,
-                assemblyName,
                 fullGeneration);
 
             return result ? 0 : 1;
@@ -193,7 +201,6 @@ public partial class Program
     /// <param name="targetFramework">Target framework version.</param>
     /// <param name="platform">Target platform.</param>
     /// <param name="references">Additional assembly references (optional).</param>
-    /// <param name="assemblyName">The name of the assembly being generated for (optional).</param>
     /// <param name="fullGeneration">Whether to generate the full set of APIs.</param>
     /// <returns>True if successful, false otherwise.</returns>
     private Task<bool> GenerateCode(
@@ -206,7 +213,6 @@ public partial class Program
         string? targetFramework,
         string platform,
         FileInfo[]? references,
-        string? assemblyName,
         bool fullGeneration)
     {
         this.VerboseWriteLine("Starting CsWin32 code generation...");
@@ -254,7 +260,7 @@ public partial class Program
         }
 
         // Create compilation context
-        CSharpCompilation? compilation = this.CreateCompilation(allowUnsafeBlocks: true, platform, references, assemblyName);
+        CSharpCompilation? compilation = this.CreateCompilation(allowUnsafeBlocks: true, platform, references);
         CSharpParseOptions? parseOptions = this.CreateParseOptions(targetFramework);
         this.VerboseWriteLine($"Created compilation context with platform: {platform}, language version: {parseOptions?.LanguageVersion}");
 
@@ -344,9 +350,8 @@ public partial class Program
     /// <param name="allowUnsafeBlocks">Whether unsafe code is allowed.</param>
     /// <param name="platform">Target platform.</param>
     /// <param name="references">Additional assembly references (optional).</param>
-    /// <param name="assemblyName">The name of the assembly being generated for (optional).</param>
     /// <returns>C# compilation instance or null if creation fails.</returns>
-    private CSharpCompilation? CreateCompilation(bool allowUnsafeBlocks, string platform, FileInfo[]? references, string? assemblyName)
+    private CSharpCompilation? CreateCompilation(bool allowUnsafeBlocks, string platform, FileInfo[]? references)
     {
         var metadataReferences = new List<MetadataReference>();
 
@@ -379,8 +384,24 @@ public partial class Program
             allowUnsafe: allowUnsafeBlocks,
             platform: compilationPlatform);
 
+        // Handle strong name signing if a key file is provided
+        if (this.assemblyOriginatorKeyFile is not null)
+        {
+            if (!this.assemblyOriginatorKeyFile.Exists)
+            {
+                this.ReportError($"Key file not found: {this.assemblyOriginatorKeyFile.FullName}");
+                return null;
+            }
+
+            compilationOptions = compilationOptions
+                .WithStrongNameProvider(new DesktopStrongNameProvider())
+                .WithCryptoKeyFile(this.assemblyOriginatorKeyFile.FullName);
+
+            this.VerboseWriteLine("Compilation configured for strong-name signing");
+        }
+
         return CSharpCompilation.Create(
-            assemblyName: assemblyName ?? "GeneratedCode",
+            assemblyName: this.assemblyName ?? "GeneratedCode",
             syntaxTrees: null,
             references: metadataReferences,
             options: compilationOptions);

@@ -3,7 +3,7 @@
 
 #pragma warning disable SA1402
 
-using System.Text;
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Xunit;
 
@@ -216,12 +216,18 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         Assert.Empty(this.FindGeneratedType(checkNotPresent));
     }
 
-    [Fact]
-    public async Task DoNotEmitTypesFromInternalsVisibleToReferences()
+    [Theory, PairwiseData]
+    public async Task DoNotEmitTypesFromInternalsVisibleToReferences(bool strongNameSign)
     {
         // Create a reference assembly with an internal type that has InternalsVisibleTo
         string referencedAssemblyName = "ReferencedAssembly";
         string referencingAssemblyName = "TestAssembly";
+
+        string strongNameKeyFilePath = Path.Combine(Path.GetDirectoryName(typeof(CsWin32GeneratorTests).Assembly.Location)!, "TestContent", "TestKey.snk");
+
+        string friendName = strongNameSign ?
+            $"{referencingAssemblyName}, PublicKey=0024000004800000940000000602000000240000525341310004000001000100e5999fa77c961399a0969d58b6889d88b0abb6bc639762ae519e94deb639d9169db63d972d351368a893f82adc11ac9c520a945e8806aed1f06f5db55a458ec81365b40d7b940c35e8c285683646e4a632e436089f19c378bf9a27f201b32614be5bb3064f01c3b798856b39ecfb8229b497584254a1cd42fa9cd543fd6bc0c8" :
+            referencingAssemblyName;
 
         // Create a compilation for the referenced assembly with internal PCWSTR type and InternalsVisibleTo
         CSharpCompilation referencedCompilation = this.compilation
@@ -229,7 +235,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
             .AddSyntaxTrees(
                 CSharpSyntaxTree.ParseText(
                     $@"
-                    [assembly: System.Runtime.CompilerServices.InternalsVisibleTo(""{referencingAssemblyName}"")]
+                    [assembly: System.Runtime.CompilerServices.InternalsVisibleTo(""{friendName}"")]
 
                     namespace Windows.Win32.Foundation
                     {{
@@ -242,6 +248,16 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
                     ",
                     this.parseOptions,
                     cancellationToken: TestContext.Current.CancellationToken));
+        if (strongNameSign)
+        {
+            referencedCompilation = referencedCompilation.WithOptions(
+                this.compilation.Options
+                    .WithStrongNameProvider(new DesktopStrongNameProvider())
+                    .WithCryptoKeyFile(strongNameKeyFilePath));
+        }
+
+        var diagnostics = referencedCompilation.GetDiagnostics(cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Empty(diagnostics);
 
         // Verify the referenced assembly compiles
         string referencedAssemblyPath = $"{Path.GetTempFileName()}-{referencedAssemblyName}.dll";
@@ -252,11 +268,20 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         this.nativeMethods.Add("GetTickCount");
         this.additionalReferences.Add(referencedAssemblyPath);
         this.assemblyName = referencingAssemblyName;
+        this.keyFile = strongNameSign ? strongNameKeyFilePath : null;
+
+        if (strongNameSign)
+        {
+            this.compilation = this.compilation.WithOptions(
+                this.compilation.Options
+                    .WithStrongNameProvider(new DesktopStrongNameProvider())
+                    .WithCryptoKeyFile(strongNameKeyFilePath));
+        }
 
         await this.InvokeGeneratorAndCompile();
 
-        File.Delete(referencedAssemblyPath);
-
         Assert.Empty(this.FindGeneratedType("PCWSTR"));
+
+        File.Delete(referencedAssemblyPath);
     }
 }

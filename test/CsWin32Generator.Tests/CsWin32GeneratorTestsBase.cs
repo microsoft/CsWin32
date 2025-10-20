@@ -29,6 +29,7 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
     protected string? nativeMethodsJson;
     protected List<string> additionalReferences = new();
     protected string assemblyName = "TestAssembly";
+    protected string? keyFile;
 
     public CsWin32GeneratorTestsBase(ITestOutputHelper logger)
         : base(logger)
@@ -37,9 +38,14 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
 
     public ITestOutputHelper Logger => TestContext.Current.TestOutputHelper!;
 
+    public override async ValueTask InitializeAsync()
+    {
+        await base.InitializeAsync();
+        this.compilation = this.starterCompilations["net9.0"];
+    }
+
     protected async Task InvokeGeneratorAndCompile(TestOptions options = TestOptions.None, [CallerMemberName] string testCase = "")
     {
-        this.compilation = this.starterCompilations["net9.0"];
         this.compilation = this.compilation.AddReferences(this.additionalReferences.Select(x => MetadataReference.CreateFromFile(x)));
 
         string outputPath = this.GetTestCaseOutputDirectory(testCase);
@@ -110,6 +116,11 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
         foreach (string reference in this.additionalReferences)
         {
             args.AddRange(["--references", reference]);
+        }
+
+        if (this.keyFile is not null)
+        {
+            args.AddRange(["--key-file", this.keyFile]);
         }
 
         // Act
@@ -276,7 +287,7 @@ using System.Runtime.CompilerServices;
         return outputPath;
     }
 
-    private string GetOutputDirectory()
+    protected string GetOutputDirectory()
     {
         return Path.Combine(Path.GetDirectoryName(typeof(CsWin32GeneratorTests).Assembly.Location)!, "TestOutput");
     }

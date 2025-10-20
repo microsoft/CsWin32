@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 18
+VisualStudioVersion = 18.0.11018.127 d18.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "buildtask-sdk", "app\buildtask-sdk.csproj", "{4FCC0CE2-D220-4649-EDDD-789D910924C0}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "buildtask-sdk-dependency", "dependency\buildtask-sdk-dependency.csproj", "{AC945D5E-3D70-377F-2025-571ACEB1FA66}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{4FCC0CE2-D220-4649-EDDD-789D910924C0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4FCC0CE2-D220-4649-EDDD-789D910924C0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4FCC0CE2-D220-4649-EDDD-789D910924C0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4FCC0CE2-D220-4649-EDDD-789D910924C0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AC945D5E-3D70-377F-2025-571ACEB1FA66}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AC945D5E-3D70-377F-2025-571ACEB1FA66}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AC945D5E-3D70-377F-2025-571ACEB1FA66}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AC945D5E-3D70-377F-2025-571ACEB1FA66}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {422712AD-82F2-45F4-95D5-79D64BBA9A85}
+	EndGlobalSection
+EndGlobal

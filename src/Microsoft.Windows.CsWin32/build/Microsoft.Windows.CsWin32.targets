@@ -57,6 +57,7 @@
 
     <CsWin32CodeGeneratorTask
       AssemblyName="$(AssemblyName)"
+      KeyFile="$(AssemblyOriginatorKeyFile)"
       NativeMethodsTxt="@(CsWin32NativeMethodsTxt)"
       NativeMethodsJson="@(CsWin32NativeMethodsJson)"
       MetadataPaths="$(CsWin32MetadataPaths)"

@@ -278,7 +278,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
                     .WithCryptoKeyFile(strongNameKeyFilePath));
         }
 
-        await this.InvokeGeneratorAndCompile();
+        await this.InvokeGeneratorAndCompile(testCase: $"{nameof(this.DoNotEmitTypesFromInternalsVisibleToReferences)}_{strongNameSign}");
 
         Assert.Empty(this.FindGeneratedType("PCWSTR"));
 

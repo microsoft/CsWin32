@@ -28,7 +28,8 @@ extends:
     stages:
     - stage: release
       jobs:
-      - job: release
+      - job: nuget
+        displayName: 📦 Push nuget.org packages
         pool:
           name: AzurePipelines-EO
           demands:
@@ -45,6 +46,28 @@ extends:
             publishFeedCredentials: VisualStudioExtensibility (nuget.org)
         steps:
         - checkout: none
+        - download: CI
+          artifact: deployables-Windows
+          displayName: 🔻 Download deployables-Windows artifact
+          patterns: 'NuGet/*'
+      - job: github
+        displayName: 📢 GitHub release
+        dependsOn: nuget
+        pool:
+          name: AzurePipelines-EO
+          demands:
+          - ImageOverride -equals 1ESPT-Ubuntu22.04
+          os: Linux
+        templateContext:
+          type: releaseJob
+          isProduction: true
+          inputs:
+          - input: pipelineArtifact
+            pipeline: CI
+            artifactName: deployables-Windows
+            targetPath: $(Pipeline.Workspace)/CI/deployables-Windows
+        steps:
+        - checkout: none
         - powershell: |
             Write-Host "##vso[build.updatebuildnumber]$(resources.pipeline.CI.runName)"
             if ('$(resources.pipeline.CI.runName)'.Contains('-')) {
@@ -53,10 +76,6 @@ extends:
               Write-Host "##vso[task.setvariable variable=IsPrerelease]false"
             }
           displayName: ⚙ Set up pipeline
-        - download: CI
-          artifact: deployables-Windows
-          displayName: 🔻 Download deployables-Windows artifact
-          patterns: 'NuGet/*'
         - task: GitHubRelease@1
           displayName: 📢 GitHub release (create)
           inputs:

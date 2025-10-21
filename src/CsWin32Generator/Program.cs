@@ -371,13 +371,23 @@ public partial class Program
             }
         }
 
-        Platform compilationPlatform = platform switch
+        Platform compilationPlatform = Platform.AnyCpu;
+        if (platform.Equals("x86", StringComparison.OrdinalIgnoreCase))
         {
-            "x86" => Platform.X86,
-            "x64" => Platform.X64,
-            "arm64" => Platform.Arm64,
-            _ => Platform.AnyCpu,
-        };
+            compilationPlatform = Platform.X86;
+        }
+        else if (platform.Equals("x64", StringComparison.OrdinalIgnoreCase))
+        {
+            compilationPlatform = Platform.X64;
+        }
+        else if (platform.Equals("arm64", StringComparison.OrdinalIgnoreCase))
+        {
+            compilationPlatform = Platform.Arm64;
+        }
+        else if (platform.Equals("AnyCPU", StringComparison.OrdinalIgnoreCase))
+        {
+            compilationPlatform = Platform.AnyCpu;
+        }
 
         var compilationOptions = new CSharpCompilationOptions(
             outputKind: OutputKind.DynamicallyLinkedLibrary,

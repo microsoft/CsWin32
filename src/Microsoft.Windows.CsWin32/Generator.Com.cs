@@ -68,6 +68,10 @@ public partial class Generator
         return true;
     }
 
+    private static StatementSyntax ThrowOnHRFailure(ExpressionSyntax hrExpression) => ExpressionStatement(InvocationExpression(
+        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, hrExpression, HRThrowOnFailureMethodName),
+        ArgumentList()));
+
     /// <summary>
     /// Generates a type to represent a COM interface.
     /// </summary>
@@ -327,10 +331,6 @@ public partial class Generator
             if (methodDefinition.Generator.TryGetPropertyAccessorInfo(methodDefinition, originalIfaceName, context, out IdentifierNameSyntax? propertyName, out SyntaxKind? accessorKind, out TypeSyntax? propertyType) &&
                 declaredProperties.Contains(propertyName.Identifier.ValueText))
             {
-                StatementSyntax ThrowOnHRFailure(ExpressionSyntax hrExpression) => ExpressionStatement(InvocationExpression(
-                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, hrExpression, HRThrowOnFailureMethodName),
-                    ArgumentList()));
-
                 BlockSyntax? body;
                 switch (accessorKind)
                 {
@@ -1307,7 +1307,7 @@ public partial class Generator
     /// Creates an empty class that when instantiated, creates a cocreatable Windows object
     /// that may implement a number of interfaces at runtime, discoverable only by documentation.
     /// </summary>
-    private ClassDeclarationSyntax DeclareCocreatableClass(TypeDefinition typeDef)
+    private ClassDeclarationSyntax DeclareCocreatableClass(TypeDefinition typeDef, Context context)
     {
         IdentifierNameSyntax name = IdentifierName(this.Reader.GetString(typeDef.Name));
         Guid guid = this.FindGuidFromAttribute(typeDef) ?? throw new ArgumentException("Type does not have a GuidAttribute.");
@@ -1315,7 +1315,67 @@ public partial class Generator
         classModifiers = classModifiers.Add(TokenWithSpace(SyntaxKind.PartialKeyword));
         ClassDeclarationSyntax result = ClassDeclaration(name.Identifier)
             .WithModifiers(classModifiers)
-            .AddAttributeLists(AttributeList().AddAttributes(GUID(guid), ComImportAttributeSyntax));
+            .AddAttributeLists(AttributeList().AddAttributes(GUID(guid)).AddAttributes(this.useSourceGenerators ? [] : [ComImportAttributeSyntax]));
+
+        if (context.AllowMarshaling && this.useSourceGenerators)
+        {
+            // If using source generators, generate a constructor with obsolete attribute like this:
+            // [Obsolete("COM source generators do not support direct instantiation of co-creatable classes. Use CreateInstance<T> method instead.")]
+            // public Foo() { throw new NotSupportedException("COM source generators do not support direct instantiation of co-creatable classes. Use CreateInstance<T> method instead."); }
+            AttributeSyntax obsoleteAttribute =
+                Attribute(IdentifierName(nameof(ObsoleteAttribute)))
+                    .AddArgumentListArguments(
+                        AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal("COM source generators do not support direct instantiation of co-creatable classes. Use CreateInstance<T> method instead."))));
+            ConstructorDeclarationSyntax constructor = ConstructorDeclaration(name.Identifier)
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword))
+                .AddAttributeLists(AttributeList().AddAttributes(obsoleteAttribute))
+                .WithBody(
+                    Block(
+                        ThrowStatement(
+                            ObjectCreationExpression(IdentifierName(nameof(NotSupportedException)))
+                                .WithArgumentList(
+                                    ArgumentList().AddArguments(
+                                        Argument(
+                                            LiteralExpression(SyntaxKind.StringLiteralExpression, Literal("COM source generators do not support direct instantiation of co-creatable classes. Use CreateInstance<T> method instead."))))))));
+            result = result.AddMembers(constructor);
+
+            // Then add the CreateInstance<T> method:
+            // public static T CreateInstance<T>() where T : class
+            // {
+            //    PInvoke.CoCreateInstance<T>(typeof(Foo).GUID, null, CLSCTX.CLSCTX_SERVER, out T ret).ThrowOnFailure();
+            //    return ret;
+            // }
+            this.MainGenerator.TryGenerateExternMethod("CoCreateInstance", out IReadOnlyCollection<string> preciseApi);
+            this.MainGenerator.TryGenerateConstant("CLSCTX", out preciseApi);
+
+            TypeParameterSyntax typeParameter = TypeParameter(Identifier("T"));
+            GenericNameSyntax genericName = GenericName("CreateInstance").AddTypeArgumentListArguments(IdentifierName("T"));
+            MethodDeclarationSyntax createInstanceMethod = MethodDeclaration(IdentifierName("T"), genericName.Identifier)
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))
+                .AddTypeParameterListParameters(typeParameter)
+                .AddConstraintClauses(
+                    TypeParameterConstraintClause(IdentifierName("T"), SingletonSeparatedList<TypeParameterConstraintSyntax>(ClassOrStructConstraint(SyntaxKind.ClassConstraint))))
+                .WithBody(
+                    Block(
+                        ThrowOnHRFailure(
+                            InvocationExpression(QualifiedName(ParseName($"{this.Win32NamespacePrefix}.{this.options.ClassName}"), GenericName("CoCreateInstance").AddTypeArgumentListArguments(IdentifierName("T"))))
+                            .WithArgumentList(
+                                ArgumentList().AddArguments(
+                                    Argument(
+                                        MemberAccessExpression(
+                                            SyntaxKind.SimpleMemberAccessExpression,
+                                            TypeOfExpression(name),
+                                            IdentifierName("GUID"))),
+                                    Argument(LiteralExpression(SyntaxKind.NullLiteralExpression)),
+                                    Argument(
+                                        MemberAccessExpression(
+                                            SyntaxKind.SimpleMemberAccessExpression,
+                                            QualifiedName(ParseName($"{this.Win32NamespacePrefix}.System.Com"), IdentifierName("CLSCTX")),
+                                            IdentifierName("CLSCTX_SERVER"))),
+                                    Argument(DeclarationExpression(IdentifierName("T").WithTrailingTrivia(Space), SingleVariableDesignation(Identifier("ret")))).WithRefKindKeyword(Token(SyntaxKind.OutKeyword))))),
+                        ReturnStatement(IdentifierName("ret"))));
+            result = result.AddMembers(createInstanceMethod);
+        }
 
         result = this.AddApiDocumentation(name.Identifier.ValueText, result);
         return result;

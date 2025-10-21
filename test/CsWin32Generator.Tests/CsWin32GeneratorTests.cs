@@ -5,6 +5,7 @@
 
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Xunit;
 
 namespace CsWin32Generator.Tests;
@@ -85,6 +86,22 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         this.nativeMethods.Add("GetDistanceOfClosestLanguageInList");
         this.nativeMethods.Add("ADVANCED_FEATURE_FLAGS");
         await this.InvokeGeneratorAndCompile();
+    }
+
+    [Fact]
+    public async Task TestGenerateCoCreateableClass()
+    {
+        // If we need CharSet _and_ we generate something in Windows.Win32.System, the partially qualified reference breaks.
+        this.nativeMethods.Add("ShellLink");
+        await this.InvokeGeneratorAndCompile();
+
+        var shellLinkType = Assert.Single(this.FindGeneratedType("ShellLink"));
+
+        // Check that it does not have the ComImport attribute.
+        Assert.DoesNotContain(shellLinkType.AttributeLists, al => al.Attributes.Any(attr => attr.Name.ToString().Contains("ComImport")));
+
+        // Check that it contains a CreateInstance method
+        Assert.Contains(shellLinkType.DescendantNodes().OfType<MethodDeclarationSyntax>(), method => method.Identifier.Text == "CreateInstance");
     }
 
     [Theory]

@@ -1440,7 +1440,7 @@ public partial class Generator : IGenerator, IDisposable
                 }
                 else if (this.IsEmptyStructWithGuid(typeDef))
                 {
-                    typeDeclaration = this.DeclareCocreatableClass(typeDef);
+                    typeDeclaration = this.DeclareCocreatableClass(typeDef, context);
                 }
                 else
                 {

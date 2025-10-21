@@ -4,6 +4,7 @@
 #pragma warning disable IDE0005
 #pragma warning disable SA1201, SA1512, SA1005, SA1507, SA1515, SA1403, SA1402, SA1411, SA1300, SA1313, SA1134, SA1307, SA1308
 
+using System.ComponentModel;
 using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
@@ -17,6 +18,7 @@ using Windows.Win32.Graphics.Direct3D;
 using Windows.Win32.Graphics.Direct3D11;
 using Windows.Win32.System.Com;
 using Windows.Win32.System.WinRT.Composition;
+using Windows.Win32.UI.Shell;
 
 [Trait("WindowsOnly", "true")]
 public partial class COMTests
@@ -70,4 +72,43 @@ public partial class COMTests
             Assert.Skip("Skipping due to UnauthorizedAccessException.");
         }
     }
+
+    [Fact]
+    public void CocreatableClassesWithImplicitInterfaces()
+    {
+        var shellLinkW = ShellLink.CreateInstance<IShellLinkW>();
+        var persistFile = (IPersistFile)shellLinkW;
+        Assert.NotNull(persistFile);
+    }
 }
+
+[Guid("00021401-0000-0000-C000-000000000046")]
+[global::System.CodeDom.Compiler.GeneratedCode("Microsoft.Windows.CsWin32", "0.3.217+533aa1bddf.RR")]
+internal partial class ShellLink
+{
+    [Obsolete("COM source generators do not support direct instantiation of co-creatable classes. Use CreateInstance<T> method instead.")]
+    public ShellLink() { throw new NotSupportedException("COM source generators do not support direct instantiation of co-creatable classes. Use CreateInstance<T> method instead."); }
+
+    public static T CreateInstance<T>() where T : class
+    {
+        PInvoke.CoCreateInstance<T>(typeof(ShellLink).GUID, null, CLSCTX.CLSCTX_INPROC_SERVER, out T ret).ThrowOnFailure();
+        return ret;
+    }
+}
+
+//[Guid("00021401-0000-0000-C000-000000000046")]
+//[global::System.CodeDom.Compiler.GeneratedCode("Microsoft.Windows.CsWin32", "0.3.217+533aa1bddf.RR")]
+//internal partial struct ShellLink2
+//{
+//    public object Instance;
+
+//    public ShellLink2()
+//    {
+//        PInvoke.CoCreateInstance(typeof(ShellLink).GUID, null, CLSCTX.CLSCTX_INPROC_SERVER, out Instance).ThrowOnFailure();
+//    }
+
+//    public static implicit operator T(in ShellLink2 instance)
+//    {
+//        return (T)instance.Instance;
+//    }
+//}

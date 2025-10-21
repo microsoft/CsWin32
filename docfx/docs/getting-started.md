@@ -121,7 +121,9 @@ To keep CsWin32 generating the referred types you need, add them explicitly to `
 
 ### Support for trimming, AOT, and/or disabling the runtime marshaler
 
-Newer .NET runtime versions may fail for CsWin32 generated code when the application project builds with one or both of these properties set:
+**NEW!** CsWin32 now has improved support for NativeAOT by generating code from an MSBuild task rather than a source generator so that it can leverage other source generators that support `[LibraryImport]` and others.
+
+If you set one of these flags:
 
 ```xml
 <PublishAot>true</PublishAot>
@@ -129,7 +131,26 @@ Newer .NET runtime versions may fail for CsWin32 generated code when the applica
 <PublishTrimmed>true</PublishTrimmed>
 ```
 
-CsWin32 supports these environments by avoiding code that relies on the runtime marshaler when the `allowMarshaling` setting is disabled in the `NativeMethods.json` file.
+Then you have two options:
+
+#### Enable CsWin32RunAsBuildTask
+
+CsWin32 now supports AOT by generating code which relies on `GeneratedComInterface` and `LibraryImport`, which are source generators.
+To make this chaining work, you have to request CsWin32 to run as a build task to generate the source code _before_ compile. Do this by adding this to your csproj:
+
+```xml
+<CsWin32RunAsBuildTask>true</CsWin32RunAsBuildTask>
+<DisableRuntimeMarshalling>true</DisableRuntimeMarshalling>
+```
+
+It is also strongly recommended to set DisableRuntimeMarshalling=true as shown here to ensure that the COM source generators handle
+all the marshalling correctly. See https://learn.microsoft.com/en-us/dotnet/standard/native-interop/pinvoke-source-generation and
+https://learn.microsoft.com/en-us/dotnet/standard/native-interop/comwrappers-source-generation for more information on these .NET source
+generators.
+
+#### Disable runtime marshalling
+
+CsWin32 can also support these environments by avoiding code that relies on the runtime marshaler when the `allowMarshaling` setting is disabled in the `NativeMethods.json` file.
 For example:
 
 ```json

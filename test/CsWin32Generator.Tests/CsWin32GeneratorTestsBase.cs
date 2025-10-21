@@ -30,6 +30,7 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
     protected List<string> additionalReferences = new();
     protected string assemblyName = "TestAssembly";
     protected string? keyFile;
+    protected string platform = "x64";
 
     public CsWin32GeneratorTestsBase(ITestOutputHelper logger)
         : base(logger)
@@ -104,7 +105,7 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
         args.AddRange(["--native-methods-txt", nativeMethodsTxtPath]);
         args.AddRange(["--metadata-paths", win32winmd]);
         args.AddRange(["--output-path", outputPath]);
-        args.AddRange(["--platform", "x64"]);
+        args.AddRange(["--platform", this.platform]);
         if (this.nativeMethodsJson is string)
         {
             string nativeMethodsJsonPath = Path.Combine(Path.GetDirectoryName(typeof(CsWin32GeneratorTests).Assembly.Location)!, "TestContent", this.nativeMethodsJson);

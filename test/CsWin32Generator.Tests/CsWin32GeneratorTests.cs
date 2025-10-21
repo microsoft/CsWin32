@@ -89,6 +89,18 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
     }
 
     [Theory]
+    [InlineData("x64")]
+    [InlineData("X64")]
+    [InlineData("arm64")]
+    [InlineData("ARM64")]
+    public async Task TestPlatformCaseSensitivity(string platform)
+    {
+        this.platform = platform;
+        this.nativeMethods.Add("SetWindowLongPtr");
+        await this.InvokeGeneratorAndCompile();
+    }
+
+    [Theory]
     [InlineData("IMFMediaKeySession", "get_KeySystem", "winmdroot.Foundation.BSTR* keySystem")]
     [InlineData("AddPrinterW", "AddPrinter", "winmdroot.Foundation.PWSTR pName, uint Level, Span<byte> pPrinter")]
     public async Task VerifySignature(string api, string member, string signature)

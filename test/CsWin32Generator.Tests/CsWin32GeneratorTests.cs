@@ -97,7 +97,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
     {
         this.platform = platform;
         this.nativeMethods.Add("SetWindowLongPtr");
-        await this.InvokeGeneratorAndCompile();
+        await this.InvokeGeneratorAndCompile($"{nameof(this.TestPlatformCaseSensitivity)}_{platform}");
     }
 
     [Theory]

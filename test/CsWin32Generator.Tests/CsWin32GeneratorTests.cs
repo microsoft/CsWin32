@@ -97,7 +97,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
     {
         this.platform = platform;
         this.nativeMethods.Add("SetWindowLongPtr");
-        await this.InvokeGeneratorAndCompile();
+        await this.InvokeGeneratorAndCompile($"{nameof(this.TestPlatformCaseSensitivity)}_{platform}");
     }
 
     [Fact]
@@ -105,7 +105,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
     {
         // If we need CharSet _and_ we generate something in Windows.Win32.System, the partially qualified reference breaks.
         this.nativeMethods.Add("ShellLink");
-        await this.InvokeGeneratorAndCompile();
+        await this.InvokeGeneratorAndCompileFromFact();
 
         var shellLinkType = Assert.Single(this.FindGeneratedType("ShellLink"));
 

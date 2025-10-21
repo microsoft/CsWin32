@@ -159,7 +159,7 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
                 return new TypeSyntaxAndMarshaling(IdentifierName(specialName));
             }
         }
-        else if (useComSourceGenerators && simpleName is "VARIANT")
+        else if (useComSourceGenerators && simpleName is "VARIANT" && this.Generator.CanUseComVariant)
         {
             return new TypeSyntaxAndMarshaling(QualifiedName(ParseName("global::System.Runtime.InteropServices.Marshalling"), IdentifierName("ComVariant")));
         }
@@ -311,8 +311,13 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
                     marshalAs = new MarshalAsAttribute(UnmanagedType.IDispatch);
                     return true;
                 case "VARIANT":
-                    marshalAs = new MarshalAsAttribute(UnmanagedType.Struct);
-                    return true;
+                    if (inputs.Generator?.UseSourceGenerators != true)
+                    {
+                        marshalAs = new MarshalAsAttribute(UnmanagedType.Struct);
+                        return true;
+                    }
+
+                    break;
             }
         }
 

@@ -30,6 +30,7 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
     protected List<string> additionalReferences = new();
     protected string assemblyName = "TestAssembly";
     protected string? keyFile;
+    protected string platform = "x64";
 
     public CsWin32GeneratorTestsBase(ITestOutputHelper logger)
         : base(logger)
@@ -44,7 +45,13 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
         this.compilation = this.starterCompilations["net9.0"];
     }
 
-    protected async Task InvokeGeneratorAndCompile(TestOptions options = TestOptions.None, [CallerMemberName] string testCase = "")
+    // NOTE: Only use this method from a [Fact]. [Theory] should always use the below method to generate a unique testCase name per combination.
+    protected async Task InvokeGeneratorAndCompileFromFact([CallerMemberName] string testCase = "")
+    {
+        await this.InvokeGeneratorAndCompile(testCase);
+    }
+
+    protected async Task InvokeGeneratorAndCompile(string testCase, TestOptions options = TestOptions.None)
     {
         this.compilation = this.compilation.AddReferences(this.additionalReferences.Select(x => MetadataReference.CreateFromFile(x)));
 
@@ -98,7 +105,7 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
         args.AddRange(["--native-methods-txt", nativeMethodsTxtPath]);
         args.AddRange(["--metadata-paths", win32winmd]);
         args.AddRange(["--output-path", outputPath]);
-        args.AddRange(["--platform", "x64"]);
+        args.AddRange(["--platform", this.platform]);
         if (this.nativeMethodsJson is string)
         {
             string nativeMethodsJsonPath = Path.Combine(Path.GetDirectoryName(typeof(CsWin32GeneratorTests).Assembly.Location)!, "TestContent", this.nativeMethodsJson);
@@ -123,6 +130,11 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
             args.AddRange(["--key-file", this.keyFile]);
         }
 
+        if (this.parseOptions.LanguageVersion is LanguageVersion version && version < LanguageVersion.CSharp13)
+        {
+            args.AddRange(["--language-version", LanguageVersionFacts.ToDisplayString(version)]);
+        }
+
         // Act
         var loggerWriter = new TestOutputWriter(this.Logger);
         var program = new Program(loggerWriter, loggerWriter);
@@ -145,7 +157,7 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
         foreach (string filePath in generatedFiles)
         {
             string sourceCode = await File.ReadAllTextAsync(filePath);
-            SyntaxTree syntaxTree = CSharpSyntaxTree.ParseText(sourceCode, path: filePath);
+            SyntaxTree syntaxTree = CSharpSyntaxTree.ParseText(sourceCode, path: filePath, options: this.parseOptions);
             syntaxTrees.Add(syntaxTree);
         }
 
@@ -155,7 +167,7 @@ using System.Runtime.CompilerServices;
 
 [assembly: DisableRuntimeMarshalling]
 ";
-        SyntaxTree disableRuntimeMarshallingSyntaxTree = CSharpSyntaxTree.ParseText(disableRuntimeMarshallingSource, path: "DisableRuntimeMarshalling.cs");
+        SyntaxTree disableRuntimeMarshallingSyntaxTree = CSharpSyntaxTree.ParseText(disableRuntimeMarshallingSource, path: "DisableRuntimeMarshalling.cs", options: this.parseOptions);
         syntaxTrees.Add(disableRuntimeMarshallingSyntaxTree);
 
         this.compilation = this.compilation.AddSyntaxTrees(syntaxTrees);
@@ -174,7 +186,7 @@ using System.Runtime.CompilerServices;
             }
 
             // Create a GeneratorDriver with the source generators
-            var driver = CSharpGeneratorDriver.Create(sourceGenerators.Where(x => x is IIncrementalGenerator).Select(x => (IIncrementalGenerator)x).ToArray());
+            GeneratorDriver driver = CSharpGeneratorDriver.Create(sourceGenerators.Where(x => x is IIncrementalGenerator).Select(GeneratorExtensions.AsSourceGenerator), parseOptions: this.parseOptions);
 
             // Run the source generators
             var generatorDriver = driver.RunGeneratorsAndUpdateCompilation(this.compilation, out var newCompilation, out var generatorDiagnostics);

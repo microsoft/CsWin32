@@ -20,6 +20,7 @@ public partial class Generator
     private readonly bool canMarshalNativeDelegateParams;
     private readonly bool overloadResolutionPriorityAttributePredefined;
     private readonly bool unscopedRefAttributePredefined;
+    private readonly bool canUseComVariant;
     private readonly INamedTypeSymbol? runtimeFeatureClass;
     private readonly bool generateSupportedOSPlatformAttributes;
     private readonly bool generateSupportedOSPlatformAttributesOnInterfaces; // only supported on net6.0 (https://github.com/dotnet/runtime/pull/48838)
@@ -29,6 +30,8 @@ public partial class Generator
     internal bool UseSourceGenerators => this.useSourceGenerators;
 
     internal bool CanUseIPropertyValue => this.canUseIPropertyValue;
+
+    internal bool CanUseComVariant => this.canUseComVariant;
 
     private void DeclareOverloadResolutionPriorityAttributeIfNecessary()
     {

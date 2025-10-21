@@ -23,6 +23,7 @@ public partial class Program
     private bool verbose;
     private string? assemblyName;
     private FileInfo? assemblyOriginatorKeyFile;
+    private LanguageVersion languageVersion = LanguageVersion.CSharp13;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="Program"/> class.
@@ -118,6 +119,11 @@ public partial class Program
             Description = "Path to the strong name key file (.snk) for signing.",
         };
 
+        var languageVersionOption = new Option<string?>("--language-version")
+        {
+            Description = "C# language version (e.g., 10, 11, 12, 13, Latest, Preview).",
+        };
+
         var verboseOption = new Option<bool>("--verbose");
 
         var rootCommand = new RootCommand("CsWin32 Code Generator - Generates P/Invoke methods and supporting types from Windows metadata.")
@@ -133,6 +139,7 @@ public partial class Program
             referencesOption,
             assemblyNameOption,
             keyFileOption,
+            languageVersionOption,
             verboseOption,
         };
 
@@ -149,6 +156,7 @@ public partial class Program
         this.assemblyName = parseResult.GetValue(assemblyNameOption);
         this.assemblyOriginatorKeyFile = parseResult.GetValue(keyFileOption);
         this.verbose = parseResult.GetValue(verboseOption);
+        string? languageVersionString = parseResult.GetValue(languageVersionOption);
 
         // Check for errors before continuing.
         if (parseResult.Errors.Count > 0)
@@ -159,6 +167,15 @@ public partial class Program
             }
 
             return 1;
+        }
+
+        if (languageVersionString is not null)
+        {
+            if (!LanguageVersionFacts.TryParse(languageVersionString, out this.languageVersion))
+            {
+                this.ReportError($"Invalid language version: {languageVersionString}");
+                return 1;
+            }
         }
 
         try
@@ -261,7 +278,7 @@ public partial class Program
 
         // Create compilation context
         CSharpCompilation? compilation = this.CreateCompilation(allowUnsafeBlocks: true, platform, references);
-        CSharpParseOptions? parseOptions = this.CreateParseOptions(targetFramework);
+        CSharpParseOptions? parseOptions = this.CreateParseOptions(targetFramework)?.WithLanguageVersion(this.languageVersion);
         this.VerboseWriteLine($"Created compilation context with platform: {platform}, language version: {parseOptions?.LanguageVersion}");
 
         // Load docs if available
@@ -371,13 +388,23 @@ public partial class Program
             }
         }
 
-        Platform compilationPlatform = platform switch
+        Platform compilationPlatform = Platform.AnyCpu;
+        if (platform.Equals("x86", StringComparison.OrdinalIgnoreCase))
         {
-            "x86" => Platform.X86,
-            "x64" => Platform.X64,
-            "arm64" => Platform.Arm64,
-            _ => Platform.AnyCpu,
-        };
+            compilationPlatform = Platform.X86;
+        }
+        else if (platform.Equals("x64", StringComparison.OrdinalIgnoreCase))
+        {
+            compilationPlatform = Platform.X64;
+        }
+        else if (platform.Equals("arm64", StringComparison.OrdinalIgnoreCase))
+        {
+            compilationPlatform = Platform.Arm64;
+        }
+        else if (platform.Equals("AnyCPU", StringComparison.OrdinalIgnoreCase))
+        {
+            compilationPlatform = Platform.AnyCpu;
+        }
 
         var compilationOptions = new CSharpCompilationOptions(
             outputKind: OutputKind.DynamicallyLinkedLibrary,

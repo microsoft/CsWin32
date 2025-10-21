@@ -67,6 +67,7 @@
       GeneratorToolPath="$(CsWin32GeneratorToolPath)CsWin32Generator.dll"
       TargetFramework="$(TargetFramework)"
       Platform="$(Platform)"
+      LangVersion="$(LangVersion)"
       References="@(ReferencePath)"
       ContinueOnError="$(CsWin32ContinueOnError)"
       Condition="@(CsWin32NativeMethodsTxt->Count()) > 0">

@@ -105,6 +105,11 @@ public class CsWin32CodeGeneratorTask : ToolTask
     public string? KeyFile { get; set; }
 
     /// <summary>
+    /// Gets or sets the C# language version (e.g., 10, 11, 12, 13, Latest, Preview).
+    /// </summary>
+    public string? LangVersion { get; set; }
+
+    /// <summary>
     /// Gets the generated source files.
     /// </summary>
     [Output]
@@ -191,6 +196,7 @@ public class CsWin32CodeGeneratorTask : ToolTask
         commandLine.AppendSwitchIfNotNull("--platform ", this.Platform);
         commandLine.AppendSwitchIfNotNull("--assembly-name ", this.AssemblyName);
         commandLine.AppendSwitchIfNotNull("--key-file ", this.KeyFile);
+        commandLine.AppendSwitchIfNotNull("--language-version ", this.LangVersion);
         commandLine.AppendSwitch("--verbose ");
 
         if (this.References?.Length > 0)

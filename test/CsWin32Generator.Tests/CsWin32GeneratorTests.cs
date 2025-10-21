@@ -5,6 +5,7 @@
 
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Xunit;
 
 namespace CsWin32Generator.Tests;
@@ -21,7 +22,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
     {
         // IDispatch is not normally emitted, but we need it for source generated com so check that it got generated.
         this.nativeMethods.Add("IDispatch");
-        await this.InvokeGeneratorAndCompile();
+        await this.InvokeGeneratorAndCompileFromFact();
 
         var idispatchType = this.FindGeneratedType("IDispatch");
         Assert.NotEmpty(idispatchType);
@@ -31,7 +32,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
     public async Task TestGenerateIShellWindows()
     {
         this.nativeMethods.Add("IShellWindows");
-        await this.InvokeGeneratorAndCompile();
+        await this.InvokeGeneratorAndCompileFromFact();
 
         var ishellWindowsType = this.FindGeneratedType("IShellWindows");
         Assert.NotEmpty(ishellWindowsType);
@@ -44,7 +45,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
     public async Task TestNativeMethods()
     {
         this.nativeMethodsTxt = "NativeMethods.txt";
-        await this.InvokeGeneratorAndCompile();
+        await this.InvokeGeneratorAndCompileFromFact();
     }
 
     [Fact]
@@ -52,7 +53,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
     {
         // Request DebugPropertyInfo and we should see ITypeComp_unmanaged get generated because it has an embedded managed field
         this.nativeMethods.Add("DebugPropertyInfo");
-        await this.InvokeGeneratorAndCompile();
+        await this.InvokeGeneratorAndCompileFromFact();
 
         var iface = this.FindGeneratedType("ITypeComp_unmanaged");
         Assert.True(iface.Any());
@@ -63,7 +64,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
     {
         // Request IAudioProcessingObjectConfiguration and it should request IAudioMediaType_unmanaged that's embedded in a struct
         this.nativeMethods.Add("IAudioProcessingObjectConfiguration");
-        await this.InvokeGeneratorAndCompile();
+        await this.InvokeGeneratorAndCompileFromFact();
 
         var iface = this.FindGeneratedType("IAudioMediaType_unmanaged");
         Assert.True(iface.Any());
@@ -75,7 +76,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         // If IUnknown is requested first and then it's needed as an unmanaged type, we fail to generate it.
         this.nativeMethods.Add("IUnknown");
         this.nativeMethods.Add("ID3D11DeviceContext");
-        await this.InvokeGeneratorAndCompile();
+        await this.InvokeGeneratorAndCompileFromFact();
     }
 
     [Fact]
@@ -84,7 +85,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         // If we need CharSet _and_ we generate something in Windows.Win32.System, the partially qualified reference breaks.
         this.nativeMethods.Add("GetDistanceOfClosestLanguageInList");
         this.nativeMethods.Add("ADVANCED_FEATURE_FLAGS");
-        await this.InvokeGeneratorAndCompile();
+        await this.InvokeGeneratorAndCompileFromFact();
     }
 
     [Theory]
@@ -94,7 +95,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
     {
         // If we need CharSet _and_ we generate something in Windows.Win32.System, the partially qualified reference breaks.
         this.nativeMethods.Add(api);
-        await this.InvokeGeneratorAndCompile(TestOptions.None, $"{api}_{member}");
+        await this.InvokeGeneratorAndCompile($"{api}_{member}");
 
         var generatedMemberSignatures = this.FindGeneratedMethod(member).Select(x => x.ParameterList.ToString());
         Assert.Contains($"({signature})", generatedMemberSignatures);
@@ -154,7 +155,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
     {
         this.Logger.WriteLine($"Testing {api} - {purpose}");
         this.nativeMethods.Add(api);
-        await this.InvokeGeneratorAndCompile(options, $"Test_{api}");
+        await this.InvokeGeneratorAndCompile($"Test_{api}", options);
     }
 
     [Fact]
@@ -184,7 +185,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         this.nativeMethods.Add("IUnknown"); // Add a method to ensure generation occurs
 
         // Act
-        await this.InvokeGeneratorAndCompile();
+        await this.InvokeGeneratorAndCompileFromFact();
     }
 
     [Theory]
@@ -210,7 +211,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         }
 
         // Invoke the generator and compile
-        await this.InvokeGeneratorAndCompile(TestOptions.GeneratesNothing | TestOptions.DoNotFailOnDiagnostics, $"TestNativeMethodsExclusion_{scenario}");
+        await this.InvokeGeneratorAndCompile($"TestNativeMethodsExclusion_{scenario}", TestOptions.GeneratesNothing | TestOptions.DoNotFailOnDiagnostics);
 
         // Verify the results based on includes and excludes
         Assert.Empty(this.FindGeneratedType(checkNotPresent));
@@ -283,5 +284,33 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         Assert.Empty(this.FindGeneratedType("PCWSTR"));
 
         File.Delete(referencedAssemblyPath);
+    }
+
+    // https://github.com/microsoft/CsWin32/issues/1494
+    [Theory]
+    [InlineData(LanguageVersion.CSharp12)]
+    [InlineData(LanguageVersion.CSharp13)]
+    public async Task VerifyOverloadPriorityAttributeInNet8(LanguageVersion langVersion)
+    {
+        this.compilation = this.starterCompilations["net8.0"];
+        this.parseOptions = this.parseOptions.WithLanguageVersion(langVersion);
+        this.nativeMethods.Add("IShellLinkW");
+        await this.InvokeGeneratorAndCompile($"{nameof(this.VerifyOverloadPriorityAttributeInNet8)}_{langVersion}");
+
+        // See if we generated any methods with OverloadResolutionPriorityAttribute.
+        var methods = this.compilation.SyntaxTrees.SelectMany(st => st.GetRoot().DescendantNodes().OfType<MethodDeclarationSyntax>());
+        var methodsWithAttribute = methods
+            .Where(md => FindAttribute(md.AttributeLists, "OverloadResolutionPriority").Any());
+
+        IEnumerable<AttributeSyntax> FindAttribute(SyntaxList<AttributeListSyntax> attributeLists, string name) => attributeLists.SelectMany(al => al.Attributes).Where(a => a.Name.ToString() == name);
+
+        if (langVersion >= LanguageVersion.CSharp13)
+        {
+            Assert.NotEmpty(methodsWithAttribute);
+        }
+        else
+        {
+            Assert.Empty(methodsWithAttribute);
+        }
     }
 }

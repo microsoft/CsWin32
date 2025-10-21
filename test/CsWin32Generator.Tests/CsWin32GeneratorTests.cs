@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-#pragma warning disable SA1402,SA1201
+#pragma warning disable SA1402,SA1201,SA1202
 
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -167,7 +167,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         await this.TestGenerateApiWorker(api, purpose, options, "net8.0");
     }
 
-    public async Task TestGenerateApiWorker(string api, string purpose, TestOptions options, string tfm)
+    private async Task TestGenerateApiWorker(string api, string purpose, TestOptions options, string tfm)
     {
         LanguageVersion langVersion = (tfm == "net8.0") ? LanguageVersion.CSharp12 : LanguageVersion.CSharp13;
 

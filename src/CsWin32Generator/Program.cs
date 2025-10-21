@@ -21,6 +21,8 @@ public partial class Program
     private readonly TextWriter output;
     private readonly TextWriter error;
     private bool verbose;
+    private string? assemblyName;
+    private FileInfo? assemblyOriginatorKeyFile;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="Program"/> class.
@@ -106,6 +108,16 @@ public partial class Program
             AllowMultipleArgumentsPerToken = true,
         };
 
+        var assemblyNameOption = new Option<string?>("--assembly-name")
+        {
+            Description = "The name of the assembly being generated for.",
+        };
+
+        var keyFileOption = new Option<FileInfo?>("--key-file")
+        {
+            Description = "Path to the strong name key file (.snk) for signing.",
+        };
+
         var verboseOption = new Option<bool>("--verbose");
 
         var rootCommand = new RootCommand("CsWin32 Code Generator - Generates P/Invoke methods and supporting types from Windows metadata.")
@@ -119,6 +131,8 @@ public partial class Program
             targetFrameworkOption,
             platformOption,
             referencesOption,
+            assemblyNameOption,
+            keyFileOption,
             verboseOption,
         };
 
@@ -132,6 +146,8 @@ public partial class Program
         var targetFramework = parseResult.GetValue(targetFrameworkOption);
         var platform = parseResult.GetValue(platformOption);
         var references = parseResult.GetValue(referencesOption);
+        this.assemblyName = parseResult.GetValue(assemblyNameOption);
+        this.assemblyOriginatorKeyFile = parseResult.GetValue(keyFileOption);
         this.verbose = parseResult.GetValue(verboseOption);
 
         // Check for errors before continuing.
@@ -155,7 +171,7 @@ public partial class Program
                 appLocalAllowedLibraries,
                 outputPath,
                 targetFramework,
-                platform ?? "AnyCPU", // Provide default value for platform
+                platform ?? "AnyCPU",
                 references,
                 fullGeneration);
 
@@ -348,15 +364,19 @@ public partial class Program
                 {
                     metadataReferences.Add(MetadataReference.CreateFromFile(reference.FullName));
                 }
+                else
+                {
+                    this.ReportError($"Reference path not found {reference.FullName}");
+                }
             }
         }
 
-        Microsoft.CodeAnalysis.Platform compilationPlatform = platform switch
+        Platform compilationPlatform = platform switch
         {
-            "x86" => Microsoft.CodeAnalysis.Platform.X86,
-            "x64" => Microsoft.CodeAnalysis.Platform.X64,
-            "arm64" => Microsoft.CodeAnalysis.Platform.Arm64,
-            _ => Microsoft.CodeAnalysis.Platform.AnyCpu,
+            "x86" => Platform.X86,
+            "x64" => Platform.X64,
+            "arm64" => Platform.Arm64,
+            _ => Platform.AnyCpu,
         };
 
         var compilationOptions = new CSharpCompilationOptions(
@@ -364,8 +384,24 @@ public partial class Program
             allowUnsafe: allowUnsafeBlocks,
             platform: compilationPlatform);
 
+        // Handle strong name signing if a key file is provided
+        if (this.assemblyOriginatorKeyFile is not null)
+        {
+            if (!this.assemblyOriginatorKeyFile.Exists)
+            {
+                this.ReportError($"Key file not found: {this.assemblyOriginatorKeyFile.FullName}");
+                return null;
+            }
+
+            compilationOptions = compilationOptions
+                .WithStrongNameProvider(new DesktopStrongNameProvider())
+                .WithCryptoKeyFile(this.assemblyOriginatorKeyFile.FullName);
+
+            this.VerboseWriteLine("Compilation configured for strong-name signing");
+        }
+
         return CSharpCompilation.Create(
-            assemblyName: "GeneratedCode",
+            assemblyName: this.assemblyName ?? "GeneratedCode",
             syntaxTrees: null,
             references: metadataReferences,
             options: compilationOptions);

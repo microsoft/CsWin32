@@ -27,6 +27,9 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
     protected string? nativeMethodsTxt;
     protected List<string> nativeMethods = new();
     protected string? nativeMethodsJson;
+    protected List<string> additionalReferences = new();
+    protected string assemblyName = "TestAssembly";
+    protected string? keyFile;
 
     public CsWin32GeneratorTestsBase(ITestOutputHelper logger)
         : base(logger)
@@ -35,8 +38,16 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
 
     public ITestOutputHelper Logger => TestContext.Current.TestOutputHelper!;
 
+    public override async ValueTask InitializeAsync()
+    {
+        await base.InitializeAsync();
+        this.compilation = this.starterCompilations["net9.0"];
+    }
+
     protected async Task InvokeGeneratorAndCompile(TestOptions options = TestOptions.None, [CallerMemberName] string testCase = "")
     {
+        this.compilation = this.compilation.AddReferences(this.additionalReferences.Select(x => MetadataReference.CreateFromFile(x)));
+
         string outputPath = this.GetTestCaseOutputDirectory(testCase);
         if (Directory.Exists(outputPath))
         {
@@ -83,6 +94,7 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
         this.Logger.WriteLine($"OutputPath: {outputPath}");
 
         List<string> args = new();
+        args.AddRange(["--assembly-name", this.assemblyName]);
         args.AddRange(["--native-methods-txt", nativeMethodsTxtPath]);
         args.AddRange(["--metadata-paths", win32winmd]);
         args.AddRange(["--output-path", outputPath]);
@@ -93,13 +105,22 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
             args.AddRange(["--native-methods-json", nativeMethodsJsonPath]);
         }
 
-        CSharpCompilation baseCompilation = this.starterCompilations["net9.0"];
-        foreach (MetadataReference reference in baseCompilation.References)
+        foreach (MetadataReference reference in this.compilation.References)
         {
             if (reference is PortableExecutableReference peRef && peRef.FilePath is not null)
             {
                 args.AddRange(["--references", peRef.FilePath]);
             }
+        }
+
+        foreach (string reference in this.additionalReferences)
+        {
+            args.AddRange(["--references", reference]);
+        }
+
+        if (this.keyFile is not null)
+        {
+            args.AddRange(["--key-file", this.keyFile]);
         }
 
         // Act
@@ -118,8 +139,6 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
     protected async Task CompileGeneratedFilesWithSourceGenerators(string outputPath, string[] generatedFiles, TestOptions options)
     {
         this.Logger.WriteLine("Compiling generated files with source generators...");
-
-        this.compilation = this.starterCompilations["net9.0"];
 
         // Create syntax trees from the generated files
         var syntaxTrees = new List<SyntaxTree>();
@@ -268,7 +287,7 @@ using System.Runtime.CompilerServices;
         return outputPath;
     }
 
-    private string GetOutputDirectory()
+    protected string GetOutputDirectory()
     {
         return Path.Combine(Path.GetDirectoryName(typeof(CsWin32GeneratorTests).Assembly.Location)!, "TestOutput");
     }

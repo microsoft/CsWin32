@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="app/buildtask-sdk.csproj" />
+  <Project Path="dependency/buildtask-sdk-dependency.csproj" />
+</Solution>

@@ -121,7 +121,7 @@ To keep CsWin32 generating the referred types you need, add them explicitly to `
 
 ### Support for trimming, AOT, and/or disabling the runtime marshaler
 
-**NEW!** CsWin32 now supports AOT by generating code from an MSBuild task rather than a source generator.
+**NEW!** CsWin32 now has improved support for NativeAOT by generating code from an MSBuild task rather than a source generator so that it can leverage other source generators that support `[LibraryImport]` and others.
 
 If you set one of these flags:
 

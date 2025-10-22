@@ -7,7 +7,7 @@ public partial class Generator
 {
     private (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? MarshalAsAttribute) DeclareFixedLengthArrayStruct(FieldDefinition fieldDef, CustomAttributeHandleCollection customAttributes, TypeHandleInfo fieldTypeHandleInfo, ArrayTypeSyntax arrayType, Context context)
     {
-        if (context.AllowMarshaling && this.IsManagedType(fieldTypeHandleInfo))
+        if (context.AllowMarshaling && this.IsManagedType(fieldTypeHandleInfo) && !this.useSourceGenerators)
         {
             ArrayTypeSyntax ranklessArray = arrayType.WithRankSpecifiers(new SyntaxList<ArrayRankSpecifierSyntax>(ArrayRankSpecifier()));
             AttributeSyntax marshalAs = MarshalAs(UnmanagedType.ByValArray, sizeConst: arrayType.RankSpecifiers[0].Sizes[0]);
@@ -731,7 +731,7 @@ public partial class Generator
             }
             else
             {
-                qualifiedElementType = fieldTypeHandleInfo.ToTypeSyntax(this.extensionMethodSignatureTypeSettings, GeneratingElement.Other, customAttributes).Type switch
+                qualifiedElementType = fieldTypeHandleInfo.ToTypeSyntax(this.extensionMethodSignatureTypeSettings, GeneratingElement.Other, customAttributes.QualifyWith(this)).Type switch
                 {
                     ArrayTypeSyntax at => at.ElementType,
                     PointerTypeSyntax ptrType => ptrType.ElementType,

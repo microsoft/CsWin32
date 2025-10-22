@@ -3,21 +3,21 @@
   "isRoot": true,
   "tools": {
     "powershell": {
-      "version": "7.5.0",
+      "version": "7.5.3",
       "commands": [
         "pwsh"
       ],
       "rollForward": false
     },
     "dotnet-coverage": {
-      "version": "17.14.2",
+      "version": "18.1.0",
       "commands": [
         "dotnet-coverage"
       ],
       "rollForward": false
     },
     "nbgv": {
-      "version": "3.7.115",
+      "version": "3.8.118",
       "commands": [
         "nbgv"
       ],
@@ -27,6 +27,13 @@
       "version": "2.78.3",
       "commands": [
         "docfx"
+      ],
+      "rollForward": false
+    },
+    "nerdbank.dotnetrepotools": {
+      "version": "1.0.92",
+      "commands": [
+        "repo"
       ],
       "rollForward": false
     }

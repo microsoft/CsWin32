@@ -220,6 +220,15 @@ public class SuperGenerator : IGenerator, IDisposable
         }
     }
 
+    /// <inheritdoc/>
+    public void AddGeneratorExclusion(string exclusion)
+    {
+        foreach (Generator generator in this.Generators.Values)
+        {
+            generator.AddGeneratorExclusion(exclusion);
+        }
+    }
+
     /// <summary>
     /// Looks up the <see cref="Generator"/> that owns a referenced type.
     /// </summary>
@@ -248,6 +257,11 @@ public class SuperGenerator : IGenerator, IDisposable
         }
 
         return this.Generators.TryGetValue(winmdName, out targetGenerator);
+    }
+
+    internal Generator GetGeneratorFromReader(MetadataReader reader)
+    {
+        return this.Generators.FirstOrDefault(kv => kv.Value.Reader == reader).Value ?? throw new InvalidOperationException("No generator found for the specified reader.");
     }
 
     internal bool TryGetTypeDefinitionHandle(QualifiedTypeReferenceHandle typeRefHandle, out QualifiedTypeDefinitionHandle typeDefHandle)

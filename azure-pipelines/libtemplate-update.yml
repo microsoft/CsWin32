@@ -30,11 +30,15 @@ variables:
 extends:
   template: azure-pipelines/MicroBuild.1ES.Unofficial.yml@MicroBuildTemplate
   parameters:
+    settings:
+      networkIsolationPolicy: Permissive,CFSClean
     sdl:
       sourceAnalysisPool:
         name: AzurePipelines-EO
         demands:
         - ImageOverride -equals 1ESPT-Windows2022
+      credscan:
+        enabled: false
 
     stages:
     - stage: Merge

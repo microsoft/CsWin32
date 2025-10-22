@@ -1,0 +1,8 @@
+{
+  "namespace": "TestNamespace",
+  "apis": [
+    "CreateFile",
+    "DeleteFile" // This is a comment
+  ],
+  "output": "GeneratedCode",
+}

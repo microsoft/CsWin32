@@ -49,8 +49,10 @@ jobs:
       isLargeApp: false
       toolVersion: Latest
       preserveLogsFolder: true
+      azureSubscription: VSEng-APIScanSC
     env:
-      AzureServicesAuthConnectionString: runAs=App;AppId=$(ApiScanClientId)
+      AzureServicesAuthConnectionString: $(APIScanAuthConnectionString)
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
 
   # File bugs when APIScan finds issues
   - task: TSAUpload@2

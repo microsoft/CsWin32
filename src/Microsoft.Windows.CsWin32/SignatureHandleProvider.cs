@@ -5,10 +5,11 @@ namespace Microsoft.Windows.CsWin32;
 
 internal class SignatureHandleProvider : ISignatureTypeProvider<TypeHandleInfo, SignatureHandleProvider.IGenericContext?>
 {
-    internal static readonly SignatureHandleProvider Instance = new SignatureHandleProvider();
+    private readonly Generator generator;
 
-    private SignatureHandleProvider()
+    internal SignatureHandleProvider(Generator generator)
     {
+        this.generator = generator;
     }
 
     internal interface IGenericContext
@@ -21,9 +22,9 @@ internal class SignatureHandleProvider : ISignatureTypeProvider<TypeHandleInfo, 
 
     public TypeHandleInfo GetPrimitiveType(PrimitiveTypeCode typeCode) => new PrimitiveTypeHandleInfo(typeCode);
 
-    public TypeHandleInfo GetTypeFromDefinition(MetadataReader reader, TypeDefinitionHandle handle, byte rawTypeKind) => new HandleTypeHandleInfo(reader, handle, rawTypeKind);
+    public TypeHandleInfo GetTypeFromDefinition(MetadataReader reader, TypeDefinitionHandle handle, byte rawTypeKind) => new HandleTypeHandleInfo(this.generator.GetGeneratorFromReader(reader), reader, handle, rawTypeKind);
 
-    public TypeHandleInfo GetTypeFromReference(MetadataReader reader, TypeReferenceHandle handle, byte rawTypeKind) => new HandleTypeHandleInfo(reader, handle, rawTypeKind);
+    public TypeHandleInfo GetTypeFromReference(MetadataReader reader, TypeReferenceHandle handle, byte rawTypeKind) => new HandleTypeHandleInfo(this.generator.GetGeneratorFromReader(reader), reader, handle, rawTypeKind);
 
     /// <inheritdoc/>
     public TypeHandleInfo GetSZArrayType(TypeHandleInfo elementType) => throw new NotImplementedException();

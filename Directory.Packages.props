@@ -5,17 +5,20 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
 
-    <MicroBuildVersion>2.0.187</MicroBuildVersion>
-    <MetadataVersion>61.0.15-preview</MetadataVersion>
-    <WDKMetadataVersion>0.12.8-experimental</WDKMetadataVersion>
+    <MicroBuildVersion>2.0.201</MicroBuildVersion>
+    <MetadataVersion>65.0.8-preview</MetadataVersion>
+    <WDKMetadataVersion>0.13.25-experimental</WDKMetadataVersion>
     <!-- <DiaMetadataVersion>0.2.185-preview-g7e1e6a442c</DiaMetadataVersion> -->
     <ApiDocsVersion>0.1.42-alpha</ApiDocsVersion>
-    <CodeAnalysisVersion>4.13.0</CodeAnalysisVersion>
+    <CodeAnalysisVersion>4.14.0</CodeAnalysisVersion>
   </PropertyGroup>
   <ItemGroup>
     <!-- We have to use the MessagePack version used by win32metadata (https://github.com/microsoft/CsWin32/issues/371) -->
     <PackageVersion Include="MessagePack" Version="2.2.85" />
     <PackageVersion Include="MessagePackAnalyzer" Version="2.5.192" />
+    <PackageVersion Include="Microsoft.Bcl.AsyncInterfaces" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.Build.Utilities.Core" Version="16.11.6" />
+    <PackageVersion Include="Microsoft.Build.Framework" Version="16.11.6" />
     <PackageVersion Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="3.3.4" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Common" Version="$(CodeAnalysisVersion)" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.SourceGenerators.Testing.XUnit" Version="1.1.3-beta1.24352.1" />
@@ -26,21 +29,24 @@
     <PackageVersion Include="Microsoft.Windows.SDK.Win32Docs" Version="$(ApiDocsVersion)" />
     <PackageVersion Include="Microsoft.Windows.SDK.Win32Metadata" Version="$(MetadataVersion)" />
     <PackageVersion Include="Microsoft.Windows.WDK.Win32Metadata" Version="$(WDKMetadataVersion)" />
+    <PackageVersion Include="Microsoft.Windows.CsWinRT" Version="2.2.0" />
+    <PackageVersion Include="Moq" Version="4.20.72" />
     <PackageVersion Include="NuGet.Protocol" Version="6.13.2" />
+    <PackageVersion Include="System.CommandLine" Version="2.0.0-rc.1.25451.107" />
     <PackageVersion Include="System.Collections.Immutable" Version="9.0.0" />
     <PackageVersion Include="System.Memory" Version="4.6.0" />
     <PackageVersion Include="System.Reflection.Metadata" Version="9.0.0" />
     <PackageVersion Include="System.Runtime.CompilerServices.Unsafe" Version="6.1.0" />
-    <PackageVersion Include="System.Text.Json" Version="9.0.0" />
+    <PackageVersion Include="System.Text.Json" Version="8.0.0" />
     <PackageVersion Include="Xunit.Combinatorial" Version="2.0.24" />
     <PackageVersion Include="Xunit.Assert" Version="2.9.3" />
   </ItemGroup>
   <Import Project="Directory.Packages.Analyzers.props" Condition="'$(IsTestProject)'!='true'" />
   <ItemGroup Label="Library.Template">
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.13.0" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.0.0" />
     <PackageVersion Include="Microsoft.VisualStudio.Internal.MicroBuild.NonShipping" Version="$(MicroBuildVersion)" />
-    <PackageVersion Include="xunit.runner.visualstudio" Version="3.0.2" />
-    <PackageVersion Include="xunit.v3" Version="1.1.0" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <PackageVersion Include="xunit.v3" Version="3.1.0" />
   </ItemGroup>
   <ItemGroup>
     <!-- Put repo-specific GlobalPackageReference items in this group. -->
@@ -50,7 +56,7 @@
     <GlobalPackageReference Include="DotNetAnalyzers.DocumentationAnalyzers" Version="1.0.0-beta.59" />
     <GlobalPackageReference Include="Microsoft.VisualStudio.Internal.MicroBuild.VisualStudio" Version="$(MicroBuildVersion)" />
     <!-- The condition works around https://github.com/dotnet/sdk/issues/44951 -->
-    <GlobalPackageReference Include="Nerdbank.GitVersioning" Version="3.7.115" Condition="!('$(TF_BUILD)'=='true' and '$(dotnetformat)'=='true')" />
+    <GlobalPackageReference Include="Nerdbank.GitVersioning" Version="3.8.118" Condition="!('$(TF_BUILD)'=='true' and '$(dotnetformat)'=='true')" />
     <GlobalPackageReference Include="PolySharp" Version="1.15.0" Condition="'$(DisablePolyfill)'!='true'" />
     <GlobalPackageReference Include="StyleCop.Analyzers.Unstable" Version="1.2.0.556" />
   </ItemGroup>

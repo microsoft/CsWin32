@@ -14,7 +14,7 @@ public partial class Generator
         InterfaceMethod,
     }
 
-    private IEnumerable<MethodDeclarationSyntax> DeclareFriendlyOverloads(MethodDefinition methodDefinition, MethodDeclarationSyntax externMethodDeclaration, NameSyntax declaringTypeName, FriendlyOverloadOf overloadOf, HashSet<string> helperMethodsAdded)
+    private IEnumerable<MethodDeclarationSyntax> DeclareFriendlyOverloads(MethodDefinition methodDefinition, MethodDeclarationSyntax externMethodDeclaration, NameSyntax declaringTypeName, FriendlyOverloadOf overloadOf, HashSet<string> helperMethodsAdded, bool avoidWinmdRootAlias)
     {
         if (!this.options.FriendlyOverloads.Enabled)
         {
@@ -59,7 +59,12 @@ public partial class Generator
             _ => throw new NotSupportedException(overloadOf.ToString()),
         };
 
-        MethodSignature<TypeHandleInfo> originalSignature = methodDefinition.DecodeSignature(SignatureHandleProvider.Instance, null);
+        if (avoidWinmdRootAlias)
+        {
+            parameterTypeSyntaxSettings = parameterTypeSyntaxSettings with { AvoidWinmdRootAlias = true };
+        }
+
+        MethodSignature<TypeHandleInfo> originalSignature = methodDefinition.DecodeSignature(this.SignatureHandleProvider, null);
         CustomAttributeHandleCollection? returnTypeAttributes = null;
         var parameters = externMethodDeclaration.ParameterList.Parameters.Select(StripAttributes).ToList();
         var lengthParamUsedBy = new Dictionary<int, int>();
@@ -71,7 +76,9 @@ public partial class Generator
         var leadingStatements = new List<StatementSyntax>();
         var trailingStatements = new List<StatementSyntax>();
         var finallyStatements = new List<StatementSyntax>();
-        bool signatureChanged = false;
+        bool signatureChanged = false; // Did the signature change with fundamentally different types?
+        bool minorSignatureChange = false; // Did the signature change but not enough that overload resolution would be confused?
+
         foreach (ParameterHandle paramHandle in methodDefinition.GetParameters())
         {
             Parameter param = this.Reader.GetParameter(paramHandle);
@@ -105,7 +112,7 @@ public partial class Generator
 
             TypeHandleInfo parameterTypeInfo = originalSignature.ParameterTypes[param.SequenceNumber - 1];
             bool isManagedParameterType = this.IsManagedType(parameterTypeInfo);
-            bool mustRemainAsPointer = parameterTypeInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo pointedElement } && this.IsStructWithFlexibleArray(pointedElement);
+            bool mustRemainAsPointer = parameterTypeInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo pointedElement } && pointedElement.Generator.IsStructWithFlexibleArray(pointedElement);
 
             IdentifierNameSyntax origName = IdentifierName(externParam.Identifier.ValueText);
 
@@ -120,13 +127,18 @@ public partial class Generator
                 countParamIndex = nativeArrayInfo.CountParamIndex;
                 countConst = nativeArrayInfo.CountConst;
             }
-            else if (externParam.Type is PointerTypeSyntax { ElementType: PredefinedTypeSyntax { Keyword.RawKind: (int)SyntaxKind.ByteKeyword } } && this.FindInteropDecorativeAttribute(paramAttributes, MemorySizeAttribute) is CustomAttribute memorySizeAttribute)
+            else if (externParam.Type is PointerTypeSyntax { ElementType: PredefinedTypeSyntax { Keyword.RawKind: (int)SyntaxKind.ByteKeyword } })
             {
                 // A very special case as documented in https://github.com/microsoft/win32metadata/issues/1555
                 // where MemorySizeAttribute is applied to byte* parameters to indicate the size of the buffer.
+                // Also https://github.com/microsoft/CsWin32/issues/1487 showed that byte* parameters are very unlikely to be a
+                // single byte so it's safer to assume it's an un-annotated array.
                 isArray = true;
-                MemorySize memorySize = DecodeMemorySizeAttribute(memorySizeAttribute);
-                countParamIndex = memorySize.BytesParamIndex;
+                if (this.FindInteropDecorativeAttribute(paramAttributes, MemorySizeAttribute) is CustomAttribute memorySizeAttribute)
+                {
+                    MemorySize memorySize = DecodeMemorySizeAttribute(memorySizeAttribute);
+                    countParamIndex = memorySize.BytesParamIndex;
+                }
             }
 
             if (mustRemainAsPointer)
@@ -146,7 +158,7 @@ public partial class Generator
                 bool hasOut = externParam.Modifiers.Any(SyntaxKind.OutKeyword);
                 arguments[param.SequenceNumber - 1] = arguments[param.SequenceNumber - 1].WithRefKindKeyword(TokenWithSpace(hasOut ? SyntaxKind.OutKeyword : SyntaxKind.RefKeyword));
             }
-            else if (isOut && !isIn && !isReleaseMethod && parameterTypeInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo pointedElementInfo } && this.TryGetHandleReleaseMethod(pointedElementInfo.Handle, paramAttributes, out string? outReleaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, outReleaseMethod))
+            else if (isOut && !isIn && !isReleaseMethod && parameterTypeInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo pointedElementInfo } && pointedElementInfo.Generator.TryGetHandleReleaseMethod(pointedElementInfo.Handle, paramAttributes, out string? outReleaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, outReleaseMethod))
             {
                 if (this.RequestSafeHandle(outReleaseMethod) is TypeSyntax safeHandleType)
                 {
@@ -293,6 +305,17 @@ public partial class Generator
                                 GetSpanLength(origName, false /* we've converted it to be a span */),
                                 LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(countConst.Value))),
                             ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentException))).WithArgumentList(ArgumentList()))));
+                    }
+                    else if (!isPointerToPointer && this.canUseSpan && externParam.Type is PointerTypeSyntax)
+                    {
+                        signatureChanged = true;
+
+                        // Handle the byte* => Span<byte> mapping
+                        parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
+                            .WithType((isConst ? MakeReadOnlySpanOfT(elementType) : MakeSpanOfT(elementType)).WithTrailingTrivia(TriviaList(Space)));
+                        fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
+                            VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
+                        arguments[param.SequenceNumber - 1] = Argument(localName);
                     }
                     else if (isNullTerminated && isConst && parameters[param.SequenceNumber - 1].Type is PointerTypeSyntax { ElementType: PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.CharKeyword } } })
                     {
@@ -590,7 +613,7 @@ public partial class Generator
             {
                 // The extern method couldn't have exposed the parameter as a pointer because the type is managed.
                 // It would have exposed as an `in` modifier, and non-optional. But we can expose as optional anyway.
-                signatureChanged = true;
+                minorSignatureChange = true;
                 IdentifierNameSyntax localName = IdentifierName(origName + "Local");
                 parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
                     .WithType(NullableType(externParam.Type).WithTrailingTrivia(TriviaList(Space)))
@@ -673,11 +696,11 @@ public partial class Generator
         }
 
         TypeSyntax? returnSafeHandleType = originalSignature.ReturnType is HandleTypeHandleInfo returnTypeHandleInfo
-            && this.TryGetHandleReleaseMethod(returnTypeHandleInfo.Handle, returnTypeAttributes, out string? returnReleaseMethod)
+            && returnTypeHandleInfo.Generator.TryGetHandleReleaseMethod(returnTypeHandleInfo.Handle, returnTypeAttributes, out string? returnReleaseMethod)
             ? this.RequestSafeHandle(returnReleaseMethod) : null;
         SyntaxToken friendlyMethodName = externMethodDeclaration.Identifier;
 
-        if (returnSafeHandleType is object && !signatureChanged)
+        if ((returnSafeHandleType is object || minorSignatureChange) && !signatureChanged)
         {
             // The parameter types are all the same, but we need a friendly overload with a different return type.
             // Our only choice is to rename the friendly overload.
@@ -799,7 +822,7 @@ public partial class Generator
             // If we're using C# 13 or later, consider adding the overload resolution attribute if it would likely resolve ambiguities.
             if (this.LanguageVersion >= (LanguageVersion)1300 && parameters.Count == externMethodDeclaration.ParameterList.Parameters.Count)
             {
-                this.DeclareOverloadResolutionPriorityAttributeIfNecessary();
+                this.volatileCode.GenerationTransaction(() => this.DeclareOverloadResolutionPriorityAttributeIfNecessary());
                 friendlyDeclaration = friendlyDeclaration.AddAttributeLists(AttributeList().AddAttributes(OverloadResolutionPriorityAttribute(1)));
             }
 

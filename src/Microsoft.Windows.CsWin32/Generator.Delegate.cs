@@ -54,7 +54,7 @@ public partial class Generator
         }
 
         this.GetSignatureForDelegate(typeDef, out MethodDefinition invokeMethodDef, out MethodSignature<TypeHandleInfo> signature, out CustomAttributeHandleCollection? returnTypeAttributes);
-        TypeSyntaxAndMarshaling returnValue = signature.ReturnType.ToTypeSyntax(typeSettings, GeneratingElement.Delegate, returnTypeAttributes);
+        TypeSyntaxAndMarshaling returnValue = signature.ReturnType.ToTypeSyntax(typeSettings, GeneratingElement.Delegate, returnTypeAttributes?.QualifyWith(this));
 
         DelegateDeclarationSyntax result = DelegateDeclaration(returnValue.Type, Identifier(name))
             .WithParameterList(FixTrivia(this.CreateParameterList(invokeMethodDef, signature, typeSettings, GeneratingElement.Delegate)))
@@ -113,7 +113,7 @@ public partial class Generator
     private void GetSignatureForDelegate(TypeDefinition typeDef, out MethodDefinition invokeMethodDef, out MethodSignature<TypeHandleInfo> signature, out CustomAttributeHandleCollection? returnTypeAttributes)
     {
         invokeMethodDef = typeDef.GetMethods().Select(this.Reader.GetMethodDefinition).Single(def => this.Reader.StringComparer.Equals(def.Name, "Invoke"));
-        signature = invokeMethodDef.DecodeSignature(SignatureHandleProvider.Instance, null);
+        signature = invokeMethodDef.DecodeSignature(this.SignatureHandleProvider, null);
         returnTypeAttributes = this.GetReturnTypeCustomAttributes(invokeMethodDef);
     }
 
@@ -149,6 +149,6 @@ public partial class Generator
             return FunctionPointerParameter(delegateTypeDef.Generator.FunctionPointer(delegateTypeDef.Definition));
         }
 
-        return FunctionPointerParameter(parameterTypeInfo.ToTypeSyntax(this.functionPointerTypeSettings, GeneratingElement.FunctionPointer, customAttributeHandles).GetUnmarshaledType());
+        return FunctionPointerParameter(parameterTypeInfo.ToTypeSyntax(this.functionPointerTypeSettings, GeneratingElement.FunctionPointer, customAttributeHandles?.QualifyWith(this)).GetUnmarshaledType());
     }
 }

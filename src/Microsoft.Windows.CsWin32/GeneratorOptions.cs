@@ -9,54 +9,54 @@ namespace Microsoft.Windows.CsWin32;
 public record GeneratorOptions
 {
     /// <summary>
-    /// Gets a value indicating whether ANSI functions will be omitted and the `W` suffix removed from from UTF-16 functions.
+    /// Gets or sets a value indicating whether ANSI functions will be omitted and the `W` suffix removed from from UTF-16 functions.
     /// </summary>
-    public bool WideCharOnly { get; init; } = true;
+    public bool WideCharOnly { get; set; } = true;
 
     /// <summary>
-    /// Gets the name of a single class under which all p/invoke methods and constants are generated, regardless of imported module.
+    /// Gets or sets the name of a single class under which all p/invoke methods and constants are generated, regardless of imported module.
     /// </summary>
     /// <value>The default value is "PInvoke".</value>
-    public string ClassName { get; init; } = "PInvoke";
+    public string ClassName { get; set; } = "PInvoke";
 
     /// <summary>
-    /// Gets a value indicating whether to emit a single source file as opposed to types spread across many files.
+    /// Gets or sets a value indicating whether to emit a single source file as opposed to types spread across many files.
     /// </summary>
     /// <value>The default value is <see langword="false" />.</value>
-    public bool EmitSingleFile { get; init; }
+    public bool EmitSingleFile { get; set; }
 
     /// <summary>
-    /// Gets a value indicating whether to expose the generated APIs publicly (as opposed to internally).
+    /// Gets or sets a value indicating whether to expose the generated APIs publicly (as opposed to internally).
     /// </summary>
-    public bool Public { get; init; }
+    public bool Public { get; set; }
 
     /// <summary>
-    /// Gets options related to COM interop.
+    /// Gets or sets options related to COM interop.
     /// </summary>
-    public ComInteropOptions ComInterop { get; init; } = new ComInteropOptions();
+    public ComInteropOptions ComInterop { get; set; } = new ComInteropOptions();
 
     /// <summary>
-    /// Gets a value indicating whether to emit COM interfaces instead of structs, and allow generation of non-blittable structs for the sake of an easier to use API.
+    /// Gets or sets a value indicating whether to emit COM interfaces instead of structs, and allow generation of non-blittable structs for the sake of an easier to use API.
     /// </summary>
     /// <value>The default value is <see langword="true"/>.</value>
-    public bool AllowMarshaling { get; init; } = true;
+    public bool AllowMarshaling { get; set; } = true;
 
     /// <summary>
-    /// Gets options related to friendly overloads.
+    /// Gets or sets options related to friendly overloads.
     /// </summary>
-    public FriendlyOverloadOptions FriendlyOverloads { get; init; } = new();
+    public FriendlyOverloadOptions FriendlyOverloads { get; set; } = new();
 
     /// <summary>
-    /// Gets a value indicating whether to generate APIs judged to be unnecessary or redundant given the target framework
+    /// Gets or sets a value indicating whether to generate APIs judged to be unnecessary or redundant given the target framework
     /// because the project multi-targets to frameworks that need the APIs consistently for easier coding.
     /// </summary>
-    public bool MultiTargetingFriendlyAPIs { get; init; }
+    public bool MultiTargetingFriendlyAPIs { get; set; }
 
     /// <summary>
-    /// Gets a value indicating whether friendly overloads should use safe handles.
+    /// Gets or sets a value indicating whether friendly overloads should use safe handles.
     /// </summary>
     /// <value>The default value is <see langword="true"/>.</value>
-    public bool UseSafeHandles { get; init; } = true;
+    public bool UseSafeHandles { get; set; } = true;
 
     /// <summary>
     /// Throws an exception when this instance is not initialized with a valid set of values.
@@ -76,17 +76,24 @@ public record GeneratorOptions
     public record ComInteropOptions
     {
         /// <summary>
-        /// Gets an array of "interface.method" or "interface" strings that identify methods and interfaces that should be generated with <see cref="PreserveSigAttribute"/>.
+        /// Gets or sets an array of "interface.method" or "interface" strings that identify methods and interfaces that should be generated with <see cref="PreserveSigAttribute"/>.
         /// </summary>
-        public ImmutableArray<string> PreserveSigMethods { get; init; } = ImmutableArray.Create<string>();
+        public ImmutableArray<string> PreserveSigMethods { get; set; } = ImmutableArray.Create<string>();
 
         /// <summary>
-        /// Gets a value indicating whether to emit methods that return COM objects via output parameters using <see cref="IntPtr"/> as the parameter type instead of the COM interface.
+        /// Gets or sets a value indicating whether to emit methods that return COM objects via output parameters using <see cref="IntPtr"/> as the parameter type instead of the COM interface.
         /// </summary>
         /// <remarks>
         /// This may be useful on .NET when using ComWrappers. See <see href="https://github.com/microsoft/CsWin32/issues/328">this issue</see> for more details.
         /// </remarks>
-        public bool UseIntPtrForComOutPointers { get; init; }
+        public bool UseIntPtrForComOutPointers { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value indicating whether to emit code that relies on [GeneratedComInterface] and [GeneratedComClass].
+        /// Only takes effect if MSBuild property '&lt;CsWin32RunAsBuildTask&gt;true&lt;/CsWin32RunAsBuildTask&gt;' is set.
+        /// </summary>
+        /// <value>The default value is <see langword="null"/>.</value>
+        public bool? UseComSourceGenerators { get; set; }
     }
 
     /// <summary>
@@ -95,9 +102,9 @@ public record GeneratorOptions
     public record FriendlyOverloadOptions
     {
         /// <summary>
-        /// Gets a value indicating whether to generate method overloads that may be easier to consume or be more idiomatic C#.
+        /// Gets or sets a value indicating whether to generate method overloads that may be easier to consume or be more idiomatic C#.
         /// </summary>
         /// <value>The default value is <see langword="true" />.</value>
-        public bool Enabled { get; init; } = true;
+        public bool Enabled { get; set; } = true;
     }
 }

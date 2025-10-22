@@ -1,0 +1,18 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net9.0-windows10.0.22621.0</TargetFrameworks>
+  </PropertyGroup>
+
+  <Import Project="..\GenerationSandbox.props" />
+
+  <PropertyGroup>
+    <CsWin32RunAsBuildTask>true</CsWin32RunAsBuildTask>
+    <DisableRuntimeMarshalling>true</DisableRuntimeMarshalling>
+  </PropertyGroup>
+
+  <!-- For browsing, add the .cs files as None items -->
+  <ItemGroup>
+    <None Include="$(IntermediateOutputPath)Generated\CsWin32\*.cs" LinkBase="Generated" />
+    <None Include="$(IntermediateOutputPath)Generated\CsWin32\*.txt" LinkBase="Generated" />
+  </ItemGroup>
+</Project>

@@ -3,6 +3,7 @@
 
 namespace Microsoft.Windows.CsWin32;
 
+#if NETSTANDARD2_0
 internal static class BindingRedirects
 {
     private static readonly string SourceGeneratorAssemblyDirectory = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
@@ -10,8 +11,10 @@ internal static class BindingRedirects
 
     static BindingRedirects()
     {
+#pragma warning disable RS1035 // Do not use APIs banned for analyzers
         LocalAssemblies = new Lazy<Dictionary<string, string>>(
             () => Directory.GetFiles(SourceGeneratorAssemblyDirectory, "*.dll").ToDictionary(Path.GetFileNameWithoutExtension, StringComparer.OrdinalIgnoreCase));
+#pragma warning restore RS1035 // Do not use APIs banned for analyzers
     }
 
     private static bool IsNetFramework => RuntimeInformation.FrameworkDescription.StartsWith(".NET Framework", StringComparison.OrdinalIgnoreCase);
@@ -42,3 +45,4 @@ internal static class BindingRedirects
         return null;
     }
 }
+#endif

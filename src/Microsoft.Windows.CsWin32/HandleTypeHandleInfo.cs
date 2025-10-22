@@ -6,20 +6,26 @@ namespace Microsoft.Windows.CsWin32;
 internal record HandleTypeHandleInfo : TypeHandleInfo
 {
     private readonly MetadataReader reader;
+    private readonly Generator generator;
 
     // We just want to see that the identifier starts with I, followed by another upper case letter,
     // followed by a lower case letter. All the WinRT interfaces will match this, and none of the WinRT
     // objects will match it
     private static readonly System.Text.RegularExpressions.Regex InterfaceNameMatcher = new System.Text.RegularExpressions.Regex("^I[A-Z][a-z]");
 
-    internal HandleTypeHandleInfo(MetadataReader reader, EntityHandle handle, byte? rawTypeKind = null)
+    internal HandleTypeHandleInfo(Generator generator, MetadataReader reader, EntityHandle handle, byte? rawTypeKind = null)
     {
+        this.generator = generator;
         this.reader = reader;
         this.Handle = handle;
         this.RawTypeKind = rawTypeKind;
     }
 
     internal EntityHandle Handle { get; }
+
+    internal MetadataReader Reader => this.reader;
+
+    internal Generator Generator => this.generator;
 
     internal byte? RawTypeKind { get; }
 
@@ -70,12 +76,14 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
         }
     }
 
-    internal override TypeSyntaxAndMarshaling ToTypeSyntax(TypeSyntaxSettings inputs, Generator.GeneratingElement forElement, CustomAttributeHandleCollection? customAttributes, ParameterAttributes parameterAttributes = default)
+    internal override TypeSyntaxAndMarshaling ToTypeSyntax(TypeSyntaxSettings inputs, Generator.GeneratingElement forElement, QualifiedCustomAttributeHandleCollection? customAttributes, ParameterAttributes parameterAttributes = default)
     {
         NameSyntax? nameSyntax;
         bool isInterface;
         bool isNonCOMConformingInterface;
-        bool isManagedType = inputs.Generator?.IsManagedType(this) ?? false;
+        bool useComSourceGenerators = this.generator.UseSourceGenerators;
+
+        bool isManagedType = this.generator.IsManagedType(this);
         QualifiedTypeDefinitionHandle? qtdh = default;
         switch (this.Handle.Kind)
         {
@@ -85,23 +93,20 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
                 string simpleNameSuffix = hasUnmanagedSuffix ? Generator.UnmanagedInteropSuffix : string.Empty;
                 nameSyntax = inputs.QualifyNames ? GetNestingQualifiedName(inputs.Generator, this.reader, td, hasUnmanagedSuffix, isInterfaceNestedInStruct: false) : IdentifierName(this.reader.GetString(td.Name) + simpleNameSuffix);
                 isInterface = (td.Attributes & TypeAttributes.Interface) == TypeAttributes.Interface;
-                isNonCOMConformingInterface = isInterface && inputs.Generator?.IsNonCOMInterface(td) is true;
-                qtdh = inputs.Generator is not null ? new QualifiedTypeDefinitionHandle(inputs.Generator, (TypeDefinitionHandle)this.Handle) : default;
+                isNonCOMConformingInterface = isInterface && this.generator.IsNonCOMInterface(td) is true;
+                qtdh = new QualifiedTypeDefinitionHandle(this.generator, (TypeDefinitionHandle)this.Handle);
                 break;
             case HandleKind.TypeReference:
                 var trh = (TypeReferenceHandle)this.Handle;
                 TypeReference tr = this.reader.GetTypeReference(trh);
-                hasUnmanagedSuffix = inputs.Generator?.HasUnmanagedSuffix(this.reader, tr.Name, inputs.AllowMarshaling, isManagedType) ?? false;
+                hasUnmanagedSuffix = inputs.Generator?.HasUnmanagedSuffix(this.Reader, tr.Name, inputs.AllowMarshaling, isManagedType) ?? false;
                 simpleNameSuffix = hasUnmanagedSuffix ? Generator.UnmanagedInteropSuffix : string.Empty;
                 nameSyntax = inputs.QualifyNames ? GetNestingQualifiedName(inputs, this.reader, tr, hasUnmanagedSuffix) : IdentifierName(this.reader.GetString(tr.Name) + simpleNameSuffix);
-                isInterface = inputs.Generator?.IsInterface(trh) is true;
-                isNonCOMConformingInterface = isInterface && inputs.Generator?.IsNonCOMInterface(trh) is true;
-                if (inputs.Generator is not null)
+                isInterface = this.generator.IsInterface(trh) is true;
+                isNonCOMConformingInterface = isInterface && this.generator.IsNonCOMInterface(trh) is true;
+                if (this.generator.TryGetTypeDefHandle(this.Handle, out QualifiedTypeDefinitionHandle qtdhTmp))
                 {
-                    if (inputs.Generator.TryGetTypeDefHandle(this.Handle, out QualifiedTypeDefinitionHandle qtdhTmp))
-                    {
-                        qtdh = qtdhTmp;
-                    }
+                    qtdh = qtdhTmp;
                 }
 
                 break;
@@ -120,7 +125,7 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
             return new TypeSyntaxAndMarshaling(bclType);
         }
 
-        if (inputs.PreferMarshaledTypes && Generator.AdditionalBclInteropStructsMarshaled.TryGetValue(simpleName, out bclType))
+        if (inputs.PreferMarshaledTypes && Generator.AdditionalBclInteropStructsMarshaled.TryGetValue(simpleName, out bclType) && !useComSourceGenerators)
         {
             return new TypeSyntaxAndMarshaling(bclType);
         }
@@ -131,8 +136,8 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
 
         if (simpleName is "PWSTR" or "PSTR")
         {
-            bool isConst = this.IsConstantField || MetadataUtilities.FindAttribute(this.reader, customAttributes, Generator.InteropDecorationNamespace, "ConstAttribute").HasValue;
-            bool isEmptyStringTerminatedList = MetadataUtilities.FindAttribute(this.reader, customAttributes, Generator.InteropDecorationNamespace, "NullNullTerminatedAttribute").HasValue;
+            bool isConst = this.IsConstantField || ((customAttributes is object) && MetadataUtilities.FindAttribute(customAttributes.Value.Reader, customAttributes.Value.Collection, Generator.InteropDecorationNamespace, "ConstAttribute").HasValue);
+            bool isEmptyStringTerminatedList = (customAttributes is object) && MetadataUtilities.FindAttribute(customAttributes.Value.Reader, customAttributes.Value.Collection, Generator.InteropDecorationNamespace, "NullNullTerminatedAttribute").HasValue;
             string constChar = isConst ? "C" : string.Empty;
             string listChars = isEmptyStringTerminatedList ? "ZZ" : string.Empty;
             string nameEnding = simpleName.Substring(1);
@@ -146,7 +151,7 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
                 }
                 else
                 {
-                    this.RequestTypeGeneration(inputs.Generator, this.GetContext(inputs));
+                    this.RequestTypeGeneration(this.GetContext(inputs));
                 }
             }
             else
@@ -154,17 +159,30 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
                 return new TypeSyntaxAndMarshaling(IdentifierName(specialName));
             }
         }
+        else if (useComSourceGenerators && simpleName is "VARIANT" && this.Generator.CanUseComVariant)
+        {
+            return new TypeSyntaxAndMarshaling(QualifiedName(ParseName("global::System.Runtime.InteropServices.Marshalling"), IdentifierName("ComVariant")));
+        }
+        else if (useComSourceGenerators && simpleName is "IDispatch")
+        {
+            return new TypeSyntaxAndMarshaling(QualifiedName(ParseName("global::Windows.Win32.System.Com"), IdentifierName("IDispatch")));
+        }
+        else if (inputs.Generator?.CanUseIPropertyValue != true && simpleName is "IPropertyValue")
+        {
+            marshalAs = new MarshalAsAttribute(UnmanagedType.Interface);
+            return new TypeSyntaxAndMarshaling(PredefinedType(Token(SyntaxKind.ObjectKeyword)), marshalAs, null);
+        }
         else if (TryMarshalAsObject(inputs, simpleName, out marshalAs))
         {
             return new TypeSyntaxAndMarshaling(PredefinedType(Token(SyntaxKind.ObjectKeyword)), marshalAs, null);
         }
-        else if (!inputs.AllowMarshaling && isDelegate && inputs.Generator is object && !Generator.IsUntypedDelegate(delegateDefinition.Generator.Reader, delegateDefinition.Definition))
+        else if ((!inputs.AllowMarshaling || useComSourceGenerators) && isDelegate && inputs.Generator is object && !Generator.IsUntypedDelegate(delegateDefinition.Generator.Reader, delegateDefinition.Definition))
         {
             return new TypeSyntaxAndMarshaling(inputs.Generator.FunctionPointer(delegateDefinition));
         }
         else
         {
-            this.RequestTypeGeneration(inputs.Generator, this.GetContext(inputs));
+            this.RequestTypeGeneration(this.GetContext(inputs));
         }
 
         if (isDelegate)
@@ -176,38 +194,49 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
             ? PointerType(nameSyntax)
             : nameSyntax;
 
+        string? marshalUsingType = null;
+
         if (nameSyntax is QualifiedNameSyntax qualifiedName)
         {
             string? ns = qualifiedName.Left.ToString();
 
             // Look for WinRT namespaces
-            if (ns.StartsWith("global::Windows.Foundation") || ns.StartsWith("global::Windows.UI") || ns.StartsWith("global::Windows.Graphics") || ns.StartsWith("global::Windows.System"))
+            if (ns.StartsWith("global::Windows.Foundation") || ns.StartsWith("global::Windows.UI") || ns.StartsWith("global::Windows.Graphics") || ns.StartsWith("global::Windows.System") || ns.StartsWith("global::Windows.Storage"))
             {
-                // We only want to marshal WinRT objects, not interfaces. We don't have a good way of knowing
-                // whether it's an interface or an object. "isInterface" comes back as false for a WinRT interface,
-                // so that doesn't help. Looking at the name should be good enough, but if we needed to, the
-                // Win32 projection could give us an attribute to make sure.
-                string? objName = qualifiedName.Right.ToString();
-                bool isInterfaceName = InterfaceNameMatcher.IsMatch(objName);
-                if (!isInterfaceName)
+                // Always generate a custom marshaler for WinRT type
+                if (inputs.AllowMarshaling && this.generator.UseSourceGenerators)
                 {
-                    string marshalCookie = nameSyntax.ToString();
-                    if (marshalCookie.StartsWith(Generator.GlobalNamespacePrefix, StringComparison.Ordinal))
+                    string fullTypeName = qualifiedName.ToString();
+                    marshalUsingType = this.generator.RequestCustomWinRTMarshaler(fullTypeName);
+                }
+                else
+                {
+                    // We only want to marshal WinRT objects, not interfaces. We don't have a good way of knowing
+                    // whether it's an interface or an object. "isInterface" comes back as false for a WinRT interface,
+                    // so that doesn't help. Looking at the name should be good enough, but if we needed to, the
+                    // Win32 projection could give us an attribute to make sure.
+                    string? objName = qualifiedName.Right.ToString();
+                    bool isInterfaceName = InterfaceNameMatcher.IsMatch(objName);
+                    if (!isInterfaceName)
                     {
-                        marshalCookie = marshalCookie.Substring(Generator.GlobalNamespacePrefix.Length);
-                    }
+                        string marshalCookie = nameSyntax.ToString();
+                        if (marshalCookie.StartsWith(Generator.GlobalNamespacePrefix, StringComparison.Ordinal))
+                        {
+                            marshalCookie = marshalCookie.Substring(Generator.GlobalNamespacePrefix.Length);
+                        }
 
-                    marshalAs = new MarshalAsAttribute(UnmanagedType.CustomMarshaler) { MarshalCookie = marshalCookie, MarshalType = Generator.WinRTCustomMarshalerFullName };
+                        marshalAs = new MarshalAsAttribute(UnmanagedType.CustomMarshaler) { MarshalCookie = marshalCookie, MarshalType = Generator.WinRTCustomMarshalerFullName };
+                    }
                 }
             }
         }
 
-        return new TypeSyntaxAndMarshaling(syntax, marshalAs, null);
+        return new TypeSyntaxAndMarshaling(syntax, marshalAs, null) { MarshalUsingType = marshalUsingType };
     }
 
     internal override bool? IsValueType(TypeSyntaxSettings inputs)
     {
-        Generator generator = inputs.Generator ?? throw new ArgumentException("Generator required.");
+        Generator generator = this.generator;
         TypeDefinitionHandle typeDefHandle = default;
         switch (this.Handle.Kind)
         {
@@ -259,14 +288,36 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
             switch (name)
             {
                 case "IUnknown":
-                    marshalAs = new MarshalAsAttribute(UnmanagedType.IUnknown);
+                    if (inputs.Generator?.UseSourceGenerators == true)
+                    {
+                        marshalAs = new MarshalAsAttribute(UnmanagedType.Interface);
+                    }
+                    else
+                    {
+                        marshalAs = new MarshalAsAttribute(UnmanagedType.IUnknown);
+                    }
+
                     return true;
+                case "IPropertyValue":
+                    // If IPropertyValue isn't public, just marshal to Interface.
+                    if (inputs.Generator?.CanUseIPropertyValue != true)
+                    {
+                        marshalAs = new MarshalAsAttribute(UnmanagedType.Interface);
+                        return true;
+                    }
+
+                    break;
                 case "IDispatch":
                     marshalAs = new MarshalAsAttribute(UnmanagedType.IDispatch);
                     return true;
                 case "VARIANT":
-                    marshalAs = new MarshalAsAttribute(UnmanagedType.Struct);
-                    return true;
+                    if (inputs.Generator?.UseSourceGenerators != true)
+                    {
+                        marshalAs = new MarshalAsAttribute(UnmanagedType.Struct);
+                        return true;
+                    }
+
+                    break;
             }
         }
 
@@ -301,12 +352,12 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
     private bool IsDelegate(TypeSyntaxSettings inputs, out QualifiedTypeDefinition delegateTypeDef)
     {
         TypeDefinitionHandle tdh = default;
-        Generator? generator = inputs.Generator;
+        Generator generator = this.generator;
         switch (this.Handle.Kind)
         {
-            case HandleKind.TypeReference when inputs.Generator is not null:
+            case HandleKind.TypeReference when generator is not null:
                 var trHandle = (TypeReferenceHandle)this.Handle;
-                if (inputs.Generator.TryGetTypeDefHandle(trHandle, out QualifiedTypeDefinitionHandle qtdh))
+                if (generator.TryGetTypeDefHandle(trHandle, out QualifiedTypeDefinitionHandle qtdh))
                 {
                     tdh = qtdh.DefinitionHandle;
                     generator = qtdh.Generator;
@@ -339,15 +390,15 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
         return false;
     }
 
-    private void RequestTypeGeneration(Generator? generator, Generator.Context context)
+    private void RequestTypeGeneration(Generator.Context context)
     {
         if (this.Handle.Kind == HandleKind.TypeDefinition)
         {
-            generator?.RequestInteropType((TypeDefinitionHandle)this.Handle, context);
+            this.generator.RequestInteropType((TypeDefinitionHandle)this.Handle, context);
         }
         else if (this.Handle.Kind == HandleKind.TypeReference)
         {
-            generator?.RequestInteropType((TypeReferenceHandle)this.Handle, context);
+            this.generator.RequestInteropType((TypeReferenceHandle)this.Handle, context);
         }
     }
 }

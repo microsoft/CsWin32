@@ -65,7 +65,7 @@ public partial class Generator
             ConstantHandle valueHandle = fieldDef.GetDefaultValue();
             if (valueHandle.IsNil)
             {
-                enumBaseType = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null).ToTypeSyntax(this.enumTypeSettings, GeneratingElement.EnumValue, null).Type;
+                enumBaseType = fieldDef.DecodeSignature(this.SignatureHandleProvider, null).ToTypeSyntax(this.enumTypeSettings, GeneratingElement.EnumValue, null).Type;
                 return;
             }
 

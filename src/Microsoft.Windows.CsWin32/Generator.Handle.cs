@@ -36,9 +36,9 @@ public partial class Generator
             string releaseMethodModule = this.GetNormalizedModuleName(releaseMethodDef.GetImport());
 
             IdentifierNameSyntax? safeHandleTypeIdentifier = IdentifierName(safeHandleClassName);
-            safeHandleType = safeHandleTypeIdentifier;
+            safeHandleType = QualifiedName(ParseName($"global::{this.Namespace}"), safeHandleTypeIdentifier);
 
-            MethodSignature<TypeHandleInfo> releaseMethodSignature = releaseMethodDef.DecodeSignature(SignatureHandleProvider.Instance, null);
+            MethodSignature<TypeHandleInfo> releaseMethodSignature = releaseMethodDef.DecodeSignature(this.SignatureHandleProvider, null);
             TypeHandleInfo releaseMethodParameterTypeHandleInfo = releaseMethodSignature.ParameterTypes[0];
             TypeSyntaxAndMarshaling releaseMethodParameterType = releaseMethodParameterTypeHandleInfo.ToTypeSyntax(this.externSignatureTypeSettings, GeneratingElement.HelperClassMember, default);
 
@@ -60,19 +60,25 @@ public partial class Generator
                 safeHandleType = null;
             }
 
-            this.volatileCode.AddSafeHandleNameForReleaseMethod(releaseMethod, safeHandleType);
+            this.volatileCode.GenerationTransaction(delegate
+            {
+                this.volatileCode.AddSafeHandleNameForReleaseMethod(releaseMethod, safeHandleType);
+            });
 
             if (safeHandleType is null)
             {
                 return safeHandleType;
             }
 
-            if (this.FindTypeSymbolIfAlreadyAvailable($"{this.Namespace}.{safeHandleType}") is not null)
+            if (this.IsTypeAlreadyFullyDeclared($"{this.Namespace}.{safeHandleType}"))
             {
                 return safeHandleType;
             }
 
-            this.RequestExternMethod(releaseMethodHandle.Value);
+            this.volatileCode.GenerationTransaction(delegate
+            {
+                this.RequestExternMethod(releaseMethodHandle.Value);
+            });
 
             // Collect all the known invalid values for this handle.
             // If no invalid values are given (e.g. BSTR), we'll just assume 0 is invalid.
@@ -80,7 +86,7 @@ public partial class Generator
             IntPtr preferredInvalidValue = GetPreferredInvalidHandleValue(invalidHandleValues, new IntPtr(-1));
 
             CustomAttributeHandleCollection? atts = this.GetReturnTypeCustomAttributes(releaseMethodDef);
-            TypeSyntaxAndMarshaling releaseMethodReturnType = releaseMethodSignature.ReturnType.ToTypeSyntax(this.externSignatureTypeSettings, GeneratingElement.HelperClassMember, atts);
+            TypeSyntaxAndMarshaling releaseMethodReturnType = releaseMethodSignature.ReturnType.ToTypeSyntax(this.externSignatureTypeSettings, GeneratingElement.HelperClassMember, atts?.QualifyWith(this));
 
             this.TryGetRenamedMethod(releaseMethod, out string? renamedReleaseMethod);
 
@@ -247,7 +253,7 @@ public partial class Generator
             members.Add(releaseHandleDeclaration);
 
             ClassDeclarationSyntax safeHandleDeclaration = ClassDeclaration(Identifier(safeHandleClassName))
-                .AddModifiers(TokenWithSpace(this.Visibility))
+                .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.PartialKeyword))
                 .WithBaseList(BaseList(SingletonSeparatedList<BaseTypeSyntax>(SimpleBaseType(SafeHandleTypeSyntax))))
                 .AddMembers(members.ToArray())
                 .AddAttributeLists(AttributeList().AddAttributes(GeneratedCodeAttribute))
@@ -257,7 +263,11 @@ public partial class Generator
 /// </summary>
 "));
 
-            this.volatileCode.AddSafeHandleType(safeHandleDeclaration);
+            this.volatileCode.GenerationTransaction(delegate
+            {
+                this.volatileCode.AddSafeHandleType(safeHandleDeclaration);
+            });
+
             return safeHandleType;
         }
         catch (Exception ex)

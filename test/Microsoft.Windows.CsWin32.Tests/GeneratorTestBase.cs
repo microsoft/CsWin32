@@ -13,6 +13,7 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
     protected static readonly string[] DefaultMetadataPaths = new[] { MetadataPath, WdkMetadataPath };
     ////protected static readonly string DiaMetadataPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "Microsoft.Dia.winmd");
     protected static readonly string ServiceFabricMetadataPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "ExternalMetadata", "ServiceFabric.winmd");
+    protected static readonly string CustomIInspectableMetadataPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "ExternalMetadata", "CustomIInspectable.winmd");
     protected static readonly string ApiDocsPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "apidocs.msgpack");
 
     protected readonly ITestOutputHelper logger;
@@ -81,7 +82,7 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
 
     public static IEnumerable<object[]> AvailableMacros => Generator.AvailableMacros.Select(name => new object[] { name });
 
-    public async ValueTask InitializeAsync()
+    public virtual async ValueTask InitializeAsync()
     {
         this.starterCompilations.Add("net35", await this.CreateCompilationAsync(MyReferenceAssemblies.NetFramework.Net35));
         this.starterCompilations.Add("net472", await this.CreateCompilationAsync(MyReferenceAssemblies.NetFramework.Net472));

@@ -11,7 +11,7 @@ internal class MetadataFile : IDisposable
 {
     private readonly object syncObject = new();
     private readonly Stack<(PEReader PEReader, MetadataReader MDReader)> peReaders = new();
-    private readonly Dictionary<Platform?, MetadataIndex> indexes = new();
+    private readonly Dictionary<Platform, MetadataIndex> indexes = new();
     private int readersRentedOut;
     private MemoryMappedFile file;
     private bool obsolete;
@@ -19,7 +19,9 @@ internal class MetadataFile : IDisposable
     internal MetadataFile(string path)
     {
         this.Path = path;
+#pragma warning disable RS1035 // Do not use APIs banned for analyzers
         this.LastWriteTimeUtc = File.GetLastWriteTimeUtc(path);
+#pragma warning restore RS1035 // Do not use APIs banned for analyzers
 
         // When using FileShare.Delete, the OS will allow the file to be deleted, but it does not disrupt
         // our ability to read the file while our handle is open.
@@ -85,7 +87,7 @@ internal class MetadataFile : IDisposable
         }
     }
 
-    internal MetadataIndex GetMetadataIndex(Platform? platform)
+    internal MetadataIndex GetMetadataIndex(Platform platform)
     {
         lock (this.syncObject)
         {

@@ -1,13 +1,21 @@
 ﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <CsWin32RunAsBuildTask Condition="'$(CsWin32RunAsBuildTask)'==''">false</CsWin32RunAsBuildTask>
+    <GeneratorBuildTasksPath Condition="'$(GeneratorBuildTasksPath)'==''">$(MSBuildThisFileDirectory)</GeneratorBuildTasksPath>
+    <GeneratorBuildTasksTaskFactory Condition="'$(GeneratorBuildTasksTaskFactory)'==''">AssemblyTaskFactory</GeneratorBuildTasksTaskFactory>
   </PropertyGroup>
 
   <ItemGroup>
     <None Remove="NativeMethods.json" />
     <None Remove="NativeMethods.txt" />
-    <AdditionalFiles Include="NativeMethods.json" Condition="Exists('NativeMethods.json')" />
-    <AdditionalFiles Include="NativeMethods.txt" Condition="Exists('NativeMethods.txt')" />
+    <AdditionalFiles Include="NativeMethods.json" Condition="Exists('NativeMethods.json')">
+      <!-- Add this metadata to trigger a design-time build to re-run the generator for CsWin32RunAsBuildTask=true scenarios. -->
+      <Generator Condition="'$(CsWin32RunAsBuildTask)'=='true'">MSBuild:Compile</Generator>
+    </AdditionalFiles>
+    <AdditionalFiles Include="NativeMethods.txt" Condition="Exists('NativeMethods.txt')">
+      <Generator Condition="'$(CsWin32RunAsBuildTask)'=='true'">MSBuild:Compile</Generator>
+    </AdditionalFiles>
   </ItemGroup>
 
   <ItemGroup>
@@ -15,14 +23,6 @@
     <CompilerVisibleProperty Include="CsWin32InputMetadataPaths" />
     <CompilerVisibleProperty Include="CsWin32InputDocPaths" />
     <CompilerVisibleProperty Include="CsWin32AppLocalAllowedLibraries" />
+    <CompilerVisibleProperty Include="CsWin32RunAsBuildTask" />
   </ItemGroup>
-
-  <Target Name="AssembleCsWin32InputPaths" BeforeTargets="GenerateMSBuildEditorConfigFileCore">
-    <!-- Roslyn only allows source generators to see msbuild properties, to lift msbuild items into semicolon-delimited properties. -->
-    <PropertyGroup>
-      <CsWin32InputMetadataPaths>@(ProjectionMetadataWinmd->'%(FullPath)','|')</CsWin32InputMetadataPaths>
-      <CsWin32InputDocPaths>@(ProjectionDocs->'%(FullPath)','|')</CsWin32InputDocPaths>
-      <CsWin32AppLocalAllowedLibraries>@(AppLocalAllowedLibraries->'%(FullPath)','|')</CsWin32AppLocalAllowedLibraries>
-    </PropertyGroup>
-  </Target>
 </Project>

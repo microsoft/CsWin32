@@ -35,6 +35,9 @@ public partial class Generator : IGenerator, IDisposable
     private readonly StructDeclarationSyntax variableLengthInlineArrayStruct2;
 
     private readonly Dictionary<string, IReadOnlyList<ISymbol>> findTypeSymbolIfAlreadyAvailableCache = new(StringComparer.Ordinal);
+    private readonly List<string> nameExclusions = new();
+    private readonly List<string> fullNameExclusions = new();
+    private readonly List<string> wildCardExclusions = new();
     private readonly MetadataFile.Rental metadataReader;
     private readonly GeneratorOptions options;
     private readonly CSharpCompilation? compilation;
@@ -86,7 +89,8 @@ public partial class Generator : IGenerator, IDisposable
         }
 
         MetadataFile metadataFile = MetadataCache.Default.GetMetadataFile(metadataLibraryPath);
-        this.MetadataIndex = metadataFile.GetMetadataIndex(compilation?.Options.Platform);
+        this.SignatureHandleProvider = new(this);
+        this.MetadataIndex = metadataFile.GetMetadataIndex(compilation?.Options.Platform ?? Platform.AnyCpu);
         this.metadataReader = metadataFile.GetMetadataReader();
 
         this.ApiDocs = docs;
@@ -119,6 +123,8 @@ public partial class Generator : IGenerator, IDisposable
         this.comIIDInterfacePredefined = this.FindTypeSymbolIfAlreadyAvailable($"{this.Namespace}.{IComIIDGuidInterfaceName}") is not null;
         this.getDelegateForFunctionPointerGenericExists = this.compilation?.GetTypeByMetadataName(typeof(Marshal).FullName)?.GetMembers(nameof(Marshal.GetDelegateForFunctionPointer)).Any(m => m is IMethodSymbol { IsGenericMethod: true }) is true;
         this.generateDefaultDllImportSearchPathsAttribute = this.compilation?.GetTypeByMetadataName(typeof(DefaultDllImportSearchPathsAttribute).FullName) is object;
+        this.canUseIPropertyValue = this.compilation?.GetTypeByMetadataName("Windows.Foundation.IPropertyValue")?.DeclaredAccessibility == Accessibility.Public;
+        this.canUseComVariant = this.compilation?.GetTypeByMetadataName("System.Runtime.InteropServices.Marshalling.ComVariant") is not null;
         if (this.FindTypeSymbolIfAlreadyAvailable("System.Runtime.Versioning.SupportedOSPlatformAttribute") is { } attribute)
         {
             this.generateSupportedOSPlatformAttributes = true;
@@ -126,6 +132,15 @@ public partial class Generator : IGenerator, IDisposable
             var targets = (AttributeTargets)usageAttribute.ConstructorArguments[0].Value!;
             this.generateSupportedOSPlatformAttributesOnInterfaces = (targets & AttributeTargets.Interface) == AttributeTargets.Interface;
         }
+
+        // We use source generators if we are in marshaling mode and the user has enabled them.
+        this.useSourceGenerators = this.options.AllowMarshaling && (this.options.ComInterop.UseComSourceGenerators ?? false);
+
+        // GeneratedComInterface doesn't support properties yet https://github.com/dotnet/runtime/issues/96502
+        this.canDeclareProperties = !this.useSourceGenerators;
+
+        // When runtime marshaling is disabled, native functions can't use out parameters.
+        this.canMarshalNativeDelegateParams = !this.useSourceGenerators;
 
         // Convert some of our CanUse fields to preprocessor symbols so our templates can use them.
         if (this.parseOptions is not null)
@@ -285,6 +300,8 @@ public partial class Generator : IGenerator, IDisposable
     internal string InputAssemblyName => this.MetadataIndex.MetadataName;
 
     internal MetadataIndex MetadataIndex { get; }
+
+    internal SignatureHandleProvider SignatureHandleProvider { get; }
 
     internal MetadataReader Reader => this.metadataReader.Value;
 
@@ -680,7 +697,7 @@ public partial class Generator : IGenerator, IDisposable
             throw new ArgumentNullException(nameof(macroName));
         }
 
-        if (!this.IsWin32Sdk || !Win32SdkMacros.TryGetValue(macroName, out MethodDeclarationSyntax macro))
+        if (!this.IsWin32Sdk || !Win32SdkMacros.TryGetValue(macroName, out MethodDeclarationSyntax? macro))
         {
             preciseApi = Array.Empty<string>();
             return false;
@@ -812,6 +829,11 @@ public partial class Generator : IGenerator, IDisposable
             UsingDirective(ParseName(GlobalNamespacePrefix + SystemRuntimeInteropServices)),
         };
 
+        if (this.useSourceGenerators)
+        {
+            usingDirectives.Add(UsingDirective(ParseName(GlobalNamespacePrefix + SystemRuntimeInteropServicesMarshalling)));
+        }
+
         if (this.generateSupportedOSPlatformAttributes)
         {
             usingDirectives.Add(UsingDirective(ParseName(GlobalNamespacePrefix + "System.Runtime.Versioning")));
@@ -871,6 +893,26 @@ public partial class Generator : IGenerator, IDisposable
         return normalizedResults;
     }
 
+    /// <inheritdoc/>
+    public void AddGeneratorExclusion(string exclusionLine)
+    {
+        if (exclusionLine.Contains("."))
+        {
+            if (exclusionLine.EndsWith(".*", StringComparison.Ordinal))
+            {
+                this.wildCardExclusions.Add(exclusionLine[..^2]);
+            }
+            else
+            {
+                this.fullNameExclusions.Add(exclusionLine);
+            }
+        }
+        else
+        {
+            this.nameExclusions.Add(exclusionLine);
+        }
+    }
+
     internal static ImmutableDictionary<string, string> GetBannedAPIs(GeneratorOptions options) => options.AllowMarshaling ? BannedAPIsWithMarshaling : BannedAPIsWithoutMarshaling;
 
     /// <summary>
@@ -923,7 +965,10 @@ public partial class Generator : IGenerator, IDisposable
         }
         else if (this.SuperGenerator is not null && this.SuperGenerator.TryGetGenerator("Windows.Win32", out Generator? generator))
         {
-            generator.RequestComHelpers(context);
+            generator.volatileCode.GenerationTransaction(delegate
+            {
+                generator.RequestComHelpers(context);
+            });
         }
     }
 
@@ -966,46 +1011,49 @@ public partial class Generator : IGenerator, IDisposable
 
     internal void RequestInteropType(TypeDefinitionHandle typeDefHandle, Context context)
     {
-        TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefHandle);
-        if (typeDef.GetDeclaringType() is { IsNil: false } nestingParentHandle)
+        this.volatileCode.GenerationTransaction(delegate
         {
-            // We should only generate this type into its parent type.
-            this.RequestInteropType(nestingParentHandle, context);
-            return;
-        }
-
-        string ns = this.Reader.GetString(typeDef.Namespace);
-        if (!this.IsCompatibleWithPlatform(typeDef.GetCustomAttributes()))
-        {
-            // We've been asked for an interop type that does not apply. This happens because the metadata
-            // may use a TypeReferenceHandle or TypeDefinitionHandle to just one of many arch-specific definitions of this type.
-            // Try to find the appropriate definition for our target architecture.
-            string name = this.Reader.GetString(typeDef.Name);
-            NamespaceMetadata namespaceMetadata = this.MetadataIndex.MetadataByNamespace[ns];
-            if (!namespaceMetadata.Types.TryGetValue(name, out typeDefHandle) && namespaceMetadata.TypesForOtherPlatform.Contains(name))
+            TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefHandle);
+            if (typeDef.GetDeclaringType() is { IsNil: false } nestingParentHandle)
             {
-                throw new PlatformIncompatibleException($"Request for type ({ns}.{name}) that is not available given the target platform.");
+                // We should only generate this type into its parent type.
+                this.RequestInteropType(nestingParentHandle, context);
+                return;
             }
-        }
 
-        bool hasUnmanagedName = this.HasUnmanagedSuffix(this.Reader, typeDef.Name, context.AllowMarshaling, this.IsManagedType(typeDefHandle));
-        this.volatileCode.GenerateType(typeDefHandle, hasUnmanagedName, delegate
-        {
-            if (this.RequestInteropTypeHelper(typeDefHandle, context) is MemberDeclarationSyntax typeDeclaration)
+            string ns = this.Reader.GetString(typeDef.Namespace);
+            if (!this.IsCompatibleWithPlatform(typeDef.GetCustomAttributes()))
             {
-                if (!this.TryStripCommonNamespace(ns, out string? shortNamespace))
+                // We've been asked for an interop type that does not apply. This happens because the metadata
+                // may use a TypeReferenceHandle or TypeDefinitionHandle to just one of many arch-specific definitions of this type.
+                // Try to find the appropriate definition for our target architecture.
+                string name = this.Reader.GetString(typeDef.Name);
+                NamespaceMetadata namespaceMetadata = this.MetadataIndex.MetadataByNamespace[ns];
+                if (!namespaceMetadata.Types.TryGetValue(name, out typeDefHandle) && namespaceMetadata.TypesForOtherPlatform.Contains(name))
                 {
-                    throw new GenerationFailedException("Unexpected namespace: " + ns);
+                    throw new PlatformIncompatibleException($"Request for type ({ns}.{name}) that is not available given the target platform.");
                 }
-
-                if (shortNamespace.Length > 0)
-                {
-                    typeDeclaration = typeDeclaration.WithAdditionalAnnotations(
-                        new SyntaxAnnotation(NamespaceContainerAnnotation, shortNamespace));
-                }
-
-                this.volatileCode.AddInteropType(typeDefHandle, hasUnmanagedName, typeDeclaration);
             }
+
+            bool hasUnmanagedName = this.HasUnmanagedSuffix(this.Reader, typeDef.Name, context.AllowMarshaling, this.IsManagedType(typeDefHandle));
+            this.volatileCode.GenerateType(typeDefHandle, hasUnmanagedName, delegate
+            {
+                if (this.RequestInteropTypeHelper(typeDefHandle, context) is MemberDeclarationSyntax typeDeclaration)
+                {
+                    if (!this.TryStripCommonNamespace(ns, out string? shortNamespace))
+                    {
+                        throw new GenerationFailedException("Unexpected namespace: " + ns);
+                    }
+
+                    if (shortNamespace.Length > 0)
+                    {
+                        typeDeclaration = typeDeclaration.WithAdditionalAnnotations(
+                            new SyntaxAnnotation(NamespaceContainerAnnotation, shortNamespace));
+                    }
+
+                    this.volatileCode.AddInteropType(typeDefHandle, hasUnmanagedName, typeDeclaration);
+                }
+            });
         });
     }
 
@@ -1029,7 +1077,10 @@ public partial class Generator : IGenerator, IDisposable
                     {
                         AssemblyReference assemblyRef = this.Reader.GetAssemblyReference((AssemblyReferenceHandle)typeRef.ResolutionScope);
                         string scope = this.Reader.GetString(assemblyRef.Name);
-                        throw new GenerationFailedException($"Input metadata file \"{scope}\" has not been provided, or is referenced at a version that is lacking the type \"{metadataName}\".");
+                        if (scope != "Windows.Foundation.UniversalApiContract")
+                        {
+                            throw new GenerationFailedException($"Input metadata file \"{scope}\" has not been provided, or is referenced at a version that is lacking the type \"{metadataName}\".");
+                        }
                     }
                 }
             }
@@ -1161,6 +1212,57 @@ public partial class Generator : IGenerator, IDisposable
     internal string GetMangledIdentifier(string normalIdentifier, bool allowMarshaling, bool isManagedType) =>
         this.HasUnmanagedSuffix(normalIdentifier, allowMarshaling, isManagedType) ? normalIdentifier + UnmanagedInteropSuffix : normalIdentifier;
 
+    internal Generator GetGeneratorFromReader(MetadataReader reader)
+    {
+        if (this.SuperGenerator is object)
+        {
+            return this.SuperGenerator.GetGeneratorFromReader(reader);
+        }
+        else if (reader == this.Reader)
+        {
+            return this;
+        }
+
+        throw new InvalidOperationException("Encountered a reader not associated with an active generator");
+    }
+
+    internal bool IsExcludedName(string fullyQualifiedMetadataName)
+    {
+        // Check the exclusion lists
+        if (this.nameExclusions.Count > 0)
+        {
+            int fullyQualifiedMetadataNameLastDot = fullyQualifiedMetadataName.LastIndexOf(".");
+            string namePortionWithDot = (fullyQualifiedMetadataNameLastDot != -1) ?
+                fullyQualifiedMetadataName[fullyQualifiedMetadataNameLastDot..] :
+                fullyQualifiedMetadataName;
+            foreach (string exclusion in this.nameExclusions)
+            {
+                if (fullyQualifiedMetadataName.EndsWith(exclusion, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+        }
+
+        foreach (string exclusion in this.fullNameExclusions)
+        {
+            if (fullyQualifiedMetadataName == exclusion)
+            {
+                return true;
+            }
+        }
+
+        foreach (string exclusion in this.wildCardExclusions)
+        {
+            if (fullyQualifiedMetadataName.StartsWith(exclusion, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>
     /// Disposes of managed and unmanaged resources.
     /// </summary>
@@ -1230,7 +1332,7 @@ public partial class Generator : IGenerator, IDisposable
     /// But if we have more than one match, the compiler won't be able to resolve our type references.
     /// In such a case, we'll prefer to just declare our own local symbol.
     /// </remarks>
-    private bool IsTypeAlreadyFullyDeclared(string fullyQualifiedMetadataName) => this.FindTypeSymbolsIfAlreadyAvailable(fullyQualifiedMetadataName).Count == 1;
+    private bool IsTypeAlreadyFullyDeclared(string fullyQualifiedMetadataName) => this.FindTypeSymbolsIfAlreadyAvailable(fullyQualifiedMetadataName).Count == 1 || this.IsExcludedName(fullyQualifiedMetadataName);
 
     private ISymbol? FindTypeSymbolIfAlreadyAvailable(string fullyQualifiedMetadataName) => this.FindTypeSymbolsIfAlreadyAvailable(fullyQualifiedMetadataName).FirstOrDefault();
 
@@ -1374,7 +1476,7 @@ public partial class Generator : IGenerator, IDisposable
             {
                 typeDeclaration =
                     this.IsUntypedDelegate(typeDef) ? this.DeclareUntypedDelegate(typeDef) :
-                    this.options.AllowMarshaling ? this.DeclareDelegate(typeDef) :
+                    (this.options.AllowMarshaling && !this.useSourceGenerators) ? this.DeclareDelegate(typeDef) :
                     null;
             }
             else
@@ -1459,9 +1561,9 @@ public partial class Generator : IGenerator, IDisposable
     }
 
     private ParameterListSyntax CreateParameterList(MethodDefinition methodDefinition, MethodSignature<TypeHandleInfo> signature, TypeSyntaxSettings typeSettings, GeneratingElement forElement)
-        => FixTrivia(ParameterList().AddParameters(methodDefinition.GetParameters().Select(this.Reader.GetParameter).Where(p => !p.Name.IsNil).Select(p => this.CreateParameter(signature.ParameterTypes[p.SequenceNumber - 1], p, typeSettings, forElement)).ToArray()));
+        => FixTrivia(ParameterList().AddParameters(methodDefinition.GetParameters().Select(this.Reader.GetParameter).Where(p => !p.Name.IsNil).Select(p => this.CreateParameter(signature, signature.ParameterTypes[p.SequenceNumber - 1], p, typeSettings, forElement)).ToArray()));
 
-    private ParameterSyntax CreateParameter(TypeHandleInfo parameterInfo, Parameter parameter, TypeSyntaxSettings typeSettings, GeneratingElement forElement)
+    private ParameterSyntax CreateParameter(MethodSignature<TypeHandleInfo> signature, TypeHandleInfo parameterInfo, Parameter parameter, TypeSyntaxSettings typeSettings, GeneratingElement forElement)
     {
         string name = this.Reader.GetString(parameter.Name);
         try
@@ -1469,7 +1571,20 @@ public partial class Generator : IGenerator, IDisposable
             // TODO:
             // * Notice [Out][RAIIFree] handle producing parameters. Can we make these provide SafeHandle's?
             bool isReturnOrOutParam = parameter.SequenceNumber == 0 || (parameter.Attributes & ParameterAttributes.Out) == ParameterAttributes.Out;
-            TypeSyntaxAndMarshaling parameterTypeSyntax = parameterInfo.ToTypeSyntax(typeSettings, forElement, parameter.GetCustomAttributes(), parameter.Attributes);
+            TypeSyntaxAndMarshaling parameterTypeSyntax = parameterInfo.ToTypeSyntax(typeSettings, forElement, parameter.GetCustomAttributes().QualifyWith(this), parameter.Attributes);
+
+            // Check that CountParamIndex is valid.
+            if (this.useSourceGenerators && forElement == GeneratingElement.InterfaceMember &&
+                parameterTypeSyntax.NativeArrayInfo is { CountParamIndex: short countParamIndex })
+            {
+                // If the CountParamIndex refers to a pointer-typed parameter, we have to fall back to unmanaged for this parameter.
+                // Workaround for https://github.com/dotnet/runtime/issues/120389
+                if (signature.ParameterTypes[countParamIndex] is PointerTypeHandleInfo)
+                {
+                    typeSettings = typeSettings with { AllowMarshaling = false };
+                    parameterTypeSyntax = parameterInfo.ToTypeSyntax(typeSettings, forElement, parameter.GetCustomAttributes().QualifyWith(this), parameter.Attributes);
+                }
+            }
 
             // Determine the custom attributes to apply.
             AttributeListSyntax? attributes = AttributeList();
@@ -1489,18 +1604,44 @@ public partial class Generator : IGenerator, IDisposable
 
             if (parameterTypeSyntax.MarshalAsAttribute is object)
             {
-                if ((parameter.Attributes & ParameterAttributes.Out) == ParameterAttributes.Out)
+                if (this.useSourceGenerators)
                 {
-                    if ((parameter.Attributes & ParameterAttributes.In) == ParameterAttributes.In)
+                    // Source generated com does not want [In] [Out] attributes except on array parameters.
+                    if (parameterTypeSyntax.MarshalAsAttribute?.Value == UnmanagedType.LPArray)
                     {
-                        attributes = attributes.AddAttributes(InAttributeSyntax);
-                    }
+                        if ((parameter.Attributes & ParameterAttributes.Out) == ParameterAttributes.Out)
+                        {
+                            attributes = attributes.AddAttributes(OutAttributeSyntax);
+                        }
 
-                    if (!modifiers.Any(SyntaxKind.OutKeyword))
-                    {
-                        attributes = attributes.AddAttributes(OutAttributeSyntax);
+                        if ((parameter.Attributes & ParameterAttributes.In) == ParameterAttributes.In)
+                        {
+                            attributes = attributes.AddAttributes(InAttributeSyntax);
+                        }
                     }
                 }
+                else
+                {
+                    if ((parameter.Attributes & ParameterAttributes.Out) == ParameterAttributes.Out)
+                    {
+                        if ((parameter.Attributes & ParameterAttributes.In) == ParameterAttributes.In)
+                        {
+                            attributes = attributes.AddAttributes(InAttributeSyntax);
+                        }
+
+                        if (!modifiers.Any(SyntaxKind.OutKeyword))
+                        {
+                            attributes = attributes.AddAttributes(OutAttributeSyntax);
+                        }
+                    }
+                }
+            }
+
+            if (parameterTypeSyntax.MarshalUsingType is string marshalUsingType)
+            {
+                attributes = attributes.AddAttributes(
+                    Attribute(ParseName("global::System.Runtime.InteropServices.Marshalling.MarshalUsing"))
+                        .AddArgumentListArguments(AttributeArgument(TypeOfExpression(ParseName(marshalUsingType)))));
             }
 
             ParameterSyntax parameterSyntax = Parameter(

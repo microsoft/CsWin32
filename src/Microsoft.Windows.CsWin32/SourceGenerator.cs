@@ -1,6 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+#pragma warning disable RS1035 // Do not use APIs banned for analyzers (old style source generator)
+#pragma warning disable RS1042 // Deprecated interface
+
 using System.Text.Json;
 using Microsoft.CodeAnalysis.Text;
 
@@ -9,8 +12,10 @@ namespace Microsoft.Windows.CsWin32;
 /// <summary>
 /// Generates the source code for the p/invoke methods and supporting types into some C# project.
 /// </summary>
+#pragma warning disable RS1041
 [Generator]
-public class SourceGenerator : ISourceGenerator
+#pragma warning restore RS1041
+public partial class SourceGenerator : ISourceGenerator
 {
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
     public static readonly DiagnosticDescriptor InternalError = new DiagnosticDescriptor(
@@ -32,7 +37,7 @@ public class SourceGenerator : ISourceGenerator
     public static readonly DiagnosticDescriptor NoMatchingMethodOrTypeWithBadCharacters = new DiagnosticDescriptor(
         "PInvoke001",
         "No matching method, type or constant found",
-        "Method, type or constant \"{0}\" not found. It contains unexpected characters, possibly including invisible characters, which can happen when copying and pasting from docs.microsoft.com among other places. Try deleting the line and retyping it.",
+        "Method, type or constant \"{0}\" not found. It contains unexpected characters, possibly including invisible characters, which can happen when copying and pasting from learn.microsoft.com among other places. Try deleting the line and retyping it.",
         "Functionality",
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
@@ -172,7 +177,13 @@ public class SourceGenerator : ISourceGenerator
             return;
         }
 
-        GeneratorOptions options;
+        if (GetRunAsBuildTaskProperty(context))
+        {
+            // When running as a build task, we don't want to generate anything here.
+            return;
+        }
+
+        GeneratorOptions? options;
         AdditionalText? nativeMethodsJsonFile = context.AdditionalFiles
             .FirstOrDefault(af => string.Equals(Path.GetFileName(af.Path), NativeMethodsJsonAdditionalFileName, StringComparison.OrdinalIgnoreCase));
         if (nativeMethodsJsonFile is object)
@@ -180,7 +191,7 @@ public class SourceGenerator : ISourceGenerator
             string optionsJson = nativeMethodsJsonFile.GetText(context.CancellationToken)!.ToString();
             try
             {
-                options = JsonSerializer.Deserialize<GeneratorOptions>(optionsJson, JsonOptions);
+                options = JsonSerializer.Deserialize<GeneratorOptions>(optionsJson, JsonOptions) ?? new();
             }
             catch (JsonException ex)
             {
@@ -222,6 +233,9 @@ public class SourceGenerator : ISourceGenerator
         }
 
         using SuperGenerator superGenerator = SuperGenerator.Combine(generators);
+
+        List<(AdditionalText, SourceText)> nativeMethodsTxts = new();
+
         foreach (AdditionalText nativeMethodsTxtFile in nativeMethodsTxtFiles)
         {
             SourceText? nativeMethodsTxt = nativeMethodsTxtFile.GetText(context.CancellationToken);
@@ -232,9 +246,23 @@ public class SourceGenerator : ISourceGenerator
 
             foreach (TextLine line in nativeMethodsTxt.Lines)
             {
+                string name = line.ToString();
+                if (name.StartsWith("-", StringComparison.InvariantCulture))
+                {
+                    superGenerator.AddGeneratorExclusion(name.Substring(1).Trim());
+                }
+            }
+
+            nativeMethodsTxts.Add((nativeMethodsTxtFile, nativeMethodsTxt));
+        }
+
+        foreach (var (nativeMethodsTxtFile, nativeMethodsTxt) in nativeMethodsTxts)
+        {
+            foreach (TextLine line in nativeMethodsTxt.Lines)
+            {
                 context.CancellationToken.ThrowIfCancellationRequested();
                 string name = line.ToString();
-                if (string.IsNullOrWhiteSpace(name) || name.StartsWith("//", StringComparison.InvariantCulture))
+                if (string.IsNullOrWhiteSpace(name) || name.StartsWith("//", StringComparison.InvariantCulture) || name.StartsWith("-", StringComparison.InvariantCulture))
                 {
                     continue;
                 }
@@ -400,7 +428,7 @@ public class SourceGenerator : ISourceGenerator
             return Array.Empty<string>();
         }
 
-        return delimitedAppLocalLibraryPaths.Split('|').Select(Path.GetFileName);
+        return delimitedAppLocalLibraryPaths?.Split('|').Select(x => Path.GetFileName(x)!) ?? Array.Empty<string>();
     }
 
     private static Docs? ParseDocs(GeneratorExecutionContext context)
@@ -430,5 +458,16 @@ public class SourceGenerator : ISourceGenerator
         }
 
         return docs;
+    }
+
+    private static bool GetRunAsBuildTaskProperty(GeneratorExecutionContext context)
+    {
+        if (!context.AnalyzerConfigOptions.GlobalOptions.TryGetValue("build_property.CsWin32RunAsBuildTask", out string? runAsBuildTask) ||
+            string.IsNullOrWhiteSpace(runAsBuildTask))
+        {
+            return false;
+        }
+
+        return bool.TryParse(runAsBuildTask, out bool result) && result;
     }
 }

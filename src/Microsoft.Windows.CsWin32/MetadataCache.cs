@@ -19,7 +19,9 @@ internal class MetadataCache
         lock (this.metadataFiles)
         {
             MetadataFile? metadataFile;
+#pragma warning disable RS1035 // Do not use APIs banned for analyzers
             DateTime lastWriteTimeUtc = File.GetLastWriteTimeUtc(path);
+#pragma warning restore RS1035 // Do not use APIs banned for analyzers
             if (this.metadataFiles.TryGetValue(path, out metadataFile))
             {
                 if (metadataFile.LastWriteTimeUtc == lastWriteTimeUtc)

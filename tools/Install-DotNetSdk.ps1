@@ -36,7 +36,11 @@ if (!(Test-Path $DotNetInstallScriptRoot)) { New-Item -ItemType Directory -Path 
 $DotNetInstallScriptRoot = Resolve-Path $DotNetInstallScriptRoot
 
 # Look up actual required .NET SDK version from global.json
-$sdkVersion = & "$PSScriptRoot/variables/DotNetSdkVersion.ps1"
+$sdks = @(New-Object PSObject -Property @{ Version = & "$PSScriptRoot/variables/DotNetSdkVersion.ps1" })
+
+# Sometimes a repo requires extra SDKs to be installed (e.g. msbuild.locator scenarios running in tests).
+# In such a circumstance, a precise SDK version or a channel can be added as in the example below:
+# $sdks += New-Object PSObject -Property @{ Channel = '8.0' }
 
 If ($IncludeX86 -and ($IsMacOS -or $IsLinux)) {
     Write-Verbose "Ignoring -IncludeX86 switch because 32-bit runtimes are only supported on Windows."
@@ -191,13 +195,16 @@ if ($InstallLocality -eq 'machine') {
         $DotNetInstallDir = '/usr/share/dotnet'
     } else {
         $restartRequired = $false
-        if ($PSCmdlet.ShouldProcess(".NET SDK $sdkVersion", "Install")) {
-            Install-DotNet -Version $sdkVersion -Architecture $arch
-            $restartRequired = $restartRequired -or ($LASTEXITCODE -eq 3010)
-
-            if ($IncludeX86) {
-                Install-DotNet -Version $sdkVersion -Architecture x86
+        $sdks |% {
+            if ($_.Version) { $version = $_.Version } else { $version = $_.Channel }
+            if ($PSCmdlet.ShouldProcess(".NET SDK $_", "Install")) {
+                Install-DotNet -Version $version -Architecture $arch
                 $restartRequired = $restartRequired -or ($LASTEXITCODE -eq 3010)
+
+                if ($IncludeX86) {
+                    Install-DotNet -Version $version -Architecture x86
+                    $restartRequired = $restartRequired -or ($LASTEXITCODE -eq 3010)
+                }
             }
         }
 
@@ -296,29 +303,33 @@ $DotNetInstallScriptPathExpression = "& '$DotNetInstallScriptPathExpression'"
 $anythingInstalled = $false
 $global:LASTEXITCODE = 0
 
-if ($PSCmdlet.ShouldProcess(".NET SDK $sdkVersion", "Install")) {
-    $anythingInstalled = $true
-    Invoke-Expression -Command "$DotNetInstallScriptPathExpression -Version $sdkVersion -Architecture $arch -InstallDir $DotNetInstallDir $switches"
+$sdks |% {
+    if ($_.Version) { $parameters = '-Version', $_.Version } else { $parameters = '-Channel', $_.Channel }
 
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error ".NET SDK installation failure: $LASTEXITCODE"
-        exit $LASTEXITCODE
-    }
-} else {
-    Invoke-Expression -Command "$DotNetInstallScriptPathExpression -Version $sdkVersion -Architecture $arch -InstallDir $DotNetInstallDir $switches -DryRun"
-}
-
-if ($IncludeX86) {
-    if ($PSCmdlet.ShouldProcess(".NET x86 SDK $sdkVersion", "Install")) {
+    if ($PSCmdlet.ShouldProcess(".NET SDK $_", "Install")) {
         $anythingInstalled = $true
-        Invoke-Expression -Command "$DotNetInstallScriptPathExpression -Version $sdkVersion -Architecture x86 -InstallDir $DotNetX86InstallDir $switches"
+        Invoke-Expression -Command "$DotNetInstallScriptPathExpression $parameters -Architecture $arch -InstallDir $DotNetInstallDir $switches"
 
         if ($LASTEXITCODE -ne 0) {
-            Write-Error ".NET x86 SDK installation failure: $LASTEXITCODE"
+            Write-Error ".NET SDK installation failure: $LASTEXITCODE"
             exit $LASTEXITCODE
         }
     } else {
-        Invoke-Expression -Command "$DotNetInstallScriptPathExpression -Version $sdkVersion -Architecture x86 -InstallDir $DotNetX86InstallDir $switches -DryRun"
+        Invoke-Expression -Command "$DotNetInstallScriptPathExpression $parameters -Architecture $arch -InstallDir $DotNetInstallDir $switches -DryRun"
+    }
+
+    if ($IncludeX86) {
+        if ($PSCmdlet.ShouldProcess(".NET x86 SDK $_", "Install")) {
+            $anythingInstalled = $true
+            Invoke-Expression -Command "$DotNetInstallScriptPathExpression $parameters -Architecture x86 -InstallDir $DotNetX86InstallDir $switches"
+
+            if ($LASTEXITCODE -ne 0) {
+                Write-Error ".NET x86 SDK installation failure: $LASTEXITCODE"
+                exit $LASTEXITCODE
+            }
+        } else {
+            Invoke-Expression -Command "$DotNetInstallScriptPathExpression $parameters -Architecture x86 -InstallDir $DotNetX86InstallDir $switches -DryRun"
+        }
     }
 }
 

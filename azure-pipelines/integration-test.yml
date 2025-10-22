@@ -1,13 +1,10 @@
 jobs:
-# Matrix over VS 2019 and VS 2022
+# Matrix over VS 2022 (and eventually VS 2026)
 
 - job: integrationtest
   displayName: 🧪 Integration tests
   strategy:
     matrix:
-      vs2019:
-        vmImage: windows-2019
-        currentSdk: false
       vs2022:
         vmImage: windows-2022
         currentSdk: true
@@ -50,4 +47,14 @@ jobs:
   - pwsh: dotnet build
     displayName: 🧪 dotnet build
     workingDirectory: $(Pipeline.Workspace)\integration-tests\sdk
+    condition: eq(variables.currentSdk, 'true')
+  - task: MSBuild@1
+    displayName: 🧪 MSBuild buildtask-sdk-style
+    inputs:
+      solution: $(Pipeline.Workspace)\integration-tests\buildtask-sdk\buildtask-sdk.slnx
+      msbuildArguments: /r
+    condition: eq(variables.currentSdk, 'true')
+  - pwsh: dotnet publish -r win-x64
+    displayName: 🧪 dotnet publish
+    workingDirectory: $(Pipeline.Workspace)\integration-tests\buildtask-sdk
     condition: eq(variables.currentSdk, 'true')

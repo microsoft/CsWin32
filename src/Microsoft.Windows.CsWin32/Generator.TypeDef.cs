@@ -29,7 +29,7 @@ public partial class Generator
             foreach (FieldDefinitionHandle fdh in td.GetFields())
             {
                 FieldDefinition fd = this.Reader.GetFieldDefinition(fdh);
-                fieldType = fd.DecodeSignature(SignatureHandleProvider.Instance, null);
+                fieldType = fd.DecodeSignature(this.SignatureHandleProvider, null);
                 return true;
             }
 
@@ -98,8 +98,8 @@ public partial class Generator
         IdentifierNameSyntax fieldIdentifierName = SafeIdentifierName(fieldName);
         VariableDeclaratorSyntax fieldDeclarator = VariableDeclarator(fieldIdentifierName.Identifier);
         CustomAttributeHandleCollection fieldAttributes = fieldDef.GetCustomAttributes();
-        TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(SignatureHandleProvider.Instance, null);
-        TypeSyntaxAndMarshaling fieldType = fieldTypeInfo.ToTypeSyntax(typeSettings, GeneratingElement.Field, fieldAttributes);
+        TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(this.SignatureHandleProvider, null);
+        TypeSyntaxAndMarshaling fieldType = fieldTypeInfo.ToTypeSyntax(typeSettings, GeneratingElement.Field, fieldAttributes.QualifyWith(this));
         (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? _) fieldInfo =
             this.ReinterpretFieldType(fieldDef, fieldType.Type, fieldAttributes, this.DefaultContext);
         SyntaxList<MemberDeclarationSyntax> members = List<MemberDeclarationSyntax>();
@@ -239,12 +239,22 @@ public partial class Generator
             structModifiers = structModifiers.Add(TokenWithSpace(SyntaxKind.UnsafeKeyword));
         }
 
+        string debuggerDisplay;
+        if (members.Where(x => x is PropertyDeclarationSyntax && ((PropertyDeclarationSyntax)x).Identifier.ValueText == "DebuggerDisplay").Any())
+        {
+            debuggerDisplay = "{DebuggerDisplay,nq}";
+        }
+        else
+        {
+            debuggerDisplay = "{" + fieldName + "}";
+        }
+
         structModifiers = structModifiers.Add(TokenWithSpace(SyntaxKind.ReadOnlyKeyword)).Add(TokenWithSpace(SyntaxKind.PartialKeyword));
         StructDeclarationSyntax result = StructDeclaration(name.Identifier)
             .WithBaseList(BaseList(SingletonSeparatedList<BaseTypeSyntax>(SimpleBaseType(GenericName(nameof(IEquatable<int>), TypeArgumentList().WithGreaterThanToken(TokenWithLineFeed(SyntaxKind.GreaterThanToken))).AddTypeArgumentListArguments(name)))).WithColonToken(TokenWithSpace(SyntaxKind.ColonToken)))
             .WithMembers(members)
             .WithModifiers(structModifiers)
-            .AddAttributeLists(AttributeList().WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken)).AddAttributes(DebuggerDisplay("{" + fieldName + "}")));
+            .AddAttributeLists(AttributeList().WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken)).AddAttributes(DebuggerDisplay(debuggerDisplay)));
 
         result = this.AddApiDocumentation(name.Identifier.ValueText, result);
         return result;

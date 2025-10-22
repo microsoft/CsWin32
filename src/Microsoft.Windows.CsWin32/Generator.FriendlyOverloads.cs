@@ -404,17 +404,22 @@ public partial class Generator
 
                         leadingOutsideTryStatements.AddRange([gcHandlesArrayDecl, strsArrayDecl, forLoop]);
 
-                        // foreach (var gcHandle in paramNameGCHandles) gcHandle.Free();
-                        var freeHandleStatement = ForEachStatement(
-                            IdentifierName("var").WithTrailingTrivia(Space),
-                            Identifier("gcHandle").WithTrailingTrivia(Space),
-                            gcHandlesLocal.WithLeadingTrivia(Space),
-                            ExpressionStatement(
-                                InvocationExpression(
-                                    MemberAccessExpression(
-                                        SyntaxKind.SimpleMemberAccessExpression,
-                                        IdentifierName("gcHandle"),
-                                        IdentifierName("Free")))).WithLeadingTrivia(LineFeed));
+                        // for (int i = 0; i < paramName.Length; i++)
+                        // {
+                        //     paramNameGCHandles[i].Free()
+                        // }
+                        var freeHandleStatement = ForStatement(
+                            VariableDeclaration(PredefinedType(Token(SyntaxKind.IntKeyword))).AddVariables(
+                                VariableDeclarator(loopVariable.Identifier).WithInitializer(EqualsValueClause(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))))),
+                            BinaryExpression(SyntaxKind.LessThanExpression, loopVariable, GetSpanLength(origName, false)),
+                            SingletonSeparatedList<ExpressionSyntax>(PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, loopVariable)),
+                            Block().AddStatements(
+                                ExpressionStatement(
+                                    InvocationExpression(
+                                        MemberAccessExpression(
+                                            SyntaxKind.SimpleMemberAccessExpression,
+                                            ElementAccessExpression(gcHandlesLocal).AddArgumentListArguments(Argument(loopVariable)),
+                                            IdentifierName("Free"))).WithArgumentList(ArgumentList()))));
 
                         // ArrayPool<GCHandle>.Shared.Return(gcHandlesArray);
                         var returnGCHandlesArray = ExpressionStatement(

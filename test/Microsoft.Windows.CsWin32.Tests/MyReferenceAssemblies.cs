@@ -5,7 +5,7 @@
 
 internal static class MyReferenceAssemblies
 {
-    private static readonly string NuGetConfigPath = FindNuGetConfigPath();
+    internal static readonly string NuGetConfigPath = FindNuGetConfigPath();
 
     private static readonly ImmutableArray<PackageIdentity> AdditionalModernPackages = [
         ExtraPackages.Unsafe,

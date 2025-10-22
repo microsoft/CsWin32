@@ -5,6 +5,8 @@
 
 internal static class MyReferenceAssemblies
 {
+    private static readonly string NuGetConfigPath = FindNuGetConfigPath();
+
     private static readonly ImmutableArray<PackageIdentity> AdditionalModernPackages = [
         ExtraPackages.Unsafe,
         ExtraPackages.Memory,
@@ -19,18 +21,47 @@ internal static class MyReferenceAssemblies
         new PackageIdentity("Microsoft.Windows.SDK.NET.Ref", "10.0.26100.57"),
     ];
 
-    internal static readonly ReferenceAssemblies NetStandard20 = ReferenceAssemblies.NetStandard.NetStandard20.AddPackages([.. AdditionalLegacyPackagesNetFX, .. AdditionalModernPackages]);
+    internal static readonly ReferenceAssemblies NetStandard20 = ReferenceAssemblies.NetStandard.NetStandard20
+        .WithNuGetConfigFilePath(NuGetConfigPath)
+        .AddPackages([.. AdditionalLegacyPackagesNetFX, .. AdditionalModernPackages]);
+
+    private static string FindNuGetConfigPath()
+    {
+        string? path = AppContext.BaseDirectory;
+        while (path is not null)
+        {
+            string candidate = Path.Combine(path, "nuget.config");
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            path = Path.GetDirectoryName(path);
+        }
+
+        throw new InvalidOperationException("Could not find NuGet.config by searching up from " + AppContext.BaseDirectory);
+    }
 
     internal static class NetFramework
     {
-        internal static readonly ReferenceAssemblies Net35 = ReferenceAssemblies.NetFramework.Net35.WindowsForms.AddPackages(AdditionalLegacyPackagesNetFX);
-        internal static readonly ReferenceAssemblies Net472 = ReferenceAssemblies.NetFramework.Net472.WindowsForms.AddPackages([.. AdditionalLegacyPackagesNetFX, .. AdditionalModernPackages]);
+        internal static readonly ReferenceAssemblies Net35 = ReferenceAssemblies.NetFramework.Net35.WindowsForms
+            .WithNuGetConfigFilePath(NuGetConfigPath)
+            .AddPackages(AdditionalLegacyPackagesNetFX);
+
+        internal static readonly ReferenceAssemblies Net472 = ReferenceAssemblies.NetFramework.Net472.WindowsForms
+            .WithNuGetConfigFilePath(NuGetConfigPath)
+            .AddPackages([.. AdditionalLegacyPackagesNetFX, .. AdditionalModernPackages]);
     }
 
     internal static class Net
     {
-        internal static readonly ReferenceAssemblies Net80 = ReferenceAssemblies.Net.Net80.AddPackages([.. AdditionalLegacyPackagesNET, .. AdditionalModernPackages]);
-        internal static readonly ReferenceAssemblies Net90 = ReferenceAssemblies.Net.Net90.AddPackages([.. AdditionalLegacyPackagesNET, .. AdditionalModernPackages]);
+        internal static readonly ReferenceAssemblies Net80 = ReferenceAssemblies.Net.Net80
+            .WithNuGetConfigFilePath(NuGetConfigPath)
+            .AddPackages([.. AdditionalLegacyPackagesNET, .. AdditionalModernPackages]);
+
+        internal static readonly ReferenceAssemblies Net90 = ReferenceAssemblies.Net.Net90
+            .WithNuGetConfigFilePath(NuGetConfigPath)
+            .AddPackages([.. AdditionalLegacyPackagesNET, .. AdditionalModernPackages]);
     }
 
     internal static class ExtraPackages

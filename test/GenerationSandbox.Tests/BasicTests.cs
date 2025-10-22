@@ -521,4 +521,38 @@ public class BasicTests
         s.dwDescriptionId = SHDID_ID.SHDID_FS_FILE;
         Assert.Equal(SHDID_ID.SHDID_FS_FILE, s.dwDescriptionId);
     }
+
+    // Test for https://github.com/microsoft/CsWin32/issues/1421
+    [Fact]
+    public void RmRegisterResourcesDoesNotThrow()
+    {
+        var fileNames = new[] { @"C:\Windows\System32\notepad.exe" };
+
+        var sessionKey = new char[PInvoke.CCH_RM_SESSION_KEY + 1];
+        var rc = PInvoke.RmStartSession(out var session, sessionKey);
+        ThrowExceptionForError(rc);
+        try
+        {
+            // Throws InvalidOperationException: Handle is not initialized
+            rc = PInvoke.RmRegisterResources(session, fileNames, rgApplications: null, rgsServiceNames: null);
+            ThrowExceptionForError(rc);
+
+            // RmGetList call removed for brevity
+        }
+        finally
+        {
+            rc = PInvoke.RmEndSession(session);
+            ThrowExceptionForError(rc);
+        }
+
+        void ThrowExceptionForError(WIN32_ERROR error)
+        {
+            if (error == WIN32_ERROR.NO_ERROR)
+            {
+                return;
+            }
+
+            throw new Win32Exception((int)(uint)error);
+        }
+    }
 }

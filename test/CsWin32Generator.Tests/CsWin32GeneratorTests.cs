@@ -103,7 +103,6 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
     [Fact]
     public async Task TestGenerateCoCreateableClass()
     {
-        // If we need CharSet _and_ we generate something in Windows.Win32.System, the partially qualified reference breaks.
         this.nativeMethods.Add("ShellLink");
         await this.InvokeGeneratorAndCompileFromFact();
 

@@ -81,34 +81,3 @@ public partial class COMTests
         Assert.NotNull(persistFile);
     }
 }
-
-[Guid("00021401-0000-0000-C000-000000000046")]
-[global::System.CodeDom.Compiler.GeneratedCode("Microsoft.Windows.CsWin32", "0.3.217+533aa1bddf.RR")]
-internal partial class ShellLink
-{
-    [Obsolete("COM source generators do not support direct instantiation of co-creatable classes. Use CreateInstance<T> method instead.")]
-    public ShellLink() { throw new NotSupportedException("COM source generators do not support direct instantiation of co-creatable classes. Use CreateInstance<T> method instead."); }
-
-    public static T CreateInstance<T>() where T : class
-    {
-        PInvoke.CoCreateInstance<T>(typeof(ShellLink).GUID, null, CLSCTX.CLSCTX_INPROC_SERVER, out T ret).ThrowOnFailure();
-        return ret;
-    }
-}
-
-//[Guid("00021401-0000-0000-C000-000000000046")]
-//[global::System.CodeDom.Compiler.GeneratedCode("Microsoft.Windows.CsWin32", "0.3.217+533aa1bddf.RR")]
-//internal partial struct ShellLink2
-//{
-//    public object Instance;
-
-//    public ShellLink2()
-//    {
-//        PInvoke.CoCreateInstance(typeof(ShellLink).GUID, null, CLSCTX.CLSCTX_INPROC_SERVER, out Instance).ThrowOnFailure();
-//    }
-
-//    public static implicit operator T(in ShellLink2 instance)
-//    {
-//        return (T)instance.Instance;
-//    }
-//}

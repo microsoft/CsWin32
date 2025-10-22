@@ -37,9 +37,9 @@ public class InlineArrayTests : GeneratorTestBase
     {
         ReferenceAssemblies referenceAssemblies = tfm switch
         {
-            "net35" => ReferenceAssemblies.NetFramework.Net35.WindowsForms,
-            "net472" => ReferenceAssemblies.NetFramework.Net472.WindowsForms,
-            "netstandard2.0" => ReferenceAssemblies.NetStandard.NetStandard20,
+            "net35" => ReferenceAssemblies.NetFramework.Net35.WindowsForms.WithNuGetConfigFilePath(MyReferenceAssemblies.NuGetConfigPath),
+            "net472" => ReferenceAssemblies.NetFramework.Net472.WindowsForms.WithNuGetConfigFilePath(MyReferenceAssemblies.NuGetConfigPath),
+            "netstandard2.0" => ReferenceAssemblies.NetStandard.NetStandard20.WithNuGetConfigFilePath(MyReferenceAssemblies.NuGetConfigPath),
             _ => throw new ArgumentOutOfRangeException(nameof(tfm)),
         };
         if (referenceUnsafe)

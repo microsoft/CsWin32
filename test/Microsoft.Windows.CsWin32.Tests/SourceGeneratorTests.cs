@@ -36,7 +36,7 @@ public class SourceGeneratorTests(ITestOutputHelper logger)
     {
         await new VerifyCS.Test(logger)
         {
-            ReferenceAssemblies = ReferenceAssemblies.NetFramework.Net472.Default,
+            ReferenceAssemblies = ReferenceAssemblies.NetFramework.Net472.Default.WithNuGetConfigFilePath(MyReferenceAssemblies.NuGetConfigPath),
         }.RunAsync(TestContext.Current.CancellationToken);
     }
 
@@ -48,7 +48,7 @@ public class SourceGeneratorTests(ITestOutputHelper logger)
     {
         await new VerifyCS.Test(logger)
         {
-            ReferenceAssemblies = ReferenceAssemblies.NetFramework.Net472.Default,
+            ReferenceAssemblies = ReferenceAssemblies.NetFramework.Net472.Default.WithNuGetConfigFilePath(MyReferenceAssemblies.NuGetConfigPath),
             NativeMethodsTxt = "CreateFile",
             ExpectedDiagnostics =
             {
@@ -65,7 +65,7 @@ public class SourceGeneratorTests(ITestOutputHelper logger)
     {
         await new VerifyCS.Test(logger)
         {
-            ReferenceAssemblies = ReferenceAssemblies.Net.Net80,
+            ReferenceAssemblies = ReferenceAssemblies.Net.Net80.WithNuGetConfigFilePath(MyReferenceAssemblies.NuGetConfigPath),
             NativeMethodsTxt = "CreateFile",
         }.RunAsync(TestContext.Current.CancellationToken);
     }
@@ -75,7 +75,7 @@ public class SourceGeneratorTests(ITestOutputHelper logger)
     {
         await new VerifyCS.Test(logger)
         {
-            ReferenceAssemblies = ReferenceAssemblies.Net.Net80,
+            ReferenceAssemblies = ReferenceAssemblies.Net.Net80.WithNuGetConfigFilePath(MyReferenceAssemblies.NuGetConfigPath),
             LanguageVersion = LanguageVersion.CSharp12,
             NativeMethodsTxt = "gdi32.*",
         }.RunAsync(TestContext.Current.CancellationToken);

@@ -2,9 +2,6 @@ parameters:
 - name: EnableLocalization
   type: boolean
   default: false
-- name: EnableOptProf
-  type: boolean
-  default: false
 - name: IsOptProf
   type: boolean
   default: false

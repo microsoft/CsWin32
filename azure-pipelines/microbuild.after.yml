@@ -1,7 +1,4 @@
 parameters:
-- name: EnableOptProf
-  type: boolean
-  default: false
 - name: IsOptProf
   type: boolean
   default: false

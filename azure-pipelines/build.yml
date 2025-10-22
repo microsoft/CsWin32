@@ -29,14 +29,17 @@ parameters:
 - name: artifact_names
   type: object
   default:
-    - build_logs
-    - coverageResults
-    - deployables
-    - projectAssetsJson
-    - symbols
-    - testResults
-    - test_symbols
-    - Variables
+    - name: build_logs
+    - name: coverageResults
+    - name: deployables
+      sbomEnabled: true
+    - name: projectAssetsJson
+    - name: symbols
+    - name: testResults
+      testOnly: true
+    - name: test_symbols
+      testOnly: true
+    - name: Variables
 # The Enable*Build parameters turn non-Windows agents on or off.
 # Their default value should be based on whether the build and tests are expected/required to pass on that platform.
 # Callers (e.g. Official.yml) *may* expose these parameters at queue-time in order to turn OFF optional agents.
@@ -56,6 +59,11 @@ parameters:
 # Indicates whether the entrypoint file is 1ESPT compliant. Use this parameter to switch between publish tasks to fit 1ES or non-1ES needs.
 - name: Is1ESPT
   type: boolean
+
+# Indicates whether the 'official' 1ES PT templates are being used (as opposed to the unofficial ones).
+- name: Is1ESPTOfficial
+  type: boolean
+  default: false
 
 - name: RealSign
   type: boolean
@@ -148,12 +156,14 @@ jobs:
 
       outputParentDirectory: $(Build.ArtifactStagingDirectory)
       outputs:
-      - ${{ each artifact_name in parameters.artifact_names }}:
-        - ${{ if or(ne(artifact_name, 'testResults'), parameters.RunTests) }}:
+      - ${{ each artifact in parameters.artifact_names }}:
+        - ${{ if or(ne(artifact.testOnly, 'true'), parameters.RunTests) }}:
           - output: pipelineArtifact
-            displayName: 📢 Publish ${{ artifact_name }}-Windows
-            targetPath: $(Build.ArtifactStagingDirectory)/${{ artifact_name }}-Windows
-            artifactName: ${{ artifact_name }}-Windows
+            displayName: 📢 Publish ${{ artifact.name }}-Windows
+            targetPath: $(Build.ArtifactStagingDirectory)/${{ artifact.name }}-Windows
+            artifactName: ${{ artifact.name }}-Windows
+            ${{ if and(parameters.Is1ESPTOfficial, eq(artifact.sbomEnabled, 'true')) }}:
+              sbomEnabled: true
             condition: succeededOrFailed()
       - output: pipelineArtifact
         displayName: 📢 Publish VSInsertion-Windows
@@ -229,12 +239,14 @@ jobs:
                 signWithProd: true
           outputParentDirectory: $(Build.ArtifactStagingDirectory)
           outputs:
-          - ${{ each artifact_name in parameters.artifact_names }}:
-            - ${{ if or(ne(artifact_name, 'testResults'), parameters.RunTests) }}:
+          - ${{ each artifact in parameters.artifact_names }}:
+            - ${{ if or(ne(artifact.testOnly, 'true'), parameters.RunTests) }}:
               - output: pipelineArtifact
-                displayName: 📢 Publish ${{ artifact_name }}-Linux
-                targetPath: $(Build.ArtifactStagingDirectory)/${{ artifact_name }}-Linux
-                artifactName: ${{ artifact_name }}-Linux
+                displayName: 📢 Publish ${{ artifact.name }}-Linux
+                targetPath: $(Build.ArtifactStagingDirectory)/${{ artifact.name }}-Linux
+                artifactName: ${{ artifact.name }}-Linux
+                ${{ if and(parameters.Is1ESPTOfficial, eq(artifact.sbomEnabled, 'true')) }}:
+                  sbomEnabled: true
                 condition: succeededOrFailed()
       steps:
       - checkout: self
@@ -266,12 +278,14 @@ jobs:
                 signWithProd: true
           outputParentDirectory: $(Build.ArtifactStagingDirectory)
           outputs:
-          - ${{ each artifact_name in parameters.artifact_names }}:
-            - ${{ if or(ne(artifact_name, 'testResults'), parameters.RunTests) }}:
+          - ${{ each artifact in parameters.artifact_names }}:
+            - ${{ if or(ne(artifact.testOnly, 'true'), parameters.RunTests) }}:
               - output: pipelineArtifact
-                displayName: 📢 Publish ${{ artifact_name }}-macOS
-                targetPath: $(Build.ArtifactStagingDirectory)/${{ artifact_name }}-macOS
-                artifactName: ${{ artifact_name }}-macOS
+                displayName: 📢 Publish ${{ artifact.name }}-macOS
+                targetPath: $(Build.ArtifactStagingDirectory)/${{ artifact.name }}-macOS
+                artifactName: ${{ artifact.name }}-macOS
+                ${{ if and(parameters.Is1ESPTOfficial, eq(artifact.sbomEnabled, 'true')) }}:
+                  sbomEnabled: true
                 condition: succeededOrFailed()
       steps:
       - checkout: self

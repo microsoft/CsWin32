@@ -68,6 +68,7 @@ extends:
       - template: /azure-pipelines/build.yml@self
         parameters:
           Is1ESPT: true
+          Is1ESPTOfficial: true
           RealSign: true
           # ShouldSkipOptimize: ${{ parameters.ShouldSkipOptimize }}
           EnableAPIScan: ${{ parameters.EnableAPIScan }}

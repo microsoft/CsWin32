@@ -1325,14 +1325,14 @@ public partial class Generator
                 ? $"COM source generators do not support direct instantiation of co-creatable classes. Use {name.Identifier}.CreateInstance<T> instead."
                 : $"Marshaling is disabled, so direct instantiation of co-creatable classes is not supported. Use {name.Identifier}.CreateInstance<T> instead.";
 
-            // Generate a private property for the Guid
-            // private static Guid CLSID_Foo => new Guid(...);
-            SyntaxToken clsidPropertyName = Identifier($"CLSID_{name.Identifier}");
-            PropertyDeclarationSyntax clsidProperty = PropertyDeclaration(GuidTypeSyntax.WithTrailingTrivia(Space), clsidPropertyName)
-                .AddModifiers(TokenWithSpace(SyntaxKind.PrivateKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))
-                .WithExpressionBody(ArrowExpressionClause(GuidValue(guid)))
-                .WithSemicolonToken(SemicolonWithLineFeed);
-            result = result.AddMembers(clsidProperty);
+            // Generate a private readonly field for the Guid
+            // private static readonly Guid CLSID_Foo = new Guid(...);
+            SyntaxToken clsidFieldName = Identifier($"CLSID_{name.Identifier}");
+            FieldDeclarationSyntax clsidField = FieldDeclaration(
+                    VariableDeclaration(IdentifierName(nameof(Guid)))
+                        .AddVariables(VariableDeclarator(clsidFieldName).WithInitializer(EqualsValueClause(GuidValue(guid)))))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PrivateKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword));
+            result = result.AddMembers(clsidField);
 
             // If using source generators or marshalling is disabled, generate a constructor with obsolete attribute like this:
             // [Obsolete("COM source generators do not support direct instantiation of co-creatable classes. Use CreateInstance<T> method instead.")]
@@ -1362,7 +1362,7 @@ public partial class Generator
                 // Then add the CreateInstance<T> method:
                 // public static T CreateInstance<T>() where T : class
                 // {
-                //    PInvoke.CoCreateInstance<T>(typeof(Foo).GUID, null, CLSCTX.CLSCTX_SERVER, out T ret).ThrowOnFailure();
+                //    PInvoke.CoCreateInstance<T>(CLSID_Foo, null, CLSCTX.CLSCTX_SERVER, out T ret).ThrowOnFailure();
                 //    return ret;
                 // }
                 TypeParameterSyntax typeParameter = TypeParameter(Identifier("T"));
@@ -1378,7 +1378,7 @@ public partial class Generator
                                 InvocationExpression(QualifiedName(ParseName($"{this.Win32NamespacePrefix}.{this.options.ClassName}"), GenericName("CoCreateInstance").AddTypeArgumentListArguments(IdentifierName("T"))))
                                 .WithArgumentList(
                                     ArgumentList().AddArguments(
-                                        Argument(IdentifierName(clsidPropertyName)),
+                                        Argument(IdentifierName(clsidFieldName)),
                                         Argument(LiteralExpression(SyntaxKind.NullLiteralExpression)),
                                         Argument(
                                             MemberAccessExpression(
@@ -1394,7 +1394,7 @@ public partial class Generator
                 // Then add a CreateInstance<T> method that looks like this:
                 // public static HRESULT CreateInstance<T>(out T* instance) where T : unmanaged
                 // {
-                //    return PInvoke.CoCreateInstance<T>(typeof(Foo).GUID, null, CLSCTX.CLSCTX_SERVER, out T* ret);
+                //    return PInvoke.CoCreateInstance<T>(CLSID_Foo, null, CLSCTX.CLSCTX_SERVER, out instance);
                 // }
                 TypeParameterSyntax typeParameter = TypeParameter(Identifier("T"));
                 GenericNameSyntax genericName = GenericName("CreateInstance").AddTypeArgumentListArguments(IdentifierName("T"));
@@ -1414,7 +1414,7 @@ public partial class Generator
                                 InvocationExpression(QualifiedName(ParseName($"{this.Win32NamespacePrefix}.{this.options.ClassName}"), GenericName("CoCreateInstance").AddTypeArgumentListArguments(IdentifierName("T"))))
                                 .WithArgumentList(
                                     ArgumentList().AddArguments(
-                                        Argument(IdentifierName(clsidPropertyName)),
+                                        Argument(IdentifierName(clsidFieldName)),
                                         Argument(LiteralExpression(SyntaxKind.NullLiteralExpression)),
                                         Argument(
                                             MemberAccessExpression(

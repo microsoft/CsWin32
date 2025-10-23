@@ -488,10 +488,10 @@ public class COMTests : GeneratorTestBase
             m => m.Parent is StructDeclarationSyntax { Identifier.Text: "ITypeLib" } && m.TypeParameterList?.Parameters.Count == 1);
     }
 
-    [Fact]
-    public void TestGenerateCoCreateableClass()
+    [Theory, PairwiseData]
+    public void TestGenerateCoCreateableClass(bool useIntPtrForComOutPtr)
     {
-        this.generator = this.CreateGenerator(new GeneratorOptions { AllowMarshaling = false });
+        this.generator = this.CreateGenerator(new GeneratorOptions { AllowMarshaling = false, ComInterop = new GeneratorOptions.ComInteropOptions { UseIntPtrForComOutPointers = useIntPtrForComOutPtr } });
 
         this.GenerateApi("ShellLink");
 

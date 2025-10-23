@@ -1325,6 +1325,15 @@ public partial class Generator
                 ? $"COM source generators do not support direct instantiation of co-creatable classes. Use {name.Identifier}.CreateInstance<T> instead."
                 : $"Marshaling is disabled, so direct instantiation of co-creatable classes is not supported. Use {name.Identifier}.CreateInstance<T> instead.";
 
+            // Generate a private property for the Guid
+            // private static Guid CLSID_Foo => new Guid(...);
+            SyntaxToken clsidPropertyName = Identifier($"CLSID_{name.Identifier}");
+            PropertyDeclarationSyntax clsidProperty = PropertyDeclaration(GuidTypeSyntax.WithTrailingTrivia(Space), clsidPropertyName)
+                .AddModifiers(TokenWithSpace(SyntaxKind.PrivateKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))
+                .WithExpressionBody(ArrowExpressionClause(GuidValue(guid)))
+                .WithSemicolonToken(SemicolonWithLineFeed);
+            result = result.AddMembers(clsidProperty);
+
             // If using source generators or marshalling is disabled, generate a constructor with obsolete attribute like this:
             // [Obsolete("COM source generators do not support direct instantiation of co-creatable classes. Use CreateInstance<T> method instead.")]
             // public Foo() { throw new NotSupportedException("COM source generators do not support direct instantiation of co-creatable classes. Use CreateInstance<T> method instead."); }
@@ -1369,11 +1378,7 @@ public partial class Generator
                                 InvocationExpression(QualifiedName(ParseName($"{this.Win32NamespacePrefix}.{this.options.ClassName}"), GenericName("CoCreateInstance").AddTypeArgumentListArguments(IdentifierName("T"))))
                                 .WithArgumentList(
                                     ArgumentList().AddArguments(
-                                        Argument(
-                                            MemberAccessExpression(
-                                                SyntaxKind.SimpleMemberAccessExpression,
-                                                TypeOfExpression(name),
-                                                IdentifierName("GUID"))),
+                                        Argument(IdentifierName(clsidPropertyName)),
                                         Argument(LiteralExpression(SyntaxKind.NullLiteralExpression)),
                                         Argument(
                                             MemberAccessExpression(
@@ -1409,11 +1414,7 @@ public partial class Generator
                                 InvocationExpression(QualifiedName(ParseName($"{this.Win32NamespacePrefix}.{this.options.ClassName}"), GenericName("CoCreateInstance").AddTypeArgumentListArguments(IdentifierName("T"))))
                                 .WithArgumentList(
                                     ArgumentList().AddArguments(
-                                        Argument(
-                                            MemberAccessExpression(
-                                                SyntaxKind.SimpleMemberAccessExpression,
-                                                TypeOfExpression(name),
-                                                IdentifierName("GUID"))),
+                                        Argument(IdentifierName(clsidPropertyName)),
                                         Argument(LiteralExpression(SyntaxKind.NullLiteralExpression)),
                                         Argument(
                                             MemberAccessExpression(

@@ -425,6 +425,34 @@ internal static class SimpleSyntaxFactory
             Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(k), k))));
     }
 
+    internal static ObjectCreationExpressionSyntax GuidValue(Guid guid)
+    {
+        byte[] bytes = guid.ToByteArray();
+        uint a = BitConverter.ToUInt32(bytes, 0);
+        ushort b = BitConverter.ToUInt16(bytes, 4);
+        ushort c = BitConverter.ToUInt16(bytes, 6);
+        byte d = bytes[8];
+        byte e = bytes[9];
+        byte f = bytes[10];
+        byte g = bytes[11];
+        byte h = bytes[12];
+        byte i = bytes[13];
+        byte j = bytes[14];
+        byte k = bytes[15];
+        return ObjectCreationExpression(GuidTypeSyntax).AddArgumentListArguments(
+            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(a), a))),
+            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(b), b))),
+            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(c), c))),
+            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(d), d))),
+            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(e), e))),
+            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(f), f))),
+            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(g), g))),
+            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(h), h))),
+            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(i), i))),
+            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(j), j))),
+            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(k), k))));
+    }
+
     internal static ExpressionSyntax IntPtrExpr(IntPtr value) => ObjectCreationExpression(IntPtrTypeSyntax).AddArgumentListArguments(
         Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(value.ToInt64()))));
 

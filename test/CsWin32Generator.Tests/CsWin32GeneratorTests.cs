@@ -100,6 +100,21 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         await this.InvokeGeneratorAndCompile($"{nameof(this.TestPlatformCaseSensitivity)}_{platform}");
     }
 
+    [Fact]
+    public async Task TestGenerateCoCreateableClass()
+    {
+        this.nativeMethods.Add("ShellLink");
+        await this.InvokeGeneratorAndCompileFromFact();
+
+        var shellLinkType = Assert.Single(this.FindGeneratedType("ShellLink"));
+
+        // Check that it does not have the ComImport attribute.
+        Assert.DoesNotContain(shellLinkType.AttributeLists, al => al.Attributes.Any(attr => attr.Name.ToString().Contains("ComImport")));
+
+        // Check that it contains a CreateInstance method
+        Assert.Contains(shellLinkType.DescendantNodes().OfType<MethodDeclarationSyntax>(), method => method.Identifier.Text == "CreateInstance");
+    }
+
     [Theory]
     [InlineData("IMFMediaKeySession", "get_KeySystem", "winmdroot.Foundation.BSTR* keySystem")]
     [InlineData("AddPrinterW", "AddPrinter", "winmdroot.Foundation.PWSTR pName, uint Level, Span<byte> pPrinter")]

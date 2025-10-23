@@ -35,3 +35,6 @@ WINTRUST_FILE_INFO
 WinVerifyTrust
 WM_HOTKEY
 WNDCLASSW
+ShellLink
+CoCreateInstance
+IShellLinkW

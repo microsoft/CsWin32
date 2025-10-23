@@ -500,7 +500,10 @@ public class COMTests : GeneratorTestBase
         // Check that it does not have the ComImport attribute.
         Assert.DoesNotContain(shellLinkType.AttributeLists, al => al.Attributes.Any(attr => attr.Name.ToString().Contains("ComImport")));
 
-        // Check that it contains a CreateInstance method
-        Assert.Contains(shellLinkType.DescendantNodes().OfType<MethodDeclarationSyntax>(), method => method.Identifier.Text == "CreateInstance");
+        if (!useIntPtrForComOutPtr)
+        {
+            // Check that it contains a CreateInstance method
+            Assert.Contains(shellLinkType.DescendantNodes().OfType<MethodDeclarationSyntax>(), method => method.Identifier.Text == "CreateInstance");
+        }
     }
 }

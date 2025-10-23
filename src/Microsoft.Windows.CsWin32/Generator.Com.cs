@@ -1319,7 +1319,7 @@ public partial class Generator
             .WithModifiers(classModifiers)
             .AddAttributeLists(AttributeList().AddAttributes(GUID(guid)).AddAttributes(canUseComImport ? [ComImportAttributeSyntax] : []));
 
-        if (!canUseComImport)
+        if (!canUseComImport && !this.Options.ComInterop.UseIntPtrForComOutPointers)
         {
             string obsoleteMessage = context.AllowMarshaling
                 ? $"COM source generators do not support direct instantiation of co-creatable classes. Use {name.Identifier}.CreateInstance<T> instead."

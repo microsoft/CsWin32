@@ -156,4 +156,16 @@ public class HandleTests : GeneratorTestBase
     [Theory]
     [InlineData("HDC")]
     public void InterestingHandles(string api) => this.GenerateApi(api);
+
+    [Theory]
+    [InlineData("HWND")]
+    [InlineData("PSID")]
+    public void VerifyHandlesHaveImplicitIntPtrCast(string api)
+    {
+        this.GenerateApi(api);
+        BaseTypeDeclarationSyntax type = Assert.Single(this.FindGeneratedType(api));
+        IEnumerable<string> methods = type.DescendantNodes().OfType<ConversionOperatorDeclarationSyntax>()
+            .Select(x => x.Type).OfType<IdentifierNameSyntax>().Select(x => x.Identifier.ValueText);
+        Assert.Contains("IntPtr", methods);
+    }
 }

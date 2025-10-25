@@ -380,7 +380,7 @@ public partial class Generator
             this.volatileCode.AddMemberToModule(moduleName, this.DeclareFriendlyOverloads(methodDefinition, exposedMethod, this.methodsAndConstantsClassName, FriendlyOverloadOf.ExternMethod, this.injectedPInvokeHelperMethods, avoidWinmdRootAlias: false));
             this.volatileCode.AddMemberToModule(moduleName, exposedMethod);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not GenerationFailedException)
         {
             throw new GenerationFailedException($"Failed while generating extern method: {methodName}", ex);
         }

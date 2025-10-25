@@ -88,6 +88,16 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         await this.InvokeGeneratorAndCompileFromFact();
     }
 
+    [Fact]
+    public async Task InnerExceptionIsReportedOnParameterPlatformError()
+    {
+        this.nativeMethods.Add("SHGetFileInfo");
+        this.platform = "AnyCPU";
+        this.expectedExitCode = 1;
+        await this.InvokeGeneratorAndCompile(nameof(this.InnerExceptionIsReportedOnParameterPlatformError), TestOptions.GeneratesNothing);
+        Assert.Contains("Windows.Win32.UI.Shell.SHFILEINFOW is not declared for this platform.", this.Logger.Output);
+    }
+
     [Theory]
     [InlineData("x64")]
     [InlineData("X64")]
@@ -103,6 +113,8 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
     [Theory]
     [InlineData("IMFMediaKeySession", "get_KeySystem", "winmdroot.Foundation.BSTR* keySystem")]
     [InlineData("AddPrinterW", "AddPrinter", "winmdroot.Foundation.PWSTR pName, uint Level, Span<byte> pPrinter")]
+    [InlineData("SHGetFileInfo", "SHGetFileInfo", "string pszPath, winmdroot.Storage.FileSystem.FILE_FLAGS_AND_ATTRIBUTES dwFileAttributes, Span<byte> psfi, winmdroot.UI.Shell.SHGFI_FLAGS uFlags")]
+    [InlineData("SHGetFileInfo", "SHGetFileInfo", "string pszPath, winmdroot.Storage.FileSystem.FILE_FLAGS_AND_ATTRIBUTES dwFileAttributes, out winmdroot.UI.Shell.SHFILEINFOW psfi, winmdroot.UI.Shell.SHGFI_FLAGS uFlags")]
     public async Task VerifySignature(string api, string member, string signature)
     {
         // If we need CharSet _and_ we generate something in Windows.Win32.System, the partially qualified reference breaks.

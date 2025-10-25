@@ -66,7 +66,7 @@
       OutputPath="$(CsWin32GeneratorGeneratedFilesPath)"
       GeneratorToolPath="$(CsWin32GeneratorToolPath)CsWin32Generator.dll"
       TargetFramework="$(TargetFramework)"
-      Platform="$(Platform)"
+      Platform="$(PlatformTarget)"
       LangVersion="$(LangVersion)"
       References="@(ReferencePath)"
       ContinueOnError="$(CsWin32ContinueOnError)"

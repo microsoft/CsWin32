@@ -31,6 +31,7 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
     protected string assemblyName = "TestAssembly";
     protected string? keyFile;
     protected string platform = "x64";
+    protected int expectedExitCode = 0;
 
     public CsWin32GeneratorTestsBase(ITestOutputHelper logger)
         : base(logger)
@@ -141,7 +142,7 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
         int exitCode = await program.Main(args.ToArray(), this.fullGeneration);
 
         // Assert
-        Assert.Equal(0, exitCode);
+        Assert.Equal(this.expectedExitCode, exitCode);
         if (!options.HasFlag(TestOptions.GeneratesNothing))
         {
             Assert.True(Directory.GetFiles(outputPath, "*.g.cs").Any(), "No generated files found.");

@@ -15,8 +15,10 @@ using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.Graphics.Direct3D;
 using Windows.Win32.Graphics.Direct3D11;
+using Windows.Win32.Storage.FileSystem;
 using Windows.Win32.System.Com;
 using Windows.Win32.System.WinRT.Composition;
+using Windows.Win32.UI.Shell;
 
 [Trait("WindowsOnly", "true")]
 public partial class COMTests
@@ -69,5 +71,18 @@ public partial class COMTests
         {
             Assert.Skip("Skipping due to UnauthorizedAccessException.");
         }
+    }
+
+    [Fact]
+    public void IsSHGetFileInfoEasilyCalled()
+    {
+        Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
+
+        SHFILEINFOW fileInfo = default;
+        PInvoke.SHGetFileInfo(
+            "c:\\windows\\notepad.exe",
+            FILE_FLAGS_AND_ATTRIBUTES.FILE_ATTRIBUTE_NORMAL,
+            MemoryMarshal.AsBytes(new Span<SHFILEINFOW>(ref fileInfo)),
+            SHGFI_FLAGS.SHGFI_DISPLAYNAME);
     }
 }

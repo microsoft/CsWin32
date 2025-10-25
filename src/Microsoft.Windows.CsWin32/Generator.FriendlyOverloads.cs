@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+
 namespace Microsoft.Windows.CsWin32;
 
 public partial class Generator
@@ -47,7 +49,11 @@ public partial class Generator
 
 #pragma warning disable SA1114 // Parameter list should follow declaration
         static ParameterSyntax StripAttributes(ParameterSyntax parameter) => parameter.WithAttributeLists(List<AttributeListSyntax>());
-        static ExpressionSyntax GetSpanLength(ExpressionSyntax span, bool isRefType) => isRefType ? ParenthesizedExpression(BinaryExpression(SyntaxKind.CoalesceExpression, ConditionalAccessExpression(span, IdentifierName(nameof(Span<int>.Length))), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)))) : MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, span, IdentifierName(nameof(Span<int>.Length)));
+        static ExpressionSyntax GetSpanLength(ExpressionSyntax span, bool isRefType) => isRefType ?
+            ParenthesizedExpression(BinaryExpression(
+                    SyntaxKind.CoalesceExpression,
+                    ConditionalAccessExpression(span, IdentifierName(nameof(Span<int>.Length))),
+                    LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)))) : MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, span, IdentifierName(nameof(Span<int>.Length)));
         bool isReleaseMethod = this.MetadataIndex.ReleaseMethods.Contains(externMethodDeclaration.Identifier.ValueText);
         bool doNotRelease = this.FindInteropDecorativeAttribute(this.GetReturnTypeCustomAttributes(methodDefinition), DoNotReleaseAttribute) is not null;
 
@@ -118,6 +124,7 @@ public partial class Generator
 
             bool isArray = false;
             bool isNullTerminated = false; // TODO
+            bool isCountOfBytes = false;
             short? countParamIndex = null;
             int? countConst = null;
             if (this.FindInteropDecorativeAttribute(paramAttributes, NativeArrayInfoAttribute) is CustomAttribute nativeArrayInfoAttribute)
@@ -138,7 +145,17 @@ public partial class Generator
                 {
                     MemorySize memorySize = DecodeMemorySizeAttribute(memorySizeAttribute);
                     countParamIndex = memorySize.BytesParamIndex;
+                    isCountOfBytes = true;
                 }
+            }
+            else if (this.FindInteropDecorativeAttribute(paramAttributes, MemorySizeAttribute) is CustomAttribute memorySizeAttribute)
+            {
+                // Methods like InitializeAcl have a parameter typed as ACL but are sized more like a buffer. They accept
+                // a Span<ACL> where the Length in bytes is based on a different parameter.
+                isArray = true;
+                MemorySize memorySize = DecodeMemorySizeAttribute(memorySizeAttribute);
+                countParamIndex = memorySize.BytesParamIndex;
+                isCountOfBytes = true;
             }
 
             if (mustRemainAsPointer)
@@ -656,11 +673,25 @@ public partial class Generator
                     if (externParam.Type is PointerTypeSyntax)
                     {
                         remainsRefType = false;
-                        parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
-                            .WithType((isIn ? MakeReadOnlySpanOfT(elementType) : MakeSpanOfT(elementType)).WithTrailingTrivia(TriviaList(Space)));
-                        fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
-                            VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
-                        arguments[param.SequenceNumber - 1] = Argument(localName);
+                        if (isCountOfBytes)
+                        {
+                            // For parameters annotated as count of bytes, we need to switch the friendly parameter to Span<byte>
+                            // and then cast to (ParamType*) when we call the p/invoke.
+                            TypeSyntax byteSyntax = PredefinedType(Token(SyntaxKind.ByteKeyword));
+                            parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
+                                .WithType((!isOut ? MakeReadOnlySpanOfT(byteSyntax) : MakeSpanOfT(byteSyntax)).WithTrailingTrivia(TriviaList(Space)));
+                            fixedBlocks.Add(VariableDeclaration(PointerType(byteSyntax)).AddVariables(
+                                VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
+                            arguments[param.SequenceNumber - 1] = Argument(CastExpression(externParam.Type, localName));
+                        }
+                        else
+                        {
+                            parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
+                                .WithType((isIn ? MakeReadOnlySpanOfT(elementType) : MakeSpanOfT(elementType)).WithTrailingTrivia(TriviaList(Space)));
+                            fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
+                                VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
+                            arguments[param.SequenceNumber - 1] = Argument(localName);
+                        }
                     }
 
                     if (lengthParamUsedBy.TryGetValue(countParamIndex.Value, out int userIndex))

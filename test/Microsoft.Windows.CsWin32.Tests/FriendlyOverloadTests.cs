@@ -74,6 +74,16 @@ public class FriendlyOverloadTests : GeneratorTestBase
         this.Generate(name);
     }
 
+    [Fact]
+    public void InitializeAclProjectsSpanParameter()
+    {
+        const string name = "InitializeAcl";
+        this.Generate(name);
+        MethodDeclarationSyntax friendlyOverload = Assert.Single(this.FindGeneratedMethod(name), m => m.ParameterList.Parameters.Count == 2);
+        //Assert.Equal("Span<char>", friendlyOverload.ParameterList.Parameters[1].Type?.ToString());
+    }
+
+
     private void Generate(string name)
     {
         this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(Platform.X64));

@@ -552,7 +552,7 @@ public partial class Program
                 }
                 catch (Exception ex)
                 {
-                    this.ReportError($"'{name}': {ex.Message}");
+                    this.ReportError($"'{name}': {this.ErrorChainToString(ex)}");
                     errorCount++;
                 }
             }
@@ -562,9 +562,16 @@ public partial class Program
         }
         catch (Exception ex)
         {
-            this.ReportError($"Failed to process NativeMethods.txt file: {ex.Message}");
+            this.ReportError($"Failed to process NativeMethods.txt file: {this.ErrorChainToString(ex)}");
             return false;
         }
+    }
+
+    private string ErrorChainToString(Exception ex)
+    {
+        return ex.InnerException is null
+            ? ex.Message
+            : $"{ex.Message} => {this.ErrorChainToString(ex.InnerException)}";
     }
 
     /// <summary>

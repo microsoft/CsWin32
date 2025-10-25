@@ -227,7 +227,8 @@ public class GeneratorTests : GeneratorTestBase
             "OpenTrace", // the CloseTrace method called by the SafeHandle returns WIN32_ERROR. The handle is ALWAYS 64-bits.
             "QueryTraceProcessingHandle", // uses a handle that is always 64-bits, even in 32-bit processes
             "ID2D1RectangleGeometry", // COM interface with base types
-            "IGraphicsEffectD2D1Interop")] // COM interface that refers to C#/WinRT types
+            "IGraphicsEffectD2D1Interop", // COM interface that refers to C#/WinRT types
+            "MprAdminInterfaceGetCredentials")] // Span overloads are ambiguous with PWSTR params for optional overload
         string api,
         [CombinatorialValues("netstandard2.0", "net9.0")]
         string tfm,
@@ -1026,7 +1027,7 @@ class Program
     {
         this.GenerateApi("IStream");
 
-        MethodDeclarationSyntax seekMethod = Assert.Single(this.FindGeneratedMethod("Seek"));
+        MethodDeclarationSyntax seekMethod = this.FindGeneratedMethod("Seek").First();
         QualifiedNameSyntax seekParamType = Assert.IsType<QualifiedNameSyntax>(seekMethod.ParameterList.Parameters[1].Type);
         Assert.Equal(nameof(SeekOrigin), seekParamType.Right.Identifier.ValueText);
     }
@@ -1041,5 +1042,16 @@ class Program
         Assert.True(this.generator.TryGenerate("ISensor", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
         Assert.Empty(this.FindGeneratedType("BSTR"));
+    }
+
+    [Theory]
+    [InlineData("K32EnumDeviceDrivers")]
+    [InlineData("OfferVirtualMemory")]
+    [InlineData("TokenBindingGenerateMessage")]
+    public void InterestingVoidPtrParameters(string api)
+    {
+        this.compilation = this.starterCompilations["net8.0"];
+        this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(Platform.Arm64));
+        this.GenerateApi(api);
     }
 }

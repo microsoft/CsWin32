@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-#pragma warning disable SA1402,SA1201,SA1202
+#pragma warning disable SA1402,SA1201,SA1202,SA1515
 
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -88,6 +88,16 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         await this.InvokeGeneratorAndCompileFromFact();
     }
 
+    [Fact]
+    public async Task InnerExceptionIsReportedOnParameterPlatformError()
+    {
+        this.nativeMethods.Add("SHGetFileInfo");
+        this.platform = "AnyCPU";
+        this.expectedExitCode = 1;
+        await this.InvokeGeneratorAndCompile(nameof(this.InnerExceptionIsReportedOnParameterPlatformError), TestOptions.GeneratesNothing);
+        Assert.Contains("Windows.Win32.UI.Shell.SHFILEINFOW is not declared for this platform.", this.Logger.Output);
+    }
+
     [Theory]
     [InlineData("x64")]
     [InlineData("X64")]
@@ -115,17 +125,65 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         Assert.Contains(shellLinkType.DescendantNodes().OfType<MethodDeclarationSyntax>(), method => method.Identifier.Text == "CreateInstance");
     }
 
+    public static IList<object[]> TestSignatureData => [
+        ["IMFMediaKeySession", "get_KeySystem", "winmdroot.Foundation.BSTR* keySystem"],
+        ["AddPrinterW", "AddPrinter", "winmdroot.Foundation.PWSTR pName, uint Level, Span<byte> pPrinter"],
+        // MemorySized-struct param should have Span<byte> parameter.
+        ["SHGetFileInfo", "SHGetFileInfo", "string pszPath, winmdroot.Storage.FileSystem.FILE_FLAGS_AND_ATTRIBUTES dwFileAttributes, Span<byte> psfi, winmdroot.UI.Shell.SHGFI_FLAGS uFlags"],
+        // MemorySized-struct param should also have a version with `ref struct` parameter.
+        ["SHGetFileInfo", "SHGetFileInfo", "string pszPath, winmdroot.Storage.FileSystem.FILE_FLAGS_AND_ATTRIBUTES dwFileAttributes, ref winmdroot.UI.Shell.SHFILEINFOW psfi, winmdroot.UI.Shell.SHGFI_FLAGS uFlags"],
+        ["InitializeAcl", "InitializeAcl", "Span<byte> pAcl, winmdroot.Security.ACE_REVISION dwAclRevision"],
+        // MemorySized-struct param should also have a version with `out struct` parameter.
+        ["InitializeAcl", "InitializeAcl", "out winmdroot.Security.ACL pAcl, winmdroot.Security.ACE_REVISION dwAclRevision"],
+        ["SetDefaultCommConfig", "SetDefaultCommConfig", "string lpszName, in winmdroot.Devices.Communication.COMMCONFIG lpCC"],
+        ["ID3D11DeviceChild", "GetPrivateData", "this winmdroot.Graphics.Direct3D11.ID3D11DeviceChild @this, in global::System.Guid guid, ref uint pDataSize, Span<byte> pData"],
+        ["WriteFile", "WriteFile", "SafeHandle hFile, in byte lpBuffer, uint* lpNumberOfBytesWritten, global::System.Threading.NativeOverlapped* lpOverlapped", false],
+        // All params included
+        ["SetupDiGetDeviceInterfaceDetail", "SetupDiGetDeviceInterfaceDetail", "SafeHandle DeviceInfoSet, in winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVICE_INTERFACE_DATA DeviceInterfaceData, Span<byte> DeviceInterfaceDetailData, out uint RequiredSize, ref winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVINFO_DATA DeviceInfoData"],
+        // Optional params omitted
+        ["SetupDiGetDeviceInterfaceDetail", "SetupDiGetDeviceInterfaceDetail", "SafeHandle DeviceInfoSet, in winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVICE_INTERFACE_DATA DeviceInterfaceData, Span<byte> DeviceInterfaceDetailData"],
+        ["WinHttpReadData", "WinHttpReadData", "Span<byte> hRequest, Span<byte> lpBuffer, ref uint lpdwNumberOfBytesRead"],
+        ["IsTextUnicode", "IsTextUnicode", "ReadOnlySpan<byte> lpv, ref winmdroot.Globalization.IS_TEXT_UNICODE_RESULT lpiResult"],
+        // Omitted ref param
+        ["IsTextUnicode", "IsTextUnicode", "ReadOnlySpan<byte> lpv"],
+        ["GetAce", "GetAce", "in winmdroot.Security.ACL pAcl, uint dwAceIndex, Span<byte> pAce"],
+        // Optional and MemorySize-d struct params, optional params included
+        ["SetupDiGetClassInstallParams", "SetupDiGetClassInstallParams", "SafeHandle DeviceInfoSet, winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVINFO_DATA? DeviceInfoData, Span<byte> ClassInstallParams, out uint RequiredSize"],
+        ["IEnumString", "Next", "this winmdroot.System.Com.IEnumString @this, Span<winmdroot.Foundation.PWSTR> rgelt, out uint pceltFetched"],
+    ];
+
     [Theory]
-    [InlineData("IMFMediaKeySession", "get_KeySystem", "winmdroot.Foundation.BSTR* keySystem")]
-    [InlineData("AddPrinterW", "AddPrinter", "winmdroot.Foundation.PWSTR pName, uint Level, Span<byte> pPrinter")]
-    public async Task VerifySignature(string api, string member, string signature)
+    [MemberData(nameof(TestSignatureData))]
+    public async Task VerifySignature(string api, string member, string signature, bool assertPresent = true)
     {
-        // If we need CharSet _and_ we generate something in Windows.Win32.System, the partially qualified reference breaks.
+        await this.VerifySignatureWorker(api, member, signature, assertPresent, "net9.0");
+    }
+
+    [Theory]
+    [InlineData("InitializeAcl", "InitializeAcl", "out winmdroot.Security.ACL pAcl, winmdroot.Security.ACE_REVISION dwAclRevision", false)]
+    public async Task VerifySignatureNet472(string api, string member, string signature, bool assertPresent = true)
+    {
+        await this.VerifySignatureWorker(api, member, signature, assertPresent, "net472");
+    }
+
+    private async Task VerifySignatureWorker(string api, string member, string signature, bool assertPresent, string tfm)
+    {
+        this.tfm = tfm;
+        this.compilation = this.starterCompilations[tfm];
         this.nativeMethods.Add(api);
-        await this.InvokeGeneratorAndCompile($"{api}_{member}");
+
+        // Make a unique name based on the signature
+        await this.InvokeGeneratorAndCompile($"{api}_{member}_{tfm}_{signature.Select(x => (int)x).Aggregate((x, y) => x + y).ToString("X")}");
 
         var generatedMemberSignatures = this.FindGeneratedMethod(member).Select(x => x.ParameterList.ToString());
-        Assert.Contains($"({signature})", generatedMemberSignatures);
+        if (assertPresent)
+        {
+            Assert.Contains($"({signature})", generatedMemberSignatures);
+        }
+        else
+        {
+            Assert.DoesNotContain($"({signature})", generatedMemberSignatures);
+        }
     }
 
     public static IList<object[]> TestApiData => [
@@ -178,6 +236,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         ["SECURITY_NULL_SID_AUTHORITY", "static struct with embedded array incorrectly initialized"],
         ["CreateThreadpoolWork", "Friendly overload differs only on return type and 'in' modifiers on attributes"],
         ["GetModuleFileName", "Should have a friendly Span overload"],
+        ["PdhGetCounterInfo", "Optional out parameter omission conflicts with other overload"],
     ];
 
     [Theory]
@@ -198,6 +257,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
     {
         LanguageVersion langVersion = (tfm == "net8.0") ? LanguageVersion.CSharp12 : LanguageVersion.CSharp13;
 
+        this.tfm = tfm;
         this.compilation = this.starterCompilations[tfm];
         this.parseOptions = this.parseOptions.WithLanguageVersion(langVersion);
         this.Logger.WriteLine($"Testing {api} - {tfm} - {purpose}");
@@ -288,7 +348,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
                     namespace Windows.Win32.Foundation
                     {{
                         internal struct PCWSTR
-                        {{        
+                        {{
                             // Field exists solely to validate that the containing type is considered non-struct-like.
                             internal unsafe byte* Value;
                         }}

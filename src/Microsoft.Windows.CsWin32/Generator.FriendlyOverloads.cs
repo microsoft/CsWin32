@@ -14,6 +14,42 @@ public partial class Generator
         InterfaceMethod,
     }
 
+    private static ParameterSyntax StripAttributes(ParameterSyntax parameter) => parameter.WithAttributeLists(List<AttributeListSyntax>());
+
+    private static ExpressionSyntax GetSpanLength(ExpressionSyntax span, bool isRefType) => isRefType ?
+        ParenthesizedExpression(BinaryExpression(
+                SyntaxKind.CoalesceExpression,
+                ConditionalAccessExpression(span, IdentifierName(nameof(Span<int>.Length))),
+                LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)))) : MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, span, IdentifierName(nameof(Span<int>.Length)));
+
+    private ExpressionSyntax GetIntPtrFromTypeDef(ExpressionSyntax typedefValue, TypeHandleInfo typeDefTypeInfo)
+    {
+        ExpressionSyntax intPtrValue = typedefValue;
+        if (this.TryGetTypeDefFieldType(typeDefTypeInfo, out TypeHandleInfo? returnTypeField) && returnTypeField is PrimitiveTypeHandleInfo primitiveReturnField)
+        {
+            switch (primitiveReturnField.PrimitiveTypeCode)
+            {
+                case PrimitiveTypeCode.UInt32:
+                    // (IntPtr)result.Value;
+                    intPtrValue = CastExpression(IntPtrTypeSyntax, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, typedefValue, IdentifierName("Value")));
+                    break;
+                case PrimitiveTypeCode.UIntPtr:
+                    // unchecked((IntPtr)(long)(ulong)result.Value)
+                    intPtrValue = UncheckedExpression(
+                        CastExpression(
+                            IntPtrTypeSyntax,
+                            CastExpression(
+                                PredefinedType(Token(SyntaxKind.LongKeyword)),
+                                CastExpression(
+                                    PredefinedType(Token(SyntaxKind.ULongKeyword)),
+                                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, typedefValue, IdentifierName("Value"))))));
+                    break;
+            }
+        }
+
+        return intPtrValue;
+    }
+
     private IEnumerable<MethodDeclarationSyntax> DeclareFriendlyOverloads(MethodDefinition methodDefinition, MethodDeclarationSyntax externMethodDeclaration, NameSyntax declaringTypeName, FriendlyOverloadOf overloadOf, HashSet<string> helperMethodsAdded, bool avoidWinmdRootAlias)
     {
         if (!this.options.FriendlyOverloads.Enabled)
@@ -45,9 +81,16 @@ public partial class Generator
             }
         }
 
+        bool useSpansForPointers = this.canUseSpan;
+        foreach (MethodDeclarationSyntax method in this.DeclareFriendlyOverload(methodDefinition, externMethodDeclaration, declaringTypeName, overloadOf, helperMethodsAdded, avoidWinmdRootAlias, useSpansForPointers, omitOptionalParams: false))
+        {
+            yield return method;
+        }
+    }
+
+    private IEnumerable<MethodDeclarationSyntax> DeclareFriendlyOverload(MethodDefinition methodDefinition, MethodDeclarationSyntax externMethodDeclaration, NameSyntax declaringTypeName, FriendlyOverloadOf overloadOf, HashSet<string> helperMethodsAdded, bool avoidWinmdRootAlias, bool useSpansForPointers, bool omitOptionalParams)
+    {
 #pragma warning disable SA1114 // Parameter list should follow declaration
-        static ParameterSyntax StripAttributes(ParameterSyntax parameter) => parameter.WithAttributeLists(List<AttributeListSyntax>());
-        static ExpressionSyntax GetSpanLength(ExpressionSyntax span, bool isRefType) => isRefType ? ParenthesizedExpression(BinaryExpression(SyntaxKind.CoalesceExpression, ConditionalAccessExpression(span, IdentifierName(nameof(Span<int>.Length))), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)))) : MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, span, IdentifierName(nameof(Span<int>.Length)));
         bool isReleaseMethod = this.MetadataIndex.ReleaseMethods.Contains(externMethodDeclaration.Identifier.ValueText);
         bool doNotRelease = this.FindInteropDecorativeAttribute(this.GetReturnTypeCustomAttributes(methodDefinition), DoNotReleaseAttribute) is not null;
 
@@ -78,6 +121,8 @@ public partial class Generator
         var finallyStatements = new List<StatementSyntax>();
         bool signatureChanged = false; // Did the signature change with fundamentally different types?
         bool minorSignatureChange = false; // Did the signature change but not enough that overload resolution would be confused?
+        List<Parameter>? countOfBytesStructParameters = null;
+        int numOptionalParams = 0;
 
         foreach (ParameterHandle paramHandle in methodDefinition.GetParameters())
         {
@@ -112,12 +157,29 @@ public partial class Generator
 
             TypeHandleInfo parameterTypeInfo = originalSignature.ParameterTypes[param.SequenceNumber - 1];
             bool isManagedParameterType = this.IsManagedType(parameterTypeInfo);
-            bool mustRemainAsPointer = parameterTypeInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo pointedElement } && pointedElement.Generator.IsStructWithFlexibleArray(pointedElement);
+            MemorySize? memorySize = null;
+            bool mustRemainAsPointer = false;
+            if (this.FindInteropDecorativeAttribute(paramAttributes, MemorySizeAttribute) is CustomAttribute memorySizeAttribute)
+            {
+                memorySize = DecodeMemorySizeAttribute(memorySizeAttribute);
+            }
+
+            // If there's no MemorySize attribute, we may still need to keep this parameter as a pointer if it's a struct with a flexible array.
+            if (memorySize is null)
+            {
+                mustRemainAsPointer = parameterTypeInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo pointedElement } && pointedElement.Generator.IsStructWithFlexibleArray(pointedElement);
+            }
+            else if (!useSpansForPointers)
+            {
+                // If we are generating the overload with pointers for memory sized params then also force them to pointers.
+                mustRemainAsPointer = true;
+            }
 
             IdentifierNameSyntax origName = IdentifierName(externParam.Identifier.ValueText);
 
             bool isArray = false;
             bool isNullTerminated = false; // TODO
+            bool isCountOfBytes = false;
             short? countParamIndex = null;
             int? countConst = null;
             if (this.FindInteropDecorativeAttribute(paramAttributes, NativeArrayInfoAttribute) is CustomAttribute nativeArrayInfoAttribute)
@@ -134,11 +196,61 @@ public partial class Generator
                 // Also https://github.com/microsoft/CsWin32/issues/1487 showed that byte* parameters are very unlikely to be a
                 // single byte so it's safer to assume it's an un-annotated array.
                 isArray = true;
-                if (this.FindInteropDecorativeAttribute(paramAttributes, MemorySizeAttribute) is CustomAttribute memorySizeAttribute)
+                if (memorySize is not null)
                 {
-                    MemorySize memorySize = DecodeMemorySizeAttribute(memorySizeAttribute);
-                    countParamIndex = memorySize.BytesParamIndex;
+                    countParamIndex = memorySize.Value.BytesParamIndex;
+                    isCountOfBytes = true;
                 }
+            }
+            else if (memorySize is not null)
+            {
+                // Methods like InitializeAcl have a parameter typed as ACL but are sized more like a buffer. They accept
+                // a Span<ACL> where the Length in bytes is based on a different parameter.
+                isArray = true;
+                countParamIndex = memorySize.Value.BytesParamIndex;
+                isCountOfBytes = true;
+            }
+
+            bool projectAsSpanBytes = false;
+            if (useSpansForPointers && IsVoidPtrOrPtrPtr(externParam.Type))
+            {
+                // if it's memory-sized project as Span<byte>
+                if (memorySize is not null)
+                {
+                    isArray = true;
+                    projectAsSpanBytes = true;
+                }
+                else if (!countParamIndex.HasValue && !isComOutPtr)
+                {
+                    // void* param with no size annotations and without [ComOutPtr] is assumed to be
+                    // arbitrary memory block which we represent as Span<byte>
+                    isArray = true;
+                    projectAsSpanBytes = true;
+                }
+                else
+                {
+                    // If it's void* but annotated with a count-of-elements (like OfferVirtualMemory or TokenBindingGenerateMessage) then
+                    // just leave it as raw pointer because it's not clear what the developer meant and projecting as Span<byte> will require
+                    // manipulating the .Length parameter to preserve intent.
+                    isArray = false;
+                }
+            }
+
+            // Optional params which are going to be emitted as "out" or "ref" need to be part of a second overload where those parameters
+            // are omitted so that there's a reasonably idiomatic way to pass "null" for them. Don't do this for all Optional params:
+            // * Parameters that are [Reserved] are always omitted.
+            // * Array parameters are projected as Span and empty/0 are the same as "null" at the ABI, so they also don't need to be omitted.
+            // * If the extern method parameter is "out T*" then we can't omit it because there's actually no way to pass null for those kinds of out params.
+            // * If the parameter remains as pointer it won't be different for optional vs non-optional.
+            bool omittableOptionalParam = false;
+            SyntaxToken externParamModifier = externParam.Modifiers.FirstOrDefault(m => m.Kind() is SyntaxKind.RefKeyword or SyntaxKind.OutKeyword);
+            if (isOptional && !isReserved && isOut && !isArray
+                && (externParamModifier == default || externParam.Type is not PointerTypeSyntax)
+                && !mustRemainAsPointer)
+            {
+                // Keep track of how many out/ref optional parameters we included -- if there are any we will generate another overload with them omitted.
+                numOptionalParams++;
+                omittableOptionalParam = true;
             }
 
             if (mustRemainAsPointer)
@@ -150,6 +262,29 @@ public partial class Generator
             {
                 // Remove the parameter and supply the default value for the type to the extern method.
                 arguments[param.SequenceNumber - 1] = Argument(LiteralExpression(SyntaxKind.DefaultLiteralExpression));
+                parametersToRemove.Add(param.SequenceNumber - 1);
+                signatureChanged = true;
+            }
+            else if (omittableOptionalParam && omitOptionalParams)
+            {
+                // Remove the optional out parameter and supply the default value for the type to the extern method.
+                if (externParamModifier.Kind() is SyntaxKind.OutKeyword || externParamModifier.Kind() is SyntaxKind.RefKeyword)
+                {
+                    // ref TParam => ref Unsafe.NullRef<TParam>()
+                    ExpressionSyntax nullRef = this.canUseUnsafeNullRef
+                        ? InvocationExpression(
+                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Unsafe)), GenericName("NullRef", TypeArgumentList().AddArguments(externParam.Type))),
+                            ArgumentList())
+                        : InvocationExpression(
+                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Unsafe)), GenericName(nameof(Unsafe.AsRef), TypeArgumentList().AddArguments(externParam.Type))),
+                            ArgumentList().AddArguments(Argument(LiteralExpression(SyntaxKind.NullLiteralExpression))));
+                    arguments[param.SequenceNumber - 1] = Argument(nullRef).WithRefKindKeyword(TokenWithSpace(externParamModifier.Kind()));
+                }
+                else
+                {
+                    arguments[param.SequenceNumber - 1] = Argument(DefaultExpression(externParam.Type));
+                }
+
                 parametersToRemove.Add(param.SequenceNumber - 1);
                 signatureChanged = true;
             }
@@ -183,7 +318,7 @@ public partial class Generator
                         SyntaxKind.SimpleAssignmentExpression,
                         origName,
                         ObjectCreationExpression(safeHandleType).AddArgumentListArguments(
-                            Argument(GetIntPtrFromTypeDef(typeDefHandleName, pointedElementInfo)),
+                            Argument(this.GetIntPtrFromTypeDef(typeDefHandleName, pointedElementInfo)),
                             Argument(LiteralExpression(doNotRelease ? SyntaxKind.FalseLiteralExpression : SyntaxKind.TrueLiteralExpression)).WithNameColon(NameColon(IdentifierName("ownsHandle")))))));
                 }
             }
@@ -252,13 +387,19 @@ public partial class Generator
                 arguments[param.SequenceNumber - 1] = Argument(typeDefHandleName);
             }
             else if ((externParam.Type is PointerTypeSyntax { ElementType: TypeSyntax ptrElementType }
-                && !IsVoid(ptrElementType)
+                && (!IsVoid(ptrElementType) || (useSpansForPointers && isArray))
                 && !this.IsInterface(parameterTypeInfo)) ||
                 externParam.Type is ArrayTypeSyntax)
             {
                 TypeSyntax elementType = externParam.Type is PointerTypeSyntax ptr ? ptr.ElementType
                     : externParam.Type is ArrayTypeSyntax array ? array.ElementType
                     : throw new InvalidOperationException();
+
+                if (projectAsSpanBytes)
+                {
+                    elementType = PredefinedType(Token(SyntaxKind.ByteKeyword));
+                }
+
                 bool isPointerToPointer = elementType is PointerTypeSyntax or FunctionPointerTypeSyntax;
 
                 // If there are no SAL annotations at all...
@@ -284,7 +425,12 @@ public partial class Generator
                     // TODO: add support for lists of pointers via a generated pointer-wrapping struct (e.g. PSSetSamplers)
                     if (!isPointerToPointer && TryHandleCountParam(elementType, nullableSource: true))
                     {
-                        // This block intentionally left blank.
+                        // If we used a Span, we might also want to generate a struct helper.
+                        if (memorySize is not null)
+                        {
+                            countOfBytesStructParameters ??= new();
+                            countOfBytesStructParameters.Add(param);
+                        }
                     }
                     else if (countConst.HasValue && !isPointerToPointer && this.canUseSpan && externParam.Type is PointerTypeSyntax)
                     {
@@ -313,9 +459,9 @@ public partial class Generator
                         // Handle the byte* => Span<byte> mapping
                         parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
                             .WithType((isConst ? MakeReadOnlySpanOfT(elementType) : MakeSpanOfT(elementType)).WithTrailingTrivia(TriviaList(Space)));
-                        fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
+                        fixedBlocks.Add(VariableDeclaration(PointerType(elementType)).AddVariables(
                             VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
-                        arguments[param.SequenceNumber - 1] = Argument(localName);
+                        arguments[param.SequenceNumber - 1] = projectAsSpanBytes ? Argument(CastExpression(externParam.Type, localName)) : Argument(localName);
                     }
                     else if (isNullTerminated && isConst && parameters[param.SequenceNumber - 1].Type is PointerTypeSyntax { ElementType: PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.CharKeyword } } })
                     {
@@ -478,7 +624,7 @@ public partial class Generator
                         PrefixUnaryExpression(SyntaxKind.AddressOfExpression, localName),
                         LiteralExpression(SyntaxKind.NullLiteralExpression)));
                 }
-                else if (isIn && isOut && !isOptional)
+                else if (isIn && isOut)
                 {
                     signatureChanged = true;
                     parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
@@ -489,7 +635,7 @@ public partial class Generator
                             PrefixUnaryExpression(SyntaxKind.AddressOfExpression, origName)))));
                     arguments[param.SequenceNumber - 1] = Argument(localName);
                 }
-                else if (isOut && !isIn && !isOptional)
+                else if (isOut && !isIn)
                 {
                     signatureChanged = true;
                     parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
@@ -500,7 +646,7 @@ public partial class Generator
                             PrefixUnaryExpression(SyntaxKind.AddressOfExpression, origName)))));
                     arguments[param.SequenceNumber - 1] = Argument(localName);
                 }
-                else if (isIn && !isOut && !isOptional)
+                else if (isIn && !isOut)
                 {
                     // Use the "in" modifier to avoid copying the struct.
                     signatureChanged = true;
@@ -656,11 +802,25 @@ public partial class Generator
                     if (externParam.Type is PointerTypeSyntax)
                     {
                         remainsRefType = false;
-                        parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
-                            .WithType((isIn ? MakeReadOnlySpanOfT(elementType) : MakeSpanOfT(elementType)).WithTrailingTrivia(TriviaList(Space)));
-                        fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
-                            VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
-                        arguments[param.SequenceNumber - 1] = Argument(localName);
+                        if (isCountOfBytes)
+                        {
+                            // For parameters annotated as count of bytes, we need to switch the friendly parameter to Span<byte>
+                            // and then cast to (ParamType*) when we call the p/invoke.
+                            TypeSyntax byteSyntax = PredefinedType(Token(SyntaxKind.ByteKeyword));
+                            parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
+                                .WithType((!isOut ? MakeReadOnlySpanOfT(byteSyntax) : MakeSpanOfT(byteSyntax)).WithTrailingTrivia(TriviaList(Space)));
+                            fixedBlocks.Add(VariableDeclaration(PointerType(byteSyntax)).AddVariables(
+                                VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
+                            arguments[param.SequenceNumber - 1] = Argument(CastExpression(externParam.Type, localName));
+                        }
+                        else
+                        {
+                            parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
+                                .WithType((isIn ? MakeReadOnlySpanOfT(elementType) : MakeSpanOfT(elementType)).WithTrailingTrivia(TriviaList(Space)));
+                            fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
+                                VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
+                            arguments[param.SequenceNumber - 1] = Argument(localName);
+                        }
                     }
 
                     if (lengthParamUsedBy.TryGetValue(countParamIndex.Value, out int userIndex))
@@ -749,7 +909,7 @@ public partial class Generator
 
                 //// return new SafeHandle(result, ownsHandle: true);
                 body = body.AddStatements(ReturnStatement(ObjectCreationExpression(returnSafeHandleType).AddArgumentListArguments(
-                    Argument(GetIntPtrFromTypeDef(resultLocal, originalSignature.ReturnType)),
+                    Argument(this.GetIntPtrFromTypeDef(resultLocal, originalSignature.ReturnType)),
                     Argument(LiteralExpression(doNotRelease ? SyntaxKind.FalseLiteralExpression : SyntaxKind.TrueLiteralExpression)).WithNameColon(NameColon(IdentifierName("ownsHandle"))))));
             }
             else if (hasVoidReturn)
@@ -830,35 +990,163 @@ public partial class Generator
                 .WithLeadingTrivia(leadingTrivia);
 
             yield return friendlyDeclaration;
-        }
 
-        ExpressionSyntax GetIntPtrFromTypeDef(ExpressionSyntax typedefValue, TypeHandleInfo typeDefTypeInfo)
-        {
-            ExpressionSyntax intPtrValue = typedefValue;
-            if (this.TryGetTypeDefFieldType(typeDefTypeInfo, out TypeHandleInfo? returnTypeField) && returnTypeField is PrimitiveTypeHandleInfo primitiveReturnField)
+            // We generated the main overload, but now see if we should generate another helper for things like SHGetFileInfo where
+            // there is a parameter that's sized in bytes and for convenience you want to just use the struct and not cast between Span<byte>.
+            // To avoid an explosion of overloads, just do this if there's one parameter of this kind.
+            if (useSpansForPointers && countOfBytesStructParameters?.Count == 1)
             {
-                switch (primitiveReturnField.PrimitiveTypeCode)
+                MethodDeclarationSyntax? structOverload = this.DeclareStructCountOfBytesFriendlyOverload(externMethodDeclaration, countOfBytesStructParameters, friendlyDeclaration);
+                if (structOverload is not null)
                 {
-                    case PrimitiveTypeCode.UInt32:
-                        // (IntPtr)result.Value;
-                        intPtrValue = CastExpression(IntPtrTypeSyntax, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, typedefValue, IdentifierName("Value")));
-                        break;
-                    case PrimitiveTypeCode.UIntPtr:
-                        // unchecked((IntPtr)(long)(ulong)result.Value)
-                        intPtrValue = UncheckedExpression(
-                            CastExpression(
-                                IntPtrTypeSyntax,
-                                CastExpression(
-                                    PredefinedType(Token(SyntaxKind.LongKeyword)),
-                                    CastExpression(
-                                        PredefinedType(Token(SyntaxKind.ULongKeyword)),
-                                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, typedefValue, IdentifierName("Value"))))));
-                        break;
+                    yield return structOverload;
                 }
             }
-
-            return intPtrValue;
         }
-#pragma warning restore SA1114 // Parameter list should follow declaration
+
+        if (numOptionalParams > 0 && !omitOptionalParams)
+        {
+            // Generate overloads for optional parameters.
+            foreach (MethodDeclarationSyntax method in this.DeclareFriendlyOverload(methodDefinition, externMethodDeclaration, declaringTypeName, overloadOf, helperMethodsAdded, avoidWinmdRootAlias, useSpansForPointers, omitOptionalParams: true))
+            {
+                yield return method;
+            }
+        }
+    }
+
+    private MethodDeclarationSyntax? DeclareStructCountOfBytesFriendlyOverload(MethodDeclarationSyntax externMethodDeclaration, List<Parameter> countOfBytesStructParameters, MethodDeclarationSyntax friendlyDeclaration)
+    {
+        // Can't easily generate the helpers we want to on net472, so just bail out if the ref helpers aren't present.
+        if (!this.canCallCreateSpan)
+        {
+            return null;
+        }
+
+        // Swap the parameter that is Span<byte> typed for one that is struct-typed and generate this helper:
+        //   internal static unsafe winmdroot.Foundation.BOOL InitializeAcl(out winmdroot.Security.ACL pAcl, winmdroot.Security.ACE_REVISION dwAclRevision)
+        //   {
+        //     pAcl = default;
+        //     return InitializeAcl(MemoryMarshal.AsBytes(new Span<winmdroot.Security.ACL>(ref pAcl)), dwAclRevision);
+        //   }
+        // If it's an "out" parameter then notice we need to put a local that assigns to default before we call new Span on it.
+        // If it's an "in" parameter then use ReadOnlySpan like this:
+        //   return InitializeAcl(MemoryMarshal.AsBytes(new ReadOnlySpan<winmdroot.Security.ACL>(in pAcl)), dwAclRevision);
+        // And if it's in & out, then use Ref with Span.
+        List<ParameterSyntax> externParams = externMethodDeclaration.ParameterList.Parameters.Select(StripAttributes).ToList();
+        Parameter param = countOfBytesStructParameters[0];
+        ParameterSyntax externParam = externParams[param.SequenceNumber - 1];
+        ParameterSyntax[] friendlyParams = friendlyDeclaration.ParameterList.Parameters.ToArray();
+        int friendlyParamIndex = Array.FindIndex(friendlyParams, x => x.Identifier.Text == externParam.Identifier.Text);
+
+        CustomAttributeHandleCollection paramAttributes = param.GetCustomAttributes();
+        bool isIn = (param.Attributes & ParameterAttributes.In) == ParameterAttributes.In;
+        bool isConst = this.FindInteropDecorativeAttribute(paramAttributes, "ConstAttribute") is not null;
+        bool isComOutPtr = this.FindInteropDecorativeAttribute(paramAttributes, "ComOutPtrAttribute") is not null;
+        bool isOut = isComOutPtr || (param.Attributes & ParameterAttributes.Out) == ParameterAttributes.Out;
+
+        // Only proceed if the existing friendly overload replaced a pointer to a struct (or similar) with Span<byte>/ReadOnlySpan<byte>.
+        if (externParam.Type is not PointerTypeSyntax pts || pts.ElementType is PredefinedTypeSyntax || IsVoidPtrOrPtrPtr(externParam.Type))
+        {
+            return null;
+        }
+
+        TypeSyntax structType = pts.ElementType.WithTrailingTrivia(TriviaList(Space));
+
+        // Build the new parameter (in/out/ref struct)
+        SyntaxToken paramName = externParam.Identifier;
+        ParameterSyntax newParam = Parameter(paramName).WithType(structType);
+
+        if (isIn && isOut)
+        {
+            newParam = newParam.WithModifiers(TokenList(TokenWithSpace(SyntaxKind.RefKeyword)));
+        }
+        else if (isOut && !isIn)
+        {
+            newParam = newParam.WithModifiers(TokenList(TokenWithSpace(SyntaxKind.OutKeyword)));
+        }
+        else if (isIn && !isOut)
+        {
+            // Honor const (already implies in)
+            newParam = newParam.WithModifiers(TokenList(TokenWithSpace(SyntaxKind.InKeyword)));
+        }
+
+        // Construct the argument list for invoking the Span<byte> overload.
+        // Start from the original extern signature since the friendly Span<byte> overload keeps parameter names.
+        var invocationArguments = friendlyParams
+            .Select(p => Argument(IdentifierName(p.Identifier.Text))
+                .WithRefKindKeyword(p.Modifiers.FirstOrDefault(m => m.Kind() is SyntaxKind.RefKeyword or SyntaxKind.OutKeyword or SyntaxKind.InKeyword)))
+            .ToArray();
+
+        // Build the MemoryMarshal.AsBytes(...) expression that replaces this struct parameter.
+        // Choose Span<> or ReadOnlySpan<> and ref kind inside the span constructor.
+        bool spanIsReadOnly = isIn && !isOut;
+        TypeSyntax spanType = spanIsReadOnly ? MakeReadOnlySpanOfT(structType.WithoutTrailingTrivia()) : MakeSpanOfT(structType.WithoutTrailingTrivia());
+        SyntaxKind refKindForSpanCtor = spanIsReadOnly ? SyntaxKind.InKeyword : SyntaxKind.RefKeyword;
+
+        ObjectCreationExpressionSyntax spanCreation = ObjectCreationExpression(spanType)
+            .WithArgumentList(ArgumentList(SingletonSeparatedList(
+                Argument(IdentifierName(paramName))
+                .WithRefKindKeyword(Token(refKindForSpanCtor)))));
+
+        ExpressionSyntax memoryMarshalAsBytes = InvocationExpression(
+            MemberAccessExpression(
+                SyntaxKind.SimpleMemberAccessExpression,
+                ParseName("global::System.Runtime.InteropServices.MemoryMarshal"),
+                IdentifierName("AsBytes")))
+            .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(spanCreation))));
+
+        invocationArguments[friendlyParamIndex] = Argument(memoryMarshalAsBytes);
+
+        // The helper should invoke the existing overload by name (same identifier) which now expects Span<byte>/ReadOnlySpan<byte>.
+        InvocationExpressionSyntax call = InvocationExpression(
+            IdentifierName(friendlyDeclaration.Identifier))
+            .WithArgumentList(ArgumentList(SeparatedList(invocationArguments)));
+
+        // Build method modifiers.
+        var modifiers = friendlyDeclaration.Modifiers;
+
+        // Replace the parameter in our list.
+        friendlyParams[friendlyParamIndex] = newParam;
+
+        // Build body statements.
+        var statements = new List<StatementSyntax>();
+        if (isOut && !isIn)
+        {
+            // pAcl = default;
+            statements.Add(ExpressionStatement(
+                AssignmentExpression(
+                    SyntaxKind.SimpleAssignmentExpression,
+                    IdentifierName(paramName),
+                    DefaultExpression(structType.WithoutTrailingTrivia()))));
+        }
+
+        // return <call>;
+        if (friendlyDeclaration.ReturnType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.VoidKeyword } })
+        {
+            statements.Add(ExpressionStatement(call));
+        }
+        else
+        {
+            statements.Add(ReturnStatement(call));
+        }
+
+        BlockSyntax body = Block(statements.ToArray())
+            .WithOpenBraceToken(Token(TriviaList(LineFeed), SyntaxKind.OpenBraceToken, TriviaList(LineFeed)))
+            .WithCloseBraceToken(TokenWithLineFeed(SyntaxKind.CloseBraceToken));
+
+        // Doc comment inherit from extern.
+        SyntaxTriviaList leadingTrivia = friendlyDeclaration.GetLeadingTrivia();
+
+        MethodDeclarationSyntax helper = MethodDeclaration(
+                friendlyDeclaration.ReturnType.WithTrailingTrivia(TriviaList(Space)),
+                friendlyDeclaration.Identifier)
+            .WithAttributeLists(List<AttributeListSyntax>())
+            .WithModifiers(modifiers)
+            .WithParameterList(FixTrivia(ParameterList().AddParameters(friendlyParams)))
+            .WithBody(body)
+            .WithSemicolonToken(default)
+            .WithLeadingTrivia(leadingTrivia);
+
+        return helper;
     }
 }

@@ -160,6 +160,65 @@ For example:
 }
 ```
 
+### Optional out/ref parameters
+
+Some parameters in win32 are `[optional, out]` or `[optional, in, out]`. C# does not have an idiomatic way to represent this concept, so for any method that
+has such parameters, CsWin32 will generate two versions: one with all `ref` or `out` parameters included, and one with all such parameters omitted. For example:
+
+```c#
+// Omitting the optional parameter:
+IsTextUnicode(buffer);
+
+// Passing ref for optional parameter:
+IS_TEXT_UNICODE_RESULT result = default;
+IsTextUnicode(buffer, ref result);
+```
+
+### Working with Span-typed and MemorySize-d parameters
+
+In the Win32 APIs there are many functions where one parameter is a buffer (`void*` or `byte*`) and another parameter is the size of that buffer. When generating
+for a target framework that supports Spans, there will be overloads of these functions that take a `Span<byte>` which represents both of these parameters,
+since a Span refers to a chunk of memory and a length. For example, an API like [IsTextUnicode](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-istextunicode)
+has a `void*` parameter whose length is described by the iSize parameter in the native signature. The CsWin32 projection of this method will be:
+
+```c#
+BOOL IsTextUnicode(ReadOnlySpan<byte> lpv, Span<IS_TEXT_UNICODE_RESULT> lpiResult)
+```
+
+Instead of passing the buffer and length separately, in this projection you pass just one parameter. Span is a flexible type with many things that can
+be converted to it safely. You will also see Span parameters for things that may look like a struct but are variable sized. For example, [InitializeAcl](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-initializeacl)
+looks like it returns an ACL struct but the parameter is annotated with a `[MemorySize]` attribute in the metadata, indicating it is variable-sized based on another parameter.
+Thus, the cswin32 projection of this method will project this parameter as a `Span<byte>` since the size of the parameter is variable:
+
+```c#
+// The cswin32 signature:
+static BOOL InitializeAcl(Span<byte> pAcl, ACE_REVISION dwAclRevision) { ... }
+```
+
+And you would call this by creating a buffer to receive the ACL. Then, after the call you can reinterpret the buffer as an ACL:
+```c#
+// Make a buffer
+Span<byte> buffer = new byte[CalculateAclSize(...)];
+InitializeAcl(buffer, ACE_REVISION.ACL_REVISION);
+
+// The beginning of the buffer is an ACL, so cast it to a ref:
+ref ACL acl = ref MemoryMarshal.AsRef<ACL>(buffer);
+
+// Or treat it as a Span:
+Span<ACL> aclSpan = MemoryMarshal.Cast<byte, ACL>(buffer);
+```
+
+CsWin32 will also generate a struct-typed parameter for convenience but this overload will pass `sizeof(T)` for the length parameter to the
+underlying Win32 API, so this only makes sense in some overloads such as [SHGetFileInfo](https://learn.microsoft.com/windows/win32/api/shellapi/nf-shellapi-shgetfileinfow)
+where the parameter has an annotation indicating it's variable-sized, but the size is only ever `sizeof(SHFILEINFOW)`:
+
+```c#
+// Span<byte> overload:
+static nuint SHGetFileInfo(string pszPath, FILE_FLAGS_AND_ATTRIBUTES dwFileAttributes, Span<byte> psfi, SHGFI_FLAGS uFlags)
+// ref SHGETFILEINFOW overload:
+static nuint SHGetFileInfo(string pszPath, FILE_FLAGS_AND_ATTRIBUTES dwFileAttributes, ref SHFILEINFOW psfi, SHGFI_FLAGS uFlags)
+```
+
 ### Newer metadata
 
 To update the metadata used as the source for code generation, you may install a newer `Microsoft.Windows.SDK.Win32Metadata` package:

@@ -21,10 +21,14 @@ public class FriendlyOverloadTests : GeneratorTestBase
     {
         // This method uses MemorySize but for determining the size of a struct that another parameter points to.
         // We cannot know the size of that, since it may be a v1 struct, a v2 struct, etc.
-        // So assert that no overload has fewer parameters.
+        // So assert that no overload has fewer parameters or it has a Span parameter.
         const string name = "SHGetFileInfo";
         this.Generate(name);
-        Assert.All(this.FindGeneratedMethod(name), m => Assert.Equal(5, m.ParameterList.Parameters.Count));
+        Assert.All(
+            this.FindGeneratedMethod(name),
+            m => Assert.True(
+                m.ParameterList.Parameters.Count == 5 ||
+                m.ParameterList.Parameters.Any(p => p.Type is GenericNameSyntax { Identifier.ValueText: "Span" })));
     }
 
     [Fact]

@@ -115,6 +115,8 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
     [InlineData("AddPrinterW", "AddPrinter", "winmdroot.Foundation.PWSTR pName, uint Level, Span<byte> pPrinter")]
     [InlineData("SHGetFileInfo", "SHGetFileInfo", "string pszPath, winmdroot.Storage.FileSystem.FILE_FLAGS_AND_ATTRIBUTES dwFileAttributes, Span<byte> psfi, winmdroot.UI.Shell.SHGFI_FLAGS uFlags")]
     [InlineData("SHGetFileInfo", "SHGetFileInfo", "string pszPath, winmdroot.Storage.FileSystem.FILE_FLAGS_AND_ATTRIBUTES dwFileAttributes, out winmdroot.UI.Shell.SHFILEINFOW psfi, winmdroot.UI.Shell.SHGFI_FLAGS uFlags")]
+    [InlineData("InitializeAcl", "InitializeAcl", "Span<byte> pAcl, winmdroot.Security.ACE_REVISION dwAclRevision")]
+    [InlineData("InitializeAcl", "InitializeAcl", "out winmd.Security.ACL pAcl, winmdroot.Security.ACE_REVISION dwAclRevision")]
     public async Task VerifySignature(string api, string member, string signature)
     {
         // If we need CharSet _and_ we generate something in Windows.Win32.System, the partially qualified reference breaks.

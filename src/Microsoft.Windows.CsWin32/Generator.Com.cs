@@ -68,6 +68,10 @@ public partial class Generator
         return true;
     }
 
+    private static StatementSyntax ThrowOnHRFailure(ExpressionSyntax hrExpression) => ExpressionStatement(InvocationExpression(
+        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, hrExpression, HRThrowOnFailureMethodName),
+        ArgumentList()));
+
     /// <summary>
     /// Generates a type to represent a COM interface.
     /// </summary>
@@ -327,10 +331,6 @@ public partial class Generator
             if (methodDefinition.Generator.TryGetPropertyAccessorInfo(methodDefinition, originalIfaceName, context, out IdentifierNameSyntax? propertyName, out SyntaxKind? accessorKind, out TypeSyntax? propertyType) &&
                 declaredProperties.Contains(propertyName.Identifier.ValueText))
             {
-                StatementSyntax ThrowOnHRFailure(ExpressionSyntax hrExpression) => ExpressionStatement(InvocationExpression(
-                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, hrExpression, HRThrowOnFailureMethodName),
-                    ArgumentList()));
-
                 BlockSyntax? body;
                 switch (accessorKind)
                 {
@@ -1307,15 +1307,124 @@ public partial class Generator
     /// Creates an empty class that when instantiated, creates a cocreatable Windows object
     /// that may implement a number of interfaces at runtime, discoverable only by documentation.
     /// </summary>
-    private ClassDeclarationSyntax DeclareCocreatableClass(TypeDefinition typeDef)
+    private ClassDeclarationSyntax DeclareCocreatableClass(TypeDefinition typeDef, Context context)
     {
+        bool canUseComImport = context.AllowMarshaling && !this.useSourceGenerators;
+
         IdentifierNameSyntax name = IdentifierName(this.Reader.GetString(typeDef.Name));
         Guid guid = this.FindGuidFromAttribute(typeDef) ?? throw new ArgumentException("Type does not have a GuidAttribute.");
         SyntaxTokenList classModifiers = TokenList(TokenWithSpace(this.Visibility));
         classModifiers = classModifiers.Add(TokenWithSpace(SyntaxKind.PartialKeyword));
         ClassDeclarationSyntax result = ClassDeclaration(name.Identifier)
             .WithModifiers(classModifiers)
-            .AddAttributeLists(AttributeList().AddAttributes(GUID(guid), ComImportAttributeSyntax));
+            .AddAttributeLists(AttributeList().AddAttributes(GUID(guid)).AddAttributes(canUseComImport ? [ComImportAttributeSyntax] : []));
+
+        if (!canUseComImport && !this.Options.ComInterop.UseIntPtrForComOutPointers)
+        {
+            string obsoleteMessage = context.AllowMarshaling
+                ? $"COM source generators do not support direct instantiation of co-creatable classes. Use {name.Identifier}.CreateInstance<T> instead."
+                : $"Marshaling is disabled, so direct instantiation of co-creatable classes is not supported. Use {name.Identifier}.CreateInstance<T> instead.";
+
+            // Generate a private readonly field for the Guid
+            // private static readonly Guid CLSID_Foo = new Guid(...);
+            SyntaxToken clsidFieldName = Identifier($"CLSID_{name.Identifier}");
+            FieldDeclarationSyntax clsidField = FieldDeclaration(
+                    VariableDeclaration(IdentifierName(nameof(Guid)))
+                        .AddVariables(VariableDeclarator(clsidFieldName).WithInitializer(EqualsValueClause(GuidValue(guid)))))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PrivateKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword));
+            result = result.AddMembers(clsidField);
+
+            // If using source generators or marshalling is disabled, generate a constructor with obsolete attribute like this:
+            // [Obsolete("COM source generators do not support direct instantiation of co-creatable classes. Use CreateInstance<T> method instead.")]
+            // public Foo() { throw new NotSupportedException("COM source generators do not support direct instantiation of co-creatable classes. Use CreateInstance<T> method instead."); }
+            AttributeSyntax obsoleteAttribute =
+                Attribute(IdentifierName(nameof(ObsoleteAttribute)))
+                    .AddArgumentListArguments(
+                        AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(obsoleteMessage))));
+            ConstructorDeclarationSyntax constructor = ConstructorDeclaration(name.Identifier)
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword))
+                .AddAttributeLists(AttributeList().AddAttributes(obsoleteAttribute))
+                .WithBody(
+                    Block(
+                        ThrowStatement(
+                            ObjectCreationExpression(IdentifierName(nameof(NotSupportedException)))
+                                .WithArgumentList(
+                                    ArgumentList().AddArguments(
+                                        Argument(
+                                            LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(obsoleteMessage))))))));
+            result = result.AddMembers(constructor);
+
+            this.MainGenerator.TryGenerateExternMethod("CoCreateInstance", out IReadOnlyCollection<string> preciseApi);
+            this.MainGenerator.TryGenerateConstant("CLSCTX", out preciseApi);
+
+            if (context.AllowMarshaling)
+            {
+                // Then add the CreateInstance<T> method:
+                // public static T CreateInstance<T>() where T : class
+                // {
+                //    PInvoke.CoCreateInstance<T>(CLSID_Foo, null, CLSCTX.CLSCTX_SERVER, out T ret).ThrowOnFailure();
+                //    return ret;
+                // }
+                TypeParameterSyntax typeParameter = TypeParameter(Identifier("T"));
+                GenericNameSyntax genericName = GenericName("CreateInstance").AddTypeArgumentListArguments(IdentifierName("T"));
+                MethodDeclarationSyntax createInstanceMethod = MethodDeclaration(IdentifierName("T"), genericName.Identifier)
+                    .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))
+                    .AddTypeParameterListParameters(typeParameter)
+                    .AddConstraintClauses(
+                        TypeParameterConstraintClause(IdentifierName("T"), SingletonSeparatedList<TypeParameterConstraintSyntax>(ClassOrStructConstraint(SyntaxKind.ClassConstraint))))
+                    .WithBody(
+                        Block(
+                            ThrowOnHRFailure(
+                                InvocationExpression(QualifiedName(ParseName($"{this.Win32NamespacePrefix}.{this.options.ClassName}"), GenericName("CoCreateInstance").AddTypeArgumentListArguments(IdentifierName("T"))))
+                                .WithArgumentList(
+                                    ArgumentList().AddArguments(
+                                        Argument(IdentifierName(clsidFieldName)),
+                                        Argument(LiteralExpression(SyntaxKind.NullLiteralExpression)),
+                                        Argument(
+                                            MemberAccessExpression(
+                                                SyntaxKind.SimpleMemberAccessExpression,
+                                                QualifiedName(ParseName($"{this.Win32NamespacePrefix}.System.Com"), IdentifierName("CLSCTX")),
+                                                IdentifierName("CLSCTX_SERVER"))),
+                                        Argument(DeclarationExpression(IdentifierName("T").WithTrailingTrivia(Space), SingleVariableDesignation(Identifier("ret")))).WithRefKindKeyword(Token(SyntaxKind.OutKeyword))))),
+                            ReturnStatement(IdentifierName("ret"))));
+                result = result.AddMembers(createInstanceMethod);
+            }
+            else
+            {
+                // Then add a CreateInstance<T> method that looks like this:
+                // public static HRESULT CreateInstance<T>(out T* instance) where T : unmanaged
+                // {
+                //    return PInvoke.CoCreateInstance<T>(CLSID_Foo, null, CLSCTX.CLSCTX_SERVER, out instance);
+                // }
+                TypeParameterSyntax typeParameter = TypeParameter(Identifier("T"));
+                GenericNameSyntax genericName = GenericName("CreateInstance").AddTypeArgumentListArguments(IdentifierName("T"));
+                MethodDeclarationSyntax createInstanceMethod = MethodDeclaration(IdentifierName($"{this.Win32NamespacePrefix}.Foundation.HRESULT"), genericName.Identifier)
+                    .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword))
+                    .AddTypeParameterListParameters(typeParameter)
+                    .AddConstraintClauses(
+                        TypeParameterConstraintClause(IdentifierName("T"), SingletonSeparatedList<TypeParameterConstraintSyntax>(TypeConstraint(IdentifierName("unmanaged")))))
+                    .WithParameterList(
+                        ParameterList().AddParameters(
+                            Parameter(Identifier("instance"))
+                            .WithType(PointerType(IdentifierName("T")))
+                            .WithModifiers(TokenList(Token(SyntaxKind.OutKeyword)))))
+                    .WithBody(
+                        Block(
+                            ReturnStatement(
+                                InvocationExpression(QualifiedName(ParseName($"{this.Win32NamespacePrefix}.{this.options.ClassName}"), GenericName("CoCreateInstance").AddTypeArgumentListArguments(IdentifierName("T"))))
+                                .WithArgumentList(
+                                    ArgumentList().AddArguments(
+                                        Argument(IdentifierName(clsidFieldName)),
+                                        Argument(LiteralExpression(SyntaxKind.NullLiteralExpression)),
+                                        Argument(
+                                            MemberAccessExpression(
+                                                SyntaxKind.SimpleMemberAccessExpression,
+                                                QualifiedName(ParseName($"{this.Win32NamespacePrefix}.System.Com"), IdentifierName("CLSCTX")),
+                                                IdentifierName("CLSCTX_SERVER"))),
+                                        Argument(IdentifierName("instance")).WithRefKindKeyword(Token(SyntaxKind.OutKeyword)))))));
+                result = result.AddMembers(createInstanceMethod);
+            }
+        }
 
         result = this.AddApiDocumentation(name.Identifier.ValueText, result);
         return result;

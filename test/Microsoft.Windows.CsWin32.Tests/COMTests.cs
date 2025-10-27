@@ -487,4 +487,23 @@ public class COMTests : GeneratorTestBase
             this.FindGeneratedMethod("QueryInterface"),
             m => m.Parent is StructDeclarationSyntax { Identifier.Text: "ITypeLib" } && m.TypeParameterList?.Parameters.Count == 1);
     }
+
+    [Theory, PairwiseData]
+    public void TestGenerateCoCreateableClass(bool useIntPtrForComOutPtr)
+    {
+        this.generator = this.CreateGenerator(new GeneratorOptions { AllowMarshaling = false, ComInterop = new GeneratorOptions.ComInteropOptions { UseIntPtrForComOutPointers = useIntPtrForComOutPtr } });
+
+        this.GenerateApi("ShellLink");
+
+        var shellLinkType = Assert.Single(this.FindGeneratedType("ShellLink"));
+
+        // Check that it does not have the ComImport attribute.
+        Assert.DoesNotContain(shellLinkType.AttributeLists, al => al.Attributes.Any(attr => attr.Name.ToString().Contains("ComImport")));
+
+        if (!useIntPtrForComOutPtr)
+        {
+            // Check that it contains a CreateInstance method
+            Assert.Contains(shellLinkType.DescendantNodes().OfType<MethodDeclarationSyntax>(), method => method.Identifier.Text == "CreateInstance");
+        }
+    }
 }

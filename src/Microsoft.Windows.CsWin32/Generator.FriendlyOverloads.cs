@@ -240,12 +240,11 @@ public partial class Generator
             // are omitted so that there's a reasonably idiomatic way to pass "null" for them. Don't do this for all Optional params:
             // * Parameters that are [Reserved] are always omitted.
             // * Array parameters are projected as Span and empty/0 are the same as "null" at the ABI, so they also don't need to be omitted.
-            // * If the extern method parameter is "out T*" then we can't omit it because there's actually no way to pass null for those kinds of out params.
             // * If the parameter remains as pointer it won't be different for optional vs non-optional.
             bool omittableOptionalParam = false;
             SyntaxToken externParamModifier = externParam.Modifiers.FirstOrDefault(m => m.Kind() is SyntaxKind.RefKeyword or SyntaxKind.OutKeyword);
             if (isOptional && !isReserved && isOut && !isArray
-                && (externParamModifier == default || externParam.Type is not PointerTypeSyntax)
+                && externParamModifier == default
                 && !mustRemainAsPointer)
             {
                 // Keep track of how many out/ref optional parameters we included -- if there are any we will generate another overload with them omitted.
@@ -270,15 +269,24 @@ public partial class Generator
                 // Remove the optional out parameter and supply the default value for the type to the extern method.
                 if (externParamModifier.Kind() is SyntaxKind.OutKeyword || externParamModifier.Kind() is SyntaxKind.RefKeyword)
                 {
-                    // ref TParam => ref Unsafe.NullRef<TParam>()
-                    ExpressionSyntax nullRef = this.canUseUnsafeNullRef
-                        ? InvocationExpression(
-                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Unsafe)), GenericName("NullRef", TypeArgumentList().AddArguments(externParam.Type))),
-                            ArgumentList())
-                        : InvocationExpression(
-                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Unsafe)), GenericName(nameof(Unsafe.AsRef), TypeArgumentList().AddArguments(externParam.Type))),
-                            ArgumentList().AddArguments(Argument(LiteralExpression(SyntaxKind.NullLiteralExpression))));
-                    arguments[param.SequenceNumber - 1] = Argument(nullRef).WithRefKindKeyword(TokenWithSpace(externParamModifier.Kind()));
+                    if (externParam.Type is PointerTypeSyntax || externParam.Type is FunctionPointerTypeSyntax)
+                    {
+                        // Can't pass pointers as type parameter to Unsafe.NullRef<T>(), so use `ref *(delegate ...*)null` syntax instead.
+                        ExpressionSyntax nullRef = PrefixUnaryExpression(SyntaxKind.PointerIndirectionExpression, CastExpression(PointerType(externParam.Type), LiteralExpression(SyntaxKind.NullLiteralExpression)));
+                        arguments[param.SequenceNumber - 1] = Argument(nullRef).WithRefKindKeyword(TokenWithSpace(externParamModifier.Kind()));
+                    }
+                    else
+                    {
+                        // ref Unsafe.NullRef<TParam>()
+                        ExpressionSyntax nullRef = this.canUseUnsafeNullRef
+                            ? InvocationExpression(
+                                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Unsafe)), GenericName("NullRef", TypeArgumentList().AddArguments(externParam.Type))),
+                                ArgumentList())
+                            : InvocationExpression(
+                                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Unsafe)), GenericName(nameof(Unsafe.AsRef), TypeArgumentList().AddArguments(externParam.Type))),
+                                ArgumentList().AddArguments(Argument(LiteralExpression(SyntaxKind.NullLiteralExpression))));
+                        arguments[param.SequenceNumber - 1] = Argument(nullRef).WithRefKindKeyword(TokenWithSpace(externParamModifier.Kind()));
+                    }
                 }
                 else
                 {

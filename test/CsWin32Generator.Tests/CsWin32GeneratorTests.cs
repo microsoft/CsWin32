@@ -237,6 +237,8 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         ["CreateThreadpoolWork", "Friendly overload differs only on return type and 'in' modifiers on attributes"],
         ["GetModuleFileName", "Should have a friendly Span overload"],
         ["PdhGetCounterInfo", "Optional out parameter omission conflicts with other overload"],
+        ["RtlUpcaseUnicodeChar", "char parameter should not get CharSet marshalling in AOT"],
+        ["CryptGetAsyncParam", "Has optional unmanaged delegate out param"]
     ];
 
     [Theory]

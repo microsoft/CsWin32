@@ -38,7 +38,7 @@
 partial struct HRESULT
 {
 	public static implicit operator uint(HRESULT value) => (uint)value.Value;
-	public static explicit operator HRESULT(uint value) => new HRESULT((int)value);
+	public static explicit operator HRESULT(uint value) => new HRESULT(unchecked((int)value));
 
 	[DebuggerBrowsable(DebuggerBrowsableState.Never)]
 	internal bool Succeeded => this.Value >= 0;

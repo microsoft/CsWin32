@@ -26,9 +26,9 @@
 partial struct NTSTATUS
 {
 	public static implicit operator uint(NTSTATUS value) => (uint)value.Value;
-	public static explicit operator NTSTATUS(uint value) => new NTSTATUS((int)value);
+	public static explicit operator NTSTATUS(uint value) => new NTSTATUS(unchecked((int)value));
 
-	internal Severity SeverityCode => (Severity)(((uint)this.Value & 0xc0000000) >> 30);
+	internal Severity SeverityCode => (Severity)unchecked(((uint)this.Value & 0xc0000000) >> 30);
 
 	internal enum Severity
 	{

@@ -19,7 +19,7 @@ internal class PInvokeClassMacros
 	/// <param name="a">The low word.</param>
 	/// <param name="b">The high word.</param>
 	/// <returns>A 32-bit unsigned integer.</returns>
-	internal static uint MAKELONG(ushort a, ushort b) => (uint)(a | b << 16);
+	internal static uint MAKELONG(ushort a, ushort b) => unchecked((uint)(a | b << 16));
 
 	/// <summary>
 	/// Constructs a <see cref="global::Windows.Win32.Foundation.WPARAM"/> from two 16-bit values.
@@ -57,5 +57,5 @@ internal class PInvokeClassMacros
 	/// </summary>
 	/// <param name="value">The 32-bit value.</param>
 	/// <returns>The high-order word.</returns>
-	internal static ushort HIWORD(uint value) => (ushort)(value >> 16);
+	internal static ushort HIWORD(uint value) => unchecked((ushort)(value >> 16));
 }

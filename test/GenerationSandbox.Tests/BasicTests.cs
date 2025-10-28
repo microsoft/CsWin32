@@ -153,11 +153,9 @@ public class BasicTests
         decimal valueRoundTripped = nativeDecimal;
         Assert.Equal(value, valueRoundTripped);
 
-#if NET5_0_OR_GREATER
         nativeDecimal = value;
         valueRoundTripped = nativeDecimal;
         Assert.Equal(value, valueRoundTripped);
-#endif
     }
 
     [Fact]

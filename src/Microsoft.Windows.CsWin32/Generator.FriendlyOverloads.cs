@@ -1148,7 +1148,7 @@ public partial class Generator
         MethodDeclarationSyntax helper = MethodDeclaration(
                 friendlyDeclaration.ReturnType.WithTrailingTrivia(TriviaList(Space)),
                 friendlyDeclaration.Identifier)
-            .WithAttributeLists(List<AttributeListSyntax>())
+            .WithAttributeLists(friendlyDeclaration.AttributeLists)
             .WithModifiers(modifiers)
             .WithParameterList(FixTrivia(ParameterList().AddParameters(friendlyParams)))
             .WithBody(body)

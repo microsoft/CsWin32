@@ -98,6 +98,18 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         Assert.Contains("Windows.Win32.UI.Shell.SHFILEINFOW is not declared for this platform.", this.Logger.Output);
     }
 
+    [Fact]
+    public async Task AllFriendlyOverloadsHaveTheSameAttributes()
+    {
+        this.nativeMethods.Add("SHGetFileInfo");
+        this.platform = "arm64";
+        await this.InvokeGeneratorAndCompileFromFact();
+        var methods = this.FindGeneratedMethod("SHGetFileInfo");
+
+        // Verify that all methods have the SupportedOSPlatform attribute
+        Assert.All(methods, m => Assert.Contains(m.AttributeLists.First().Attributes, attr => attr.Name.ToString().Contains("SupportedOSPlatform") || attr.Name.ToString().Contains("DllImport") || attr.Name.ToString().Contains("LibraryImport")));
+    }
+
     [Theory]
     [InlineData("x64")]
     [InlineData("X64")]

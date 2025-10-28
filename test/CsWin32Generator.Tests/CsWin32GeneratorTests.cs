@@ -399,7 +399,6 @@ using global::System.Runtime.Versioning;
         File.Delete(referencedAssemblyPath);
     }
 
-
     // https://github.com/microsoft/CsWin32/issues/1494
     [Theory]
     [InlineData(LanguageVersion.CSharp12)]

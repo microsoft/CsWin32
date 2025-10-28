@@ -26,16 +26,6 @@ public partial class Generator
 
             string safeHandleClassName = $"{releaseMethod}SafeHandle";
 
-            IdentifierNameSyntax? safeHandleTypeIdentifier = IdentifierName(safeHandleClassName);
-            safeHandleType = QualifiedName(ParseName($"global::{this.Namespace}"), safeHandleTypeIdentifier);
-
-            // Bail out early if someone already made the SafeHandle type
-            string safeHandleFullyQualifiedName = $"{this.Namespace}.{safeHandleClassName}";
-            if (this.IsTypeAlreadyFullyDeclared(safeHandleFullyQualifiedName))
-            {
-                return safeHandleType;
-            }
-
             MethodDefinitionHandle? releaseMethodHandle = this.GetMethodByName(releaseMethod);
             if (!releaseMethodHandle.HasValue)
             {
@@ -44,6 +34,9 @@ public partial class Generator
 
             MethodDefinition releaseMethodDef = this.Reader.GetMethodDefinition(releaseMethodHandle.Value);
             string releaseMethodModule = this.GetNormalizedModuleName(releaseMethodDef.GetImport());
+
+            IdentifierNameSyntax? safeHandleTypeIdentifier = IdentifierName(safeHandleClassName);
+            safeHandleType = QualifiedName(ParseName($"global::{this.Namespace}"), safeHandleTypeIdentifier);
 
             MethodSignature<TypeHandleInfo> releaseMethodSignature = releaseMethodDef.DecodeSignature(this.SignatureHandleProvider, null);
             TypeHandleInfo releaseMethodParameterTypeHandleInfo = releaseMethodSignature.ParameterTypes[0];
@@ -73,6 +66,13 @@ public partial class Generator
             });
 
             if (safeHandleType is null)
+            {
+                return safeHandleType;
+            }
+
+            // Bail out early if someone already made the SafeHandle type
+            string safeHandleFullyQualifiedName = $"{this.Namespace}.{safeHandleClassName}";
+            if (this.IsTypeAlreadyFullyDeclared(safeHandleFullyQualifiedName))
             {
                 return safeHandleType;
             }

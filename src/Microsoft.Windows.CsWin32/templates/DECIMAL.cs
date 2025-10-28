@@ -12,7 +12,5 @@
 		return *(decimal*)&value;
 	}
 
-#if NET5_0_OR_GREATER
 	public static implicit operator DECIMAL(decimal value) => new DECIMAL(value);
-#endif
 }

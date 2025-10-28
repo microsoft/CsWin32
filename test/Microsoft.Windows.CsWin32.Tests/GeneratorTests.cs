@@ -83,6 +83,16 @@ public class GeneratorTests : GeneratorTestBase
     }
 
     [Fact]
+    public void DecimalWorksInNet35()
+    {
+        this.compilation = this.starterCompilations["net35"];
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate("VarDecDiv", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+    }
+
+    [Fact]
     public void DbgHelpExternMethodsCanLoadAppLocal()
     {
         this.generator = this.CreateGenerator();

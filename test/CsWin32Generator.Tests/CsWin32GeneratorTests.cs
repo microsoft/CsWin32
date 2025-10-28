@@ -283,15 +283,78 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
             .AddSyntaxTrees(
                 CSharpSyntaxTree.ParseText(
                     $@"
+#pragma warning disable CS1591,CS1573,CS0465,CS0649,CS8019,CS1570,CS1584,CS1658,CS0436,CS8981,SYSLIB1092
+using global::System;
+using global::System.Diagnostics;
+using global::System.Diagnostics.CodeAnalysis;
+using global::System.Runtime.CompilerServices;
+using global::System.Runtime.InteropServices;
+using global::System.Runtime.Versioning;
+
                     [assembly: System.Runtime.CompilerServices.InternalsVisibleTo(""{friendName}"")]
 
                     namespace Windows.Win32.Foundation
                     {{
-                        internal struct PCWSTR
-                        {{        
-                            // Field exists solely to validate that the containing type is considered non-struct-like.
-                            internal unsafe byte* Value;
-                        }}
+		                internal unsafe readonly partial struct PCWSTR
+			                : IEquatable<PCWSTR>
+		                {{
+			                internal readonly char* Value;
+
+			                internal PCWSTR(char* value) => this.Value = value;
+
+			                public static explicit operator char*(PCWSTR value) => value.Value;
+
+			                public static implicit operator PCWSTR(char* value) => new PCWSTR(value);
+
+			                public bool Equals(PCWSTR other) => this.Value == other.Value;
+
+			                public override bool Equals(object obj) => obj is PCWSTR other && this.Equals(other);
+
+			                public override int GetHashCode() => unchecked((int)this.Value);
+
+			                internal int Length
+			                {{
+				                get
+				                {{
+					                char* p = this.Value;
+					                if (p is null)
+						                return 0;
+					                while (*p != '\0')
+						                p++;
+					                return checked((int)(p - this.Value));
+				                }}
+			                }}
+
+
+			                public override string ToString() => this.Value is null ? null : new string(this.Value);
+
+			                internal ReadOnlySpan<char> AsSpan() => this.Value is null ? default(ReadOnlySpan<char>) : new ReadOnlySpan<char>(this.Value, this.Length);
+
+			                private string DebuggerDisplay => this.ToString();
+		                }}
+                    }}
+
+                    namespace Windows.Win32
+                    {{
+	                    internal partial class SysFreeStringSafeHandle :SafeHandle	{{
+		                    private static readonly IntPtr INVALID_HANDLE_VALUE = new IntPtr(0L);
+
+		                    internal SysFreeStringSafeHandle():base(INVALID_HANDLE_VALUE, true)
+		                    {{
+		                    }}
+
+		                    internal SysFreeStringSafeHandle(IntPtr preexistingHandle, bool ownsHandle = true):base(INVALID_HANDLE_VALUE, ownsHandle)
+		                    {{
+			                    this.SetHandle(preexistingHandle);
+		                    }}
+
+		                    public override bool IsInvalid => false;
+
+		                    protected override bool ReleaseHandle()
+		                    {{
+			                    return true;
+		                    }}
+	                    }}
                     }}
                     ",
                     this.parseOptions,
@@ -314,6 +377,8 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
 
         this.nativeMethods.Add("PCWSTR");
         this.nativeMethods.Add("GetTickCount");
+        this.nativeMethods.Add("StrToIntW"); // Method that uses PCWSTR
+        this.nativeMethods.Add("IRestrictedErrorInfo"); // Generates BSTR out params and makes SysFreeStringSafeHandle
         this.additionalReferences.Add(referencedAssemblyPath);
         this.assemblyName = referencingAssemblyName;
         this.keyFile = strongNameSign ? strongNameKeyFilePath : null;
@@ -329,9 +394,11 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         await this.InvokeGeneratorAndCompile(testCase: $"{nameof(this.DoNotEmitTypesFromInternalsVisibleToReferences)}_{strongNameSign}");
 
         Assert.Empty(this.FindGeneratedType("PCWSTR"));
+        Assert.Empty(this.FindGeneratedType("SysFreeStringSafeHandle"));
 
         File.Delete(referencedAssemblyPath);
     }
+
 
     // https://github.com/microsoft/CsWin32/issues/1494
     [Theory]

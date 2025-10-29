@@ -201,6 +201,13 @@ public class BasicTests
     }
 
     [Fact]
+    public void HANDLE_CanCreateFromNegative()
+    {
+        // unchecked this will throw overflow exception in .NET Core.
+        var handle = new HANDLE(new IntPtr(-3));
+    }
+
+    [Fact]
     public void GetWindowText_FriendlyOverload()
     {
         HWND hwnd = PInvoke.GetForegroundWindow();

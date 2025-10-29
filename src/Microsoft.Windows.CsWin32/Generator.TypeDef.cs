@@ -278,7 +278,7 @@ public partial class Generator
             yield return ConstructorDeclaration(structName.Identifier)
                 .AddModifiers(TokenWithSpace(this.Visibility))
                 .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))))
-                .WithInitializer(ConstructorInitializer(SyntaxKind.ThisConstructorInitializer).AddArgumentListArguments(Argument(CastExpression(fieldType, valueParameter))))
+                .WithInitializer(ConstructorInitializer(SyntaxKind.ThisConstructorInitializer).AddArgumentListArguments(Argument(UncheckedExpression(CastExpression(fieldType, valueParameter)))))
                 .WithBody(Block());
         }
 

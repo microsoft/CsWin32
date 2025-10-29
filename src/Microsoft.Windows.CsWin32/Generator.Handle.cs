@@ -70,7 +70,9 @@ public partial class Generator
                 return safeHandleType;
             }
 
-            if (this.IsTypeAlreadyFullyDeclared($"{this.Namespace}.{safeHandleType}"))
+            // Bail out early if someone already made the SafeHandle type
+            string safeHandleFullyQualifiedName = $"{this.Namespace}.{safeHandleClassName}";
+            if (this.IsTypeAlreadyFullyDeclared(safeHandleFullyQualifiedName))
             {
                 return safeHandleType;
             }

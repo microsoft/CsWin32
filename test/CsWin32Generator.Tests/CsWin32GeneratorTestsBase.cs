@@ -57,6 +57,7 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
 
     protected async Task InvokeGeneratorAndCompile(string testCase, TestOptions options = TestOptions.None)
     {
+        this.compilation = this.compilation.WithAssemblyName(this.assemblyName);
         this.compilation = this.compilation.AddReferences(this.additionalReferences.Select(x => MetadataReference.CreateFromFile(x)));
 
         string outputPath = this.GetTestCaseOutputDirectory(testCase);

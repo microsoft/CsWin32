@@ -31,6 +31,7 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
     protected string assemblyName = "TestAssembly";
     protected string? keyFile;
     protected string platform = "x64";
+    protected string? languageVersionOverride;
     protected int expectedExitCode = 0;
     protected string? tfm;
     protected string[]? win32winmdPaths;
@@ -141,7 +142,11 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
             args.AddRange(["--key-file", this.keyFile]);
         }
 
-        if (this.parseOptions.LanguageVersion is LanguageVersion version && version < LanguageVersion.CSharp13)
+        if (this.languageVersionOverride is not null)
+        {
+            args.AddRange(["--language-version", this.languageVersionOverride]);
+        }
+        else if (this.parseOptions.LanguageVersion is LanguageVersion version && version < LanguageVersion.CSharp13)
         {
             args.AddRange(["--language-version", LanguageVersionFacts.ToDisplayString(version)]);
         }

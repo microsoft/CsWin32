@@ -173,8 +173,8 @@ public partial class Program
         {
             if (!LanguageVersionFacts.TryParse(languageVersionString, out this.languageVersion))
             {
-                this.ReportError($"Invalid language version: {languageVersionString}");
-                return 1;
+                // Assume any language version we haven't seen is C# 13 (the newest that we need).
+                this.languageVersion = LanguageVersion.CSharp13;
             }
         }
 

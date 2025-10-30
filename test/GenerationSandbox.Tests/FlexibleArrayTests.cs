@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
 using Windows.Win32.System.Ole;
@@ -49,8 +50,7 @@ public class FlexibleArrayTests
             new SafeFileHandle(IntPtr.Zero, false),
             default,
             null,
-            0,
-            &size,
-            null);
+            out size,
+            ref Unsafe.NullRef<Windows.Win32.Devices.DeviceAndDriverInstallation.SP_DEVINFO_DATA>());
     }
 }

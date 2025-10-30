@@ -343,7 +343,11 @@ public class COMTests : GeneratorTestBase
 
         // The generated methods MUST reference the "interface" (which must actually be generated as a struct) by pointer.
         Assert.Contains(this.FindGeneratedType("ID3DInclude"), t => t is StructDeclarationSyntax);
-        Assert.All(this.FindGeneratedMethod(methodName), m => Assert.True(m.ParameterList.Parameters[4].Type is PointerTypeSyntax { ElementType: QualifiedNameSyntax { Right: IdentifierNameSyntax { Identifier: { ValueText: "ID3DInclude" } } } }));
+        Assert.All(this.FindGeneratedMethod(methodName), m =>
+        {
+            var parameter = m.ParameterList.Parameters.First(x => x.Identifier.ValueText == "pInclude");
+            Assert.True(parameter.Type is PointerTypeSyntax { ElementType: QualifiedNameSyntax { Right: IdentifierNameSyntax { Identifier: { ValueText: "ID3DInclude" } } } });
+        });
     }
 
     [Theory, PairwiseData]

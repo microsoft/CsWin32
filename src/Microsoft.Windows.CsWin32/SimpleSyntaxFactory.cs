@@ -369,6 +369,9 @@ internal static class SimpleSyntaxFactory
 
     internal static bool IsVoid(TypeSyntax typeSyntax) => typeSyntax is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.VoidKeyword } };
 
+    internal static bool IsVoidPtrOrPtrPtr(TypeSyntax typeSyntax) => typeSyntax is PointerTypeSyntax { ElementType: TypeSyntax ptrElementType } &&
+        (IsVoid(ptrElementType) || (ptrElementType is PointerTypeSyntax { ElementType: TypeSyntax ptrPtrElementType } && IsVoid(ptrPtrElementType)));
+
     /// <summary>
     /// Creates the syntax for creating a new byte array populated with the specified data.
     /// e.g. <c>new byte[] { 0x01, 0x02 }</c>.

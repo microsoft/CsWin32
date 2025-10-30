@@ -31,6 +31,9 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
     protected string assemblyName = "TestAssembly";
     protected string? keyFile;
     protected string platform = "x64";
+    protected int expectedExitCode = 0;
+    protected string? tfm;
+    protected string[]? win32winmdPaths;
 
     public CsWin32GeneratorTestsBase(ITestOutputHelper logger)
         : base(logger)
@@ -43,6 +46,7 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
     {
         await base.InitializeAsync();
         this.compilation = this.starterCompilations["net9.0"];
+        this.win32winmdPaths = DefaultMetadataPaths;
     }
 
     // NOTE: Only use this method from a [Fact]. [Theory] should always use the below method to generate a unique testCase name per combination.
@@ -94,9 +98,6 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
             File.WriteAllLines(nativeMethodsTxtPath, this.nativeMethods);
         }
 
-        // Arrange
-        string win32winmd = Path.Combine(Path.GetDirectoryName(typeof(CsWin32GeneratorTests).Assembly.Location)!, "Windows.Win32.winmd");
-
         Directory.CreateDirectory(outputPath);
 
         this.Logger.WriteLine($"OutputPath: {outputPath}");
@@ -104,9 +105,18 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
         List<string> args = new();
         args.AddRange(["--assembly-name", this.assemblyName]);
         args.AddRange(["--native-methods-txt", nativeMethodsTxtPath]);
-        args.AddRange(["--metadata-paths", win32winmd]);
+        foreach (string win32winmd in this.win32winmdPaths!)
+        {
+            args.AddRange(["--metadata-paths", win32winmd]);
+        }
+
         args.AddRange(["--output-path", outputPath]);
         args.AddRange(["--platform", this.platform]);
+        if (this.tfm is string)
+        {
+            args.AddRange(["--target-framework", this.tfm]);
+        }
+
         if (this.nativeMethodsJson is string)
         {
             string nativeMethodsJsonPath = Path.Combine(Path.GetDirectoryName(typeof(CsWin32GeneratorTests).Assembly.Location)!, "TestContent", this.nativeMethodsJson);
@@ -142,7 +152,7 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
         int exitCode = await program.Main(args.ToArray(), this.fullGeneration);
 
         // Assert
-        Assert.Equal(0, exitCode);
+        Assert.Equal(this.expectedExitCode, exitCode);
         if (!options.HasFlag(TestOptions.GeneratesNothing))
         {
             Assert.True(Directory.GetFiles(outputPath, "*.g.cs").Any(), "No generated files found.");
@@ -162,14 +172,23 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
             syntaxTrees.Add(syntaxTree);
         }
 
-        // Add the assembly attribute for DisableRuntimeMarshalling
-        string disableRuntimeMarshallingSource = @"
+        bool canDisableRuntimeMarshalling = this.tfm is null ||
+            this.tfm.StartsWith("net6.0", StringComparison.OrdinalIgnoreCase) ||
+            this.tfm.StartsWith("net7.0", StringComparison.OrdinalIgnoreCase) ||
+            this.tfm.StartsWith("net8.0", StringComparison.OrdinalIgnoreCase) ||
+            this.tfm.StartsWith("net9.0", StringComparison.OrdinalIgnoreCase);
+
+        if (canDisableRuntimeMarshalling)
+        {
+            // Add the assembly attribute for DisableRuntimeMarshalling
+            string disableRuntimeMarshallingSource = @"
 using System.Runtime.CompilerServices;
 
 [assembly: DisableRuntimeMarshalling]
 ";
-        SyntaxTree disableRuntimeMarshallingSyntaxTree = CSharpSyntaxTree.ParseText(disableRuntimeMarshallingSource, path: "DisableRuntimeMarshalling.cs", options: this.parseOptions);
-        syntaxTrees.Add(disableRuntimeMarshallingSyntaxTree);
+            SyntaxTree disableRuntimeMarshallingSyntaxTree = CSharpSyntaxTree.ParseText(disableRuntimeMarshallingSource, path: "DisableRuntimeMarshalling.cs", options: this.parseOptions);
+            syntaxTrees.Add(disableRuntimeMarshallingSyntaxTree);
+        }
 
         this.compilation = this.compilation.AddSyntaxTrees(syntaxTrees);
 

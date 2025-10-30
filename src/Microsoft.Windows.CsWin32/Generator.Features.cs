@@ -108,13 +108,6 @@ public partial class Generator
 
     private void DeclareCharSetWorkaroundIfNecessary()
     {
-        // Always generate these in the context of the most common metadata so we don't emit it more than once.
-        if (!this.IsWin32Sdk)
-        {
-            this.MainGenerator.volatileCode.GenerationTransaction(() => this.MainGenerator.DeclareCharSetWorkaroundIfNecessary());
-            return;
-        }
-
         const string name = "CharSet_Workaround";
         this.volatileCode.GenerateSpecialType(name, delegate
         {
@@ -125,6 +118,9 @@ public partial class Generator
             }
 
             MemberDeclarationSyntax templateNamespace = compilationUnit.Members.Single();
+
+            // templateNamespace is System.Runtime.InteropServices, nest it within this generator's root namespace
+            templateNamespace = NamespaceDeclaration(ParseName(this.Namespace)).AddMembers(templateNamespace);
             this.volatileCode.AddSpecialType(name, templateNamespace, topLevel: true);
         });
     }

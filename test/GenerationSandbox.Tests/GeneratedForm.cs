@@ -79,7 +79,8 @@ internal static unsafe class GeneratedForm
     private static void WriteFile()
     {
         uint written = 0;
-        PInvoke.WriteFile((SafeHandle?)null, new byte[2], &written, (NativeOverlapped*)null);
+        System.Threading.NativeOverlapped overlapped = default;
+        PInvoke.WriteFile((SafeHandle?)null, new byte[2], out written, ref overlapped);
     }
 
     private static void RmRegisterResources()

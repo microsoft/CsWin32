@@ -123,6 +123,14 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
     }
 
     [Fact]
+    public async Task CanGenerateWithNewerLanguageVersion()
+    {
+        this.languageVersionOverride = "20";
+        this.nativeMethods.Add("SHGetFileInfo");
+        await this.InvokeGeneratorAndCompileFromFact();
+    }
+
+    [Fact]
     public async Task TestGenerateCoCreateableClass()
     {
         this.nativeMethods.Add("ShellLink");

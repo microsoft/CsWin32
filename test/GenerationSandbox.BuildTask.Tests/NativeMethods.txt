@@ -42,3 +42,8 @@ SHGetFileInfo
 SHGFI_FLAGS
 FILE_FLAGS_AND_ATTRIBUTES
 InitializeAcl
+DeviceIoControl
+SetupDiCreateDeviceInterface
+GetFileVersionInfoSizeEx
+GetFileVersionInfoEx
+VerQueryValue

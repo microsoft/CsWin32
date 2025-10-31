@@ -162,14 +162,15 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         ["SetupDiGetDeviceInterfaceDetail", "SetupDiGetDeviceInterfaceDetail", "SafeHandle DeviceInfoSet, in winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVICE_INTERFACE_DATA DeviceInterfaceData, Span<byte> DeviceInterfaceDetailData, out uint RequiredSize, ref winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVINFO_DATA DeviceInfoData"],
         // Optional params omitted
         ["SetupDiGetDeviceInterfaceDetail", "SetupDiGetDeviceInterfaceDetail", "SafeHandle DeviceInfoSet, in winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVICE_INTERFACE_DATA DeviceInterfaceData, Span<byte> DeviceInterfaceDetailData"],
-        ["WinHttpReadData", "WinHttpReadData", "Span<byte> hRequest, Span<byte> lpBuffer, ref uint lpdwNumberOfBytesRead"],
+        ["WinHttpReadData", "WinHttpReadData", "void* hRequest, Span<byte> lpBuffer, ref uint lpdwNumberOfBytesRead"],
         ["IsTextUnicode", "IsTextUnicode", "ReadOnlySpan<byte> lpv, ref winmdroot.Globalization.IS_TEXT_UNICODE_RESULT lpiResult"],
         // Omitted ref param
         ["IsTextUnicode", "IsTextUnicode", "ReadOnlySpan<byte> lpv"],
-        ["GetAce", "GetAce", "in winmdroot.Security.ACL pAcl, uint dwAceIndex, Span<byte> pAce"],
+        ["GetAce", "GetAce", "in winmdroot.Security.ACL pAcl, uint dwAceIndex, out void* pAce"],
         // Optional and MemorySize-d struct params, optional params included
         ["SetupDiGetClassInstallParams", "SetupDiGetClassInstallParams", "SafeHandle DeviceInfoSet, winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVINFO_DATA? DeviceInfoData, Span<byte> ClassInstallParams, out uint RequiredSize"],
         ["IEnumString", "Next", "this winmdroot.System.Com.IEnumString @this, Span<winmdroot.Foundation.PWSTR> rgelt, out uint pceltFetched"],
+        ["PSCreateMemoryPropertyStore", "PSCreateMemoryPropertyStore", "in global::System.Guid riid, out void* ppv"],
     ];
 
     [Theory]

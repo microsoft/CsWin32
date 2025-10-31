@@ -21,6 +21,8 @@ using Windows.Win32.System.Com;
 using Windows.Win32.System.WinRT.Composition;
 using Windows.Win32.UI.Shell;
 
+namespace GenerationSandbox.BuildTask.Tests;
+
 [Trait("WindowsOnly", "true")]
 public partial class COMTests
 {

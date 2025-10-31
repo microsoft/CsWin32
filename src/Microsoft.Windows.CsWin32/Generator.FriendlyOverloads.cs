@@ -222,12 +222,10 @@ public partial class Generator
                 }
                 else if (!countParamIndex.HasValue && !isComOutPtr)
                 {
-                    // void* param with no size annotations and without [ComOutPtr] is assumed to be
-                    // arbitrary memory block which we represent as Span<byte>
-                    isArray = true;
-                    projectAsSpanBytes = true;
+                    // void* param with no size annotations and without [ComOutPtr] can't really be improved,
+                    // so leave it alone.
                 }
-                else
+                else if (countParamIndex.HasValue)
                 {
                     // If it's void* but annotated with a count-of-elements (like OfferVirtualMemory or TokenBindingGenerateMessage) then
                     // just leave it as raw pointer because it's not clear what the developer meant and projecting as Span<byte> will require

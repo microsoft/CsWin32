@@ -491,9 +491,11 @@ public partial class Program
             int processedCount = 0;
             int skippedCount = 0;
             int errorCount = 0;
+            int lineNumber = 0;
 
             foreach (string line in lines)
             {
+                lineNumber++;
                 string name = line.Trim();
                 if (string.IsNullOrWhiteSpace(name) || name.StartsWith("//", StringComparison.Ordinal) || name.StartsWith("-", StringComparison.Ordinal))
                 {
@@ -511,7 +513,7 @@ public partial class Program
                         int matches = superGenerator.TryGenerateAllExternMethods(moduleName, CancellationToken.None);
                         if (matches == 0)
                         {
-                            this.ReportWarning($"No methods found under module '{moduleName}'");
+                            this.ReportWarning($"No methods found under module '{moduleName}'", nativeMethodsTxt.FullName, lineNumber);
                         }
                         else
                         {
@@ -526,13 +528,13 @@ public partial class Program
 
                     foreach (string declaringEnum in redirectedEnums)
                     {
-                        this.ReportWarning($"Using the name of the enum that declares this constant: {declaringEnum}");
+                        this.ReportWarning($"Using the name of the enum that declares this constant: {declaringEnum}", nativeMethodsTxt.FullName, lineNumber);
                     }
 
                     switch (matchingApis.Count)
                     {
                         case 0:
-                            this.ReportError($"Method, type or constant '{name}' not found");
+                            this.ReportError($"Method, type or constant '{name}' not found", nativeMethodsTxt.FullName, lineNumber);
                             errorCount++;
                             break;
                         case 1:
@@ -540,19 +542,19 @@ public partial class Program
                             processedCount++;
                             break;
                         case > 1:
-                            this.ReportError($"The API '{name}' is ambiguous. Please specify one of: {string.Join(", ", matchingApis.Select(api => $"\"{api}\""))}");
+                            this.ReportError($"The API '{name}' is ambiguous. Please specify one of: {string.Join(", ", matchingApis.Select(api => $"\"{api}\""))}", nativeMethodsTxt.FullName, lineNumber);
                             errorCount++;
                             break;
                     }
                 }
                 catch (PlatformIncompatibleException)
                 {
-                    this.ReportError($"API '{name}' is not available for the target platform");
+                    this.ReportError($"API '{name}' is not available for the target platform", nativeMethodsTxt.FullName, lineNumber);
                     errorCount++;
                 }
                 catch (Exception ex)
                 {
-                    this.ReportError($"'{name}': {this.ErrorChainToString(ex)}");
+                    this.ReportError($"'{name}': {this.ErrorChainToString(ex)}", nativeMethodsTxt.FullName, lineNumber);
                     errorCount++;
                 }
             }
@@ -562,7 +564,7 @@ public partial class Program
         }
         catch (Exception ex)
         {
-            this.ReportError($"Failed to process NativeMethods.txt file: {this.ErrorChainToString(ex)}");
+            this.ReportError($"Failed to process NativeMethods.txt file: {this.ErrorChainToString(ex)}", nativeMethodsTxt.FullName);
             return false;
         }
     }
@@ -624,14 +626,36 @@ public partial class Program
         }
     }
 
-    private void ReportError(string message)
+    private void ReportError(string message, string? file = null, int? line = null)
     {
-        this.error.WriteLine($"CsWin32 : error : {message}");
+        if (file is not null && line is not null)
+        {
+            this.error.WriteLine($"{file}({line}): CsWin32 error : {message}");
+        }
+        else if (file is not null)
+        {
+            this.error.WriteLine($"{file}: CsWin32 error : {message}");
+        }
+        else
+        {
+            this.error.WriteLine($"CsWin32 : error : {message}");
+        }
     }
 
-    private void ReportWarning(string message)
+    private void ReportWarning(string message, string? file = null, int? line = null)
     {
-        this.output.WriteLine($"CsWin32 : warning : {message}");
+        if (file is not null && line is not null)
+        {
+            this.output.WriteLine($"{file}({line}): CsWin32 warning : {message}");
+        }
+        else if (file is not null)
+        {
+            this.output.WriteLine($"{file}: CsWin32 warning : {message}");
+        }
+        else
+        {
+            this.output.WriteLine($"CsWin32 : warning : {message}");
+        }
     }
 
     private void InfoWriteLine(string message)

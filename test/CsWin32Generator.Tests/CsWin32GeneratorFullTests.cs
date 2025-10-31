@@ -22,6 +22,7 @@ public partial class CsWin32GeneratorFullTests : CsWin32GeneratorTestsBase
         this.fullGeneration = true;
         this.compilation = this.starterCompilations[tfm];
         this.parseOptions = this.parseOptions.WithLanguageVersion(langVersion);
+        this.nativeMethodsJson = "NativeMethods.EmitSingleFile.json";
         await this.InvokeGeneratorAndCompile($"FullGeneration_{tfm}_{langVersion}", TestOptions.None);
     }
 }

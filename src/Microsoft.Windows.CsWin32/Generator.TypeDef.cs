@@ -173,6 +173,35 @@ public partial class Generator
                     .WithSemicolonToken(SemicolonWithLineFeed));
             }
         }
+        else if (fieldInfo.FieldType is PointerTypeSyntax pts && IsVoid(pts.ElementType))
+        {
+            // void* typedefs should still get IntPtr conversions for convenience like their HANDLE counterparts.
+
+            // public static implicit operator IntPtr(PSID value) => new IntPtr(value.Value);
+            ExpressionSyntax valueValueArg = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, fieldIdentifierName);
+            members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), IntPtrTypeSyntax)
+                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))))
+                .WithExpressionBody(ArrowExpressionClause(
+                    ObjectCreationExpression(IntPtrTypeSyntax).AddArgumentListArguments(Argument(valueValueArg))))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
+                .WithSemicolonToken(SemicolonWithLineFeed));
+
+            // public static explicit operator PSID(IntPtr value) => new PSID(value.ToPointer());
+            members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
+                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))))
+                .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(
+                    Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToPointer)))))))))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
+                .WithSemicolonToken(SemicolonWithLineFeed));
+
+            // public static explicit operator PSID(UIntPtr value) => new PSID(value.ToPointer());
+            members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
+                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(UIntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))))
+                .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(
+                    Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToPointer)))))))))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
+                .WithSemicolonToken(SemicolonWithLineFeed));
+        }
 
         foreach (string alsoUsableForValue in this.GetAlsoUsableForValues(typeDef))
         {

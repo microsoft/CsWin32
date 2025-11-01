@@ -140,6 +140,7 @@ public partial class Generator
             bool isOptional = (param.Attributes & ParameterAttributes.Optional) == ParameterAttributes.Optional;
             CustomAttributeHandleCollection paramAttributes = param.GetCustomAttributes();
             bool isReserved = this.FindInteropDecorativeAttribute(paramAttributes, "ReservedAttribute") is not null;
+            bool isRetained = this.FindInteropDecorativeAttribute(paramAttributes, "RetainedAttribute") is not null;
             isOptional |= isReserved; // Per metadata decision made at https://github.com/microsoft/win32metadata/issues/1421#issuecomment-1372608090
             bool isIn = (param.Attributes & ParameterAttributes.In) == ParameterAttributes.In;
             bool isConst = this.FindInteropDecorativeAttribute(paramAttributes, "ConstAttribute") is not null;
@@ -164,9 +165,16 @@ public partial class Generator
                 memorySize = DecodeMemorySizeAttribute(memorySizeAttribute);
             }
 
-            // If there's no MemorySize attribute, we may still need to keep this parameter as a pointer if it's a struct with a flexible array.
-            if (memorySize is null)
+            if (isRetained)
             {
+                // Retained means that the callee will keep the pointer beyond this call. To communicate that safety problem to the caller,
+                // the best we can do is project as a pointer so they know they need to think about it. See https://github.com/microsoft/CsWin32/issues/1066
+                // and linked issues for more info.
+                mustRemainAsPointer = true;
+            }
+            else if (memorySize is null)
+            {
+                // If there's no MemorySize attribute, we may still need to keep this parameter as a pointer if it's a struct with a flexible array.
                 mustRemainAsPointer = parameterTypeInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo pointedElement } && pointedElement.Generator.IsStructWithFlexibleArray(pointedElement);
             }
             else if (!useSpansForPointers)

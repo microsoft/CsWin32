@@ -171,6 +171,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         ["SetupDiGetClassInstallParams", "SetupDiGetClassInstallParams", "SafeHandle DeviceInfoSet, winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVINFO_DATA? DeviceInfoData, Span<byte> ClassInstallParams, out uint RequiredSize"],
         ["IEnumString", "Next", "this winmdroot.System.Com.IEnumString @this, Span<winmdroot.Foundation.PWSTR> rgelt, out uint pceltFetched"],
         ["PSCreateMemoryPropertyStore", "PSCreateMemoryPropertyStore", "in global::System.Guid riid, out void* ppv"],
+        ["DeviceIoControl", "DeviceIoControl", "SafeHandle hDevice, uint dwIoControlCode, ReadOnlySpan<byte> lpInBuffer, Span<byte> lpOutBuffer, out uint lpBytesReturned, global::System.Threading.NativeOverlapped* lpOverlapped"],
     ];
 
     [Theory]

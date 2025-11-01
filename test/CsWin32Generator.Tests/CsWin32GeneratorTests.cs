@@ -172,6 +172,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         ["IEnumString", "Next", "this winmdroot.System.Com.IEnumString @this, Span<winmdroot.Foundation.PWSTR> rgelt, out uint pceltFetched"],
         ["PSCreateMemoryPropertyStore", "PSCreateMemoryPropertyStore", "in global::System.Guid riid, out void* ppv"],
         ["DeviceIoControl", "DeviceIoControl", "SafeHandle hDevice, uint dwIoControlCode, ReadOnlySpan<byte> lpInBuffer, Span<byte> lpOutBuffer, out uint lpBytesReturned, global::System.Threading.NativeOverlapped* lpOverlapped"],
+        ["NtQueryObject", "NtQueryObject", "global::Windows.Win32.Foundation.HANDLE Handle, winmdroot.Foundation.OBJECT_INFORMATION_CLASS ObjectInformationClass, Span<byte> ObjectInformation, out uint ReturnLength"],
     ];
 
     [Theory]
@@ -260,24 +261,25 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         ["GetModuleFileName", "Should have a friendly Span overload"],
         ["PdhGetCounterInfo", "Optional out parameter omission conflicts with other overload"],
         ["RtlUpcaseUnicodeChar", "char parameter should not get CharSet marshalling in AOT"],
-        ["CryptGetAsyncParam", "Has optional unmanaged delegate out param"]
+        ["CryptGetAsyncParam", "Has optional unmanaged delegate out param"],
+        ["NtQueryObject", "Verify pointer overloads and optional parameters", TestOptions.None, "NativeMethods.PointerOverloadsToo.json"],
     ];
 
     [Theory]
     [MemberData(nameof(TestApiData))]
-    public async Task TestGenerateApi(string api, string purpose, TestOptions options = TestOptions.None)
+    public async Task TestGenerateApi(string api, string purpose, TestOptions options = TestOptions.None, string? nativeMethodsJson = null)
     {
-        await this.TestGenerateApiWorker(api, purpose, options, "net9.0");
+        await this.TestGenerateApiWorker(api, purpose, options, "net9.0", nativeMethodsJson);
     }
 
     [Theory]
     [MemberData(nameof(TestApiData))]
-    public async Task TestGenerateApiNet8(string api, string purpose, TestOptions options = TestOptions.None)
+    public async Task TestGenerateApiNet8(string api, string purpose, TestOptions options = TestOptions.None, string? nativeMethodsJson = null)
     {
-        await this.TestGenerateApiWorker(api, purpose, options, "net8.0");
+        await this.TestGenerateApiWorker(api, purpose, options, "net8.0", nativeMethodsJson);
     }
 
-    private async Task TestGenerateApiWorker(string api, string purpose, TestOptions options, string tfm)
+    private async Task TestGenerateApiWorker(string api, string purpose, TestOptions options, string tfm, string? nativeMethodsJson)
     {
         LanguageVersion langVersion = (tfm == "net8.0") ? LanguageVersion.CSharp12 : LanguageVersion.CSharp13;
 
@@ -286,6 +288,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         this.parseOptions = this.parseOptions.WithLanguageVersion(langVersion);
         this.Logger.WriteLine($"Testing {api} - {tfm} - {purpose}");
         this.nativeMethods.Add(api);
+        this.nativeMethodsJson = nativeMethodsJson;
         await this.InvokeGeneratorAndCompile($"Test_{api}_{tfm}", options);
     }
 

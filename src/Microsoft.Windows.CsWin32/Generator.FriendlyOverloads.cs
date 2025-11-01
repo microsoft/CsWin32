@@ -82,13 +82,32 @@ public partial class Generator
         }
 
         bool useSpansForPointers = this.canUseSpan;
-        foreach (MethodDeclarationSyntax method in this.DeclareFriendlyOverload(methodDefinition, externMethodDeclaration, declaringTypeName, overloadOf, helperMethodsAdded, avoidWinmdRootAlias, useSpansForPointers, omitOptionalParams: false))
+        FriendlyMethodBookkeeping bookkeeping = new();
+        foreach (MethodDeclarationSyntax method in this.DeclareFriendlyOverload(methodDefinition, externMethodDeclaration, declaringTypeName, overloadOf, helperMethodsAdded, avoidWinmdRootAlias, useSpansForPointers, omitOptionalParams: false, bookkeeping))
         {
             yield return method;
         }
+
+        if (this.Options.FriendlyOverloads.PointerOverloadsToo && useSpansForPointers && bookkeeping.NumSpanByteParameters > 0)
+        {
+            // If we could use Span and _did_ use span Span and the pointer overloads were requested, then Generate overloads that use pointer types instead of Span<byte>/ReadOnlySpan<byte>.
+            foreach (MethodDeclarationSyntax method in this.DeclareFriendlyOverload(methodDefinition, externMethodDeclaration, declaringTypeName, overloadOf, helperMethodsAdded, avoidWinmdRootAlias, useSpansForPointers: false, omitOptionalParams: false))
+            {
+                yield return method;
+            }
+        }
     }
 
-    private IEnumerable<MethodDeclarationSyntax> DeclareFriendlyOverload(MethodDefinition methodDefinition, MethodDeclarationSyntax externMethodDeclaration, NameSyntax declaringTypeName, FriendlyOverloadOf overloadOf, HashSet<string> helperMethodsAdded, bool avoidWinmdRootAlias, bool useSpansForPointers, bool omitOptionalParams)
+    private IEnumerable<MethodDeclarationSyntax> DeclareFriendlyOverload(
+        MethodDefinition methodDefinition,
+        MethodDeclarationSyntax externMethodDeclaration,
+        NameSyntax declaringTypeName,
+        FriendlyOverloadOf overloadOf,
+        HashSet<string> helperMethodsAdded,
+        bool avoidWinmdRootAlias,
+        bool useSpansForPointers,
+        bool omitOptionalParams,
+        FriendlyMethodBookkeeping? bookkeeping = null)
     {
 #pragma warning disable SA1114 // Parameter list should follow declaration
         bool isReleaseMethod = this.MetadataIndex.ReleaseMethods.Contains(externMethodDeclaration.Identifier.ValueText);
@@ -123,6 +142,7 @@ public partial class Generator
         bool minorSignatureChange = false; // Did the signature change but not enough that overload resolution would be confused?
         List<Parameter>? countOfBytesStructParameters = null;
         int numOptionalParams = 0;
+        int numSpanByteParameters = 0;
 
         foreach (ParameterHandle paramHandle in methodDefinition.GetParameters())
         {
@@ -476,6 +496,11 @@ public partial class Generator
                         fixedBlocks.Add(VariableDeclaration(PointerType(elementType)).AddVariables(
                             VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
                         arguments[param.SequenceNumber - 1] = projectAsSpanBytes ? Argument(CastExpression(externParam.Type, localName)) : Argument(localName);
+
+                        if (projectAsSpanBytes)
+                        {
+                            numSpanByteParameters++;
+                        }
                     }
                     else if (isNullTerminated && isConst && parameters[param.SequenceNumber - 1].Type is PointerTypeSyntax { ElementType: PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.CharKeyword } } })
                     {
@@ -826,6 +851,7 @@ public partial class Generator
                             fixedBlocks.Add(VariableDeclaration(PointerType(byteSyntax)).AddVariables(
                                 VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
                             arguments[param.SequenceNumber - 1] = Argument(CastExpression(externParam.Type, localName));
+                            numSpanByteParameters++;
                         }
                         else
                         {
@@ -898,7 +924,7 @@ public partial class Generator
                 : IdentifierName(externMethodDeclaration.Identifier);
             SyntaxTrivia leadingTrivia = Trivia(
                 DocumentationCommentTrivia(SyntaxKind.SingleLineDocumentationCommentTrivia).AddContent(
-                    XmlText("/// "),
+                    XmlText($"/// Parameters: useSpansForPointers={useSpansForPointers}, omitOptionalParams={omitOptionalParams}"),
                     XmlEmptyElement("inheritdoc").AddAttributes(XmlCrefAttribute(NameMemberCref(docRefExternName, ToCref(externMethodDeclaration.ParameterList)))),
                     XmlText().AddTextTokens(XmlTextNewLine("\n", continueXmlDocumentationComment: false))));
             InvocationExpressionSyntax externInvocation = InvocationExpression(
@@ -1002,6 +1028,11 @@ public partial class Generator
 
             friendlyDeclaration = friendlyDeclaration
                 .WithLeadingTrivia(leadingTrivia);
+
+            if (bookkeeping is not null)
+            {
+                bookkeeping.NumSpanByteParameters = numSpanByteParameters;
+            }
 
             yield return friendlyDeclaration;
 
@@ -1162,5 +1193,10 @@ public partial class Generator
             .WithLeadingTrivia(leadingTrivia);
 
         return helper;
+    }
+
+    private class FriendlyMethodBookkeeping
+    {
+        public int NumSpanByteParameters { get; set; } = 0;
     }
 }

@@ -172,28 +172,30 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         ["IEnumString", "Next", "this winmdroot.System.Com.IEnumString @this, Span<winmdroot.Foundation.PWSTR> rgelt, out uint pceltFetched"],
         ["PSCreateMemoryPropertyStore", "PSCreateMemoryPropertyStore", "in global::System.Guid riid, out void* ppv"],
         ["DeviceIoControl", "DeviceIoControl", "SafeHandle hDevice, uint dwIoControlCode, ReadOnlySpan<byte> lpInBuffer, Span<byte> lpOutBuffer, out uint lpBytesReturned, global::System.Threading.NativeOverlapped* lpOverlapped"],
+        ["DeviceIoControl", "DeviceIoControl", "SafeHandle hDevice, uint dwIoControlCode, ReadOnlySpan<byte> lpInBuffer, Span<byte> lpOutBuffer, out uint lpBytesReturned, global::System.Threading.NativeOverlapped* lpOverlapped", true, "NativeMethods.PointerOverloadsToo.json"],
         ["NtQueryObject", "NtQueryObject", "global::Windows.Win32.Foundation.HANDLE Handle, winmdroot.Foundation.OBJECT_INFORMATION_CLASS ObjectInformationClass, Span<byte> ObjectInformation, out uint ReturnLength"],
     ];
 
     [Theory]
     [MemberData(nameof(TestSignatureData))]
-    public async Task VerifySignature(string api, string member, string signature, bool assertPresent = true)
+    public async Task VerifySignature(string api, string member, string signature, bool assertPresent = true, string? nativeMethodsJson = null)
     {
-        await this.VerifySignatureWorker(api, member, signature, assertPresent, "net9.0");
+        await this.VerifySignatureWorker(api, member, signature, assertPresent, "net9.0", nativeMethodsJson);
     }
 
     [Theory]
     [InlineData("InitializeAcl", "InitializeAcl", "out winmdroot.Security.ACL pAcl, winmdroot.Security.ACE_REVISION dwAclRevision", false)]
-    public async Task VerifySignatureNet472(string api, string member, string signature, bool assertPresent = true)
+    public async Task VerifySignatureNet472(string api, string member, string signature, bool assertPresent = true, string? nativeMethodsJson = null)
     {
-        await this.VerifySignatureWorker(api, member, signature, assertPresent, "net472");
+        await this.VerifySignatureWorker(api, member, signature, assertPresent, "net472", nativeMethodsJson);
     }
 
-    private async Task VerifySignatureWorker(string api, string member, string signature, bool assertPresent, string tfm)
+    private async Task VerifySignatureWorker(string api, string member, string signature, bool assertPresent, string tfm, string? nativeMethodsJson)
     {
         this.tfm = tfm;
         this.compilation = this.starterCompilations[tfm];
         this.nativeMethods.Add(api);
+        this.nativeMethodsJson = nativeMethodsJson;
 
         // Make a unique name based on the signature
         await this.InvokeGeneratorAndCompile($"{api}_{member}_{tfm}_{signature.Select(x => (int)x).Aggregate((x, y) => x + y).ToString("X")}");

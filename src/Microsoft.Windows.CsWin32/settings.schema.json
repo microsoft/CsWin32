@@ -50,6 +50,11 @@
           "description": "A value indicating whether to generate method overloads that may be easier to consume or be more idiomatic C#. These may use fewer pointers, accept or return SafeHandles, etc.",
           "type": "boolean",
           "default": true
+        },
+        "pointerOverloadsToo": {
+          "description": "A value indicating whether to generate overloads that use pointer types for parameters that are [MemorySize] annotated buffers which normally appear as spans.",
+          "type": "boolean",
+          "default": false
         }
       }
     },

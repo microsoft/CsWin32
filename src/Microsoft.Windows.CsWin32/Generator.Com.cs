@@ -19,6 +19,9 @@ public partial class Generator
     // IDispatch because the interface would be expensive and not very useful. We just need to have placeholder vtable slots.
     private bool GenerateIDispatch => this.useSourceGenerators;
 
+    // But, if IDispatch is explicitly requested then we will generate the full IDispatch interface.
+    internal bool GenerateFullIDispatch { get; set; }
+
     private static Guid DecodeGuidFromAttribute(CustomAttribute guidAttribute)
     {
         CustomAttributeValue<TypeSyntax> args = guidAttribute.DecodeValue(CustomAttributeTypeProvider.Instance);
@@ -707,7 +710,10 @@ public partial class Generator
 
         if (this.Reader.StringComparer.Equals(typeDef.Name, "IDispatch"))
         {
-            return this.GenerateIDispatch ? this.CreateIDispatchTypeDeclarationSyntax() : null;
+            if (!this.GenerateFullIDispatch)
+            {
+                return this.GenerateIDispatch ? this.CreateIDispatchTypeDeclarationSyntax() : null;
+            }
         }
 
         string actualIfaceName = this.Reader.GetString(typeDef.Name);

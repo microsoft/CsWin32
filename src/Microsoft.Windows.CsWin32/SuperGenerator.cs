@@ -230,6 +230,18 @@ public class SuperGenerator : IGenerator, IDisposable
     }
 
     /// <summary>
+    /// Tells the generator to generate the "real" IDispatch interface fully. This only really has an
+    /// effect in COM source generator mode.
+    /// </summary>
+    public void GenerateIDispatch()
+    {
+        foreach (Generator generator in this.Generators.Values)
+        {
+            generator.GenerateFullIDispatch = true;
+        }
+    }
+
+    /// <summary>
     /// Looks up the <see cref="Generator"/> that owns a referenced type.
     /// </summary>
     /// <param name="typeRef">The generator and type reference from the requesting generator.</param>

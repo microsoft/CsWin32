@@ -5,6 +5,10 @@ namespace Microsoft.Windows.CsWin32;
 
 public partial class Generator
 {
+    // If IDispatch is explicitly requested then we will generate the full IDispatch interface. SuperGenerator calls this when
+    // CsWin32Generator sees IDispatch in the NativeMethods.txt.
+    internal bool GenerateFullIDispatch { get; set; }
+
     private static readonly IdentifierNameSyntax HRThrowOnFailureMethodName = IdentifierName("ThrowOnFailure");
 
     // [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvStdcall) })]
@@ -18,9 +22,6 @@ public partial class Generator
     // don't support this, so we generate a dummy IDispatch when using source generators mode. We don't generate a "real"
     // IDispatch because the interface would be expensive and not very useful. We just need to have placeholder vtable slots.
     private bool GenerateIDispatch => this.useSourceGenerators;
-
-    // But, if IDispatch is explicitly requested then we will generate the full IDispatch interface.
-    internal bool GenerateFullIDispatch { get; set; }
 
     private static Guid DecodeGuidFromAttribute(CustomAttribute guidAttribute)
     {

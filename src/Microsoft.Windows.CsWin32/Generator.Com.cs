@@ -5,10 +5,6 @@ namespace Microsoft.Windows.CsWin32;
 
 public partial class Generator
 {
-    // If IDispatch is explicitly requested then we will generate the full IDispatch interface. SuperGenerator calls this when
-    // CsWin32Generator sees IDispatch in the NativeMethods.txt.
-    internal bool GenerateFullIDispatch { get; set; }
-
     private static readonly IdentifierNameSyntax HRThrowOnFailureMethodName = IdentifierName("ThrowOnFailure");
 
     // [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvStdcall) })]
@@ -17,6 +13,10 @@ public partial class Generator
             .WithNameEquals(NameEquals(IdentifierName("CallConvs")))));
 
     private readonly HashSet<string> injectedPInvokeHelperMethodsToFriendlyOverloadsExtensions = new();
+
+    // If IDispatch is explicitly requested then we will generate the full IDispatch interface. SuperGenerator calls this when
+    // CsWin32Generator sees IDispatch in the NativeMethods.txt.
+    internal bool GenerateFullIDispatch { get; set; }
 
     // With runtime marshaling, IDispatch is implicitly generated when using InterfaceIsDual. The COM source generators
     // don't support this, so we generate a dummy IDispatch when using source generators mode. We don't generate a "real"

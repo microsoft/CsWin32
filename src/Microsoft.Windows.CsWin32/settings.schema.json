@@ -51,8 +51,8 @@
           "type": "boolean",
           "default": true
         },
-        "pointerOverloadsToo": {
-          "description": "A value indicating whether to generate overloads that use pointer types for parameters that are [MemorySize] annotated buffers which normally appear as spans.",
+        "includePointerOverloads": {
+          "description": "A value indicating whether to also generate overloads that use pointer types for parameters that are [MemorySize] annotated buffers which normally appear as spans.",
           "type": "boolean",
           "default": false
         }

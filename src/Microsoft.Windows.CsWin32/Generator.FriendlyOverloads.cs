@@ -88,7 +88,7 @@ public partial class Generator
             yield return method;
         }
 
-        if (this.Options.FriendlyOverloads.PointerOverloadsToo && improvePointersToSpansAndRefs && bookkeeping.NumSpanByteParameters > 0)
+        if (this.Options.FriendlyOverloads.IncludePointerOverloads && improvePointersToSpansAndRefs && bookkeeping.NumSpanByteParameters > 0)
         {
             // If we could use Span and _did_ use span Span and the pointer overloads were requested, then Generate overloads that use pointer types instead of Span<byte>/ReadOnlySpan<byte>.
             foreach (MethodDeclarationSyntax method in this.DeclareFriendlyOverload(methodDefinition, externMethodDeclaration, declaringTypeName, overloadOf, helperMethodsAdded, avoidWinmdRootAlias, improvePointersToSpansAndRefs: false, omitOptionalParams: false))

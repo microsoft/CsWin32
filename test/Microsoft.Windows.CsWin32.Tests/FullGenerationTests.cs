@@ -56,11 +56,11 @@ public class FullGenerationTests : GeneratorTestBase
     public void ExternMethods(
         MarshalingOptions marshaling,
         bool useIntPtrForComOutPtr,
-        bool pointerOverloadsToo,
+        bool includePointerOverloads,
         [CombinatorialMemberData(nameof(SpecificCpuArchitectures))] Platform platform,
         [CombinatorialMemberData(nameof(TFMDataNoNetFx35))] string tfm)
     {
-        this.TestHelper(OptionsForMarshaling(marshaling, useIntPtrForComOutPtr, pointerOverloadsToo), platform, tfm, generator => generator.GenerateAllExternMethods(CancellationToken.None));
+        this.TestHelper(OptionsForMarshaling(marshaling, useIntPtrForComOutPtr, includePointerOverloads), platform, tfm, generator => generator.GenerateAllExternMethods(CancellationToken.None));
     }
 
     [Fact]
@@ -69,7 +69,7 @@ public class FullGenerationTests : GeneratorTestBase
         this.TestHelper(new GeneratorOptions(), Platform.X64, DefaultTFM, generator => generator.GenerateAllMacros(CancellationToken.None));
     }
 
-    private static GeneratorOptions OptionsForMarshaling(MarshalingOptions marshaling, bool useIntPtrForComOutPtr, bool pointerOverloadsToo = false) => new()
+    private static GeneratorOptions OptionsForMarshaling(MarshalingOptions marshaling, bool useIntPtrForComOutPtr, bool includePointerOverloads = false) => new()
     {
         AllowMarshaling = marshaling >= MarshalingOptions.MarshalingWithoutSafeHandles,
         UseSafeHandles = marshaling == MarshalingOptions.FullMarshaling,
@@ -79,7 +79,7 @@ public class FullGenerationTests : GeneratorTestBase
         },
         FriendlyOverloads = new()
         {
-            PointerOverloadsToo = pointerOverloadsToo,
+            IncludePointerOverloads = includePointerOverloads,
         },
     };
 

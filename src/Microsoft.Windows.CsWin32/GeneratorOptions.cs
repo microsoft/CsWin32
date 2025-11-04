@@ -108,9 +108,9 @@ public record GeneratorOptions
         public bool Enabled { get; set; } = true;
 
         /// <summary>
-        /// Gets or sets a value indicating whether to generate overloads that use pointer types for parameters that are [MemorySize] annotated buffers
+        /// Gets or sets a value indicating whether to also generate overloads that use pointer types for parameters that are [MemorySize] annotated buffers
         /// which normally appear as spans.
         /// </summary>
-        public bool PointerOverloadsToo { get; set; } = false;
+        public bool IncludePointerOverloads { get; set; } = false;
     }
 }

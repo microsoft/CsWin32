@@ -18,12 +18,12 @@ public partial class CsWin32GeneratorFullTests : CsWin32GeneratorTestsBase
     [InlineData("net8.0", LanguageVersion.CSharp12)]
     [InlineData("net9.0", LanguageVersion.CSharp13)]
     [InlineData("net9.0", LanguageVersion.CSharp13, true)]
-    public async Task FullGeneration(string tfm, LanguageVersion langVersion, bool pointerOverloadsToo = false)
+    public async Task FullGeneration(string tfm, LanguageVersion langVersion, bool includePointerOverloads = false)
     {
         this.fullGeneration = true;
         this.compilation = this.starterCompilations[tfm];
         this.parseOptions = this.parseOptions.WithLanguageVersion(langVersion);
-        this.nativeMethodsJson = pointerOverloadsToo ? "NativeMethods.PointerOverloadsToo.json" : "NativeMethods.EmitSingleFile.json";
+        this.nativeMethodsJson = includePointerOverloads ? "NativeMethods.IncludePointerOverloads.json" : "NativeMethods.EmitSingleFile.json";
         await this.InvokeGeneratorAndCompile($"FullGeneration_{tfm}_{langVersion}", TestOptions.None);
     }
 }

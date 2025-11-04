@@ -172,7 +172,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         ["IEnumString", "Next", "this winmdroot.System.Com.IEnumString @this, Span<winmdroot.Foundation.PWSTR> rgelt, out uint pceltFetched"],
         ["PSCreateMemoryPropertyStore", "PSCreateMemoryPropertyStore", "in global::System.Guid riid, out void* ppv"],
         ["DeviceIoControl", "DeviceIoControl", "SafeHandle hDevice, uint dwIoControlCode, ReadOnlySpan<byte> lpInBuffer, Span<byte> lpOutBuffer, out uint lpBytesReturned, global::System.Threading.NativeOverlapped* lpOverlapped"],
-        ["DeviceIoControl", "DeviceIoControl", "SafeHandle hDevice, uint dwIoControlCode, ReadOnlySpan<byte> lpInBuffer, Span<byte> lpOutBuffer, out uint lpBytesReturned, global::System.Threading.NativeOverlapped* lpOverlapped", true, "NativeMethods.PointerOverloadsToo.json"],
+        ["DeviceIoControl", "DeviceIoControl", "SafeHandle hDevice, uint dwIoControlCode, ReadOnlySpan<byte> lpInBuffer, Span<byte> lpOutBuffer, out uint lpBytesReturned, global::System.Threading.NativeOverlapped* lpOverlapped", true, "NativeMethods.IncludePointerOverloads.json"],
         ["NtQueryObject", "NtQueryObject", "global::Windows.Win32.Foundation.HANDLE Handle, winmdroot.Foundation.OBJECT_INFORMATION_CLASS ObjectInformationClass, Span<byte> ObjectInformation, out uint ReturnLength"],
     ];
 
@@ -264,7 +264,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         ["PdhGetCounterInfo", "Optional out parameter omission conflicts with other overload"],
         ["RtlUpcaseUnicodeChar", "char parameter should not get CharSet marshalling in AOT"],
         ["CryptGetAsyncParam", "Has optional unmanaged delegate out param"],
-        ["NtQueryObject", "Verify pointer overloads and optional parameters", TestOptions.None, "NativeMethods.PointerOverloadsToo.json"],
+        ["NtQueryObject", "Verify pointer overloads and optional parameters", TestOptions.None, "NativeMethods.IncludePointerOverloads.json"],
     ];
 
     [Theory]

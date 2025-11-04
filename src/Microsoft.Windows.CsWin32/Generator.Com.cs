@@ -14,6 +14,10 @@ public partial class Generator
 
     private readonly HashSet<string> injectedPInvokeHelperMethodsToFriendlyOverloadsExtensions = new();
 
+    // If IDispatch is explicitly requested then we will generate the full IDispatch interface. SuperGenerator calls this when
+    // CsWin32Generator sees IDispatch in the NativeMethods.txt.
+    internal bool GenerateFullIDispatch { get; set; }
+
     // With runtime marshaling, IDispatch is implicitly generated when using InterfaceIsDual. The COM source generators
     // don't support this, so we generate a dummy IDispatch when using source generators mode. We don't generate a "real"
     // IDispatch because the interface would be expensive and not very useful. We just need to have placeholder vtable slots.
@@ -707,7 +711,10 @@ public partial class Generator
 
         if (this.Reader.StringComparer.Equals(typeDef.Name, "IDispatch"))
         {
-            return this.GenerateIDispatch ? this.CreateIDispatchTypeDeclarationSyntax() : null;
+            if (!this.GenerateFullIDispatch)
+            {
+                return this.GenerateIDispatch ? this.CreateIDispatchTypeDeclarationSyntax() : null;
+            }
         }
 
         string actualIfaceName = this.Reader.GetString(typeDef.Name);

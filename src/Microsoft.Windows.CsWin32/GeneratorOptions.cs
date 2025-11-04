@@ -106,5 +106,11 @@ public record GeneratorOptions
         /// </summary>
         /// <value>The default value is <see langword="true" />.</value>
         public bool Enabled { get; set; } = true;
+
+        /// <summary>
+        /// Gets or sets a value indicating whether to also generate overloads that use pointer types for parameters that are [MemorySize] annotated buffers
+        /// which normally appear as spans.
+        /// </summary>
+        public bool IncludePointerOverloads { get; set; } = false;
     }
 }

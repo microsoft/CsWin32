@@ -184,27 +184,30 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         ["IEnumString", "Next", "this winmdroot.System.Com.IEnumString @this, Span<winmdroot.Foundation.PWSTR> rgelt, out uint pceltFetched"],
         ["PSCreateMemoryPropertyStore", "PSCreateMemoryPropertyStore", "in global::System.Guid riid, out void* ppv"],
         ["DeviceIoControl", "DeviceIoControl", "SafeHandle hDevice, uint dwIoControlCode, ReadOnlySpan<byte> lpInBuffer, Span<byte> lpOutBuffer, out uint lpBytesReturned, global::System.Threading.NativeOverlapped* lpOverlapped"],
+        ["DeviceIoControl", "DeviceIoControl", "SafeHandle hDevice, uint dwIoControlCode, ReadOnlySpan<byte> lpInBuffer, Span<byte> lpOutBuffer, out uint lpBytesReturned, global::System.Threading.NativeOverlapped* lpOverlapped", true, "NativeMethods.IncludePointerOverloads.json"],
+        ["NtQueryObject", "NtQueryObject", "global::Windows.Win32.Foundation.HANDLE Handle, winmdroot.Foundation.OBJECT_INFORMATION_CLASS ObjectInformationClass, Span<byte> ObjectInformation, out uint ReturnLength"],
     ];
 
     [Theory]
     [MemberData(nameof(TestSignatureData))]
-    public async Task VerifySignature(string api, string member, string signature, bool assertPresent = true)
+    public async Task VerifySignature(string api, string member, string signature, bool assertPresent = true, string? nativeMethodsJson = null)
     {
-        await this.VerifySignatureWorker(api, member, signature, assertPresent, "net9.0");
+        await this.VerifySignatureWorker(api, member, signature, assertPresent, "net9.0", nativeMethodsJson);
     }
 
     [Theory]
     [InlineData("InitializeAcl", "InitializeAcl", "out winmdroot.Security.ACL pAcl, winmdroot.Security.ACE_REVISION dwAclRevision", false)]
-    public async Task VerifySignatureNet472(string api, string member, string signature, bool assertPresent = true)
+    public async Task VerifySignatureNet472(string api, string member, string signature, bool assertPresent = true, string? nativeMethodsJson = null)
     {
-        await this.VerifySignatureWorker(api, member, signature, assertPresent, "net472");
+        await this.VerifySignatureWorker(api, member, signature, assertPresent, "net472", nativeMethodsJson);
     }
 
-    private async Task VerifySignatureWorker(string api, string member, string signature, bool assertPresent, string tfm)
+    private async Task VerifySignatureWorker(string api, string member, string signature, bool assertPresent, string tfm, string? nativeMethodsJson)
     {
         this.tfm = tfm;
         this.compilation = this.starterCompilations[tfm];
         this.nativeMethods.Add(api);
+        this.nativeMethodsJson = nativeMethodsJson;
 
         // Make a unique name based on the signature
         await this.InvokeGeneratorAndCompile($"{api}_{member}_{tfm}_{signature.Select(x => (int)x).Aggregate((x, y) => x + y).ToString("X")}");
@@ -272,24 +275,25 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         ["GetModuleFileName", "Should have a friendly Span overload"],
         ["PdhGetCounterInfo", "Optional out parameter omission conflicts with other overload"],
         ["RtlUpcaseUnicodeChar", "char parameter should not get CharSet marshalling in AOT"],
-        ["CryptGetAsyncParam", "Has optional unmanaged delegate out param"]
+        ["CryptGetAsyncParam", "Has optional unmanaged delegate out param"],
+        ["NtQueryObject", "Verify pointer overloads and optional parameters", TestOptions.None, "NativeMethods.IncludePointerOverloads.json"],
     ];
 
     [Theory]
     [MemberData(nameof(TestApiData))]
-    public async Task TestGenerateApi(string api, string purpose, TestOptions options = TestOptions.None)
+    public async Task TestGenerateApi(string api, string purpose, TestOptions options = TestOptions.None, string? nativeMethodsJson = null)
     {
-        await this.TestGenerateApiWorker(api, purpose, options, "net9.0");
+        await this.TestGenerateApiWorker(api, purpose, options, "net9.0", nativeMethodsJson);
     }
 
     [Theory]
     [MemberData(nameof(TestApiData))]
-    public async Task TestGenerateApiNet8(string api, string purpose, TestOptions options = TestOptions.None)
+    public async Task TestGenerateApiNet8(string api, string purpose, TestOptions options = TestOptions.None, string? nativeMethodsJson = null)
     {
-        await this.TestGenerateApiWorker(api, purpose, options, "net8.0");
+        await this.TestGenerateApiWorker(api, purpose, options, "net8.0", nativeMethodsJson);
     }
 
-    private async Task TestGenerateApiWorker(string api, string purpose, TestOptions options, string tfm)
+    private async Task TestGenerateApiWorker(string api, string purpose, TestOptions options, string tfm, string? nativeMethodsJson)
     {
         LanguageVersion langVersion = (tfm == "net8.0") ? LanguageVersion.CSharp12 : LanguageVersion.CSharp13;
 
@@ -298,6 +302,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         this.parseOptions = this.parseOptions.WithLanguageVersion(langVersion);
         this.Logger.WriteLine($"Testing {api} - {tfm} - {purpose}");
         this.nativeMethods.Add(api);
+        this.nativeMethodsJson = nativeMethodsJson;
         await this.InvokeGeneratorAndCompile($"Test_{api}_{tfm}", options);
     }
 

@@ -26,6 +26,11 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
 
         var idispatchType = this.FindGeneratedType("IDispatch");
         Assert.NotEmpty(idispatchType);
+
+        // And when generating IDispatch explicitly it should have "real" methods on it.
+        var methods = idispatchType.SelectMany(t => t.DescendantNodes().OfType<MethodDeclarationSyntax>());
+        var method = Assert.Single(methods, m => m.Identifier.Text == "GetTypeInfoCount");
+        Assert.Contains("(out uint pctinfo)", method.ParameterList.ToString());
     }
 
     [Fact]
@@ -39,6 +44,13 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
 
         // Check that IShellWindows has IDispatch as a base
         Assert.Contains(ishellWindowsType, x => x.BaseList?.Types.Any(t => t.Type.ToString().Contains("IDispatch")) ?? false);
+
+        var idispatchType = this.FindGeneratedType("IDispatch");
+        Assert.NotEmpty(idispatchType);
+
+        // And when generating IDispatch implicitly it should not have "real" methods on it.
+        var methods = idispatchType.SelectMany(t => t.DescendantNodes().OfType<MethodDeclarationSyntax>());
+        Assert.DoesNotContain(methods, m => m.Identifier.Text == "GetTypeInfoCount");
     }
 
     [Fact]

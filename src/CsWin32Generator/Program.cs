@@ -319,6 +319,12 @@ public partial class Program
                 {
                     superGenerator.AddGeneratorExclusion(trimmedLine[1..]);
                 }
+                else if (trimmedLine.Equals("IDispatch", StringComparison.Ordinal))
+                {
+                    // If IDispatch is explicitly requested then generate the full interface. By default
+                    // only a placeholder IDispatch is generated, this overrides it.
+                    superGenerator.GenerateIDispatch();
+                }
             }
         }
 

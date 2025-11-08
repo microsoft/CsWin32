@@ -111,7 +111,7 @@ public partial class COMTests
     }
 
     [Fact]
-    public void HWNDReturnValueMarshalsCorrectly()
+    public void ReturnValueMarshalsCorrectly()
     {
         // Create an ID2D1HwndRenderTarget and verify GetHwnd returns the original HWND.
         Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
@@ -180,8 +180,11 @@ public partial class COMTests
         factory.CreateHwndRenderTarget(in rtProps, in hwndProps, out ID2D1HwndRenderTarget renderTarget);
 
         // 5. Retrieve HWND from render target and validate.
-        HWND returned = renderTarget.GetHwnd();
-        Assert.Equal(hwnd, returned);
+        HWND hwndReturned = renderTarget.GetHwnd();
+        Assert.Equal(hwnd, hwndReturned);
+
+        D2D_SIZE_U sizeReturned = renderTarget.GetPixelSize();
+        Assert.Equal(sizeReturned, hwndProps.pixelSize);
 
         if (!hwnd.IsNull)
         {

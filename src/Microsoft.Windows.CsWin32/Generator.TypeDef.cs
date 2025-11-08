@@ -278,12 +278,25 @@ public partial class Generator
             debuggerDisplay = "{" + fieldName + "}";
         }
 
+        AttributeSyntax[] attributes = [DebuggerDisplay(debuggerDisplay)];
+
+        // If we're using source generators, generate a NativeMarshaller attribute pointing to the custom marshaller.
+        if (this.UseSourceGenerators)
+        {
+            string ns = this.Reader.GetString(typeDef.Namespace);
+            string typedefMarshaller = this.RequestCustomTypeDefMarshaller($"{ns}.{name.Identifier.ValueText}", fieldType.Type);
+            AttributeSyntax nativeMarshallingAttribute = Attribute(IdentifierName("NativeMarshalling"))
+                .AddArgumentListArguments(
+                AttributeArgument(TypeOfExpression(IdentifierName(typedefMarshaller))));
+            attributes = [..attributes, nativeMarshallingAttribute];
+        }
+
         structModifiers = structModifiers.Add(TokenWithSpace(SyntaxKind.ReadOnlyKeyword)).Add(TokenWithSpace(SyntaxKind.PartialKeyword));
         StructDeclarationSyntax result = StructDeclaration(name.Identifier)
             .WithBaseList(BaseList(SingletonSeparatedList<BaseTypeSyntax>(SimpleBaseType(GenericName(nameof(IEquatable<int>), TypeArgumentList().WithGreaterThanToken(TokenWithLineFeed(SyntaxKind.GreaterThanToken))).AddTypeArgumentListArguments(name)))).WithColonToken(TokenWithSpace(SyntaxKind.ColonToken)))
             .WithMembers(members)
             .WithModifiers(structModifiers)
-            .AddAttributeLists(AttributeList().WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken)).AddAttributes(DebuggerDisplay(debuggerDisplay)));
+            .AddAttributeLists(AttributeList().WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken)).AddAttributes(attributes));
 
         result = this.AddApiDocumentation(name.Identifier.ValueText, result);
         return result;

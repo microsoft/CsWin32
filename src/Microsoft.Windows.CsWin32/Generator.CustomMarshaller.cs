@@ -109,6 +109,60 @@ public partial class Generator
         });
     }
 
+    internal string RequestCustomTypeDefMarshaller(string fullyQualifiedTypeName, TypeSyntax unmanagedTypeSyntax)
+    {
+        if (!TrySplitPossiblyQualifiedName(fullyQualifiedTypeName, out string? @namespace, out string typeDefName) ||
+            !this.TryStripCommonNamespace(@namespace, out string? shortNamespace))
+        {
+            throw new InvalidOperationException($"This generator doesn't share a prefix with this enum {fullyQualifiedTypeName}");
+        }
+
+        // Custom marshallers should go in a InteropServices sub-namespace.
+        shortNamespace += ".InteropServices";
+
+        string customTypeMarshallerName = $"{typeDefName}Marshaller";
+
+        return this.volatileCode.GenerateCustomTypeMarshaller(customTypeMarshallerName, delegate
+        {
+            // Type syntax for the typedef type (unqualified within its namespace container).
+            TypeSyntax typedefTypeSyntax = ParseName(fullyQualifiedTypeName);
+
+            // Single CustomMarshaller attribute for MarshalMode.Default.
+            AttributeSyntax attribute = Attribute(ParseName("global::System.Runtime.InteropServices.Marshalling.CustomMarshaller"))
+                .AddArgumentListArguments(
+                    AttributeArgument(TypeOfExpression(typedefTypeSyntax)),
+                    AttributeArgument(MemberAccessExpression(
+                        SyntaxKind.SimpleMemberAccessExpression,
+                        ParseName("global::System.Runtime.InteropServices.Marshalling.MarshalMode"),
+                        IdentifierName("Default"))),
+                    AttributeArgument(TypeOfExpression(IdentifierName(customTypeMarshallerName))));
+
+            // public static unsafe void* ConvertToUnmanaged(HWND managed) => managed.Value;
+            MethodDeclarationSyntax toUnmanaged = MethodDeclaration(unmanagedTypeSyntax, Identifier("ConvertToUnmanaged"))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword))
+                .AddParameterListParameters(Parameter(Identifier("managed")).WithType(typedefTypeSyntax.WithTrailingTrivia(Space)))
+                .WithBody(Block(ReturnStatement(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("managed"), IdentifierName("Value")))));
+
+            // public static unsafe HWND ConvertToManaged(void* unmanaged) => new(unmanaged);
+            MethodDeclarationSyntax toManaged = MethodDeclaration(typedefTypeSyntax, Identifier("ConvertToManaged"))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword))
+                .AddParameterListParameters(Parameter(Identifier("unmanaged")).WithType(unmanagedTypeSyntax.WithTrailingTrivia(Space)))
+                .WithBody(Block(ReturnStatement(ObjectCreationExpression(typedefTypeSyntax)
+                    .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(IdentifierName("unmanaged"))))))));
+
+            ClassDeclarationSyntax marshallerClass = ClassDeclaration(Identifier(customTypeMarshallerName))
+                .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword))
+                .AddAttributeLists(AttributeList().AddAttributes(attribute))
+                .AddMembers(toUnmanaged, toManaged)
+                .WithAdditionalAnnotations(new SyntaxAnnotation(NamespaceContainerAnnotation, shortNamespace));
+
+            string qualifiedName = $"global::{this.Namespace}.{shortNamespace}.{customTypeMarshallerName}";
+            CustomMarshallerTypeRecord typeRecord = new(marshallerClass, qualifiedName);
+            this.volatileCode.AddCustomTypeMarshaller(customTypeMarshallerName, typeRecord);
+            return typeRecord;
+        });
+    }
+
     internal string RequestCustomWinRTMarshaller(string qualifiedWinRTTypeName)
     {
         if (!TrySplitPossiblyQualifiedName(qualifiedWinRTTypeName, out string? @namespace, out string winrtTypeName))

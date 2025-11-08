@@ -269,10 +269,17 @@ public partial class Generator
                 .AddParameters(parameterList.Parameters.Select(p => ToFunctionPointerParameter(p)).ToArray())
                 .AddParameters(FunctionPointerParameter(returnType));
 
+            // Use MemberFunction calling convention for structs when available and return type is a struct.
+            var callingConvention = this.canUseMemberFunctionCallingConvention && this.IsStruct(signature.ReturnType) ?
+                FunctionPointerUnmanagedCallingConventionList(SeparatedList([
+                    FunctionPointerUnmanagedCallingConvention(Identifier("Stdcall")),
+                    FunctionPointerUnmanagedCallingConvention(Identifier("MemberFunction"))])) :
+                FunctionPointerUnmanagedCallingConventionList(SeparatedList([
+                    FunctionPointerUnmanagedCallingConvention(Identifier("Stdcall"))]));
+
             TypeSyntax unmanagedDelegateType = FunctionPointerType().WithCallingConvention(
                 FunctionPointerCallingConvention(TokenWithSpace(SyntaxKind.UnmanagedKeyword))
-                    .WithUnmanagedCallingConventionList(FunctionPointerUnmanagedCallingConventionList(
-                        SingletonSeparatedList(FunctionPointerUnmanagedCallingConvention(Identifier("Stdcall"))))))
+                    .WithUnmanagedCallingConventionList(callingConvention))
                 .WithParameterList(funcPtrParameters);
             FieldDeclarationSyntax vtblFunctionPtr = FieldDeclaration(
                 VariableDeclaration(unmanagedDelegateType)

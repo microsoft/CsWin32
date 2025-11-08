@@ -213,6 +213,32 @@ public partial class Generator
         return false;
     }
 
+    internal bool IsStruct(TypeHandleInfo typeInfo)
+    {
+        if (typeInfo is HandleTypeHandleInfo handleTypeHandleInfo)
+        {
+            return handleTypeHandleInfo.Generator.TryGetTypeDefHandle(handleTypeHandleInfo.Handle, out QualifiedTypeDefinitionHandle typeHandle)
+                && typeHandle.Generator.IsStruct(typeHandle.DefinitionHandle);
+        }
+
+        return false;
+    }
+
+    internal bool IsStruct(TypeDefinitionHandle typeDefHandle)
+    {
+        TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefHandle);
+        if (!this.IsTypeDefStruct(typeDef) && (typeDef.Attributes & (TypeAttributes.Class | TypeAttributes.Interface)) == 0)
+        {
+            this.GetBaseTypeInfo(typeDef, out StringHandle baseTypeName, out StringHandle baseTypeNamespace);
+            if (this.Reader.StringComparer.Equals(baseTypeName, nameof(ValueType)) && this.Reader.StringComparer.Equals(baseTypeNamespace, nameof(System)))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     internal bool IsManagedType(TypeHandleInfo typeHandleInfo)
     {
         TypeHandleInfo elementType =

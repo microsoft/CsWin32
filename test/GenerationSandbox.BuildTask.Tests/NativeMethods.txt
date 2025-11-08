@@ -47,3 +47,15 @@ SetupDiCreateDeviceInterface
 GetFileVersionInfoSizeEx
 GetFileVersionInfoEx
 VerQueryValue
+ID2D1HwndRenderTarget
+D2D1_FACTORY_OPTIONS
+D2D1CreateFactory
+WNDCLASSEXW
+DefWindowProc
+GetModuleHandle
+CreateWindowEx
+RegisterClassEx
+WINDOW_STYLE
+HMENU
+D2D1_PIXEL_FORMAT
+DestroyWindow

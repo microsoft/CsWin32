@@ -24,7 +24,7 @@ public partial class Generator
 
         private readonly Dictionary<string, MethodDeclarationSyntax> macros = new(StringComparer.Ordinal);
 
-        private readonly Dictionary<string, CustomMarshalerTypeRecord> customTypeMarshalers = new();
+        private readonly Dictionary<string, CustomMarshallerTypeRecord> customTypeMarshallers = new();
 
         /// <summary>
         /// The set of types that are or have been generated so we don't stack overflow for self-referencing types.
@@ -66,7 +66,7 @@ public partial class Generator
         }
 
         internal bool IsEmpty => this.modulesAndMembers.Count == 0 && this.types.Count == 0 && this.fieldsToSyntax.Count == 0 && this.safeHandleTypes.Count == 0 && this.specialTypes.Count == 0
-            && this.inlineArrayIndexerExtensionsMembers.Count == 0 && this.comInterfaceFriendlyExtensionsMembers.Count == 0 && this.macros.Count == 0 && this.inlineArrays.Count == 0 && this.customTypeMarshalers.Count == 0;
+            && this.inlineArrayIndexerExtensionsMembers.Count == 0 && this.comInterfaceFriendlyExtensionsMembers.Count == 0 && this.macros.Count == 0 && this.inlineArrays.Count == 0 && this.customTypeMarshallers.Count == 0;
 
         internal bool NeedsWinRTCustomMarshaler { get; private set; }
 
@@ -74,7 +74,7 @@ public partial class Generator
             .Concat(this.specialTypes.Values.Where(st => !st.TopLevel).Select(st => st.Type))
             .Concat(this.safeHandleTypes)
             .Concat(this.inlineArrays.Values)
-            .Concat(this.customTypeMarshalers.Values.Select(x => x.ClassDeclaration));
+            .Concat(this.customTypeMarshallers.Values.Select(x => x.ClassDeclaration));
 
         internal IEnumerable<MemberDeclarationSyntax> GeneratedTopLevelTypes => this.specialTypes.Values.Where(st => st.TopLevel).Select(st => st.Type);
 
@@ -144,10 +144,10 @@ public partial class Generator
             this.macros.Add(macroName, macro);
         }
 
-        internal void AddCustomTypeMarshaler(string marshalerName, CustomMarshalerTypeRecord typeRecord)
+        internal void AddCustomTypeMarshaller(string marshallerName, CustomMarshallerTypeRecord typeRecord)
         {
             this.ThrowIfNotGenerating();
-            this.customTypeMarshalers.Add(marshalerName, typeRecord);
+            this.customTypeMarshallers.Add(marshallerName, typeRecord);
         }
 
         internal void AddInlineArrayIndexerExtension(MethodDeclarationSyntax inlineIndexer)
@@ -356,21 +356,21 @@ public partial class Generator
             generator();
         }
 
-        internal string GenerateCustomTypeMarshaler(string marshalerName, Func<CustomMarshalerTypeRecord> generator)
+        internal string GenerateCustomTypeMarshaller(string marshallerName, Func<CustomMarshallerTypeRecord> generator)
         {
             this.ThrowIfNotGenerating();
 
-            if (this.customTypeMarshalers.TryGetValue(marshalerName, out CustomMarshalerTypeRecord? marshalerType) ||
-                (this.parent?.customTypeMarshalers.TryGetValue(marshalerName, out marshalerType) ?? false))
+            if (this.customTypeMarshallers.TryGetValue(marshallerName, out CustomMarshallerTypeRecord? marshallerType) ||
+                (this.parent?.customTypeMarshallers.TryGetValue(marshallerName, out marshallerType) ?? false))
             {
-                // Result is in marshalerType
+                // Result is in marshallerType
             }
             else
             {
-                marshalerType = generator();
+                marshallerType = generator();
             }
 
-            return marshalerType.QualifiedName;
+            return marshallerType.QualifiedName;
         }
 
         internal bool TryGetSafeHandleForReleaseMethod(string releaseMethod, out TypeSyntax? safeHandleType)
@@ -443,7 +443,7 @@ public partial class Generator
             Commit(this.releaseMethodsWithSafeHandleTypesGenerating, parent?.releaseMethodsWithSafeHandleTypesGenerating);
             Commit(this.inlineArrayIndexerExtensionsMembers, parent?.inlineArrayIndexerExtensionsMembers);
             Commit(this.comInterfaceFriendlyExtensionsMembers, parent?.comInterfaceFriendlyExtensionsMembers);
-            Commit(this.customTypeMarshalers, parent?.customTypeMarshalers);
+            Commit(this.customTypeMarshallers, parent?.customTypeMarshallers);
 
             if (parent is not null)
             {

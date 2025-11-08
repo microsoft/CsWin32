@@ -104,11 +104,6 @@ public partial class COMTests
             SHGFI_FLAGS.SHGFI_DISPLAYNAME);
     }
 
-    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvStdcall) })]
-    private static LRESULT WndProc(HWND hWnd, uint msg, WPARAM wParam, LPARAM lParam)
-    {
-        return PInvoke.DefWindowProc(hWnd, msg, wParam, lParam);
-    }
 
     [Fact]
     public void ReturnValueMarshalsCorrectly()
@@ -131,6 +126,12 @@ public partial class COMTests
         {
             fixed (char* className = "CsWin32TestWindow")
             {
+                [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvStdcall) })]
+                static LRESULT WndProc(HWND hWnd, uint msg, WPARAM wParam, LPARAM lParam)
+                {
+                    return PInvoke.DefWindowProc(hWnd, msg, wParam, lParam);
+                }
+
                 WNDCLASSEXW wc = new()
                 {
                     cbSize = (uint)sizeof(WNDCLASSEXW),
@@ -145,7 +146,10 @@ public partial class COMTests
                     "CsWin32TestWindow",
                     "TestD2DWindow",
                     WINDOW_STYLE.WS_OVERLAPPEDWINDOW,
-                    0, 0, 32, 32,
+                    0,
+                    0,
+                    32,
+                    32,
                     HWND.Null,
                     null,
                     null,

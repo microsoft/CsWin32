@@ -12,6 +12,10 @@ public partial class Generator
         AttributeArgument(ImplicitArrayCreationExpression(InitializerExpression(SyntaxKind.ArrayInitializerExpression, SingletonSeparatedList(TypeOfExpression(IdentifierName("CallConvStdcall"))))))
             .WithNameEquals(NameEquals(IdentifierName("CallConvs")))));
 
+    private static readonly AttributeListSyntax CcwMemberFunctionEntrypointAttributes = AttributeList().AddAttributes(Attribute(IdentifierName("UnmanagedCallersOnly")).AddArgumentListArguments(
+        AttributeArgument(ImplicitArrayCreationExpression(InitializerExpression(SyntaxKind.ArrayInitializerExpression, SeparatedList([TypeOfExpression(IdentifierName("CallConvStdcall")), TypeOfExpression(IdentifierName("CallConvMemberFunction"))]))))
+            .WithNameEquals(NameEquals(IdentifierName("CallConvs")))));
+
     private readonly HashSet<string> injectedPInvokeHelperMethodsToFriendlyOverloadsExtensions = new();
 
     // If IDispatch is explicitly requested then we will generate the full IDispatch interface. SuperGenerator calls this when
@@ -608,8 +612,9 @@ public partial class Generator
 
                 //// [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvStdcall) })]
                 //// private static HRESULT Clone(IEnumEventObject* @this, IEnumEventObject** ppInterface)
+                bool useMemberFunctionCallingConvention = this.canUseMemberFunctionCallingConvention && this.IsStruct(signature.ReturnType);
                 MethodDeclarationSyntax ccwMethod = MethodDeclaration(
-                    new SyntaxList<AttributeListSyntax>(CcwEntrypointAttributes),
+                    new SyntaxList<AttributeListSyntax>(useMemberFunctionCallingConvention ? CcwMemberFunctionEntrypointAttributes : CcwEntrypointAttributes),
                     TokenList(TokenWithSpace(SyntaxKind.PrivateKeyword), Token(SyntaxKind.StaticKeyword)),
                     returnTypePreserveSig,
                     explicitInterfaceSpecifier: null,

@@ -157,6 +157,15 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         Assert.Contains(shellLinkType.DescendantNodes().OfType<MethodDeclarationSyntax>(), method => method.Identifier.Text == "CreateInstance");
     }
 
+    [Fact]
+    public async Task PointerReturnValueIsPreserved()
+    {
+        this.nativeMethods.Add("WTHelperProvDataFromStateData");
+        await this.InvokeGeneratorAndCompileFromFact();
+        var methodReturnTypes = this.FindGeneratedMethod("WTHelperProvDataFromStateData").Select(x => x.ReturnType.ToString());
+        Assert.Contains("winmdroot.Security.WinTrust.CRYPT_PROVIDER_DATA*", methodReturnTypes);
+    }
+
     public static IList<object[]> TestSignatureData => [
         ["IMFMediaKeySession", "get_KeySystem", "winmdroot.Foundation.BSTR* keySystem"],
         ["AddPrinterW", "AddPrinter", "winmdroot.Foundation.PWSTR pName, uint Level, Span<byte> pPrinter"],

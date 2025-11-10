@@ -11,6 +11,7 @@ internal record TypeSyntaxSettings(
     bool QualifyNames,
     bool IsField = false,
     bool PreferInOutRef = false,
-    bool AvoidWinmdRootAlias = false)
+    bool AvoidWinmdRootAlias = false,
+    bool IsReturnValue = false)
 {
 }

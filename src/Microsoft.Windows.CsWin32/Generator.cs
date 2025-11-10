@@ -588,7 +588,10 @@ public partial class Generator : IGenerator, IDisposable
     /// <inheritdoc/>
     public void GenerateAllInteropTypes(CancellationToken cancellationToken)
     {
-        foreach (TypeDefinitionHandle typeDefinitionHandle in this.Reader.TypeDefinitions)
+        var sortedInteropTypes = this.Reader.TypeDefinitions.OrderBy(x => this.Reader.GetString(this.Reader.GetTypeDefinition(x).Namespace))
+                                                           .ThenBy(x => this.Reader.GetString(this.Reader.GetTypeDefinition(x).Name));
+
+        foreach (TypeDefinitionHandle typeDefinitionHandle in sortedInteropTypes)
         {
             cancellationToken.ThrowIfCancellationRequested();
             TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefinitionHandle);

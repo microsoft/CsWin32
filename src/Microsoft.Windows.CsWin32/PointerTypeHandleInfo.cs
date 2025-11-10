@@ -28,6 +28,7 @@ internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleIn
         bool xOptional = (parameterAttributes & ParameterAttributes.Optional) == ParameterAttributes.Optional;
         bool mustUsePointers = xOptional && forElement == Generator.GeneratingElement.InterfaceMember && nativeArrayInfo is null;
         mustUsePointers |= this.ElementType is HandleTypeHandleInfo handleElementType && handleElementType.Generator.IsStructWithFlexibleArray(handleElementType) is true;
+        mustUsePointers |= inputs.IsReturnValue;
         if (mustUsePointers)
         {
             // Disable marshaling because pointers to optional parameters cannot be passed by reference when used as parameters of a COM interface method.

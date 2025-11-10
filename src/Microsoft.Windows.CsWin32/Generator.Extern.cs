@@ -8,7 +8,11 @@ public partial class Generator
     /// <inheritdoc/>
     public void GenerateAllExternMethods(CancellationToken cancellationToken)
     {
-        foreach (MethodDefinitionHandle methodHandle in this.MetadataIndex.Apis.SelectMany(api => this.Reader.GetTypeDefinition(api).GetMethods()))
+        var initialOrder = this.MetadataIndex.Apis.SelectMany(api => this.Reader.GetTypeDefinition(api).GetMethods());
+        var sortedMethods = initialOrder
+            .OrderBy(methodHandle => this.Reader.GetString(this.Reader.GetMethodDefinition(methodHandle).Name));
+
+        foreach (MethodDefinitionHandle methodHandle in sortedMethods)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -188,7 +192,7 @@ public partial class Generator
             bool requiresUnicodeCharSet = signature.ParameterTypes.Any(p => p is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.Char });
 
             CustomAttributeHandleCollection? returnTypeAttributes = this.GetReturnTypeCustomAttributes(methodDefinition);
-            TypeSyntaxAndMarshaling returnType = signature.ReturnType.ToTypeSyntax(typeSettings, GeneratingElement.ExternMethod, returnTypeAttributes?.QualifyWith(this), ParameterAttributes.Out);
+            TypeSyntaxAndMarshaling returnType = signature.ReturnType.ToTypeSyntax(typeSettings with { IsReturnValue = true }, GeneratingElement.ExternMethod, returnTypeAttributes?.QualifyWith(this), ParameterAttributes.Out);
 
             bool customMarshaling = this.options.AllowMarshaling && this.useSourceGenerators;
 

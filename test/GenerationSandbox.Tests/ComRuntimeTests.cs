@@ -107,10 +107,8 @@ public class ComRuntimeTests
         HWND hwndReturned = renderTarget.GetHwnd();
         Assert.Equal(hwnd, hwndReturned);
 
-#if false // BUG: built-in COM marshalling cannot handle struct returns
         D2D_SIZE_U sizeReturned = renderTarget.GetPixelSize();
         Assert.Equal(sizeReturned, hwndProps.pixelSize);
-#endif
 
         if (!hwnd.IsNull)
         {

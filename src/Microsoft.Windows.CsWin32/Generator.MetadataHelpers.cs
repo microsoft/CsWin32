@@ -226,16 +226,23 @@ public partial class Generator
 
     internal bool IsStruct(TypeDefinitionHandle typeDefHandle)
     {
+        if (this.structTypesCheck.TryGetValue(typeDefHandle, out bool result))
+        {
+            return result;
+        }
+
         TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefHandle);
         if (!this.IsTypeDefStruct(typeDef) && (typeDef.Attributes & (TypeAttributes.Class | TypeAttributes.Interface)) == 0)
         {
             this.GetBaseTypeInfo(typeDef, out StringHandle baseTypeName, out StringHandle baseTypeNamespace);
             if (this.Reader.StringComparer.Equals(baseTypeName, nameof(ValueType)) && this.Reader.StringComparer.Equals(baseTypeNamespace, nameof(System)))
             {
+                this.structTypesCheck.Add(typeDefHandle, true);
                 return true;
             }
         }
 
+        this.structTypesCheck.Add(typeDefHandle, false);
         return false;
     }
 

@@ -143,6 +143,8 @@ public partial class Generator
         List<Parameter>? countOfBytesStructParameters = null;
         int numOptionalParams = 0;
         int numSpanByteParameters = 0;
+        SyntaxToken friendlyMethodName = externMethodDeclaration.Identifier;
+        bool emulateMemberFunctionCallConv = friendlyMethodName.ValueText.EndsWith(EmulateMemberFunctionCallConvSuffix);
 
         foreach (ParameterHandle paramHandle in methodDefinition.GetParameters())
         {
@@ -901,10 +903,28 @@ public partial class Generator
             }
         }
 
+        if (emulateMemberFunctionCallConv)
+        {
+            // Turn the __retVal parameter into a local with default.
+            SyntaxToken retValLocalName = ((IdentifierNameSyntax)arguments[0].Expression).Identifier;
+
+            // Return type of the friendly method is the non-pointer struct return.
+            externMethodReturnType = ((PointerTypeSyntax)externMethodReturnType).ElementType;
+            LocalDeclarationStatementSyntax localRetValDecl = LocalDeclarationStatement(VariableDeclaration(externMethodReturnType).AddVariables(
+                VariableDeclarator(retValLocalName).WithInitializer(EqualsValueClause(DefaultExpression(externMethodReturnType)))));
+            leadingStatements.Add(localRetValDecl);
+
+            // Pass in the local as the return value.
+            arguments[0] = Argument(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName(retValLocalName)));
+            parametersToRemove.Add(0);
+
+            friendlyMethodName = Identifier(friendlyMethodName.ValueText.Replace(EmulateMemberFunctionCallConvSuffix, string.Empty));
+            signatureChanged = true;
+        }
+
         TypeSyntax? returnSafeHandleType = originalSignature.ReturnType is HandleTypeHandleInfo returnTypeHandleInfo
             && returnTypeHandleInfo.Generator.TryGetHandleReleaseMethod(returnTypeHandleInfo.Handle, returnTypeAttributes, out string? returnReleaseMethod)
             ? this.RequestSafeHandle(returnReleaseMethod) : null;
-        SyntaxToken friendlyMethodName = externMethodDeclaration.Identifier;
 
         if ((returnSafeHandleType is object || minorSignatureChange) && !signatureChanged)
         {
@@ -933,7 +953,7 @@ public partial class Generator
                     XmlText($"/// "),
                     XmlEmptyElement("inheritdoc").AddAttributes(XmlCrefAttribute(NameMemberCref(docRefExternName, ToCref(externMethodDeclaration.ParameterList)))),
                     XmlText().AddTextTokens(XmlTextNewLine("\n", continueXmlDocumentationComment: false))));
-            InvocationExpressionSyntax externInvocation = InvocationExpression(
+            ExpressionSyntax externInvocation = InvocationExpression(
                 overloadOf switch
                 {
                     FriendlyOverloadOf.ExternMethod => QualifiedName(declaringTypeName, IdentifierName(externMethodDeclaration.Identifier.Text)),
@@ -965,6 +985,11 @@ public partial class Generator
             }
             else
             {
+                if (emulateMemberFunctionCallConv)
+                {
+                    externInvocation = PrefixUnaryExpression(SyntaxKind.PointerIndirectionExpression, externInvocation);
+                }
+
                 // var result = externInvocation();
                 body = body.AddStatements(LocalDeclarationStatement(VariableDeclaration(externMethodReturnType)
                     .AddVariables(VariableDeclarator(resultLocal.Identifier).WithInitializer(EqualsValueClause(externInvocation)))));

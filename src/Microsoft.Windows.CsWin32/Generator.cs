@@ -50,6 +50,7 @@ public partial class Generator : IGenerator, IDisposable
     private readonly HashSet<string> injectedPInvokeHelperMethods = new();
     private readonly HashSet<string> injectedPInvokeMacros = new();
     private readonly Dictionary<TypeDefinitionHandle, bool> managedTypesCheck = new();
+    private readonly Dictionary<TypeDefinitionHandle, bool> structTypesCheck = new();
     private MethodDeclarationSyntax? sliceAtNullMethodDecl;
 
     static Generator()

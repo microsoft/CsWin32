@@ -510,4 +510,14 @@ public class COMTests : GeneratorTestBase
             Assert.Contains(shellLinkType.DescendantNodes().OfType<MethodDeclarationSyntax>(), method => method.Identifier.Text == "CreateInstance");
         }
     }
+
+    [Theory, PairwiseData]
+    public void COMInterfaceStructReturn(bool allowMarshaling)
+    {
+        // TODO: PreserveSig and not
+        this.generator = this.CreateGenerator(new GeneratorOptions { AllowMarshaling = allowMarshaling });
+
+        this.GenerateApi("ID2D1RenderTarget");
+        var methods = this.FindGeneratedMethod("GetSize");
+    }
 }

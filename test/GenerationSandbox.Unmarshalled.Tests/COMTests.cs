@@ -43,9 +43,6 @@ public class COMTests
     }
 #endif
 
-    private delegate LRESULT WndProcDelegate(HWND hWnd, uint msg, WPARAM wParam, LPARAM lParam);
-
-#if NET7_0_OR_GREATER
     [Fact]
     public unsafe void ReturnValueMarshalsCorrectly()
     {
@@ -61,49 +58,22 @@ public class COMTests
             out var ppv).ThrowOnFailure();
         ID2D1Factory* factory = (ID2D1Factory*)ppv;
 
-#if NET7_0_OR_GREATER
-            [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvStdcall) })]
-#endif
-        static LRESULT WndProc(HWND hWnd, uint msg, WPARAM wParam, LPARAM lParam)
-        {
-            return PInvoke.DefWindowProc(hWnd, msg, wParam, lParam);
-        }
-
         // 2. Register a simple window class and create a window.
         HWND hwnd;
-#if NET472_OR_GREATER
-        var wndproc = new WndProcDelegate(WndProc);
-#endif
-        fixed (char* className = "CsWin32TestWindow")
-        {
-            WNDCLASSEXW wc = new()
-            {
-                cbSize = (uint)sizeof(WNDCLASSEXW),
-#if NET7_0_OR_GREATER
-                lpfnWndProc = &WndProc,
-#else
-                lpfnWndProc = (delegate* unmanaged[Stdcall]<global::Windows.Win32.Foundation.HWND, uint, global::Windows.Win32.Foundation.WPARAM, global::Windows.Win32.Foundation.LPARAM, global::Windows.Win32.Foundation.LRESULT>)Marshal.GetFunctionPointerForDelegate(wndproc),
-#endif
-                lpszClassName = className,
-            };
-            var atom = PInvoke.RegisterClassEx(&wc);
-            Assert.NotEqual<ushort>(0, atom);
-
-            hwnd = PInvoke.CreateWindowEx(
-                0,
-                "CsWin32TestWindow",
-                "TestD2DWindow",
-                WINDOW_STYLE.WS_OVERLAPPEDWINDOW,
-                0,
-                0,
-                32,
-                32,
-                HWND.Null,
-                null,
-                null,
-                null);
-            Assert.False(hwnd.IsNull);
-        }
+        hwnd = PInvoke.CreateWindowEx(
+            0,
+            "BUTTON",
+            "TestD2DWindow",
+            WINDOW_STYLE.WS_OVERLAPPEDWINDOW,
+            0,
+            0,
+            32,
+            32,
+            HWND.Null,
+            null,
+            null,
+            null);
+        Assert.False(hwnd.IsNull);
 
         // 3. Prepare render target properties.
         D2D1_RENDER_TARGET_PROPERTIES rtProps = new()
@@ -135,10 +105,8 @@ public class COMTests
         HWND hwndReturned = renderTarget->GetHwnd();
         Assert.Equal(hwnd, hwndReturned);
 
-#if NET7_0_OR_GREATER // BUG: net472 doesn't support MemberFunction, so there's no way to get the return type right. See https://github.com/microsoft/CsWin32/issues/1479
         D2D_SIZE_U sizeReturned = renderTarget->GetPixelSize();
         Assert.Equal(sizeReturned, hwndProps.pixelSize);
-#endif
 
         if (!hwnd.IsNull)
         {
@@ -148,5 +116,4 @@ public class COMTests
         renderTarget->Release();
         factory->Release();
     }
-#endif
 }

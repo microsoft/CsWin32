@@ -80,6 +80,22 @@ internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleIn
                     };
                 }
 
+                // If this is a pointer to a pointer parameter (e.g. ITypeInfo.GetFuncDesc's [Out] FUNCDESC** ppFuncDesc), then
+                // this needs to turn into "out FUNCDESC* ppFuncDesc". We need to be careful because the elementTypeDetails isn't a pointer
+                // anymore, it has an "out" modifier. Also because it'll be a pointer, we can't have any marshalling.
+                if (xOut && elementTypeDetails.ParameterModifier is SyntaxToken { RawKind: (int)SyntaxKind.OutKeyword })
+                {
+                    elementTypeDetails = this.ElementType.ToTypeSyntax(inputs with { AllowMarshaling = false, PreferInOutRef = false }, forElement, customAttributes, parameterAttributes);
+                    return new TypeSyntaxAndMarshaling(PointerType(elementTypeDetails.Type), elementTypeDetails.MarshalAsAttribute, elementTypeDetails.NativeArrayInfo)
+                    {
+                        MarshalUsingType = elementTypeDetails.MarshalUsingType,
+                        ParameterModifier = Token(
+                            xIn && xOut ? SyntaxKind.RefKeyword :
+                            xIn ? SyntaxKind.InKeyword :
+                            SyntaxKind.OutKeyword),
+                    };
+                }
+
                 // But we can use a modifier to emulate a pointer and thereby enable marshaling.
                 return new TypeSyntaxAndMarshaling(elementTypeDetails.Type, elementTypeDetails.MarshalAsAttribute, elementTypeDetails.NativeArrayInfo)
                 {

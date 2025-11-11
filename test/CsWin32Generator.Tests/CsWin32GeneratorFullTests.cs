@@ -24,6 +24,6 @@ public partial class CsWin32GeneratorFullTests : CsWin32GeneratorTestsBase
         this.compilation = this.starterCompilations[tfm];
         this.parseOptions = this.parseOptions.WithLanguageVersion(langVersion);
         this.nativeMethodsJson = includePointerOverloads ? "NativeMethods.IncludePointerOverloads.json" : "NativeMethods.EmitSingleFile.json";
-        await this.InvokeGeneratorAndCompile($"FullGeneration_{tfm}_{langVersion}", TestOptions.None);
+        await this.InvokeGeneratorAndCompile($"FullGeneration_{tfm}_{langVersion}{(includePointerOverloads ? "_pointers" : string.Empty)}", TestOptions.None);
     }
 }

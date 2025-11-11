@@ -125,6 +125,10 @@ public partial class Generator : IGenerator, IDisposable
         this.generateDefaultDllImportSearchPathsAttribute = this.compilation?.GetTypeByMetadataName(typeof(DefaultDllImportSearchPathsAttribute).FullName) is object;
         this.canUseIPropertyValue = this.compilation?.GetTypeByMetadataName("Windows.Foundation.IPropertyValue")?.DeclaredAccessibility == Accessibility.Public;
         this.canUseComVariant = this.compilation?.GetTypeByMetadataName("System.Runtime.InteropServices.Marshalling.ComVariant") is not null;
+
+        INamedTypeSymbol? argumentNullExceptionType = this.compilation?.GetTypeByMetadataName(typeof(ArgumentNullException).FullName);
+        this.canUseArgumentNullExceptionThrowIfNull = argumentNullExceptionType?.GetMembers("ThrowIfNull").Length > 0;
+
         if (this.FindTypeSymbolIfAlreadyAvailable("System.Runtime.Versioning.SupportedOSPlatformAttribute") is { } attribute)
         {
             this.generateSupportedOSPlatformAttributes = true;

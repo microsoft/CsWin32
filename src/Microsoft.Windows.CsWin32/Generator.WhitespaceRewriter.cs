@@ -97,7 +97,11 @@ public partial class Generator
         public override SyntaxNode? VisitBlock(BlockSyntax node)
         {
             SyntaxTriviaList leadingTrivia;
-            if (node.Parent is FixedStatementSyntax or AccessorDeclarationSyntax or TryStatementSyntax or FinallyClauseSyntax)
+            if (node.Parent is ElseClauseSyntax
+                            or FixedStatementSyntax
+                            or AccessorDeclarationSyntax
+                            or TryStatementSyntax
+                            or FinallyClauseSyntax)
             {
                 leadingTrivia = TriviaList(this.IndentTrivia);
             }
@@ -107,8 +111,8 @@ public partial class Generator
             }
 
             node = node
-                .WithOpenBraceToken(Token(leadingTrivia, SyntaxKind.OpenBraceToken, TriviaList(LineFeed)))
-                .WithCloseBraceToken(Token(TriviaList(this.IndentTrivia), SyntaxKind.CloseBraceToken, TriviaList(LineFeed)));
+                .WithOpenBraceToken(Token(leadingTrivia, SyntaxKind.OpenBraceToken, node.OpenBraceToken.TrailingTrivia))
+                .WithCloseBraceToken(Token(TriviaList(this.IndentTrivia), SyntaxKind.CloseBraceToken, node.CloseBraceToken.TrailingTrivia));
             using var indent = new Indent(this);
             return base.VisitBlock(node);
         }

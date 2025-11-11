@@ -535,6 +535,12 @@ public partial class Generator
                     // Delegates appear as unmanaged function pointers when using structs instead of COM interfaces.
                     // But certain delegates are never declared as delegates.
                     result = this.options.AllowMarshaling && !this.IsUntypedDelegate(typeDef);
+                    if (this.UseSourceGenerators)
+                    {
+                        // We never allow managed delegates in fields for source-generated marshalling so these are always unmanaged.
+                        result = false;
+                    }
+
                     this.managedTypesCheck.Add(typeDefinitionHandle, result);
                     return result;
                 }

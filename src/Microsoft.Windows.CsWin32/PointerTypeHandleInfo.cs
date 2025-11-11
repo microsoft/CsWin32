@@ -28,6 +28,7 @@ internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleIn
         bool xOptional = (parameterAttributes & ParameterAttributes.Optional) == ParameterAttributes.Optional;
         bool mustUsePointers = xOptional && forElement == Generator.GeneratingElement.InterfaceMember && nativeArrayInfo is null;
         mustUsePointers |= this.ElementType is HandleTypeHandleInfo handleElementType && handleElementType.Generator.IsStructWithFlexibleArray(handleElementType) is true;
+        mustUsePointers |= inputs.IsReturnValue;
         if (mustUsePointers)
         {
             // Disable marshaling because pointers to optional parameters cannot be passed by reference when used as parameters of a COM interface method.
@@ -77,6 +78,22 @@ internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleIn
                     return new TypeSyntaxAndMarshaling(IdentifierName(nameof(IntPtr)))
                     {
                         ParameterModifier = Token(SyntaxKind.OutKeyword),
+                    };
+                }
+
+                // If this is a pointer to a pointer parameter (e.g. ITypeInfo.GetFuncDesc's [Out] FUNCDESC** ppFuncDesc), then
+                // this needs to turn into "out FUNCDESC* ppFuncDesc". We need to be careful because the elementTypeDetails isn't a pointer
+                // anymore, it has an "out" modifier. Also because it'll be a pointer, we can't have any marshalling.
+                if (xOut && elementTypeDetails.ParameterModifier is SyntaxToken { RawKind: (int)SyntaxKind.OutKeyword })
+                {
+                    elementTypeDetails = this.ElementType.ToTypeSyntax(inputs with { AllowMarshaling = false, PreferInOutRef = false }, forElement, customAttributes, parameterAttributes);
+                    return new TypeSyntaxAndMarshaling(PointerType(elementTypeDetails.Type), elementTypeDetails.MarshalAsAttribute, elementTypeDetails.NativeArrayInfo)
+                    {
+                        MarshalUsingType = elementTypeDetails.MarshalUsingType,
+                        ParameterModifier = Token(
+                            xIn && xOut ? SyntaxKind.RefKeyword :
+                            xIn ? SyntaxKind.InKeyword :
+                            SyntaxKind.OutKeyword),
                     };
                 }
 

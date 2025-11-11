@@ -7,7 +7,7 @@ public partial class Generator
 {
     private static readonly IdentifierNameSyntax HRThrowOnFailureMethodName = IdentifierName("ThrowOnFailure");
 
-    private static readonly string EmulateMemberFunctionCallConvSuffix = "_StructReturnWorkaround";
+    private static readonly string EmulateMemberFunctionCallConvSuffix = "_StructReturn";
 
     // [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvStdcall) })]
     private static readonly AttributeListSyntax CcwEntrypointAttributes = AttributeList().AddAttributes(Attribute(IdentifierName("UnmanagedCallersOnly")).AddArgumentListArguments(

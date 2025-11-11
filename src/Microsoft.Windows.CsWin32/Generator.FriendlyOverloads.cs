@@ -134,6 +134,7 @@ public partial class Generator
         var arguments = externMethodDeclaration.ParameterList.Parameters.Select(p => Argument(IdentifierName(p.Identifier.Text)).WithRefKindKeyword(p.Modifiers.FirstOrDefault(p => p.Kind() is SyntaxKind.RefKeyword or SyntaxKind.OutKeyword or SyntaxKind.InKeyword))).ToList();
         TypeSyntax? externMethodReturnType = externMethodDeclaration.ReturnType.WithoutLeadingTrivia();
         var fixedBlocks = new List<VariableDeclarationSyntax>();
+        var leadingValidationStatements = new List<StatementSyntax>();
         var leadingOutsideTryStatements = new List<StatementSyntax>();
         var leadingStatements = new List<StatementSyntax>();
         var trailingStatements = new List<StatementSyntax>();
@@ -368,6 +369,41 @@ public partial class Generator
                 IdentifierNameSyntax typeDefHandleName = IdentifierName(externParam.Identifier.ValueText + "Local");
                 signatureChanged = true;
 
+                if (!isOptional)
+                {
+                    if (this.canUseArgumentNullExceptionThrowIfNull)
+                    {
+                        // ArgumentNullException.ThrowIfNull(hTemplateFile);
+                        leadingValidationStatements.Add(ExpressionStatement(
+                            InvocationExpression(
+                                MemberAccessExpression(
+                                    SyntaxKind.SimpleMemberAccessExpression,
+                                    IdentifierName(nameof(ArgumentNullException)),
+                                    IdentifierName("ThrowIfNull")),
+                                ArgumentList(
+                                    SingletonSeparatedList(
+                                        Argument(IdentifierName(externParam.Identifier)))))));
+                    }
+                    else
+                    {
+                        // if (hTemplateFile is null) { throw new ArgumentNullException(nameof(hTemplateFile)); }
+                        leadingValidationStatements.Add(
+                            IfStatement(
+                                IsPatternExpression(
+                                    IdentifierName(externParam.Identifier),
+                                    ConstantPattern(LiteralExpression(SyntaxKind.NullLiteralExpression))),
+                                Block(
+                                    ThrowStatement(
+                                        ObjectCreationExpression(
+                                            IdentifierName(nameof(ArgumentNullException)),
+                                            ArgumentList(
+                                                SingletonSeparatedList<ArgumentSyntax>(
+                                                    Argument(
+                                                        NameOfExpression(
+                                                            IdentifierName(externParam.Identifier.ValueText))))))))));
+                    }
+                }
+
                 IdentifierNameSyntax refAddedName = IdentifierName(externParam.Identifier.ValueText + "AddRef");
 
                 // bool hParamNameAddRef = false;
@@ -375,41 +411,65 @@ public partial class Generator
                     VariableDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword))).AddVariables(
                         VariableDeclarator(refAddedName.Identifier).WithInitializer(EqualsValueClause(LiteralExpression(SyntaxKind.FalseLiteralExpression))))));
 
-                // HANDLE hTemplateFileLocal;
-                leadingStatements.Add(LocalDeclarationStatement(VariableDeclaration(externParam.Type).AddVariables(
-                    VariableDeclarator(typeDefHandleName.Identifier))));
+                // hTemplateFile.DangerousAddRef(ref hTemplateFileAddRef);
+                StatementSyntax addRefStatement = ExpressionStatement(
+                    InvocationExpression(
+                        MemberAccessExpression(
+                            SyntaxKind.SimpleMemberAccessExpression,
+                            origName,
+                            IdentifierName(nameof(SafeHandle.DangerousAddRef))),
+                        ArgumentList(
+                            SingletonSeparatedList(
+                                Argument(refAddedName).WithRefKindKeyword(TokenWithSpace(SyntaxKind.RefKeyword))))));
 
-                // throw new ArgumentNullException(nameof(hTemplateFile));
-                StatementSyntax nullHandleStatement = ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentNullException))).WithArgumentList(ArgumentList().AddArguments(Argument(NameOfExpression(IdentifierName(externParam.Identifier.ValueText))))));
+                // (HANDLE)hTemplateFile.DangerousGetHandle();
+                ExpressionSyntax getHandleValueAndCastToHandleTypeExpression = CastExpression(
+                    externParam.Type.WithoutTrailingTrivia(),
+                    InvocationExpression(
+                        MemberAccessExpression(
+                            SyntaxKind.SimpleMemberAccessExpression,
+                            origName,
+                            IdentifierName(nameof(SafeHandle.DangerousGetHandle))),
+                        ArgumentList()));
+
                 if (isOptional)
                 {
-                    // (HANDLE)new IntPtr(-1);
+                    // HANDLE hTemplateFileLocal;
+                    leadingStatements.Add(LocalDeclarationStatement(VariableDeclaration(externParam.Type).AddVariables(
+                        VariableDeclarator(typeDefHandleName.Identifier))));
+
                     HashSet<IntPtr> invalidValues = this.GetInvalidHandleValues(parameterHandleTypeInfo.Handle);
                     IntPtr invalidValue = invalidValues.Count > 0 ? GetPreferredInvalidHandleValue(invalidValues) : IntPtr.Zero;
-                    ExpressionSyntax invalidExpression = CastExpression(externParam.Type, IntPtrExpr(invalidValue));
 
-                    // hTemplateFileLocal = invalid-handle-value;
-                    nullHandleStatement = ExpressionStatement(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, typeDefHandleName, invalidExpression));
+                    // if (hTemplateFile is object)
+                    leadingStatements.Add(IfStatement(
+                        BinaryExpression(SyntaxKind.IsExpression, origName, PredefinedType(Token(SyntaxKind.ObjectKeyword))),
+                        Block(
+                            addRefStatement,
+                            //// hTemplateFileLocal = (HANDLE)hTemplateFile.DangerousGetHandle();
+                            ExpressionStatement(
+                                AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, typeDefHandleName, getHandleValueAndCastToHandleTypeExpression))),
+                        //// else { hTemplateFileLocal = (HANDLE)new IntPtr(invalid-handle-value); }
+                        ElseClause(
+                            Block(
+                                ExpressionStatement(
+                                    AssignmentExpression(
+                                        SyntaxKind.SimpleAssignmentExpression,
+                                        typeDefHandleName,
+                                        CastExpression(externParam.Type, IntPtrExpr(invalidValue))))))));
                 }
+                else
+                {
+                    // hTemplateFile.DangerousAddRef(ref hTemplateFileAddRef);
+                    leadingStatements.Add(addRefStatement);
 
-                // if (hTemplateFile is object)
-                leadingStatements.Add(IfStatement(
-                    BinaryExpression(SyntaxKind.IsExpression, origName, PredefinedType(Token(SyntaxKind.ObjectKeyword))),
-                    Block().AddStatements(
-                    //// hTemplateFile.DangerousAddRef(ref hTemplateFileAddRef);
-                    ExpressionStatement(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName(nameof(SafeHandle.DangerousAddRef))))
-                        .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(refAddedName).WithRefKindKeyword(TokenWithSpace(SyntaxKind.RefKeyword)))))),
-                    //// hTemplateFileLocal = (HANDLE)hTemplateFile.DangerousGetHandle();
-                    ExpressionStatement(
-                        AssignmentExpression(
-                            SyntaxKind.SimpleAssignmentExpression,
-                            typeDefHandleName,
-                            CastExpression(
-                                externParam.Type.WithoutTrailingTrivia(),
-                                InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName(nameof(SafeHandle.DangerousGetHandle))), ArgumentList())))
-                        .WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken)))),
-                    //// else hTemplateFileLocal = default;
-                    ElseClause(nullHandleStatement)));
+                    // HANDLE hTemplateFileLocal = (HANDLE)hTemplateFile.DangerousGetHandle();
+                    leadingStatements.Add(
+                        LocalDeclarationStatement(
+                            VariableDeclaration(externParam.Type).AddVariables(
+                                VariableDeclarator(typeDefHandleName.Identifier).WithInitializer(
+                                    EqualsValueClause(getHandleValueAndCastToHandleTypeExpression)))));
+                }
 
                 // if (hTemplateFileAddRef)
                 //     hTemplateFile.DangerousRelease();
@@ -989,6 +1049,16 @@ public partial class Generator
             else if (leadingOutsideTryStatements.Count > 0)
             {
                 body = body.WithStatements(body.Statements.InsertRange(0, leadingOutsideTryStatements));
+            }
+
+            if (leadingValidationStatements.Count > 0)
+            {
+                // Add additional line feed to the last validation statement
+                // so that we get an additional blank line separating
+                // validation statements with the rest of the logic
+                leadingValidationStatements[^1] = leadingValidationStatements[^1]
+                    .WithTrailingTrivia(leadingValidationStatements[^1].GetTrailingTrivia().Add(LineFeed));
+                body = body.WithStatements(body.Statements.InsertRange(0, leadingValidationStatements));
             }
 
             SyntaxTokenList modifiers = TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword));

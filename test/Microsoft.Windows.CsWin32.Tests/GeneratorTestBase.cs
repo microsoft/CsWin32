@@ -351,6 +351,56 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
             TestUtils.NormalizeToExpectedLineEndings(memberSyntax.ToFullString()).Trim());
     }
 
+    protected void AssertGeneratedApiFunction(string apiName, Predicate<MethodDeclarationSyntax> overloadSelector, string expectedSyntax)
+    {
+        this.GenerateApi(apiName);
+        var actualSyntax = Assert.Single(this.FindGeneratedMethod(apiName), overloadSelector).ToFullString().Trim(['\r', '\n']);
+
+        // Since we take method node from the body of the PInvoke class it will have excessive indentation on each line.
+        // Moreover, its indentation may be represented in tabs, while in test source indentation is represented in spaces.
+        // Thus we split both expected and actual results into individual lines and compare them line by line with excessive indentation
+        // from all actual lines trimmed. This way we can also validate the prettiness of generated code as well as its structure
+        var expectedSyntaxLines = expectedSyntax.Split(["\r\n", "\r", "\n"], StringSplitOptions.None);
+        var actualSyntaxLines = actualSyntax.Split(["\r\n", "\r", "\n"], StringSplitOptions.None);
+
+        Assert.Equal(expectedSyntaxLines.Length, actualSyntaxLines.Length);
+
+        var firstActualLine = actualSyntaxLines[0];
+        var commonIdentLength = 0;
+        for (var i = 0; i < firstActualLine.Length; i++)
+        {
+            if (!char.IsWhiteSpace(firstActualLine[i]))
+            {
+                commonIdentLength = i;
+                break;
+            }
+        }
+
+        var commonIdentPrefix = firstActualLine[..commonIdentLength];
+
+        for (var i = 0; i < expectedSyntaxLines.Length; i++)
+        {
+            const string identString = "    ";
+
+            var expectedLine = expectedSyntaxLines[i].Replace("\t", identString);
+            var actualLine = actualSyntaxLines[i];
+
+            if (!actualLine.StartsWith(commonIdentPrefix))
+            {
+                if (actualLine.Length != 0)
+                {
+                    Assert.Fail($"Line at index {i} in generated API function doesn't start with a common ident. This is most likely generator's formatting issue");
+                }
+            }
+            else
+            {
+                actualLine = actualLine[commonIdentPrefix.Length..];
+            }
+
+            Assert.Equal(expectedLine, actualLine.Replace("\t", identString));
+        }
+    }
+
     protected async Task<CSharpCompilation> CreateCompilationAsync(ReferenceAssemblies references, Platform platform = Platform.AnyCpu)
     {
         ImmutableArray<MetadataReference> metadataReferences = await references.ResolveAsync(LanguageNames.CSharp, default);

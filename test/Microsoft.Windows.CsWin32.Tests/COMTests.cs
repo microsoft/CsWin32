@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+using Microsoft.CodeAnalysis;
+
 public class COMTests : GeneratorTestBase
 {
     private const string WinRTCustomMarshalerClass = "WinRTCustomMarshaler";
@@ -511,13 +513,27 @@ public class COMTests : GeneratorTestBase
         }
     }
 
-    [Theory, PairwiseData]
-    public void COMInterfaceStructReturn(bool allowMarshaling)
+    [Theory]
+    [InlineData(true, "net472")]
+    [InlineData(true, "net8.0")]
+    [InlineData(false, "net472")]
+    [InlineData(false, "net8.0")]
+    public void COMInterfaceStructReturn(bool allowMarshaling, string tfm)
     {
-        // TODO: PreserveSig and not
+        this.compilation = this.starterCompilations[tfm];
+        this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(Platform.X64));
+
         this.generator = this.CreateGenerator(new GeneratorOptions { AllowMarshaling = allowMarshaling });
 
-        this.GenerateApi("ID2D1RenderTarget");
+        Assert.True(this.generator.TryGenerate("ID2D1RenderTarget", CancellationToken.None));
+        Assert.True(this.generator.TryGenerate("ID3D12Device1", CancellationToken.None));
+        Assert.True(this.generator.TryGenerate("ID3D12Device9", CancellationToken.None));
+        Assert.True(this.generator.TryGenerate("ID3D12StateObjectProperties2", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
         var methods = this.FindGeneratedMethod("GetSize");
+
+        // TODO: Check "GetResourceAllocationInfo"
     }
 }

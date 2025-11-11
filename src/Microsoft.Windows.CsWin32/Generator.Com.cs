@@ -573,16 +573,36 @@ public partial class Generator
                     // Prepare the args for the thunk call. The Interface we thunk into *always* uses PreserveSig, which is super convenient for us.
                     ArgumentListSyntax args = ArgumentList().AddArguments(parameterListPreserveSig.Parameters.Select(p => Argument(IdentifierName(p.Identifier.ValueText))).ToArray());
 
-                    // @object!.SomeMethod(args)
-                    InvocationExpressionSyntax thunkInvoke = InvocationExpression(
-                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, objectLocal, SafeIdentifierName(methodName)),
-                        args);
+                    if (!isStructReturn)
+                    {
+                        // @object!.SomeMethod(args)
+                        InvocationExpressionSyntax thunkInvoke = InvocationExpression(
+                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, objectLocal, SafeIdentifierName(methodName)),
+                            args);
 
-                    StatementSyntax returnManagedMethodInvocation = returnTypePreserveSig is PredefinedTypeSyntax { Keyword.RawKind: (int)SyntaxKind.VoidKeyword }
-                        ? ExpressionStatement(thunkInvoke)
-                        : ReturnStatement(thunkInvoke);
+                        StatementSyntax returnManagedMethodInvocation = returnTypePreserveSig is PredefinedTypeSyntax { Keyword.RawKind: (int)SyntaxKind.VoidKeyword }
+                            ? ExpressionStatement(thunkInvoke)
+                            : ReturnStatement(thunkInvoke);
 
-                    AddCcwThunk(returnManagedMethodInvocation);
+                        AddCcwThunk(returnManagedMethodInvocation);
+                    }
+                    else
+                    {
+                        // If this is a struct return, we're using built-in COM and the signature was modified to accommodate the return value.
+                        // Create a local and pass it in as the first parameter.
+                        LocalDeclarationStatementSyntax structReturnLocal =
+                            LocalDeclarationStatement(VariableDeclaration(returnTypePreserveSig).AddVariables(
+                                VariableDeclarator(Identifier("__retVal")).WithInitializer(EqualsValueClause(
+                                    DefaultExpression(returnTypePreserveSig)))));
+                        args = args.WithArguments(args.Arguments.Insert(0, Argument(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName("__retVal")))));
+
+                        // *@object!.SomeMethod(&__retVal, args)
+                        ExpressionSyntax thunkInvoke = PrefixUnaryExpression(SyntaxKind.PointerIndirectionExpression, InvocationExpression(
+                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, objectLocal, SafeIdentifierName(methodName + EmulateMemberFunctionCallConvSuffix)),
+                            args));
+
+                        AddCcwThunk(structReturnLocal, ReturnStatement(thunkInvoke));
+                    }
                 }
             }
 
@@ -609,6 +629,8 @@ public partial class Generator
 
                 this.RequestComHelpers(context);
                 bool hrReturnType = returnTypePreserveSig is QualifiedNameSyntax { Right.Identifier.ValueText: "HRESULT" };
+                bool isStructReturn = this.IsStruct(signature.ReturnType);
+                bool useMemberFunctionCallingConvention = this.canUseMemberFunctionCallingConvention && isStructReturn;
 
                 //// HRESULT hr = ComHelpers.UnwrapCCW(@this, out Interface? @object);
                 LocalDeclarationStatementSyntax hrDecl = LocalDeclarationStatement(VariableDeclaration(this.HresultTypeSyntax).AddVariables(
@@ -659,7 +681,6 @@ public partial class Generator
 
                 //// [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvStdcall) })]
                 //// private static HRESULT Clone(IEnumEventObject* @this, IEnumEventObject** ppInterface)
-                bool useMemberFunctionCallingConvention = this.canUseMemberFunctionCallingConvention && this.IsStruct(signature.ReturnType);
                 MethodDeclarationSyntax ccwMethod = MethodDeclaration(
                     new SyntaxList<AttributeListSyntax>(useMemberFunctionCallingConvention ? CcwMemberFunctionEntrypointAttributes : CcwEntrypointAttributes),
                     TokenList(TokenWithSpace(SyntaxKind.PrivateKeyword), Token(SyntaxKind.StaticKeyword)),

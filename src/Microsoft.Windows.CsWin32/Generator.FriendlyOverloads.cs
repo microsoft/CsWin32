@@ -180,6 +180,7 @@ public partial class Generator
             bool isManagedParameterType = this.IsManagedType(parameterTypeInfo);
             MemorySize? memorySize = null;
             bool mustRemainAsPointer = false;
+            bool isPointerToStructWithFlexibleArray = parameterTypeInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo pointedElement } && pointedElement.Generator.IsStructWithFlexibleArray(pointedElement);
             if (this.FindInteropDecorativeAttribute(paramAttributes, MemorySizeAttribute) is CustomAttribute memorySizeAttribute)
             {
                 memorySize = DecodeMemorySizeAttribute(memorySizeAttribute);
@@ -195,7 +196,7 @@ public partial class Generator
             else if (memorySize is null)
             {
                 // If there's no MemorySize attribute, we may still need to keep this parameter as a pointer if it's a struct with a flexible array.
-                mustRemainAsPointer = parameterTypeInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo pointedElement } && pointedElement.Generator.IsStructWithFlexibleArray(pointedElement);
+                mustRemainAsPointer = isPointerToStructWithFlexibleArray;
             }
             else if (!improvePointersToSpansAndRefs)
             {
@@ -466,7 +467,7 @@ public partial class Generator
                     if (!isPointerToPointer && TryHandleCountParam(elementType, nullableSource: true))
                     {
                         // If we used a Span, we might also want to generate a struct helper.
-                        if (memorySize is not null)
+                        if (memorySize is not null && !isPointerToStructWithFlexibleArray)
                         {
                             countOfBytesStructParameters ??= new();
                             countOfBytesStructParameters.Add(param);

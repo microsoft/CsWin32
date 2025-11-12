@@ -183,6 +183,8 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         ["SetupDiGetDeviceInterfaceDetail", "SetupDiGetDeviceInterfaceDetail", "SafeHandle DeviceInfoSet, in winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVICE_INTERFACE_DATA DeviceInterfaceData, Span<byte> DeviceInterfaceDetailData, out uint RequiredSize, ref winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVINFO_DATA DeviceInfoData"],
         // Optional params omitted
         ["SetupDiGetDeviceInterfaceDetail", "SetupDiGetDeviceInterfaceDetail", "SafeHandle DeviceInfoSet, in winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVICE_INTERFACE_DATA DeviceInterfaceData, Span<byte> DeviceInterfaceDetailData"],
+        // We should _not_ have a struct param overload for flexible arrays
+        ["SetupDiGetDeviceInterfaceDetail", "SetupDiGetDeviceInterfaceDetail", "SafeHandle DeviceInfoSet, in winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVICE_INTERFACE_DATA DeviceInterfaceData, out winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVICE_INTERFACE_DETAIL_DATA_W DeviceInterfaceDetailData, out uint RequiredSize, ref winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVINFO_DATA DeviceInfoData", false],
         ["WinHttpReadData", "WinHttpReadData", "void* hRequest, Span<byte> lpBuffer, ref uint lpdwNumberOfBytesRead"],
         ["IsTextUnicode", "IsTextUnicode", "ReadOnlySpan<byte> lpv, ref winmdroot.Globalization.IS_TEXT_UNICODE_RESULT lpiResult"],
         // Omitted ref param

@@ -176,7 +176,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         ["InitializeAcl", "InitializeAcl", "Span<byte> pAcl, winmdroot.Security.ACE_REVISION dwAclRevision"],
         // MemorySized-struct param should also have a version with `out struct` parameter.
         ["InitializeAcl", "InitializeAcl", "out winmdroot.Security.ACL pAcl, winmdroot.Security.ACE_REVISION dwAclRevision"],
-        ["SetDefaultCommConfig", "SetDefaultCommConfig", "string lpszName, in winmdroot.Devices.Communication.COMMCONFIG lpCC"],
+        ["SetDefaultCommConfig", "SetDefaultCommConfig", "string lpszName, in winmdroot.Devices.Communication.COMMCONFIG lpCC", false],
         ["ID3D11DeviceChild", "GetPrivateData", "this winmdroot.Graphics.Direct3D11.ID3D11DeviceChild @this, in global::System.Guid guid, ref uint pDataSize, Span<byte> pData"],
         ["WriteFile", "WriteFile", "SafeHandle hFile, in byte lpBuffer, uint* lpNumberOfBytesWritten, global::System.Threading.NativeOverlapped* lpOverlapped", false],
         // All params included

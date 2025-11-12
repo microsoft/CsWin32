@@ -1,12 +1,16 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
 using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.Graphics.Direct2D;
 using Windows.Win32.Graphics.Direct2D.Common;
 using Windows.Win32.Graphics.Dxgi.Common;
+using Windows.Win32.System.Com;
+using Windows.Win32.System.Wmi;
 using Windows.Win32.UI.Shell;
 using Windows.Win32.UI.WindowsAndMessaging;
 using IServiceProvider = Windows.Win32.System.Com.IServiceProvider;
@@ -27,6 +31,7 @@ public class ComRuntimeTests
     }
 
     [Fact]
+    [Trait("TestCategory", "FailsInCloudTest")] // D3D APIs fail in cloud VMs
     public void ReturnValueMarshalsCorrectly()
     {
         // Create an ID2D1HwndRenderTarget and verify GetHwnd returns the original HWND.
@@ -114,5 +119,40 @@ public class ComRuntimeTests
         {
             PInvoke.DestroyWindow(hwnd);
         }
+    }
+
+    [Fact]
+    [Trait("FailsInCloudTest", "true")] // WMI APIs don't work in cloud VMs.
+    public void IWbemServices_GetObject_Works()
+    {
+        Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
+
+        // CoCreateInstance CLSID_WbemLocator
+        IWbemLocator locator = (IWbemLocator)new WbemLocator();
+
+        var ns = new SysFreeStringSafeHandle(Marshal.StringToBSTR(@"ROOT\Microsoft\Windows\Defender"), true);
+        locator.ConnectServer(ns, new SysFreeStringSafeHandle(), new SysFreeStringSafeHandle(), new SysFreeStringSafeHandle(), 0, new SafeFileHandle(IntPtr.Zero, false), null, out IWbemServices services);
+        Assert.NotNull(services);
+
+        unsafe
+        {
+            PInvoke.CoSetProxyBlanket(
+                    services,
+                    10, // RPC_C_AUTHN_WINNT is 10
+                    0,  // RPC_C_AUTHZ_NONE is 0
+                    pServerPrincName: null,
+                    dwAuthnLevel: RPC_C_AUTHN_LEVEL.RPC_C_AUTHN_LEVEL_CALL,
+                    dwImpLevel: RPC_C_IMP_LEVEL.RPC_C_IMP_LEVEL_IMPERSONATE,
+                    pAuthInfo: null,
+                    dwCapabilities: EOLE_AUTHENTICATION_CAPABILITIES.EOAC_NONE);
+        }
+
+        var className = new SysFreeStringSafeHandle(Marshal.StringToBSTR("MSFT_MpScan"), true);
+        IWbemClassObject? classObj = null; // out param
+        services.GetObject(className, WBEM_GENERIC_FLAG_TYPE.WBEM_FLAG_RETURN_WBEM_COMPLETE, null, ref classObj, ref Unsafe.NullRef<IWbemCallResult>());
+
+        classObj.GetMethod("Start", 0, out IWbemClassObject pInParamsSignature, out IWbemClassObject ppOutSignature);
+
+        Assert.NotNull(pInParamsSignature);
     }
 }

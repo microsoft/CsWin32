@@ -50,6 +50,7 @@ public partial class Generator : IGenerator, IDisposable
     private readonly HashSet<string> injectedPInvokeHelperMethods = new();
     private readonly HashSet<string> injectedPInvokeMacros = new();
     private readonly Dictionary<TypeDefinitionHandle, bool> managedTypesCheck = new();
+    private readonly Dictionary<TypeDefinitionHandle, bool> structTypesCheck = new();
     private MethodDeclarationSyntax? sliceAtNullMethodDecl;
 
     static Generator()
@@ -125,6 +126,7 @@ public partial class Generator : IGenerator, IDisposable
         this.generateDefaultDllImportSearchPathsAttribute = this.compilation?.GetTypeByMetadataName(typeof(DefaultDllImportSearchPathsAttribute).FullName) is object;
         this.canUseIPropertyValue = this.compilation?.GetTypeByMetadataName("Windows.Foundation.IPropertyValue")?.DeclaredAccessibility == Accessibility.Public;
         this.canUseComVariant = this.compilation?.GetTypeByMetadataName("System.Runtime.InteropServices.Marshalling.ComVariant") is not null;
+        this.canUseMemberFunctionCallingConvention = this.compilation?.GetTypeByMetadataName("System.Runtime.CompilerServices.CallConvMemberFunction") is not null;
         if (this.FindTypeSymbolIfAlreadyAvailable("System.Runtime.Versioning.SupportedOSPlatformAttribute") is { } attribute)
         {
             this.generateSupportedOSPlatformAttributes = true;

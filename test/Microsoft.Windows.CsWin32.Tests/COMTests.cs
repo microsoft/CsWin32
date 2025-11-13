@@ -510,4 +510,28 @@ public class COMTests : GeneratorTestBase
             Assert.Contains(shellLinkType.DescendantNodes().OfType<MethodDeclarationSyntax>(), method => method.Identifier.Text == "CreateInstance");
         }
     }
+
+    [Theory]
+    [InlineData(true, "net472")]
+    [InlineData(true, "net8.0")]
+    [InlineData(false, "net472")]
+    [InlineData(false, "net8.0")]
+    public void COMInterfaceStructReturn(bool allowMarshaling, string tfm)
+    {
+        this.compilation = this.starterCompilations[tfm];
+        this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(Platform.X64));
+
+        this.generator = this.CreateGenerator(new GeneratorOptions { AllowMarshaling = allowMarshaling });
+
+        Assert.True(this.generator.TryGenerate("ID2D1RenderTarget", CancellationToken.None));
+        Assert.True(this.generator.TryGenerate("ID3D12Device1", CancellationToken.None));
+        Assert.True(this.generator.TryGenerate("ID3D12Device9", CancellationToken.None));
+        Assert.True(this.generator.TryGenerate("ID3D12StateObjectProperties2", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        var methods = this.FindGeneratedMethod("GetSize");
+
+        // TODO: Check "GetResourceAllocationInfo"
+    }
 }

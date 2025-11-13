@@ -7,9 +7,15 @@ public partial class Generator
 {
     private static readonly IdentifierNameSyntax HRThrowOnFailureMethodName = IdentifierName("ThrowOnFailure");
 
+    private static readonly string EmulateMemberFunctionCallConvSuffix = "_StructReturn";
+
     // [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvStdcall) })]
     private static readonly AttributeListSyntax CcwEntrypointAttributes = AttributeList().AddAttributes(Attribute(IdentifierName("UnmanagedCallersOnly")).AddArgumentListArguments(
         AttributeArgument(ImplicitArrayCreationExpression(InitializerExpression(SyntaxKind.ArrayInitializerExpression, SingletonSeparatedList(TypeOfExpression(IdentifierName("CallConvStdcall"))))))
+            .WithNameEquals(NameEquals(IdentifierName("CallConvs")))));
+
+    private static readonly AttributeListSyntax CcwMemberFunctionEntrypointAttributes = AttributeList().AddAttributes(Attribute(IdentifierName("UnmanagedCallersOnly")).AddArgumentListArguments(
+        AttributeArgument(ImplicitArrayCreationExpression(InitializerExpression(SyntaxKind.ArrayInitializerExpression, SeparatedList([TypeOfExpression(IdentifierName("CallConvStdcall")), TypeOfExpression(IdentifierName("CallConvMemberFunction"))]))))
             .WithNameEquals(NameEquals(IdentifierName("CallConvs")))));
 
     private readonly HashSet<string> injectedPInvokeHelperMethodsToFriendlyOverloadsExtensions = new();
@@ -231,7 +237,18 @@ public partial class Generator
 
             MethodSignature<TypeHandleInfo> signature = methodDefinition.Method.DecodeSignature(this.SignatureHandleProvider, null);
             QualifiedCustomAttributeHandleCollection? returnTypeAttributes = methodDefinition.GetReturnTypeCustomAttributes();
-            TypeSyntax returnType = signature.ReturnType.ToTypeSyntax(typeSettings, GeneratingElement.InterfaceAsStructMember, returnTypeAttributes).Type;
+            bool isStructReturn = this.IsStruct(signature.ReturnType);
+            TypeSyntaxSettings returnTypeSettings = typeSettings;
+
+            // If the return type is a struct and we don't have MemberFunction calling convention available, we can emulate MemberFunction
+            // calling convention. See https://github.com/microsoft/CsWin32/issues/167.
+            bool emulateMemberFunctionCallConv = isStructReturn && !this.canUseMemberFunctionCallingConvention;
+            if (emulateMemberFunctionCallConv)
+            {
+                returnTypeSettings = returnTypeSettings with { AllowMarshaling = false };
+            }
+
+            TypeSyntax returnType = signature.ReturnType.ToTypeSyntax(returnTypeSettings, GeneratingElement.InterfaceAsStructMember, returnTypeAttributes).Type;
             TypeSyntax returnTypePreserveSig = returnType;
 
             FunctionPointerParameterSyntax ToFunctionPointerParameter(ParameterSyntax p)
@@ -266,13 +283,21 @@ public partial class Generator
             bool requiresMarshaling = parameterList.Parameters.Any(p => p.AttributeLists.SelectMany(al => al.Attributes).Any(a => a.Name is IdentifierNameSyntax { Identifier.ValueText: "MarshalAs" }) || p.Modifiers.Any(SyntaxKind.RefKeyword) || p.Modifiers.Any(SyntaxKind.OutKeyword) || p.Modifiers.Any(SyntaxKind.InKeyword));
             FunctionPointerParameterListSyntax funcPtrParameters = FunctionPointerParameterList()
                 .AddParameters(FunctionPointerParameter(PointerType(ifaceName)))
+                .AddParameters(emulateMemberFunctionCallConv ? [FunctionPointerParameter(PointerType(returnType))] : [])
                 .AddParameters(parameterList.Parameters.Select(p => ToFunctionPointerParameter(p)).ToArray())
-                .AddParameters(FunctionPointerParameter(returnType));
+                .AddParameters(emulateMemberFunctionCallConv ? FunctionPointerParameter(PointerType(returnType)) : FunctionPointerParameter(returnType));
+
+            // Use MemberFunction calling convention for structs when available and return type is a struct.
+            var callingConvention = isStructReturn && this.canUseMemberFunctionCallingConvention ?
+                FunctionPointerUnmanagedCallingConventionList(SeparatedList([
+                    FunctionPointerUnmanagedCallingConvention(Identifier("Stdcall")),
+                    FunctionPointerUnmanagedCallingConvention(Identifier("MemberFunction"))])) :
+                FunctionPointerUnmanagedCallingConventionList(SeparatedList([
+                    FunctionPointerUnmanagedCallingConvention(Identifier("Stdcall"))]));
 
             TypeSyntax unmanagedDelegateType = FunctionPointerType().WithCallingConvention(
                 FunctionPointerCallingConvention(TokenWithSpace(SyntaxKind.UnmanagedKeyword))
-                    .WithUnmanagedCallingConventionList(FunctionPointerUnmanagedCallingConventionList(
-                        SingletonSeparatedList(FunctionPointerUnmanagedCallingConvention(Identifier("Stdcall"))))))
+                    .WithUnmanagedCallingConventionList(callingConvention))
                 .WithParameterList(funcPtrParameters);
             FieldDeclarationSyntax vtblFunctionPtr = FieldDeclaration(
                 VariableDeclaration(unmanagedDelegateType)
@@ -287,18 +312,24 @@ public partial class Generator
             ExpressionSyntax vtblIndexingExpression = ParenthesizedExpression(
                 CastExpression(unmanagedDelegateType, ElementAccessExpression(vtblFieldName).AddArgumentListArguments(Argument(methodOffset))));
             var fixedBlocks = new List<VariableDeclarationSyntax>();
+            IdentifierNameSyntax? emulatedMemberFunctionCallConvReturnLocal = emulateMemberFunctionCallConv ? IdentifierName("__retVal") : null;
             InvocationExpressionSyntax vtblInvocation;
             if (this.canMarshalNativeDelegateParams)
             {
                 vtblInvocation = InvocationExpression(vtblIndexingExpression)
                     .WithArgumentList(FixTrivia(ArgumentList()
                         .AddArguments(Argument(pThis))
+                        .AddArguments(emulateMemberFunctionCallConv ? [Argument(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, emulatedMemberFunctionCallConvReturnLocal!))] : [])
                         .AddArguments(parameterList.Parameters.Select(p => Argument(IdentifierName(p.Identifier.ValueText)).WithRefKindKeyword(p.Modifiers.Count > 0 ? p.Modifiers[0] : default)).ToArray())));
             }
             else
             {
                 // When we can't use in/out/ref on arguments we must pass by pointers so we also need fixed blocks.
                 List<ArgumentSyntax> arguments = [Argument(pThis)];
+                if (emulateMemberFunctionCallConv)
+                {
+                    arguments.Add(Argument(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, emulatedMemberFunctionCallConvReturnLocal!)));
+                }
 
                 foreach (ParameterSyntax p in parameterList.Parameters)
                 {
@@ -335,6 +366,11 @@ public partial class Generator
             if (methodDefinition.Generator.TryGetPropertyAccessorInfo(methodDefinition, originalIfaceName, context, out IdentifierNameSyntax? propertyName, out SyntaxKind? accessorKind, out TypeSyntax? propertyType) &&
                 declaredProperties.Contains(propertyName.Identifier.ValueText))
             {
+                if (emulateMemberFunctionCallConv)
+                {
+                    throw new InvalidOperationException("Emulated MemberFunction for properties is not implemented");
+                }
+
                 BlockSyntax? body;
                 switch (accessorKind)
                 {
@@ -396,17 +432,39 @@ public partial class Generator
             else
             {
                 BlockSyntax body;
-                bool preserveSig = methodDefinition.Generator.UsePreserveSigForComMethod(methodDefinition.Method, signature, ifaceName.Identifier.ValueText, methodName);
+                if (emulateMemberFunctionCallConv)
+                {
+                    var localRetValDecl = LocalDeclarationStatement(VariableDeclaration(returnType).AddVariables(VariableDeclarator(emulatedMemberFunctionCallConvReturnLocal!.Identifier)
+                        .WithInitializer(EqualsValueClause(DefaultExpression(returnType)))));
+                }
+
+                bool preserveSig = methodDefinition.Generator.UsePreserveSigForComMethod(methodDefinition.Method, signature, ifaceName.Identifier.ValueText, methodName) || emulateMemberFunctionCallConv;
                 if (preserveSig)
                 {
-                    // return ...
-                    body = Block().AddStatements(
-                        IsVoid(returnType)
-                            ? ExpressionStatement(vtblInvocation)
-                            : ReturnStatement(vtblInvocation));
+                    if (emulateMemberFunctionCallConv)
+                    {
+                        var localRetValDecl = LocalDeclarationStatement(VariableDeclaration(returnType).AddVariables(VariableDeclarator(emulatedMemberFunctionCallConvReturnLocal!.Identifier)
+                            .WithInitializer(EqualsValueClause(DefaultExpression(returnType)))));
+                        body = Block().AddStatements(
+                            localRetValDecl,
+                            ReturnStatement(PrefixUnaryExpression(SyntaxKind.PointerIndirectionExpression, vtblInvocation)));
+                    }
+                    else
+                    {
+                        // return ...
+                        body = Block().AddStatements(
+                            IsVoid(returnType)
+                                ? ExpressionStatement(vtblInvocation)
+                                : ReturnStatement(vtblInvocation));
+                    }
                 }
                 else
                 {
+                    if (emulateMemberFunctionCallConv)
+                    {
+                        throw new InvalidOperationException("Emulated MemberFunction should not be used for PreserveSig=false");
+                    }
+
                     // hrReturningInvocation().ThrowOnFailure();
                     StatementSyntax InvokeVtblAndThrow() => ExpressionStatement(InvocationExpression(
                         MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, vtblInvocation, HRThrowOnFailureMethodName),
@@ -515,16 +573,36 @@ public partial class Generator
                     // Prepare the args for the thunk call. The Interface we thunk into *always* uses PreserveSig, which is super convenient for us.
                     ArgumentListSyntax args = ArgumentList().AddArguments(parameterListPreserveSig.Parameters.Select(p => Argument(IdentifierName(p.Identifier.ValueText))).ToArray());
 
-                    // @object!.SomeMethod(args)
-                    InvocationExpressionSyntax thunkInvoke = InvocationExpression(
-                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, objectLocal, SafeIdentifierName(methodName)),
-                        args);
+                    if (!isStructReturn)
+                    {
+                        // @object!.SomeMethod(args)
+                        InvocationExpressionSyntax thunkInvoke = InvocationExpression(
+                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, objectLocal, SafeIdentifierName(methodName)),
+                            args);
 
-                    StatementSyntax returnManagedMethodInvocation = returnTypePreserveSig is PredefinedTypeSyntax { Keyword.RawKind: (int)SyntaxKind.VoidKeyword }
-                        ? ExpressionStatement(thunkInvoke)
-                        : ReturnStatement(thunkInvoke);
+                        StatementSyntax returnManagedMethodInvocation = returnTypePreserveSig is PredefinedTypeSyntax { Keyword.RawKind: (int)SyntaxKind.VoidKeyword }
+                            ? ExpressionStatement(thunkInvoke)
+                            : ReturnStatement(thunkInvoke);
 
-                    AddCcwThunk(returnManagedMethodInvocation);
+                        AddCcwThunk(returnManagedMethodInvocation);
+                    }
+                    else
+                    {
+                        // If this is a struct return, we're using built-in COM and the signature was modified to accommodate the return value.
+                        // Create a local and pass it in as the first parameter.
+                        LocalDeclarationStatementSyntax structReturnLocal =
+                            LocalDeclarationStatement(VariableDeclaration(returnTypePreserveSig).AddVariables(
+                                VariableDeclarator(Identifier("__retVal")).WithInitializer(EqualsValueClause(
+                                    DefaultExpression(returnTypePreserveSig)))));
+                        args = args.WithArguments(args.Arguments.Insert(0, Argument(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName("__retVal")))));
+
+                        // *@object!.SomeMethod(&__retVal, args)
+                        ExpressionSyntax thunkInvoke = PrefixUnaryExpression(SyntaxKind.PointerIndirectionExpression, InvocationExpression(
+                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, objectLocal, SafeIdentifierName(methodName + EmulateMemberFunctionCallConvSuffix)),
+                            args));
+
+                        AddCcwThunk(structReturnLocal, ReturnStatement(thunkInvoke));
+                    }
                 }
             }
 
@@ -551,6 +629,8 @@ public partial class Generator
 
                 this.RequestComHelpers(context);
                 bool hrReturnType = returnTypePreserveSig is QualifiedNameSyntax { Right.Identifier.ValueText: "HRESULT" };
+                bool isStructReturn = this.IsStruct(signature.ReturnType);
+                bool useMemberFunctionCallingConvention = this.canUseMemberFunctionCallingConvention && isStructReturn;
 
                 //// HRESULT hr = ComHelpers.UnwrapCCW(@this, out Interface? @object);
                 LocalDeclarationStatementSyntax hrDecl = LocalDeclarationStatement(VariableDeclaration(this.HresultTypeSyntax).AddVariables(
@@ -602,7 +682,7 @@ public partial class Generator
                 //// [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvStdcall) })]
                 //// private static HRESULT Clone(IEnumEventObject* @this, IEnumEventObject** ppInterface)
                 MethodDeclarationSyntax ccwMethod = MethodDeclaration(
-                    new SyntaxList<AttributeListSyntax>(CcwEntrypointAttributes),
+                    new SyntaxList<AttributeListSyntax>(useMemberFunctionCallingConvention ? CcwMemberFunctionEntrypointAttributes : CcwEntrypointAttributes),
                     TokenList(TokenWithSpace(SyntaxKind.PrivateKeyword), Token(SyntaxKind.StaticKeyword)),
                     returnTypePreserveSig,
                     explicitInterfaceSpecifier: null,
@@ -849,6 +929,16 @@ public partial class Generator
                         }
                     }
 
+                    // If the return type is a struct and we are using Built-in COM, Built-in COM is not properly handling struct returns.
+                    // But we can emulate MemberFunction calling convention that it _should_ be using: https://github.com/microsoft/CsWin32/issues/167
+                    bool isStructReturn = this.IsStruct(signature.ReturnType);
+                    bool emulateMemberFunctionCallConv = isStructReturn && !this.useSourceGenerators;
+                    if (emulateMemberFunctionCallConv)
+                    {
+                        returnTypeSettings = returnTypeSettings with { AllowMarshaling = false };
+                        methodName += EmulateMemberFunctionCallConvSuffix;
+                    }
+
                     TypeSyntaxAndMarshaling returnTypeDetails = signature.ReturnType.ToTypeSyntax(returnTypeSettings, GeneratingElement.InterfaceMember, returnTypeAttributes?.QualifyWith(methodDefinition.Generator));
                     TypeSyntax returnType = returnTypeDetails.Type;
                     AttributeSyntax? returnsAttribute = MarshalAs(returnTypeDetails.MarshalAsAttribute, returnTypeDetails.NativeArrayInfo);
@@ -856,7 +946,7 @@ public partial class Generator
                     TypeSyntaxSettings functionSignatureSettings = this.comSignatureTypeSettings;
                     ParameterListSyntax? parameterList = methodDefinition.Generator.CreateParameterList(methodDefinition.Method, signature, functionSignatureSettings, GeneratingElement.InterfaceMember);
 
-                    bool preserveSig = interfaceAsSubtype || this.UsePreserveSigForComMethod(methodDefinition.Method, signature, actualIfaceName, methodName);
+                    bool preserveSig = interfaceAsSubtype || this.UsePreserveSigForComMethod(methodDefinition.Method, signature, actualIfaceName, methodName) || emulateMemberFunctionCallConv;
                     if (!preserveSig)
                     {
                         ParameterSyntax? lastParameter = parameterList.Parameters.Count > 0 ? parameterList.Parameters[parameterList.Parameters.Count - 1] : null;
@@ -872,6 +962,14 @@ public partial class Generator
                             // Remove the return type
                             returnType = PredefinedType(Token(SyntaxKind.VoidKeyword));
                         }
+                    }
+
+                    if (emulateMemberFunctionCallConv)
+                    {
+                        // First parameter needs to be a pointer to the return value.
+                        parameterList = parameterList.WithParameters(parameterList.Parameters.Insert(0, Parameter(Identifier("__retVal"))
+                                .WithType(PointerType(returnType))));
+                        returnType = PointerType(returnType);
                     }
 
                     methodDeclaration = MethodDeclaration(returnType.WithTrailingTrivia(TriviaList(Space)), SafeIdentifier(methodName))

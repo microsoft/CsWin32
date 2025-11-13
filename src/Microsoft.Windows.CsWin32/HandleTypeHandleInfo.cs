@@ -207,7 +207,7 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
                 if (inputs.AllowMarshaling && this.generator.UseSourceGenerators)
                 {
                     string fullTypeName = qualifiedName.ToString();
-                    marshalUsingType = this.generator.RequestCustomWinRTMarshaler(fullTypeName);
+                    marshalUsingType = this.generator.RequestCustomWinRTMarshaller(fullTypeName);
                 }
                 else
                 {

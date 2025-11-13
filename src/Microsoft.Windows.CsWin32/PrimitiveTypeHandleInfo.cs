@@ -23,7 +23,7 @@ internal record PrimitiveTypeHandleInfo(PrimitiveTypeCode PrimitiveTypeCode) : T
             // If marshaling using source generators, we need to generate a custom marshaler and a MarshalUsing(...) attribute.
             if (inputs.AllowMarshaling && inputs.Generator?.UseSourceGenerators == true)
             {
-                string marshalerTypeName = inputs.Generator!.RequestCustomEnumMarshaler(preciseMatch.First(), unmanagedType);
+                string marshalerTypeName = inputs.Generator!.RequestCustomEnumMarshaller(preciseMatch.First(), unmanagedType);
                 return new TypeSyntaxAndMarshaling(enumTypeName) { MarshalUsingType = marshalerTypeName };
             }
 

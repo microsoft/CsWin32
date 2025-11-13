@@ -5,7 +5,7 @@ namespace Microsoft.Windows.CsWin32;
 
 public partial class Generator
 {
-    internal string RequestCustomEnumMarshaler(string qualifiedEnumTypeName, UnmanagedType unmanagedType)
+    internal string RequestCustomEnumMarshaller(string qualifiedEnumTypeName, UnmanagedType unmanagedType)
     {
         // Create type syntax for the unmanaged type (uint for U4)
         TypeSyntax unmanagedTypeSyntax = unmanagedType switch
@@ -22,12 +22,12 @@ public partial class Generator
             throw new InvalidOperationException($"This generator doesn't share a prefix with this enum {qualifiedEnumTypeName}");
         }
 
-        // Custom marshalers should go in a InteropServices sub-namespace.
+        // Custom marshallers should go in a InteropServices sub-namespace.
         shortNamespace += ".InteropServices";
 
-        string customTypeMarshalerName = $"{enumTypeName}To{unmanagedType}Marshaler";
+        string customTypeMarshallerName = $"{enumTypeName}To{unmanagedType}Marshaller";
 
-        return this.volatileCode.GenerateCustomTypeMarshaler(customTypeMarshalerName, delegate
+        return this.volatileCode.GenerateCustomTypeMarshaller(customTypeMarshallerName, delegate
         {
             // Create type syntax for the enum type
             TypeSyntax enumTypeSyntax = IdentifierName(enumTypeName);
@@ -57,7 +57,7 @@ public partial class Generator
                             SyntaxKind.SimpleMemberAccessExpression,
                             ParseName("global::System.Runtime.InteropServices.Marshalling.MarshalMode"),
                             IdentifierName(mode))),
-                        AttributeArgument(TypeOfExpression(IdentifierName(customTypeMarshalerName)))))
+                        AttributeArgument(TypeOfExpression(IdentifierName(customTypeMarshallerName)))))
                 .ToArray();
 
             // Create ConvertToManaged method
@@ -92,24 +92,78 @@ public partial class Generator
                 .WithBody(Block()); // Empty body
 
             // Create the class declaration
-            ClassDeclarationSyntax marshalerClass = ClassDeclaration(Identifier(customTypeMarshalerName))
+            ClassDeclarationSyntax marshallerClass = ClassDeclaration(Identifier(customTypeMarshallerName))
                 .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword))
                 .AddAttributeLists(customMarshallerAttributes.Select(attr => AttributeList().AddAttributes(attr)).ToArray())
                 .AddMembers(convertToManagedMethod, convertToUnmanagedMethod, freeMethod);
 
-            marshalerClass = marshalerClass.WithAdditionalAnnotations(new SyntaxAnnotation(NamespaceContainerAnnotation, shortNamespace));
+            marshallerClass = marshallerClass.WithAdditionalAnnotations(new SyntaxAnnotation(NamespaceContainerAnnotation, shortNamespace));
 
-            string qualifiedName = $"global::{this.Namespace}.{shortNamespace}.{customTypeMarshalerName}";
+            string qualifiedName = $"global::{this.Namespace}.{shortNamespace}.{customTypeMarshallerName}";
 
-            CustomMarshalerTypeRecord typeRecord = new(marshalerClass, qualifiedName);
+            CustomMarshallerTypeRecord typeRecord = new(marshallerClass, qualifiedName);
 
-            this.volatileCode.AddCustomTypeMarshaler(customTypeMarshalerName, typeRecord);
+            this.volatileCode.AddCustomTypeMarshaller(customTypeMarshallerName, typeRecord);
 
             return typeRecord;
         });
     }
 
-    internal string RequestCustomWinRTMarshaler(string qualifiedWinRTTypeName)
+    internal string RequestCustomTypeDefMarshaller(string fullyQualifiedTypeName, TypeSyntax unmanagedTypeSyntax)
+    {
+        if (!TrySplitPossiblyQualifiedName(fullyQualifiedTypeName, out string? @namespace, out string typeDefName) ||
+            !this.TryStripCommonNamespace(@namespace, out string? shortNamespace))
+        {
+            throw new InvalidOperationException($"This generator doesn't share a prefix with this enum {fullyQualifiedTypeName}");
+        }
+
+        // Custom marshallers should go in a InteropServices sub-namespace.
+        shortNamespace += ".InteropServices";
+
+        string customTypeMarshallerName = $"{typeDefName}Marshaller";
+
+        return this.volatileCode.GenerateCustomTypeMarshaller(customTypeMarshallerName, delegate
+        {
+            // Type syntax for the typedef type (unqualified within its namespace container).
+            TypeSyntax typedefTypeSyntax = ParseName(fullyQualifiedTypeName);
+
+            // Single CustomMarshaller attribute for MarshalMode.Default.
+            AttributeSyntax attribute = Attribute(ParseName("global::System.Runtime.InteropServices.Marshalling.CustomMarshaller"))
+                .AddArgumentListArguments(
+                    AttributeArgument(TypeOfExpression(typedefTypeSyntax)),
+                    AttributeArgument(MemberAccessExpression(
+                        SyntaxKind.SimpleMemberAccessExpression,
+                        ParseName("global::System.Runtime.InteropServices.Marshalling.MarshalMode"),
+                        IdentifierName("Default"))),
+                    AttributeArgument(TypeOfExpression(IdentifierName(customTypeMarshallerName))));
+
+            // public static unsafe void* ConvertToUnmanaged(HWND managed) => managed.Value;
+            MethodDeclarationSyntax toUnmanaged = MethodDeclaration(unmanagedTypeSyntax, Identifier("ConvertToUnmanaged"))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword))
+                .AddParameterListParameters(Parameter(Identifier("managed")).WithType(typedefTypeSyntax.WithTrailingTrivia(Space)))
+                .WithBody(Block(ReturnStatement(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("managed"), IdentifierName("Value")))));
+
+            // public static unsafe HWND ConvertToManaged(void* unmanaged) => new(unmanaged);
+            MethodDeclarationSyntax toManaged = MethodDeclaration(typedefTypeSyntax, Identifier("ConvertToManaged"))
+                .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword))
+                .AddParameterListParameters(Parameter(Identifier("unmanaged")).WithType(unmanagedTypeSyntax.WithTrailingTrivia(Space)))
+                .WithBody(Block(ReturnStatement(ObjectCreationExpression(typedefTypeSyntax)
+                    .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(IdentifierName("unmanaged"))))))));
+
+            ClassDeclarationSyntax marshallerClass = ClassDeclaration(Identifier(customTypeMarshallerName))
+                .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword))
+                .AddAttributeLists(AttributeList().AddAttributes(attribute))
+                .AddMembers(toUnmanaged, toManaged)
+                .WithAdditionalAnnotations(new SyntaxAnnotation(NamespaceContainerAnnotation, shortNamespace));
+
+            string qualifiedName = $"global::{this.Namespace}.{shortNamespace}.{customTypeMarshallerName}";
+            CustomMarshallerTypeRecord typeRecord = new(marshallerClass, qualifiedName);
+            this.volatileCode.AddCustomTypeMarshaller(customTypeMarshallerName, typeRecord);
+            return typeRecord;
+        });
+    }
+
+    internal string RequestCustomWinRTMarshaller(string qualifiedWinRTTypeName)
     {
         if (!TrySplitPossiblyQualifiedName(qualifiedWinRTTypeName, out string? @namespace, out string winrtTypeName))
         {
@@ -118,11 +172,11 @@ public partial class Generator
             @namespace = string.Empty;
         }
 
-        string customTypeMarshalerName = $"WinRTMarshaler{winrtTypeName}";
+        string customTypeMarshallerName = $"WinRTMarshaller{winrtTypeName}";
 
-        string marshalerNamespace = "CsWin32.InteropServices";
+        string marshallerNamespace = "CsWin32.InteropServices";
 
-        return this.volatileCode.GenerateCustomTypeMarshaler(customTypeMarshalerName, delegate
+        return this.volatileCode.GenerateCustomTypeMarshaller(customTypeMarshallerName, delegate
         {
             // Create type syntax for the WinRT type (using the qualified name)
             TypeSyntax winrtTypeSyntax = string.IsNullOrEmpty(@namespace)
@@ -151,7 +205,7 @@ public partial class Generator
                             SyntaxKind.SimpleMemberAccessExpression,
                             ParseName("global::System.Runtime.InteropServices.Marshalling.MarshalMode"),
                             IdentifierName(mode))),
-                        AttributeArgument(TypeOfExpression(IdentifierName(customTypeMarshalerName)))))
+                        AttributeArgument(TypeOfExpression(IdentifierName(customTypeMarshallerName)))))
                 .ToArray();
 
             // Create ConvertToManaged method
@@ -206,24 +260,24 @@ public partial class Generator
                         ArgumentList().AddArguments(Argument(IdentifierName("unmanaged")))))));
 
             // Create the class declaration
-            ClassDeclarationSyntax marshalerClass = ClassDeclaration(Identifier(customTypeMarshalerName))
+            ClassDeclarationSyntax marshallerClass = ClassDeclaration(Identifier(customTypeMarshallerName))
                 .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword))
                 .AddAttributeLists(customMarshallerAttributes.Select(attr => AttributeList().AddAttributes(attr)).ToArray())
                 .AddMembers(convertToManagedMethod, convertToUnmanagedMethod, freeMethod);
 
-            marshalerClass = marshalerClass.WithAdditionalAnnotations(new SyntaxAnnotation(NamespaceContainerAnnotation, marshalerNamespace));
+            marshallerClass = marshallerClass.WithAdditionalAnnotations(new SyntaxAnnotation(NamespaceContainerAnnotation, marshallerNamespace));
 
-            string qualifiedName = $"global::{this.Namespace}.{marshalerNamespace}.{customTypeMarshalerName}";
+            string qualifiedName = $"global::{this.Namespace}.{marshallerNamespace}.{customTypeMarshallerName}";
 
-            CustomMarshalerTypeRecord typeRecord = new(marshalerClass, qualifiedName);
+            CustomMarshallerTypeRecord typeRecord = new(marshallerClass, qualifiedName);
 
             // For WinRT types, we generally don't need a specific namespace container annotation
             // since they're typically in the global namespace context
-            this.volatileCode.AddCustomTypeMarshaler(customTypeMarshalerName, typeRecord);
+            this.volatileCode.AddCustomTypeMarshaller(customTypeMarshallerName, typeRecord);
 
             return typeRecord;
         });
     }
 
-    private record CustomMarshalerTypeRecord(ClassDeclarationSyntax ClassDeclaration, string QualifiedName);
+    private record CustomMarshallerTypeRecord(ClassDeclarationSyntax ClassDeclaration, string QualifiedName);
 }

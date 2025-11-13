@@ -143,6 +143,8 @@ public partial class Generator
         List<Parameter>? countOfBytesStructParameters = null;
         int numOptionalParams = 0;
         int numSpanByteParameters = 0;
+        SyntaxToken friendlyMethodName = externMethodDeclaration.Identifier;
+        bool emulateMemberFunctionCallConv = friendlyMethodName.ValueText.EndsWith(EmulateMemberFunctionCallConvSuffix);
 
         foreach (ParameterHandle paramHandle in methodDefinition.GetParameters())
         {
@@ -155,6 +157,15 @@ public partial class Generator
             if (param.SequenceNumber == 0 || param.SequenceNumber - 1 >= parameters.Count)
             {
                 continue;
+            }
+
+            int origParamIndex = param.SequenceNumber - 1;
+            int paramIndex = origParamIndex;
+
+            if (emulateMemberFunctionCallConv)
+            {
+                // We added an additional parameter to the externMethodDeclaration which we need to adjust for.
+                paramIndex++;
             }
 
             bool isOptional = (param.Attributes & ParameterAttributes.Optional) == ParameterAttributes.Optional;
@@ -170,13 +181,13 @@ public partial class Generator
             // TODO:
             // * Review double/triple pointer scenarios.
             //   * Consider CredEnumerateA, which is a "pointer to an array of pointers" (3-asterisks!). How does FriendlyAttribute improve this, if at all? The memory must be freed through another p/invoke.
-            ParameterSyntax externParam = parameters[param.SequenceNumber - 1];
+            ParameterSyntax externParam = parameters[paramIndex];
             if (externParam.Type is null)
             {
                 throw new GenerationFailedException();
             }
 
-            TypeHandleInfo parameterTypeInfo = originalSignature.ParameterTypes[param.SequenceNumber - 1];
+            TypeHandleInfo parameterTypeInfo = originalSignature.ParameterTypes[origParamIndex];
             bool isManagedParameterType = this.IsManagedType(parameterTypeInfo);
             MemorySize? memorySize = null;
             bool mustRemainAsPointer = false;
@@ -292,8 +303,8 @@ public partial class Generator
             else if (isReserved && !isOut)
             {
                 // Remove the parameter and supply the default value for the type to the extern method.
-                arguments[param.SequenceNumber - 1] = Argument(LiteralExpression(SyntaxKind.DefaultLiteralExpression));
-                parametersToRemove.Add(param.SequenceNumber - 1);
+                arguments[paramIndex] = Argument(LiteralExpression(SyntaxKind.DefaultLiteralExpression));
+                parametersToRemove.Add(paramIndex);
                 signatureChanged = true;
             }
             else if (omittableOptionalParam && omitOptionalParams)
@@ -305,7 +316,7 @@ public partial class Generator
                     {
                         // Can't pass pointers as type parameter to Unsafe.NullRef<T>(), so use `ref *(delegate ...*)null` syntax instead.
                         ExpressionSyntax nullRef = PrefixUnaryExpression(SyntaxKind.PointerIndirectionExpression, CastExpression(PointerType(externParam.Type), LiteralExpression(SyntaxKind.NullLiteralExpression)));
-                        arguments[param.SequenceNumber - 1] = Argument(nullRef).WithRefKindKeyword(TokenWithSpace(externParamModifier.Kind()));
+                        arguments[paramIndex] = Argument(nullRef).WithRefKindKeyword(TokenWithSpace(externParamModifier.Kind()));
                     }
                     else
                     {
@@ -317,21 +328,21 @@ public partial class Generator
                             : InvocationExpression(
                                 MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Unsafe)), GenericName(nameof(Unsafe.AsRef), TypeArgumentList().AddArguments(externParam.Type))),
                                 ArgumentList().AddArguments(Argument(LiteralExpression(SyntaxKind.NullLiteralExpression))));
-                        arguments[param.SequenceNumber - 1] = Argument(nullRef).WithRefKindKeyword(TokenWithSpace(externParamModifier.Kind()));
+                        arguments[paramIndex] = Argument(nullRef).WithRefKindKeyword(TokenWithSpace(externParamModifier.Kind()));
                     }
                 }
                 else
                 {
-                    arguments[param.SequenceNumber - 1] = Argument(DefaultExpression(externParam.Type));
+                    arguments[paramIndex] = Argument(DefaultExpression(externParam.Type));
                 }
 
-                parametersToRemove.Add(param.SequenceNumber - 1);
+                parametersToRemove.Add(paramIndex);
                 signatureChanged = true;
             }
             else if (isManagedParameterType && (externParam.Modifiers.Any(SyntaxKind.OutKeyword) || externParam.Modifiers.Any(SyntaxKind.RefKeyword)))
             {
                 bool hasOut = externParam.Modifiers.Any(SyntaxKind.OutKeyword);
-                arguments[param.SequenceNumber - 1] = arguments[param.SequenceNumber - 1].WithRefKindKeyword(TokenWithSpace(hasOut ? SyntaxKind.OutKeyword : SyntaxKind.RefKeyword));
+                arguments[paramIndex] = arguments[paramIndex].WithRefKindKeyword(TokenWithSpace(hasOut ? SyntaxKind.OutKeyword : SyntaxKind.RefKeyword));
             }
             else if (isOut && !isIn && !isReleaseMethod && parameterTypeInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo pointedElementInfo } && pointedElementInfo.Generator.TryGetHandleReleaseMethod(pointedElementInfo.Handle, paramAttributes, out string? outReleaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, outReleaseMethod))
             {
@@ -342,7 +353,7 @@ public partial class Generator
                     IdentifierNameSyntax typeDefHandleName = IdentifierName(externParam.Identifier.ValueText + "Local");
 
                     // out SafeHandle
-                    parameters[param.SequenceNumber - 1] = externParam
+                    parameters[paramIndex] = externParam
                         .WithType(safeHandleType.WithTrailingTrivia(TriviaList(Space)))
                         .WithModifiers(TokenList(TokenWithSpace(SyntaxKind.OutKeyword)));
 
@@ -351,7 +362,7 @@ public partial class Generator
                         VariableDeclarator(typeDefHandleName.Identifier))));
 
                     // Argument: &SomeLocal
-                    arguments[param.SequenceNumber - 1] = Argument(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, typeDefHandleName));
+                    arguments[paramIndex] = Argument(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, typeDefHandleName));
 
                     // Some = new SafeHandle(SomeLocal, ownsHandle: true);
                     trailingStatements.Add(ExpressionStatement(AssignmentExpression(
@@ -420,11 +431,11 @@ public partial class Generator
                     .WithCloseParenToken(TokenWithLineFeed(SyntaxKind.CloseParenToken)));
 
                 // Accept the SafeHandle instead.
-                parameters[param.SequenceNumber - 1] = externParam
+                parameters[paramIndex] = externParam
                     .WithType(IdentifierName(nameof(SafeHandle)).WithTrailingTrivia(TriviaList(Space)));
 
                 // hParamNameLocal;
-                arguments[param.SequenceNumber - 1] = Argument(typeDefHandleName);
+                arguments[paramIndex] = Argument(typeDefHandleName);
             }
             else if ((externParam.Type is PointerTypeSyntax { ElementType: TypeSyntax ptrElementType }
                 && (!IsVoid(ptrElementType) || (improvePointersToSpansAndRefs && isArray))
@@ -478,11 +489,11 @@ public partial class Generator
                         signatureChanged = true;
 
                         // Accept a span instead of a pointer.
-                        parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
+                        parameters[paramIndex] = parameters[paramIndex]
                             .WithType((isIn ? MakeReadOnlySpanOfT(elementType) : MakeSpanOfT(elementType)).WithTrailingTrivia(TriviaList(Space)));
                         fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
                             VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
-                        arguments[param.SequenceNumber - 1] = Argument(localName);
+                        arguments[paramIndex] = Argument(localName);
 
                         // Add a runtime check that the span is at least the required length.
                         leadingStatements.Add(IfStatement(
@@ -497,26 +508,26 @@ public partial class Generator
                         signatureChanged = true;
 
                         // Handle the byte* => Span<byte> mapping
-                        parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
+                        parameters[paramIndex] = parameters[paramIndex]
                             .WithType((isConst ? MakeReadOnlySpanOfT(elementType) : MakeSpanOfT(elementType)).WithTrailingTrivia(TriviaList(Space)));
                         fixedBlocks.Add(VariableDeclaration(PointerType(elementType)).AddVariables(
                             VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
-                        arguments[param.SequenceNumber - 1] = projectAsSpanBytes ? Argument(CastExpression(externParam.Type, localName)) : Argument(localName);
+                        arguments[paramIndex] = projectAsSpanBytes ? Argument(CastExpression(externParam.Type, localName)) : Argument(localName);
 
                         if (projectAsSpanBytes)
                         {
                             numSpanByteParameters++;
                         }
                     }
-                    else if (isNullTerminated && isConst && parameters[param.SequenceNumber - 1].Type is PointerTypeSyntax { ElementType: PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.CharKeyword } } })
+                    else if (isNullTerminated && isConst && parameters[paramIndex].Type is PointerTypeSyntax { ElementType: PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.CharKeyword } } })
                     {
                         // replace char* with string
                         signatureChanged = true;
-                        parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
+                        parameters[paramIndex] = parameters[paramIndex]
                             .WithType(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword)));
                         fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
                             VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
-                        arguments[param.SequenceNumber - 1] = Argument(localName);
+                        arguments[paramIndex] = Argument(localName);
                     }
 
                     // Translate ReadOnlySpan<PCWSTR> to ReadOnlySpan<string>
@@ -525,7 +536,7 @@ public partial class Generator
                         signatureChanged = true;
 
                         // Change the parameter type to ReadOnlySpan<string>
-                        parameters[param.SequenceNumber - 1] = externParam
+                        parameters[paramIndex] = externParam
                             .WithType(MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.StringKeyword))));
 
                         IdentifierNameSyntax gcHandlesLocal = IdentifierName($"{origName}GCHandles");
@@ -651,20 +662,20 @@ public partial class Generator
                             throw new GenerationFailedException("Unable to find existing fixed block to change.");
                         }
 
-                        arguments[param.SequenceNumber - 1] = Argument(localName);
+                        arguments[paramIndex] = Argument(localName);
                     }
                 }
                 else if (isIn && isOptional && !isOut && !isPointerToPointer)
                 {
                     signatureChanged = true;
-                    parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
+                    parameters[paramIndex] = parameters[paramIndex]
                         .WithType(NullableType(elementType).WithTrailingTrivia(TriviaList(Space)));
                     leadingStatements.Add(
                         LocalDeclarationStatement(VariableDeclaration(elementType)
                             .AddVariables(VariableDeclarator(localName.Identifier).WithInitializer(
                                 EqualsValueClause(
                                     BinaryExpression(SyntaxKind.CoalesceExpression, origName, DefaultExpression(elementType)))))));
-                    arguments[param.SequenceNumber - 1] = Argument(ConditionalExpression(
+                    arguments[paramIndex] = Argument(ConditionalExpression(
                         MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName("HasValue")),
                         PrefixUnaryExpression(SyntaxKind.AddressOfExpression, localName),
                         LiteralExpression(SyntaxKind.NullLiteralExpression)));
@@ -672,53 +683,53 @@ public partial class Generator
                 else if (isIn && isOut)
                 {
                     signatureChanged = true;
-                    parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
+                    parameters[paramIndex] = parameters[paramIndex]
                         .WithType(elementType.WithTrailingTrivia(TriviaList(Space)))
                         .WithModifiers(TokenList(TokenWithSpace(SyntaxKind.RefKeyword)));
                     fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
                         VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(
                             PrefixUnaryExpression(SyntaxKind.AddressOfExpression, origName)))));
-                    arguments[param.SequenceNumber - 1] = Argument(localName);
+                    arguments[paramIndex] = Argument(localName);
                 }
                 else if (isOut && !isIn)
                 {
                     signatureChanged = true;
-                    parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
+                    parameters[paramIndex] = parameters[paramIndex]
                         .WithType(elementType.WithTrailingTrivia(TriviaList(Space)))
                         .WithModifiers(TokenList(TokenWithSpace(SyntaxKind.OutKeyword)));
                     fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
                         VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(
                             PrefixUnaryExpression(SyntaxKind.AddressOfExpression, origName)))));
-                    arguments[param.SequenceNumber - 1] = Argument(localName);
+                    arguments[paramIndex] = Argument(localName);
                 }
                 else if (isIn && !isOut)
                 {
                     // Use the "in" modifier to avoid copying the struct.
                     signatureChanged = true;
-                    parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
+                    parameters[paramIndex] = parameters[paramIndex]
                         .WithType(elementType.WithTrailingTrivia(TriviaList(Space)))
                         .WithModifiers(TokenList(TokenWithSpace(SyntaxKind.InKeyword)));
                     fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
                         VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(
                             PrefixUnaryExpression(SyntaxKind.AddressOfExpression, origName)))));
-                    arguments[param.SequenceNumber - 1] = Argument(localName);
+                    arguments[paramIndex] = Argument(localName);
                 }
             }
             else if (isIn && !isOut && isConst && externParam.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "PCWSTR" } } })
             {
                 IdentifierNameSyntax localName = IdentifierName(origName + "Local");
                 signatureChanged = true;
-                parameters[param.SequenceNumber - 1] = externParam
+                parameters[paramIndex] = externParam
                     .WithType(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword)));
                 fixedBlocks.Add(VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword)))).AddVariables(
                     VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
-                arguments[param.SequenceNumber - 1] = Argument(localName);
+                arguments[paramIndex] = Argument(localName);
             }
             else if (isIn && !isOut && isConst && externParam.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "PCSTR" } } })
             {
                 IdentifierNameSyntax localName = IdentifierName(origName + "Local");
                 signatureChanged = true;
-                parameters[param.SequenceNumber - 1] = externParam
+                parameters[paramIndex] = externParam
                     .WithType(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword)));
 
                 // fixed (byte* someLocal = some is object ? System.Text.Encoding.Default.GetBytes(some) : null)
@@ -737,14 +748,14 @@ public partial class Generator
                             LiteralExpression(SyntaxKind.NullLiteralExpression))))));
 
                 // new PCSTR(someLocal)
-                arguments[param.SequenceNumber - 1] = Argument(ObjectCreationExpression(externParam.Type).AddArgumentListArguments(Argument(localName)));
+                arguments[paramIndex] = Argument(ObjectCreationExpression(externParam.Type).AddArgumentListArguments(Argument(localName)));
             }
             else if (isIn && isOut && this.canUseSpan && externParam.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "PWSTR" } } })
             {
                 IdentifierNameSyntax localName = IdentifierName("p" + origName);
                 IdentifierNameSyntax localWstrName = IdentifierName("wstr" + origName);
                 signatureChanged = true;
-                parameters[param.SequenceNumber - 1] = externParam
+                parameters[paramIndex] = externParam
                     .WithType(MakeSpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword))))
                     .AddModifiers(Token(SyntaxKind.RefKeyword));
 
@@ -754,7 +765,7 @@ public partial class Generator
                         origName))));
 
                 // wstrParam1
-                arguments[param.SequenceNumber - 1] = Argument(localWstrName);
+                arguments[paramIndex] = Argument(localWstrName);
 
                 // if (buffer != null && buffer.LastIndexOf('\0') == -1) throw new ArgumentException("Required null terminator is missing.", "Param1");
                 InvocationExpressionSyntax lastIndexOf = InvocationExpression(
@@ -786,7 +797,7 @@ public partial class Generator
             {
                 IdentifierNameSyntax localName = IdentifierName(origName + "Local");
                 signatureChanged = true;
-                parameters[param.SequenceNumber - 1] = externParam
+                parameters[paramIndex] = externParam
                     .WithType(MakeSpanOfT(PredefinedType(Token(SyntaxKind.CharKeyword))));
 
                 // fixed (char* pParam1 = Param1)
@@ -795,7 +806,7 @@ public partial class Generator
                         origName))));
 
                 // Use the char* pointer as the argument instead of the parameter.
-                arguments[param.SequenceNumber - 1] = Argument(localName);
+                arguments[paramIndex] = Argument(localName);
 
                 // Remove the size parameter if one exists.
                 TryHandleCountParam(PredefinedType(Token(SyntaxKind.CharKeyword)), nullableSource: false);
@@ -806,7 +817,7 @@ public partial class Generator
                 // It would have exposed as an `in` modifier, and non-optional. But we can expose as optional anyway.
                 minorSignatureChange = true;
                 IdentifierNameSyntax localName = IdentifierName(origName + "Local");
-                parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
+                parameters[paramIndex] = parameters[paramIndex]
                     .WithType(NullableType(externParam.Type).WithTrailingTrivia(TriviaList(Space)))
                     .WithModifiers(TokenList()); // drop the `in` modifier.
                 leadingStatements.Add(
@@ -824,7 +835,7 @@ public partial class Generator
                     : InvocationExpression(
                         MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Unsafe)), GenericName(nameof(Unsafe.AsRef), TypeArgumentList().AddArguments(externParam.Type))),
                         ArgumentList().AddArguments(Argument(LiteralExpression(SyntaxKind.NullLiteralExpression))));
-                arguments[param.SequenceNumber - 1] = Argument(ConditionalExpression(
+                arguments[paramIndex] = Argument(ConditionalExpression(
                     MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName("HasValue")),
                     RefExpression(localName),
                     RefExpression(nullRef)));
@@ -852,20 +863,20 @@ public partial class Generator
                             // For parameters annotated as count of bytes, we need to switch the friendly parameter to Span<byte>
                             // and then cast to (ParamType*) when we call the p/invoke.
                             TypeSyntax byteSyntax = PredefinedType(Token(SyntaxKind.ByteKeyword));
-                            parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
+                            parameters[paramIndex] = parameters[paramIndex]
                                 .WithType((!isOut ? MakeReadOnlySpanOfT(byteSyntax) : MakeSpanOfT(byteSyntax)).WithTrailingTrivia(TriviaList(Space)));
                             fixedBlocks.Add(VariableDeclaration(PointerType(byteSyntax)).AddVariables(
                                 VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
-                            arguments[param.SequenceNumber - 1] = Argument(CastExpression(externParam.Type, localName));
+                            arguments[paramIndex] = Argument(CastExpression(externParam.Type, localName));
                             numSpanByteParameters++;
                         }
                         else
                         {
-                            parameters[param.SequenceNumber - 1] = parameters[param.SequenceNumber - 1]
+                            parameters[paramIndex] = parameters[paramIndex]
                                 .WithType((isIn ? MakeReadOnlySpanOfT(elementType) : MakeSpanOfT(elementType)).WithTrailingTrivia(TriviaList(Space)));
                             fixedBlocks.Add(VariableDeclaration(externParam.Type).AddVariables(
                                 VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(origName))));
-                            arguments[param.SequenceNumber - 1] = Argument(localName);
+                            arguments[paramIndex] = Argument(localName);
                         }
                     }
 
@@ -884,7 +895,7 @@ public partial class Generator
                     }
                     else
                     {
-                        lengthParamUsedBy.Add(countParamIndex.Value, param.SequenceNumber - 1);
+                        lengthParamUsedBy.Add(countParamIndex.Value, paramIndex);
                     }
 
                     ExpressionSyntax sizeArgExpression = GetSpanLength(origName, remainsRefType);
@@ -901,10 +912,28 @@ public partial class Generator
             }
         }
 
+        if (emulateMemberFunctionCallConv)
+        {
+            // Turn the __retVal parameter into a local with default.
+            SyntaxToken retValLocalName = ((IdentifierNameSyntax)arguments[0].Expression).Identifier;
+
+            // Return type of the friendly method is the non-pointer struct return.
+            externMethodReturnType = ((PointerTypeSyntax)externMethodReturnType).ElementType;
+            LocalDeclarationStatementSyntax localRetValDecl = LocalDeclarationStatement(VariableDeclaration(externMethodReturnType).AddVariables(
+                VariableDeclarator(retValLocalName).WithInitializer(EqualsValueClause(DefaultExpression(externMethodReturnType)))));
+            leadingStatements.Add(localRetValDecl);
+
+            // Pass in the local as the return value.
+            arguments[0] = Argument(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName(retValLocalName)));
+            parametersToRemove.Add(0);
+
+            friendlyMethodName = Identifier(friendlyMethodName.ValueText.Replace(EmulateMemberFunctionCallConvSuffix, string.Empty));
+            signatureChanged = true;
+        }
+
         TypeSyntax? returnSafeHandleType = originalSignature.ReturnType is HandleTypeHandleInfo returnTypeHandleInfo
             && returnTypeHandleInfo.Generator.TryGetHandleReleaseMethod(returnTypeHandleInfo.Handle, returnTypeAttributes, out string? returnReleaseMethod)
             ? this.RequestSafeHandle(returnReleaseMethod) : null;
-        SyntaxToken friendlyMethodName = externMethodDeclaration.Identifier;
 
         if ((returnSafeHandleType is object || minorSignatureChange) && !signatureChanged)
         {
@@ -933,7 +962,7 @@ public partial class Generator
                     XmlText($"/// "),
                     XmlEmptyElement("inheritdoc").AddAttributes(XmlCrefAttribute(NameMemberCref(docRefExternName, ToCref(externMethodDeclaration.ParameterList)))),
                     XmlText().AddTextTokens(XmlTextNewLine("\n", continueXmlDocumentationComment: false))));
-            InvocationExpressionSyntax externInvocation = InvocationExpression(
+            ExpressionSyntax externInvocation = InvocationExpression(
                 overloadOf switch
                 {
                     FriendlyOverloadOf.ExternMethod => QualifiedName(declaringTypeName, IdentifierName(externMethodDeclaration.Identifier.Text)),
@@ -965,6 +994,11 @@ public partial class Generator
             }
             else
             {
+                if (emulateMemberFunctionCallConv)
+                {
+                    externInvocation = PrefixUnaryExpression(SyntaxKind.PointerIndirectionExpression, externInvocation);
+                }
+
                 // var result = externInvocation();
                 body = body.AddStatements(LocalDeclarationStatement(VariableDeclaration(externMethodReturnType)
                     .AddVariables(VariableDeclarator(resultLocal.Identifier).WithInitializer(EqualsValueClause(externInvocation)))));
@@ -1047,7 +1081,7 @@ public partial class Generator
             // To avoid an explosion of overloads, just do this if there's one parameter of this kind.
             if (improvePointersToSpansAndRefs && countOfBytesStructParameters?.Count == 1)
             {
-                MethodDeclarationSyntax? structOverload = this.DeclareStructCountOfBytesFriendlyOverload(externMethodDeclaration, countOfBytesStructParameters, friendlyDeclaration);
+                MethodDeclarationSyntax? structOverload = this.DeclareStructCountOfBytesFriendlyOverload(externMethodDeclaration, countOfBytesStructParameters, friendlyDeclaration, emulateMemberFunctionCallConv);
                 if (structOverload is not null)
                 {
                     yield return structOverload;
@@ -1065,7 +1099,7 @@ public partial class Generator
         }
     }
 
-    private MethodDeclarationSyntax? DeclareStructCountOfBytesFriendlyOverload(MethodDeclarationSyntax externMethodDeclaration, List<Parameter> countOfBytesStructParameters, MethodDeclarationSyntax friendlyDeclaration)
+    private MethodDeclarationSyntax? DeclareStructCountOfBytesFriendlyOverload(MethodDeclarationSyntax externMethodDeclaration, List<Parameter> countOfBytesStructParameters, MethodDeclarationSyntax friendlyDeclaration, bool emulateMemberFunctionCallConv)
     {
         // Can't easily generate the helpers we want to on net472, so just bail out if the ref helpers aren't present.
         if (!this.canCallCreateSpan)
@@ -1085,7 +1119,7 @@ public partial class Generator
         // And if it's in & out, then use Ref with Span.
         List<ParameterSyntax> externParams = externMethodDeclaration.ParameterList.Parameters.Select(StripAttributes).ToList();
         Parameter param = countOfBytesStructParameters[0];
-        ParameterSyntax externParam = externParams[param.SequenceNumber - 1];
+        ParameterSyntax externParam = externParams[param.SequenceNumber - 1 + (emulateMemberFunctionCallConv ? 1 : 0)];
         ParameterSyntax[] friendlyParams = friendlyDeclaration.ParameterList.Parameters.ToArray();
         int friendlyParamIndex = Array.FindIndex(friendlyParams, x => x.Identifier.Text == externParam.Identifier.Text);
 

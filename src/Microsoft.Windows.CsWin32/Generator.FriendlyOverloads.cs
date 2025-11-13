@@ -861,7 +861,6 @@ public partial class Generator
 
                 TypeSyntax nativeInterfaceTypeSyntax = ((PointerTypeSyntax)externParam.Type).ElementType;
 
-                IdentifierNameSyntax? incomingNativePointer = null;
                 if (!isIn)
                 {
                     // Not a ref so need to assign first so we can use "ref" on the param. Use Unsafe.SkipInit(out origName) so that we can handle null refs.
@@ -904,13 +903,6 @@ public partial class Generator
                 // __origName_nativeIn = __origName_native;
                 if (isIn)
                 {
-                    // Need to keep track of the native pointer we marshalled so we can free it at the end of the method.
-                    incomingNativePointer = IdentifierName($"__{origName.Identifier.ValueText.Replace("@", string.Empty)}_nativeIn");
-                    leadingOutsideTryStatements.Add(
-                        LocalDeclarationStatement(VariableDeclaration(nativeInterfaceTypeSyntax)
-                            .AddVariables(VariableDeclarator(incomingNativePointer.Identifier)
-                                .WithInitializer(EqualsValueClause(LiteralExpression(SyntaxKind.NullLiteralExpression))))));
-
                     ExpressionSyntax toNativeExpression = this.useSourceGenerators ?
                         InvocationExpression(
                             MemberAccessExpression(
@@ -940,12 +932,7 @@ public partial class Generator
                                         nativeLocal,
                                         CastExpression(
                                             nativeInterfaceTypeSyntax,
-                                            toNativeExpression))),
-                                ExpressionStatement(
-                                    AssignmentExpression(
-                                        SyntaxKind.SimpleAssignmentExpression,
-                                        incomingNativePointer,
-                                        nativeLocal)))));
+                                            toNativeExpression))))));
                 }
 
                 // If it's an out parameter, assign the out parameter from the native local.
@@ -983,10 +970,6 @@ public partial class Generator
 
                 // Release the native pointers we have refs on.
                 finallyStatements.Add(this.COMFreeNativePointerStatement(nativeLocal, interfaceTypeSyntax));
-                if (incomingNativePointer is not null && isOut)
-                {
-                    finallyStatements.Add(this.COMFreeNativePointerStatement(incomingNativePointer, interfaceTypeSyntax));
-                }
 
                 // If it's an in parameter, pass the native local as the argument.
                 arguments[paramIndex] = arguments[paramIndex].WithExpression(ConditionalExpression(IdentifierName(paramPresent), PrefixUnaryExpression(SyntaxKind.AddressOfExpression, nativeLocal), LiteralExpression(SyntaxKind.NullLiteralExpression)));

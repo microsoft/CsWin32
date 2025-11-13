@@ -861,6 +861,7 @@ public partial class Generator
 
                 TypeSyntax nativeInterfaceTypeSyntax = ((PointerTypeSyntax)externParam.Type).ElementType;
 
+                IdentifierNameSyntax? incomingNativePointer = null;
                 if (!isIn)
                 {
                     // Not a ref so need to assign first so we can use "ref" on the param. Use Unsafe.SkipInit(out origName) so that we can handle null refs.
@@ -899,8 +900,17 @@ public partial class Generator
 
                 // If it's an in parameter, assign the native local from the managed parameter.
                 // __origName_native = (TNative)global::System.Runtime.InteropServices.Marshalling.ComInterfaceMarshaller<TInterface>.ConvertToUnmanaged(origName);
+                // Also remember the marshalled in pointer in case the callee modifies in for ref params.
+                // __origName_nativeIn = __origName_native;
                 if (isIn)
                 {
+                    // Need to keep track of the native pointer we marshalled so we can free it at the end of the method.
+                    incomingNativePointer = IdentifierName($"__{origName.Identifier.ValueText.Replace("@", string.Empty)}_nativeIn");
+                    leadingOutsideTryStatements.Add(
+                        LocalDeclarationStatement(VariableDeclaration(nativeInterfaceTypeSyntax)
+                            .AddVariables(VariableDeclarator(incomingNativePointer.Identifier)
+                                .WithInitializer(EqualsValueClause(LiteralExpression(SyntaxKind.NullLiteralExpression))))));
+
                     ExpressionSyntax toNativeExpression = this.useSourceGenerators ?
                         InvocationExpression(
                             MemberAccessExpression(
@@ -930,7 +940,12 @@ public partial class Generator
                                         nativeLocal,
                                         CastExpression(
                                             nativeInterfaceTypeSyntax,
-                                            toNativeExpression))))));
+                                            toNativeExpression))),
+                                ExpressionStatement(
+                                    AssignmentExpression(
+                                        SyntaxKind.SimpleAssignmentExpression,
+                                        incomingNativePointer,
+                                        nativeLocal)))));
                 }
 
                 // If it's an out parameter, assign the out parameter from the native local.
@@ -966,33 +981,11 @@ public partial class Generator
                                         toManagedExpression)))));
                 }
 
-                if (this.useSourceGenerators)
+                // Release the native pointers we have refs on.
+                finallyStatements.Add(this.COMFreeNativePointerStatement(nativeLocal, interfaceTypeSyntax));
+                if (incomingNativePointer is not null && isOut)
                 {
-                    // Finally, release the nativeLocal via ComInterfaceMarshaller.Free.
-                    finallyStatements.Add(
-                        ExpressionStatement(
-                            InvocationExpression(
-                                MemberAccessExpression(
-                                    SyntaxKind.SimpleMemberAccessExpression,
-                                    GenericName($"global::System.Runtime.InteropServices.Marshalling.ComInterfaceMarshaller", TypeArgumentList().AddArguments(interfaceTypeSyntax)),
-                                    IdentifierName("Free")),
-                                ArgumentList().AddArguments(Argument(nativeLocal)))));
-                }
-                else
-                {
-                    // Finally, release the nativeLocal via Marshal.Release.
-                    finallyStatements.Add(
-                        IfStatement(
-                            BinaryExpression(SyntaxKind.NotEqualsExpression, nativeLocal, LiteralExpression(SyntaxKind.NullLiteralExpression)),
-                            ExpressionStatement(
-                                InvocationExpression(
-                                    MemberAccessExpression(
-                                        SyntaxKind.SimpleMemberAccessExpression,
-                                        ParseTypeName("global::System.Runtime.InteropServices.Marshal"),
-                                        IdentifierName("Release")),
-                                    ArgumentList().AddArguments(Argument(
-                                        CastExpression(ParseName("nint"), nativeLocal))))))
-                        .WithCloseParenToken(TokenWithLineFeed(SyntaxKind.CloseParenToken)));
+                    finallyStatements.Add(this.COMFreeNativePointerStatement(incomingNativePointer, interfaceTypeSyntax));
                 }
 
                 // If it's an in parameter, pass the native local as the argument.
@@ -1391,6 +1384,38 @@ public partial class Generator
             .WithLeadingTrivia(leadingTrivia);
 
         return helper;
+    }
+
+    private StatementSyntax COMFreeNativePointerStatement(ExpressionSyntax nativePointer, TypeSyntax interfaceTypeSyntax)
+    {
+        if (this.useSourceGenerators)
+        {
+            // Release the nativeLocal via ComInterfaceMarshaller.Free.
+            return
+                ExpressionStatement(
+                    InvocationExpression(
+                        MemberAccessExpression(
+                            SyntaxKind.SimpleMemberAccessExpression,
+                            GenericName($"global::System.Runtime.InteropServices.Marshalling.ComInterfaceMarshaller", TypeArgumentList().AddArguments(interfaceTypeSyntax)),
+                            IdentifierName("Free")),
+                        ArgumentList().AddArguments(Argument(nativePointer))));
+        }
+        else
+        {
+            // Finally, release the nativeLocal via Marshal.Release.
+            return
+                IfStatement(
+                    BinaryExpression(SyntaxKind.NotEqualsExpression, nativePointer, LiteralExpression(SyntaxKind.NullLiteralExpression)),
+                    ExpressionStatement(
+                        InvocationExpression(
+                            MemberAccessExpression(
+                                SyntaxKind.SimpleMemberAccessExpression,
+                                ParseTypeName("global::System.Runtime.InteropServices.Marshal"),
+                                IdentifierName("Release")),
+                            ArgumentList().AddArguments(Argument(
+                                CastExpression(ParseName("nint"), nativePointer))))))
+                .WithCloseParenToken(TokenWithLineFeed(SyntaxKind.CloseParenToken));
+        }
     }
 
     private class FriendlyMethodBookkeeping

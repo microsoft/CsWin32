@@ -303,7 +303,6 @@ public class BasicTests
                             // {
                             //     throw new Win32Exception(errorCode);
                             // }
-
                             return true;
                         }
 

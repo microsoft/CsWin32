@@ -11,6 +11,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
 using System.Runtime.Versioning;
 using System.Threading.Tasks;
+using Newtonsoft.Json.Linq;
 using Windows.System;
 using Windows.UI.Composition;
 using Windows.Win32;
@@ -135,7 +136,7 @@ public partial class COMTests
                 WNDCLASSEXW wc = new()
                 {
                     cbSize = (uint)sizeof(WNDCLASSEXW),
-                    lpfnWndProc = &WndProc,
+                    lpfnWndProc = new(&WndProc),
                     lpszClassName = className,
                 };
                 var atom = PInvoke.RegisterClassEx(in wc);

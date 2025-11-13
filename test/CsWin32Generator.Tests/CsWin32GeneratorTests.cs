@@ -166,6 +166,17 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         Assert.Contains("winmdroot.Security.WinTrust.CRYPT_PROVIDER_DATA*", methodReturnTypes);
     }
 
+    [Fact]
+    public async Task DelegatesGetStructsGenerated()
+    {
+        this.nativeMethods.Add("SetTimer");
+        await this.InvokeGeneratorAndCompileFromFact();
+
+        var timerProcType = Assert.Single(this.FindGeneratedType("TIMERPROC"));
+        var setTimerMethod = Assert.Single(this.FindGeneratedMethod("SetTimer"), m => m.AttributeLists.Any(attributeList => attributeList.Attributes.Any(attr => attr.Name.ToString().Contains("LibraryImport"))));
+        Assert.EndsWith("TIMERPROC", setTimerMethod.ParameterList.Parameters[3].Type?.ToString());
+    }
+
     public static IList<object[]> TestSignatureData => [
         ["IMFMediaKeySession", "get_KeySystem", "winmdroot.Foundation.BSTR* keySystem"],
         ["AddPrinterW", "AddPrinter", "winmdroot.Foundation.PWSTR pName, uint Level, Span<byte> pPrinter"],

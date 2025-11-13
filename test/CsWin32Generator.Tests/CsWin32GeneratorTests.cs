@@ -202,7 +202,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         ["MFEnumDeviceSources", "MFEnumDeviceSources", "winmdroot.Media.MediaFoundation.IMFAttributes pAttributes, out winmdroot.Media.MediaFoundation.IMFActivate_unmanaged** pppSourceActivate, out uint pcSourceActivate"],
         // Check that GetObject optional parameters got an overload with marshalled interface types
         ["IWbemServices", "GetObject", "this winmdroot.System.Wmi.IWbemServices @this, SafeHandle strObjectPath, winmdroot.System.Wmi.WBEM_GENERIC_FLAG_TYPE lFlags, winmdroot.System.Wmi.IWbemContext pCtx, ref winmdroot.System.Wmi.IWbemClassObject ppObject, ref winmdroot.System.Wmi.IWbemCallResult ppCallResult"],
-        // "in" optional parameters should project as "in" instead of nullable
+        // NativeOverlapped should be pointer even when not [Retained] as in CancelIoEx.
         ["CancelIoEx", "CancelIoEx", "SafeHandle hFile, global::System.Threading.NativeOverlapped* lpOverlapped"],
     ];
 

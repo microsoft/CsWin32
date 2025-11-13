@@ -294,7 +294,6 @@ public partial class Generator
             // * Parameters that are [Reserved] are always omitted.
             // * Array parameters are projected as Span and empty/0 are the same as "null" at the ABI, so they also don't need to be omitted.
             // * If the parameter remains as pointer it won't be different for optional vs non-optional.
-            // * If it's an in parameter that is nullable (e.g. IsInterface), it already can be null so no need to omit it an overload.
             bool omittableOptionalParam = false;
             SyntaxToken externParamModifier = externParam.Modifiers.FirstOrDefault(m => m.Kind() is SyntaxKind.RefKeyword or SyntaxKind.OutKeyword);
             if (isOptional && !isReserved && isOut && !isArray

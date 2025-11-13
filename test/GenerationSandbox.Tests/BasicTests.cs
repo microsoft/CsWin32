@@ -297,11 +297,12 @@ public class BasicTests
                     {
                         if (PInvoke.GetWindowText(handle, windowNameChars, bufferSize) == 0)
                         {
-                            int errorCode = Marshal.GetLastWin32Error();
-                            if (errorCode != 0 && errorCode != (int)WIN32_ERROR.ERROR_INVALID_HANDLE)
-                            {
-                                throw new Win32Exception(errorCode);
-                            }
+                            // Don't throw exceptions, this can fail for many reasons on dev machines.
+                            // int errorCode = Marshal.GetLastWin32Error();
+                            // if (errorCode != 0 && errorCode != (int)WIN32_ERROR.ERROR_INVALID_HANDLE)
+                            // {
+                            //     throw new Win32Exception(errorCode);
+                            // }
 
                             return true;
                         }

@@ -446,14 +446,8 @@ public class COMTests : GeneratorTestBase
         this.GenerateApi("IContextCallback");
         MethodDeclarationSyntax method = this.FindGeneratedMethod("ContextCallback").Single(m => m.Parent is InterfaceDeclarationSyntax);
         ParameterSyntax parameter = method.ParameterList.Parameters[0];
-        Assert.Contains(
-            parameter.AttributeLists,
-            al => al.Attributes.Any(a =>
-            a is
-            {
-                Name: IdentifierNameSyntax { Identifier.ValueText: "MarshalAs" },
-                ArgumentList.Arguments: [{ Expression: MemberAccessExpressionSyntax { Name: IdentifierNameSyntax { Identifier.ValueText: "FunctionPtr" } } }],
-            }));
+        var paramType = Assert.IsType<QualifiedNameSyntax>(parameter.Type);
+        Assert.Equal("PFNCONTEXTCALL", paramType.Right.ToString());
     }
 
     [Fact]

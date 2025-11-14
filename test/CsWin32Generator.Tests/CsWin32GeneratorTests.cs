@@ -31,6 +31,9 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         var methods = idispatchType.SelectMany(t => t.DescendantNodes().OfType<MethodDeclarationSyntax>());
         var method = Assert.Single(methods, m => m.Identifier.Text == "GetTypeInfoCount");
         Assert.Contains("(out uint pctinfo)", method.ParameterList.ToString());
+
+        var invokeMethods = methods.Where(m => m.Identifier.Text == "Invoke");
+        Assert.All(invokeMethods, m => Assert.DoesNotContain("VARIANT_unmanaged", m.ParameterList.ToString()));
     }
 
     [Fact]

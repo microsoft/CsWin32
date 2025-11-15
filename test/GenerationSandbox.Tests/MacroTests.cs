@@ -180,4 +180,113 @@ public class MacroTests
             Assert.Equal((short)120, GET_WHEEL_DELTA_WPARAM((WPARAM)0x0078ABCD));
         }
     }
+
+    [Fact]
+    public void GET_APPCOMMAND_LPARAMTest()
+    {
+        unchecked
+        {
+            // Test extracting app command (HIWORD & ~FAPPCOMMAND_MASK)
+            // FAPPCOMMAND_MASK = 0xF000
+            Assert.Equal((short)0, GET_APPCOMMAND_LPARAM((LPARAM)(nint)0x00000000));
+            Assert.Equal((short)1, GET_APPCOMMAND_LPARAM((LPARAM)(nint)0x00010000));
+            Assert.Equal((short)0x0FFF, GET_APPCOMMAND_LPARAM((LPARAM)(nint)0x0FFF0000));
+
+            // Test with device bits set (should be masked out)
+            Assert.Equal((short)1, GET_APPCOMMAND_LPARAM((LPARAM)(nint)0x10010000));
+            Assert.Equal((short)1, GET_APPCOMMAND_LPARAM((LPARAM)(nint)0x20010000));
+            Assert.Equal((short)1, GET_APPCOMMAND_LPARAM((LPARAM)(nint)0xF0010000));
+        }
+    }
+
+    [Fact]
+    public void GET_DEVICE_LPARAMTest()
+    {
+        unchecked
+        {
+            // Test extracting device type (HIWORD & FAPPCOMMAND_MASK)
+            // FAPPCOMMAND_MASK = 0xF000
+            Assert.Equal((ushort)0x0000, GET_DEVICE_LPARAM((LPARAM)(nint)0x00000000));
+            Assert.Equal((ushort)0x1000, GET_DEVICE_LPARAM((LPARAM)(nint)0x10000000));
+            Assert.Equal((ushort)0x2000, GET_DEVICE_LPARAM((LPARAM)(nint)0x20000000));
+            Assert.Equal((ushort)0xF000, GET_DEVICE_LPARAM((LPARAM)(nint)0xF0000000));
+
+            // Test with app command bits set (should be masked out)
+            Assert.Equal((ushort)0x1000, GET_DEVICE_LPARAM((LPARAM)(nint)0x10FF0000));
+        }
+    }
+
+    [Fact]
+    public void GET_FLAGS_LPARAMTest()
+    {
+        unchecked
+        {
+            // Test extracting flags from low word
+            Assert.Equal((ushort)0x0000, GET_FLAGS_LPARAM((LPARAM)(nint)0x00000000));
+            Assert.Equal((ushort)0x0001, GET_FLAGS_LPARAM((LPARAM)(nint)0x00000001));
+            Assert.Equal((ushort)0xFFFF, GET_FLAGS_LPARAM((LPARAM)(nint)0x0000FFFF));
+            Assert.Equal((ushort)0x1234, GET_FLAGS_LPARAM((LPARAM)(nint)0x56781234));
+
+            // Test that high word is ignored
+            Assert.Equal((ushort)0xABCD, GET_FLAGS_LPARAM((LPARAM)(nint)0xFFFFABCD));
+        }
+    }
+
+    [Fact]
+    public void GET_KEYSTATE_LPARAMTest()
+    {
+        unchecked
+        {
+            // Test extracting key state from low word
+            Assert.Equal((ushort)0x0000, GET_KEYSTATE_LPARAM((LPARAM)(nint)0x00000000));
+            Assert.Equal((ushort)0x0001, GET_KEYSTATE_LPARAM((LPARAM)(nint)0x00000001));
+            Assert.Equal((ushort)0xFFFF, GET_KEYSTATE_LPARAM((LPARAM)(nint)0x0000FFFF));
+            Assert.Equal((ushort)0x0004, GET_KEYSTATE_LPARAM((LPARAM)(nint)0x12340004));
+
+            // Test that high word is ignored
+            Assert.Equal((ushort)0x0008, GET_KEYSTATE_LPARAM((LPARAM)(nint)0xFFFF0008));
+        }
+    }
+
+    [Fact]
+    public void GET_KEYSTATE_WPARAMTest()
+    {
+        unchecked
+        {
+            // Test extracting key state from low word of WPARAM
+            Assert.Equal((ushort)0x0000, GET_KEYSTATE_WPARAM((WPARAM)0x00000000));
+            Assert.Equal((ushort)0x0001, GET_KEYSTATE_WPARAM((WPARAM)0x00000001));
+            Assert.Equal((ushort)0xFFFF, GET_KEYSTATE_WPARAM((WPARAM)0x0000FFFF));
+            Assert.Equal((ushort)0x0008, GET_KEYSTATE_WPARAM((WPARAM)0x12340008));
+
+            // Test that high word is ignored
+            Assert.Equal((ushort)0x0004, GET_KEYSTATE_WPARAM((WPARAM)0xFFFF0004));
+        }
+    }
+
+    [Fact]
+    public void GET_NCHITTEST_WPARAMTest()
+    {
+        unchecked
+        {
+            // Test extracting hit-test value
+            Assert.Equal(0x00000000u, GET_NCHITTEST_WPARAM((WPARAM)0x00000000));
+            Assert.Equal(0x00000001u, GET_NCHITTEST_WPARAM((WPARAM)0x00000001));
+            Assert.Equal(0x0000FFFFu, GET_NCHITTEST_WPARAM((WPARAM)0x0000FFFF));
+            Assert.Equal(0x12345678u, GET_NCHITTEST_WPARAM((WPARAM)0x12345678));
+        }
+    }
+
+    [Fact]
+    public void GET_RAWINPUT_CODE_WPARAMTest()
+    {
+        unchecked
+        {
+            // Test extracting raw input code
+            Assert.Equal(0x00000000u, GET_RAWINPUT_CODE_WPARAM((WPARAM)0x00000000));
+            Assert.Equal(0x00000001u, GET_RAWINPUT_CODE_WPARAM((WPARAM)0x00000001));
+            Assert.Equal(0x0000FFFFu, GET_RAWINPUT_CODE_WPARAM((WPARAM)0x0000FFFF));
+            Assert.Equal(0xABCDEF12u, GET_RAWINPUT_CODE_WPARAM((WPARAM)0xABCDEF12));
+        }
+    }
 }

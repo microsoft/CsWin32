@@ -95,4 +95,65 @@ internal class PInvokeClassMacros
 	/// Learn more in <see href="https://learn.microsoft.com/windows/win32/inputdev/wm-mousewheel">the documentation for this API</see>.
 	/// </remarks>
 	internal static short GET_WHEEL_DELTA_WPARAM(global::Windows.Win32.Foundation.WPARAM wParam) => unchecked((short)HIWORD(unchecked((uint)(nuint)wParam)));
+
+	/// <summary>
+	/// Retrieves the application command from the specified <see cref="global::Windows.Win32.Foundation.LPARAM"/> value.
+	/// </summary>
+	/// <param name="lParam">The value to be converted.</param>
+	/// <returns>The application command.</returns>
+	/// <remarks>
+	/// Learn more in <see href="https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-get_appcommand_lparam">the documentation for this API</see>.
+	/// </remarks>
+	internal static short GET_APPCOMMAND_LPARAM(global::Windows.Win32.Foundation.LPARAM lParam) => unchecked((short)(HIWORD(unchecked((uint)(nint)lParam)) & ~0xF000));
+
+	/// <summary>
+	/// Retrieves the input device type from the specified <see cref="global::Windows.Win32.Foundation.LPARAM"/> value.
+	/// </summary>
+	/// <param name="lParam">The value to be converted.</param>
+	/// <returns>The input device type.</returns>
+	/// <remarks>
+	/// Learn more in <see href="https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-get_device_lparam">the documentation for this API</see>.
+	/// </remarks>
+	internal static ushort GET_DEVICE_LPARAM(global::Windows.Win32.Foundation.LPARAM lParam) => unchecked((ushort)(HIWORD(unchecked((uint)(nint)lParam)) & 0xF000));
+
+	/// <summary>
+	/// Retrieves the key state flags from the specified <see cref="global::Windows.Win32.Foundation.LPARAM"/> value.
+	/// </summary>
+	/// <param name="lParam">The value to be converted.</param>
+	/// <returns>The key state flags.</returns>
+	/// <remarks>
+	/// Learn more in <see href="https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-get_flags_lparam">the documentation for this API</see>.
+	/// </remarks>
+	internal static ushort GET_FLAGS_LPARAM(global::Windows.Win32.Foundation.LPARAM lParam) => LOWORD(unchecked((uint)(nint)lParam));
+
+	/// <summary>
+	/// Retrieves the key state from the specified <see cref="global::Windows.Win32.Foundation.LPARAM"/> value.
+	/// </summary>
+	/// <param name="lParam">The value to be converted.</param>
+	/// <returns>The key state.</returns>
+	/// <remarks>
+	/// Learn more in <see href="https://learn.microsoft.com/windows/win32/inputdev/wm-appcommand">the documentation for this API</see>.
+	/// </remarks>
+	internal static ushort GET_KEYSTATE_LPARAM(global::Windows.Win32.Foundation.LPARAM lParam) => LOWORD(unchecked((uint)(nint)lParam));
+
+	/// <summary>
+	/// Retrieves the key state from the specified <see cref="global::Windows.Win32.Foundation.WPARAM"/> value.
+	/// </summary>
+	/// <param name="wParam">The value to be converted.</param>
+	/// <returns>The key state.</returns>
+	internal static ushort GET_KEYSTATE_WPARAM(global::Windows.Win32.Foundation.WPARAM wParam) => LOWORD(unchecked((uint)(nuint)wParam));
+
+	/// <summary>
+	/// Retrieves the hit-test value from the specified <see cref="global::Windows.Win32.Foundation.WPARAM"/> value.
+	/// </summary>
+	/// <param name="wParam">The value to be converted.</param>
+	/// <returns>The hit-test value.</returns>
+	internal static uint GET_NCHITTEST_WPARAM(global::Windows.Win32.Foundation.WPARAM wParam) => unchecked((uint)(nuint)wParam);
+
+	/// <summary>
+	/// Retrieves the input code from the specified <see cref="global::Windows.Win32.Foundation.WPARAM"/> value.
+	/// </summary>
+	/// <param name="wParam">The value to be converted.</param>
+	/// <returns>The input code.</returns>
+	internal static uint GET_RAWINPUT_CODE_WPARAM(global::Windows.Win32.Foundation.WPARAM wParam) => unchecked((uint)(nuint)wParam);
 }

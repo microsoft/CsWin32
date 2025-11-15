@@ -1,4 +1,5 @@
-﻿ChoosePixelFormat
+﻿# Testing
+ChoosePixelFormat
 CoCreateInstance
 CreateDispatcherQueueController
 CreateFile
@@ -60,3 +61,14 @@ WM_HOTKEY
 WNDCLASSEXW
 WNDCLASSW
 WTHelperProvDataFromStateData
+IWbemServices
+IWbemLocator
+IWbemClassObject
+IWbemContext
+IWbemCallResult
+WBEM_GENERIC_FLAG_TYPE
+WbemLocator
+CLSCTX
+CoSetProxyBlanket
+RPC_C_AUTHN_LEVEL
+RPC_C_IMP_LEVEL

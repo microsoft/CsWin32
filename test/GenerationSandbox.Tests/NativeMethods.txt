@@ -74,3 +74,14 @@ WINDOW_STYLE
 WNDCLASSEXW
 WPARAM
 WriteFile
+IWbemServices
+IWbemLocator
+IWbemClassObject
+IWbemContext
+IWbemCallResult
+WBEM_GENERIC_FLAG_TYPE
+WbemLocator
+CLSCTX
+CoSetProxyBlanket
+RPC_C_AUTHN_LEVEL
+RPC_C_IMP_LEVEL

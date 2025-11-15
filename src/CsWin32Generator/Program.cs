@@ -503,7 +503,7 @@ public partial class Program
             {
                 lineNumber++;
                 string name = line.Trim();
-                if (string.IsNullOrWhiteSpace(name) || name.StartsWith("//", StringComparison.Ordinal) || name.StartsWith("-", StringComparison.Ordinal))
+                if (string.IsNullOrWhiteSpace(name) || name.StartsWith("#", StringComparison.Ordinal) || name.StartsWith("//", StringComparison.Ordinal) || name.StartsWith("-", StringComparison.Ordinal))
                 {
                     skippedCount++;
                     continue;

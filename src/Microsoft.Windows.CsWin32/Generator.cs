@@ -1192,7 +1192,9 @@ public partial class Generator : IGenerator, IDisposable
                     throw new GenerationFailedException("Failed to parse template.");
                 }
 
-                specialDeclaration = specialDeclaration.WithAdditionalAnnotations(new SyntaxAnnotation(NamespaceContainerAnnotation, subNamespace));
+                specialDeclaration = specialDeclaration
+                    .WithAdditionalAnnotations(new SyntaxAnnotation(NamespaceContainerAnnotation, subNamespace))
+                    .AddAttributeLists(AttributeList().AddAttributes(GeneratedCodeAttribute));
 
                 this.volatileCode.AddSpecialType(specialName, specialDeclaration);
             });

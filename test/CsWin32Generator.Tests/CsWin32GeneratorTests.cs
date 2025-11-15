@@ -542,4 +542,21 @@ using global::System.Runtime.Versioning;
             Assert.Empty(methodsWithAttribute);
         }
     }
+
+    [Theory, CombinatorialData]
+    public async Task CrossWinMD_IInspectable(
+        [CombinatorialValues([false, true])] bool allowMarshaling,
+        [CombinatorialValues([null, "TestPInvoke"])] string pinvokeClassName,
+        [CombinatorialValues(["net8.0", "net9.0"])] string tfm)
+    {
+        this.compilation = this.starterCompilations[tfm];
+        this.win32winmdPaths = [.. this.win32winmdPaths!, CustomIInspectableMetadataPath];
+        this.nativeMethodsJsonOptions = new NativeMethodsJsonOptions
+        {
+            AllowMarshaling = allowMarshaling,
+            ClassName = pinvokeClassName,
+        };
+        this.nativeMethods.Add("ITestDerivedFromInspectable");
+        await this.InvokeGeneratorAndCompile($"{nameof(this.CrossWinMD_IInspectable)}_{tfm}_{allowMarshaling}_{pinvokeClassName ?? "null"}");
+    }
 }

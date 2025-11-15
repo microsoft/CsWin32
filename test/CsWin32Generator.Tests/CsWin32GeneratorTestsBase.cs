@@ -21,6 +21,12 @@ public enum TestOptions
     DoNotFailOnDiagnostics = 2,
 }
 
+public record NativeMethodsJsonOptions(
+    bool? AllowMarshaling = null,
+    bool? EmitSingleFile = null,
+    bool? Public = null,
+    string? ClassName = null);
+
 public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
 {
     protected bool fullGeneration;
@@ -35,6 +41,7 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
     protected int expectedExitCode = 0;
     protected string? tfm;
     protected string[]? win32winmdPaths;
+    protected NativeMethodsJsonOptions? nativeMethodsJsonOptions;
 
     public CsWin32GeneratorTestsBase(ITestOutputHelper logger)
         : base(logger)
@@ -97,6 +104,16 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
         {
             nativeMethodsTxtPath = Path.Combine(this.GetTestCaseOutputDirectory(testCase), "NativeMethods.txt");
             File.WriteAllLines(nativeMethodsTxtPath, this.nativeMethods);
+        }
+
+        if (this.nativeMethodsJsonOptions is NativeMethodsJsonOptions generatorOptions)
+        {
+            string nativeMethodsJsonPath = Path.Combine(this.GetTestCaseOutputDirectory(testCase), "NativeMethods.json");
+            var jsonOptions = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+            jsonOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault;
+            string jsonContent = System.Text.Json.JsonSerializer.Serialize(generatorOptions, jsonOptions);
+            File.WriteAllText(nativeMethodsJsonPath, jsonContent);
+            this.nativeMethodsJson = Path.GetFileName(nativeMethodsJsonPath);
         }
 
         Directory.CreateDirectory(outputPath);

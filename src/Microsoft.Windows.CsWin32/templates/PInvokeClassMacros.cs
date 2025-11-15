@@ -58,4 +58,41 @@ internal class PInvokeClassMacros
 	/// <param name="value">The 32-bit value.</param>
 	/// <returns>The high-order word.</returns>
 	internal static ushort HIWORD(uint value) => unchecked((ushort)(value >> 16));
+
+	/// <summary>
+	/// Retrieves the signed x-coordinate from the specified <see cref="global::Windows.Win32.Foundation.LPARAM"/> value.
+	/// </summary>
+	/// <param name="lParam">The value to be converted.</param>
+	/// <returns>The signed x-coordinate.</returns>
+	/// <remarks>
+	/// Learn more in <see href="https://learn.microsoft.com/windows/win32/api/windowsx/nf-windowsx-get_x_lparam">the documentation for this API</see>.
+	/// </remarks>
+	internal static int GET_X_LPARAM(global::Windows.Win32.Foundation.LPARAM lParam) => unchecked((int)(short)LOWORD(unchecked((uint)(nint)lParam)));
+
+	/// <summary>
+	/// Retrieves the signed y-coordinate from the specified <see cref="global::Windows.Win32.Foundation.LPARAM"/> value.
+	/// </summary>
+	/// <param name="lParam">The value to be converted.</param>
+	/// <returns>The signed y-coordinate.</returns>
+	/// <remarks>
+	/// Learn more in <see href="https://learn.microsoft.com/windows/win32/api/windowsx/nf-windowsx-get_y_lparam">the documentation for this API</see>.
+	/// </remarks>
+	internal static int GET_Y_LPARAM(global::Windows.Win32.Foundation.LPARAM lParam) => unchecked((int)(short)HIWORD(unchecked((uint)(nint)lParam)));
+
+	/// <summary>
+	/// Retrieves a <see cref="global::Windows.Win32.Foundation.POINTS"/> structure from the specified <see cref="global::Windows.Win32.Foundation.LPARAM"/> value.
+	/// </summary>
+	/// <param name="lParam">The value to be converted.</param>
+	/// <returns>A POINTS structure containing the x and y coordinates.</returns>
+	internal static global::Windows.Win32.Foundation.POINTS MAKEPOINTS(global::Windows.Win32.Foundation.LPARAM lParam) => new global::Windows.Win32.Foundation.POINTS { x = unchecked((short)LOWORD(unchecked((uint)(nint)lParam))), y = unchecked((short)HIWORD(unchecked((uint)(nint)lParam))) };
+
+	/// <summary>
+	/// Retrieves the signed wheel delta value from the specified <see cref="global::Windows.Win32.Foundation.WPARAM"/> value.
+	/// </summary>
+	/// <param name="wParam">The value to be converted.</param>
+	/// <returns>The signed wheel delta value.</returns>
+	/// <remarks>
+	/// Learn more in <see href="https://learn.microsoft.com/windows/win32/inputdev/wm-mousewheel">the documentation for this API</see>.
+	/// </remarks>
+	internal static short GET_WHEEL_DELTA_WPARAM(global::Windows.Win32.Foundation.WPARAM wParam) => unchecked((short)HIWORD(unchecked((uint)(nuint)wParam)));
 }

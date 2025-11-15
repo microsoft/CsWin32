@@ -43,8 +43,6 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
     protected string[]? win32winmdPaths;
     protected NativeMethodsJsonOptions? nativeMethodsJsonOptions;
 
-    protected static readonly string CustomIInspectableMetadataPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "ExternalMetadata", "CustomIInspectable.winmd");
-
     public CsWin32GeneratorTestsBase(ITestOutputHelper logger)
         : base(logger)
     {
@@ -108,11 +106,12 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
             File.WriteAllLines(nativeMethodsTxtPath, this.nativeMethods);
         }
 
-        if (this.nativeMethodsJsonOptions is NativeMethodsJsonOptions options)
+        if (this.nativeMethodsJsonOptions is NativeMethodsJsonOptions generatorOptions)
         {
             string nativeMethodsJsonPath = Path.Combine(this.GetTestCaseOutputDirectory(testCase), "NativeMethods.json");
             var jsonOptions = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
-            string jsonContent = System.Text.Json.JsonSerializer.Serialize(options, jsonOptions);
+            jsonOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault;
+            string jsonContent = System.Text.Json.JsonSerializer.Serialize(generatorOptions, jsonOptions);
             File.WriteAllText(nativeMethodsJsonPath, jsonContent);
             this.nativeMethodsJson = Path.GetFileName(nativeMethodsJsonPath);
         }

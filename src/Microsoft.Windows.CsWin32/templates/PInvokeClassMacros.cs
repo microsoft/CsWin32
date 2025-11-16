@@ -158,5 +158,5 @@ internal class PInvokeClassMacros
 	/// </summary>
 	/// <param name="wParam">The value to be converted.</param>
 	/// <returns>The input code.</returns>
-	internal static uint GET_RAWINPUT_CODE_WPARAM(global::Windows.Win32.Foundation.WPARAM wParam) => unchecked((uint)(nuint)wParam);
+	internal static uint GET_RAWINPUT_CODE_WPARAM(global::Windows.Win32.Foundation.WPARAM wParam) => unchecked((uint)(nuint)wParam) & 0xff;
 }

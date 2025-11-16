@@ -285,11 +285,15 @@ public class MacroTests
     {
         unchecked
         {
-            // Test extracting raw input code
-            Assert.Equal(0x00000000u, GET_RAWINPUT_CODE_WPARAM((WPARAM)0x00000000));
-            Assert.Equal(0x00000001u, GET_RAWINPUT_CODE_WPARAM((WPARAM)0x00000001));
-            Assert.Equal(0x0000FFFFu, GET_RAWINPUT_CODE_WPARAM((WPARAM)0x0000FFFF));
-            Assert.Equal(0xABCDEF12u, GET_RAWINPUT_CODE_WPARAM((WPARAM)0xABCDEF12));
+            // Test extracting raw input code (lowest 8 bits only)
+            Assert.Equal(0x00u, GET_RAWINPUT_CODE_WPARAM((WPARAM)0x00000000));
+            Assert.Equal(0x01u, GET_RAWINPUT_CODE_WPARAM((WPARAM)0x00000001));
+            Assert.Equal(0xFFu, GET_RAWINPUT_CODE_WPARAM((WPARAM)0x0000FFFF));
+            Assert.Equal(0x12u, GET_RAWINPUT_CODE_WPARAM((WPARAM)0xABCDEF12));
+
+            // Test that only lowest 8 bits are extracted
+            Assert.Equal(0xABu, GET_RAWINPUT_CODE_WPARAM((WPARAM)0x123456AB));
+            Assert.Equal(0x00u, GET_RAWINPUT_CODE_WPARAM((WPARAM)0xFFFFFF00));
         }
     }
 }

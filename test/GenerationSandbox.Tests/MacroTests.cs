@@ -269,11 +269,14 @@ public class MacroTests
     {
         unchecked
         {
-            // Test extracting hit-test value
-            Assert.Equal(0x00000000u, GET_NCHITTEST_WPARAM((WPARAM)0x00000000));
-            Assert.Equal(0x00000001u, GET_NCHITTEST_WPARAM((WPARAM)0x00000001));
-            Assert.Equal(0x0000FFFFu, GET_NCHITTEST_WPARAM((WPARAM)0x0000FFFF));
-            Assert.Equal(0x12345678u, GET_NCHITTEST_WPARAM((WPARAM)0x12345678));
+            // Test extracting hit-test value from low word
+            Assert.Equal((short)0, GET_NCHITTEST_WPARAM((WPARAM)0x00000000));
+            Assert.Equal((short)1, GET_NCHITTEST_WPARAM((WPARAM)0x00000001));
+            Assert.Equal((short)-1, GET_NCHITTEST_WPARAM((WPARAM)0x0000FFFF));
+            Assert.Equal((short)0x1234, GET_NCHITTEST_WPARAM((WPARAM)0x56781234));
+
+            // Test that high word is ignored
+            Assert.Equal((short)0x5678, GET_NCHITTEST_WPARAM((WPARAM)0xFFFF5678));
         }
     }
 

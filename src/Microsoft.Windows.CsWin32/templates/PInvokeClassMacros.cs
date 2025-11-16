@@ -148,7 +148,10 @@ internal class PInvokeClassMacros
 	/// </summary>
 	/// <param name="wParam">The value to be converted.</param>
 	/// <returns>The hit-test value.</returns>
-	internal static uint GET_NCHITTEST_WPARAM(global::Windows.Win32.Foundation.WPARAM wParam) => unchecked((uint)(nuint)wParam);
+	/// <remarks>
+	/// Learn more in <see href="https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-get_nchittest_wparam">the documentation for this API</see>.
+	/// </remarks>
+	internal static short GET_NCHITTEST_WPARAM(global::Windows.Win32.Foundation.WPARAM wParam) => unchecked((short)LOWORD(unchecked((uint)(nuint)wParam)));
 
 	/// <summary>
 	/// Retrieves the input code from the specified <see cref="global::Windows.Win32.Foundation.WPARAM"/> value.

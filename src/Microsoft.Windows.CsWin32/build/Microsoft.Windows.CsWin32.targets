@@ -45,8 +45,8 @@
           Outputs="$(CsWin32GeneratorGeneratedFilesList);@(CsWin32GeneratorPreviousOutputs);$(CsWin32GeneratorSucceededMarker)"
           Condition="'$(CsWin32RunAsBuildTask)'=='true' and '@(ProjectionMetadataWinmd)'!=''">
     <ItemGroup>
-      <CsWin32NativeMethodsTxt Include="%(AdditionalFiles.FullPath)" Condition="'%(FileName)%(Extension)'=='NativeMethods.txt'" />
-      <CsWin32NativeMethodsJson Include="%(AdditionalFiles.FullPath)" Condition="'%(FileName)%(Extension)'=='NativeMethods.json'" />
+      <CsWin32NativeMethodsTxt Include="%(AdditionalFiles.FullPath)" Condition="$([System.String]::new('%(FileName)%(Extension)').EndsWith('NativeMethods.txt'))" />
+      <CsWin32NativeMethodsJson Include="%(AdditionalFiles.FullPath)" Condition="$([System.String]::new('%(FileName)%(Extension)').EndsWith('NativeMethods.json'))" />
     </ItemGroup>
 
     <PropertyGroup>

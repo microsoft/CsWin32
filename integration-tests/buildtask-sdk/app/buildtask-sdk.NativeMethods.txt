@@ -1,0 +1,2 @@
+﻿// This file tests that $(ProjectName).NativeMethods.txt is automatically picked up.
+GetForegroundWindow

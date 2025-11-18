@@ -17,7 +17,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Windows.WinmdGenerator" GeneratePathProperty="true" Version="0.63.31-preview" />
-    <PackageReference Include="Microsoft.Windows.SDK.CPP" GeneratePathProperty="true" Version="10.0.22621.3233"/>
+    <PackageReference Include="Microsoft.Windows.SDK.CPP" GeneratePathProperty="true" Version="10.0.26100.7175"/>
     <PackageReference Include="Microsoft.Windows.SDK.Win32Metadata" GeneratePathProperty="true" Version="63.0.31-preview"/>
   </ItemGroup>
   <PropertyGroup>

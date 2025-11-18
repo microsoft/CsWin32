@@ -5,6 +5,6 @@
     <PackageVersion Update="Microsoft.Windows.SDK.cpp" Version="10.0.22621.3233" />
     <PackageVersion Update="Microsoft.Windows.SDK.cpp.arm64" Version="10.0.22621.3233" />
     <PackageVersion Update="Microsoft.Windows.SDK.cpp.x64" Version="10.0.22621.3233" />
-    <PackageVersion Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.22621.3233" />
+    <PackageVersion Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.7175" />
   </ItemGroup>
 </Project>

@@ -66,8 +66,8 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
     [Fact]
     public async Task CheckITypeCompIsUnmanaged()
     {
-        // Request DebugPropertyInfo and we should see ITypeComp_unmanaged get generated because it has an embedded managed field
-        this.nativeMethods.Add("DebugPropertyInfo");
+        // Request BINDPTR and we should see ITypeComp_unmanaged get generated because it has an embedded managed field
+        this.nativeMethods.Add("BINDPTR");
         await this.InvokeGeneratorAndCompileFromFact();
 
         var iface = this.FindGeneratedType("ITypeComp_unmanaged");

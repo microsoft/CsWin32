@@ -185,7 +185,7 @@ public partial class SourceGenerator : ISourceGenerator
 
         GeneratorOptions? options;
         AdditionalText? nativeMethodsJsonFile = context.AdditionalFiles
-            .FirstOrDefault(af => string.Equals(Path.GetFileName(af.Path), NativeMethodsJsonAdditionalFileName, StringComparison.OrdinalIgnoreCase));
+            .FirstOrDefault(af => Path.GetFileName(af.Path).EndsWith(NativeMethodsJsonAdditionalFileName, StringComparison.OrdinalIgnoreCase));
         if (nativeMethodsJsonFile is object)
         {
             string optionsJson = nativeMethodsJsonFile.GetText(context.CancellationToken)!.ToString();
@@ -205,7 +205,7 @@ public partial class SourceGenerator : ISourceGenerator
         }
 
         IEnumerable<AdditionalText> nativeMethodsTxtFiles = context.AdditionalFiles
-            .Where(af => string.Equals(Path.GetFileName(af.Path), NativeMethodsTxtAdditionalFileName, StringComparison.OrdinalIgnoreCase));
+            .Where(af => Path.GetFileName(af.Path).EndsWith(NativeMethodsTxtAdditionalFileName, StringComparison.OrdinalIgnoreCase));
         if (!nativeMethodsTxtFiles.Any())
         {
             return;

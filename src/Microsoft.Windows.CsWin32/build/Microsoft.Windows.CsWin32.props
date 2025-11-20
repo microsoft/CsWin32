@@ -16,6 +16,13 @@
     <AdditionalFiles Include="NativeMethods.txt" Condition="Exists('NativeMethods.txt')">
       <Generator Condition="'$(CsWin32RunAsBuildTask)'=='true'">MSBuild:Compile</Generator>
     </AdditionalFiles>
+    <AdditionalFiles Include="$(ProjectName).NativeMethods.json" Condition="Exists('$(ProjectName).NativeMethods.json')">
+      <!-- Add this metadata to trigger a design-time build to re-run the generator for CsWin32RunAsBuildTask=true scenarios. -->
+      <Generator Condition="'$(CsWin32RunAsBuildTask)'=='true'">MSBuild:Compile</Generator>
+    </AdditionalFiles>
+    <AdditionalFiles Include="$(ProjectName).NativeMethods.txt" Condition="Exists('$(ProjectName).NativeMethods.txt')">
+      <Generator Condition="'$(CsWin32RunAsBuildTask)'=='true'">MSBuild:Compile</Generator>
+    </AdditionalFiles>
   </ItemGroup>
 
   <ItemGroup>

@@ -3,7 +3,7 @@
     <CodeAnalysisVersionForAnalyzers>4.11.0</CodeAnalysisVersionForAnalyzers>
   </PropertyGroup>
   <ItemGroup>
-    <!-- These versions carefully chosen to support VS 2022 Update 14. -->
+    <!-- These versions carefully chosen to support VS 2022 Update 14 and also run down to .NET 8. -->
     <PackageVersion Update="Microsoft.CodeAnalysis.Common" Version="$(CodeAnalysisVersionForAnalyzers)" />
     <PackageVersion Update="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="$(CodeAnalysisVersionForAnalyzers)" />
     <PackageVersion Update="Microsoft.CodeAnalysis.CSharp" Version="$(CodeAnalysisVersionForAnalyzers)" />

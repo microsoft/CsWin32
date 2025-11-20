@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-The .NET 8 SDK or Visual Studio 2019 Update 11 (16.11).
+The .NET 8 SDK or Visual Studio 2022 Update 14 (16.14).
 
 WPF projects have [additional requirements](https://github.com/microsoft/CsWin32/issues/7).
 

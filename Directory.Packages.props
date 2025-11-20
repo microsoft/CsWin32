@@ -41,7 +41,7 @@
     <PackageVersion Include="Xunit.Combinatorial" Version="2.0.24" />
     <PackageVersion Include="Xunit.Assert" Version="2.9.3" />
   </ItemGroup>
-  <Import Project="Directory.Packages.Analyzers.props" Condition="'$(IsTestProject)'!='true'" />
+  <Import Project="Directory.Packages.Analyzers.props" Condition="'$(IsTestProject)'!='true' and '$(MSBuildProjectName)'!='CsWin32Generator'" />
   <ItemGroup Label="Library.Template">
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.0.0" />
     <PackageVersion Include="Microsoft.VisualStudio.Internal.MicroBuild.NonShipping" Version="$(MicroBuildVersion)" />

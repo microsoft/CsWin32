@@ -565,4 +565,20 @@ using global::System.Runtime.Versioning;
         this.nativeMethods.Add("ITestDerivedFromInspectable");
         await this.InvokeGeneratorAndCompile($"{nameof(this.CrossWinMD_IInspectable)}_{tfm}_{allowMarshaling}_{pinvokeClassName ?? "null"}");
     }
+
+    [Fact]
+    public async Task TestComVariantReturnValue()
+    {
+        // IUIAutomationElement has methods that return VARIANT, they should be translated to ComVariant
+        this.nativeMethods.Add("IUIAutomationElement");
+        await this.InvokeGeneratorAndCompileFromFact();
+
+        var iface = this.FindGeneratedType("IUIAutomationElement");
+        Assert.NotEmpty(iface);
+
+        // And when generating IDispatch explicitly it should have "real" methods on it.
+        var methods = iface.SelectMany(t => t.DescendantNodes().OfType<MethodDeclarationSyntax>());
+        var method = Assert.Single(methods, m => m.Identifier.Text == "GetCachedPropertyValue");
+        Assert.Contains("ComVariant", method.ReturnType.ToString());
+    }
 }

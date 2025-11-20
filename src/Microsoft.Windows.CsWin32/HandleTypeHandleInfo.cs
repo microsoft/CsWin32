@@ -159,7 +159,7 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
                 return new TypeSyntaxAndMarshaling(IdentifierName(specialName));
             }
         }
-        else if (useComSourceGenerators && !inputs.AllowMarshaling && (simpleName is "VARIANT" or "VARIANT_unmanaged") && this.Generator.CanUseComVariant)
+        else if (useComSourceGenerators && (simpleName is "VARIANT" or "VARIANT_unmanaged") && this.Generator.CanUseComVariant)
         {
             return new TypeSyntaxAndMarshaling(QualifiedName(ParseName("global::System.Runtime.InteropServices.Marshalling"), IdentifierName("ComVariant")));
         }

@@ -569,7 +569,7 @@ public partial class Generator : IGenerator, IDisposable
             return;
         }
 
-        foreach (KeyValuePair<string, MethodDeclarationSyntax> macro in Win32SdkMacros)
+        foreach (KeyValuePair<string, MethodDeclarationSyntax> macro in Win32SdkMacros.OrderBy(x => x.Key))
         {
             cancellationToken.ThrowIfCancellationRequested();
 

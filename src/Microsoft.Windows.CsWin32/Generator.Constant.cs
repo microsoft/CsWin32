@@ -8,7 +8,10 @@ public partial class Generator
     /// <inheritdoc/>
     public void GenerateAllConstants(CancellationToken cancellationToken)
     {
-        foreach (FieldDefinitionHandle fieldDefHandle in this.MetadataIndex.Apis.SelectMany(api => this.Reader.GetTypeDefinition(api).GetFields()))
+        var fields = this.MetadataIndex.Apis.SelectMany(api => this.Reader.GetTypeDefinition(api).GetFields());
+        var sortedFields = fields.OrderBy(fieldDefHandle => this.Reader.GetString(this.Reader.GetFieldDefinition(fieldDefHandle).Name));
+
+        foreach (FieldDefinitionHandle fieldDefHandle in sortedFields)
         {
             cancellationToken.ThrowIfCancellationRequested();
 

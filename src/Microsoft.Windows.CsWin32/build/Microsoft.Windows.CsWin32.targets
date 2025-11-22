@@ -93,5 +93,14 @@
       <FileWrites Include="@(CsWin32GeneratorOutputs)" />
       <FileWrites Include="$(CsWin32GeneratorGeneratedFilesList)" Condition="Exists('$(CsWin32GeneratorGeneratedFilesList)')" />
     </ItemGroup>
+
   </Target>
+
+  <!-- Add the items to AdditionalDesignTimeBuildInput as well so that DesignTimeBuilds re-run when NativeMethods.txt contents change.
+       VS seems to evaluate this directly (not looking at the DesignTimeBuild outputs) and so we can't do it in a Target.
+       And VS doesn't support conditions on FileName or things like that in a top-level ItemGroup so just include all AdditionalFiles 
+       as ContentSensitive. Worst case the DesignTimeBuild runs on files other than NativeMethods.txt. -->
+  <ItemGroup Condition="'$(CsWin32RunAsBuildTask)'=='true'">
+    <AdditionalDesignTimeBuildInput Include="@(AdditionalFiles)" ContentSensitive="true" />
+  </ItemGroup>
 </Project>

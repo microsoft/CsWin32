@@ -538,7 +538,7 @@ public partial class Generator : IGenerator, IDisposable
             {
                 foreach (KeyValuePair<string, MethodDefinitionHandle> method in metadata.Methods)
                 {
-                    this.RequestExternMethod(method.Value);
+                    this.RequestExternMethod(method.Value, explicitlyRequestedName: null);
                 }
 
                 foreach (KeyValuePair<string, TypeDefinitionHandle> type in metadata.Types)

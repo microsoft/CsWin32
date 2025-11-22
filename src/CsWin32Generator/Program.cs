@@ -553,6 +553,11 @@ public partial class Program
                             break;
                     }
                 }
+                catch (SkippedAnsiFunctionException)
+                {
+                    // Explicitly requested ANSI function skipped due to WideCharOnly; warn instead of error.
+                    this.ReportWarning($"The ANSI function '{name}' will not be generated because WideCharOnly is set to true", nativeMethodsTxt.FullName, lineNumber);
+                }
                 catch (PlatformIncompatibleException)
                 {
                     this.ReportError($"API '{name}' is not available for the target platform", nativeMethodsTxt.FullName, lineNumber);

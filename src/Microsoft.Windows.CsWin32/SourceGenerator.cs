@@ -143,6 +143,15 @@ public partial class SourceGenerator : ISourceGenerator
         "Configuration",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor SkippedAnsiFunction = new(
+        "PInvoke011",
+        "Skipped ANSI Function",
+        "The ANSI function \"{0}\" will not be generated because WideCharOnly is set to true",
+        "Configuration",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
 #pragma warning restore CS1591 // Missing XML comment for publicly visible type or member
 
     private const string InputProjectionErrorId = "PInvoke010";
@@ -317,6 +326,10 @@ public partial class SourceGenerator : ISourceGenerator
                     if (Generator.IsPlatformCompatibleException(ex))
                     {
                         context.ReportDiagnostic(Diagnostic.Create(CpuArchitectureIncompatibility, location));
+                    }
+                    else if (ex is SkippedAnsiFunctionException skippedAnsi)
+                    {
+                        context.ReportDiagnostic(Diagnostic.Create(SkippedAnsiFunction, location, skippedAnsi.FunctionName));
                     }
                     else
                     {

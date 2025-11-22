@@ -97,4 +97,26 @@ public class SourceGeneratorTests(ITestOutputHelper logger)
             },
         }.RunAsync(TestContext.Current.CancellationToken);
     }
+
+    [Fact]
+    public async Task RequestAnsiWithWideCharDefault()
+    {
+        await new VerifyCS.Test(logger)
+        {
+            NativeMethodsTxt = "MessageBoxA",
+            NativeMethodsJson = @"{ ""WideCharOnly"": true }",
+            TestState =
+            {
+                GeneratedSources =
+                {
+                    // Nothing generated, but no exceptions thrown that would lead Roslyn to disable the source generator in the IDE either.
+                },
+                ExpectedDiagnostics =
+                {
+                    new DiagnosticResult(SourceGenerator.SkippedAnsiFunction.Id, DiagnosticSeverity.Warning)
+                        .WithSpan("NativeMethods.txt", 1, 1, 1, 12).WithArguments("MessageBoxA"),
+                },
+            },
+        }.RunAsync(TestContext.Current.CancellationToken);
+    }
 }

@@ -23,7 +23,7 @@ public partial class Generator
                 {
                     this.volatileCode.GenerationTransaction(delegate
                     {
-                        this.RequestExternMethod(methodHandle);
+                        this.RequestExternMethod(methodHandle, explicitlyRequestedName: null);
                     });
                 }
                 catch (GenerationFailedException ex) when (IsPlatformCompatibleException(ex))
@@ -79,7 +79,7 @@ public partial class Generator
                     {
                         this.volatileCode.GenerationTransaction(delegate
                         {
-                            this.RequestExternMethod(methodHandle);
+                            this.RequestExternMethod(methodHandle, explicitlyRequestedName: null);
                         });
                     }
                     catch (GenerationFailedException ex) when (IsPlatformCompatibleException(ex))
@@ -114,7 +114,7 @@ public partial class Generator
 
             this.volatileCode.GenerationTransaction(delegate
             {
-                this.RequestExternMethod(methodDefHandle);
+                this.RequestExternMethod(methodDefHandle, explicitlyRequestedName: possiblyQualifiedName);
             });
 
             string methodNamespace = this.GetMethodNamespace(methodDef);
@@ -126,7 +126,7 @@ public partial class Generator
         return false;
     }
 
-    internal void RequestExternMethod(MethodDefinitionHandle methodDefinitionHandle)
+    internal void RequestExternMethod(MethodDefinitionHandle methodDefinitionHandle, string? explicitlyRequestedName)
     {
         if (methodDefinitionHandle.IsNil)
         {
@@ -148,12 +148,12 @@ public partial class Generator
             }
         }
 
-        this.volatileCode.GenerateMethod(methodDefinitionHandle, () => this.DeclareExternMethod(methodDefinitionHandle));
+        this.volatileCode.GenerateMethod(methodDefinitionHandle, () => this.DeclareExternMethod(methodDefinitionHandle, explicitlyRequestedName));
     }
 
     private string GetMethodNamespace(MethodDefinition methodDef) => this.Reader.GetString(this.Reader.GetTypeDefinition(methodDef.GetDeclaringType()).Namespace);
 
-    private void DeclareExternMethod(MethodDefinitionHandle methodDefinitionHandle)
+    private void DeclareExternMethod(MethodDefinitionHandle methodDefinitionHandle, string? explicitlyRequestedName)
     {
         MethodDefinition methodDefinition = this.Reader.GetMethodDefinition(methodDefinitionHandle);
         MethodImport import = methodDefinition.GetImport();
@@ -169,6 +169,12 @@ public partial class Generator
             if (this.WideCharOnly && IsAnsiFunction(methodName))
             {
                 // Skip Ansi functions.
+                if (methodName == explicitlyRequestedName)
+                {
+                    // Throw a specific exception so callers can surface a warning/diagnostic.
+                    throw new SkippedAnsiFunctionException(explicitlyRequestedName);
+                }
+
                 return;
             }
 

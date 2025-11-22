@@ -79,7 +79,7 @@ public partial class Generator
 
             this.volatileCode.GenerationTransaction(delegate
             {
-                this.RequestExternMethod(releaseMethodHandle.Value);
+                this.RequestExternMethod(releaseMethodHandle.Value, explicitlyRequestedName: null);
             });
 
             // Collect all the known invalid values for this handle.

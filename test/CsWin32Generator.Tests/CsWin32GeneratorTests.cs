@@ -114,6 +114,15 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
     }
 
     [Fact]
+    public async Task RequestAnsiWithWideCharDefault()
+    {
+        this.nativeMethods.Add("MessageBoxA");
+        this.platform = "AnyCPU";
+        await this.InvokeGeneratorAndCompile(nameof(this.RequestAnsiWithWideCharDefault), TestOptions.GeneratesNothing);
+        Assert.Contains("The ANSI function 'MessageBoxA' will not be generated because WideCharOnly is set to true", this.Logger.Output);
+    }
+
+    [Fact]
     public async Task AllFriendlyOverloadsHaveTheSameAttributes()
     {
         this.nativeMethods.Add("SHGetFileInfo");

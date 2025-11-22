@@ -15,3 +15,4 @@ PInvoke007 | Functionality | Error | SourceGenerator
 PInvoke008 | Configuration | Error | SourceGenerator
 PInvoke009 | Configuration | Warning | SourceGenerator
 PInvoke010 | Configuration | Error | SourceGenerator
+PInvoke011 | Configuration | Warning | SourceGenerator

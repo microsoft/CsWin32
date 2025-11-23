@@ -82,9 +82,9 @@ public partial class Generator
 
         internal IEnumerable<MethodDeclarationSyntax> InlineArrayIndexerExtensions => this.inlineArrayIndexerExtensionsMembers;
 
-        internal IEnumerable<FieldDeclarationSyntax> TopLevelFields => from field in this.fieldsToSyntax.Values
-                                                                       where field.FieldType is null || !this.types.ContainsKey((field.FieldType.Value, false))
-                                                                       select field.FieldDeclaration;
+        internal IEnumerable<FieldDeclarationSyntax> TopLevelFields => from @field in this.fieldsToSyntax.Values
+                                                                       where @field.FieldType is null || !this.types.ContainsKey((@field.FieldType.Value, false))
+                                                                       select @field.FieldDeclaration;
 
         internal IEnumerable<IGrouping<string, MemberDeclarationSyntax>> MembersByModule
         {

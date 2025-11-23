@@ -1,6 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>net9.0-windows10.0.22621.0</TargetFrameworks>
+    <TargetFrameworks>net9.0-windows10.0.22621.0;net10.0-windows10.0.22621.0</TargetFrameworks>
   </PropertyGroup>
 
   <Import Project="..\GenerationSandbox.props" />
@@ -12,7 +12,7 @@
 
   <!-- For browsing, add the .cs files as None items -->
   <ItemGroup>
-    <None Include="$(IntermediateOutputPath)Generated\CsWin32\*.cs" LinkBase="Generated" />
-    <None Include="$(IntermediateOutputPath)Generated\CsWin32\*.txt" LinkBase="Generated" />
+    <None Include="$(IntermediateOutputPath)Generated\CsWin32\*.cs" LinkBase="Generated\$(TargetFramework)" />
+    <None Include="$(IntermediateOutputPath)Generated\CsWin32\*.txt" LinkBase="Generated\$(TargetFramework)" />
   </ItemGroup>
 </Project>

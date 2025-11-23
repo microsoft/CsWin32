@@ -61,6 +61,7 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
             "netstandard2.0",
             "net8.0",
             "net9.0",
+            "net10.0"
         };
 
     public static Platform[] SpecificCpuArchitectures =>
@@ -91,6 +92,7 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
         this.starterCompilations.Add("net8.0-x86", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net80, Platform.X86));
         this.starterCompilations.Add("net8.0-x64", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net80, Platform.X64));
         this.starterCompilations.Add("net9.0", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net90));
+        //this.starterCompilations.Add("net10.0", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net100));
 
         foreach (string tfm in this.starterCompilations.Keys)
         {

@@ -19,10 +19,13 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)'=='net472'">
     <PackageReference Include="Microsoft.Win32.Registry" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="System.Runtime.CompilerServices.Unsafe" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>

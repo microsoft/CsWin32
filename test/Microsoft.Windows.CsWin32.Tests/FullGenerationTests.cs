@@ -53,6 +53,7 @@ public class FullGenerationTests : GeneratorTestBase
     }
 
     [Theory, PairwiseData]
+    [Trait("TestCategory", "FailsInCloudTest")] // these take ~4GB of memory to run.
     public void ExternMethods(
         MarshalingOptions marshaling,
         bool useIntPtrForComOutPtr,

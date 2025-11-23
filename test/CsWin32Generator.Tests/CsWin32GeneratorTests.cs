@@ -302,7 +302,14 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
 
     [Theory]
     [MemberData(nameof(TestApiData))]
-    public async Task TestGenerateApi(string api, string purpose, TestOptions options = TestOptions.None, string? nativeMethodsJson = null)
+    public async Task TestGenerateApiNet10(string api, string purpose, TestOptions options = TestOptions.None, string? nativeMethodsJson = null)
+    {
+        await this.TestGenerateApiWorker(api, purpose, options, "net10.0", nativeMethodsJson);
+    }
+
+    [Theory]
+    [MemberData(nameof(TestApiData))]
+    public async Task TestGenerateApiNet9(string api, string purpose, TestOptions options = TestOptions.None, string? nativeMethodsJson = null)
     {
         await this.TestGenerateApiWorker(api, purpose, options, "net9.0", nativeMethodsJson);
     }
@@ -316,7 +323,13 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
 
     private async Task TestGenerateApiWorker(string api, string purpose, TestOptions options, string tfm, string? nativeMethodsJson)
     {
-        LanguageVersion langVersion = (tfm == "net8.0") ? LanguageVersion.CSharp12 : LanguageVersion.CSharp13;
+        LanguageVersion langVersion = tfm switch
+        {
+            "net8.0" => LanguageVersion.CSharp12,
+            "net9.0" => LanguageVersion.CSharp13,
+            "net10.0" => LanguageVersion.CSharp14,
+            _ => throw new InvalidOperationException(),
+        };
 
         this.tfm = tfm;
         this.compilation = this.starterCompilations[tfm];

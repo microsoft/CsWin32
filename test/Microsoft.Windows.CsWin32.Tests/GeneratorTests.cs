@@ -67,7 +67,7 @@ public class GeneratorTests : GeneratorTestBase
         this.AssertNoDiagnostics();
 
         var generatedMethod = this.FindGeneratedMethod(methodName).Single();
-        if (tfm is "net8.0" or "net9.0")
+        if (tfm is "net8.0" or "net9.0" or "net10.0")
         {
             Assert.Contains(generatedMethod.AttributeLists, al => IsAttributePresent(al, "SupportedOSPlatform"));
         }

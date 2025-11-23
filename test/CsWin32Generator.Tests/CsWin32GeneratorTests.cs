@@ -566,7 +566,7 @@ using global::System.Runtime.Versioning;
     public async Task CrossWinMD_IInspectable(
         [CombinatorialValues([false, true])] bool allowMarshaling,
         [CombinatorialValues([null, "TestPInvoke"])] string pinvokeClassName,
-        [CombinatorialValues(["net8.0", "net9.0"])] string tfm)
+        [CombinatorialValues(["net8.0", "net9.0", "net10.0"])] string tfm)
     {
         this.compilation = this.starterCompilations[tfm];
         this.win32winmdPaths = [.. this.win32winmdPaths!, CustomIInspectableMetadataPath];

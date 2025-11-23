@@ -194,7 +194,7 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
             syntaxTrees.Add(syntaxTree);
         }
 
-        bool canDisableRuntimeMarshalling = true;
+        bool canDisableRuntimeMarshalling = this.tfm is not "net472";
 
         if (canDisableRuntimeMarshalling)
         {

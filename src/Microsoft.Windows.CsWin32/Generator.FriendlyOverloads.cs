@@ -354,8 +354,11 @@ public partial class Generator
                 bool hasOut = externParam.Modifiers.Any(SyntaxKind.OutKeyword);
                 arguments[paramIndex] = arguments[paramIndex].WithRefKindKeyword(TokenWithSpace(hasOut ? SyntaxKind.OutKeyword : SyntaxKind.RefKeyword));
             }
-            else if (isOut && !isIn && !isReleaseMethod && parameterTypeInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo pointedElementInfo } && pointedElementInfo.Generator.TryGetHandleReleaseMethod(pointedElementInfo.Handle, paramAttributes, out string? outReleaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, outReleaseMethod))
+            else if (isOut && !isIn && !isReleaseMethod && parameterTypeInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo pointedElementInfo } &&
+                pointedElementInfo.Generator.TryGetHandleReleaseMethod(pointedElementInfo.Handle, paramAttributes, out string? outReleaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, outReleaseMethod) &&
+                (memorySize is null) && !isArray)
             {
+                // NOTE: We don't handle scenarios where the parameter is [MemorySize] annotated (e.g. EnumProcessModules) or [NativeArrayInfo] (e.g. ITypeInfo.GetNames)
                 if (this.RequestSafeHandle(outReleaseMethod) is TypeSyntax safeHandleType)
                 {
                     signatureChanged = true;

@@ -207,6 +207,8 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         ["IWbemServices", "GetObject", "this winmdroot.System.Wmi.IWbemServices @this, SafeHandle strObjectPath, winmdroot.System.Wmi.WBEM_GENERIC_FLAG_TYPE lFlags, winmdroot.System.Wmi.IWbemContext pCtx, ref winmdroot.System.Wmi.IWbemClassObject ppObject, ref winmdroot.System.Wmi.IWbemCallResult ppCallResult"],
         // NativeOverlapped should be pointer even when not [Retained] as in CancelIoEx.
         ["CancelIoEx", "CancelIoEx", "SafeHandle hFile, global::System.Threading.NativeOverlapped* lpOverlapped"],
+        ["ITypeInfo", "GetNames", "this winmdroot.System.Com.ITypeInfo @this, int memid, Span<winmdroot.Foundation.BSTR> rgBstrNames, out uint pcNames"],
+        ["EnumProcessModules", "EnumProcessModules", "SafeHandle hProcess, Span<byte> lphModule, out uint lpcbNeeded"],
     ];
 
     [Theory]

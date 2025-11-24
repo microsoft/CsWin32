@@ -264,6 +264,12 @@ public partial class Program
             options.ComInterop.UseComSourceGenerators = true;
         }
 
+        // Set EmitSingleFile to true by default if unspecified.
+        // We put everything in a single file to avoid needing to kick design-time-build to re-run to pick up the newly generated files.
+        // We _could_ make this happen using the AdditionalDesignTimeBuildInput item group but that makes design time build re-run each time
+        // NativeMethods.txt changes and we want to avoid triggering DTBs if possible.
+        options.EmitSingleFile ??= true;
+
         this.VerboseWriteLine($"Loaded generator options. AllowMarshaling: {options.AllowMarshaling}, ClassName: {options.ClassName}");
 
         // Validate metadata files exist
@@ -361,14 +367,7 @@ public partial class Program
         if (nativeMethodsJson is object)
         {
             string optionsJson = File.ReadAllText(nativeMethodsJson.FullName);
-            GeneratorOptions options = JsonSerializer.Deserialize(optionsJson, GeneratorOptionsSerializerContext.Default.GeneratorOptions) ?? new GeneratorOptions();
-
-            // Set EmitSingleFile to true by default if unspecified. Need to check the Json manually because the property is not nullable.
-            // We put everything in a single file to avoid needing to kick design-time-build to re-run to pick up the newly generated files.
-            // We _could_ make this happen using the AdditionalDesignTimeBuildInput item group but that makes design time build re-run each time
-            // NativeMethods.txt changes and we want to avoid triggering DTBs if possible.
-            options.EmitSingleFile ??= true;
-            return options;
+            return JsonSerializer.Deserialize(optionsJson, GeneratorOptionsSerializerContext.Default.GeneratorOptions) ?? new GeneratorOptions();
         }
 
         return new();

@@ -55,6 +55,12 @@ internal static class MyReferenceAssemblies
 
     internal static class Net
     {
+        private static readonly Lazy<ReferenceAssemblies> LazyNet100 = new(() =>
+            new(
+                targetFramework: "net10.0",
+                referenceAssemblyPackage: new PackageIdentity("Microsoft.NETCore.App.Ref", "10.0.0"),
+                referenceAssemblyPath: Path.Combine("ref", "net10.0")));
+
         internal static readonly ReferenceAssemblies Net80 = ReferenceAssemblies.Net.Net80
             .WithNuGetConfigFilePath(NuGetConfigPath)
             .AddPackages([.. AdditionalLegacyPackagesNET, .. AdditionalModernPackages]);
@@ -62,6 +68,10 @@ internal static class MyReferenceAssemblies
         internal static readonly ReferenceAssemblies Net90 = ReferenceAssemblies.Net.Net90
             .WithNuGetConfigFilePath(NuGetConfigPath)
             .AddPackages([.. AdditionalLegacyPackagesNET, .. AdditionalModernPackages]);
+
+        internal static ReferenceAssemblies Net100 => LazyNet100.Value
+              .WithNuGetConfigFilePath(NuGetConfigPath)
+              .AddPackages([.. AdditionalLegacyPackagesNET, .. AdditionalModernPackages]);
     }
 
     internal static class ExtraPackages

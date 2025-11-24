@@ -50,6 +50,7 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
             new object[] { "netstandard2.0" },
             new object[] { "net8.0" },
             new object[] { "net9.0" },
+            new object[] { "net10.0" },
         };
 
     public static IEnumerable<object[]> TFMDataNoNetFx35MemberData => TFMDataNoNetFx35.Select(tfm => new object[] { tfm }).ToArray();
@@ -61,6 +62,7 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
             "netstandard2.0",
             "net8.0",
             "net9.0",
+            "net10.0",
         };
 
     public static Platform[] SpecificCpuArchitectures =>
@@ -91,6 +93,7 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
         this.starterCompilations.Add("net8.0-x86", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net80, Platform.X86));
         this.starterCompilations.Add("net8.0-x64", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net80, Platform.X64));
         this.starterCompilations.Add("net9.0", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net90));
+        this.starterCompilations.Add("net10.0", await this.CreateCompilationAsync(MyReferenceAssemblies.Net.Net100));
 
         foreach (string tfm in this.starterCompilations.Keys)
         {
@@ -115,6 +118,11 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
             if (tfm.StartsWith("net9"))
             {
                 AddSymbols("NET9_0_OR_GREATER");
+            }
+
+            if (tfm.StartsWith("net10"))
+            {
+                AddSymbols("NET10_0_OR_GREATER");
             }
 
             // Guarantee we have at least an empty list of symbols for each TFM.
@@ -178,6 +186,7 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
     {
         "net8.0" => LanguageVersion.CSharp12,
         "net9.0" => LanguageVersion.CSharp13,
+        "net10.0" => LanguageVersion.CSharp14,
         _ => null,
     };
 

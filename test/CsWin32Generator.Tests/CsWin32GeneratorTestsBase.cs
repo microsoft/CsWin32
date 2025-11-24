@@ -194,11 +194,7 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
             syntaxTrees.Add(syntaxTree);
         }
 
-        bool canDisableRuntimeMarshalling = this.tfm is null ||
-            this.tfm.StartsWith("net6.0", StringComparison.OrdinalIgnoreCase) ||
-            this.tfm.StartsWith("net7.0", StringComparison.OrdinalIgnoreCase) ||
-            this.tfm.StartsWith("net8.0", StringComparison.OrdinalIgnoreCase) ||
-            this.tfm.StartsWith("net9.0", StringComparison.OrdinalIgnoreCase);
+        bool canDisableRuntimeMarshalling = this.tfm is not "net472";
 
         if (canDisableRuntimeMarshalling)
         {
@@ -268,14 +264,17 @@ using System.Runtime.CompilerServices;
         var analyzerDiagnostics = await compilationWithAnalyzers.GetAllDiagnosticsAsync();
 
         var filteredAnalyzerDiagnostics = analyzerDiagnostics.Where(d =>
-            d.Descriptor.Id switch {
+            d.Descriptor.Id switch
+            {
                 "CA1016" or
                 "SA1517" or
                 "SA1633" or
                 "CS1701" or
                 "CA1418" or // Ignore bad platforms coming from win32metadata like "windowsserver2008"
                 "CS0465" // IMFSinkWriterEx has a "Finalize" method
-                => false, _ => true, });
+                => false,
+                _ => true,
+            });
 
         allDiagnostics.AddRange(filteredAnalyzerDiagnostics);
 

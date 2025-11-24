@@ -20,10 +20,10 @@ public record GeneratorOptions
     public string ClassName { get; set; } = "PInvoke";
 
     /// <summary>
-    /// Gets or sets a value indicating whether to emit a single source file as opposed to types spread across many files.
+    /// Gets or sets a value indicating whether to emit a single source file as opposed to types spread across many files, 'null' indicates to use the recommended default for the environment.
     /// </summary>
-    /// <value>The default value is <see langword="false" />.</value>
-    public bool EmitSingleFile { get; set; }
+    /// <value>The default value is <see langword="null" />.</value>
+    public bool? EmitSingleFile { get; set; }
 
     /// <summary>
     /// Gets or sets a value indicating whether to expose the generated APIs publicly (as opposed to internally).

@@ -775,7 +775,7 @@ public partial class Generator : IGenerator, IDisposable
                         : nsContents.ToArray());
         }
 
-        if (this.options.EmitSingleFile)
+        if (this.options.EmitSingleFile == true)
         {
             CompilationUnitSyntax file = CompilationUnit()
                 .AddMembers(starterNamespace.AddMembers(GroupMembersByNamespace(this.NamespaceMembers).ToArray()))
@@ -862,7 +862,7 @@ public partial class Generator : IGenerator, IDisposable
 
         if (this.compilation?.GetTypeByMetadataName("System.Reflection.AssemblyMetadataAttribute") is not null)
         {
-            if (this.options.EmitSingleFile)
+            if (this.options.EmitSingleFile == true)
             {
                 KeyValuePair<string, CompilationUnitSyntax> originalEntry = normalizedResults.Single();
                 normalizedResults[originalEntry.Key] = originalEntry.Value.WithLeadingTrivia().AddAttributeLists(CsWin32StampAttribute).WithLeadingTrivia(originalEntry.Value.GetLeadingTrivia());

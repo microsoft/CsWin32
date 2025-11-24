@@ -5,7 +5,6 @@ using System.CommandLine;
 using System.CommandLine.Parsing;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -362,18 +361,13 @@ public partial class Program
         if (nativeMethodsJson is object)
         {
             string optionsJson = File.ReadAllText(nativeMethodsJson.FullName);
-            JsonNode? root = JsonNode.Parse(optionsJson);
-            GeneratorOptions options = JsonSerializer.Deserialize(root, GeneratorOptionsSerializerContext.Default.GeneratorOptions) ?? new GeneratorOptions();
+            GeneratorOptions options = JsonSerializer.Deserialize(optionsJson, GeneratorOptionsSerializerContext.Default.GeneratorOptions) ?? new GeneratorOptions();
 
             // Set EmitSingleFile to true by default if unspecified. Need to check the Json manually because the property is not nullable.
             // We put everything in a single file to avoid needing to kick design-time-build to re-run to pick up the newly generated files.
             // We _could_ make this happen using the AdditionalDesignTimeBuildInput item group but that makes design time build re-run each time
             // NativeMethods.txt changes and we want to avoid triggering DTBs if possible.
-            if (root is null || root["emitSingleFile"] is null)
-            {
-                options.EmitSingleFile = true;
-            }
-
+            options.EmitSingleFile ??= true;
             return options;
         }
 

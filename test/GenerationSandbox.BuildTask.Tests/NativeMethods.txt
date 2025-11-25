@@ -72,3 +72,7 @@ CLSCTX
 CoSetProxyBlanket
 RPC_C_AUTHN_LEVEL
 RPC_C_IMP_LEVEL
+InitializeProcThreadAttributeList
+UpdateProcThreadAttribute
+DeleteProcThreadAttributeList 
+PROC_THREAD_ATTRIBUTE_MACHINE_TYPE

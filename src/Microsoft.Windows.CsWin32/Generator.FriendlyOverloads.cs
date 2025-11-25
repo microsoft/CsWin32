@@ -22,6 +22,13 @@ public partial class Generator
                 ConditionalAccessExpression(span, IdentifierName(nameof(Span<int>.Length))),
                 LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)))) : MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, span, IdentifierName(nameof(Span<int>.Length)));
 
+    private static ExpressionSyntax GetIsSpanEmpty(ExpressionSyntax span, bool isRefType) => isRefType ?
+        ParenthesizedExpression(BinaryExpression(
+                SyntaxKind.EqualsExpression,
+                span,
+                LiteralExpression(SyntaxKind.NullLiteralExpression))) :
+        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, span, IdentifierName(nameof(Span<int>.IsEmpty)));
+
     private ExpressionSyntax GetIntPtrFromTypeDef(ExpressionSyntax typedefValue, TypeHandleInfo typeDefTypeInfo)
     {
         ExpressionSyntax intPtrValue = typedefValue;
@@ -1017,31 +1024,54 @@ public partial class Generator
                         }
                     }
 
+                    ExpressionSyntax sizeArgExpression;
                     if (lengthParamUsedBy.TryGetValue(countParamIndex.Value, out int userIndex))
                     {
+                        bool origNameIsRefType = remainsRefType;
+                        bool otherUserNameIsRefType = parameters[userIndex].Type is ArrayTypeSyntax;
+
                         // Multiple array parameters share a common 'length' parameter.
                         // Since we're making this a little less obvious, add a quick if check in the helper method
                         // that enforces that all such parameters have a common span length.
                         ExpressionSyntax otherUserName = IdentifierName(parameters[userIndex].Identifier.ValueText);
+
+                        // Only enforce length equality when both spans are non-empty.
+                        ExpressionSyntax otherNotEmpty = PrefixUnaryExpression(SyntaxKind.LogicalNotExpression, GetIsSpanEmpty(otherUserName, otherUserNameIsRefType));
+                        ExpressionSyntax origNotEmpty = PrefixUnaryExpression(SyntaxKind.LogicalNotExpression, GetIsSpanEmpty(origName, origNameIsRefType));
+                        ExpressionSyntax lengthsNotEqual = BinaryExpression(
+                            SyntaxKind.NotEqualsExpression,
+                            GetSpanLength(otherUserName, otherUserNameIsRefType),
+                            GetSpanLength(origName, origNameIsRefType));
+                        ExpressionSyntax condition = BinaryExpression(SyntaxKind.LogicalAndExpression, BinaryExpression(SyntaxKind.LogicalAndExpression, otherNotEmpty, origNotEmpty), lengthsNotEqual);
                         leadingStatements.Add(IfStatement(
-                            BinaryExpression(
-                                SyntaxKind.NotEqualsExpression,
-                                GetSpanLength(otherUserName, parameters[userIndex].Type is ArrayTypeSyntax),
-                                GetSpanLength(origName, remainsRefType)),
+                            condition,
                             ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentException))).WithArgumentList(ArgumentList()))));
+
+                        // Also we need to compound the size argument so that if one of the spans was empty, we pass the non-zero one.
+                        sizeArgExpression = arguments[countParamIndex.Value].Expression;
+                        if (sizeArgExpression is CastExpressionSyntax { Expression: ExpressionSyntax castedExpression })
+                        {
+                            // Unwrap the cast so we can simplify the logic
+                            sizeArgExpression = castedExpression;
+                        }
+
+                        sizeArgExpression = ParenthesizedExpression(ConditionalExpression(GetIsSpanEmpty(origName, origNameIsRefType), sizeArgExpression, GetSpanLength(origName, origNameIsRefType)));
                     }
                     else
                     {
                         lengthParamUsedBy.Add(countParamIndex.Value, paramIndex);
+
+                        sizeArgExpression = GetSpanLength(origName, remainsRefType);
                     }
 
-                    ExpressionSyntax sizeArgExpression = GetSpanLength(origName, remainsRefType);
+                    // Always wrap the sizeArgExpression in CastExpression if needed.
                     if (!(parameters[countParamIndex.Value].Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.IntKeyword } }))
                     {
                         sizeArgExpression = CastExpression(parameters[countParamIndex.Value].Type!, sizeArgExpression);
                     }
 
                     arguments[countParamIndex.Value] = Argument(sizeArgExpression);
+
                     return true;
                 }
 

@@ -171,7 +171,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
 
     public static IList<object[]> TestSignatureData => [
         ["IMFMediaKeySession", "get_KeySystem", "winmdroot.Foundation.BSTR* keySystem"],
-        ["AddPrinterW", "AddPrinter", "winmdroot.Foundation.PWSTR pName, uint Level, Span<byte> pPrinter"],
+        ["AddPrinterW", "AddPrinter", "string pName, uint Level, Span<byte> pPrinter"],
         // MemorySized-struct param should have Span<byte> parameter.
         ["SHGetFileInfo", "SHGetFileInfo", "string pszPath, winmdroot.Storage.FileSystem.FILE_FLAGS_AND_ATTRIBUTES dwFileAttributes, Span<byte> psfi, winmdroot.UI.Shell.SHGFI_FLAGS uFlags"],
         // MemorySized-struct param should also have a version with `ref struct` parameter.

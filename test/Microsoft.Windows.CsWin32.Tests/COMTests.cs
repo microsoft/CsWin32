@@ -404,8 +404,11 @@ public class COMTests : GeneratorTestBase
     [Fact]
     public void ReferencesToStructWithFlexibleArrayAreAlwaysPointers()
     {
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { FriendlyOverloads = DefaultTestGeneratorOptions.FriendlyOverloads with { IncludePointerOverloads = true } });
         this.GenerateApi("IAMLine21Decoder");
-        Assert.All(this.FindGeneratedMethod("SetOutputFormat"), m => Assert.IsType<PointerTypeSyntax>(m.ParameterList.Parameters[0].Type));
+
+        // At least one of the methods should take pointers.
+        Assert.Contains(this.FindGeneratedMethod("SetOutputFormat"), m => m.ParameterList.Parameters[0].Type is PointerTypeSyntax);
 
         // Assert that the 'unmanaged' declaration of the struct is the *only* declaration.
         Assert.Single(this.FindGeneratedType("BITMAPINFO"));

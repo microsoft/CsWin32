@@ -209,6 +209,8 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         ["CancelIoEx", "CancelIoEx", "SafeHandle hFile, global::System.Threading.NativeOverlapped* lpOverlapped"],
         ["ITypeInfo", "GetNames", "this winmdroot.System.Com.ITypeInfo @this, int memid, Span<winmdroot.Foundation.BSTR> rgBstrNames, out uint pcNames"],
         ["EnumProcessModules", "EnumProcessModules", "SafeHandle hProcess, Span<byte> lphModule, out uint lpcbNeeded"],
+        ["AdjustTokenPrivileges", "AdjustTokenPrivileges", "SafeHandle TokenHandle, winmdroot.Foundation.BOOL DisableAllPrivileges, Span<byte> NewState, Span<byte> PreviousState, out uint ReturnLength"],
+        ["IMAPIStatus", "FlushQueues", "nuint ulUIParam, ReadOnlySpan<byte> lpTargetTransport, uint ulFlags"],
     ];
 
     [Theory]

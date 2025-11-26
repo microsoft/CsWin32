@@ -78,8 +78,11 @@ public class ExternMethodTests : GeneratorTestBase
     [Fact]
     public void ReferencesToStructWithFlexibleArrayAreAlwaysPointers()
     {
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { FriendlyOverloads = DefaultTestGeneratorOptions.FriendlyOverloads with { IncludePointerOverloads = true } });
         this.GenerateApi("CreateDIBSection");
-        Assert.All(this.FindGeneratedMethod("CreateDIBSection"), m => Assert.IsType<PointerTypeSyntax>(m.ParameterList.Parameters[1].Type));
+
+        // At least one of the methods should take pointers.
+        Assert.Contains(this.FindGeneratedMethod("CreateDIBSection"), m => m.ParameterList.Parameters[1].Type is PointerTypeSyntax);
 
         // Assert that the 'unmanaged' declaration of the struct is the *only* declaration.
         Assert.Single(this.FindGeneratedType("BITMAPINFO"));

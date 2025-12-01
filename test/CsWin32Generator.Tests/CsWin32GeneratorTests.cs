@@ -172,12 +172,10 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
     [Fact]
     public async Task DelegatesGetStructsGenerated()
     {
-        this.nativeMethods.Add("SetTimer");
+        this.nativeMethods.Add("TIMERPROC");
         await this.InvokeGeneratorAndCompileFromFact();
 
         var timerProcType = Assert.Single(this.FindGeneratedType("TIMERPROC"));
-        var setTimerMethod = Assert.Single(this.FindGeneratedMethod("SetTimer"), m => m.AttributeLists.Any(attributeList => attributeList.Attributes.Any(attr => attr.Name.ToString().Contains("LibraryImport"))));
-        Assert.EndsWith("TIMERPROC", setTimerMethod.ParameterList.Parameters[3].Type?.ToString());
     }
 
     public static IList<object[]> TestSignatureData => [

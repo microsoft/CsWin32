@@ -176,9 +176,22 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
         {
             return new TypeSyntaxAndMarshaling(PredefinedType(Token(SyntaxKind.ObjectKeyword)), marshalAs, null);
         }
+        else if ((!inputs.AllowMarshaling || useComSourceGenerators) && isDelegate && inputs.Generator is object && !Generator.IsUntypedDelegate(delegateDefinition.Generator.Reader, delegateDefinition.Definition))
+        {
+            // We would like to offer function pointers wrapped in structs (similar to the managed marshalling experience) but that
+            // makes them worse to work with. See https://github.com/dotnet/roslyn/issues/81234 and https://github.com/microsoft/CsWin32/issues/1542.
+            // If that ever gets better in C#, we can revisit this. If devs request the delegate by name (e.g. WNDPROC) then we will
+            // generate the struct and it does implicitly cast down to the function pointer.
+            return new TypeSyntaxAndMarshaling(inputs.Generator.FunctionPointer(delegateDefinition));
+        }
         else
         {
             this.RequestTypeGeneration(this.GetContext(inputs));
+        }
+
+        if (isDelegate)
+        {
+            marshalAs = new(UnmanagedType.FunctionPtr);
         }
 
         TypeSyntax syntax = isInterface && (!inputs.AllowMarshaling || isNonCOMConformingInterface)

@@ -4,7 +4,6 @@
 #pragma warning disable IDE0005
 #pragma warning disable SA1201, SA1512, SA1005, SA1507, SA1515, SA1403, SA1402, SA1411, SA1300, SA1313, SA1134, SA1307, SA1308, SA1202
 
-using Microsoft.Win32.SafeHandles;
 using System.ComponentModel;
 using System.Net.NetworkInformation;
 using System.Runtime.CompilerServices;
@@ -12,6 +11,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
 using System.Runtime.Versioning;
 using System.Threading.Tasks;
+using Microsoft.Win32.SafeHandles;
 using Windows.System;
 using Windows.UI.Composition;
 using Windows.Win32;
@@ -138,7 +138,7 @@ public partial class COMTests
                 WNDCLASSEXW wc = new()
                 {
                     cbSize = (uint)sizeof(WNDCLASSEXW),
-                    lpfnWndProc = new(&WndProc),
+                    lpfnWndProc = &WndProc,
                     lpszClassName = className,
                 };
                 var atom = PInvoke.RegisterClassEx(in wc);

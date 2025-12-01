@@ -31,6 +31,9 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         var methods = idispatchType.SelectMany(t => t.DescendantNodes().OfType<MethodDeclarationSyntax>());
         var method = Assert.Single(methods, m => m.Identifier.Text == "GetTypeInfoCount");
         Assert.Contains("(out uint pctinfo)", method.ParameterList.ToString());
+
+        var invokeMethods = methods.Where(m => m.Identifier.Text == "Invoke");
+        Assert.All(invokeMethods, m => Assert.DoesNotContain("VARIANT_unmanaged", m.ParameterList.ToString()));
     }
 
     [Fact]
@@ -63,8 +66,8 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
     [Fact]
     public async Task CheckITypeCompIsUnmanaged()
     {
-        // Request DebugPropertyInfo and we should see ITypeComp_unmanaged get generated because it has an embedded managed field
-        this.nativeMethods.Add("DebugPropertyInfo");
+        // Request BINDPTR and we should see ITypeComp_unmanaged get generated because it has an embedded managed field
+        this.nativeMethods.Add("BINDPTR");
         await this.InvokeGeneratorAndCompileFromFact();
 
         var iface = this.FindGeneratedType("ITypeComp_unmanaged");
@@ -179,7 +182,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
 
     public static IList<object[]> TestSignatureData => [
         ["IMFMediaKeySession", "get_KeySystem", "winmdroot.Foundation.BSTR* keySystem"],
-        ["AddPrinterW", "AddPrinter", "winmdroot.Foundation.PWSTR pName, uint Level, Span<byte> pPrinter"],
+        ["AddPrinterW", "AddPrinter", "string pName, uint Level, Span<byte> pPrinter"],
         // MemorySized-struct param should have Span<byte> parameter.
         ["SHGetFileInfo", "SHGetFileInfo", "string pszPath, winmdroot.Storage.FileSystem.FILE_FLAGS_AND_ATTRIBUTES dwFileAttributes, Span<byte> psfi, winmdroot.UI.Shell.SHGFI_FLAGS uFlags"],
         // MemorySized-struct param should also have a version with `ref struct` parameter.
@@ -208,10 +211,15 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         ["DeviceIoControl", "DeviceIoControl", "SafeHandle hDevice, uint dwIoControlCode, ReadOnlySpan<byte> lpInBuffer, Span<byte> lpOutBuffer, out uint lpBytesReturned, global::System.Threading.NativeOverlapped* lpOverlapped"],
         ["DeviceIoControl", "DeviceIoControl", "SafeHandle hDevice, uint dwIoControlCode, ReadOnlySpan<byte> lpInBuffer, Span<byte> lpOutBuffer, out uint lpBytesReturned, global::System.Threading.NativeOverlapped* lpOverlapped", true, "NativeMethods.IncludePointerOverloads.json"],
         ["NtQueryObject", "NtQueryObject", "global::Windows.Win32.Foundation.HANDLE Handle, winmdroot.Foundation.OBJECT_INFORMATION_CLASS ObjectInformationClass, Span<byte> ObjectInformation, out uint ReturnLength"],
-        // ["IWbemServices", "GetObject", "winmdroot.Foundation.BSTR, winmdroot.System.Wmi.WBEM_GENERIC_FLAG_TYPE, winmdroot.System.Wmi.IWbemContext, out winmdroot.System.Wmi.IWbemClassObject ppObject, out winmdroot.System.Wmi.IWbemCallResult ppCallResult"],
         ["ITypeInfo", "GetFuncDesc", "uint index, out winmdroot.System.Com.FUNCDESC_unmanaged* ppFuncDesc"],
         ["ITsSbResourcePluginStore", "EnumerateTargets", "winmdroot.Foundation.BSTR FarmName, winmdroot.Foundation.BSTR EnvName, winmdroot.System.RemoteDesktop.TS_SB_SORT_BY sortByFieldId, winmdroot.Foundation.BSTR sortyByPropName, ref uint pdwCount, out winmdroot.System.RemoteDesktop.ITsSbTarget_unmanaged** pVal"],
         ["MFEnumDeviceSources", "MFEnumDeviceSources", "winmdroot.Media.MediaFoundation.IMFAttributes pAttributes, out winmdroot.Media.MediaFoundation.IMFActivate_unmanaged** pppSourceActivate, out uint pcSourceActivate"],
+        // Check that GetObject optional parameters got an overload with marshalled interface types
+        ["IWbemServices", "GetObject", "this winmdroot.System.Wmi.IWbemServices @this, SafeHandle strObjectPath, winmdroot.System.Wmi.WBEM_GENERIC_FLAG_TYPE lFlags, winmdroot.System.Wmi.IWbemContext pCtx, ref winmdroot.System.Wmi.IWbemClassObject ppObject, ref winmdroot.System.Wmi.IWbemCallResult ppCallResult"],
+        // NativeOverlapped should be pointer even when not [Retained] as in CancelIoEx.
+        ["CancelIoEx", "CancelIoEx", "SafeHandle hFile, global::System.Threading.NativeOverlapped* lpOverlapped"],
+        ["ITypeInfo", "GetNames", "this winmdroot.System.Com.ITypeInfo @this, int memid, Span<winmdroot.Foundation.BSTR> rgBstrNames, out uint pcNames"],
+        ["EnumProcessModules", "EnumProcessModules", "SafeHandle hProcess, Span<byte> lphModule, out uint lpcbNeeded"],
     ];
 
     [Theory]
@@ -307,7 +315,14 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
 
     [Theory]
     [MemberData(nameof(TestApiData))]
-    public async Task TestGenerateApi(string api, string purpose, TestOptions options = TestOptions.None, string? nativeMethodsJson = null)
+    public async Task TestGenerateApiNet10(string api, string purpose, TestOptions options = TestOptions.None, string? nativeMethodsJson = null)
+    {
+        await this.TestGenerateApiWorker(api, purpose, options, "net10.0", nativeMethodsJson);
+    }
+
+    [Theory]
+    [MemberData(nameof(TestApiData))]
+    public async Task TestGenerateApiNet9(string api, string purpose, TestOptions options = TestOptions.None, string? nativeMethodsJson = null)
     {
         await this.TestGenerateApiWorker(api, purpose, options, "net9.0", nativeMethodsJson);
     }
@@ -321,7 +336,13 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
 
     private async Task TestGenerateApiWorker(string api, string purpose, TestOptions options, string tfm, string? nativeMethodsJson)
     {
-        LanguageVersion langVersion = (tfm == "net8.0") ? LanguageVersion.CSharp12 : LanguageVersion.CSharp13;
+        LanguageVersion langVersion = tfm switch
+        {
+            "net8.0" => LanguageVersion.CSharp12,
+            "net9.0" => LanguageVersion.CSharp13,
+            "net10.0" => LanguageVersion.CSharp14,
+            _ => throw new InvalidOperationException(),
+        };
 
         this.tfm = tfm;
         this.compilation = this.starterCompilations[tfm];
@@ -552,5 +573,38 @@ using global::System.Runtime.Versioning;
         {
             Assert.Empty(methodsWithAttribute);
         }
+    }
+
+    [Theory, CombinatorialData]
+    public async Task CrossWinMD_IInspectable(
+        [CombinatorialValues([false, true])] bool allowMarshaling,
+        [CombinatorialValues([null, "TestPInvoke"])] string pinvokeClassName,
+        [CombinatorialValues(["net8.0", "net9.0", "net10.0"])] string tfm)
+    {
+        this.compilation = this.starterCompilations[tfm];
+        this.win32winmdPaths = [.. this.win32winmdPaths!, CustomIInspectableMetadataPath];
+        this.nativeMethodsJsonOptions = new NativeMethodsJsonOptions
+        {
+            AllowMarshaling = allowMarshaling,
+            ClassName = pinvokeClassName,
+        };
+        this.nativeMethods.Add("ITestDerivedFromInspectable");
+        await this.InvokeGeneratorAndCompile($"{nameof(this.CrossWinMD_IInspectable)}_{tfm}_{allowMarshaling}_{pinvokeClassName ?? "null"}");
+    }
+
+    [Fact]
+    public async Task TestComVariantReturnValue()
+    {
+        // IUIAutomationElement has methods that return VARIANT, they should be translated to ComVariant
+        this.nativeMethods.Add("IUIAutomationElement");
+        await this.InvokeGeneratorAndCompileFromFact();
+
+        var iface = this.FindGeneratedType("IUIAutomationElement");
+        Assert.NotEmpty(iface);
+
+        // And when generating IDispatch explicitly it should have "real" methods on it.
+        var methods = iface.SelectMany(t => t.DescendantNodes().OfType<MethodDeclarationSyntax>());
+        var method = Assert.Single(methods, m => m.Identifier.Text == "GetCachedPropertyValue");
+        Assert.Contains("ComVariant", method.ReturnType.ToString());
     }
 }

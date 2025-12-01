@@ -21,6 +21,12 @@ public enum TestOptions
     DoNotFailOnDiagnostics = 2,
 }
 
+public record NativeMethodsJsonOptions(
+    bool? AllowMarshaling = null,
+    bool? EmitSingleFile = null,
+    bool? Public = null,
+    string? ClassName = null);
+
 public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
 {
     protected bool fullGeneration;
@@ -35,6 +41,7 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
     protected int expectedExitCode = 0;
     protected string? tfm;
     protected string[]? win32winmdPaths;
+    protected NativeMethodsJsonOptions? nativeMethodsJsonOptions;
 
     public CsWin32GeneratorTestsBase(ITestOutputHelper logger)
         : base(logger)
@@ -97,6 +104,16 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
         {
             nativeMethodsTxtPath = Path.Combine(this.GetTestCaseOutputDirectory(testCase), "NativeMethods.txt");
             File.WriteAllLines(nativeMethodsTxtPath, this.nativeMethods);
+        }
+
+        if (this.nativeMethodsJsonOptions is NativeMethodsJsonOptions generatorOptions)
+        {
+            string nativeMethodsJsonPath = Path.Combine(this.GetTestCaseOutputDirectory(testCase), "NativeMethods.json");
+            var jsonOptions = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+            jsonOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault;
+            string jsonContent = System.Text.Json.JsonSerializer.Serialize(generatorOptions, jsonOptions);
+            File.WriteAllText(nativeMethodsJsonPath, jsonContent);
+            this.nativeMethodsJson = Path.GetFileName(nativeMethodsJsonPath);
         }
 
         Directory.CreateDirectory(outputPath);
@@ -177,11 +194,7 @@ public partial class CsWin32GeneratorTestsBase : GeneratorTestBase
             syntaxTrees.Add(syntaxTree);
         }
 
-        bool canDisableRuntimeMarshalling = this.tfm is null ||
-            this.tfm.StartsWith("net6.0", StringComparison.OrdinalIgnoreCase) ||
-            this.tfm.StartsWith("net7.0", StringComparison.OrdinalIgnoreCase) ||
-            this.tfm.StartsWith("net8.0", StringComparison.OrdinalIgnoreCase) ||
-            this.tfm.StartsWith("net9.0", StringComparison.OrdinalIgnoreCase);
+        bool canDisableRuntimeMarshalling = this.tfm is not "net472";
 
         if (canDisableRuntimeMarshalling)
         {
@@ -251,14 +264,17 @@ using System.Runtime.CompilerServices;
         var analyzerDiagnostics = await compilationWithAnalyzers.GetAllDiagnosticsAsync();
 
         var filteredAnalyzerDiagnostics = analyzerDiagnostics.Where(d =>
-            d.Descriptor.Id switch {
+            d.Descriptor.Id switch
+            {
                 "CA1016" or
                 "SA1517" or
                 "SA1633" or
                 "CS1701" or
                 "CA1418" or // Ignore bad platforms coming from win32metadata like "windowsserver2008"
                 "CS0465" // IMFSinkWriterEx has a "Finalize" method
-                => false, _ => true, });
+                => false,
+                _ => true,
+            });
 
         allDiagnostics.AddRange(filteredAnalyzerDiagnostics);
 

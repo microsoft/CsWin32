@@ -134,7 +134,7 @@ public partial class Generator
                     foreach (QualifiedTypeDefinitionHandle baseType in baseTypes)
                     {
                         TypeDefinition baseTypeDef = baseType.Generator.Reader.GetTypeDefinition(baseType.DefinitionHandle);
-                        if (this.FindGuidAttribute(baseTypeDef.GetCustomAttributes()) is null)
+                        if (baseType.Generator.FindGuidAttribute(baseTypeDef.GetCustomAttributes()) is null)
                         {
                             canDeclareAsInterface = false;
                             break;

@@ -264,6 +264,12 @@ public partial class Program
             options.ComInterop.UseComSourceGenerators = true;
         }
 
+        // Set EmitSingleFile to true by default if unspecified.
+        // We put everything in a single file to avoid needing to kick design-time-build to re-run to pick up the newly generated files.
+        // We _could_ make this happen using the AdditionalDesignTimeBuildInput item group but that makes design time build re-run each time
+        // NativeMethods.txt changes and we want to avoid triggering DTBs if possible.
+        options.EmitSingleFile ??= true;
+
         this.VerboseWriteLine($"Loaded generator options. AllowMarshaling: {options.AllowMarshaling}, ClassName: {options.ClassName}");
 
         // Validate metadata files exist
@@ -503,7 +509,7 @@ public partial class Program
             {
                 lineNumber++;
                 string name = line.Trim();
-                if (string.IsNullOrWhiteSpace(name) || name.StartsWith("//", StringComparison.Ordinal) || name.StartsWith("-", StringComparison.Ordinal))
+                if (string.IsNullOrWhiteSpace(name) || name.StartsWith("#", StringComparison.Ordinal) || name.StartsWith("//", StringComparison.Ordinal) || name.StartsWith("-", StringComparison.Ordinal))
                 {
                     skippedCount++;
                     continue;

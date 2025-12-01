@@ -4,6 +4,7 @@
 #pragma warning disable IDE0005
 #pragma warning disable SA1201, SA1512, SA1005, SA1507, SA1515, SA1403, SA1402, SA1411, SA1300, SA1313, SA1134, SA1307, SA1308, SA1202
 
+using Microsoft.Win32.SafeHandles;
 using System.ComponentModel;
 using System.Net.NetworkInformation;
 using System.Runtime.CompilerServices;
@@ -11,7 +12,6 @@ using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
 using System.Runtime.Versioning;
 using System.Threading.Tasks;
-using Newtonsoft.Json.Linq;
 using Windows.System;
 using Windows.UI.Composition;
 using Windows.Win32;
@@ -24,6 +24,7 @@ using Windows.Win32.Graphics.Dxgi.Common;
 using Windows.Win32.Storage.FileSystem;
 using Windows.Win32.System.Com;
 using Windows.Win32.System.WinRT.Composition;
+using Windows.Win32.System.Wmi;
 using Windows.Win32.UI.Shell;
 using Windows.Win32.UI.WindowsAndMessaging; // added for window creation APIs
 
@@ -107,6 +108,7 @@ public partial class COMTests
 
 
     [Fact]
+    [Trait("TestCategory", "FailsInCloudTest")] // D3D APIs fail in cloud VMs
     public void ReturnValueMarshalsCorrectly()
     {
         // Create an ID2D1HwndRenderTarget and verify GetHwnd returns the original HWND.
@@ -195,5 +197,40 @@ public partial class COMTests
         {
             PInvoke.DestroyWindow(hwnd);
         }
+    }
+
+    [Fact]
+    [Trait("TestCategory", "FailsInCloudTest")] // WMI APIs don't work in cloud VMs.
+    public void IWbemServices_GetObject_Works()
+    {
+        Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
+
+        // CoCreateInstance CLSID_WbemLocator
+        IWbemLocator locator = WbemLocator.CreateInstance<IWbemLocator>();
+
+        var ns = new SysFreeStringSafeHandle(Marshal.StringToBSTR(@"ROOT\Microsoft\Windows\Defender"), true);
+        locator.ConnectServer(ns, new SysFreeStringSafeHandle(), new SysFreeStringSafeHandle(), new SysFreeStringSafeHandle(), 0, new SafeFileHandle(), null, out IWbemServices services);
+        Assert.NotNull(services);
+
+        unsafe
+        {
+            PInvoke.CoSetProxyBlanket(
+                    services,
+                    10, // RPC_C_AUTHN_WINNT is 10
+                    0,  // RPC_C_AUTHZ_NONE is 0
+                    pServerPrincName: null,
+                    dwAuthnLevel: RPC_C_AUTHN_LEVEL.RPC_C_AUTHN_LEVEL_CALL,
+                    dwImpLevel: RPC_C_IMP_LEVEL.RPC_C_IMP_LEVEL_IMPERSONATE,
+                    pAuthInfo: null,
+                    dwCapabilities: EOLE_AUTHENTICATION_CAPABILITIES.EOAC_NONE);
+        }
+
+        var className = new SysFreeStringSafeHandle(Marshal.StringToBSTR("MSFT_MpScan"), true);
+        IWbemClassObject? classObj = null; // out param
+        services.GetObject(className, WBEM_GENERIC_FLAG_TYPE.WBEM_FLAG_RETURN_WBEM_COMPLETE, null, ref classObj, ref Unsafe.NullRef<IWbemCallResult>());
+
+        classObj.GetMethod("Start", 0, out IWbemClassObject pInParamsSignature, out IWbemClassObject ppOutSignature);
+
+        Assert.NotNull(pInParamsSignature);
     }
 }

@@ -22,6 +22,13 @@ public partial class Generator
                 ConditionalAccessExpression(span, IdentifierName(nameof(Span<int>.Length))),
                 LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)))) : MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, span, IdentifierName(nameof(Span<int>.Length)));
 
+    private static ExpressionSyntax GetIsSpanEmpty(ExpressionSyntax span, bool isRefType) => isRefType ?
+        ParenthesizedExpression(BinaryExpression(
+                SyntaxKind.EqualsExpression,
+                span,
+                LiteralExpression(SyntaxKind.NullLiteralExpression))) :
+        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, span, IdentifierName(nameof(Span<int>.IsEmpty)));
+
     private ExpressionSyntax GetIntPtrFromTypeDef(ExpressionSyntax typedefValue, TypeHandleInfo typeDefTypeInfo)
     {
         ExpressionSyntax intPtrValue = typedefValue;
@@ -215,7 +222,16 @@ public partial class Generator
                 mustRemainAsPointer = true;
             }
 
-            // For compat with how out/ref parameters used to be generated, leave out/ref parameters as pointers if we're not tring to improve them.
+            if (isOptional && isIn && !isOut && externParam.Type is PointerTypeSyntax { ElementType: QualifiedNameSyntax elementTypeSyntax } && elementTypeSyntax.Right.Identifier.ValueText == "NativeOverlapped")
+            {
+                // OVERLAPPED struct must always be passed by pointer. Currently "in" optional parameters are promoted to nullable which
+                // means the structs get copied. Normally this is fine since these struct addresses don't matter, but in the case of OVERLAPPED
+                // it does. Trying to change "in" optional parameters to not be wrapped in nullable is a lot of work and impact for unclear value
+                // so just adding special handling for OVERLAPPED for now.
+                mustRemainAsPointer = true;
+            }
+
+            // For compat with how out/ref parameters used to be generated, leave out/ref parameters as pointers if we're not trying to improve them.
             if (isOptional && isOut && !isComOutPtr && !improvePointersToSpansAndRefs)
             {
                 mustRemainAsPointer = true;
@@ -311,7 +327,7 @@ public partial class Generator
             else if (omittableOptionalParam && omitOptionalParams)
             {
                 // Remove the optional out parameter and supply the default value for the type to the extern method.
-                if (externParamModifier.Kind() is SyntaxKind.OutKeyword || externParamModifier.Kind() is SyntaxKind.RefKeyword)
+                if (externParamModifier.Kind() is SyntaxKind.OutKeyword or SyntaxKind.RefKeyword)
                 {
                     if (externParam.Type is PointerTypeSyntax || externParam.Type is FunctionPointerTypeSyntax)
                     {
@@ -345,8 +361,11 @@ public partial class Generator
                 bool hasOut = externParam.Modifiers.Any(SyntaxKind.OutKeyword);
                 arguments[paramIndex] = arguments[paramIndex].WithRefKindKeyword(TokenWithSpace(hasOut ? SyntaxKind.OutKeyword : SyntaxKind.RefKeyword));
             }
-            else if (isOut && !isIn && !isReleaseMethod && parameterTypeInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo pointedElementInfo } && pointedElementInfo.Generator.TryGetHandleReleaseMethod(pointedElementInfo.Handle, paramAttributes, out string? outReleaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, outReleaseMethod))
+            else if (isOut && !isIn && !isReleaseMethod && parameterTypeInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo pointedElementInfo } &&
+                pointedElementInfo.Generator.TryGetHandleReleaseMethod(pointedElementInfo.Handle, paramAttributes, out string? outReleaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, outReleaseMethod) &&
+                (memorySize is null) && !isArray)
             {
+                // NOTE: We don't handle scenarios where the parameter is [MemorySize] annotated (e.g. EnumProcessModules) or [NativeArrayInfo] (e.g. ITypeInfo.GetNames)
                 if (this.RequestSafeHandle(outReleaseMethod) is TypeSyntax safeHandleType)
                 {
                     signatureChanged = true;
@@ -841,6 +860,130 @@ public partial class Generator
                     RefExpression(localName),
                     RefExpression(nullRef)));
             }
+            else if (this.options.AllowMarshaling && isOptional && isOut && !isArray && parameterTypeInfo is PointerTypeHandleInfo pointerTypeHandleInfo && this.IsInterface(pointerTypeHandleInfo.ElementType))
+            {
+                // In source generated COM we can improve certain Optional out parameters to marshalled, e.g. IWbemServices.GetObject has some
+                // optional out parameters that need to be pointers in the ABI but in the optional overload they can be marshalled to ComWrappers.
+                TypeSyntax interfaceTypeSyntax = pointerTypeHandleInfo.ElementType.ToTypeSyntax(parameterTypeSyntaxSettings, GeneratingElement.FriendlyOverload, null).Type;
+                parameters[paramIndex] = parameters[paramIndex]
+                    .WithType(interfaceTypeSyntax.WithTrailingTrivia(TriviaList(Space)))
+                    .WithModifiers(TokenList(TokenWithSpace(isIn && isOut ? SyntaxKind.RefKeyword : (isIn ? SyntaxKind.InKeyword : SyntaxKind.OutKeyword))));
+
+                TypeSyntax nativeInterfaceTypeSyntax = ((PointerTypeSyntax)externParam.Type).ElementType;
+
+                if (!isIn)
+                {
+                    // Not a ref so need to assign first so we can use "ref" on the param. Use Unsafe.SkipInit(out origName) so that we can handle null refs.
+                    leadingOutsideTryStatements.Add(
+                        ExpressionStatement(
+                            InvocationExpression(
+                                MemberAccessExpression(
+                                    SyntaxKind.SimpleMemberAccessExpression,
+                                    IdentifierName(nameof(Unsafe)),
+                                    IdentifierName(nameof(Unsafe.SkipInit))),
+                                ArgumentList().AddArguments(Argument(origName).WithRefKindKeyword(Token(SyntaxKind.OutKeyword))))));
+                }
+
+                // For both in & out, declare a local:
+                // externParamTypeInterface* __origName_native = null;
+                IdentifierNameSyntax nativeLocal = IdentifierName($"__{origName.Identifier.ValueText.Replace("@", string.Empty)}_native");
+                leadingOutsideTryStatements.Add(
+                    LocalDeclarationStatement(VariableDeclaration(nativeInterfaceTypeSyntax)
+                        .AddVariables(VariableDeclarator(nativeLocal.Identifier)
+                            .WithInitializer(EqualsValueClause(LiteralExpression(SyntaxKind.NullLiteralExpression))))));
+
+                // bool __origName_present = !Unsafe.IsNullRef<TInterface>(origName);
+                string paramPresent = $"__{origName.Identifier.ValueText.Replace("@", string.Empty)}_present";
+                leadingOutsideTryStatements.Add(
+                    LocalDeclarationStatement(VariableDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)))
+                        .AddVariables(VariableDeclarator(Identifier(paramPresent))
+                            .WithInitializer(EqualsValueClause(
+                                PrefixUnaryExpression(
+                                SyntaxKind.LogicalNotExpression,
+                                InvocationExpression(
+                                    MemberAccessExpression(
+                                        SyntaxKind.SimpleMemberAccessExpression,
+                                        IdentifierName(nameof(Unsafe)),
+                                        GenericName(nameof(Unsafe.IsNullRef), TypeArgumentList().AddArguments(interfaceTypeSyntax))),
+                                    ArgumentList().AddArguments(Argument(RefExpression(origName))))))))));
+
+                // If it's an in parameter, assign the native local from the managed parameter.
+                // __origName_native = (TNative)global::System.Runtime.InteropServices.Marshalling.ComInterfaceMarshaller<TInterface>.ConvertToUnmanaged(origName);
+                // Also remember the marshalled in pointer in case the callee modifies in for ref params.
+                // __origName_nativeIn = __origName_native;
+                if (isIn)
+                {
+                    ExpressionSyntax toNativeExpression = this.useSourceGenerators ?
+                        InvocationExpression(
+                            MemberAccessExpression(
+                                SyntaxKind.SimpleMemberAccessExpression,
+                                GenericName($"global::System.Runtime.InteropServices.Marshalling.ComInterfaceMarshaller", TypeArgumentList().AddArguments(interfaceTypeSyntax)),
+                                IdentifierName("ConvertToUnmanaged")),
+                            ArgumentList().AddArguments(Argument(origName))) :
+                        ParenthesizedExpression(ConditionalExpression(
+                            BinaryExpression(SyntaxKind.NotEqualsExpression, origName, LiteralExpression(SyntaxKind.NullLiteralExpression)),
+                            CastExpression(
+                                PointerType(PredefinedType(Token(SyntaxKind.VoidKeyword))),
+                                InvocationExpression(
+                                    MemberAccessExpression(
+                                        SyntaxKind.SimpleMemberAccessExpression,
+                                        ParseTypeName($"global::System.Runtime.InteropServices.Marshal"),
+                                        IdentifierName("GetIUnknownForObject")),
+                                    ArgumentList().AddArguments(Argument(origName)))),
+                            LiteralExpression(SyntaxKind.NullLiteralExpression)));
+
+                    leadingStatements.Add(
+                        IfStatement(
+                            IdentifierName(paramPresent),
+                            Block().AddStatements(
+                                ExpressionStatement(
+                                    AssignmentExpression(
+                                        SyntaxKind.SimpleAssignmentExpression,
+                                        nativeLocal,
+                                        CastExpression(
+                                            nativeInterfaceTypeSyntax,
+                                            toNativeExpression))))));
+                }
+
+                // If it's an out parameter, assign the out parameter from the native local.
+                // origName = global::System.Runtime.InteropServices.Marshalling.ComInterfaceMarshaller<TInterface>.ConvertToManaged(__origName_native);
+                if (isOut)
+                {
+                    ExpressionSyntax toManagedExpression = this.useSourceGenerators ?
+                        InvocationExpression(
+                            MemberAccessExpression(
+                                SyntaxKind.SimpleMemberAccessExpression,
+                                GenericName($"global::System.Runtime.InteropServices.Marshalling.ComInterfaceMarshaller", TypeArgumentList().AddArguments(interfaceTypeSyntax)),
+                                IdentifierName("ConvertToManaged")),
+                            ArgumentList().AddArguments(Argument(nativeLocal))) :
+                        ParenthesizedExpression(ConditionalExpression(
+                            BinaryExpression(SyntaxKind.NotEqualsExpression, nativeLocal, LiteralExpression(SyntaxKind.NullLiteralExpression)),
+                            CastExpression(interfaceTypeSyntax, InvocationExpression(
+                                MemberAccessExpression(
+                                    SyntaxKind.SimpleMemberAccessExpression,
+                                    ParseTypeName($"global::System.Runtime.InteropServices.Marshal"),
+                                    IdentifierName("GetObjectForIUnknown")),
+                                ArgumentList().AddArguments(
+                                    Argument(CastExpression(ParseName("nint"), nativeLocal))))),
+                            LiteralExpression(SyntaxKind.NullLiteralExpression)));
+
+                    trailingStatements.Add(
+                        IfStatement(
+                            IdentifierName(paramPresent),
+                            Block().AddStatements(
+                                ExpressionStatement(
+                                    AssignmentExpression(
+                                        SyntaxKind.SimpleAssignmentExpression,
+                                        origName,
+                                        toManagedExpression)))));
+                }
+
+                // Release the native pointers we have refs on.
+                finallyStatements.Add(this.COMFreeNativePointerStatement(nativeLocal, interfaceTypeSyntax));
+
+                // If it's an in parameter, pass the native local as the argument.
+                arguments[paramIndex] = arguments[paramIndex].WithExpression(ConditionalExpression(IdentifierName(paramPresent), PrefixUnaryExpression(SyntaxKind.AddressOfExpression, nativeLocal), LiteralExpression(SyntaxKind.NullLiteralExpression)));
+            }
 
             bool TryHandleCountParam(TypeSyntax elementType, bool nullableSource)
             {
@@ -881,31 +1024,54 @@ public partial class Generator
                         }
                     }
 
+                    ExpressionSyntax sizeArgExpression;
                     if (lengthParamUsedBy.TryGetValue(countParamIndex.Value, out int userIndex))
                     {
+                        bool origNameIsRefType = remainsRefType;
+                        bool otherUserNameIsRefType = parameters[userIndex].Type is ArrayTypeSyntax;
+
                         // Multiple array parameters share a common 'length' parameter.
                         // Since we're making this a little less obvious, add a quick if check in the helper method
                         // that enforces that all such parameters have a common span length.
                         ExpressionSyntax otherUserName = IdentifierName(parameters[userIndex].Identifier.ValueText);
+
+                        // Only enforce length equality when both spans are non-empty.
+                        ExpressionSyntax otherNotEmpty = PrefixUnaryExpression(SyntaxKind.LogicalNotExpression, GetIsSpanEmpty(otherUserName, otherUserNameIsRefType));
+                        ExpressionSyntax origNotEmpty = PrefixUnaryExpression(SyntaxKind.LogicalNotExpression, GetIsSpanEmpty(origName, origNameIsRefType));
+                        ExpressionSyntax lengthsNotEqual = BinaryExpression(
+                            SyntaxKind.NotEqualsExpression,
+                            GetSpanLength(otherUserName, otherUserNameIsRefType),
+                            GetSpanLength(origName, origNameIsRefType));
+                        ExpressionSyntax condition = BinaryExpression(SyntaxKind.LogicalAndExpression, BinaryExpression(SyntaxKind.LogicalAndExpression, otherNotEmpty, origNotEmpty), lengthsNotEqual);
                         leadingStatements.Add(IfStatement(
-                            BinaryExpression(
-                                SyntaxKind.NotEqualsExpression,
-                                GetSpanLength(otherUserName, parameters[userIndex].Type is ArrayTypeSyntax),
-                                GetSpanLength(origName, remainsRefType)),
+                            condition,
                             ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentException))).WithArgumentList(ArgumentList()))));
+
+                        // Also we need to compound the size argument so that if one of the spans was empty, we pass the non-zero one.
+                        sizeArgExpression = arguments[countParamIndex.Value].Expression;
+                        if (sizeArgExpression is CastExpressionSyntax { Expression: ExpressionSyntax castedExpression })
+                        {
+                            // Unwrap the cast so we can simplify the logic
+                            sizeArgExpression = castedExpression;
+                        }
+
+                        sizeArgExpression = ParenthesizedExpression(ConditionalExpression(GetIsSpanEmpty(origName, origNameIsRefType), sizeArgExpression, GetSpanLength(origName, origNameIsRefType)));
                     }
                     else
                     {
                         lengthParamUsedBy.Add(countParamIndex.Value, paramIndex);
+
+                        sizeArgExpression = GetSpanLength(origName, remainsRefType);
                     }
 
-                    ExpressionSyntax sizeArgExpression = GetSpanLength(origName, remainsRefType);
+                    // Always wrap the sizeArgExpression in CastExpression if needed.
                     if (!(parameters[countParamIndex.Value].Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.IntKeyword } }))
                     {
                         sizeArgExpression = CastExpression(parameters[countParamIndex.Value].Type!, sizeArgExpression);
                     }
 
                     arguments[countParamIndex.Value] = Argument(sizeArgExpression);
+
                     return true;
                 }
 
@@ -1234,6 +1400,38 @@ public partial class Generator
             .WithLeadingTrivia(leadingTrivia);
 
         return helper;
+    }
+
+    private StatementSyntax COMFreeNativePointerStatement(ExpressionSyntax nativePointer, TypeSyntax interfaceTypeSyntax)
+    {
+        if (this.useSourceGenerators)
+        {
+            // Release the nativeLocal via ComInterfaceMarshaller.Free.
+            return
+                ExpressionStatement(
+                    InvocationExpression(
+                        MemberAccessExpression(
+                            SyntaxKind.SimpleMemberAccessExpression,
+                            GenericName($"global::System.Runtime.InteropServices.Marshalling.ComInterfaceMarshaller", TypeArgumentList().AddArguments(interfaceTypeSyntax)),
+                            IdentifierName("Free")),
+                        ArgumentList().AddArguments(Argument(nativePointer))));
+        }
+        else
+        {
+            // Finally, release the nativeLocal via Marshal.Release.
+            return
+                IfStatement(
+                    BinaryExpression(SyntaxKind.NotEqualsExpression, nativePointer, LiteralExpression(SyntaxKind.NullLiteralExpression)),
+                    ExpressionStatement(
+                        InvocationExpression(
+                            MemberAccessExpression(
+                                SyntaxKind.SimpleMemberAccessExpression,
+                                ParseTypeName("global::System.Runtime.InteropServices.Marshal"),
+                                IdentifierName("Release")),
+                            ArgumentList().AddArguments(Argument(
+                                CastExpression(ParseName("nint"), nativePointer))))))
+                .WithCloseParenToken(TokenWithLineFeed(SyntaxKind.CloseParenToken));
+        }
     }
 
     private class FriendlyMethodBookkeeping

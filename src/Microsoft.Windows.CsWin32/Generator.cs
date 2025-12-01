@@ -569,7 +569,7 @@ public partial class Generator : IGenerator, IDisposable
             return;
         }
 
-        foreach (KeyValuePair<string, MethodDeclarationSyntax> macro in Win32SdkMacros)
+        foreach (KeyValuePair<string, MethodDeclarationSyntax> macro in Win32SdkMacros.OrderBy(x => x.Key))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -775,7 +775,7 @@ public partial class Generator : IGenerator, IDisposable
                         : nsContents.ToArray());
         }
 
-        if (this.options.EmitSingleFile)
+        if (this.options.EmitSingleFile == true)
         {
             CompilationUnitSyntax file = CompilationUnit()
                 .AddMembers(starterNamespace.AddMembers(GroupMembersByNamespace(this.NamespaceMembers).ToArray()))
@@ -862,7 +862,7 @@ public partial class Generator : IGenerator, IDisposable
 
         if (this.compilation?.GetTypeByMetadataName("System.Reflection.AssemblyMetadataAttribute") is not null)
         {
-            if (this.options.EmitSingleFile)
+            if (this.options.EmitSingleFile == true)
             {
                 KeyValuePair<string, CompilationUnitSyntax> originalEntry = normalizedResults.Single();
                 normalizedResults[originalEntry.Key] = originalEntry.Value.WithLeadingTrivia().AddAttributeLists(CsWin32StampAttribute).WithLeadingTrivia(originalEntry.Value.GetLeadingTrivia());
@@ -1192,7 +1192,9 @@ public partial class Generator : IGenerator, IDisposable
                     throw new GenerationFailedException("Failed to parse template.");
                 }
 
-                specialDeclaration = specialDeclaration.WithAdditionalAnnotations(new SyntaxAnnotation(NamespaceContainerAnnotation, subNamespace));
+                specialDeclaration = specialDeclaration
+                    .WithAdditionalAnnotations(new SyntaxAnnotation(NamespaceContainerAnnotation, subNamespace))
+                    .AddAttributeLists(AttributeList().AddAttributes(GeneratedCodeAttribute));
 
                 this.volatileCode.AddSpecialType(specialName, specialDeclaration);
             });

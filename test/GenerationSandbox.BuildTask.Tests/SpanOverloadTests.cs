@@ -3,10 +3,12 @@
 
 using System.Globalization;
 using System.Runtime.InteropServices;
+using Windows.Win32;
 using Windows.Win32.Storage.FileSystem;
+using Windows.Win32.System.Threading;
 using static Windows.Win32.PInvoke;
 
-#pragma warning disable SA1201, CS0649
+#pragma warning disable SA1201, CS0649, SA1202
 
 namespace GenerationSandbox.BuildTask.Tests;
 
@@ -57,5 +59,33 @@ public partial class SpanOverloadTests
 
         // Fallback to the process name
         return Path.GetFileNameWithoutExtension(processPath);
+    }
+
+    [Fact]
+    public unsafe void FunctionWithSharedNativeArrayCanBeCalled()
+    {
+        LPPROC_THREAD_ATTRIBUTE_LIST attributeList = default;
+        nuint size = 0;
+        try
+        {
+            PInvoke.InitializeProcThreadAttributeList(LPPROC_THREAD_ATTRIBUTE_LIST.Null, 1, ref size);
+
+            attributeList = new LPPROC_THREAD_ATTRIBUTE_LIST((void*)Marshal.AllocHGlobal((int)size));
+
+            PInvoke.InitializeProcThreadAttributeList(attributeList, 1, ref size);
+
+            short machineType = 0;
+            Span<byte> buffer = MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref machineType, 1));
+            PInvoke.UpdateProcThreadAttribute(attributeList, 0, PInvoke.PROC_THREAD_ATTRIBUTE_MACHINE_TYPE, buffer, null, null);
+        }
+        finally
+        {
+            if (!attributeList.IsNull)
+            {
+                PInvoke.DeleteProcThreadAttributeList(attributeList);
+
+                Marshal.FreeHGlobal((IntPtr)attributeList.Value);
+            }
+        }
     }
 }

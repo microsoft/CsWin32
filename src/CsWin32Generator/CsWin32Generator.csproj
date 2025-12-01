@@ -5,6 +5,8 @@
     <OutputType>Exe</OutputType>
 
     <IsPackable>false</IsPackable>
+
+    <RollForward>Major</RollForward>
   </PropertyGroup>
 
   <ItemGroup>

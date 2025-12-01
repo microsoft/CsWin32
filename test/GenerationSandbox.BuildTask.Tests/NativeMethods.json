@@ -1,6 +1,5 @@
 ﻿{
   "$schema": "..\\..\\src\\Microsoft.Windows.CsWin32\\settings.schema.json",
-  "emitSingleFile": true,
   "allowMarshaling": true,
   "public": false,
   "comInterop": {

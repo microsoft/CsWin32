@@ -151,4 +151,61 @@ public partial class Generator
 
         return FunctionPointerParameter(parameterTypeInfo.ToTypeSyntax(this.functionPointerTypeSettings, GeneratingElement.FunctionPointer, customAttributeHandles?.QualifyWith(this)).GetUnmarshaledType());
     }
+
+    // Generates an unsafe readonly struct that wraps the native function pointer for a delegate type definition.
+    // Structure:
+    // unsafe readonly struct <Name> { public readonly delegate* unmanaged<...> Value; public <Name>(delegate* unmanaged<...> value) => Value = value; public bool IsNull => Value is null; implicit conversions }
+    private StructDeclarationSyntax DeclareTypeDefStructForNativeFunctionPointer(TypeDefinition typeDef, Context context)
+    {
+        // Delegates are generally managed types, except when using source generators when they never are.
+        bool isManagedType = !this.UseSourceGenerators;
+        string name = this.GetMangledIdentifier(this.Reader.GetString(typeDef.Name), context.AllowMarshaling, isManagedType);
+
+        FunctionPointerTypeSyntax fpType = this.FunctionPointer(typeDef);
+
+        // public readonly delegate* unmanaged<...> Value;
+        FieldDeclarationSyntax valueField = FieldDeclaration(
+            VariableDeclaration(fpType.WithTrailingTrivia(TriviaList(Space)))
+                .AddVariables(VariableDeclarator(Identifier("Value"))))
+            .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword));
+
+        // public <Name>(delegate* unmanaged<...> value) => Value = value;
+        ConstructorDeclarationSyntax ctor = ConstructorDeclaration(Identifier(name))
+            .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword))
+            .AddParameterListParameters(Parameter(Identifier("value")).WithType(fpType))
+            .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, IdentifierName("Value"), IdentifierName("value"))))
+            .WithSemicolonToken(SemicolonWithLineFeed);
+
+        // public static <Name> Null => default;
+        PropertyDeclarationSyntax nullProperty = PropertyDeclaration(IdentifierName(name).WithTrailingTrivia(Space), Identifier("Null"))
+            .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))
+            .WithExpressionBody(ArrowExpressionClause(LiteralExpression(SyntaxKind.DefaultLiteralExpression)))
+            .WithSemicolonToken(SemicolonWithLineFeed);
+
+        // public bool IsNull => Value is null;
+        PropertyDeclarationSyntax isNullProperty = PropertyDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Identifier("IsNull"))
+            .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword))
+            .WithExpressionBody(ArrowExpressionClause(IsPatternExpression(IdentifierName("Value"), ConstantPattern(LiteralExpression(SyntaxKind.NullLiteralExpression)))))
+            .WithSemicolonToken(SemicolonWithLineFeed);
+
+        // public static implicit operator <Name>(delegate* unmanaged<...> value) => new(value);
+        ConversionOperatorDeclarationSyntax implicitFromPointer = ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), IdentifierName(name))
+            .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))
+            .AddParameterListParameters(Parameter(Identifier("value")).WithType(fpType))
+            .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(IdentifierName(name)).AddArgumentListArguments(Argument(IdentifierName("value")))))
+            .WithSemicolonToken(SemicolonWithLineFeed);
+
+        // public static implicit operator delegate* unmanaged<...>(<Name> value) => value.Value;
+        ConversionOperatorDeclarationSyntax implicitToPointer = ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), fpType)
+            .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))
+            .AddParameterListParameters(Parameter(Identifier("value")).WithType(IdentifierName(name).WithTrailingTrivia(Space)))
+            .WithExpressionBody(ArrowExpressionClause(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("value"), IdentifierName("Value"))))
+            .WithSemicolonToken(SemicolonWithLineFeed);
+
+        StructDeclarationSyntax result = StructDeclaration(Identifier(name))
+            .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
+            .AddMembers(valueField, ctor, nullProperty, isNullProperty, implicitFromPointer, implicitToPointer);
+
+        return result;
+    }
 }

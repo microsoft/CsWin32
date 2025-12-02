@@ -1483,8 +1483,9 @@ public partial class Generator : IGenerator, IDisposable
             {
                 typeDeclaration =
                     this.IsUntypedDelegate(typeDef) ? this.DeclareUntypedDelegate(typeDef) :
-                    (this.options.AllowMarshaling && !this.useSourceGenerators) ? this.DeclareDelegate(typeDef) :
-                    null;
+                        context.AllowMarshaling ?
+                            (this.useSourceGenerators ? this.DeclareTypeDefStructForNativeFunctionPointer(typeDef, context) : this.DeclareDelegate(typeDef)) :
+                    this.DeclareTypeDefStructForNativeFunctionPointer(typeDef, context);
             }
             else
             {

@@ -169,6 +169,15 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         Assert.Contains("winmdroot.Security.WinTrust.CRYPT_PROVIDER_DATA*", methodReturnTypes);
     }
 
+    [Fact]
+    public async Task DelegatesGetStructsGenerated()
+    {
+        this.nativeMethods.Add("TIMERPROC");
+        await this.InvokeGeneratorAndCompileFromFact();
+
+        var timerProcType = Assert.Single(this.FindGeneratedType("TIMERPROC"));
+    }
+
     public static IList<object[]> TestSignatureData => [
         ["IMFMediaKeySession", "get_KeySystem", "winmdroot.Foundation.BSTR* keySystem"],
         ["AddPrinterW", "AddPrinter", "string pName, uint Level, Span<byte> pPrinter"],

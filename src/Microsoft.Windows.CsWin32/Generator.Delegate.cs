@@ -176,7 +176,7 @@ public partial class Generator
             .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, IdentifierName("Value"), IdentifierName("value"))))
             .WithSemicolonToken(SemicolonWithLineFeed);
 
-        // public <Name> Null => default;
+        // public static <Name> Null => default;
         PropertyDeclarationSyntax nullProperty = PropertyDeclaration(IdentifierName(name).WithTrailingTrivia(Space), Identifier("Null"))
             .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))
             .WithExpressionBody(ArrowExpressionClause(LiteralExpression(SyntaxKind.DefaultLiteralExpression)))

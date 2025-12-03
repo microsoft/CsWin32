@@ -198,6 +198,8 @@ public partial class Generator
             bool isManagedParameterType = this.IsManagedType(parameterTypeInfo);
             MemorySize? memorySize = null;
             bool mustRemainAsPointer = false;
+            bool isArray = false;
+            bool projectAsSpanBytes = false;
             bool isPointerToStructWithFlexibleArray = parameterTypeInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo pointedElement } && pointedElement.Generator.IsStructWithFlexibleArray(pointedElement);
             if (this.FindInteropDecorativeAttribute(paramAttributes, MemorySizeAttribute) is CustomAttribute memorySizeAttribute)
             {
@@ -214,7 +216,20 @@ public partial class Generator
             else if (memorySize is null)
             {
                 // If there's no MemorySize attribute, we may still need to keep this parameter as a pointer if it's a struct with a flexible array.
-                mustRemainAsPointer = isPointerToStructWithFlexibleArray;
+                if (isPointerToStructWithFlexibleArray)
+                {
+                    if (improvePointersToSpansAndRefs)
+                    {
+                        // FlexibleSizeArrays are easier to work with if they project as Span<byte>. Callers can request the pointer verions
+                        // via FriendlyOverloads.IncludePointerOverloads = true.
+                        isArray = true;
+                        projectAsSpanBytes = true;
+                    }
+                    else
+                    {
+                        mustRemainAsPointer = true;
+                    }
+                }
             }
             else if (!improvePointersToSpansAndRefs)
             {
@@ -239,7 +254,6 @@ public partial class Generator
 
             IdentifierNameSyntax origName = IdentifierName(externParam.Identifier.ValueText);
 
-            bool isArray = false;
             bool isNullTerminated = false; // TODO
             bool isCountOfBytes = false;
             short? countParamIndex = null;
@@ -273,7 +287,6 @@ public partial class Generator
                 isCountOfBytes = true;
             }
 
-            bool projectAsSpanBytes = false;
             if (improvePointersToSpansAndRefs && IsVoidPtrOrPtrPtr(externParam.Type))
             {
                 // if it's memory-sized project as Span<byte>
@@ -1002,7 +1015,7 @@ public partial class Generator
                     if (externParam.Type is PointerTypeSyntax)
                     {
                         remainsRefType = false;
-                        if (isCountOfBytes)
+                        if (isCountOfBytes || isPointerToStructWithFlexibleArray)
                         {
                             // For parameters annotated as count of bytes, we need to switch the friendly parameter to Span<byte>
                             // and then cast to (ParamType*) when we call the p/invoke.

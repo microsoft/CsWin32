@@ -127,7 +127,7 @@ public class ExternMethodTests : GeneratorTestBase
         this.compilation = this.starterCompilations["net35"];
         this.GenerateApi("AddPrinter");
         var methodSignatures = this.FindGeneratedMethod("AddPrinter").Select(x => x.ParameterList.ToString());
-        Assert.Contains("(string pName, uint Level, byte* pPrinter)", methodSignatures);
+        Assert.Contains("([Optional] string pName, uint Level, byte* pPrinter)", methodSignatures);
     }
 
     private static AttributeSyntax? FindDllImportAttribute(SyntaxList<AttributeListSyntax> attributeLists) => attributeLists.SelectMany(al => al.Attributes).FirstOrDefault(a => a.Name.ToString() == "DllImport");

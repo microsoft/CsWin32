@@ -180,7 +180,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
 
     public static IList<object[]> TestSignatureData => [
         ["IMFMediaKeySession", "get_KeySystem", "winmdroot.Foundation.BSTR* keySystem"],
-        ["AddPrinterW", "AddPrinter", "[Optional] string pName, uint Level, [Optional] Span<byte> pPrinter"],
+        ["AddPrinterW", "AddPrinter", "[Optional] string pName, uint Level, Span<byte> pPrinter"],
         // MemorySized-struct param should have Span<byte> parameter.
         ["SHGetFileInfo", "SHGetFileInfo", "string pszPath, winmdroot.Storage.FileSystem.FILE_FLAGS_AND_ATTRIBUTES dwFileAttributes, [Optional] Span<byte> psfi, winmdroot.UI.Shell.SHGFI_FLAGS uFlags"],
         // MemorySized-struct param should also have a version with `ref struct` parameter.
@@ -219,6 +219,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         ["ITypeInfo", "GetNames", "this winmdroot.System.Com.ITypeInfo @this, int memid, Span<winmdroot.Foundation.BSTR> rgBstrNames, out uint pcNames"],
         ["EnumProcessModules", "EnumProcessModules", "SafeHandle hProcess, Span<byte> lphModule, out uint lpcbNeeded"],
         ["Windows.Win32.NetworkManagement.WindowsFilteringPlatform.FwpmProviderAdd0", "FwpmProviderAdd0", "SafeHandle engineHandle, in winmdroot.NetworkManagement.WindowsFilteringPlatform.FWPM_PROVIDER0 provider, [Optional] winmdroot.Security.PSECURITY_DESCRIPTOR sd"],
+        ["Windows.Win32.NetworkManagement.WindowsFilteringPlatform.FwpmEngineOpen0", "FwpmEngineOpen0", "uint authnService, [Optional] winmdroot.System.Rpc.SEC_WINNT_AUTH_IDENTITY_W? authIdentity, [Optional] winmdroot.NetworkManagement.WindowsFilteringPlatform.FWPM_SESSION0? session, out Microsoft.Win32.SafeHandles.SafeFileHandle engineHandle"],
     ];
 
     [Theory]

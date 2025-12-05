@@ -1596,7 +1596,7 @@ public partial class Generator : IGenerator, IDisposable
 
             // Determine the custom attributes to apply.
             AttributeListSyntax? attributes = AttributeList();
-            if (parameterTypeSyntax.Type is PointerTypeSyntax ptr)
+            if (parameterTypeSyntax.Type is PointerTypeSyntax ptr || parameterTypeSyntax.ParameterModifier is null)
             {
                 if ((parameter.Attributes & ParameterAttributes.Optional) == ParameterAttributes.Optional)
                 {

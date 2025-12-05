@@ -180,21 +180,21 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
 
     public static IList<object[]> TestSignatureData => [
         ["IMFMediaKeySession", "get_KeySystem", "winmdroot.Foundation.BSTR* keySystem"],
-        ["AddPrinterW", "AddPrinter", "string pName, uint Level, Span<byte> pPrinter"],
+        ["AddPrinterW", "AddPrinter", "[Optional] string pName, uint Level, Span<byte> pPrinter"],
         // MemorySized-struct param should have Span<byte> parameter.
-        ["SHGetFileInfo", "SHGetFileInfo", "string pszPath, winmdroot.Storage.FileSystem.FILE_FLAGS_AND_ATTRIBUTES dwFileAttributes, Span<byte> psfi, winmdroot.UI.Shell.SHGFI_FLAGS uFlags"],
+        ["SHGetFileInfo", "SHGetFileInfo", "string pszPath, winmdroot.Storage.FileSystem.FILE_FLAGS_AND_ATTRIBUTES dwFileAttributes, [Optional] Span<byte> psfi, winmdroot.UI.Shell.SHGFI_FLAGS uFlags"],
         // MemorySized-struct param should also have a version with `ref struct` parameter.
         ["SHGetFileInfo", "SHGetFileInfo", "string pszPath, winmdroot.Storage.FileSystem.FILE_FLAGS_AND_ATTRIBUTES dwFileAttributes, ref winmdroot.UI.Shell.SHFILEINFOW psfi, winmdroot.UI.Shell.SHGFI_FLAGS uFlags"],
         ["InitializeAcl", "InitializeAcl", "Span<byte> pAcl, winmdroot.Security.ACE_REVISION dwAclRevision"],
         // MemorySized-struct param should also have a version with `out struct` parameter.
         ["InitializeAcl", "InitializeAcl", "out winmdroot.Security.ACL pAcl, winmdroot.Security.ACE_REVISION dwAclRevision"],
         ["SetDefaultCommConfig", "SetDefaultCommConfig", "string lpszName, in winmdroot.Devices.Communication.COMMCONFIG lpCC", false],
-        ["ID3D11DeviceChild", "GetPrivateData", "this winmdroot.Graphics.Direct3D11.ID3D11DeviceChild @this, in global::System.Guid guid, ref uint pDataSize, Span<byte> pData"],
+        ["ID3D11DeviceChild", "GetPrivateData", "this winmdroot.Graphics.Direct3D11.ID3D11DeviceChild @this, in global::System.Guid guid, ref uint pDataSize, [Optional] Span<byte> pData"],
         ["WriteFile", "WriteFile", "SafeHandle hFile, in byte lpBuffer, uint* lpNumberOfBytesWritten, global::System.Threading.NativeOverlapped* lpOverlapped", false],
         // All params included
-        ["SetupDiGetDeviceInterfaceDetail", "SetupDiGetDeviceInterfaceDetail", "SafeHandle DeviceInfoSet, in winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVICE_INTERFACE_DATA DeviceInterfaceData, Span<byte> DeviceInterfaceDetailData, out uint RequiredSize, ref winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVINFO_DATA DeviceInfoData"],
+        ["SetupDiGetDeviceInterfaceDetail", "SetupDiGetDeviceInterfaceDetail", "SafeHandle DeviceInfoSet, in winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVICE_INTERFACE_DATA DeviceInterfaceData, [Optional] Span<byte> DeviceInterfaceDetailData, out uint RequiredSize, ref winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVINFO_DATA DeviceInfoData"],
         // Optional params omitted
-        ["SetupDiGetDeviceInterfaceDetail", "SetupDiGetDeviceInterfaceDetail", "SafeHandle DeviceInfoSet, in winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVICE_INTERFACE_DATA DeviceInterfaceData, Span<byte> DeviceInterfaceDetailData"],
+        ["SetupDiGetDeviceInterfaceDetail", "SetupDiGetDeviceInterfaceDetail", "SafeHandle DeviceInfoSet, in winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVICE_INTERFACE_DATA DeviceInterfaceData, [Optional] Span<byte> DeviceInterfaceDetailData"],
         // We should _not_ have a struct param overload for flexible arrays
         ["SetupDiGetDeviceInterfaceDetail", "SetupDiGetDeviceInterfaceDetail", "SafeHandle DeviceInfoSet, in winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVICE_INTERFACE_DATA DeviceInterfaceData, out winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVICE_INTERFACE_DETAIL_DATA_W DeviceInterfaceDetailData, out uint RequiredSize, ref winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVINFO_DATA DeviceInfoData", false],
         ["WinHttpReadData", "WinHttpReadData", "void* hRequest, Span<byte> lpBuffer, ref uint lpdwNumberOfBytesRead"],
@@ -203,21 +203,24 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         ["IsTextUnicode", "IsTextUnicode", "ReadOnlySpan<byte> lpv"],
         ["GetAce", "GetAce", "in winmdroot.Security.ACL pAcl, uint dwAceIndex, out void* pAce"],
         // Optional and MemorySize-d struct params, optional params included
-        ["SetupDiGetClassInstallParams", "SetupDiGetClassInstallParams", "SafeHandle DeviceInfoSet, winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVINFO_DATA? DeviceInfoData, Span<byte> ClassInstallParams, out uint RequiredSize"],
+        ["SetupDiGetClassInstallParams", "SetupDiGetClassInstallParams", "SafeHandle DeviceInfoSet, [Optional] winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVINFO_DATA? DeviceInfoData, [Optional] Span<byte> ClassInstallParams, out uint RequiredSize"],
         ["IEnumString", "Next", "this winmdroot.System.Com.IEnumString @this, Span<winmdroot.Foundation.PWSTR> rgelt, out uint pceltFetched"],
         ["PSCreateMemoryPropertyStore", "PSCreateMemoryPropertyStore", "in global::System.Guid riid, out void* ppv"],
-        ["DeviceIoControl", "DeviceIoControl", "SafeHandle hDevice, uint dwIoControlCode, ReadOnlySpan<byte> lpInBuffer, Span<byte> lpOutBuffer, out uint lpBytesReturned, global::System.Threading.NativeOverlapped* lpOverlapped"],
-        ["DeviceIoControl", "DeviceIoControl", "SafeHandle hDevice, uint dwIoControlCode, ReadOnlySpan<byte> lpInBuffer, Span<byte> lpOutBuffer, out uint lpBytesReturned, global::System.Threading.NativeOverlapped* lpOverlapped", true, "NativeMethods.IncludePointerOverloads.json"],
-        ["NtQueryObject", "NtQueryObject", "global::Windows.Win32.Foundation.HANDLE Handle, winmdroot.Foundation.OBJECT_INFORMATION_CLASS ObjectInformationClass, Span<byte> ObjectInformation, out uint ReturnLength"],
+        ["DeviceIoControl", "DeviceIoControl", "SafeHandle hDevice, uint dwIoControlCode, [Optional] ReadOnlySpan<byte> lpInBuffer, [Optional] Span<byte> lpOutBuffer, out uint lpBytesReturned, [Optional] global::System.Threading.NativeOverlapped* lpOverlapped"],
+        ["DeviceIoControl", "DeviceIoControl", "SafeHandle hDevice, uint dwIoControlCode, [Optional] ReadOnlySpan<byte> lpInBuffer, [Optional] Span<byte> lpOutBuffer, out uint lpBytesReturned, [Optional] global::System.Threading.NativeOverlapped* lpOverlapped", true, "NativeMethods.IncludePointerOverloads.json"],
+        ["NtQueryObject", "NtQueryObject", "[Optional] global::Windows.Win32.Foundation.HANDLE Handle, winmdroot.Foundation.OBJECT_INFORMATION_CLASS ObjectInformationClass, [Optional] Span<byte> ObjectInformation, out uint ReturnLength"],
         ["ITypeInfo", "GetFuncDesc", "uint index, out winmdroot.System.Com.FUNCDESC_unmanaged* ppFuncDesc"],
         ["ITsSbResourcePluginStore", "EnumerateTargets", "winmdroot.Foundation.BSTR FarmName, winmdroot.Foundation.BSTR EnvName, winmdroot.System.RemoteDesktop.TS_SB_SORT_BY sortByFieldId, winmdroot.Foundation.BSTR sortyByPropName, ref uint pdwCount, out winmdroot.System.RemoteDesktop.ITsSbTarget_unmanaged** pVal"],
         ["MFEnumDeviceSources", "MFEnumDeviceSources", "winmdroot.Media.MediaFoundation.IMFAttributes pAttributes, out winmdroot.Media.MediaFoundation.IMFActivate_unmanaged** pppSourceActivate, out uint pcSourceActivate"],
         // Check that GetObject optional parameters got an overload with marshalled interface types
         ["IWbemServices", "GetObject", "this winmdroot.System.Wmi.IWbemServices @this, SafeHandle strObjectPath, winmdroot.System.Wmi.WBEM_GENERIC_FLAG_TYPE lFlags, winmdroot.System.Wmi.IWbemContext pCtx, ref winmdroot.System.Wmi.IWbemClassObject ppObject, ref winmdroot.System.Wmi.IWbemCallResult ppCallResult"],
         // NativeOverlapped should be pointer even when not [Retained] as in CancelIoEx.
-        ["CancelIoEx", "CancelIoEx", "SafeHandle hFile, global::System.Threading.NativeOverlapped* lpOverlapped"],
+        ["CancelIoEx", "CancelIoEx", "SafeHandle hFile, [Optional] global::System.Threading.NativeOverlapped* lpOverlapped"],
         ["ITypeInfo", "GetNames", "this winmdroot.System.Com.ITypeInfo @this, int memid, Span<winmdroot.Foundation.BSTR> rgBstrNames, out uint pcNames"],
         ["EnumProcessModules", "EnumProcessModules", "SafeHandle hProcess, Span<byte> lphModule, out uint lpcbNeeded"],
+        ["Windows.Win32.NetworkManagement.WindowsFilteringPlatform.FwpmProviderAdd0", "FwpmProviderAdd0", "SafeHandle engineHandle, in winmdroot.NetworkManagement.WindowsFilteringPlatform.FWPM_PROVIDER0 provider, [Optional] winmdroot.Security.PSECURITY_DESCRIPTOR sd"],
+        // Verify the ABI signature has [Optional] on Optional and Reserved parameters.
+        ["Windows.Win32.NetworkManagement.WindowsFilteringPlatform.FwpmEngineOpen0", "FwpmEngineOpen0", "[Optional] winmdroot.Foundation.PCWSTR serverName, uint authnService, [Optional] winmdroot.System.Rpc.SEC_WINNT_AUTH_IDENTITY_W* authIdentity, [Optional] winmdroot.NetworkManagement.WindowsFilteringPlatform.FWPM_SESSION0* session, winmdroot.Foundation.HANDLE* engineHandle"],
     ];
 
     [Theory]
@@ -245,6 +248,15 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         await this.InvokeGeneratorAndCompile($"{api}_{member}_{tfm}_{signature.Select(x => (int)x).Aggregate((x, y) => x + y).ToString("X")}");
 
         var generatedMemberSignatures = this.FindGeneratedMethod(member).Select(x => x.ParameterList.ToString());
+
+        foreach (var generatedSignature in generatedMemberSignatures)
+        {
+            this.Logger.WriteLine(generatedSignature.ToString());
+        }
+
+        this.Logger.WriteLine("------ searching for -------");
+        this.Logger.WriteLine($"({signature})");
+
         if (assertPresent)
         {
             Assert.Contains($"({signature})", generatedMemberSignatures);

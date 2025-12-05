@@ -76,3 +76,4 @@ InitializeProcThreadAttributeList
 UpdateProcThreadAttribute
 DeleteProcThreadAttributeList 
 PROC_THREAD_ATTRIBUTE_MACHINE_TYPE
+FwpmProviderAdd0

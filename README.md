@@ -7,7 +7,7 @@
     <img src="https://dev.azure.com/azure-public/winsdk/_apis/build/status/microsoft.CsWin32?branchName=main" alt="NuGet badge" /></a>
 </p>
 
-C#/CsWin32 provides **P/Invoke** and **COM Interop** projection support for C#. It generates strongly-typed, source-generated bindings from CsWn32-compatible `.winmd` metadata files. CsWin32 supports the metadata of `Microsoft.Windows.SDK.Win32Metadata` as the 1st-party metadata.
+C#/Win32 provides **P/Invoke** and **COM Interop** projection support for C#. It generates strongly-typed, source-generated bindings from CsWn32-compatible `.winmd` metadata files. CsWin32 supports the metadata of `Microsoft.Windows.SDK.Win32Metadata` as the 1st-party metadata.
 
 - Generates interop code quickly at compilation time.
 - Generates friendly overloads/extensions (including `SafeHandle`-types support).

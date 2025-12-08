@@ -1,6 +1,6 @@
 # Code examples
 
-When `useSafeHandles` is `true`, the code can be different than that in C++. Here we show a few code examples of use of `SafeHandle`-s snf `Span<T>` here.
+When, for example, marshaling is enabled and `useSafeHandles` is `true`, the code can be different than that in C++. Here we show a few code examples of using CsWin32.
 
 ```json
 {

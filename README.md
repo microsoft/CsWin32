@@ -1,21 +1,25 @@
-# C#/Win32 P/Invoke Source Generator
+<h1 align="center">C#/Win32 Interop Projection</h1>
 
-***A source generator to add a user-defined set of Win32 P/Invoke methods and supporting types to a C# project.***
+<p align="center">
+  <a style="text-decoration:none" href="https://www.nuget.org/packages/Microsoft.Windows.CsWin32">
+    <img src="https://img.shields.io/nuget/v/Microsoft.Windows.CsWin32" alt="NuGet badge" /></a>
+  <a style="text-decoration:none" href="https://dev.azure.com/azure-public/winsdk/_build/latest?definitionId=47&branchName=main">
+    <img src="https://dev.azure.com/azure-public/winsdk/_apis/build/status/microsoft.CsWin32?branchName=main" alt="NuGet badge" /></a>
+</p>
 
-[![NuGet (prerelease)](https://img.shields.io/nuget/v/Microsoft.Windows.CsWin32)](https://www.nuget.org/packages/Microsoft.Windows.CsWin32)
-[![NuGet (daily)](https://img.shields.io/badge/nuget-daily-red)](https://dev.azure.com/azure-public/winsdk/_packaging?_a=package&feed=CI%40Local&package=Microsoft.Windows.CsWin32&protocolType=NuGet)
+C#/CsWin32 provides **P/Invoke** and **COM Interop** projection support for C#. It generates strongly-typed, source-generated bindings from CsWn32-compatible `.winmd` metadata files. CsWin32 supports the metadata of `Microsoft.Windows.SDK.Win32Metadata` as the 1st-party metadata.
 
-[![Build Status](https://dev.azure.com/azure-public/winsdk/_apis/build/status/microsoft.CsWin32?branchName=main)](https://dev.azure.com/azure-public/winsdk/_build/latest?definitionId=47&branchName=main)
+- Generates interop code quickly at compilation time.
+- Generates friendly overloads/extensions (including `SafeHandle`-types support).
+- Generates xml documentation based on and links back to learn.microsoft.com
+- Ships no bulky assemblies alongside your application.
 
-## Features
+## Getting started
 
-* Rapidly add P/Invoke methods and supporting types to your C# project.
-* No bulky assemblies to ship alongside your application.
-* `SafeHandle`-types automatically generated.
-* Generates xml documentation based on and links back to learn.microsoft.com
+- [Getting started](https://microsoft.github.io/CsWin32/docs/getting-started.html)
+- [Examples](https://microsoft.github.io/CsWin32/docs/examples.html)
+- [3rd-party metadata support](https://microsoft.github.io/CsWin32/docs/3rdPartyMetadata.html)
+
+## Demo
 
 ![Animation demonstrating p/invoke code generation](docfx/images/demo.gif)
-
-## Usage
-
-[Check out our product documentation](https://microsoft.github.io/CsWin32/docs/getting-started.html).

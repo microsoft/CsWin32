@@ -985,6 +985,12 @@ public partial class Generator
                 arguments[paramIndex] = arguments[paramIndex].WithExpression(ConditionalExpression(IdentifierName(paramPresent), PrefixUnaryExpression(SyntaxKind.AddressOfExpression, nativeLocal), LiteralExpression(SyntaxKind.NullLiteralExpression)));
             }
 
+            // Tag any [Optional] parameters that don't have modifiers as [Optional] so that C# can help callers omit them.
+            if (isOptional && parameters[paramIndex].Modifiers.Count == 0)
+            {
+                parameters[paramIndex] = parameters[paramIndex].AddAttributeLists(AttributeList().AddAttributes(OptionalAttributeSyntax));
+            }
+
             bool TryHandleCountParam(TypeSyntax elementType, bool nullableSource)
             {
                 IdentifierNameSyntax localName = IdentifierName(origName + "Local");

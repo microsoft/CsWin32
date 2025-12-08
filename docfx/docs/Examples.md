@@ -27,7 +27,7 @@ MAX_PATH
 ```
 
 ```cs
-static Main(string[] args)
+static void Main(string[] args)
 {
     SafeHandle hFile;
     Span<char> szBuf = stackalloc char[(int)PInvoke.MAX_PATH];
@@ -67,7 +67,7 @@ static unsafe bool GetLastWriteTime(SafeHandle hFile, Span<char> lpszString)
 
     // Convert the last-write time to local time.
     PInvoke.FileTimeToSystemTime(in ftWrite, out stUTC);
-    PInvoke.SystemTimeToTzSpecificLocalTime(null, &stUTC, &stLocal);
+    PInvoke.SystemTimeToTzSpecificLocalTime(null, stUTC, out stLocal);
 
     // Build a string showing the date and time.
     string.Format("{0:00}/{1:00}/{2}  {3:00}:{4:00}", stLocal.wMonth, stLocal.wDay, stLocal.wYear, stLocal.wHour, stLocal.wMinute)
@@ -136,7 +136,7 @@ IShellItem
 SHCreateItemFromParsingName
 ```
 
-### Marshaling enabled (built-in COM Interop)
+### Marshaling enabled (built-in COM Interop, not AOT-compatible)
 
 ```cs
 [STAThread]
@@ -152,7 +152,7 @@ static void Main(string[] args)
 }
 ```
 
-### Marshaling enabled (Com Wrappers)
+### Marshaling enabled (Com Wrappers, AOT-compatible)
 
 ```cs
 [STAThread]
@@ -165,9 +165,10 @@ static unsafe void Main(string[] args)
     var shellItem = (IShellItem)ppv;
 
     // Let the GC to release shellItem
+}
 ```
 
-### Marshaling disabled
+### Marshaling disabled (AOT-compatible)
 
 ```cs
 [STAThread]
@@ -184,12 +185,4 @@ static unsafe void Main(string[] args)
 
     psi->Release();
 }
-```
-
-or, you can use `GetPinnableReference`:
-
-```cs
-hr = PInvoke.SHCreateItemFromParsingName(
-    (PCWSTR)Unsafe.AsPointer(ref Unsafe.AsRef(in "C:\\Users\\you\\file.txt".GetPinnableReference())),
-    null, &IID_IShellItem, (void**)psi);
 ```

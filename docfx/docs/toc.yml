@@ -1,5 +1,6 @@
 items:
 - href: features.md
 - href: getting-started.md
+- href: Examples.md
+- href: ArchSpecificAPIs.md
 - href: 3rdPartyMetadata.md
-

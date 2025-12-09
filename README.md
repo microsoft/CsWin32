@@ -17,7 +17,7 @@ C#/Win32 provides **P/Invoke** and **COM Interop** projection support for C#. It
 ## Getting started
 
 - [Getting started](https://microsoft.github.io/CsWin32/docs/getting-started.html)
-- [Examples](https://microsoft.github.io/CsWin32/docs/examples.html)
+- [Examples](https://microsoft.github.io/CsWin32/docs/Examples.html)
 - [3rd-party metadata support](https://microsoft.github.io/CsWin32/docs/3rdPartyMetadata.html)
 
 ## Demo

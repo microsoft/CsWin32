@@ -89,10 +89,11 @@ MONITORINFOEXW
 
 ```cs
 static Dictionary<string, RECT> _monitors = [];
+static unsafe MONITORENUMPROC proc = new(MonitorEnumProc); // Keep this alive
 
 static void Main(string[] args)
 {
-    BOOL fRes = PInvoke.EnumDisplayMonitors(HDC.Null, null, new(MonitorEnumProc), 0);
+    BOOL fRes = PInvoke.EnumDisplayMonitors(HDC.Null, (RECT?)null, proc, 0);
     if (!fRes) return;
 
     foreach (var monitor in _monitors)
@@ -142,8 +143,7 @@ SHCreateItemFromParsingName
 [STAThread]
 static void Main(string[] args)
 {
-    var IID_IShellItem = new Guid("43826D1E-E718-42EE-BC55-A1E261C37BFE");
-    HRESULT hr = PInvoke.SHCreateItemFromParsingName("C:\\Users\\you\\file.txt", null, in IID_IShellItem, out var ppv);
+    HRESULT hr = PInvoke.SHCreateItemFromParsingName("C:\\Users\\you\\file.txt", null, typeof(IShellItem).GUID, out var ppv);
     if (hr.Failed) return;
 
     var shellItem = (IShellItem)ppv;
@@ -158,8 +158,7 @@ static void Main(string[] args)
 [STAThread]
 static unsafe void Main(string[] args)
 {
-    var IID_IShellItem = new Guid("43826D1E-E718-42EE-BC55-A1E261C37BFE");
-    HRESULT hr = PInvoke.SHCreateItemFromParsingName("C:\\Users\\you\\file.txt", null, in IID_IShellItem, out var ppv);
+    HRESULT hr = PInvoke.SHCreateItemFromParsingName("C:\\Users\\you\\file.txt", null, typeof(IShellItem).GUID, out var ppv);
     if (hr.Failed) return;
 
     var shellItem = (IShellItem)ppv;
@@ -176,11 +175,11 @@ static unsafe void Main(string[] args)
 {
     HRESULT hr;
 
-    var IID_IShellItem = new Guid("43826D1E-E718-42EE-BC55-A1E261C37BFE");
+    var IID_IShellItem = typeof(IShellItem).GUID;
     IShellItem* psi = null;
 
     fixed (char* pszPath = "C:\\Users\\you\\file.txt")
-        hr = PInvoke.SHCreateItemFromParsingName(pszPath, null, &IID_IShellItem, (void**)psi);
+        hr = PInvoke.SHCreateItemFromParsingName(pszPath, null, &IID_IShellItem, (void**)&psi);
     if (hr.Failed) return;
 
     psi->Release();

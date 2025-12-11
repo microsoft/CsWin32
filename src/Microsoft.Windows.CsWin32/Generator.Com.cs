@@ -901,6 +901,11 @@ public partial class Generator
                             accessor = accessor.AddAttributeLists(
                                 AttributeList().WithTarget(AttributeTargetSpecifier(Token(SyntaxKind.ReturnKeyword))).AddAttributes(MarshalAs(propertyMarshalAsAttribute, null)));
                         }
+                        else
+                        {
+                            accessor = accessor.AddAttributeLists(
+                                AttributeList().WithTarget(AttributeTargetSpecifier(Token(SyntaxKind.ParamKeyword))).AddAttributes(MarshalAs(propertyMarshalAsAttribute, null)));
+                        }
                     }
 
                     if (members.Count > 0 && members[members.Count - 1] is PropertyDeclarationSyntax lastProperty && lastProperty.Identifier.ValueText == propertyName.Identifier.ValueText)

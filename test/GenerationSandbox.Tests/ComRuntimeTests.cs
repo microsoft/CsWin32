@@ -155,4 +155,30 @@ public class ComRuntimeTests
 
         Assert.NotNull(pInParamsSignature);
     }
+
+    [Fact]
+    public void CanCallIDispatchOnlyMethods()
+    {
+        Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
+
+        var shellWindows = (IShellWindows)new ShellWindows();
+
+        var serviceProvider = (IServiceProvider)shellWindows.FindWindowSW(
+            PInvoke.CSIDL_DESKTOP,
+            pvarLocRoot: null,
+            ShellWindowTypeConstants.SWC_DESKTOP,
+            phwnd: out _,
+            ShellWindowFindWindowOptions.SWFO_NEEDDISPATCH);
+
+        serviceProvider.QueryService(PInvoke.SID_STopLevelBrowser, typeof(IShellBrowser).GUID, out var shellBrowserAsObject);
+        var shellBrowser = (IShellBrowser)shellBrowserAsObject;
+
+        shellBrowser.QueryActiveShellView(out var shellView);
+
+        var iid_IDispatch = new Guid("00020400-0000-0000-C000-000000000046");
+        shellView.GetItemObject((uint)_SVGIO.SVGIO_BACKGROUND, iid_IDispatch, out var folderViewAsObject);
+        var folderView = (IShellFolderViewDual)folderViewAsObject;
+
+        _ = folderView.Application; // Throws InvalidOleVariantTypeException "Specified OLE variant is invalid"
+    }
 }

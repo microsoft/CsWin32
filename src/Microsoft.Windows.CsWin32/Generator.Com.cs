@@ -363,7 +363,7 @@ public partial class Generator
 
             // We can declare this method as a property accessor if it represents a property.
             // We must also confirm that the property type is the same in both cases, because sometimes they aren't (e.g. IUIAutomationProxyFactoryEntry.ClassName).
-            if (methodDefinition.Generator.TryGetPropertyAccessorInfo(methodDefinition, originalIfaceName, context, out IdentifierNameSyntax? propertyName, out SyntaxKind? accessorKind, out TypeSyntax? propertyType) &&
+            if (methodDefinition.Generator.TryGetPropertyAccessorInfo(methodDefinition, originalIfaceName, context, out IdentifierNameSyntax? propertyName, out SyntaxKind? accessorKind, out TypeSyntax? propertyType, out MarshalAsAttribute? propertyMarshalAsAttribute) &&
                 declaredProperties.Contains(propertyName.Identifier.ValueText))
             {
                 if (emulateMemberFunctionCallConv)
@@ -541,7 +541,7 @@ public partial class Generator
 
             if (ccwThisParameter is not null && !ccwMethodsToSkip.Contains(methodDefHandle))
             {
-                if (this.TryGetPropertyAccessorInfo(methodDefinition, originalIfaceName, context, out propertyName, out accessorKind, out propertyType) &&
+                if (this.TryGetPropertyAccessorInfo(methodDefinition, originalIfaceName, context, out propertyName, out accessorKind, out propertyType, out propertyMarshalAsAttribute) &&
                     ifaceDeclaredProperties!.Contains(propertyName.Identifier.ValueText))
                 {
                     switch (accessorKind)
@@ -889,10 +889,19 @@ public partial class Generator
                 // Adding an accessor to a property later than the very next row would screw up the virtual method table ordering.
                 // We must also confirm that the property type is the same in both cases, because sometimes they aren't (e.g. IUIAutomationProxyFactoryEntry.ClassName).
                 // Don't do this if we are using GeneratedComInterface because that doesn't support properties yet. https://github.com/dotnet/runtime/issues/96502
-                if (methodDefinition.Generator.TryGetPropertyAccessorInfo(methodDefinition, actualIfaceName, context, out IdentifierNameSyntax? propertyName, out SyntaxKind? accessorKind, out TypeSyntax? propertyType) &&
+                if (methodDefinition.Generator.TryGetPropertyAccessorInfo(methodDefinition, actualIfaceName, context, out IdentifierNameSyntax? propertyName, out SyntaxKind? accessorKind, out TypeSyntax? propertyType, out MarshalAsAttribute? propertyMarshalAsAttribute) &&
                     declaredProperties.Contains(propertyName.Identifier.ValueText))
                 {
                     AccessorDeclarationSyntax accessor = AccessorDeclaration(accessorKind.Value).WithSemicolonToken(Semicolon);
+
+                    if (propertyMarshalAsAttribute is not null)
+                    {
+                        if (accessorKind == SyntaxKind.GetAccessorDeclaration)
+                        {
+                            accessor = accessor.AddAttributeLists(
+                                AttributeList().WithTarget(AttributeTargetSpecifier(Token(SyntaxKind.ReturnKeyword))).AddAttributes(MarshalAs(propertyMarshalAsAttribute, null)));
+                        }
+                    }
 
                     if (members.Count > 0 && members[members.Count - 1] is PropertyDeclarationSyntax lastProperty && lastProperty.Identifier.ValueText == propertyName.Identifier.ValueText)
                     {
@@ -1240,7 +1249,7 @@ public partial class Generator
         foreach (QualifiedMethodDefinition methodDefinition in methods)
         {
             rowIndex++;
-            if (methodDefinition.Generator.TryGetPropertyAccessorInfo(methodDefinition, ifaceName, context, out IdentifierNameSyntax? propertyName, out SyntaxKind? accessorKind, out TypeSyntax? propertyType))
+            if (methodDefinition.Generator.TryGetPropertyAccessorInfo(methodDefinition, ifaceName, context, out IdentifierNameSyntax? propertyName, out SyntaxKind? accessorKind, out TypeSyntax? propertyType, out MarshalAsAttribute? propertyMarshalAsAttribute))
             {
                 if (badProperties.Contains(propertyName.Identifier.ValueText))
                 {
@@ -1276,11 +1285,19 @@ public partial class Generator
         return goodProperties.Count == 0 ? ImmutableHashSet<string>.Empty : new HashSet<string>(goodProperties.Keys, StringComparer.Ordinal);
     }
 
-    private bool TryGetPropertyAccessorInfo(QualifiedMethodDefinition qmd, string ifaceName, Context context, [NotNullWhen(true)] out IdentifierNameSyntax? propertyName, [NotNullWhen(true)] out SyntaxKind? accessorKind, [NotNullWhen(true)] out TypeSyntax? propertyType)
+    private bool TryGetPropertyAccessorInfo(
+        QualifiedMethodDefinition qmd,
+        string ifaceName,
+        Context context,
+        [NotNullWhen(true)] out IdentifierNameSyntax? propertyName,
+        [NotNullWhen(true)] out SyntaxKind? accessorKind,
+        [NotNullWhen(true)] out TypeSyntax? propertyType,
+        out MarshalAsAttribute? marshalAsAttribute)
     {
         propertyName = null;
         accessorKind = null;
         propertyType = null;
+        marshalAsAttribute = null;
 
         if (!this.canDeclareProperties)
         {
@@ -1333,7 +1350,9 @@ public partial class Generator
 
             Parameter propertyTypeParameter = qmd.Reader.GetParameter(parameters.Skip(1).Single());
             TypeHandleInfo propertyTypeInfo = signature.ParameterTypes[0];
-            propertyType = propertyTypeInfo.ToTypeSyntax(syntaxSettings, GeneratingElement.Property, propertyTypeParameter.GetCustomAttributes().QualifyWith(qmd.Generator), propertyTypeParameter.Attributes).Type;
+            TypeSyntaxAndMarshaling propertyTypeSyntax = propertyTypeInfo.ToTypeSyntax(syntaxSettings, GeneratingElement.Property, propertyTypeParameter.GetCustomAttributes().QualifyWith(qmd.Generator), propertyTypeParameter.Attributes);
+            marshalAsAttribute = propertyTypeSyntax.MarshalAsAttribute;
+            propertyType = propertyTypeSyntax.Type;
 
             if (isGetter)
             {

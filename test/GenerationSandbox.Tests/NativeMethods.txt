@@ -97,3 +97,7 @@ CLSCTX
 CoSetProxyBlanket
 RPC_C_AUTHN_LEVEL
 RPC_C_IMP_LEVEL
+IShellFolderViewDual
+SID_STopLevelBrowser
+IShellBrowser
+_SVGIO

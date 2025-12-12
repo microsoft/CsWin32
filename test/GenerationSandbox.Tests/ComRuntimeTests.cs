@@ -157,6 +157,7 @@ public class ComRuntimeTests
     }
 
     [Fact]
+    [Trait("TestCategory", "FailsInCloudTest")] // WMI APIs don't work in cloud VMs.
     public void CanCallIDispatchOnlyMethods()
     {
         Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");

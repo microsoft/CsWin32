@@ -248,6 +248,24 @@ public class COMTests : GeneratorTestBase
         Assert.Equal("SFVS_SELECT", Assert.IsType<QualifiedNameSyntax>(parameter.Type).Right.Identifier.ValueText);
     }
 
+    [Fact]
+    public void IShellFolderViewDual_ApplicationPropertyHasMarshalAsAttribute()
+    {
+        this.GenerateApi("IShellFolderViewDual");
+
+        InterfaceDeclarationSyntax ifaceSyntax = Assert.Single(this.FindGeneratedType("IShellFolderViewDual").OfType<InterfaceDeclarationSyntax>());
+        PropertyDeclarationSyntax applicationProperty = Assert.Single(ifaceSyntax.Members.OfType<PropertyDeclarationSyntax>(), p => p.Identifier.ValueText == "Application");
+        AccessorDeclarationSyntax getAccessor = Assert.Single(applicationProperty.AccessorList!.Accessors, a => a.Kind() == SyntaxKind.GetAccessorDeclaration);
+
+        // Check that the return attribute list has MarshalAs attribute
+        AttributeSyntax marshalAsAttr = Assert.Single(FindAttribute(getAccessor.AttributeLists, "MarshalAs"));
+
+        // Verify it's using the correct UnmanagedType for IDispatch
+        Assert.NotNull(marshalAsAttr.ArgumentList);
+        Assert.Contains(marshalAsAttr.ArgumentList.Arguments, arg =>
+            arg.Expression is MemberAccessExpressionSyntax { Name: IdentifierNameSyntax { Identifier: { ValueText: "IDispatch" } } });
+    }
+
     [Theory, CombinatorialData]
     public void InterestingUnmarshaledComInterfaces(
         [CombinatorialValues(

@@ -787,7 +787,7 @@ public partial class Generator
                 // wstrParam1
                 arguments[paramIndex] = Argument(localWstrName);
 
-                // if (buffer != null && buffer.LastIndexOf('\0') == -1) throw new ArgumentException("Required null terminator is missing.", "Param1");
+                // if (Param1 != null && Param1.LastIndexOf('\0') == -1) throw new ArgumentException("Required null terminator is missing.", "Param1");
                 InvocationExpressionSyntax lastIndexOf = InvocationExpression(
                     MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName(nameof(MemoryExtensions.LastIndexOf))),
                     ArgumentList().AddArguments(Argument(LiteralExpression(SyntaxKind.CharacterLiteralExpression, Literal('\0')))));
@@ -803,7 +803,8 @@ public partial class Generator
                 leadingStatements.Add(LocalDeclarationStatement(
                     VariableDeclaration(externParam.Type).AddVariables(VariableDeclarator(localWstrName.Identifier).WithInitializer(EqualsValueClause(localName)))));
 
-                // Param1 = Param1.Slice(0, wstrParam1.Length);
+                // Preserve the null terminator in the result, which contractually was included in the input.
+                // Param1 = Param1.Slice(0, wstrParam1.Length + 1);
                 trailingStatements.Add(ExpressionStatement(AssignmentExpression(
                     SyntaxKind.SimpleAssignmentExpression,
                     origName,
@@ -811,7 +812,7 @@ public partial class Generator
                         MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName(nameof(Span<char>.Slice))),
                         ArgumentList().AddArguments(
                             Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))),
-                            Argument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, localWstrName, IdentifierName("Length"))))))));
+                            Argument(BinaryExpression(SyntaxKind.AddExpression, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, localWstrName, IdentifierName("Length")), LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(1)))))))));
             }
             else if (!isIn && isOut && this.canUseSpan && externParam.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "PWSTR" } } })
             {

@@ -231,3 +231,91 @@ foreach (var aaObject in aaObjects)
     aaObject.Dispose();
 }
 ```
+
+## Use PNP APIs (shows omitted optional params and cbSize-d struct)
+
+This sample shows how to call an API where we've omitted some optional params -- note that we must
+use named parameters when passing parameters past the omitted optional ones. This also shows how to
+use Span APIs, and in this case one where we first call the API to get the buffer size, create the buffer
+and then call again to populate the buffer.
+
+```
+SetupDiGetClassDevs
+SetupDiEnumDeviceInfo
+SetupDiGetDeviceInstanceId
+```
+
+```cs
+using SafeHandle hDevInfo = PInvoke.SetupDiGetClassDevs(
+    Flags: SETUP_DI_GET_CLASS_DEVS_FLAGS.DIGCF_ALLCLASSES | SETUP_DI_GET_CLASS_DEVS_FLAGS.DIGCF_PRESENT);
+
+var devInfo = new SP_DEVINFO_DATA { cbSize = (uint)sizeof(SP_DEVINFO_DATA) };
+
+uint index = 0;
+while (PInvoke.SetupDiEnumDeviceInfo(hDevInfo, index++, ref devInfo))
+{
+    PInvoke.SetupDiGetDeviceInstanceId(hDevInfo, in devInfo, RequiredSize: out uint requiredSize);
+
+    Span<char> instanceIdSpan = new char[(int)requiredSize];
+    PInvoke.SetupDiGetDeviceInstanceId(hDevInfo, in devInfo, instanceIdSpan);
+
+    this.outputHelper.WriteLine($"Device {devInfo.ClassGuid} Instance ID: {instanceIdSpan.ToString()}");
+}
+```
+
+## Pass struct as a Span<byte>
+
+In this short example, we see how to pass a struct to a method that accepts a `Span<byte>`. `new Span<SHFILEINFOW>(ref fileInfo)` lets us
+get a `Span<SHFILEINFOW>` and then `MemoryMarshal.AsBytes` reinterprets that same Span as a `Span<byte>` with the expected size. The cswin32
+method will pass the Span's length to the native method as the "cb" count bytes parameter.
+
+```cs
+SHFILEINFOW fileInfo = default;
+PInvoke.SHGetFileInfo(
+    "c:\\windows\\notepad.exe",
+    FILE_FLAGS_AND_ATTRIBUTES.FILE_ATTRIBUTE_NORMAL,
+    MemoryMarshal.AsBytes(new Span<SHFILEINFOW>(ref fileInfo)),
+    SHGFI_FLAGS.SHGFI_DISPLAYNAME);
+```
+
+## Omitting optional out/ref parameters
+
+APIs with optional `in` parameters are tagged with `[Optional]` attribute and such parameters can be omitted, but APIs
+with optional `out` or `ref` parameters must always be passed. When the native method has these as `[optional]` and you need
+to pass _some_ but not all of those parameters, you can pass "null" to the native method using `ref Unsafe.NullRef<T>()`.
+
+This sample also shows passing `null` for SafeHandle-typed parameters which are not optional per the SDK headers but the
+implementation allows for them to be null.
+
+This sample shows a number of advanced COM marshalling scenarios
+
+### Marshalling enabled (COM wrappers, AOT compatible)
+
+```cs
+// CoCreateInstance CLSID_WbemLocator
+IWbemLocator locator = WbemLocator.CreateInstance<IWbemLocator>();
+
+var ns = new SysFreeStringSafeHandle(Marshal.StringToBSTR(@"ROOT\Microsoft\Windows\Defender"), true);
+locator.ConnectServer(ns, new SysFreeStringSafeHandle(), new SysFreeStringSafeHandle(), new SysFreeStringSafeHandle(), 0, new SafeFileHandle(), null, out IWbemServices services);
+
+unsafe
+{
+    PInvoke.CoSetProxyBlanket(
+            services,
+            10, // RPC_C_AUTHN_WINNT is 10
+            0,  // RPC_C_AUTHZ_NONE is 0
+            pServerPrincName: null,
+            dwAuthnLevel: RPC_C_AUTHN_LEVEL.RPC_C_AUTHN_LEVEL_CALL,
+            dwImpLevel: RPC_C_IMP_LEVEL.RPC_C_IMP_LEVEL_IMPERSONATE,
+            pAuthInfo: null,
+            dwCapabilities: EOLE_AUTHENTICATION_CAPABILITIES.EOAC_NONE);
+}
+
+var className = new SysFreeStringSafeHandle(Marshal.StringToBSTR("MSFT_MpScan"), true);
+IWbemClassObject? classObj = null; // out param
+
+services.GetObject(className, WBEM_GENERIC_FLAG_TYPE.WBEM_FLAG_RETURN_WBEM_COMPLETE, null, ref classObj, ref Unsafe.NullRef<IWbemCallResult>());
+
+classObj.GetMethod("Start", 0, out IWbemClassObject pInParamsSignature, out IWbemClassObject ppOutSignature);
+
+```

@@ -206,11 +206,11 @@ public class ComRuntimeTests(ITestOutputHelper outputHelper)
             var app = (INetFwAuthorizedApplication)aaObject;
 
             this.outputHelper.WriteLine("---");
-            this.outputHelper.WriteLine($"Name: {app.Name.ToString()}");
+            this.outputHelper.WriteLine($"Name: {app.Name}");
             this.outputHelper.WriteLine($"Enabled: {(bool)app.Enabled}");
-            this.outputHelper.WriteLine($"Remote Addresses: {app.RemoteAddresses.ToString()}");
+            this.outputHelper.WriteLine($"Remote Addresses: {app.RemoteAddresses}");
             this.outputHelper.WriteLine($"Scope: {app.Scope}");
-            this.outputHelper.WriteLine($"Process Image Filename: {app.ProcessImageFileName.ToString()}");
+            this.outputHelper.WriteLine($"Process Image Filename: {app.ProcessImageFileName}");
             this.outputHelper.WriteLine($"IP Version: {app.IpVersion}");
         }
     }

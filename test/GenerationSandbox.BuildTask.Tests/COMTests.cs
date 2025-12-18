@@ -255,11 +255,11 @@ public partial class COMTests(ITestOutputHelper outputHelper)
             var app = (INetFwAuthorizedApplication)ComVariantMarshaller.ConvertToManaged(aaObject)!;
 
             this.outputHelper.WriteLine("---");
-            this.outputHelper.WriteLine($"Name: {app.get_Name().ToString()}");
+            this.outputHelper.WriteLine($"Name: {app.get_Name()}");
             this.outputHelper.WriteLine($"Enabled: {(bool)app.get_Enabled()}");
-            this.outputHelper.WriteLine($"Remote Addresses: {app.get_RemoteAddresses().ToString()}");
+            this.outputHelper.WriteLine($"Remote Addresses: {app.get_RemoteAddresses()}");
             this.outputHelper.WriteLine($"Scope: {app.get_Scope()}");
-            this.outputHelper.WriteLine($"Process Image Filename: {app.get_ProcessImageFileName().ToString()}");
+            this.outputHelper.WriteLine($"Process Image Filename: {app.get_ProcessImageFileName()}");
             this.outputHelper.WriteLine($"IP Version: {app.get_IpVersion()}");
 
             aaObject.Dispose();
@@ -286,7 +286,7 @@ public partial class COMTests(ITestOutputHelper outputHelper)
             Span<char> instanceIdSpan = new char[(int)requiredSize];
             PInvoke.SetupDiGetDeviceInstanceId(hDevInfo, in devInfo, instanceIdSpan);
 
-            this.outputHelper.WriteLine($"Device {devInfo.ClassGuid} Instance ID: {instanceIdSpan.ToString()}");
+            this.outputHelper.WriteLine($"Device {devInfo.ClassGuid} Instance ID: {instanceIdSpan}");
         }
     }
 }

@@ -197,11 +197,11 @@ foreach (var aaObject in aaObjects)
 {
     var app = (INetFwAuthorizedApplication)aaObject;
     Console.WriteLine("---");
-    Console.WriteLine($"Name: {app.Name.ToString()}");
+    Console.WriteLine($"Name: {app.Name}");
     Console.WriteLine($"Enabled: {(bool)app.Enabled}");
-    Console.WriteLine($"Remote Addresses: {app.RemoteAddresses.ToString()}");
+    Console.WriteLine($"Remote Addresses: {app.RemoteAddresses}");
     Console.WriteLine($"Scope: {app.Scope}");
-    Console.WriteLine($"Process Image Filename: {app.ProcessImageFileName.ToString()}");
+    Console.WriteLine($"Process Image Filename: {app.ProcessImageFileName}");
     Console.WriteLine($"IP Version: {app.IpVersion}");
 }
 ```
@@ -223,11 +223,11 @@ foreach (var aaObject in aaObjects)
     var app = (INetFwAuthorizedApplication)ComVariantMarshaller.ConvertToManaged(aaObject)!;
 
     Console.WriteLine("---");
-    Console.WriteLine($"Name: {app.get_Name().ToString()}");
+    Console.WriteLine($"Name: {app.get_Name()}");
     Console.WriteLine($"Enabled: {(bool)app.get_Enabled()}");
-    Console.WriteLine($"Remote Addresses: {app.get_RemoteAddresses().ToString()}");
+    Console.WriteLine($"Remote Addresses: {app.get_RemoteAddresses()}");
     Console.WriteLine($"Scope: {app.get_Scope()}");
-    Console.WriteLine($"Process Image Filename: {app.get_ProcessImageFileName().ToString()}");
+    Console.WriteLine($"Process Image Filename: {app.get_ProcessImageFileName()}");
     Console.WriteLine($"IP Version: {app.get_IpVersion()}");
 
     aaObject.Dispose();
@@ -261,7 +261,7 @@ while (PInvoke.SetupDiEnumDeviceInfo(hDevInfo, index++, ref devInfo))
     Span<char> instanceIdSpan = new char[(int)requiredSize];
     PInvoke.SetupDiGetDeviceInstanceId(hDevInfo, in devInfo, instanceIdSpan);
 
-    Console.WriteLine($"Device {devInfo.ClassGuid} Instance ID: {instanceIdSpan.ToString()}");
+    Console.WriteLine($"Device {devInfo.ClassGuid} Instance ID: {instanceIdSpan}");
 }
 ```
 

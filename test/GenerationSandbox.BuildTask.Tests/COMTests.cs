@@ -6,6 +6,7 @@
 
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.Marshalling;
 using Microsoft.Win32.SafeHandles;
 using Windows.System;
 using Windows.UI.Composition;
@@ -16,8 +17,10 @@ using Windows.Win32.Graphics.Direct2D.Common;
 using Windows.Win32.Graphics.Direct3D;
 using Windows.Win32.Graphics.Direct3D11;
 using Windows.Win32.Graphics.Dxgi.Common;
+using Windows.Win32.NetworkManagement.WindowsFirewall;
 using Windows.Win32.Storage.FileSystem;
 using Windows.Win32.System.Com;
+using Windows.Win32.System.Ole;
 using Windows.Win32.System.WinRT.Composition;
 using Windows.Win32.System.Wmi;
 using Windows.Win32.UI.Shell;
@@ -26,8 +29,10 @@ using Windows.Win32.UI.WindowsAndMessaging; // added for window creation APIs
 namespace GenerationSandbox.BuildTask.Tests;
 
 [Trait("WindowsOnly", "true")]
-public partial class COMTests
+public partial class COMTests(ITestOutputHelper outputHelper)
 {
+    private ITestOutputHelper outputHelper = outputHelper;
+
     [Fact]
     public async Task CanInteropWithICompositorInterop()
     {
@@ -227,5 +232,35 @@ public partial class COMTests
         classObj.GetMethod("Start", 0, out IWbemClassObject pInParamsSignature, out IWbemClassObject ppOutSignature);
 
         Assert.NotNull(pInParamsSignature);
+    }
+
+    [Fact]
+    [Trait("TestCategory", "FailsInCloudTest")]
+    public void CanCallINetFwMgrApis()
+    {
+        Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
+
+        var fwMgr = NetFwMgr.CreateInstance<INetFwMgr>();
+        var authorizedApplications = fwMgr.get_LocalPolicy().get_CurrentProfile().get_AuthorizedApplications();
+
+        var aaObjects = new ComVariant[authorizedApplications.get_Count()];
+
+        var applicationsEnum = (IEnumVARIANT)authorizedApplications.get__NewEnum();
+        applicationsEnum.Next((uint)authorizedApplications.get_Count(), aaObjects, out uint fetched);
+
+        foreach (var aaObject in aaObjects)
+        {
+            var app = (INetFwAuthorizedApplication)ComVariantMarshaller.ConvertToManaged(aaObject)!;
+
+            this.outputHelper.WriteLine("---");
+            this.outputHelper.WriteLine($"Name: {app.get_Name().ToString()}");
+            this.outputHelper.WriteLine($"Enabled: {(bool)app.get_Enabled()}");
+            this.outputHelper.WriteLine($"Remote Addresses: {app.get_RemoteAddresses().ToString()}");
+            this.outputHelper.WriteLine($"Scope: {app.get_Scope()}");
+            this.outputHelper.WriteLine($"Process Image Filename: {app.get_ProcessImageFileName().ToString()}");
+            this.outputHelper.WriteLine($"IP Version: {app.get_IpVersion()}");
+
+            aaObject.Dispose();
+        }
     }
 }

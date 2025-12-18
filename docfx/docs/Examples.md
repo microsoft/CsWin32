@@ -1,18 +1,6 @@
 # Code examples
 
-When, for example, marshaling is enabled and `useSafeHandles` is `true`, the code can be different than that in C++. Here we show a few code examples of using CsWin32.
-
-```json
-{
-  "$schema": "https://aka.ms/CsWin32.schema.json",
-  "useSafeHandles": false,
-  "comInterop": {
-    "preserveSigMethods": ["*"]
-  }
-}
-```
-
-## Scenario 1: Retrieving the last-write time
+## Retrieving the last-write time
 
 Based on: [Retrieving the Last-Write Time](https://learn.microsoft.com/en-us/windows/win32/sysinfo/retrieving-the-last-write-time)
 
@@ -29,7 +17,6 @@ MAX_PATH
 ```cs
 static void Main(string[] args)
 {
-    SafeHandle hFile;
     Span<char> szBuf = stackalloc char[(int)PInvoke.MAX_PATH];
 
     if (args.Length is not 1)
@@ -38,7 +25,7 @@ static void Main(string[] args)
         return;
     }
 
-    hFile = PInvoke.CreateFile(
+    using SafeHandle hFile = PInvoke.CreateFile(
         args[0],
         (uint)GENERIC_ACCESS_RIGHTS.GENERIC_READ,
         FILE_SHARE_MODE.FILE_SHARE_READ,
@@ -52,8 +39,6 @@ static void Main(string[] args)
 
     if (GetLastWriteTime(hFile, szBuf))
         Console.WriteLine("Last write time is: {0}\n", szBuf.ToString());
-
-    hFile.Close();
 }
 
 static unsafe bool GetLastWriteTime(SafeHandle hFile, Span<char> lpszString)
@@ -77,7 +62,7 @@ static unsafe bool GetLastWriteTime(SafeHandle hFile, Span<char> lpszString)
 }
 ```
 
-## Scenario 2: Retrieving information about all of the display monitors
+## Retrieving information about all of the display monitors
 
 ```
 EnumDisplayMonitors
@@ -130,7 +115,7 @@ static unsafe BOOL MonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, RECT* lprc
 }
 ```
 
-## Scenario 3: Use of SHCreateItemFromParsingName
+## Use of SHCreateItemFromParsingName
 
 ```
 IShellItem
@@ -183,5 +168,66 @@ static unsafe void Main(string[] args)
     if (hr.Failed) return;
 
     psi->Release();
+}
+```
+
+## Using COM classes (NetFwMgr, INetFwMgr)
+
+In this example we see how to activate a COM class and call methods on it via its primary interface. When marshalling
+is enabled, we can use C# cast to do the "QueryInterface" that you would have seen in a native C++ sample.
+
+```
+NetFwMgr
+INetFwMgr
+IEnumVARIANT
+INetFwAuthorizedApplication
+```
+
+### Marshalling enabled (built-in COM Interop, not AOT-compatible)
+
+```cs
+var fwMgr = (INetFwMgr)new NetFwMgr();
+var authorizedApplications = fwMgr.LocalPolicy.CurrentProfile.AuthorizedApplications;
+var aaObjects = new object[authorizedApplications.Count];
+var applicationsEnum = (IEnumVARIANT)authorizedApplications._NewEnum;
+applicationsEnum.Next((uint)authorizedApplications.Count, aaObjects, out uint fetched);
+foreach (var aaObject in aaObjects)
+{
+    var app = (INetFwAuthorizedApplication)aaObject;
+    Console.WriteLine("---");
+    Console.WriteLine($"Name: {app.Name.ToString()}");
+    Console.WriteLine($"Enabled: {(bool)app.Enabled}");
+    Console.WriteLine($"Remote Addresses: {app.RemoteAddresses.ToString()}");
+    Console.WriteLine($"Scope: {app.Scope}");
+    Console.WriteLine($"Process Image Filename: {app.ProcessImageFileName.ToString()}");
+    Console.WriteLine($"IP Version: {app.IpVersion}");
+}
+```
+
+### Marshalling enabled (COM wrappers, AOT compatible)
+
+Note that in COM wrappers mode, the generated interfaces have get_ methods instead of properties. Some parameters
+are also ComVariant instead of object because source generated COM does not support as much automatic marshalling
+as built-in COM does.
+
+```cs
+var fwMgr = NetFwMgr.CreateInstance<INetFwMgr>();
+var authorizedApplications = fwMgr.get_LocalPolicy().get_CurrentProfile().get_AuthorizedApplications();
+var aaObjects = new ComVariant[authorizedApplications.get_Count()];
+var applicationsEnum = (IEnumVARIANT)authorizedApplications.get__NewEnum();
+applicationsEnum.Next((uint)authorizedApplications.get_Count(), aaObjects, out uint fetched);
+foreach (var aaObject in aaObjects)
+{
+    var app = (INetFwAuthorizedApplication)ComVariantMarshaller.ConvertToManaged(aaObject)!;
+
+    Console.WriteLine("---");
+    Console.WriteLine($"Name: {app.get_Name().ToString()}");
+    Console.WriteLine($"Enabled: {(bool)app.get_Enabled()}");
+    Console.WriteLine($"Remote Addresses: {app.get_RemoteAddresses().ToString()}");
+    Console.WriteLine($"Scope: {app.get_Scope()}");
+    Console.WriteLine($"Process Image Filename: {app.get_ProcessImageFileName().ToString()}");
+    Console.WriteLine($"IP Version: {app.get_IpVersion()}");
+
+    aaObject.Dispose();
 }
 ```

@@ -77,3 +77,7 @@ UpdateProcThreadAttribute
 DeleteProcThreadAttributeList 
 PROC_THREAD_ATTRIBUTE_MACHINE_TYPE
 FwpmProviderAdd0
+INetFwMgr
+NetFwMgr
+IEnumVARIANT
+INetFwAuthorizedApplication

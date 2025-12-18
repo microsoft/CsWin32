@@ -261,7 +261,7 @@ while (PInvoke.SetupDiEnumDeviceInfo(hDevInfo, index++, ref devInfo))
     Span<char> instanceIdSpan = new char[(int)requiredSize];
     PInvoke.SetupDiGetDeviceInstanceId(hDevInfo, in devInfo, instanceIdSpan);
 
-    this.outputHelper.WriteLine($"Device {devInfo.ClassGuid} Instance ID: {instanceIdSpan.ToString()}");
+    Console.WriteLine($"Device {devInfo.ClassGuid} Instance ID: {instanceIdSpan.ToString()}");
 }
 ```
 

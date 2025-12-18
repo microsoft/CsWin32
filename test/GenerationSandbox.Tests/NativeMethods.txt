@@ -101,3 +101,7 @@ IShellFolderViewDual
 SID_STopLevelBrowser
 IShellBrowser
 _SVGIO
+INetFwMgr
+NetFwMgr
+IEnumVARIANT
+INetFwAuthorizedApplication

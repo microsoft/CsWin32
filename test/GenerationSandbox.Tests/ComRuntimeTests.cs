@@ -9,14 +9,18 @@ using Windows.Win32.Foundation;
 using Windows.Win32.Graphics.Direct2D;
 using Windows.Win32.Graphics.Direct2D.Common;
 using Windows.Win32.Graphics.Dxgi.Common;
+using Windows.Win32.NetworkManagement.WindowsFirewall;
 using Windows.Win32.System.Com;
+using Windows.Win32.System.Ole;
 using Windows.Win32.System.Wmi;
 using Windows.Win32.UI.Shell;
 using Windows.Win32.UI.WindowsAndMessaging;
 using IServiceProvider = Windows.Win32.System.Com.IServiceProvider;
 
-public class ComRuntimeTests
+public class ComRuntimeTests(ITestOutputHelper outputHelper)
 {
+    private ITestOutputHelper outputHelper = outputHelper;
+
     [Fact]
     [Trait("TestCategory", "FailsInCloudTest")]
     public void RemotableInterface()
@@ -181,5 +185,33 @@ public class ComRuntimeTests
         var folderView = (IShellFolderViewDual)folderViewAsObject;
 
         _ = folderView.Application; // Throws InvalidOleVariantTypeException "Specified OLE variant is invalid"
+    }
+
+    [Fact]
+    [Trait("TestCategory", "FailsInCloudTest")]
+    public void CanCallINetFwMgrApis()
+    {
+        Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
+
+        var fwMgr = (INetFwMgr)new NetFwMgr();
+        var authorizedApplications = fwMgr.LocalPolicy.CurrentProfile.AuthorizedApplications;
+
+        var aaObjects = new object[authorizedApplications.Count];
+
+        var applicationsEnum = (IEnumVARIANT)authorizedApplications._NewEnum;
+        applicationsEnum.Next((uint)authorizedApplications.Count, aaObjects, out uint fetched);
+
+        foreach (var aaObject in aaObjects)
+        {
+            var app = (INetFwAuthorizedApplication)aaObject;
+
+            this.outputHelper.WriteLine("---");
+            this.outputHelper.WriteLine($"Name: {app.Name.ToString()}");
+            this.outputHelper.WriteLine($"Enabled: {(bool)app.Enabled}");
+            this.outputHelper.WriteLine($"Remote Addresses: {app.RemoteAddresses.ToString()}");
+            this.outputHelper.WriteLine($"Scope: {app.Scope}");
+            this.outputHelper.WriteLine($"Process Image Filename: {app.ProcessImageFileName.ToString()}");
+            this.outputHelper.WriteLine($"IP Version: {app.IpVersion}");
+        }
     }
 }

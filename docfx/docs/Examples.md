@@ -1,5 +1,7 @@
 # Code examples
 
+When, for example, marshaling is enabled and `useSafeHandles` is `true`, the code can be different than that in C++. Here we show a few code examples of using CsWin32.
+
 ## Retrieving the last-write time
 
 Based on: [Retrieving the Last-Write Time](https://learn.microsoft.com/en-us/windows/win32/sysinfo/retrieving-the-last-write-time)

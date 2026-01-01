@@ -221,6 +221,8 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         ["Windows.Win32.NetworkManagement.WindowsFilteringPlatform.FwpmProviderAdd0", "FwpmProviderAdd0", "SafeHandle engineHandle, in winmdroot.NetworkManagement.WindowsFilteringPlatform.FWPM_PROVIDER0 provider, [Optional] winmdroot.Security.PSECURITY_DESCRIPTOR sd"],
         // Verify the ABI signature has [Optional] on Optional and Reserved parameters.
         ["Windows.Win32.NetworkManagement.WindowsFilteringPlatform.FwpmEngineOpen0", "FwpmEngineOpen0", "[Optional] winmdroot.Foundation.PCWSTR serverName, uint authnService, [Optional] winmdroot.System.Rpc.SEC_WINNT_AUTH_IDENTITY_W* authIdentity, [Optional] winmdroot.NetworkManagement.WindowsFilteringPlatform.FWPM_SESSION0* session, winmdroot.Foundation.HANDLE* engineHandle"],
+        // WlanCloseHandle accepts an additional reserved parameter. We can still generate safe hanlde for WlanOpenHandle then
+        ["WlanOpenHandle", "WlanOpenHandle", "uint dwClientVersion, out uint pdwNegotiatedVersion, out global::Windows.Win32.WlanCloseHandleSafeHandle phClientHandle"],
     ];
 
     [Theory]
@@ -245,9 +247,9 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         this.nativeMethodsJson = nativeMethodsJson;
 
         // Make a unique name based on the signature
-        await this.InvokeGeneratorAndCompile($"{api}_{member}_{tfm}_{signature.Select(x => (int)x).Aggregate((x, y) => x + y).ToString("X")}");
+        await this.InvokeGeneratorAndCompile($"{api}_{member}_{tfm}_{signature.Select(x => (int)x).Aggregate((x, y) => x + y):X}");
 
-        var generatedMemberSignatures = this.FindGeneratedMethod(member).Select(x => x.ParameterList.ToString());
+        var generatedMemberSignatures = this.FindGeneratedMethod(member).Select(x => x.ParameterList.ToString()).ToArray();
 
         foreach (var generatedSignature in generatedMemberSignatures)
         {

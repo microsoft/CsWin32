@@ -261,7 +261,7 @@ public partial class Generator
 
             // If there are more than 1 parameter other parameters are reserved.
             // Reserved parameters can be pointers.
-            // Thus we need ussafe modifier even though we don't pass values for reserved parameters explicitly.
+            // Thus we need unsafe modifier even though we don't pass values for reserved parameters explicitly.
             // As an example of that see WlanCloseHandle function.
             if (releaseMethodSignature.RequiredParameterCount > 1)
             {

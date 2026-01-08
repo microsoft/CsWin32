@@ -46,6 +46,11 @@ public partial class Generator
             foreach (ParameterHandle paramHandle in releaseMethodDef.GetParameters())
             {
                 Parameter param = this.Reader.GetParameter(paramHandle);
+                if (param.SequenceNumber == 0)
+                {
+                    continue;
+                }
+
                 CustomAttributeHandleCollection paramAttributes = param.GetCustomAttributes();
 
                 if (this.FindInteropDecorativeAttribute(paramAttributes, "ReservedAttribute") is null)
@@ -53,9 +58,6 @@ public partial class Generator
                     actualParameterCount++;
                 }
             }
-
-            // Account for first this parameter
-            actualParameterCount--;
 
             // If the release method takes more than one non-reserved parameter, we can't generate a SafeHandle for it.
             if (actualParameterCount != 1)

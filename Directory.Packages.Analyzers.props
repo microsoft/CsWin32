@@ -11,6 +11,6 @@
     <PackageVersion Update="System.Memory" Version="4.5.5" />
     <PackageVersion Update="System.Reflection.Metadata" Version="8.0.0" />
     <PackageVersion Include="System.Text.Encodings.Web" Version="8.0.0" />
-    <PackageVersion Update="System.Text.Json" Version="8.0.0" />
+    <PackageVersion Update="System.Text.Json" Version="8.0.5" />
   </ItemGroup>
 </Project>

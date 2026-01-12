@@ -185,7 +185,11 @@ public partial class Generator
                     IdentifierName(renamedReleaseMethod ?? releaseMethod)),
                 ArgumentList().AddArguments(releaseHandleArgument));
             BlockSyntax? releaseBlock = null;
-            bool releaseMethodIsUnsafe = false;
+
+            // Reserved parameters can be pointers.
+            // Thus we need unsafe modifier even though we don't pass values for reserved parameters explicitly.
+            // As an example of that see WlanCloseHandle function.
+            var releaseMethodIsUnsafe = releaseMethodHasReservedParameters;
             if (!(releaseMethodReturnType.Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.BoolKeyword } } ||
                 releaseMethodReturnType.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "BOOL" } } }))
             {
@@ -269,14 +273,6 @@ public partial class Generator
 
             MethodDeclarationSyntax releaseHandleDeclaration = MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Identifier("ReleaseHandle"))
                 .AddModifiers(TokenWithSpace(SyntaxKind.ProtectedKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword));
-
-            // Reserved parameters can be pointers.
-            // Thus we need unsafe modifier even though we don't pass values for reserved parameters explicitly.
-            // As an example of that see WlanCloseHandle function.
-            if (releaseMethodHasReservedParameters)
-            {
-                releaseHandleDeclaration = releaseHandleDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));
-            }
 
             if (releaseMethodIsUnsafe)
             {

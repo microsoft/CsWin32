@@ -42,7 +42,7 @@ public partial class Generator
             TypeHandleInfo releaseMethodParameterTypeHandleInfo = releaseMethodSignature.ParameterTypes[0];
             TypeSyntaxAndMarshaling releaseMethodParameterType = releaseMethodParameterTypeHandleInfo.ToTypeSyntax(this.externSignatureTypeSettings, GeneratingElement.HelperClassMember, default);
 
-            var actualParameterCount = 0;
+            var nonReservedParameterCount = 0;
             foreach (ParameterHandle paramHandle in releaseMethodDef.GetParameters())
             {
                 Parameter param = this.Reader.GetParameter(paramHandle);
@@ -55,12 +55,12 @@ public partial class Generator
 
                 if (this.FindInteropDecorativeAttribute(paramAttributes, "ReservedAttribute") is null)
                 {
-                    actualParameterCount++;
+                    nonReservedParameterCount++;
                 }
             }
 
             // If the release method takes more than one non-reserved parameter, we can't generate a SafeHandle for it.
-            if (actualParameterCount != 1)
+            if (nonReservedParameterCount != 1)
             {
                 safeHandleType = null;
             }

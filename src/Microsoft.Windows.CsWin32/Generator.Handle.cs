@@ -43,6 +43,7 @@ public partial class Generator
             TypeSyntaxAndMarshaling releaseMethodParameterType = releaseMethodParameterTypeHandleInfo.ToTypeSyntax(this.externSignatureTypeSettings, GeneratingElement.HelperClassMember, default);
 
             var nonReservedParameterCount = 0;
+            var handleParameterName = string.Empty;
             foreach (ParameterHandle paramHandle in releaseMethodDef.GetParameters())
             {
                 Parameter param = this.Reader.GetParameter(paramHandle);
@@ -56,6 +57,7 @@ public partial class Generator
                 if (this.FindInteropDecorativeAttribute(paramAttributes, "ReservedAttribute") is null)
                 {
                     nonReservedParameterCount++;
+                    handleParameterName = this.Reader.GetString(param.Name);
                 }
             }
 
@@ -155,11 +157,20 @@ public partial class Generator
                 .WithExpressionBody(ArrowExpressionClause(overallTest))
                 .WithSemicolonToken(SemicolonWithLineFeed));
 
+            // If there are more than 1 parameter other parameters are reserved.
+            // Otherwise we would have quit earlier
+            var releaseMethodHasReservedParameters = releaseMethodSignature.RequiredParameterCount > 1;
+
             // (struct)this.handle or (struct)checked((fieldType)(nint))this.handle, as appropriate.
+            // If we have other reserved parameters make this a named argument to be extra sure
+            // we are passing value for correct parameter
             bool implicitConversion = typeDefStructFieldType is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.IntPtr } or PointerTypeHandleInfo;
-            ArgumentSyntax releaseHandleArgument = Argument(CastExpression(
-                releaseMethodParameterType.Type,
-                implicitConversion ? thisHandle : CheckedExpression(CastExpression(typeDefStructFieldType!.ToTypeSyntax(this.fieldTypeSettings, GeneratingElement.HelperClassMember, null).Type, CastExpression(IdentifierName("nint"), thisHandle)))));
+            ArgumentSyntax releaseHandleArgument = Argument(
+                releaseMethodHasReservedParameters ? NameColon(IdentifierName(handleParameterName)) : null,
+                default,
+                CastExpression(
+                    releaseMethodParameterType.Type,
+                    implicitConversion ? thisHandle : CheckedExpression(CastExpression(typeDefStructFieldType!.ToTypeSyntax(this.fieldTypeSettings, GeneratingElement.HelperClassMember, null).Type, CastExpression(IdentifierName("nint"), thisHandle)))));
 
             // protected override [unsafe] bool ReleaseHandle() => ReleaseMethod((struct)this.handle);
             // Special case release functions based on their return type as follows: (https://github.com/microsoft/win32metadata/issues/25)
@@ -259,11 +270,10 @@ public partial class Generator
             MethodDeclarationSyntax releaseHandleDeclaration = MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Identifier("ReleaseHandle"))
                 .AddModifiers(TokenWithSpace(SyntaxKind.ProtectedKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword));
 
-            // If there are more than 1 parameter other parameters are reserved.
             // Reserved parameters can be pointers.
             // Thus we need unsafe modifier even though we don't pass values for reserved parameters explicitly.
             // As an example of that see WlanCloseHandle function.
-            if (releaseMethodSignature.RequiredParameterCount > 1)
+            if (releaseMethodHasReservedParameters)
             {
                 releaseHandleDeclaration = releaseHandleDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));
             }

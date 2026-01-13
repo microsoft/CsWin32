@@ -6,7 +6,7 @@
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
 
     <MicroBuildVersion>2.0.201</MicroBuildVersion>
-    <MetadataVersion>68.0.4-preview</MetadataVersion>
+    <MetadataVersion>69.0.7-preview</MetadataVersion>
     <WDKMetadataVersion>0.13.25-experimental</WDKMetadataVersion>
     <!-- <DiaMetadataVersion>0.2.185-preview-g7e1e6a442c</DiaMetadataVersion> -->
     <ApiDocsVersion>0.1.42-alpha</ApiDocsVersion>

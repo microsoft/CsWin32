@@ -378,19 +378,49 @@ public partial class Generator
                         .WithModifiers(TokenList(TokenWithSpace(SyntaxKind.OutKeyword)));
 
                     // HANDLE SomeLocal;
-                    leadingStatements.Add(LocalDeclarationStatement(VariableDeclaration(pointedElementInfo.ToTypeSyntax(parameterTypeSyntaxSettings, GeneratingElement.FriendlyOverload, null).Type).AddVariables(
-                        VariableDeclarator(typeDefHandleName.Identifier))));
+                    leadingStatements.Add(
+                        LocalDeclarationStatement(
+                            VariableDeclaration(
+                                pointedElementInfo.ToTypeSyntax(parameterTypeSyntaxSettings, GeneratingElement.FriendlyOverload, null).Type,
+                                VariableDeclarator(typeDefHandleName.Identifier))));
+
+                    if (this.canUseMarshalInitHandle && !doNotRelease)
+                    {
+                        // Some = new SafeHandle();
+                        leadingStatements.Add(
+                            ExpressionStatement(
+                                AssignmentExpression(
+                                    SyntaxKind.SimpleAssignmentExpression,
+                                    origName,
+                                    ObjectCreationExpression(safeHandleType))));
+
+                        // Marshal.InitHandle(Some, SomeLocal);
+                        trailingStatements.Add(
+                            ExpressionStatement(
+                                InvocationExpression(
+                                    MemberAccessExpression(
+                                        SyntaxKind.SimpleMemberAccessExpression,
+                                        IdentifierName(nameof(Marshal)),
+                                        IdentifierName("InitHandle")),
+                                    ArgumentList(
+                                    [
+                                        Argument(origName),
+                                        Argument(typeDefHandleName),
+                                    ]))));
+                    }
+                    else
+                    {
+                        // Some = new SafeHandle(SomeLocal, ownsHandle: true);
+                        trailingStatements.Add(ExpressionStatement(AssignmentExpression(
+                            SyntaxKind.SimpleAssignmentExpression,
+                            origName,
+                            ObjectCreationExpression(safeHandleType).AddArgumentListArguments(
+                                Argument(this.GetIntPtrFromTypeDef(typeDefHandleName, pointedElementInfo)),
+                                Argument(LiteralExpression(doNotRelease ? SyntaxKind.FalseLiteralExpression : SyntaxKind.TrueLiteralExpression)).WithNameColon(NameColon(IdentifierName("ownsHandle")))))));
+                    }
 
                     // Argument: &SomeLocal
                     arguments[paramIndex] = Argument(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, typeDefHandleName));
-
-                    // Some = new SafeHandle(SomeLocal, ownsHandle: true);
-                    trailingStatements.Add(ExpressionStatement(AssignmentExpression(
-                        SyntaxKind.SimpleAssignmentExpression,
-                        origName,
-                        ObjectCreationExpression(safeHandleType).AddArgumentListArguments(
-                            Argument(this.GetIntPtrFromTypeDef(typeDefHandleName, pointedElementInfo)),
-                            Argument(LiteralExpression(doNotRelease ? SyntaxKind.FalseLiteralExpression : SyntaxKind.TrueLiteralExpression)).WithNameColon(NameColon(IdentifierName("ownsHandle")))))));
                 }
             }
             else if (this.options.UseSafeHandles && isIn && !isOut && !isReleaseMethod && parameterTypeInfo is HandleTypeHandleInfo parameterHandleTypeInfo && this.TryGetHandleReleaseMethod(parameterHandleTypeInfo.Handle, paramAttributes, out string? releaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, releaseMethod)
@@ -1108,7 +1138,38 @@ public partial class Generator
             && returnTypeHandleInfo.Generator.TryGetHandleReleaseMethod(returnTypeHandleInfo.Handle, returnTypeAttributes, out string? returnReleaseMethod)
             ? this.RequestSafeHandle(returnReleaseMethod) : null;
 
-        if ((returnSafeHandleType is object || minorSignatureChange) && !signatureChanged)
+        IdentifierNameSyntax resultLocal = IdentifierName("__result");
+
+        if (this.canUseMarshalInitHandle && returnSafeHandleType is not null)
+        {
+            IdentifierNameSyntax resultSafeHandleLocal = IdentifierName("__resultSafeHandle");
+
+            // SafeHandle __resultSafeHandle = new SafeHandle();
+            leadingStatements.Add(
+                LocalDeclarationStatement(
+                    VariableDeclaration(
+                        returnSafeHandleType,
+                        VariableDeclarator(
+                            resultSafeHandleLocal.Identifier,
+                            EqualsValueClause(
+                                ObjectCreationExpression(returnSafeHandleType))))));
+
+            // Marshal.InitHandle(__resultSafeHandle, __result);
+            trailingStatements.Add(
+                ExpressionStatement(
+                    InvocationExpression(
+                        MemberAccessExpression(
+                            SyntaxKind.SimpleMemberAccessExpression,
+                            IdentifierName(nameof(Marshal)),
+                            IdentifierName("InitHandle")),
+                        ArgumentList(
+                        [
+                            Argument(resultSafeHandleLocal),
+                            Argument(resultLocal),
+                        ]))));
+        }
+
+        if ((returnSafeHandleType is not null || minorSignatureChange) && !signatureChanged)
         {
             // The parameter types are all the same, but we need a friendly overload with a different return type.
             // Our only choice is to rename the friendly overload.
@@ -1145,20 +1206,30 @@ public partial class Generator
                 })
                 .WithArgumentList(FixTrivia(ArgumentList().AddArguments(arguments.ToArray())));
             bool hasVoidReturn = externMethodReturnType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.VoidKeyword } };
-            BlockSyntax? body = Block().AddStatements(leadingStatements.ToArray());
-            IdentifierNameSyntax resultLocal = IdentifierName("__result");
-            if (returnSafeHandleType is object)
+            BlockSyntax? body = Block(leadingStatements);
+            if (returnSafeHandleType is not null)
             {
-                //// HANDLE result = invocation();
+                // HANDLE result = invocation();
                 body = body.AddStatements(LocalDeclarationStatement(VariableDeclaration(externMethodReturnType)
                     .AddVariables(VariableDeclarator(resultLocal.Identifier).WithInitializer(EqualsValueClause(externInvocation)))));
 
                 body = body.AddStatements(trailingStatements.ToArray());
 
-                //// return new SafeHandle(result, ownsHandle: true);
-                body = body.AddStatements(ReturnStatement(ObjectCreationExpression(returnSafeHandleType).AddArgumentListArguments(
-                    Argument(this.GetIntPtrFromTypeDef(resultLocal, originalSignature.ReturnType)),
-                    Argument(LiteralExpression(doNotRelease ? SyntaxKind.FalseLiteralExpression : SyntaxKind.TrueLiteralExpression)).WithNameColon(NameColon(IdentifierName("ownsHandle"))))));
+                ReturnStatementSyntax returnStatement;
+                if (this.canUseMarshalInitHandle)
+                {
+                    // return __resultSafeHandle;
+                    returnStatement = ReturnStatement(IdentifierName("__resultSafeHandle"));
+                }
+                else
+                {
+                    // return new SafeHandle(result, ownsHandle: true);
+                    returnStatement = ReturnStatement(ObjectCreationExpression(returnSafeHandleType).AddArgumentListArguments(
+                        Argument(this.GetIntPtrFromTypeDef(resultLocal, originalSignature.ReturnType)),
+                        Argument(LiteralExpression(doNotRelease ? SyntaxKind.FalseLiteralExpression : SyntaxKind.TrueLiteralExpression)).WithNameColon(NameColon(IdentifierName("ownsHandle")))));
+                }
+
+                body = body.AddStatements(returnStatement);
             }
             else if (hasVoidReturn)
             {

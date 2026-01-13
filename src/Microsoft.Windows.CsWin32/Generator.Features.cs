@@ -22,6 +22,7 @@ public partial class Generator
     private readonly bool unscopedRefAttributePredefined;
     private readonly bool canUseComVariant;
     private readonly bool canUseMemberFunctionCallingConvention;
+    private readonly bool canUseMarshalInitHandle;
     private readonly INamedTypeSymbol? runtimeFeatureClass;
     private readonly bool generateSupportedOSPlatformAttributes;
     private readonly bool generateSupportedOSPlatformAttributesOnInterfaces; // only supported on net6.0 (https://github.com/dotnet/runtime/pull/48838)

@@ -619,4 +619,29 @@ using global::System.Runtime.Versioning;
         var method = Assert.Single(methods, m => m.Identifier.Text == "GetCachedPropertyValue");
         Assert.Contains("ComVariant", method.ReturnType.ToString());
     }
+
+    [Theory, CombinatorialData] // https://github.com/microsoft/CsWin32/issues/1430
+    public void UseInitHandleApiWhenPossible(
+        [CombinatorialValues(
+            "SysAllocString", // Returns safe handle directly
+            "OpenProcessToken")] // Returns safe handle as an out parameter
+        string api,
+        bool initHandleApiAvailable)
+    {
+        this.compilation = this.starterCompilations[initHandleApiAvailable ? "net8.0" : "net472"];
+        this.GenerateApi(api);
+
+        MethodDeclarationSyntax friendlyOverload = Assert.Single(
+            this.FindGeneratedMethod(api),
+            m => !m.AttributeLists.Any(al => al.Attributes.Any(a => a.Name.ToString() == "DllImport")));
+
+        if (initHandleApiAvailable)
+        {
+            Assert.Contains(friendlyOverload.DescendantNodes(), n => n.ToString() == "InitHandle");
+        }
+        else
+        {
+            Assert.DoesNotContain(friendlyOverload.DescendantNodes(), n => n.ToString() == "InitHandle");
+        }
+    }
 }

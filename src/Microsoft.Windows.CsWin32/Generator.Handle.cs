@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+using System.ComponentModel;
+
 namespace Microsoft.Windows.CsWin32;
 
 public partial class Generator
@@ -123,29 +125,66 @@ public partial class Generator
                 VariableDeclarator(invalidValueFieldName.Identifier).WithInitializer(EqualsValueClause(invalidHandleIntPtr))))
                 .AddModifiers(TokenWithSpace(SyntaxKind.PrivateKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword)));
 
+            SyntaxToken visibilityModifier = TokenWithSpace(this.Visibility);
+
+            IdentifierNameSyntax ownsHandleName = IdentifierName("ownsHandle");
+            ParameterSyntax ownsHandleParameter = Parameter(ownsHandleName.Identifier)
+                .WithType(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)))
+                .WithDefault(EqualsValueClause(LiteralExpression(SyntaxKind.TrueLiteralExpression)));
+
+            // [EditorBrowsable(EditorBrowsableState.Advanced)]
+            // public SafeHandle(bool ownsHandle = true) : base(INVALID_HANDLE_VALUE, ownsHandle)
+            members.Add(
+                ConstructorDeclaration(safeHandleTypeIdentifier.Identifier)
+                    .AddModifiers(visibilityModifier)
+                    .AddAttributeLists(
+                        AttributeList(
+                        [
+                            Attribute(ParseName($"global::{typeof(EditorBrowsableAttribute).FullName}"))
+                                .AddArgumentListArguments(
+                                    AttributeArgument(
+                                        MemberAccessExpression(
+                                            SyntaxKind.SimpleMemberAccessExpression,
+                                            ParseName($"global::{typeof(EditorBrowsableState).FullName}"),
+                                            IdentifierName(nameof(EditorBrowsableState.Advanced)))))
+                        ]))
+                    .AddParameterListParameters(ownsHandleParameter)
+                    .WithInitializer(
+                        ConstructorInitializer(
+                            SyntaxKind.BaseConstructorInitializer,
+                            ArgumentList(
+                            [
+                                Argument(invalidValueFieldName),
+                                Argument(ownsHandleName),
+                            ])))
+                    .WithBody(Block())
+                    .WithLeadingTrivia(ParseLeadingTrivia($"""
+/// <summary>
+/// This constructor is intended to be used when the handle is initialized with {(this.canUseMarshalInitHandle ? "<see cref=\"Marshal.InitHandle\" />" : "<c>Marshal.InitHandle</c>")} API after creation
+/// </summary>{'\n'}
+""")));
+
             // public SafeHandle() : base(INVALID_HANDLE_VALUE, true)
             members.Add(ConstructorDeclaration(safeHandleTypeIdentifier.Identifier)
-                .AddModifiers(TokenWithSpace(this.Visibility))
+                .AddModifiers(visibilityModifier)
                 .WithInitializer(ConstructorInitializer(SyntaxKind.BaseConstructorInitializer, ArgumentList().AddArguments(
                     Argument(invalidValueFieldName),
                     Argument(LiteralExpression(SyntaxKind.TrueLiteralExpression)))))
                 .WithBody(Block()));
 
             // public SafeHandle(IntPtr preexistingHandle, bool ownsHandle = true) : base(INVALID_HANDLE_VALUE, ownsHandle) { this.SetHandle(preexistingHandle); }
-            const string preexistingHandleName = "preexistingHandle";
-            const string ownsHandleName = "ownsHandle";
+            IdentifierNameSyntax preexistingHandleName = IdentifierName("preexistingHandle");
             members.Add(ConstructorDeclaration(safeHandleTypeIdentifier.Identifier)
-                .AddModifiers(TokenWithSpace(this.Visibility))
+                .AddModifiers(visibilityModifier)
                 .AddParameterListParameters(
-                    Parameter(Identifier(preexistingHandleName)).WithType(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))),
-                    Parameter(Identifier(ownsHandleName)).WithType(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)))
-                        .WithDefault(EqualsValueClause(LiteralExpression(SyntaxKind.TrueLiteralExpression))))
+                    Parameter(preexistingHandleName.Identifier).WithType(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))),
+                    ownsHandleParameter)
                 .WithInitializer(ConstructorInitializer(SyntaxKind.BaseConstructorInitializer, ArgumentList().AddArguments(
                     Argument(invalidValueFieldName),
-                    Argument(IdentifierName(ownsHandleName)))))
+                    Argument(ownsHandleName))))
                 .WithBody(Block().AddStatements(
                     ExpressionStatement(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("SetHandle")))
-                        .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(IdentifierName(preexistingHandleName)))))))));
+                        .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(preexistingHandleName))))))));
 
             // public override bool IsInvalid => this.handle.ToInt64() == 0 || this.handle.ToInt64() == -1;
             ExpressionSyntax thisHandleToInt64 = InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, thisHandle, IdentifierName(nameof(IntPtr.ToInt64))), ArgumentList());
@@ -290,7 +329,7 @@ public partial class Generator
             IEnumerable<TypeSyntax> xmlDocParameterTypes = releaseMethodSignature.ParameterTypes.Select(p => p.ToTypeSyntax(this.externSignatureTypeSettings, GeneratingElement.HelperClassMember, default).Type);
 
             ClassDeclarationSyntax safeHandleDeclaration = ClassDeclaration(Identifier(safeHandleClassName))
-                .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.PartialKeyword))
+                .AddModifiers(visibilityModifier, TokenWithSpace(SyntaxKind.PartialKeyword))
                 .WithBaseList(BaseList(SingletonSeparatedList<BaseTypeSyntax>(SimpleBaseType(SafeHandleTypeSyntax))))
                 .AddMembers(members.ToArray())
                 .AddAttributeLists(AttributeList().AddAttributes(GeneratedCodeAttribute))

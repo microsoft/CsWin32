@@ -194,7 +194,7 @@ internal static class FastSyntaxFactory
 
     internal static InitializerExpressionSyntax InitializerExpression(SyntaxKind kind, SeparatedSyntaxList<ExpressionSyntax> expressions) => SyntaxFactory.InitializerExpression(kind, OpenBrace, expressions, CloseBrace);
 
-    internal static ObjectCreationExpressionSyntax ObjectCreationExpression(TypeSyntax type) => SyntaxFactory.ObjectCreationExpression(Token(TriviaList(), SyntaxKind.NewKeyword, TriviaList(Space)), type, ArgumentList(), null);
+    internal static ObjectCreationExpressionSyntax ObjectCreationExpression(TypeSyntax type, params SeparatedSyntaxList<ArgumentSyntax> arguments) => SyntaxFactory.ObjectCreationExpression(Token(TriviaList(), SyntaxKind.NewKeyword, TriviaList(Space)), type, ArgumentList(arguments), null);
 
     internal static ArrayCreationExpressionSyntax ArrayCreationExpression(ArrayTypeSyntax type, InitializerExpressionSyntax? initializer = null) => SyntaxFactory.ArrayCreationExpression(Token(SyntaxKind.NewKeyword), type, initializer);
 
@@ -299,7 +299,7 @@ internal static class FastSyntaxFactory
 
     internal static AttributeArgumentListSyntax AttributeArgumentList(SeparatedSyntaxList<AttributeArgumentSyntax> arguments = default) => SyntaxFactory.AttributeArgumentList(Token(SyntaxKind.OpenParenToken), arguments, Token(SyntaxKind.CloseParenToken));
 
-    internal static AttributeListSyntax AttributeList() => SyntaxFactory.AttributeList(Token(SyntaxKind.OpenBracketToken), null, SeparatedList<AttributeSyntax>(), TokenWithLineFeed(SyntaxKind.CloseBracketToken));
+    internal static AttributeListSyntax AttributeList(params SeparatedSyntaxList<AttributeSyntax> attributes) => SyntaxFactory.AttributeList(Token(SyntaxKind.OpenBracketToken), null, attributes, TokenWithLineFeed(SyntaxKind.CloseBracketToken));
 
     internal static SyntaxList<TNode> List<TNode>()
         where TNode : SyntaxNode => SyntaxFactory.List<TNode>();

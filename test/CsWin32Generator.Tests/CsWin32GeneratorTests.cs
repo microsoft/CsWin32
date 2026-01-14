@@ -623,8 +623,9 @@ using global::System.Runtime.Versioning;
     [Theory, CombinatorialData] // https://github.com/microsoft/CsWin32/issues/1430
     public void UseInitHandleApiWhenPossible(
         [CombinatorialValues(
-            "SysAllocString", // Returns safe handle directly
-            "OpenProcessToken")] // Returns safe handle as an out parameter
+            "SysAllocString", // Returns owning custom safe handle
+            "ShellExecute", // Returns non-owning custom safe handle
+            "OpenProcessToken")] // Returns owning BCL safe handle as an out parameter
         string api,
         bool initHandleApiAvailable)
     {
@@ -643,5 +644,20 @@ using global::System.Runtime.Versioning;
         {
             Assert.DoesNotContain(friendlyOverload.DescendantNodes(), n => n is IdentifierNameSyntax { Identifier.Text: "InitHandle" });
         }
+    }
+
+    [Fact]
+    public void UnableToUseInitHandleDueToBclSafeHandleLimitations()
+    {
+        // Although Marshal.InitHandle API is available we cannot use it
+        // since the returned handle must be non-owning and BCL handle
+        // which is used as a safe handle for HANDLE doesn't expose functionality
+        // to create non-owning handle and then initialize it
+        this.compilation = this.starterCompilations["net8.0"];
+        this.GenerateApi("GetProcessHeap");
+
+        MethodDeclarationSyntax friendlyOverload = Assert.Single(this.FindGeneratedMethod("GetProcessHeap_SafeHandle"));
+
+        Assert.DoesNotContain(friendlyOverload.DescendantNodes(), n => n is IdentifierNameSyntax { Identifier.Text: "InitHandle" });
     }
 }

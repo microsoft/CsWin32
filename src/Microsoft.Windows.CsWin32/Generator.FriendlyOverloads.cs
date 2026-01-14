@@ -384,15 +384,22 @@ public partial class Generator
                                 pointedElementInfo.ToTypeSyntax(parameterTypeSyntaxSettings, GeneratingElement.FriendlyOverload, null).Type,
                                 VariableDeclarator(typeDefHandleName.Identifier))));
 
-                    if (this.canUseMarshalInitHandle && !doNotRelease)
+                    ArgumentSyntax ownsHandleArgument = Argument(
+                        NameColon(IdentifierName("ownsHandle")),
+                        refKindKeyword: default,
+                        LiteralExpression(doNotRelease ? SyntaxKind.FalseLiteralExpression : SyntaxKind.TrueLiteralExpression));
+
+                    var isBclSafeParameterHandle = BclInteropSafeHandles.ContainsKey(outReleaseMethod);
+
+                    if (this.canUseMarshalInitHandle && (!doNotRelease || !isBclSafeParameterHandle))
                     {
-                        // Some = new SafeHandle();
+                        // Some = new SafeHandle(ownsHandle: true);
                         leadingStatements.Add(
                             ExpressionStatement(
                                 AssignmentExpression(
                                     SyntaxKind.SimpleAssignmentExpression,
                                     origName,
-                                    ObjectCreationExpression(safeHandleType))));
+                                    ObjectCreationExpression(safeHandleType, !isBclSafeParameterHandle ? [ownsHandleArgument] : []))));
 
                         // Marshal.InitHandle(Some, SomeLocal);
                         trailingStatements.Add(
@@ -416,7 +423,7 @@ public partial class Generator
                             origName,
                             ObjectCreationExpression(safeHandleType).AddArgumentListArguments(
                                 Argument(this.GetIntPtrFromTypeDef(typeDefHandleName, pointedElementInfo)),
-                                Argument(LiteralExpression(doNotRelease ? SyntaxKind.FalseLiteralExpression : SyntaxKind.TrueLiteralExpression)).WithNameColon(NameColon(IdentifierName("ownsHandle")))))));
+                                ownsHandleArgument))));
                     }
 
                     // Argument: &SomeLocal
@@ -1140,11 +1147,23 @@ public partial class Generator
 
         IdentifierNameSyntax resultLocal = IdentifierName("__result");
 
-        if (this.canUseMarshalInitHandle && returnSafeHandleType is not null)
+        var isBclSafeReturnHandle = returnSafeHandleType is not null && BclInteropSafeHandles.ContainsValue(returnSafeHandleType);
+
+        if (this.canUseMarshalInitHandle &&
+            returnSafeHandleType is not null &&
+            (!doNotRelease || !isBclSafeReturnHandle))
         {
             IdentifierNameSyntax resultSafeHandleLocal = IdentifierName("__resultSafeHandle");
 
-            // SafeHandle __resultSafeHandle = new SafeHandle();
+            SeparatedSyntaxList<ArgumentSyntax> constructorParameters = !isBclSafeReturnHandle ?
+            [
+                Argument(
+                    NameColon(IdentifierName("ownsHandle")),
+                    refKindKeyword: default,
+                    LiteralExpression(doNotRelease ? SyntaxKind.FalseLiteralExpression : SyntaxKind.TrueLiteralExpression))
+            ] : [];
+
+            // SafeHandle __resultSafeHandle = new SafeHandle(ownsHandle: true);
             leadingStatements.Add(
                 LocalDeclarationStatement(
                     VariableDeclaration(
@@ -1152,7 +1171,9 @@ public partial class Generator
                         VariableDeclarator(
                             resultSafeHandleLocal.Identifier,
                             EqualsValueClause(
-                                ObjectCreationExpression(returnSafeHandleType))))));
+                                ObjectCreationExpression(
+                                    returnSafeHandleType,
+                                    constructorParameters))))));
 
             // Marshal.InitHandle(__resultSafeHandle, __result);
             trailingStatements.Add(
@@ -1216,7 +1237,7 @@ public partial class Generator
                 body = body.AddStatements(trailingStatements.ToArray());
 
                 ReturnStatementSyntax returnStatement;
-                if (this.canUseMarshalInitHandle)
+                if (this.canUseMarshalInitHandle && (!doNotRelease || !isBclSafeReturnHandle))
                 {
                     // return __resultSafeHandle;
                     returnStatement = ReturnStatement(IdentifierName("__resultSafeHandle"));
@@ -1226,7 +1247,10 @@ public partial class Generator
                     // return new SafeHandle(result, ownsHandle: true);
                     returnStatement = ReturnStatement(ObjectCreationExpression(returnSafeHandleType).AddArgumentListArguments(
                         Argument(this.GetIntPtrFromTypeDef(resultLocal, originalSignature.ReturnType)),
-                        Argument(LiteralExpression(doNotRelease ? SyntaxKind.FalseLiteralExpression : SyntaxKind.TrueLiteralExpression)).WithNameColon(NameColon(IdentifierName("ownsHandle")))));
+                        Argument(
+                            NameColon(IdentifierName("ownsHandle")),
+                            refKindKeyword: default,
+                            LiteralExpression(doNotRelease ? SyntaxKind.FalseLiteralExpression : SyntaxKind.TrueLiteralExpression))));
                 }
 
                 body = body.AddStatements(returnStatement);

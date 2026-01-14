@@ -405,7 +405,7 @@ public partial class Generator
                                     ArgumentList(
                                     [
                                         Argument(origName),
-                                        Argument(typeDefHandleName),
+                                        Argument(this.GetIntPtrFromTypeDef(typeDefHandleName, pointedElementInfo)),
                                     ]))));
                     }
                     else
@@ -1165,7 +1165,7 @@ public partial class Generator
                         ArgumentList(
                         [
                             Argument(resultSafeHandleLocal),
-                            Argument(resultLocal),
+                            Argument(this.GetIntPtrFromTypeDef(resultLocal, originalSignature.ReturnType)),
                         ]))));
         }
 

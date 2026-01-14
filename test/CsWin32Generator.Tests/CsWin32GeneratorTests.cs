@@ -637,11 +637,11 @@ using global::System.Runtime.Versioning;
 
         if (initHandleApiAvailable)
         {
-            Assert.Contains(friendlyOverload.DescendantNodes(), n => n.ToString() == "InitHandle");
+            Assert.Contains(friendlyOverload.DescendantNodes(), n => n is IdentifierNameSyntax { Identifier.Text: "InitHandle" });
         }
         else
         {
-            Assert.DoesNotContain(friendlyOverload.DescendantNodes(), n => n.ToString() == "InitHandle");
+            Assert.DoesNotContain(friendlyOverload.DescendantNodes(), n => n is IdentifierNameSyntax { Identifier.Text: "InitHandle" });
         }
     }
 }

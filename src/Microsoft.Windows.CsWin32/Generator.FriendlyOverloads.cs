@@ -389,17 +389,15 @@ public partial class Generator
                         refKindKeyword: default,
                         LiteralExpression(doNotRelease ? SyntaxKind.FalseLiteralExpression : SyntaxKind.TrueLiteralExpression));
 
-                    var isBclSafeParameterHandle = BclInteropSafeHandles.ContainsKey(outReleaseMethod);
-
-                    if (this.canUseMarshalInitHandle && (!doNotRelease || !isBclSafeParameterHandle))
+                    if (this.canUseMarshalInitHandle)
                     {
-                        // Some = new SafeHandle(ownsHandle: true);
+                        // Some = new SafeHandle(default, ownsHandle: true);
                         leadingStatements.Add(
                             ExpressionStatement(
                                 AssignmentExpression(
                                     SyntaxKind.SimpleAssignmentExpression,
                                     origName,
-                                    ObjectCreationExpression(safeHandleType, !isBclSafeParameterHandle ? [ownsHandleArgument] : []))));
+                                    ObjectCreationExpression(safeHandleType, [Argument(LiteralExpression(SyntaxKind.DefaultLiteralExpression)), ownsHandleArgument]))));
 
                         // Marshal.InitHandle(Some, SomeLocal);
                         trailingStatements.Add(
@@ -1147,23 +1145,11 @@ public partial class Generator
 
         IdentifierNameSyntax resultLocal = IdentifierName("__result");
 
-        var isBclSafeReturnHandle = returnSafeHandleType is not null && BclInteropSafeHandles.ContainsValue(returnSafeHandleType);
-
-        if (this.canUseMarshalInitHandle &&
-            returnSafeHandleType is not null &&
-            (!doNotRelease || !isBclSafeReturnHandle))
+        if (this.canUseMarshalInitHandle && returnSafeHandleType is not null)
         {
             IdentifierNameSyntax resultSafeHandleLocal = IdentifierName("__resultSafeHandle");
 
-            SeparatedSyntaxList<ArgumentSyntax> constructorParameters = !isBclSafeReturnHandle ?
-            [
-                Argument(
-                    NameColon(IdentifierName("ownsHandle")),
-                    refKindKeyword: default,
-                    LiteralExpression(doNotRelease ? SyntaxKind.FalseLiteralExpression : SyntaxKind.TrueLiteralExpression))
-            ] : [];
-
-            // SafeHandle __resultSafeHandle = new SafeHandle(ownsHandle: true);
+            // SafeHandle __resultSafeHandle = new SafeHandle(default, ownsHandle: true);
             leadingStatements.Add(
                 LocalDeclarationStatement(
                     VariableDeclaration(
@@ -1173,7 +1159,13 @@ public partial class Generator
                             EqualsValueClause(
                                 ObjectCreationExpression(
                                     returnSafeHandleType,
-                                    constructorParameters))))));
+                                    [
+                                        Argument(LiteralExpression(SyntaxKind.DefaultLiteralExpression)),
+                                        Argument(
+                                            NameColon(IdentifierName("ownsHandle")),
+                                            refKindKeyword: default,
+                                            LiteralExpression(doNotRelease ? SyntaxKind.FalseLiteralExpression : SyntaxKind.TrueLiteralExpression))
+                                    ]))))));
 
             // Marshal.InitHandle(__resultSafeHandle, __result);
             trailingStatements.Add(
@@ -1237,7 +1229,7 @@ public partial class Generator
                 body = body.AddStatements(trailingStatements.ToArray());
 
                 ReturnStatementSyntax returnStatement;
-                if (this.canUseMarshalInitHandle && (!doNotRelease || !isBclSafeReturnHandle))
+                if (this.canUseMarshalInitHandle)
                 {
                     // return __resultSafeHandle;
                     returnStatement = ReturnStatement(IdentifierName("__resultSafeHandle"));

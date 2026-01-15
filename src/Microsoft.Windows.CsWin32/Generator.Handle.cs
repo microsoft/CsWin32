@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-using System.ComponentModel;
-
 namespace Microsoft.Windows.CsWin32;
 
 public partial class Generator
@@ -127,43 +125,6 @@ public partial class Generator
 
             SyntaxToken visibilityModifier = TokenWithSpace(this.Visibility);
 
-            IdentifierNameSyntax ownsHandleName = IdentifierName("ownsHandle");
-            ParameterSyntax ownsHandleParameter = Parameter(ownsHandleName.Identifier)
-                .WithType(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)))
-                .WithDefault(EqualsValueClause(LiteralExpression(SyntaxKind.TrueLiteralExpression)));
-
-            // [EditorBrowsable(EditorBrowsableState.Advanced)]
-            // public SafeHandle(bool ownsHandle = true) : base(INVALID_HANDLE_VALUE, ownsHandle)
-            members.Add(
-                ConstructorDeclaration(safeHandleTypeIdentifier.Identifier)
-                    .AddModifiers(visibilityModifier)
-                    .AddAttributeLists(
-                        AttributeList(
-                        [
-                            Attribute(ParseName($"global::{typeof(EditorBrowsableAttribute).FullName}"))
-                                .AddArgumentListArguments(
-                                    AttributeArgument(
-                                        MemberAccessExpression(
-                                            SyntaxKind.SimpleMemberAccessExpression,
-                                            ParseName($"global::{typeof(EditorBrowsableState).FullName}"),
-                                            IdentifierName(nameof(EditorBrowsableState.Advanced)))))
-                        ]))
-                    .AddParameterListParameters(ownsHandleParameter)
-                    .WithInitializer(
-                        ConstructorInitializer(
-                            SyntaxKind.BaseConstructorInitializer,
-                            ArgumentList(
-                            [
-                                Argument(invalidValueFieldName),
-                                Argument(ownsHandleName),
-                            ])))
-                    .WithBody(Block())
-                    .WithLeadingTrivia(ParseLeadingTrivia($"""
-/// <summary>
-/// This constructor is intended to be used when the handle is initialized with {(this.canUseMarshalInitHandle ? "<see cref=\"Marshal.InitHandle\" />" : "<c>Marshal.InitHandle</c>")} API after creation
-/// </summary>{'\n'}
-""")));
-
             // public SafeHandle() : base(INVALID_HANDLE_VALUE, true)
             members.Add(ConstructorDeclaration(safeHandleTypeIdentifier.Identifier)
                 .AddModifiers(visibilityModifier)
@@ -174,11 +135,14 @@ public partial class Generator
 
             // public SafeHandle(IntPtr preexistingHandle, bool ownsHandle = true) : base(INVALID_HANDLE_VALUE, ownsHandle) { this.SetHandle(preexistingHandle); }
             IdentifierNameSyntax preexistingHandleName = IdentifierName("preexistingHandle");
+            IdentifierNameSyntax ownsHandleName = IdentifierName("ownsHandle");
             members.Add(ConstructorDeclaration(safeHandleTypeIdentifier.Identifier)
                 .AddModifiers(visibilityModifier)
                 .AddParameterListParameters(
                     Parameter(preexistingHandleName.Identifier).WithType(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))),
-                    ownsHandleParameter)
+                    Parameter(ownsHandleName.Identifier)
+                        .WithType(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)))
+                        .WithDefault(EqualsValueClause(LiteralExpression(SyntaxKind.TrueLiteralExpression))))
                 .WithInitializer(ConstructorInitializer(SyntaxKind.BaseConstructorInitializer, ArgumentList().AddArguments(
                     Argument(invalidValueFieldName),
                     Argument(ownsHandleName))))

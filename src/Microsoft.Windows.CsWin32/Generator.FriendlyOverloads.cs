@@ -398,13 +398,13 @@ public partial class Generator
                                     origName,
                                     ObjectCreationExpression(safeHandleType, [Argument(LiteralExpression(SyntaxKind.DefaultLiteralExpression)), ownsHandleArgument]))));
 
-                        // Marshal.InitHandle(Some, SomeLocal);
+                        // global::System.Runtime.InteropServices.Marshal.InitHandle(Some, SomeLocal);
                         trailingStatements.Add(
                             ExpressionStatement(
                                 InvocationExpression(
                                     MemberAccessExpression(
                                         SyntaxKind.SimpleMemberAccessExpression,
-                                        IdentifierName(nameof(Marshal)),
+                                        ParseName($"global::{typeof(Marshal).FullName}"),
                                         IdentifierName("InitHandle")),
                                     [
                                         Argument(origName),
@@ -1176,13 +1176,13 @@ public partial class Generator
                                         ])))
                         ])));
 
-            // Marshal.InitHandle(__resultSafeHandle, __result);
+            // global::System.Runtime.InteropServices.Marshal.InitHandle(__resultSafeHandle, __result);
             trailingStatements.Add(
                 ExpressionStatement(
                     InvocationExpression(
                         MemberAccessExpression(
                             SyntaxKind.SimpleMemberAccessExpression,
-                            IdentifierName(nameof(Marshal)),
+                            ParseName($"global::{typeof(Marshal).FullName}"),
                             IdentifierName("InitHandle")),
                         [
                             Argument(resultSafeHandleLocal),

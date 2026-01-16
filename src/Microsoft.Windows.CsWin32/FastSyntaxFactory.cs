@@ -24,10 +24,6 @@ internal static class FastSyntaxFactory
 
     internal static SyntaxTrivia SyntaxTrivia(SyntaxKind kind, string text) => SyntaxFactory.SyntaxTrivia(kind, text);
 
-    internal static SyntaxTokenList TokenList() => SyntaxFactory.TokenList();
-
-    internal static SyntaxTokenList TokenList(params SyntaxToken[] tokens) => SyntaxFactory.TokenList(tokens);
-
     internal static SyntaxToken Token(SyntaxKind kind)
     {
         SyntaxTriviaList trailingTrivia = kind switch
@@ -70,11 +66,7 @@ internal static class FastSyntaxFactory
 
     internal static SyntaxToken Token(SyntaxTriviaList leadingTrivia, SyntaxKind kind, string text, string valueText, SyntaxTriviaList trailingTrivia) => SyntaxFactory.Token(leadingTrivia, kind, text, valueText, trailingTrivia);
 
-    internal static BlockSyntax Block() => SyntaxFactory.Block(OpenBrace, List<StatementSyntax>(), CloseBrace);
-
-    internal static BlockSyntax Block(params StatementSyntax[] statements) => SyntaxFactory.Block(OpenBrace, List(statements), CloseBrace);
-
-    internal static BlockSyntax Block(IEnumerable<StatementSyntax> statements) => SyntaxFactory.Block(OpenBrace, List(statements), CloseBrace);
+    internal static BlockSyntax Block(params SyntaxList<StatementSyntax> statements) => SyntaxFactory.Block(OpenBrace, statements, CloseBrace);
 
     internal static ImplicitArrayCreationExpressionSyntax ImplicitArrayCreationExpression(InitializerExpressionSyntax initializerExpression) => SyntaxFactory.ImplicitArrayCreationExpression(Token(SyntaxKind.NewKeyword), Token(SyntaxKind.OpenBracketToken), default, Token(SyntaxKind.CloseBracketToken), initializerExpression);
 
@@ -88,25 +80,23 @@ internal static class FastSyntaxFactory
 
     internal static StatementSyntax EmptyStatement() => SyntaxFactory.EmptyStatement(Token(SyntaxKind.SemicolonToken));
 
-    internal static NamespaceDeclarationSyntax NamespaceDeclaration(NameSyntax name) => SyntaxFactory.NamespaceDeclaration(Token(TriviaList(), SyntaxKind.NamespaceKeyword, TriviaList(Space)), name.WithTrailingTrivia(LineFeed), OpenBrace, default, default, default, CloseBrace, default);
+    internal static NamespaceDeclarationSyntax NamespaceDeclaration(NameSyntax name, SyntaxList<MemberDeclarationSyntax> members = default) => SyntaxFactory.NamespaceDeclaration(Token(TriviaList(), SyntaxKind.NamespaceKeyword, TriviaList(Space)), name.WithTrailingTrivia(LineFeed), OpenBrace, default, default, members, CloseBrace, default);
 
-    internal static InterfaceDeclarationSyntax InterfaceDeclaration(SyntaxToken name) => SyntaxFactory.InterfaceDeclaration(default, default, Token(TriviaList(), SyntaxKind.InterfaceKeyword, TriviaList(Space)), name.WithTrailingTrivia(LineFeed), null, null, default, Token(TriviaList(), SyntaxKind.OpenBraceToken, TriviaList(LineFeed)), default, Token(TriviaList(), SyntaxKind.CloseBraceToken, TriviaList(LineFeed)), default);
+    internal static InterfaceDeclarationSyntax InterfaceDeclaration(SyntaxToken name, SyntaxList<MemberDeclarationSyntax> members = default) => SyntaxFactory.InterfaceDeclaration(default, default, Token(TriviaList(), SyntaxKind.InterfaceKeyword, TriviaList(Space)), name.WithTrailingTrivia(LineFeed), null, null, default, Token(TriviaList(), SyntaxKind.OpenBraceToken, TriviaList(LineFeed)), members, Token(TriviaList(), SyntaxKind.CloseBraceToken, TriviaList(LineFeed)), default);
 
-    internal static InvocationExpressionSyntax InvocationExpression(ExpressionSyntax expression) => SyntaxFactory.InvocationExpression(expression, ArgumentList());
+    internal static InvocationExpressionSyntax InvocationExpression(ExpressionSyntax expression, SeparatedSyntaxList<ArgumentSyntax> arguments = default) => SyntaxFactory.InvocationExpression(expression, ArgumentList(arguments));
 
     internal static InvocationExpressionSyntax InvocationExpression(ExpressionSyntax expression, ArgumentListSyntax argumentList) => SyntaxFactory.InvocationExpression(expression, argumentList);
 
     internal static DeclarationPatternSyntax DeclarationPattern(TypeSyntax type, VariableDesignationSyntax designation) => SyntaxFactory.DeclarationPattern(type.WithTrailingTrivia(TriviaList(Space)), designation);
 
-    internal static LocalDeclarationStatementSyntax LocalDeclarationStatement(VariableDeclarationSyntax declaration) => SyntaxFactory.LocalDeclarationStatement(TokenList(), declaration, Semicolon);
+    internal static LocalDeclarationStatementSyntax LocalDeclarationStatement(VariableDeclarationSyntax declaration) => SyntaxFactory.LocalDeclarationStatement(default, declaration, Semicolon);
 
     internal static DeclarationExpressionSyntax DeclarationExpression(TypeSyntax type, VariableDesignationSyntax designation) => SyntaxFactory.DeclarationExpression(type, designation);
 
     internal static VariableDeclaratorSyntax VariableDeclarator(SyntaxToken identifier, EqualsValueClauseSyntax? initializer = null) => SyntaxFactory.VariableDeclarator(identifier, argumentList: null, initializer: initializer);
 
-    internal static VariableDeclarationSyntax VariableDeclaration(TypeSyntax type) => SyntaxFactory.VariableDeclaration(type.WithTrailingTrivia(TriviaList(Space)));
-
-    internal static VariableDeclarationSyntax VariableDeclaration(TypeSyntax type, params VariableDeclaratorSyntax[] variables) => SyntaxFactory.VariableDeclaration(type.WithTrailingTrivia(TriviaList(Space)), SeparatedList(variables));
+    internal static VariableDeclarationSyntax VariableDeclaration(TypeSyntax type, SeparatedSyntaxList<VariableDeclaratorSyntax> variables) => SyntaxFactory.VariableDeclaration(type.WithTrailingTrivia(TriviaList(Space)), variables);
 
     internal static SizeOfExpressionSyntax SizeOfExpression(TypeSyntax type) => SyntaxFactory.SizeOfExpression(Token(SyntaxKind.SizeOfKeyword), Token(SyntaxKind.OpenParenToken), type, Token(SyntaxKind.CloseParenToken));
 
@@ -142,7 +132,7 @@ internal static class FastSyntaxFactory
 
     internal static ArrowExpressionClauseSyntax ArrowExpressionClause(ExpressionSyntax expression) => SyntaxFactory.ArrowExpressionClause(TokenWithSpaces(SyntaxKind.EqualsGreaterThanToken), expression);
 
-    internal static BracketedArgumentListSyntax BracketedArgumentList(SeparatedSyntaxList<ArgumentSyntax> arguments = default) => SyntaxFactory.BracketedArgumentList(Token(SyntaxKind.OpenBracketToken), arguments, Token(SyntaxKind.CloseBracketToken));
+    internal static BracketedArgumentListSyntax BracketedArgumentList(params SeparatedSyntaxList<ArgumentSyntax> arguments) => SyntaxFactory.BracketedArgumentList(Token(SyntaxKind.OpenBracketToken), arguments, Token(SyntaxKind.CloseBracketToken));
 
     internal static AttributeTargetSpecifierSyntax AttributeTargetSpecifier(SyntaxToken identifier) => SyntaxFactory.AttributeTargetSpecifier(identifier, TokenWithSpace(SyntaxKind.ColonToken));
 
@@ -152,25 +142,23 @@ internal static class FastSyntaxFactory
 
     internal static ThrowExpressionSyntax ThrowExpression(ExpressionSyntax expression) => SyntaxFactory.ThrowExpression(Token(TriviaList(), SyntaxKind.ThrowKeyword, TriviaList(Space)), expression);
 
-    internal static ExpressionSyntax NameOfExpression(IdentifierNameSyntax identifierName) => SyntaxFactory.InvocationExpression(IdentifierName("nameof"), ArgumentList(SingletonSeparatedList(Argument(identifierName))));
+    internal static ExpressionSyntax NameOfExpression(IdentifierNameSyntax identifierName) => SyntaxFactory.InvocationExpression(IdentifierName("nameof"), ArgumentList(Argument(identifierName)));
 
     internal static ReturnStatementSyntax ReturnStatement(ExpressionSyntax? expression) => SyntaxFactory.ReturnStatement(Token(TriviaList(), SyntaxKind.ReturnKeyword, TriviaList(Space)), expression!, Semicolon);
 
-    internal static DelegateDeclarationSyntax DelegateDeclaration(TypeSyntax returnType, SyntaxToken identifier) => SyntaxFactory.DelegateDeclaration(default(SyntaxList<AttributeListSyntax>), default(SyntaxTokenList), Token(TriviaList(), SyntaxKind.DelegateKeyword, TriviaList(Space)), returnType.WithTrailingTrivia(TriviaList(Space)), identifier, null, ParameterList(), default, Semicolon);
+    internal static DelegateDeclarationSyntax DelegateDeclaration(TypeSyntax returnType, SyntaxToken identifier) => SyntaxFactory.DelegateDeclaration(default, default, Token(TriviaList(), SyntaxKind.DelegateKeyword, TriviaList(Space)), returnType.WithTrailingTrivia(TriviaList(Space)), identifier, null, ParameterList(), default, Semicolon);
 
-    internal static OperatorDeclarationSyntax OperatorDeclaration(TypeSyntax returnType, SyntaxToken operatorToken) => SyntaxFactory.OperatorDeclaration(default(SyntaxList<AttributeListSyntax>), default(SyntaxTokenList), returnType.WithTrailingTrivia(TriviaList(Space)), Token(SyntaxKind.OperatorKeyword), operatorToken, ParameterList(), null, null, default(SyntaxToken));
+    internal static OperatorDeclarationSyntax OperatorDeclaration(TypeSyntax returnType, SyntaxToken operatorToken) => SyntaxFactory.OperatorDeclaration(default, default, returnType.WithTrailingTrivia(TriviaList(Space)), Token(SyntaxKind.OperatorKeyword), operatorToken, ParameterList(), null, null, default);
 
     internal static ConversionOperatorDeclarationSyntax ConversionOperatorDeclaration(SyntaxToken implicitOrExplicitKeyword, TypeSyntax type) => SyntaxFactory.ConversionOperatorDeclaration(default, default, implicitOrExplicitKeyword, TokenWithSpace(SyntaxKind.OperatorKeyword), type, ParameterList(), null, null, default);
 
-    internal static ConstructorDeclarationSyntax ConstructorDeclaration(SyntaxToken identifier) => SyntaxFactory.ConstructorDeclaration(default, default, identifier, ParameterList(), null, null, null, default);
+    internal static ConstructorDeclarationSyntax ConstructorDeclaration(SyntaxToken identifier, SeparatedSyntaxList<ParameterSyntax> parameters = default) => SyntaxFactory.ConstructorDeclaration(default, default, identifier, ParameterList(parameters), null, null, null, default);
 
-    internal static ClassDeclarationSyntax ClassDeclaration(SyntaxToken identifier) => SyntaxFactory.ClassDeclaration(default, default, Token(SyntaxKind.ClassKeyword), identifier.WithTrailingTrivia(TriviaList(LineFeed)), null, null, default, OpenBrace, default, CloseBrace, default);
+    internal static ClassDeclarationSyntax ClassDeclaration(SyntaxToken identifier, SyntaxList<MemberDeclarationSyntax> members = default) => SyntaxFactory.ClassDeclaration(default, default, Token(SyntaxKind.ClassKeyword), identifier.WithTrailingTrivia(TriviaList(LineFeed)), null, null, default, OpenBrace, members, CloseBrace, default);
 
-    internal static StructDeclarationSyntax StructDeclaration(SyntaxToken identifier) => SyntaxFactory.StructDeclaration(default, default, TokenWithSpace(SyntaxKind.StructKeyword), identifier.WithTrailingTrivia(TriviaList(LineFeed)), null, null, default, OpenBrace, default, CloseBrace, default);
+    internal static StructDeclarationSyntax StructDeclaration(SyntaxToken identifier, SyntaxList<MemberDeclarationSyntax> members = default) => SyntaxFactory.StructDeclaration(default, default, TokenWithSpace(SyntaxKind.StructKeyword), identifier.WithTrailingTrivia(TriviaList(LineFeed)), null, null, default, OpenBrace, members, CloseBrace, default);
 
-    internal static ConstructorInitializerSyntax ConstructorInitializer(SyntaxKind kind) => SyntaxFactory.ConstructorInitializer(kind, Token(SyntaxKind.ColonToken), Token(GetConstructorInitializerThisOrBaseKeywordKind(kind)), ArgumentList());
-
-    internal static ConstructorInitializerSyntax ConstructorInitializer(SyntaxKind kind, ArgumentListSyntax argumentList) => SyntaxFactory.ConstructorInitializer(kind, Token(SyntaxKind.ColonToken), Token(GetConstructorInitializerThisOrBaseKeywordKind(kind)), argumentList);
+    internal static ConstructorInitializerSyntax ConstructorInitializer(SyntaxKind kind, SeparatedSyntaxList<ArgumentSyntax> arguments = default) => SyntaxFactory.ConstructorInitializer(kind, Token(SyntaxKind.ColonToken), Token(GetConstructorInitializerThisOrBaseKeywordKind(kind)), ArgumentList(arguments));
 
     internal static PropertyDeclarationSyntax PropertyDeclaration(TypeSyntax type, string identifier) => PropertyDeclaration(type, Identifier(identifier));
 
@@ -180,19 +168,19 @@ internal static class FastSyntaxFactory
 
     internal static AccessorDeclarationSyntax AccessorDeclaration(SyntaxKind kind, BlockSyntax? body) => SyntaxFactory.AccessorDeclaration(kind, default, default, Token(GetAccessorDeclarationKeywordKind(kind)), body, null, default);
 
-    internal static AccessorListSyntax AccessorList() => SyntaxFactory.AccessorList(OpenBrace, default, CloseBrace);
+    internal static AccessorListSyntax AccessorList(params SyntaxList<AccessorDeclarationSyntax> accessors) => SyntaxFactory.AccessorList(OpenBrace, accessors, CloseBrace);
 
-    internal static IndexerDeclarationSyntax IndexerDeclaration(TypeSyntax type) => SyntaxFactory.IndexerDeclaration(default, default, type, null, Token(SyntaxKind.ThisKeyword), BracketedParameterList(), null, null, default);
+    internal static IndexerDeclarationSyntax IndexerDeclaration(TypeSyntax type, SeparatedSyntaxList<ParameterSyntax> parameters) => SyntaxFactory.IndexerDeclaration(default, default, type, null, Token(SyntaxKind.ThisKeyword), BracketedParameterList(parameters), null, null, default);
 
-    internal static ElementAccessExpressionSyntax ElementAccessExpression(ExpressionSyntax expression) => SyntaxFactory.ElementAccessExpression(expression, BracketedArgumentList());
+    internal static ElementAccessExpressionSyntax ElementAccessExpression(ExpressionSyntax expression, SeparatedSyntaxList<ArgumentSyntax> arguments) => SyntaxFactory.ElementAccessExpression(expression, BracketedArgumentList(arguments));
 
-    internal static EnumDeclarationSyntax EnumDeclaration(SyntaxToken identifier) => SyntaxFactory.EnumDeclaration(default, default, Token(TriviaList(), SyntaxKind.EnumKeyword, TriviaList(Space)), identifier.WithTrailingTrivia(LineFeed), null, Token(TriviaList(), SyntaxKind.OpenBraceToken, TriviaList(LineFeed)), default, Token(TriviaList(), SyntaxKind.CloseBraceToken, TriviaList(LineFeed)), default);
+    internal static EnumDeclarationSyntax EnumDeclaration(SyntaxToken identifier, SeparatedSyntaxList<EnumMemberDeclarationSyntax> members = default) => SyntaxFactory.EnumDeclaration(default, default, Token(TriviaList(), SyntaxKind.EnumKeyword, TriviaList(Space)), identifier.WithTrailingTrivia(LineFeed), null, Token(TriviaList(), SyntaxKind.OpenBraceToken, TriviaList(LineFeed)), members, Token(TriviaList(), SyntaxKind.CloseBraceToken, TriviaList(LineFeed)), default);
 
-    internal static EnumMemberDeclarationSyntax EnumMemberDeclaration(SyntaxToken identifier) => SyntaxFactory.EnumMemberDeclaration(identifier);
+    internal static EnumMemberDeclarationSyntax EnumMemberDeclaration(SyntaxToken identifier, EqualsValueClauseSyntax? equalsValueClause = null) => SyntaxFactory.EnumMemberDeclaration(default, identifier, equalsValueClause);
 
-    internal static BracketedParameterListSyntax BracketedParameterList() => SyntaxFactory.BracketedParameterList(Token(SyntaxKind.OpenBracketToken), default, Token(SyntaxKind.CloseBracketToken));
+    internal static BracketedParameterListSyntax BracketedParameterList(params SeparatedSyntaxList<ParameterSyntax> parameters) => SyntaxFactory.BracketedParameterList(Token(SyntaxKind.OpenBracketToken), parameters, Token(SyntaxKind.CloseBracketToken));
 
-    internal static InitializerExpressionSyntax InitializerExpression(SyntaxKind kind, SeparatedSyntaxList<ExpressionSyntax> expressions) => SyntaxFactory.InitializerExpression(kind, OpenBrace, expressions, CloseBrace);
+    internal static InitializerExpressionSyntax InitializerExpression(SyntaxKind kind, SeparatedSyntaxList<ExpressionSyntax> expressions = default) => SyntaxFactory.InitializerExpression(kind, OpenBrace, expressions, CloseBrace);
 
     internal static ObjectCreationExpressionSyntax ObjectCreationExpression(TypeSyntax type, SeparatedSyntaxList<ArgumentSyntax> arguments = default) => SyntaxFactory.ObjectCreationExpression(Token(TriviaList(), SyntaxKind.NewKeyword, TriviaList(Space)), type, ArgumentList(arguments), null);
 
@@ -220,11 +208,11 @@ internal static class FastSyntaxFactory
 
     internal static XmlTextSyntax XmlText(string text) => SyntaxFactory.XmlText(text);
 
-    internal static XmlEmptyElementSyntax XmlEmptyElement(string name) => SyntaxFactory.XmlEmptyElement(Token(SyntaxKind.LessThanToken), XmlName(name), default, Token(SyntaxKind.SlashGreaterThanToken));
+    internal static XmlEmptyElementSyntax XmlEmptyElement(string name, SyntaxList<XmlAttributeSyntax> attributes = default) => SyntaxFactory.XmlEmptyElement(Token(SyntaxKind.LessThanToken), XmlName(name), attributes, Token(SyntaxKind.SlashGreaterThanToken));
 
-    internal static XmlTextSyntax XmlText(params SyntaxToken[] textTokens) => SyntaxFactory.XmlText(textTokens);
+    internal static XmlTextSyntax XmlText(params SyntaxTokenList textTokens) => SyntaxFactory.XmlText(textTokens);
 
-    internal static DocumentationCommentTriviaSyntax DocumentationCommentTrivia(SyntaxKind kind, SyntaxList<XmlNodeSyntax> content = default) => SyntaxFactory.DocumentationCommentTrivia(kind, content, Token(SyntaxKind.EndOfDocumentationCommentToken));
+    internal static DocumentationCommentTriviaSyntax DocumentationCommentTrivia(SyntaxKind kind, SyntaxList<XmlNodeSyntax> content) => SyntaxFactory.DocumentationCommentTrivia(kind, content, Token(SyntaxKind.EndOfDocumentationCommentToken));
 
     internal static SyntaxTrivia DocumentationCommentExterior(string text) => SyntaxFactory.DocumentationCommentExterior(text);
 
@@ -236,9 +224,6 @@ internal static class FastSyntaxFactory
         errorCodes,
         endOfDirectiveToken: TokenWithLineFeed(SyntaxKind.EndOfDirectiveToken),
         isActive);
-
-    internal static SeparatedSyntaxList<TNode> SeparatedList<TNode>(IEnumerable<TNode>? nodes)
-        where TNode : SyntaxNode => SyntaxFactory.SeparatedList(nodes);
 
     internal static SeparatedSyntaxList<TNode> SeparatedList<TNode>(IEnumerable<SyntaxNodeOrToken> nodesOrTokens)
         where TNode : SyntaxNode => SyntaxFactory.SeparatedList<TNode>(nodesOrTokens);
@@ -275,9 +260,9 @@ internal static class FastSyntaxFactory
         return token;
     }
 
-    internal static MethodDeclarationSyntax MethodDeclaration(TypeSyntax returnType, SyntaxToken identifier) => SyntaxFactory.MethodDeclaration(default(SyntaxList<AttributeListSyntax>), default(SyntaxTokenList), returnType.WithTrailingTrivia(TriviaList(Space)), null, identifier, null, ParameterList(), default(SyntaxList<TypeParameterConstraintClauseSyntax>), null, null, default(SyntaxToken));
+    internal static MethodDeclarationSyntax MethodDeclaration(TypeSyntax returnType, SyntaxToken identifier) => SyntaxFactory.MethodDeclaration(default, default, returnType.WithTrailingTrivia(TriviaList(Space)), null, identifier, null, ParameterList(), default, null, null, default);
 
-    internal static LocalFunctionStatementSyntax LocalFunctionStatement(TypeSyntax returnType, SyntaxToken identifier) => SyntaxFactory.LocalFunctionStatement(default(SyntaxList<AttributeListSyntax>), default(SyntaxTokenList), returnType, identifier, null, ParameterList(), default(SyntaxList<TypeParameterConstraintClauseSyntax>), null, null);
+    internal static LocalFunctionStatementSyntax LocalFunctionStatement(TypeSyntax returnType, SyntaxToken identifier) => SyntaxFactory.LocalFunctionStatement(default, default, returnType, identifier, null, ParameterList(), default, null, null);
 
     internal static MethodDeclarationSyntax MethodDeclaration(SyntaxList<AttributeListSyntax> attributeLists, SyntaxTokenList modifiers, TypeSyntax returnType, ExplicitInterfaceSpecifierSyntax? explicitInterfaceSpecifier, SyntaxToken identifier, TypeParameterListSyntax? typeParameterList, ParameterListSyntax parameterList, SyntaxList<TypeParameterConstraintClauseSyntax> constraintClauses, BlockSyntax body, SyntaxToken semicolonToken) => SyntaxFactory.MethodDeclaration(attributeLists, modifiers, returnType.WithTrailingTrivia(TriviaList(Space)), explicitInterfaceSpecifier!, identifier, typeParameterList!, parameterList, constraintClauses, body, semicolonToken);
 
@@ -285,29 +270,17 @@ internal static class FastSyntaxFactory
 
     internal static SingleVariableDesignationSyntax SingleVariableDesignation(SyntaxToken identifier) => SyntaxFactory.SingleVariableDesignation(identifier);
 
-    internal static SeparatedSyntaxList<TNode> SingletonSeparatedList<TNode>(TNode node)
-        where TNode : SyntaxNode => SyntaxFactory.SingletonSeparatedList(node);
-
-    internal static SyntaxList<TNode> SingletonList<TNode>(TNode node)
-        where TNode : SyntaxNode => SyntaxFactory.SingletonList(node);
-
     internal static SyntaxTriviaList TriviaList() => SyntaxFactory.TriviaList();
 
     internal static SyntaxTriviaList TriviaList(SyntaxTrivia trivia) => SyntaxFactory.TriviaList(trivia);
 
     internal static AttributeSyntax Attribute(NameSyntax name) => SyntaxFactory.Attribute(name, AttributeArgumentList());
 
-    internal static AttributeArgumentListSyntax AttributeArgumentList(SeparatedSyntaxList<AttributeArgumentSyntax> arguments = default) => SyntaxFactory.AttributeArgumentList(Token(SyntaxKind.OpenParenToken), arguments, Token(SyntaxKind.CloseParenToken));
+    internal static AttributeArgumentListSyntax AttributeArgumentList(params SeparatedSyntaxList<AttributeArgumentSyntax> arguments) => SyntaxFactory.AttributeArgumentList(Token(SyntaxKind.OpenParenToken), arguments, Token(SyntaxKind.CloseParenToken));
 
     internal static AttributeListSyntax AttributeList(params SeparatedSyntaxList<AttributeSyntax> attributes) => SyntaxFactory.AttributeList(Token(SyntaxKind.OpenBracketToken), null, attributes, TokenWithLineFeed(SyntaxKind.CloseBracketToken));
 
-    internal static SyntaxList<TNode> List<TNode>()
-        where TNode : SyntaxNode => SyntaxFactory.List<TNode>();
-
-    internal static SyntaxList<TNode> List<TNode>(IEnumerable<TNode> nodes)
-        where TNode : SyntaxNode => SyntaxFactory.List(nodes);
-
-    internal static ParameterListSyntax ParameterList() => SyntaxFactory.ParameterList(Token(SyntaxKind.OpenParenToken), SeparatedList<ParameterSyntax>(), Token(SyntaxKind.CloseParenToken));
+    internal static ParameterListSyntax ParameterList(params SeparatedSyntaxList<ParameterSyntax> parameters) => SyntaxFactory.ParameterList(Token(SyntaxKind.OpenParenToken), parameters, Token(SyntaxKind.CloseParenToken));
 
     internal static ArgumentListSyntax ArgumentList(params SeparatedSyntaxList<ArgumentSyntax> arguments) => SyntaxFactory.ArgumentList(Token(SyntaxKind.OpenParenToken), arguments, Token(SyntaxKind.CloseParenToken));
 
@@ -317,7 +290,7 @@ internal static class FastSyntaxFactory
 
     internal static ArgumentSyntax Argument(NameColonSyntax? nameColon, SyntaxToken refKindKeyword, ExpressionSyntax expression) => SyntaxFactory.Argument(nameColon, refKindKeyword, expression);
 
-    internal static ParameterSyntax Parameter(SyntaxToken identifier) => SyntaxFactory.Parameter(identifier);
+    internal static ParameterSyntax Parameter(TypeSyntax type, SyntaxToken identifier) => SyntaxFactory.Parameter(default, default, type, identifier, default);
 
     internal static ParameterSyntax Parameter(SyntaxList<AttributeListSyntax> attributeLists, SyntaxTokenList modifiers, TypeSyntax? type, SyntaxToken identifier, EqualsValueClauseSyntax? @default) => SyntaxFactory.Parameter(attributeLists, modifiers, type, identifier, @default);
 
@@ -329,9 +302,9 @@ internal static class FastSyntaxFactory
 
     internal static TypeParameterConstraintClauseSyntax TypeParameterConstraintClause(IdentifierNameSyntax name, SeparatedSyntaxList<TypeParameterConstraintSyntax> constraints) => SyntaxFactory.TypeParameterConstraintClause(TokenWithSpace(SyntaxKind.WhereKeyword), name, TokenWithSpaces(SyntaxKind.ColonToken), constraints);
 
-    internal static FieldDeclarationSyntax FieldDeclaration(VariableDeclarationSyntax declaration) => SyntaxFactory.FieldDeclaration(default, default, declaration, Semicolon);
+    internal static FieldDeclarationSyntax FieldDeclaration(SyntaxTokenList modifiers, VariableDeclarationSyntax declaration) => SyntaxFactory.FieldDeclaration(default, modifiers, declaration, Semicolon);
 
-    internal static FunctionPointerTypeSyntax FunctionPointerType() => SyntaxFactory.FunctionPointerType(Token(SyntaxKind.DelegateKeyword), Token(SyntaxKind.AsteriskToken), null, FunctionPointerParameterList());
+    internal static FunctionPointerTypeSyntax FunctionPointerType(FunctionPointerCallingConventionSyntax? callingConvention = null) => SyntaxFactory.FunctionPointerType(Token(SyntaxKind.DelegateKeyword), Token(SyntaxKind.AsteriskToken), callingConvention, FunctionPointerParameterList());
 
     internal static FunctionPointerTypeSyntax FunctionPointerType(FunctionPointerCallingConventionSyntax? callingConvention, FunctionPointerParameterListSyntax parameterList) => SyntaxFactory.FunctionPointerType(Token(SyntaxKind.DelegateKeyword), Token(SyntaxKind.AsteriskToken), callingConvention, parameterList);
 
@@ -341,18 +314,13 @@ internal static class FastSyntaxFactory
 
     internal static FunctionPointerUnmanagedCallingConventionSyntax FunctionPointerUnmanagedCallingConvention(SyntaxToken name) => SyntaxFactory.FunctionPointerUnmanagedCallingConvention(name);
 
-    internal static FunctionPointerUnmanagedCallingConventionListSyntax FunctionPointerUnmanagedCallingConventionList() => SyntaxFactory.FunctionPointerUnmanagedCallingConventionList(Token(SyntaxKind.OpenBracketToken), default, Token(SyntaxKind.CloseBracketToken));
+    internal static FunctionPointerUnmanagedCallingConventionListSyntax FunctionPointerUnmanagedCallingConventionList(params SeparatedSyntaxList<FunctionPointerUnmanagedCallingConventionSyntax> callingConventions) => SyntaxFactory.FunctionPointerUnmanagedCallingConventionList(Token(SyntaxKind.OpenBracketToken), callingConventions, Token(SyntaxKind.CloseBracketToken));
 
-    internal static FunctionPointerUnmanagedCallingConventionListSyntax FunctionPointerUnmanagedCallingConventionList(SeparatedSyntaxList<FunctionPointerUnmanagedCallingConventionSyntax> callingConventions) => SyntaxFactory.FunctionPointerUnmanagedCallingConventionList(Token(SyntaxKind.OpenBracketToken), callingConventions, Token(SyntaxKind.CloseBracketToken));
-
-    internal static CompilationUnitSyntax CompilationUnit() => SyntaxFactory.CompilationUnit(default, default, default, default, Token(SyntaxKind.EndOfFileToken));
+    internal static CompilationUnitSyntax CompilationUnit(params SyntaxList<MemberDeclarationSyntax> members) => SyntaxFactory.CompilationUnit(default, default, default, members, Token(SyntaxKind.EndOfFileToken));
 
     internal static FunctionPointerParameterSyntax FunctionPointerParameter(TypeSyntax type) => SyntaxFactory.FunctionPointerParameter(type);
 
-    internal static FunctionPointerParameterListSyntax FunctionPointerParameterList() => SyntaxFactory.FunctionPointerParameterList(Token(SyntaxKind.LessThanToken), SeparatedList<FunctionPointerParameterSyntax>(), Token(SyntaxKind.GreaterThanToken));
-
-    internal static SeparatedSyntaxList<TNode> SeparatedList<TNode>()
-        where TNode : SyntaxNode => SyntaxFactory.SeparatedList<TNode>();
+    internal static FunctionPointerParameterListSyntax FunctionPointerParameterList(params SeparatedSyntaxList<FunctionPointerParameterSyntax> parameters) => SyntaxFactory.FunctionPointerParameterList(Token(SyntaxKind.LessThanToken), parameters, Token(SyntaxKind.GreaterThanToken));
 
     internal static PredefinedTypeSyntax PredefinedType(SyntaxToken identifier) => SyntaxFactory.PredefinedType(identifier);
 
@@ -370,7 +338,7 @@ internal static class FastSyntaxFactory
 
     internal static NullableTypeSyntax NullableType(TypeSyntax elementType) => SyntaxFactory.NullableType(elementType, Token(SyntaxKind.QuestionToken));
 
-    internal static ArrayTypeSyntax ArrayType(TypeSyntax elementType, SyntaxList<ArrayRankSpecifierSyntax> rankSpecifiers = default) => SyntaxFactory.ArrayType(elementType, rankSpecifiers);
+    internal static ArrayTypeSyntax ArrayType(TypeSyntax elementType, SyntaxList<ArrayRankSpecifierSyntax> rankSpecifiers) => SyntaxFactory.ArrayType(elementType, rankSpecifiers);
 
     internal static AttributeArgumentSyntax AttributeArgument(ExpressionSyntax expression) => SyntaxFactory.AttributeArgument(null, null, expression);
 
@@ -382,11 +350,11 @@ internal static class FastSyntaxFactory
 
     internal static SyntaxToken Identifier(SyntaxTriviaList leading, string text, SyntaxTriviaList trailing) => SyntaxFactory.Identifier(leading, text, trailing);
 
-    internal static GenericNameSyntax GenericName(string text) => GenericName(text, TypeArgumentList());
+    internal static GenericNameSyntax GenericName(string text, SeparatedSyntaxList<TypeSyntax> typeArguments) => SyntaxFactory.GenericName(Identifier(text), TypeArgumentList(typeArguments));
 
     internal static GenericNameSyntax GenericName(string text, TypeArgumentListSyntax typeArgumentList) => SyntaxFactory.GenericName(Identifier(text), typeArgumentList);
 
-    internal static TypeArgumentListSyntax TypeArgumentList(SeparatedSyntaxList<TypeSyntax> types = default) => SyntaxFactory.TypeArgumentList(Token(SyntaxKind.LessThanToken), types, Token(SyntaxKind.GreaterThanToken));
+    internal static TypeArgumentListSyntax TypeArgumentList(params SeparatedSyntaxList<TypeSyntax> types) => SyntaxFactory.TypeArgumentList(Token(SyntaxKind.LessThanToken), types, Token(SyntaxKind.GreaterThanToken));
 
     internal static NameSyntax QualifiedName(NameSyntax left, SimpleNameSyntax right) => SyntaxFactory.QualifiedName(left, Token(SyntaxKind.DotToken), right);
 
@@ -422,9 +390,9 @@ internal static class FastSyntaxFactory
 
     internal static SimpleBaseTypeSyntax SimpleBaseType(TypeSyntax type) => SyntaxFactory.SimpleBaseType(type);
 
-    internal static BaseListSyntax BaseList(SeparatedSyntaxList<BaseTypeSyntax> types) => SyntaxFactory.BaseList(Token(SyntaxKind.ColonToken), types);
+    internal static BaseListSyntax BaseList(params SeparatedSyntaxList<BaseTypeSyntax> types) => SyntaxFactory.BaseList(Token(SyntaxKind.ColonToken), types);
 
-    internal static ArrayRankSpecifierSyntax ArrayRankSpecifier() => SyntaxFactory.ArrayRankSpecifier(Token(SyntaxKind.OpenBracketToken), default, Token(SyntaxKind.CloseBracketToken));
+    internal static ArrayRankSpecifierSyntax ArrayRankSpecifier(params SeparatedSyntaxList<ExpressionSyntax> sizes) => SyntaxFactory.ArrayRankSpecifier(Token(SyntaxKind.OpenBracketToken), sizes, Token(SyntaxKind.CloseBracketToken));
 
     internal static SyntaxTrivia Trivia(StructuredTriviaSyntax node) => SyntaxFactory.Trivia(node);
 

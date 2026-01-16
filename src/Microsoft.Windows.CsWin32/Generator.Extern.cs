@@ -221,12 +221,11 @@ public partial class Generator
 
             AttributeListSyntax CreateDllImportAttributeList()
             {
-                AttributeListSyntax result = AttributeList()
-                    .WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken))
-                    .AddAttributes(
+                AttributeListSyntax result = AttributeList(
                     useGenerator ?
                         LibraryImport(import, moduleName, entrypoint, setLastErrorViaMarshaling, requiresUnicodeCharSet ? CharSet.Unicode : CharSet.Ansi) :
-                        DllImport(import, moduleName, entrypoint, setLastErrorViaMarshaling, requiresUnicodeCharSet ? CharSet.Unicode : CharSet.Ansi));
+                        DllImport(import, moduleName, entrypoint, setLastErrorViaMarshaling, requiresUnicodeCharSet ? CharSet.Unicode : CharSet.Ansi))
+                    .WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken));
                 if (this.generateDefaultDllImportSearchPathsAttribute)
                 {
                     result = result.AddAttributes(
@@ -244,14 +243,14 @@ public partial class Generator
             }
 
             MethodDeclarationSyntax externDeclaration = MethodDeclaration(
-                List<AttributeListSyntax>().Add(CreateDllImportAttributeList()),
-                modifiers: TokenList(TokenWithSpace(SyntaxKind.StaticKeyword)),
+                [CreateDllImportAttributeList()],
+                modifiers: [TokenWithSpace(SyntaxKind.StaticKeyword)],
                 returnType.Type.WithTrailingTrivia(TriviaList(Space)),
                 explicitInterfaceSpecifier: null!,
                 SafeIdentifier(methodName),
                 null!,
                 this.CreateParameterList(methodDefinition, signature, typeSettings, GeneratingElement.ExternMethod),
-                List<TypeParameterConstraintClauseSyntax>(),
+                default,
                 body: null!,
                 TokenWithLineFeed(SyntaxKind.SemicolonToken));
             externDeclaration = returnType.AddReturnMarshalAs(externDeclaration);
@@ -282,7 +281,7 @@ public partial class Generator
                     p.Modifiers.Any(SyntaxKind.OutKeyword) ? TokenWithSpace(SyntaxKind.OutKeyword) :
                     p.Modifiers.Any(SyntaxKind.RefKeyword) ? TokenWithSpace(SyntaxKind.RefKeyword) :
                     default;
-                ArgumentListSyntax argumentList = exposedParameterList.Parameters.Aggregate(ArgumentList(), (list, p) => list.AddArguments(Argument(IdentifierName(p.Identifier.ValueText)).WithRefKindKeyword(RefInOutKeyword(p))));
+                ArgumentListSyntax argumentList = ArgumentList([.. exposedParameterList.Parameters.Select(p => Argument(IdentifierName(p.Identifier.ValueText)).WithRefKindKeyword(RefInOutKeyword(p)))]);
                 if (parameterEnumType is not null)
                 {
                     for (int i = 0; i < parameterEnumType.Length; i++)
@@ -319,15 +318,15 @@ public partial class Generator
                     // Marshal.SetLastSystemError(0);
                     body = body.AddStatements(ExpressionStatement(InvocationExpression(
                         MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Marshal)), IdentifierName("SetLastSystemError")),
-                        ArgumentList().AddArguments(Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)))))));
+                        [Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)))])));
                 }
 
                 if (retValLocalName is not null)
                 {
                     // var __retVal = LocalExternFunction(...);
                     body = body.AddStatements(
-                        LocalDeclarationStatement(VariableDeclaration(returnTypeEnumName ?? returnType.Type).AddVariables(
-                            VariableDeclarator(retValLocalName.Identifier).WithInitializer(EqualsValueClause(invocation)))));
+                        LocalDeclarationStatement(
+                            VariableDeclaration(returnTypeEnumName ?? returnType.Type, [VariableDeclarator(retValLocalName.Identifier, EqualsValueClause(invocation))])));
                 }
                 else
                 {
@@ -340,8 +339,7 @@ public partial class Generator
                     // Marshal.SetLastPInvokeError(Marshal.GetLastSystemError())
                     body = body.AddStatements(ExpressionStatement(InvocationExpression(
                         MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Marshal)), IdentifierName("SetLastPInvokeError")),
-                        ArgumentList().AddArguments(Argument(InvocationExpression(
-                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Marshal)), IdentifierName("GetLastSystemError"))))))));
+                        [Argument(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Marshal)), IdentifierName("GetLastSystemError"))))])));
                 }
 
                 if (retValLocalName is not null)
@@ -375,7 +373,7 @@ public partial class Generator
 
             if (this.GetSupportedOSPlatformAttribute(methodDefinition.GetCustomAttributes()) is AttributeSyntax supportedOSPlatformAttribute)
             {
-                exposedMethod = exposedMethod.AddAttributeLists(AttributeList().AddAttributes(supportedOSPlatformAttribute));
+                exposedMethod = exposedMethod.AddAttributeLists(AttributeList(supportedOSPlatformAttribute));
             }
 
             // Add documentation if we can find it.

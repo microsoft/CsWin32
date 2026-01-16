@@ -20,7 +20,7 @@ internal record ArrayTypeHandleInfo(TypeHandleInfo ElementType, ArrayShape Shape
         TypeSyntaxAndMarshaling element = this.ElementType.ToTypeSyntax(inputs, forElement, customAttributes);
         if (inputs.AllowMarshaling || inputs.IsField)
         {
-            ArrayTypeSyntax arrayType = ArrayType(element.Type, SingletonList(ArrayRankSpecifier().AddSizes(this.Shape.Sizes.Select(size => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(size))).ToArray<ExpressionSyntax>())));
+            ArrayTypeSyntax arrayType = ArrayType(element.Type, [ArrayRankSpecifier([.. this.Shape.Sizes.Select(size => LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(size)))])]);
             MarshalAsAttribute? marshalAs = element.MarshalAsAttribute is object ? new MarshalAsAttribute(UnmanagedType.LPArray) { ArraySubType = element.MarshalAsAttribute.Value } : null;
             return new TypeSyntaxAndMarshaling(arrayType, marshalAs, element.NativeArrayInfo);
         }

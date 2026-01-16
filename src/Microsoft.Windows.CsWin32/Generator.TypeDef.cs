@@ -102,14 +102,11 @@ public partial class Generator
         TypeSyntaxAndMarshaling fieldType = fieldTypeInfo.ToTypeSyntax(typeSettings, GeneratingElement.Field, fieldAttributes.QualifyWith(this));
         (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? _) fieldInfo =
             this.ReinterpretFieldType(fieldDef, fieldType.Type, fieldAttributes, this.DefaultContext);
-        SyntaxList<MemberDeclarationSyntax> members = List<MemberDeclarationSyntax>();
-
-        FieldDeclarationSyntax fieldSyntax = FieldDeclaration(
-            VariableDeclaration(fieldType.Type).AddVariables(fieldDeclarator))
-            .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.ReadOnlyKeyword));
-        members = members.Add(fieldSyntax);
-
-        members = members.AddRange(this.CreateCommonTypeDefMembers(name, fieldType.Type, fieldIdentifierName));
+        SyntaxList<MemberDeclarationSyntax> members =
+        [
+            FieldDeclaration([TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.ReadOnlyKeyword)], VariableDeclaration(fieldType.Type, [fieldDeclarator])),
+            .. this.CreateCommonTypeDefMembers(name, fieldType.Type, fieldIdentifierName)
+        ];
 
         IdentifierNameSyntax valueParameter = IdentifierName("value");
         MemberAccessExpressionSyntax fieldAccessExpression = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), fieldIdentifierName);
@@ -126,9 +123,10 @@ public partial class Generator
                 // We still need to make conversion from an IntPtr simple since so much code relies on it.
                 // public static explicit operator SOCKET(IntPtr value) => new SOCKET((UIntPtr)unchecked((ulong)value.ToInt64()));
                 members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
-                    .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))))
-                    .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(
-                        Argument(CastExpression(fieldInfo.FieldType, UncheckedExpression(CastExpression(PredefinedType(Token(SyntaxKind.ULongKeyword)), InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToInt64)))))))))))
+                    .AddParameterListParameters(Parameter(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space)), valueParameter.Identifier))
+                    .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(
+                        name,
+                        [Argument(CastExpression(fieldInfo.FieldType, UncheckedExpression(CastExpression(PredefinedType(Token(SyntaxKind.ULongKeyword)), InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToInt64))))))))])))
                     .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
                     .WithSemicolonToken(SemicolonWithLineFeed));
             }
@@ -136,9 +134,9 @@ public partial class Generator
             {
                 // public static implicit operator IntPtr(MSIHANDLE value) => new IntPtr(value.Value);
                 members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), IntPtrTypeSyntax)
-                    .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))))
+                    .AddParameterListParameters(Parameter(name.WithTrailingTrivia(TriviaList(Space)), valueParameter.Identifier))
                     .WithExpressionBody(ArrowExpressionClause(
-                        ObjectCreationExpression(IntPtrTypeSyntax).AddArgumentListArguments(Argument(valueValueArg))))
+                        ObjectCreationExpression(IntPtrTypeSyntax, [Argument(valueValueArg)])))
                     .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
                     .WithSemicolonToken(SemicolonWithLineFeed));
             }
@@ -147,9 +145,16 @@ public partial class Generator
             {
                 // public static explicit operator MSIHANDLE(IntPtr value) => new MSIHANDLE((uint)value.ToInt32());
                 members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
-                    .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))))
-                    .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(
-                        Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToInt32)))))))))
+                    .AddParameterListParameters(Parameter(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space)), valueParameter.Identifier))
+                    .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(
+                        name,
+                        [
+                            Argument(
+                                CastExpression(
+                                    fieldInfo.FieldType,
+                                    InvocationExpression(
+                                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToInt32))))))
+                        ])))
                     .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
                     .WithSemicolonToken(SemicolonWithLineFeed));
             }
@@ -158,17 +163,19 @@ public partial class Generator
             {
                 // public static explicit operator MSIHANDLE(IntPtr value) => new MSIHANDLE(value.ToPointer());
                 members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
-                    .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))))
-                    .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(
-                        Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToPointer)))))))))
+                    .AddParameterListParameters(Parameter(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space)), valueParameter.Identifier))
+                    .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(
+                        name,
+                        [Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToPointer))))))])))
                     .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
                     .WithSemicolonToken(SemicolonWithLineFeed));
 
                 // public static explicit operator MSIHANDLE(UIntPtr value) => new MSIHANDLE(value.ToPointer());
                 members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
-                    .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(UIntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))))
-                    .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(
-                        Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToPointer)))))))))
+                    .AddParameterListParameters(Parameter(UIntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space)), valueParameter.Identifier))
+                    .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(
+                        name,
+                        [Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToPointer))))))])))
                     .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
                     .WithSemicolonToken(SemicolonWithLineFeed));
             }
@@ -180,25 +187,27 @@ public partial class Generator
             // public static implicit operator IntPtr(PSID value) => new IntPtr(value.Value);
             ExpressionSyntax valueValueArg = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, fieldIdentifierName);
             members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), IntPtrTypeSyntax)
-                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))))
+                .AddParameterListParameters(Parameter(name.WithTrailingTrivia(TriviaList(Space)), valueParameter.Identifier))
                 .WithExpressionBody(ArrowExpressionClause(
-                    ObjectCreationExpression(IntPtrTypeSyntax).AddArgumentListArguments(Argument(valueValueArg))))
+                    ObjectCreationExpression(IntPtrTypeSyntax, [Argument(valueValueArg)])))
                 .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
                 .WithSemicolonToken(SemicolonWithLineFeed));
 
             // public static explicit operator PSID(IntPtr value) => new PSID(value.ToPointer());
             members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
-                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))))
-                .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(
-                    Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToPointer)))))))))
+                .AddParameterListParameters(Parameter(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space)), valueParameter.Identifier))
+                .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(
+                    name,
+                    [Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToPointer))))))])))
                 .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
                 .WithSemicolonToken(SemicolonWithLineFeed));
 
             // public static explicit operator PSID(UIntPtr value) => new PSID(value.ToPointer());
             members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ExplicitKeyword), name)
-                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(UIntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))))
-                .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(name).AddArgumentListArguments(
-                    Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToPointer)))))))))
+                .AddParameterListParameters(Parameter(UIntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space)), valueParameter.Identifier))
+                .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(
+                    name,
+                    [Argument(CastExpression(fieldInfo.FieldType, InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, IdentifierName(nameof(IntPtr.ToPointer))))))])))
                 .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
                 .WithSemicolonToken(SemicolonWithLineFeed));
         }
@@ -214,9 +223,9 @@ public partial class Generator
 
                 // public static implicit operator HINSTANCE(HMODULE value) => new HINSTANCE(value.Value);
                 members = members.Add(ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), alsoUsableForTypeSymbolName)
-                    .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(name.WithTrailingTrivia(TriviaList(Space))))
+                    .AddParameterListParameters(Parameter(name.WithTrailingTrivia(TriviaList(Space)), valueParameter.Identifier))
                     .WithExpressionBody(ArrowExpressionClause(
-                        ObjectCreationExpression(alsoUsableForTypeSymbolName).AddArgumentListArguments(Argument(valueValueArg))))
+                        ObjectCreationExpression(alsoUsableForTypeSymbolName, [Argument(valueValueArg)])))
                     .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
                     .WithSemicolonToken(SemicolonWithLineFeed));
             }
@@ -262,7 +271,7 @@ public partial class Generator
             return members;
         }
 
-        SyntaxTokenList structModifiers = TokenList(TokenWithSpace(this.Visibility));
+        SyntaxTokenList structModifiers = [TokenWithSpace(this.Visibility)];
         if (RequiresUnsafe(fieldInfo.FieldType))
         {
             structModifiers = structModifiers.Add(TokenWithSpace(SyntaxKind.UnsafeKeyword));
@@ -288,15 +297,15 @@ public partial class Generator
             AttributeSyntax nativeMarshallingAttribute = Attribute(IdentifierName("NativeMarshalling"))
                 .AddArgumentListArguments(
                 AttributeArgument(TypeOfExpression(IdentifierName(typedefMarshaller))));
-            attributes = [..attributes, nativeMarshallingAttribute];
+            attributes = [.. attributes, nativeMarshallingAttribute];
         }
 
         structModifiers = structModifiers.Add(TokenWithSpace(SyntaxKind.ReadOnlyKeyword)).Add(TokenWithSpace(SyntaxKind.PartialKeyword));
         StructDeclarationSyntax result = StructDeclaration(name.Identifier)
-            .WithBaseList(BaseList(SingletonSeparatedList<BaseTypeSyntax>(SimpleBaseType(GenericName(nameof(IEquatable<int>), TypeArgumentList().WithGreaterThanToken(TokenWithLineFeed(SyntaxKind.GreaterThanToken))).AddTypeArgumentListArguments(name)))).WithColonToken(TokenWithSpace(SyntaxKind.ColonToken)))
+            .WithBaseList(BaseList(SimpleBaseType(GenericName(nameof(IEquatable<>), TypeArgumentList(name).WithGreaterThanToken(TokenWithLineFeed(SyntaxKind.GreaterThanToken))))).WithColonToken(TokenWithSpace(SyntaxKind.ColonToken)))
             .WithMembers(members)
             .WithModifiers(structModifiers)
-            .AddAttributeLists(AttributeList().WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken)).AddAttributes(attributes));
+            .AddAttributeLists(AttributeList([.. attributes]).WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken)));
 
         result = this.AddApiDocumentation(name.Identifier.ValueText, result);
         return result;
@@ -307,9 +316,8 @@ public partial class Generator
         // Add constructor
         IdentifierNameSyntax valueParameter = IdentifierName("value");
         MemberAccessExpressionSyntax fieldAccessExpression = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), fieldName);
-        yield return ConstructorDeclaration(structName.Identifier)
+        yield return ConstructorDeclaration(structName.Identifier, [Parameter(fieldType.WithTrailingTrivia(TriviaList(Space)), valueParameter.Identifier)])
             .AddModifiers(TokenWithSpace(this.Visibility))
-            .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(fieldType.WithTrailingTrivia(TriviaList(Space))))
             .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccessExpression, valueParameter).WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken))))
             .WithSemicolonToken(SemicolonWithLineFeed);
 
@@ -317,10 +325,9 @@ public partial class Generator
         if (fieldType is PointerTypeSyntax)
         {
             // public HWND(IntPtr value) : this((void*)value) { }
-            yield return ConstructorDeclaration(structName.Identifier)
+            yield return ConstructorDeclaration(structName.Identifier, [Parameter(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space)), valueParameter.Identifier)])
                 .AddModifiers(TokenWithSpace(this.Visibility))
-                .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))))
-                .WithInitializer(ConstructorInitializer(SyntaxKind.ThisConstructorInitializer).AddArgumentListArguments(Argument(UncheckedExpression(CastExpression(fieldType, valueParameter)))))
+                .WithInitializer(ConstructorInitializer(SyntaxKind.ThisConstructorInitializer, [Argument(UncheckedExpression(CastExpression(fieldType, valueParameter)))]))
                 .WithBody(Block());
         }
 
@@ -343,7 +350,7 @@ public partial class Generator
 
         // public static implicit operator int(HWND value) => value.Value;
         yield return ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), fieldType)
-            .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(structName.WithTrailingTrivia(TriviaList(Space))))
+            .AddParameterListParameters(Parameter(structName.WithTrailingTrivia(TriviaList(Space)), valueParameter.Identifier))
             .WithExpressionBody(ArrowExpressionClause(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameter, fieldName)))
             .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
             .WithSemicolonToken(SemicolonWithLineFeed);
@@ -352,8 +359,8 @@ public partial class Generator
         // Except make converting char* or byte* to typedefs representing strings, and LPARAM/WPARAM to nint/nuint, implicit.
         SyntaxKind explicitOrImplicitModifier = ImplicitConversionTypeDefs.Contains(structName.Identifier.ValueText) ? SyntaxKind.ImplicitKeyword : SyntaxKind.ExplicitKeyword;
         yield return ConversionOperatorDeclaration(Token(explicitOrImplicitModifier), structName)
-            .AddParameterListParameters(Parameter(valueParameter.Identifier).WithType(fieldType.WithTrailingTrivia(TriviaList(Space))))
-            .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(structName).AddArgumentListArguments(Argument(valueParameter))))
+            .AddParameterListParameters(Parameter(fieldType.WithTrailingTrivia(TriviaList(Space)), valueParameter.Identifier))
+            .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(structName, [Argument(valueParameter)])))
             .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword)) // operators MUST be public
             .WithSemicolonToken(SemicolonWithLineFeed);
 
@@ -364,8 +371,8 @@ public partial class Generator
             .WithOperatorKeyword(TokenWithSpace(SyntaxKind.OperatorKeyword))
             .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))
             .AddParameterListParameters(
-                Parameter(leftParameter.Identifier).WithType(structName.WithTrailingTrivia(TriviaList(Space))),
-                Parameter(rightParameter.Identifier).WithType(structName.WithTrailingTrivia(TriviaList(Space))))
+                Parameter(structName.WithTrailingTrivia(TriviaList(Space)), leftParameter.Identifier),
+                Parameter(structName.WithTrailingTrivia(TriviaList(Space)), rightParameter.Identifier))
             .WithExpressionBody(ArrowExpressionClause(
                 BinaryExpression(
                     SyntaxKind.EqualsExpression,
@@ -378,8 +385,8 @@ public partial class Generator
             .WithOperatorKeyword(TokenWithSpace(SyntaxKind.OperatorKeyword))
             .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))
             .AddParameterListParameters(
-                Parameter(leftParameter.Identifier).WithType(structName.WithTrailingTrivia(TriviaList(Space))),
-                Parameter(rightParameter.Identifier).WithType(structName.WithTrailingTrivia(TriviaList(Space))))
+                Parameter(structName.WithTrailingTrivia(TriviaList(Space)), leftParameter.Identifier),
+                Parameter(structName.WithTrailingTrivia(TriviaList(Space)), rightParameter.Identifier))
             .WithExpressionBody(ArrowExpressionClause(
                 PrefixUnaryExpression(
                     SyntaxKind.LogicalNotExpression,
@@ -388,9 +395,9 @@ public partial class Generator
 
         // public bool Equals(HWND other) => this.Value == other.Value;
         IdentifierNameSyntax other = IdentifierName("other");
-        yield return MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Identifier(nameof(IEquatable<int>.Equals)))
+        yield return MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Identifier(nameof(IEquatable<>.Equals)))
             .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword))
-            .AddParameterListParameters(Parameter(other.Identifier).WithType(structName.WithTrailingTrivia(TriviaList(Space))))
+            .AddParameterListParameters(Parameter(structName.WithTrailingTrivia(TriviaList(Space)), other.Identifier))
             .WithExpressionBody(ArrowExpressionClause(
                 BinaryExpression(
                     SyntaxKind.EqualsExpression,
@@ -400,15 +407,16 @@ public partial class Generator
 
         // public override bool Equals(object obj) => obj is HWND other && this.Equals(other);
         IdentifierNameSyntax objParam = IdentifierName("obj");
-        yield return MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Identifier(nameof(IEquatable<int>.Equals)))
+        yield return MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Identifier(nameof(IEquatable<>.Equals)))
             .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
-            .AddParameterListParameters(Parameter(objParam.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.ObjectKeyword))))
+            .AddParameterListParameters(Parameter(PredefinedType(TokenWithSpace(SyntaxKind.ObjectKeyword)), objParam.Identifier))
             .WithExpressionBody(ArrowExpressionClause(
                 BinaryExpression(
                     SyntaxKind.LogicalAndExpression,
                     IsPatternExpression(objParam, DeclarationPattern(structName, SingleVariableDesignation(Identifier("other")))),
-                    InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName(nameof(Equals))))
-                        .WithArgumentList(ArgumentList().AddArguments(Argument(IdentifierName("other")))))))
+                    InvocationExpression(
+                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName(nameof(Equals))),
+                        [Argument(IdentifierName("other"))]))))
             .WithSemicolonToken(SemicolonWithLineFeed);
 
         // public override int GetHashCode() => unchecked((int)this.Value); // if Value is a pointer
@@ -416,8 +424,7 @@ public partial class Generator
         ExpressionSyntax hashExpr = fieldType is PointerTypeSyntax ?
             UncheckedExpression(CastExpression(PredefinedType(TokenWithNoSpace(SyntaxKind.IntKeyword)), fieldAccessExpression)) :
             InvocationExpression(
-                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, fieldAccessExpression, IdentifierName(nameof(object.GetHashCode))),
-                ArgumentList());
+                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, fieldAccessExpression, IdentifierName(nameof(object.GetHashCode))));
         yield return MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), Identifier(nameof(object.GetHashCode)))
             .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword))
             .WithExpressionBody(ArrowExpressionClause(hashExpr))

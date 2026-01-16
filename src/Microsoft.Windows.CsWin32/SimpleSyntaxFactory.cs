@@ -132,9 +132,9 @@ internal static class SimpleSyntaxFactory
             nativeArrayInfo?.CountParamIndex.HasValue is true ? LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(nativeArrayInfo.Value.CountParamIndex.Value)) : null);
     }
 
-    internal static TypeSyntax MakeSpanOfT(TypeSyntax typeArgument) => GenericName(nameof(Span<int>)).AddTypeArgumentListArguments(typeArgument);
+    internal static TypeSyntax MakeSpanOfT(TypeSyntax typeArgument) => GenericName(nameof(Span<>), [typeArgument]);
 
-    internal static TypeSyntax MakeReadOnlySpanOfT(TypeSyntax typeArgument) => GenericName(nameof(ReadOnlySpan<int>)).AddTypeArgumentListArguments(typeArgument);
+    internal static TypeSyntax MakeReadOnlySpanOfT(TypeSyntax typeArgument) => GenericName(nameof(ReadOnlySpan<>), [typeArgument]);
 
     internal static ExpressionSyntax CompoundExpression(SyntaxKind @operator, params ExpressionSyntax[] elements) =>
         elements.Aggregate((left, right) => BinaryExpression(@operator, left, right));
@@ -175,7 +175,7 @@ internal static class SimpleSyntaxFactory
                 .WithNameEquals(NameEquals(IdentifierName(nameof(StructLayoutAttribute.CharSet)))));
         }
 
-        structLayoutAttribute = structLayoutAttribute.WithArgumentList(FixTrivia(AttributeArgumentList().AddArguments(args.ToArray())));
+        structLayoutAttribute = structLayoutAttribute.WithArgumentList(FixTrivia(AttributeArgumentList([.. args])));
         return structLayoutAttribute;
     }
 
@@ -231,7 +231,7 @@ internal static class SimpleSyntaxFactory
                 .WithNameEquals(NameEquals(IdentifierName(nameof(DllImportAttribute.CharSet)))));
         }
 
-        dllImportAttribute = dllImportAttribute.WithArgumentList(FixTrivia(AttributeArgumentList().AddArguments(args.ToArray())));
+        dllImportAttribute = dllImportAttribute.WithArgumentList(FixTrivia(AttributeArgumentList([.. args])));
         return dllImportAttribute;
     }
 
@@ -267,7 +267,7 @@ internal static class SimpleSyntaxFactory
             }
         }
 
-        libraryImportAttribute = libraryImportAttribute.WithArgumentList(FixTrivia(AttributeArgumentList().AddArguments(args.ToArray())));
+        libraryImportAttribute = libraryImportAttribute.WithArgumentList(FixTrivia(AttributeArgumentList([.. args])));
         return libraryImportAttribute;
     }
 
@@ -347,7 +347,7 @@ internal static class SimpleSyntaxFactory
             AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(format))));
     }
 
-    internal static CrefParameterListSyntax ToCref(ParameterListSyntax parameterList) => CrefParameterList(FixTrivia(SeparatedList(parameterList.Parameters.Select(ToCref))));
+    internal static CrefParameterListSyntax ToCref(ParameterListSyntax parameterList) => CrefParameterList(FixTrivia([.. parameterList.Parameters.Select(ToCref)]));
 
     internal static CrefParameterSyntax ToCref(ParameterSyntax parameter)
         => CrefParameter(
@@ -387,8 +387,8 @@ internal static class SimpleSyntaxFactory
         }
 
         return ArrayCreationExpression(
-            ArrayType(PredefinedType(Token(SyntaxKind.ByteKeyword))).AddRankSpecifiers(ArrayRankSpecifier()),
-            InitializerExpression(SyntaxKind.ArrayInitializerExpression, SeparatedList(elements)));
+            ArrayType(PredefinedType(Token(SyntaxKind.ByteKeyword)), [ArrayRankSpecifier()]),
+            InitializerExpression(SyntaxKind.ArrayInitializerExpression, [.. elements]));
     }
 
     internal static unsafe string ToHex<T>(T value, int? hexLength = null)
@@ -414,18 +414,21 @@ internal static class SimpleSyntaxFactory
         byte j = (byte)args.FixedArguments[9].Value!;
         byte k = (byte)args.FixedArguments[10].Value!;
 
-        return ObjectCreationExpression(GuidTypeSyntax).AddArgumentListArguments(
-            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(a), a))),
-            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(b), b))),
-            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(c), c))),
-            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(d), d))),
-            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(e), e))),
-            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(f), f))),
-            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(g), g))),
-            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(h), h))),
-            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(i), i))),
-            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(j), j))),
-            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(k), k))));
+        return ObjectCreationExpression(
+            GuidTypeSyntax,
+            [
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(a), a))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(b), b))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(c), c))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(d), d))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(e), e))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(f), f))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(g), g))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(h), h))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(i), i))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(j), j))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(k), k)))
+            ]);
     }
 
     internal static ObjectCreationExpressionSyntax GuidValue(Guid guid)
@@ -442,22 +445,26 @@ internal static class SimpleSyntaxFactory
         byte i = bytes[13];
         byte j = bytes[14];
         byte k = bytes[15];
-        return ObjectCreationExpression(GuidTypeSyntax).AddArgumentListArguments(
-            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(a), a))),
-            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(b), b))),
-            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(c), c))),
-            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(d), d))),
-            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(e), e))),
-            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(f), f))),
-            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(g), g))),
-            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(h), h))),
-            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(i), i))),
-            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(j), j))),
-            Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(k), k))));
+        return ObjectCreationExpression(
+            GuidTypeSyntax,
+            [
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(a), a))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(b), b))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(c), c))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(d), d))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(e), e))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(f), f))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(g), g))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(h), h))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(i), i))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(j), j))),
+                Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(ToHex(k), k)))
+            ]);
     }
 
-    internal static ExpressionSyntax IntPtrExpr(IntPtr value) => ObjectCreationExpression(IntPtrTypeSyntax).AddArgumentListArguments(
-        Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(value.ToInt64()))));
+    internal static ExpressionSyntax IntPtrExpr(IntPtr value) => ObjectCreationExpression(
+        IntPtrTypeSyntax,
+        [Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(value.ToInt64())))]);
 
     internal static SyntaxToken SafeIdentifier(string name) => SafeIdentifierName(name).Identifier;
 

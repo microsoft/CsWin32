@@ -68,7 +68,7 @@ internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleIn
                     marshalAsAttribute.ArraySubType = elementTypeDetails.MarshalAsAttribute.Value;
                 }
 
-                return new TypeSyntaxAndMarshaling(ArrayType(elementTypeDetails.Type).AddRankSpecifiers(ArrayRankSpecifier()), marshalAsAttribute, nativeArrayInfo);
+                return new TypeSyntaxAndMarshaling(ArrayType(elementTypeDetails.Type, [ArrayRankSpecifier()]), marshalAsAttribute, nativeArrayInfo);
             }
             else if (xIn || xOut)
             {
@@ -118,7 +118,7 @@ internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleIn
                 // We can replace a pointer to a struct with a managed equivalent by changing the pointer to an array.
                 // We only want to enter this branch for struct fields, since method parameters can use in/out/ref modifiers.
                 return new TypeSyntaxAndMarshaling(
-                    ArrayType(elementTypeDetails.Type).AddRankSpecifiers(ArrayRankSpecifier()),
+                    ArrayType(elementTypeDetails.Type, [ArrayRankSpecifier()]),
                     elementTypeDetails.MarshalAsAttribute is object ? new MarshalAsAttribute(UnmanagedType.LPArray) { ArraySubType = elementTypeDetails.MarshalAsAttribute.Value } : null,
                     elementTypeDetails.NativeArrayInfo);
             }

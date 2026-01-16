@@ -34,28 +34,28 @@ internal struct TypeSyntaxAndMarshaling
     internal FieldDeclarationSyntax AddMarshalAs(FieldDeclarationSyntax fieldDeclaration)
     {
         return this.MarshalAsAttribute is object
-            ? fieldDeclaration.AddAttributeLists(AttributeList().AddAttributes(SimpleSyntaxFactory.MarshalAs(this.MarshalAsAttribute, this.NativeArrayInfo)))
+            ? fieldDeclaration.AddAttributeLists(AttributeList(MarshalAs(this.MarshalAsAttribute, this.NativeArrayInfo)))
             : fieldDeclaration;
     }
 
     internal ParameterSyntax AddMarshalAs(ParameterSyntax parameter)
     {
         return this.MarshalAsAttribute is object
-            ? parameter.AddAttributeLists(AttributeList().AddAttributes(SimpleSyntaxFactory.MarshalAs(this.MarshalAsAttribute, this.NativeArrayInfo)))
+            ? parameter.AddAttributeLists(AttributeList(MarshalAs(this.MarshalAsAttribute, this.NativeArrayInfo)))
             : parameter;
     }
 
     internal MethodDeclarationSyntax AddReturnMarshalAs(MethodDeclarationSyntax methodDeclaration)
     {
         return this.MarshalAsAttribute is object
-            ? methodDeclaration.AddAttributeLists(AttributeList().WithTarget(AttributeTargetSpecifier(Token(SyntaxKind.ReturnKeyword))).AddAttributes(SimpleSyntaxFactory.MarshalAs(this.MarshalAsAttribute, this.NativeArrayInfo)))
+            ? methodDeclaration.AddAttributeLists(AttributeList(MarshalAs(this.MarshalAsAttribute, this.NativeArrayInfo)).WithTarget(AttributeTargetSpecifier(Token(SyntaxKind.ReturnKeyword))))
             : methodDeclaration;
     }
 
     internal DelegateDeclarationSyntax AddReturnMarshalAs(DelegateDeclarationSyntax methodDeclaration)
     {
         return this.MarshalAsAttribute is object
-            ? methodDeclaration.AddAttributeLists(AttributeList().WithTarget(AttributeTargetSpecifier(Token(SyntaxKind.ReturnKeyword))).AddAttributes(SimpleSyntaxFactory.MarshalAs(this.MarshalAsAttribute, this.NativeArrayInfo)))
+            ? methodDeclaration.AddAttributeLists(AttributeList(MarshalAs(this.MarshalAsAttribute, this.NativeArrayInfo)).WithTarget(AttributeTargetSpecifier(Token(SyntaxKind.ReturnKeyword))))
             : methodDeclaration;
     }
 

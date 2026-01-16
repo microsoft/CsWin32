@@ -77,11 +77,8 @@ public partial class Generator
                     var fieldType = (TypeSyntax)attributeArgs.FixedArguments[0].Value!;
                     ExpressionSyntax size = LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal((int)attributeArgs.FixedArguments[1].Value!));
                     field = FieldDeclaration(
-                        VariableDeclaration(fieldType))
-                        .AddDeclarationVariables(
-                            fieldDeclarator
-                                .WithArgumentList(BracketedArgumentList(SingletonSeparatedList(Argument(size)))))
-                        .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword), Token(SyntaxKind.FixedKeyword));
+                        [TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword), Token(SyntaxKind.FixedKeyword)],
+                        VariableDeclaration(fieldType, [fieldDeclarator.WithArgumentList(BracketedArgumentList(Argument(size)))]));
                 }
                 else if (fieldDefHandle == flexibleArrayFieldHandle)
                 {
@@ -96,10 +93,7 @@ public partial class Generator
                         StructDeclarationSyntax helperStruct = this.DeclareVariableLengthInlineArrayHelper(context, fieldType);
                         additionalMembers = additionalMembers.Add(helperStruct);
 
-                        field = FieldDeclaration(
-                            VariableDeclaration(IdentifierName(helperStruct.Identifier.ValueText)))
-                            .AddDeclarationVariables(fieldDeclarator)
-                            .AddModifiers(TokenWithSpace(this.Visibility));
+                        field = FieldDeclaration([TokenWithSpace(this.Visibility)], VariableDeclaration(IdentifierName(helperStruct.Identifier.ValueText), [fieldDeclarator]));
                     }
                     else if (fieldType is PredefinedTypeSyntax { Keyword.RawKind: (int)SyntaxKind.CharKeyword })
                     {
@@ -107,21 +101,19 @@ public partial class Generator
                         // because although C# considered char to be "unmanaged", .NET Framework considers it non-blittable.
                         this.RequestVariableLengthInlineArrayHelper2(context);
                         field = FieldDeclaration(
+                            [TokenWithSpace(this.Visibility)],
                             VariableDeclaration(
-                                GenericName($"global::Windows.Win32.VariableLengthInlineArray")
-                                .WithTypeArgumentList(TypeArgumentList().AddArguments(fieldType, PredefinedType(Token(SyntaxKind.UShortKeyword))))))
-                            .AddDeclarationVariables(fieldDeclarator)
-                            .AddModifiers(TokenWithSpace(this.Visibility));
+                                GenericName($"global::Windows.Win32.VariableLengthInlineArray", [fieldType, PredefinedType(Token(SyntaxKind.UShortKeyword))]),
+                                [fieldDeclarator]));
                     }
                     else
                     {
                         this.RequestVariableLengthInlineArrayHelper1(context);
                         field = FieldDeclaration(
+                            [TokenWithSpace(this.Visibility)],
                             VariableDeclaration(
-                                GenericName($"global::Windows.Win32.VariableLengthInlineArray")
-                                .WithTypeArgumentList(TypeArgumentList().AddArguments(fieldType))))
-                            .AddDeclarationVariables(fieldDeclarator)
-                            .AddModifiers(TokenWithSpace(this.Visibility));
+                                GenericName($"global::Windows.Win32.VariableLengthInlineArray", [fieldType]),
+                                [fieldDeclarator]));
                     }
 
                     sizeOfMethod = this.DeclareSizeOfMethod(name, fieldType, typeSettings);
@@ -161,8 +153,7 @@ public partial class Generator
                     {
                         // Keep the field with its original type, but then add a property that returns the enum type.
                         fieldDeclarator = VariableDeclarator(SafeIdentifier($"_{fieldName}"));
-                        field = FieldDeclaration(VariableDeclaration(fieldInfo.FieldType).AddVariables(fieldDeclarator))
-                            .AddModifiers(TokenWithSpace(SyntaxKind.PrivateKeyword));
+                        field = FieldDeclaration([TokenWithSpace(SyntaxKind.PrivateKeyword)], VariableDeclaration(fieldInfo.FieldType, [fieldDeclarator]));
 
                         // internal EnumType FieldName {
                         //    get => (EnumType)this._fieldName;
@@ -172,26 +163,25 @@ public partial class Generator
                         ExpressionSyntax fieldAccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName(fieldDeclarator.Identifier));
                         property = PropertyDeclaration(propertyType.WithTrailingTrivia(Space), Identifier(fieldName).WithTrailingTrivia(LineFeed))
                             .AddModifiers(TokenWithSpace(this.Visibility))
-                            .WithAccessorList(AccessorList().AddAccessors(
+                            .WithAccessorList(AccessorList(
                                 AccessorDeclaration(SyntaxKind.GetAccessorDeclaration).WithExpressionBody(ArrowExpressionClause(CastExpression(propertyType, fieldAccess))).WithSemicolonToken(Semicolon),
                                 AccessorDeclaration(SyntaxKind.SetAccessorDeclaration).WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccess, CastExpression(fieldInfo.FieldType, IdentifierName("value"))))).WithSemicolonToken(Semicolon)));
                         additionalMembers = additionalMembers.Add(property);
                     }
                     else
                     {
-                        field = FieldDeclaration(VariableDeclaration(fieldInfo.FieldType).AddVariables(fieldDeclarator))
-                            .AddModifiers(TokenWithSpace(this.Visibility));
+                        field = FieldDeclaration([TokenWithSpace(this.Visibility)], VariableDeclaration(fieldInfo.FieldType, [fieldDeclarator]));
                     }
 
                     if (fieldInfo.MarshalAsAttribute is object)
                     {
-                        field = field.AddAttributeLists(AttributeList().AddAttributes(fieldInfo.MarshalAsAttribute));
+                        field = field.AddAttributeLists(AttributeList(fieldInfo.MarshalAsAttribute));
                     }
 
                     if (this.HasObsoleteAttribute(fieldDef.GetCustomAttributes()))
                     {
-                        field = field.AddAttributeLists(AttributeList().AddAttributes(ObsoleteAttributeSyntax));
-                        property = property?.AddAttributeLists(AttributeList().AddAttributes(ObsoleteAttributeSyntax));
+                        field = field.AddAttributeLists(AttributeList(ObsoleteAttributeSyntax));
+                        property = property?.AddAttributeLists(AttributeList(ObsoleteAttributeSyntax));
                     }
 
                     if (RequiresUnsafe(fieldInfo.FieldType))
@@ -208,7 +198,7 @@ public partial class Generator
                 int offset = fieldDef.GetOffset();
                 if (offset >= 0)
                 {
-                    field = field.AddAttributeLists(AttributeList().AddAttributes(FieldOffset(offset)));
+                    field = field.AddAttributeLists(AttributeList(FieldOffset(offset)));
                 }
 
                 members.Add(field);
@@ -258,9 +248,9 @@ public partial class Generator
 
                     AccessorDeclarationSyntax getter = AccessorDeclaration(SyntaxKind.GetAccessorDeclaration)
                         .AddModifiers(TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
-                        .AddAttributeLists(AttributeList().AddAttributes(MethodImpl(MethodImplOptions.AggressiveInlining)));
+                        .AddAttributeLists(AttributeList(MethodImpl(MethodImplOptions.AggressiveInlining)));
                     AccessorDeclarationSyntax setter = AccessorDeclaration(SyntaxKind.SetAccessorDeclaration)
-                        .AddAttributeLists(AttributeList().AddAttributes(MethodImpl(MethodImplOptions.AggressiveInlining)));
+                        .AddAttributeLists(AttributeList(MethodImpl(MethodImplOptions.AggressiveInlining)));
 
                     ulong maskNoOffset = (1UL << propLength) - 1;
                     ulong mask = maskNoOffset << propOffset;
@@ -317,10 +307,7 @@ public partial class Generator
                             RelationalPatternSyntax? min = signed ? RelationalPattern(TokenWithSpace(SyntaxKind.GreaterThanEqualsToken), CastExpression(propertyType, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(minValue)))) : null;
                             setterStatements.Add(ExpressionStatement(InvocationExpression(
                                 ParseName("global::System.Diagnostics.Debug.Assert"),
-                                ArgumentList().AddArguments(Argument(
-                                    IsPatternExpression(
-                                        valueName,
-                                        min is null ? max : BinaryPattern(SyntaxKind.AndPattern, min, max)))))));
+                                [Argument(IsPatternExpression(valueName, min is null ? max : BinaryPattern(SyntaxKind.AndPattern, min, max)))])));
                         }
 
                         // field = (int)((field & unchecked((int)~mask)) | ((int)(value & mask) << propOffset)));
@@ -335,7 +322,7 @@ public partial class Generator
                                     fieldAndNotMask,
                                     //// ((int)(value & mask) << propOffset)
                                     ParenthesizedExpression(BinaryExpression(SyntaxKind.LeftShiftExpression, CastExpression(fieldType, valueAndMaskNoOffset), propOffsetExpr))))))));
-                        setter = setter.WithBody(Block().AddStatements(setterStatements.ToArray()));
+                        setter = setter.WithBody(Block([.. setterStatements]));
                     }
                     else
                     {
@@ -368,7 +355,7 @@ public partial class Generator
 
                     PropertyDeclarationSyntax bitfieldProperty = PropertyDeclaration(propertyType.WithTrailingTrivia(Space), Identifier(propName).WithTrailingTrivia(LineFeed))
                         .AddModifiers(TokenWithSpace(this.Visibility))
-                        .WithAccessorList(AccessorList().AddAccessors(getter, setter))
+                        .WithAccessorList(AccessorList(getter, setter))
                         .WithLeadingTrivia(ParseLeadingTrivia($"/// <summary>Gets or sets {bitDescription} in the <see cref=\"{fieldName}\" /> field.{allowedRange}</summary>\n"));
 
                     members.Add(bitfieldProperty);
@@ -401,20 +388,19 @@ public partial class Generator
                 break;
         }
 
-        StructDeclarationSyntax result = StructDeclaration(name.Identifier)
-            .AddMembers(members.ToArray())
-            .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.PartialKeyword)));
+        StructDeclarationSyntax result = StructDeclaration(name.Identifier, [.. members])
+            .WithModifiers([TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.PartialKeyword)]);
 
         TypeLayout layout = typeDef.GetLayout();
         CharSet charSet = hasUtf16CharField ? CharSet.Unicode : CharSet.Ansi;
         if (!layout.IsDefault || explicitLayout || charSet != CharSet.Ansi)
         {
-            result = result.AddAttributeLists(AttributeList().AddAttributes(StructLayout(typeDef.Attributes, layout, charSet)));
+            result = result.AddAttributeLists(AttributeList(StructLayout(typeDef.Attributes, layout, charSet)));
         }
 
         if (this.FindGuidFromAttribute(typeDef) is Guid guid)
         {
-            result = result.AddAttributeLists(AttributeList().AddAttributes(GUID(guid)));
+            result = result.AddAttributeLists(AttributeList(GUID(guid)));
         }
 
         result = this.AddApiDocumentation(name.Identifier.ValueText, result);
@@ -425,11 +411,13 @@ public partial class Generator
     private StructDeclarationSyntax DeclareVariableLengthInlineArrayHelper(Context context, TypeSyntax fieldType)
     {
         IdentifierNameSyntax firstElementFieldName = IdentifierName("e0");
-        List<MemberDeclarationSyntax> members = new();
-
-        // internal unsafe T e0;
-        members.Add(FieldDeclaration(VariableDeclaration(fieldType).AddVariables(VariableDeclarator(firstElementFieldName.Identifier)))
-            .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword)));
+        List<MemberDeclarationSyntax> members =
+        [
+            // internal unsafe T e0;
+            FieldDeclaration(
+                [TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword)],
+                VariableDeclaration(fieldType, [VariableDeclarator(firstElementFieldName.Identifier)])),
+        ];
 
         if (this.canUseUnsafeAdd)
         {
@@ -437,37 +425,33 @@ public partial class Generator
             ////get { fixed (int** p = &e0) return *(p + index); }
             IdentifierNameSyntax pLocal = IdentifierName("p");
             AccessorDeclarationSyntax getter = AccessorDeclaration(SyntaxKind.GetAccessorDeclaration)
-                .WithBody(Block().AddStatements(
+                .WithBody(Block(
                     FixedStatement(
-                        VariableDeclaration(PointerType(fieldType)).AddVariables(
-                            VariableDeclarator(pLocal.Identifier).WithInitializer(EqualsValueClause(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, firstElementFieldName)))),
+                        VariableDeclaration(PointerType(fieldType), [VariableDeclarator(pLocal.Identifier, EqualsValueClause(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, firstElementFieldName)))]),
                         ReturnStatement(PrefixUnaryExpression(SyntaxKind.PointerIndirectionExpression, ParenthesizedExpression(BinaryExpression(SyntaxKind.AddExpression, pLocal, IdentifierName("index"))))))))
-                .AddAttributeLists(AttributeList().AddAttributes(MethodImpl(MethodImplOptions.AggressiveInlining)));
+                .AddAttributeLists(AttributeList(MethodImpl(MethodImplOptions.AggressiveInlining)));
 
             ////[MethodImpl(MethodImplOptions.AggressiveInlining)]
             ////set { fixed (int** p = &e0) *(p + index) = value; }
             AccessorDeclarationSyntax setter = AccessorDeclaration(SyntaxKind.SetAccessorDeclaration)
-                .WithBody(Block().AddStatements(
+                .WithBody(Block(
                     FixedStatement(
-                        VariableDeclaration(PointerType(fieldType)).AddVariables(
-                            VariableDeclarator(pLocal.Identifier).WithInitializer(EqualsValueClause(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, firstElementFieldName)))),
+                        VariableDeclaration(PointerType(fieldType), [VariableDeclarator(pLocal.Identifier, EqualsValueClause(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, firstElementFieldName)))]),
                         ExpressionStatement(AssignmentExpression(
                             SyntaxKind.SimpleAssignmentExpression,
                             PrefixUnaryExpression(SyntaxKind.PointerIndirectionExpression, ParenthesizedExpression(BinaryExpression(SyntaxKind.AddExpression, pLocal, IdentifierName("index")))),
                             IdentifierName("value"))))))
-                .AddAttributeLists(AttributeList().AddAttributes(MethodImpl(MethodImplOptions.AggressiveInlining)));
+                .AddAttributeLists(AttributeList(MethodImpl(MethodImplOptions.AggressiveInlining)));
 
             ////internal unsafe T this[int index]
-            members.Add(IndexerDeclaration(fieldType.WithTrailingTrivia(Space))
+            members.Add(IndexerDeclaration(fieldType.WithTrailingTrivia(Space), [Parameter(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), Identifier("index"))])
                 .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword))
-                .AddParameterListParameters(Parameter(Identifier("index")).WithType(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))))
                 .AddAccessorListAccessors(getter, setter));
         }
 
         // internal partial struct VariableLengthInlineArrayHelper
-        return StructDeclaration(Identifier("VariableLengthInlineArrayHelper"))
-            .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.PartialKeyword))
-            .AddMembers(members.ToArray());
+        return StructDeclaration(Identifier("VariableLengthInlineArrayHelper"), [.. members])
+            .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.PartialKeyword));
     }
 
     private MethodDeclarationSyntax DeclareSizeOfMethod(TypeSyntax structType, TypeSyntax elementType, TypeSyntaxSettings typeSettings)
@@ -478,8 +462,7 @@ public partial class Generator
         List<StatementSyntax> statements = new();
 
         // int v = sizeof(OUTER_STRUCT);
-        statements.Add(LocalDeclarationStatement(VariableDeclaration(intType).AddVariables(
-            VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(SizeOfExpression(structType))))));
+        statements.Add(LocalDeclarationStatement(VariableDeclaration(intType, [VariableDeclarator(localName.Identifier, EqualsValueClause(SizeOfExpression(structType)))])));
 
         // if (count > 1)
         //   v += checked((count - 1) * sizeof(ELEMENT_TYPE));
@@ -503,8 +486,8 @@ public partial class Generator
 
         // internal static unsafe int SizeOf(int count)
         MethodDeclarationSyntax sizeOfMethod = MethodDeclaration(intType, Identifier("SizeOf"))
-            .AddParameterListParameters(Parameter(countName.Identifier).WithType(intType))
-            .WithBody(Block().AddStatements(statements.ToArray()))
+            .AddParameterListParameters(Parameter(intType, countName.Identifier))
+            .WithBody(Block([.. statements]))
             .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword))
             .WithLeadingTrivia(ParseLeadingTrivia("/// <summary>Computes the amount of memory that must be allocated to store this struct, including the specified number of elements in the variable length inline array at the end.</summary>\n"));
 
@@ -540,7 +523,7 @@ public partial class Generator
             }
             else
             {
-                return (ArrayType(ptr3.ElementType.ToTypeSyntax(typeSettings, GeneratingElement.Field, null).Type).AddRankSpecifiers(ArrayRankSpecifier()), default(SyntaxList<MemberDeclarationSyntax>), marshalAs);
+                return (ArrayType(ptr3.ElementType.ToTypeSyntax(typeSettings, GeneratingElement.Field, null).Type, [ArrayRankSpecifier()]), default(SyntaxList<MemberDeclarationSyntax>), marshalAs);
             }
         }
 

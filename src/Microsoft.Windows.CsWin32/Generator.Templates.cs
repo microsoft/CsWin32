@@ -92,7 +92,7 @@ public partial class Generator
             // Apply change recursively.
             if (publicMember is TypeDeclarationSyntax memberContainer)
             {
-                publicMember = memberContainer.WithMembers(List(memberContainer.Members.Select(this.ElevateVisibility)));
+                publicMember = memberContainer.WithMembers([.. memberContainer.Members.Select(this.ElevateVisibility)]);
             }
 
             return publicMember;

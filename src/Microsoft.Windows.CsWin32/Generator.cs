@@ -334,14 +334,13 @@ public partial class Generator : IGenerator, IDisposable
             int i = 0;
             foreach (IGrouping<string, MemberDeclarationSyntax> entry in members)
             {
-                ClassDeclarationSyntax partialClass = DeclarePInvokeClass(entry.Key)
-                    .AddMembers(entry.ToArray())
+                ClassDeclarationSyntax partialClass = DeclarePInvokeClass(entry.Key, [.. entry])
                     .WithLeadingTrivia(ParseLeadingTrivia(string.Format(CultureInfo.InvariantCulture, PartialPInvokeContentComment, entry.Key)));
                 if (i == 0)
                 {
                     partialClass = partialClass
                         .WithoutLeadingTrivia()
-                        .AddAttributeLists(AttributeList().AddAttributes(GeneratedCodeAttribute))
+                        .AddAttributeLists(AttributeList(GeneratedCodeAttribute))
                         .WithLeadingTrivia(partialClass.GetLeadingTrivia());
                 }
 
@@ -349,15 +348,14 @@ public partial class Generator : IGenerator, IDisposable
                 i++;
             }
 
-            ClassDeclarationSyntax macrosPartialClass = DeclarePInvokeClass("Macros")
-                .AddMembers(this.committedCode.Macros.ToArray())
+            ClassDeclarationSyntax macrosPartialClass = DeclarePInvokeClass("Macros", [.. this.committedCode.Macros])
                 .WithLeadingTrivia(ParseLeadingTrivia(PartialPInvokeMacrosContentComment));
             if (macrosPartialClass.Members.Count > 0)
             {
                 result = result.Concat(new MemberDeclarationSyntax[] { macrosPartialClass });
             }
 
-            ClassDeclarationSyntax DeclarePInvokeClass(string fileNameKey) => ClassDeclaration(Identifier(this.options.ClassName))
+            ClassDeclarationSyntax DeclarePInvokeClass(string fileNameKey, SyntaxList<MemberDeclarationSyntax> members) => ClassDeclaration(Identifier(this.options.ClassName), members)
                 .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword))
                 .WithAdditionalAnnotations(new SyntaxAnnotation(SimpleFileNameAnnotation, $"{this.options.ClassName}.{fileNameKey}"));
 
@@ -772,15 +770,17 @@ public partial class Generator : IGenerator, IDisposable
                 member.HasAnnotations(NamespaceContainerAnnotation) ? member.GetAnnotations(NamespaceContainerAnnotation).Single().Data : null)
                 .SelectMany(nsContents =>
                     nsContents.Key is object
-                        ? new MemberDeclarationSyntax[] { NamespaceDeclaration(ParseName(nsContents.Key)).AddMembers(nsContents.ToArray()) }
+                        ? new MemberDeclarationSyntax[] { NamespaceDeclaration(ParseName(nsContents.Key), [.. nsContents]) }
                         : nsContents.ToArray());
         }
 
         if (this.options.EmitSingleFile == true)
         {
-            CompilationUnitSyntax file = CompilationUnit()
-                .AddMembers(starterNamespace.AddMembers(GroupMembersByNamespace(this.NamespaceMembers).ToArray()))
-                .AddMembers(this.committedCode.GeneratedTopLevelTypes.ToArray());
+            CompilationUnitSyntax file = CompilationUnit(
+            [
+                starterNamespace.AddMembers(GroupMembersByNamespace(this.NamespaceMembers).ToArray()),
+                .. this.committedCode.GeneratedTopLevelTypes
+            ]);
             results.Add(
                 string.Format(CultureInfo.InvariantCulture, FilenamePattern, "NativeMethods"),
                 file);
@@ -792,7 +792,7 @@ public partial class Generator : IGenerator, IDisposable
                 string typeName = topLevelType.DescendantNodesAndSelf().OfType<BaseTypeDeclarationSyntax>().First().Identifier.ValueText;
                 results.Add(
                     string.Format(CultureInfo.InvariantCulture, FilenamePattern, typeName),
-                    CompilationUnit().AddMembers(topLevelType));
+                    CompilationUnit(topLevelType));
             }
 
             IEnumerable<IGrouping<string?, MemberDeclarationSyntax>>? membersByFile = this.NamespaceMembers.GroupBy(
@@ -813,8 +813,7 @@ public partial class Generator : IGenerator, IDisposable
             {
                 try
                 {
-                    CompilationUnitSyntax file = CompilationUnit()
-                        .AddMembers(starterNamespace.AddMembers(GroupMembersByNamespace(fileSimpleName).ToArray()));
+                    CompilationUnitSyntax file = CompilationUnit(starterNamespace.AddMembers(GroupMembersByNamespace(fileSimpleName).ToArray()));
                     results.Add(
                         string.Format(CultureInfo.InvariantCulture, FilenamePattern, fileSimpleName.Key),
                         file);
@@ -1195,7 +1194,7 @@ public partial class Generator : IGenerator, IDisposable
 
                 specialDeclaration = specialDeclaration
                     .WithAdditionalAnnotations(new SyntaxAnnotation(NamespaceContainerAnnotation, subNamespace))
-                    .AddAttributeLists(AttributeList().AddAttributes(GeneratedCodeAttribute));
+                    .AddAttributeLists(AttributeList(GeneratedCodeAttribute));
 
                 this.volatileCode.AddSpecialType(specialName, specialDeclaration);
             });
@@ -1499,7 +1498,7 @@ public partial class Generator : IGenerator, IDisposable
             {
                 typeDeclaration = typeDeclaration
                     .WithLeadingTrivia()
-                    .AddAttributeLists(AttributeList().AddAttributes(GeneratedCodeAttribute))
+                    .AddAttributeLists(AttributeList(GeneratedCodeAttribute))
                     .WithLeadingTrivia(typeDeclaration.GetLeadingTrivia());
             }
 
@@ -1540,7 +1539,7 @@ public partial class Generator : IGenerator, IDisposable
             .WithExpressionBody(ArrowExpressionClause(ConditionalExpression(
                 condition: IsPatternExpression(thisValue, ConstantPattern(LiteralExpression(SyntaxKind.NullLiteralExpression))),
                 whenTrue: DefaultExpression(spanType),
-                whenFalse: ObjectCreationExpression(spanType).AddArgumentListArguments(Argument(thisValue), Argument(thisLength)))))
+                whenFalse: ObjectCreationExpression(spanType, [Argument(thisValue), Argument(thisLength)]))))
             .WithSemicolonToken(SemicolonWithLineFeed)
             .WithLeadingTrivia(StrAsSpanComment);
     }
@@ -1570,7 +1569,7 @@ public partial class Generator : IGenerator, IDisposable
     }
 
     private ParameterListSyntax CreateParameterList(MethodDefinition methodDefinition, MethodSignature<TypeHandleInfo> signature, TypeSyntaxSettings typeSettings, GeneratingElement forElement)
-        => FixTrivia(ParameterList().AddParameters(methodDefinition.GetParameters().Select(this.Reader.GetParameter).Where(p => !p.Name.IsNil).Select(p => this.CreateParameter(signature, signature.ParameterTypes[p.SequenceNumber - 1], p, typeSettings, forElement)).ToArray()));
+        => FixTrivia(ParameterList([.. methodDefinition.GetParameters().Select(this.Reader.GetParameter).Where(p => !p.Name.IsNil).Select(p => this.CreateParameter(signature, signature.ParameterTypes[p.SequenceNumber - 1], p, typeSettings, forElement))]));
 
     private ParameterSyntax CreateParameter(MethodSignature<TypeHandleInfo> signature, TypeHandleInfo parameterInfo, Parameter parameter, TypeSyntaxSettings typeSettings, GeneratingElement forElement)
     {
@@ -1605,7 +1604,7 @@ public partial class Generator : IGenerator, IDisposable
                 }
             }
 
-            SyntaxTokenList modifiers = TokenList();
+            SyntaxTokenList modifiers = default;
             if (parameterTypeSyntax.ParameterModifier.HasValue)
             {
                 modifiers = modifiers.Add(parameterTypeSyntax.ParameterModifier.Value.WithTrailingTrivia(TriviaList(Space)));
@@ -1654,7 +1653,7 @@ public partial class Generator : IGenerator, IDisposable
             }
 
             ParameterSyntax parameterSyntax = Parameter(
-                attributes.Attributes.Count > 0 ? List<AttributeListSyntax>().Add(attributes) : List<AttributeListSyntax>(),
+                attributes.Attributes.Count > 0 ? [attributes] : default,
                 modifiers,
                 parameterTypeSyntax.Type.WithTrailingTrivia(TriviaList(Space)),
                 SafeIdentifier(name),
@@ -1684,25 +1683,28 @@ public partial class Generator : IGenerator, IDisposable
 
             // int length = value.IndexOf('\0');
             StatementSyntax lengthLocalDeclaration =
-                LocalDeclarationStatement(VariableDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))).AddVariables(
-                    VariableDeclarator(lengthLocal.Identifier).WithInitializer(EqualsValueClause(
-                        InvocationExpression(
-                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParam, IdentifierName(nameof(MemoryExtensions.IndexOf))),
-                            ArgumentList().AddArguments(Argument(LiteralExpression(SyntaxKind.CharacterLiteralExpression, Literal('\0')))))))));
+                LocalDeclarationStatement(VariableDeclaration(
+                    PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)),
+                    [
+                        VariableDeclarator(lengthLocal.Identifier, EqualsValueClause(
+                            InvocationExpression(
+                                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParam, IdentifierName(nameof(MemoryExtensions.IndexOf))),
+                                [Argument(LiteralExpression(SyntaxKind.CharacterLiteralExpression, Literal('\0')))])))
+                    ]));
 
             // static ReadOnlySpan<char> SliceAtNull(this ReadOnlySpan<char> value)
             this.sliceAtNullMethodDecl = MethodDeclaration(charSpan, SliceAtNullMethodName.Identifier)
                 .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword))
-                .AddParameterListParameters(Parameter(valueParam.Identifier).WithType(charSpan).AddModifiers(TokenWithSpace(SyntaxKind.ThisKeyword)))
-                .WithBody(Block().AddStatements(
+                .AddParameterListParameters(Parameter(charSpan, valueParam.Identifier).AddModifiers(TokenWithSpace(SyntaxKind.ThisKeyword)))
+                .WithBody(Block(
                     lengthLocalDeclaration,
                     //// return length < 0 ? value : value.Slice(0, length);
                     ReturnStatement(ConditionalExpression(
                         BinaryExpression(SyntaxKind.LessThanExpression, lengthLocal, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))),
                         valueParam,
                         InvocationExpression(
-                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParam, IdentifierName(nameof(ReadOnlySpan<char>.Slice))),
-                            ArgumentList().AddArguments(Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))), Argument(lengthLocal)))))));
+                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParam, IdentifierName(nameof(ReadOnlySpan<>.Slice))),
+                            [Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))), Argument(lengthLocal)])))));
         }
 
         this.volatileCode.AddInlineArrayIndexerExtension(this.sliceAtNullMethodDecl);

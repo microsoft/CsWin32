@@ -10,12 +10,12 @@ public partial class Generator
     private static readonly string EmulateMemberFunctionCallConvSuffix = "_StructReturn";
 
     // [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvStdcall) })]
-    private static readonly AttributeListSyntax CcwEntrypointAttributes = AttributeList().AddAttributes(Attribute(IdentifierName("UnmanagedCallersOnly")).AddArgumentListArguments(
-        AttributeArgument(ImplicitArrayCreationExpression(InitializerExpression(SyntaxKind.ArrayInitializerExpression, SingletonSeparatedList(TypeOfExpression(IdentifierName("CallConvStdcall"))))))
+    private static readonly AttributeListSyntax CcwEntrypointAttributes = AttributeList(Attribute(IdentifierName("UnmanagedCallersOnly")).AddArgumentListArguments(
+        AttributeArgument(ImplicitArrayCreationExpression(InitializerExpression(SyntaxKind.ArrayInitializerExpression, [TypeOfExpression(IdentifierName("CallConvStdcall"))])))
             .WithNameEquals(NameEquals(IdentifierName("CallConvs")))));
 
-    private static readonly AttributeListSyntax CcwMemberFunctionEntrypointAttributes = AttributeList().AddAttributes(Attribute(IdentifierName("UnmanagedCallersOnly")).AddArgumentListArguments(
-        AttributeArgument(ImplicitArrayCreationExpression(InitializerExpression(SyntaxKind.ArrayInitializerExpression, SeparatedList([TypeOfExpression(IdentifierName("CallConvStdcall")), TypeOfExpression(IdentifierName("CallConvMemberFunction"))]))))
+    private static readonly AttributeListSyntax CcwMemberFunctionEntrypointAttributes = AttributeList(Attribute(IdentifierName("UnmanagedCallersOnly")).AddArgumentListArguments(
+        AttributeArgument(ImplicitArrayCreationExpression(InitializerExpression(SyntaxKind.ArrayInitializerExpression, [TypeOfExpression(IdentifierName("CallConvStdcall")), TypeOfExpression(IdentifierName("CallConvMemberFunction"))])))
             .WithNameEquals(NameEquals(IdentifierName("CallConvs")))));
 
     private readonly HashSet<string> injectedPInvokeHelperMethodsToFriendlyOverloadsExtensions = new();
@@ -79,8 +79,7 @@ public partial class Generator
     }
 
     private static StatementSyntax ThrowOnHRFailure(ExpressionSyntax hrExpression) => ExpressionStatement(InvocationExpression(
-        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, hrExpression, HRThrowOnFailureMethodName),
-        ArgumentList()));
+        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, hrExpression, HRThrowOnFailureMethodName)));
 
     /// <summary>
     /// Generates a type to represent a COM interface.
@@ -184,7 +183,7 @@ public partial class Generator
         TypeSyntaxSettings typeSettings = context.Filter(this.comSignatureTypeSettings);
         IdentifierNameSyntax pThisParameterName = IdentifierName("pThis");
         ExpressionSyntax pThis = ThisPointer(PointerType(ifaceName));
-        ParameterSyntax? ccwThisParameter = this.canUseUnmanagedCallersOnlyAttribute && !this.options.AllowMarshaling && originalIfaceName != "IUnknown" && (originalIfaceName != "IDispatch" && !this.GenerateIDispatch) && !this.IsNonCOMInterface(typeDef) ? Parameter(pThisParameterName.Identifier).WithType(PointerType(ifaceName).WithTrailingTrivia(Space)) : null;
+        ParameterSyntax? ccwThisParameter = this.canUseUnmanagedCallersOnlyAttribute && !this.options.AllowMarshaling && originalIfaceName != "IUnknown" && (originalIfaceName != "IDispatch" && !this.GenerateIDispatch) && !this.IsNonCOMInterface(typeDef) ? Parameter(PointerType(ifaceName).WithTrailingTrivia(Space), pThisParameterName.Identifier) : null;
         List<QualifiedMethodDefinitionHandle> ccwMethodsToSkip = new();
         List<MemberDeclarationSyntax> ccwEntrypointMethods = new();
         IdentifierNameSyntax vtblParamName = IdentifierName("vtable");
@@ -281,28 +280,23 @@ public partial class Generator
             ParameterListSyntax parameterList = methodDefinition.Generator.CreateParameterList(methodDefinition.Method, signature, typeSettings, GeneratingElement.InterfaceAsStructMember);
             ParameterListSyntax parameterListPreserveSig = parameterList; // preserve a copy that has no mutations.
             bool requiresMarshaling = parameterList.Parameters.Any(p => p.AttributeLists.SelectMany(al => al.Attributes).Any(a => a.Name is IdentifierNameSyntax { Identifier.ValueText: "MarshalAs" }) || p.Modifiers.Any(SyntaxKind.RefKeyword) || p.Modifiers.Any(SyntaxKind.OutKeyword) || p.Modifiers.Any(SyntaxKind.InKeyword));
-            FunctionPointerParameterListSyntax funcPtrParameters = FunctionPointerParameterList()
-                .AddParameters(FunctionPointerParameter(PointerType(ifaceName)))
+            FunctionPointerParameterListSyntax funcPtrParameters = FunctionPointerParameterList(FunctionPointerParameter(PointerType(ifaceName)))
                 .AddParameters(emulateMemberFunctionCallConv ? [FunctionPointerParameter(PointerType(returnType))] : [])
                 .AddParameters(parameterList.Parameters.Select(p => ToFunctionPointerParameter(p)).ToArray())
                 .AddParameters(emulateMemberFunctionCallConv ? FunctionPointerParameter(PointerType(returnType)) : FunctionPointerParameter(returnType));
 
             // Use MemberFunction calling convention for structs when available and return type is a struct.
             var callingConvention = isStructReturn && this.canUseMemberFunctionCallingConvention ?
-                FunctionPointerUnmanagedCallingConventionList(SeparatedList([
+                FunctionPointerUnmanagedCallingConventionList(
                     FunctionPointerUnmanagedCallingConvention(Identifier("Stdcall")),
-                    FunctionPointerUnmanagedCallingConvention(Identifier("MemberFunction"))])) :
-                FunctionPointerUnmanagedCallingConventionList(SeparatedList([
-                    FunctionPointerUnmanagedCallingConvention(Identifier("Stdcall"))]));
+                    FunctionPointerUnmanagedCallingConvention(Identifier("MemberFunction"))) :
+                FunctionPointerUnmanagedCallingConventionList(FunctionPointerUnmanagedCallingConvention(Identifier("Stdcall")));
 
-            TypeSyntax unmanagedDelegateType = FunctionPointerType().WithCallingConvention(
+            TypeSyntax unmanagedDelegateType = FunctionPointerType(
                 FunctionPointerCallingConvention(TokenWithSpace(SyntaxKind.UnmanagedKeyword))
                     .WithUnmanagedCallingConventionList(callingConvention))
                 .WithParameterList(funcPtrParameters);
-            FieldDeclarationSyntax vtblFunctionPtr = FieldDeclaration(
-                VariableDeclaration(unmanagedDelegateType)
-                .WithVariables(SingletonSeparatedList(VariableDeclarator(innerMethodName.Identifier))))
-                .WithModifiers(TokenList(TokenWithSpace(SyntaxKind.InternalKeyword)));
+            FieldDeclarationSyntax vtblFunctionPtr = FieldDeclaration([TokenWithSpace(SyntaxKind.InternalKeyword)], VariableDeclaration(unmanagedDelegateType, [VariableDeclarator(innerMethodName.Identifier)]));
             vtblMembers.Add(vtblFunctionPtr);
 
             // Build up an unmanaged delegate cast directly from the vtbl pointer and invoke it.
@@ -310,17 +304,15 @@ public partial class Generator
             // when the app may only invoke a subset of the methods.
             //// ((delegate *unmanaged [Stdcall]<IPersist*,global::System.Guid* ,winmdroot.Foundation.HRESULT>)lpVtbl[3])(pThis, pClassID)
             ExpressionSyntax vtblIndexingExpression = ParenthesizedExpression(
-                CastExpression(unmanagedDelegateType, ElementAccessExpression(vtblFieldName).AddArgumentListArguments(Argument(methodOffset))));
+                CastExpression(unmanagedDelegateType, ElementAccessExpression(vtblFieldName, [Argument(methodOffset)])));
             var fixedBlocks = new List<VariableDeclarationSyntax>();
             IdentifierNameSyntax? emulatedMemberFunctionCallConvReturnLocal = emulateMemberFunctionCallConv ? IdentifierName("__retVal") : null;
             InvocationExpressionSyntax vtblInvocation;
             if (this.canMarshalNativeDelegateParams)
             {
-                vtblInvocation = InvocationExpression(vtblIndexingExpression)
-                    .WithArgumentList(FixTrivia(ArgumentList()
-                        .AddArguments(Argument(pThis))
-                        .AddArguments(emulateMemberFunctionCallConv ? [Argument(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, emulatedMemberFunctionCallConvReturnLocal!))] : [])
-                        .AddArguments(parameterList.Parameters.Select(p => Argument(IdentifierName(p.Identifier.ValueText)).WithRefKindKeyword(p.Modifiers.Count > 0 ? p.Modifiers[0] : default)).ToArray())));
+                vtblInvocation = InvocationExpression(vtblIndexingExpression, FixTrivia(ArgumentList(Argument(pThis))
+                    .AddArguments(emulateMemberFunctionCallConv ? [Argument(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, emulatedMemberFunctionCallConvReturnLocal!))] : [])
+                    .AddArguments(parameterList.Parameters.Select(p => Argument(IdentifierName(p.Identifier.ValueText)).WithRefKindKeyword(p.Modifiers.Count > 0 ? p.Modifiers[0] : default)).ToArray())));
             }
             else
             {
@@ -343,9 +335,12 @@ public partial class Generator
                         IdentifierNameSyntax localName = IdentifierName(origName + "Local");
                         arg = Argument(localName);
 
-                        fixedBlocks.Add(VariableDeclaration(PointerType(p.Type!)).AddVariables(
-                            VariableDeclarator(localName.Identifier).WithInitializer(EqualsValueClause(
-                                PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName(origName))))));
+                        fixedBlocks.Add(VariableDeclaration(
+                            PointerType(p.Type!),
+                            [
+                                VariableDeclarator(localName.Identifier, EqualsValueClause(
+                                    PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName(origName))))
+                            ]));
                     }
                     else
                     {
@@ -355,7 +350,7 @@ public partial class Generator
                     arguments.Add(arg);
                 }
 
-                vtblInvocation = InvocationExpression(vtblIndexingExpression).WithArgumentList(FixTrivia(ArgumentList().AddArguments(arguments.ToArray())));
+                vtblInvocation = InvocationExpression(vtblIndexingExpression, [.. arguments]);
             }
 
             MemberDeclarationSyntax? propertyOrMethod;
@@ -377,27 +372,24 @@ public partial class Generator
                     case SyntaxKind.GetAccessorDeclaration:
                         // PropertyType __result;
                         IdentifierNameSyntax resultLocal = IdentifierName("__result");
-                        LocalDeclarationStatementSyntax resultLocalDeclaration = LocalDeclarationStatement(VariableDeclaration(propertyType).AddVariables(VariableDeclarator(resultLocal.Identifier)));
+                        LocalDeclarationStatementSyntax resultLocalDeclaration = LocalDeclarationStatement(VariableDeclaration(propertyType, [VariableDeclarator(resultLocal.Identifier)]));
 
                         // vtblInvoke(pThis, &__result).ThrowOnFailure();
                         // vtblInvoke(pThis, out __result).ThrowOnFailure();
                         ArgumentSyntax resultArgument = funcPtrParameters.Parameters[1].Modifiers.Any(SyntaxKind.OutKeyword)
                             ? Argument(resultLocal).WithRefKindKeyword(Token(SyntaxKind.OutKeyword))
                             : Argument(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, resultLocal));
-                        StatementSyntax vtblInvocationStatement = ThrowOnHRFailure(vtblInvocation.WithArgumentList(ArgumentList().AddArguments(Argument(pThis), resultArgument)));
+                        StatementSyntax vtblInvocationStatement = ThrowOnHRFailure(vtblInvocation.WithArgumentList(ArgumentList(Argument(pThis), resultArgument)));
 
                         // return __result;
                         StatementSyntax returnStatement = ReturnStatement(resultLocal);
 
-                        body = Block().AddStatements(
-                            resultLocalDeclaration,
-                            vtblInvocationStatement,
-                            returnStatement);
+                        body = Block(resultLocalDeclaration, vtblInvocationStatement, returnStatement);
                         break;
                     case SyntaxKind.SetAccessorDeclaration:
                         // vtblInvoke(pThis, value).ThrowOnFailure();
-                        vtblInvocationStatement = ThrowOnHRFailure(vtblInvocation.WithArgumentList(ArgumentList().AddArguments(Argument(pThis), Argument(IdentifierName("value")))));
-                        body = Block().AddStatements(vtblInvocationStatement);
+                        vtblInvocationStatement = ThrowOnHRFailure(vtblInvocation.WithArgumentList(ArgumentList(Argument(pThis), Argument(IdentifierName("value")))));
+                        body = Block(vtblInvocationStatement);
                         break;
                     default:
                         throw new NotSupportedException("Unsupported accessor kind: " + accessorKind);
@@ -418,7 +410,7 @@ public partial class Generator
                     PropertyDeclarationSyntax propertyDeclaration = PropertyDeclaration(propertyType.WithTrailingTrivia(Space), propertyName.Identifier.WithTrailingTrivia(LineFeed));
 
                     propertyDeclaration = propertyDeclaration
-                        .WithAccessorList(AccessorList().AddAccessors(accessor))
+                        .WithAccessorList(AccessorList(accessor))
                         .AddModifiers(Token(this.Visibility));
 
                     if (propertyDeclaration.Type is PointerTypeSyntax)
@@ -434,8 +426,9 @@ public partial class Generator
                 BlockSyntax body;
                 if (emulateMemberFunctionCallConv)
                 {
-                    var localRetValDecl = LocalDeclarationStatement(VariableDeclaration(returnType).AddVariables(VariableDeclarator(emulatedMemberFunctionCallConvReturnLocal!.Identifier)
-                        .WithInitializer(EqualsValueClause(DefaultExpression(returnType)))));
+                    var localRetValDecl = LocalDeclarationStatement(VariableDeclaration(
+                        returnType,
+                        [VariableDeclarator(emulatedMemberFunctionCallConvReturnLocal!.Identifier).WithInitializer(EqualsValueClause(DefaultExpression(returnType)))]));
                 }
 
                 bool preserveSig = methodDefinition.Generator.UsePreserveSigForComMethod(methodDefinition.Method, signature, ifaceName.Identifier.ValueText, methodName) || emulateMemberFunctionCallConv;
@@ -443,16 +436,17 @@ public partial class Generator
                 {
                     if (emulateMemberFunctionCallConv)
                     {
-                        var localRetValDecl = LocalDeclarationStatement(VariableDeclaration(returnType).AddVariables(VariableDeclarator(emulatedMemberFunctionCallConvReturnLocal!.Identifier)
-                            .WithInitializer(EqualsValueClause(DefaultExpression(returnType)))));
-                        body = Block().AddStatements(
+                        var localRetValDecl = LocalDeclarationStatement(VariableDeclaration(
+                            returnType,
+                            [VariableDeclarator(emulatedMemberFunctionCallConvReturnLocal!.Identifier).WithInitializer(EqualsValueClause(DefaultExpression(returnType)))]));
+                        body = Block(
                             localRetValDecl,
                             ReturnStatement(PrefixUnaryExpression(SyntaxKind.PointerIndirectionExpression, vtblInvocation)));
                     }
                     else
                     {
                         // return ...
-                        body = Block().AddStatements(
+                        body = Block(
                             IsVoid(returnType)
                                 ? ExpressionStatement(vtblInvocation)
                                 : ReturnStatement(vtblInvocation));
@@ -467,8 +461,7 @@ public partial class Generator
 
                     // hrReturningInvocation().ThrowOnFailure();
                     StatementSyntax InvokeVtblAndThrow() => ExpressionStatement(InvocationExpression(
-                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, vtblInvocation, HRThrowOnFailureMethodName),
-                        ArgumentList()));
+                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, vtblInvocation, HRThrowOnFailureMethodName)));
 
                     ParameterSyntax? lastParameter = parameterList.Parameters.Count > 0 ? parameterList.Parameters[parameterList.Parameters.Count - 1] : null;
                     if (lastParameter?.HasAnnotation(IsRetValAnnotation) is true)
@@ -479,8 +472,8 @@ public partial class Generator
 
                         // Guid __retVal = default(Guid);
                         IdentifierNameSyntax retValLocalName = IdentifierName("__retVal");
-                        LocalDeclarationStatementSyntax localRetValDecl = LocalDeclarationStatement(VariableDeclaration(returnType).AddVariables(
-                            VariableDeclarator(retValLocalName.Identifier).WithInitializer(EqualsValueClause(DefaultExpression(returnType)))));
+                        LocalDeclarationStatementSyntax localRetValDecl = LocalDeclarationStatement(
+                            VariableDeclaration(returnType, [VariableDeclarator(retValLocalName.Identifier, EqualsValueClause(DefaultExpression(returnType)))]));
 
                         // Modify the vtbl invocation's last argument to point to our own local variable.
                         ArgumentSyntax lastArgument = this.canMarshalNativeDelegateParams ?
@@ -494,14 +487,14 @@ public partial class Generator
                         // return __retVal;
                         ReturnStatementSyntax returnStatement = ReturnStatement(retValLocalName);
 
-                        body = Block().AddStatements(localRetValDecl, InvokeVtblAndThrow(), returnStatement);
+                        body = Block(localRetValDecl, InvokeVtblAndThrow(), returnStatement);
                     }
                     else
                     {
                         // Remove the return type
                         returnType = PredefinedType(Token(SyntaxKind.VoidKeyword));
 
-                        body = Block().AddStatements(InvokeVtblAndThrow());
+                        body = Block(InvokeVtblAndThrow());
                     }
                 }
 
@@ -512,14 +505,14 @@ public partial class Generator
                 }
 
                 methodDeclaration = MethodDeclaration(
-                    List<AttributeListSyntax>(),
-                    modifiers: TokenList(TokenWithSpace(SyntaxKind.PublicKeyword)), // always use public so struct can implement the COM interface
+                    attributeLists: default,
+                    modifiers: [TokenWithSpace(SyntaxKind.PublicKeyword)], // always use public so struct can implement the COM interface
                     returnType.WithTrailingTrivia(TriviaList(Space)),
                     explicitInterfaceSpecifier: null,
                     SafeIdentifier(methodName),
                     null,
                     parameterList,
-                    List<TypeParameterConstraintClauseSyntax>(),
+                    default,
                     body: body,
                     semicolonToken: default);
 
@@ -571,7 +564,7 @@ public partial class Generator
                 else
                 {
                     // Prepare the args for the thunk call. The Interface we thunk into *always* uses PreserveSig, which is super convenient for us.
-                    ArgumentListSyntax args = ArgumentList().AddArguments(parameterListPreserveSig.Parameters.Select(p => Argument(IdentifierName(p.Identifier.ValueText))).ToArray());
+                    ArgumentListSyntax args = ArgumentList([.. parameterListPreserveSig.Parameters.Select(p => Argument(IdentifierName(p.Identifier.ValueText)))]);
 
                     if (!isStructReturn)
                     {
@@ -591,9 +584,8 @@ public partial class Generator
                         // If this is a struct return, we're using built-in COM and the signature was modified to accommodate the return value.
                         // Create a local and pass it in as the first parameter.
                         LocalDeclarationStatementSyntax structReturnLocal =
-                            LocalDeclarationStatement(VariableDeclaration(returnTypePreserveSig).AddVariables(
-                                VariableDeclarator(Identifier("__retVal")).WithInitializer(EqualsValueClause(
-                                    DefaultExpression(returnTypePreserveSig)))));
+                            LocalDeclarationStatement(
+                                VariableDeclaration(returnTypePreserveSig, [VariableDeclarator(Identifier("__retVal"), EqualsValueClause(DefaultExpression(returnTypePreserveSig)))]));
                         args = args.WithArguments(args.Arguments.Insert(0, Argument(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName("__retVal")))));
 
                         // *@object!.SomeMethod(&__retVal, args)
@@ -633,19 +625,23 @@ public partial class Generator
                 bool useMemberFunctionCallingConvention = this.canUseMemberFunctionCallingConvention && isStructReturn;
 
                 //// HRESULT hr = ComHelpers.UnwrapCCW(@this, out Interface? @object);
-                LocalDeclarationStatementSyntax hrDecl = LocalDeclarationStatement(VariableDeclaration(this.HresultTypeSyntax).AddVariables(
-                    VariableDeclarator(hrLocal.Identifier).WithInitializer(EqualsValueClause(
-                        InvocationExpression(
-                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, QualifiedName(this.Win32NamespacePrefix, IdentifierName("ComHelpers")), IdentifierName("UnwrapCCW")),
-                            ArgumentList().AddArguments(
-                                Argument(pThisParameterName),
-                                Argument(DeclarationExpression(NestedCOMInterfaceName.WithTrailingTrivia(Space), SingleVariableDesignation(objectLocal.Identifier))).WithRefKindKeyword(Token(SyntaxKind.OutKeyword))))))));
+                LocalDeclarationStatementSyntax hrDecl = LocalDeclarationStatement(VariableDeclaration(
+                    this.HresultTypeSyntax,
+                    [
+                        VariableDeclarator(hrLocal.Identifier, EqualsValueClause(
+                            InvocationExpression(
+                                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, QualifiedName(this.Win32NamespacePrefix, IdentifierName("ComHelpers")), IdentifierName("UnwrapCCW")),
+                                [
+                                    Argument(pThisParameterName),
+                                    Argument(DeclarationExpression(NestedCOMInterfaceName.WithTrailingTrivia(Space), SingleVariableDesignation(objectLocal.Identifier))).WithRefKindKeyword(Token(SyntaxKind.OutKeyword))
+                                ])))
+                    ]));
 
                 StatementSyntax ifNullReturnStatement = hrReturnType
                     //// if (hr.Failed) return hr;
                     ? IfStatement(
                         MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, hrLocal, IdentifierName("Failed")),
-                        Block().AddStatements(ReturnStatement(hrLocal)))
+                        Block(ReturnStatement(hrLocal)))
                     //// hr.ThrowOnFailure();
                     : ExpressionStatement(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, hrLocal, HRThrowOnFailureMethodName)));
 
@@ -663,32 +659,31 @@ public partial class Generator
                     catchBlock = catchBlock.AddStatements(
                         ExpressionStatement(InvocationExpression(
                             MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseName("global::System.Environment"), IdentifierName(nameof(Environment.FailFast))),
-                            ArgumentList().AddArguments(
+                            [
                                 Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal("COM object threw an exception from a non-HRESULT returning method."))),
-                                Argument(exLocal)))),
+                                Argument(exLocal)
+                            ])),
                         ThrowStatement());
                 }
 
                 //// catch (Exception ex) {
                 CatchClauseSyntax catchClause = CatchClause(CatchDeclaration(IdentifierName(nameof(Exception)).WithTrailingTrivia(Space), exLocal.Identifier), null, catchBlock);
 
-                BlockSyntax tryBlock = Block().AddStatements(
-                    hrDecl,
-                    ifNullReturnStatement).AddStatements(thunkInvokeAndReturn);
+                BlockSyntax tryBlock = Block([hrDecl, ifNullReturnStatement, .. thunkInvokeAndReturn]);
 
                 //// try { ... } catch { ... }
-                BlockSyntax ccwBody = Block().AddStatements(TryStatement(tryBlock, new SyntaxList<CatchClauseSyntax>(catchClause), null));
+                BlockSyntax ccwBody = Block(TryStatement(tryBlock, [catchClause], null));
 
                 //// [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvStdcall) })]
                 //// private static HRESULT Clone(IEnumEventObject* @this, IEnumEventObject** ppInterface)
                 MethodDeclarationSyntax ccwMethod = MethodDeclaration(
                     new SyntaxList<AttributeListSyntax>(useMemberFunctionCallingConvention ? CcwMemberFunctionEntrypointAttributes : CcwEntrypointAttributes),
-                    TokenList(TokenWithSpace(SyntaxKind.PrivateKeyword), Token(SyntaxKind.StaticKeyword)),
+                    [TokenWithSpace(SyntaxKind.PrivateKeyword), Token(SyntaxKind.StaticKeyword)],
                     returnTypePreserveSig,
                     explicitInterfaceSpecifier: null,
                     SafeIdentifier(methodName),
                     typeParameterList: null,
-                    ParameterList().WithParameters(parameterListPreserveSig.Parameters.Insert(0, ccwThisParameter)),
+                    ParameterList(parameterListPreserveSig.Parameters.Insert(0, ccwThisParameter)),
                     constraintClauses: default,
                     ccwBody,
                     semicolonToken: default);
@@ -715,7 +710,7 @@ public partial class Generator
             // (type*)Unsafe.AsPointer(ref this)
             InvocationExpressionSyntax invocation = InvocationExpression(
                 MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Unsafe)), IdentifierName(nameof(Unsafe.AsPointer))),
-                ArgumentList().AddArguments(Argument(RefExpression(ThisExpression()))));
+                [Argument(RefExpression(ThisExpression()))]);
             return typedPointer is not null ? CastExpression(typedPointer, invocation) : invocation;
         }
 
@@ -727,8 +722,8 @@ public partial class Generator
 
         // We expose the vtbl struct to support CCWs.
         IdentifierNameSyntax vtblStructName = IdentifierName("Vtbl");
-        StructDeclarationSyntax? vtblStruct = StructDeclaration(Identifier("Vtbl")).WithTrailingTrivia(Space)
-            .AddMembers(vtblMembers.ToArray())
+        StructDeclarationSyntax? vtblStruct = StructDeclaration(Identifier("Vtbl"), [.. vtblMembers])
+            .WithTrailingTrivia(Space)
             .AddModifiers(TokenWithSpace(this.Visibility));
         members.Add(vtblStruct);
 
@@ -738,7 +733,7 @@ public partial class Generator
             // public static void PopulateVTable(Vtbl* vtable)
             MethodDeclarationSyntax populateVtblMethodDecl = MethodDeclaration(PredefinedType(Token(SyntaxKind.VoidKeyword)), Identifier("PopulateVTable"))
                 .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword))
-                .AddParameterListParameters(Parameter(vtblParamName.Identifier).WithType(PointerType(vtblStructName).WithTrailingTrivia(Space)))
+                .AddParameterListParameters(Parameter(PointerType(vtblStructName).WithTrailingTrivia(Space), vtblParamName.Identifier))
                 .WithBody(populateVTableBody);
             members.Add(populateVtblMethodDecl);
 
@@ -750,18 +745,19 @@ public partial class Generator
         }
 
         // private void** lpVtbl; // Vtbl* (but we avoid strong typing to enable trimming the entire vtbl struct away)
-        members.Add(FieldDeclaration(VariableDeclaration(PointerType(PointerType(PredefinedType(Token(SyntaxKind.VoidKeyword))))).AddVariables(VariableDeclarator(vtblFieldName.Identifier))).AddModifiers(TokenWithSpace(SyntaxKind.PrivateKeyword)));
+        members.Add(FieldDeclaration(
+            [TokenWithSpace(SyntaxKind.PrivateKeyword)],
+            VariableDeclaration(PointerType(PointerType(PredefinedType(Token(SyntaxKind.VoidKeyword)))), [VariableDeclarator(vtblFieldName.Identifier)])));
 
-        BaseListSyntax baseList = BaseList(SeparatedList<BaseTypeSyntax>());
+        BaseListSyntax baseList = BaseList();
 
         CustomAttribute? guidAttribute = this.FindGuidAttribute(typeDef.GetCustomAttributes());
         var staticMembers = this.DeclareStaticCOMInterfaceMembers(originalIfaceName, ifaceName, ccwThisParameter is not null, guidAttribute, context);
         members.AddRange(staticMembers.Members);
         baseList = baseList.AddTypes(staticMembers.BaseTypes.ToArray());
 
-        StructDeclarationSyntax iface = StructDeclaration(ifaceName.Identifier)
-            .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword), TokenWithSpace(SyntaxKind.PartialKeyword))
-            .AddMembers(members.ToArray());
+        StructDeclarationSyntax iface = StructDeclaration(ifaceName.Identifier, [.. members])
+            .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword), TokenWithSpace(SyntaxKind.PartialKeyword));
 
         if (baseList.Types.Count > 0)
         {
@@ -770,12 +766,12 @@ public partial class Generator
 
         if (guidAttribute.HasValue)
         {
-            iface = iface.AddAttributeLists(AttributeList().AddAttributes(GUID(DecodeGuidFromAttribute(guidAttribute.Value))));
+            iface = iface.AddAttributeLists(AttributeList(GUID(DecodeGuidFromAttribute(guidAttribute.Value))));
         }
 
         if (this.GetSupportedOSPlatformAttribute(typeDef.GetCustomAttributes()) is AttributeSyntax supportedOSPlatformAttribute)
         {
-            iface = iface.AddAttributeLists(AttributeList().AddAttributes(supportedOSPlatformAttribute));
+            iface = iface.AddAttributeLists(AttributeList(supportedOSPlatformAttribute));
         }
 
         return iface;
@@ -899,12 +895,12 @@ public partial class Generator
                         if (accessorKind == SyntaxKind.GetAccessorDeclaration)
                         {
                             accessor = accessor.AddAttributeLists(
-                                AttributeList().WithTarget(AttributeTargetSpecifier(Token(SyntaxKind.ReturnKeyword))).AddAttributes(MarshalAs(propertyMarshalAsAttribute, null)));
+                                AttributeList(MarshalAs(propertyMarshalAsAttribute, null)).WithTarget(AttributeTargetSpecifier(Token(SyntaxKind.ReturnKeyword))));
                         }
                         else
                         {
                             accessor = accessor.AddAttributeLists(
-                                AttributeList().WithTarget(AttributeTargetSpecifier(Token(SyntaxKind.ParamKeyword))).AddAttributes(MarshalAs(propertyMarshalAsAttribute, null)));
+                                AttributeList(MarshalAs(propertyMarshalAsAttribute, null)).WithTarget(AttributeTargetSpecifier(Token(SyntaxKind.ParamKeyword))));
                         }
                     }
 
@@ -918,7 +914,7 @@ public partial class Generator
                     {
                         PropertyDeclarationSyntax propertyDeclaration = PropertyDeclaration(propertyType.WithTrailingTrivia(Space), propertyName.Identifier.WithTrailingTrivia(LineFeed));
 
-                        propertyDeclaration = propertyDeclaration.WithAccessorList(AccessorList().AddAccessors(accessor));
+                        propertyDeclaration = propertyDeclaration.WithAccessorList(AccessorList(accessor));
 
                         if (propertyDeclaration.Type is PointerTypeSyntax)
                         {
@@ -981,8 +977,7 @@ public partial class Generator
                     if (emulateMemberFunctionCallConv)
                     {
                         // First parameter needs to be a pointer to the return value.
-                        parameterList = parameterList.WithParameters(parameterList.Parameters.Insert(0, Parameter(Identifier("__retVal"))
-                                .WithType(PointerType(returnType))));
+                        parameterList = parameterList.WithParameters(parameterList.Parameters.Insert(0, Parameter(PointerType(returnType), Identifier("__retVal"))));
                         returnType = PointerType(returnType);
                     }
 
@@ -992,12 +987,12 @@ public partial class Generator
                     if (returnsAttribute is object)
                     {
                         methodDeclaration = methodDeclaration.AddAttributeLists(
-                            AttributeList().WithTarget(AttributeTargetSpecifier(Token(SyntaxKind.ReturnKeyword))).AddAttributes(returnsAttribute));
+                            AttributeList(returnsAttribute).WithTarget(AttributeTargetSpecifier(Token(SyntaxKind.ReturnKeyword))));
                     }
 
                     if (preserveSig)
                     {
-                        methodDeclaration = methodDeclaration.AddAttributeLists(AttributeList().AddAttributes(PreserveSigAttributeSyntax));
+                        methodDeclaration = methodDeclaration.AddAttributeLists(AttributeList(PreserveSigAttributeSyntax));
 
                         // GeneratedComInterface wants [return: MarshalAs(UnmanagedType.Error)] on methods that return HRESULT and are [PreserveSig].
                         if (this.useSourceGenerators && IsHresult(signature.ReturnType))
@@ -1010,9 +1005,7 @@ public partial class Generator
                                             IdentifierName(nameof(UnmanagedType)),
                                             IdentifierName("Error"))));
                             methodDeclaration = methodDeclaration.AddAttributeLists(
-                                AttributeList()
-                                    .WithTarget(AttributeTargetSpecifier(Token(SyntaxKind.ReturnKeyword)))
-                                    .AddAttributes(attrib));
+                                AttributeList(attrib).WithTarget(AttributeTargetSpecifier(Token(SyntaxKind.ReturnKeyword))));
                         }
                     }
 
@@ -1049,10 +1042,9 @@ public partial class Generator
 
         CustomAttribute? guidAttribute = this.FindGuidAttribute(typeDef.GetCustomAttributes());
 
-        InterfaceDeclarationSyntax ifaceDeclaration = InterfaceDeclaration(ifaceName.Identifier)
+        InterfaceDeclarationSyntax ifaceDeclaration = InterfaceDeclaration(ifaceName.Identifier, [.. members])
             .WithKeyword(TokenWithSpace(SyntaxKind.InterfaceKeyword))
-            .AddModifiers(TokenWithSpace(this.Visibility))
-            .AddMembers(members.ToArray());
+            .AddModifiers(TokenWithSpace(this.Visibility));
 
         if (this.useSourceGenerators)
         {
@@ -1063,7 +1055,7 @@ public partial class Generator
         if (guidAttribute.HasValue)
         {
             AttributeSyntax comImportAttribute = this.useSourceGenerators ? GeneratedComInterfaceAttributeSyntax : ComImportAttributeSyntax;
-            ifaceDeclaration = ifaceDeclaration.AddAttributeLists(AttributeList().AddAttributes(GUID(DecodeGuidFromAttribute(guidAttribute.Value)), ifaceType, comImportAttribute));
+            ifaceDeclaration = ifaceDeclaration.AddAttributeLists(AttributeList(GUID(DecodeGuidFromAttribute(guidAttribute.Value)), ifaceType, comImportAttribute));
         }
         else if (this.useSourceGenerators)
         {
@@ -1074,12 +1066,12 @@ public partial class Generator
         if (topMostBaseTypeSyntax is object)
         {
             ifaceDeclaration = ifaceDeclaration
-                .WithBaseList(BaseList([topMostBaseTypeSyntax]));
+                .WithBaseList(BaseList(topMostBaseTypeSyntax));
         }
 
         if (this.generateSupportedOSPlatformAttributesOnInterfaces && this.GetSupportedOSPlatformAttribute(typeDef.GetCustomAttributes()) is AttributeSyntax supportedOSPlatformAttribute)
         {
-            ifaceDeclaration = ifaceDeclaration.AddAttributeLists(AttributeList().AddAttributes(supportedOSPlatformAttribute));
+            ifaceDeclaration = ifaceDeclaration.AddAttributeLists(AttributeList(supportedOSPlatformAttribute));
         }
 
         // Only add overloads to instance collections after everything else is done,
@@ -1092,10 +1084,9 @@ public partial class Generator
                 ns = strippedNamespace;
             }
 
-            ClassDeclarationSyntax friendlyOverloadClass = ClassDeclaration(Identifier($"{ns.Replace('.', '_')}_{actualIfaceName}_Extensions"))
-                .WithMembers(List<MemberDeclarationSyntax>(friendlyOverloads))
-                .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)))
-                .AddAttributeLists(AttributeList().AddAttributes(GeneratedCodeAttribute));
+            ClassDeclarationSyntax friendlyOverloadClass = ClassDeclaration(Identifier($"{ns.Replace('.', '_')}_{actualIfaceName}_Extensions"), [.. friendlyOverloads])
+                .WithModifiers([TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)])
+                .AddAttributeLists(AttributeList(GeneratedCodeAttribute));
             this.volatileCode.AddComInterfaceExtension(friendlyOverloadClass);
         }
 
@@ -1121,10 +1112,9 @@ public partial class Generator
         };
 
         // Create the interface declaration
-        InterfaceDeclarationSyntax ifaceDeclaration = InterfaceDeclaration(Identifier("IDispatch"))
+        InterfaceDeclarationSyntax ifaceDeclaration = InterfaceDeclaration(Identifier("IDispatch"), [.. members])
             .WithKeyword(TokenWithSpace(SyntaxKind.InterfaceKeyword))
-            .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.PartialKeyword))
-            .AddMembers(members.ToArray());
+            .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.PartialKeyword));
 
         // Add the attributes: Guid, InterfaceType, and GeneratedComInterface/ComImport
         AttributeSyntax guidAttribute = GUID(iDispatchGuid);
@@ -1134,7 +1124,7 @@ public partial class Generator
             : ComImportAttributeSyntax;
 
         ifaceDeclaration = ifaceDeclaration.AddAttributeLists(
-            AttributeList().AddAttributes(guidAttribute, interfaceTypeAttribute, comImportAttribute)
+            AttributeList(guidAttribute, interfaceTypeAttribute, comImportAttribute)
                 .WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken)));
 
         return ifaceDeclaration;
@@ -1155,9 +1145,7 @@ public partial class Generator
         if (populateVtblDeclared && this.IsFeatureAvailable(Feature.InterfaceStaticMembers) && !context.AllowMarshaling && GenerateCcwFor(originalIfaceName, this.GenerateIDispatch))
         {
             this.RequestComHelpers(context);
-            baseTypes.Add(SimpleBaseType(GenericName($"{this.Win32NamespacePrefixString}.IVTable").AddTypeArgumentListArguments(
-                ifaceName,
-                QualifiedName(ifaceName, IdentifierName("Vtbl")))));
+            baseTypes.Add(SimpleBaseType(GenericName($"{this.Win32NamespacePrefixString}.IVTable", [ifaceName, QualifiedName(ifaceName, IdentifierName("Vtbl"))])));
         }
 
         // IComIID
@@ -1169,10 +1157,8 @@ public partial class Generator
             IdentifierNameSyntax iidGuidFieldName = IdentifierName("IID_Guid");
             TypeSyntax guidTypeSyntax = IdentifierName(nameof(Guid));
             members.Add(FieldDeclaration(
-                VariableDeclaration(guidTypeSyntax)
-                .AddVariables(VariableDeclarator(iidGuidFieldName.Identifier).WithInitializer(EqualsValueClause(
-                    GuidValue(guidAttribute.Value)))))
-                .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
+                [TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword)],
+                VariableDeclaration(guidTypeSyntax, [VariableDeclarator(iidGuidFieldName.Identifier, EqualsValueClause(GuidValue(guidAttribute.Value)))]))
                 .WithLeadingTrivia(ParseLeadingTrivia($"/// <summary>The IID guid for this interface.</summary>\n/// <value>{guidAttributeValue:B}</value>\n")));
 
             if (this.TryDeclareCOMGuidInterfaceIfNecessary())
@@ -1194,8 +1180,9 @@ public partial class Generator
                 // ReadOnlySpan<byte> data = new byte[] { ... };
                 ReadOnlySpan<byte> guidBytes = new((byte*)&guidAttributeValue, sizeof(Guid));
                 LocalDeclarationStatementSyntax dataDecl = LocalDeclarationStatement(
-                    VariableDeclaration(MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.ByteKeyword)))).AddVariables(
-                        VariableDeclarator(dataLocal.Identifier).WithInitializer(EqualsValueClause(NewByteArray(guidBytes)))));
+                    VariableDeclaration(
+                        MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.ByteKeyword))),
+                        [VariableDeclarator(dataLocal.Identifier, EqualsValueClause(NewByteArray(guidBytes)))]));
 
                 // return ref Unsafe.As<byte, Guid>(ref MemoryMarshal.GetReference(data));
                 ReturnStatementSyntax returnStatement = ReturnStatement(RefExpression(
@@ -1203,18 +1190,19 @@ public partial class Generator
                         MemberAccessExpression(
                             SyntaxKind.SimpleMemberAccessExpression,
                             IdentifierName(nameof(Unsafe)),
-                            GenericName(nameof(Unsafe.As)).AddTypeArgumentListArguments(PredefinedType(Token(SyntaxKind.ByteKeyword)), IdentifierName(nameof(Guid)))),
-                        ArgumentList().AddArguments(
+                            GenericName(nameof(Unsafe.As), [PredefinedType(Token(SyntaxKind.ByteKeyword)), IdentifierName(nameof(Guid))])),
+                        [
                             Argument(
                                 InvocationExpression(
                                     MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(MemoryMarshal)), IdentifierName(nameof(MemoryMarshal.GetReference))),
-                                    ArgumentList(SingletonSeparatedList(Argument(dataLocal)))))
-                            .WithRefOrOutKeyword(Token(SyntaxKind.RefKeyword))))));
+                                    [Argument(dataLocal)]))
+                            .WithRefOrOutKeyword(Token(SyntaxKind.RefKeyword))
+                        ])));
 
                 // The native assembly code for this property getter is just a `mov` and a `ret.
                 // For our callers to also enjoy just the `mov` instruction, we have to attribute for aggressive inlining.
                 // [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                AttributeListSyntax methodImplAttr = AttributeList().AddAttributes(MethodImpl(MethodImplOptions.AggressiveInlining));
+                AttributeListSyntax methodImplAttr = AttributeList(MethodImpl(MethodImplOptions.AggressiveInlining));
 
                 BlockSyntax getBody = Block(dataDecl, returnStatement);
 
@@ -1222,7 +1210,7 @@ public partial class Generator
                 PropertyDeclarationSyntax guidProperty = PropertyDeclaration(IdentifierName(nameof(Guid)).WithTrailingTrivia(Space), ComIIDGuidPropertyName.Identifier)
                     .WithExplicitInterfaceSpecifier(ExplicitInterfaceSpecifier(IComIIDGuidInterfaceName))
                     .AddModifiers(TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.RefKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
-                    .WithAccessorList(AccessorList().AddAccessors(AccessorDeclaration(SyntaxKind.GetAccessorDeclaration, getBody).AddAttributeLists(methodImplAttr)));
+                    .WithAccessorList(AccessorList(AccessorDeclaration(SyntaxKind.GetAccessorDeclaration, getBody).AddAttributeLists(methodImplAttr)));
                 members.Add(guidProperty);
             }
         }
@@ -1418,13 +1406,12 @@ public partial class Generator
                     TokenWithSpace(SyntaxKind.AbstractKeyword),
                     TokenWithSpace(SyntaxKind.RefKeyword),
                     TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
-                .WithAccessorList(AccessorList().AddAccessors(AccessorDeclaration(SyntaxKind.GetAccessorDeclaration).WithSemicolonToken(Semicolon)))
+                .WithAccessorList(AccessorList(AccessorDeclaration(SyntaxKind.GetAccessorDeclaration).WithSemicolonToken(Semicolon)))
                 .WithLeadingTrivia(ParseLeadingTrivia($"/// <summary>The IID guid for this interface.</summary>\n/// <remarks>The <see cref=\"Guid\" /> reference that is returned comes from a permanent memory address, and is therefore safe to convert to a pointer and pass around or hold long-term.</remarks>\n"));
 
             // internal interface IComIID { ... }
-            InterfaceDeclarationSyntax ifaceDecl = InterfaceDeclaration(IComIIDGuidInterfaceName.Identifier)
-                .AddModifiers(Token(this.Visibility))
-                .AddMembers(guidProperty);
+            InterfaceDeclarationSyntax ifaceDecl = InterfaceDeclaration(IComIIDGuidInterfaceName.Identifier, [guidProperty])
+                .AddModifiers(Token(this.Visibility));
 
             this.volatileCode.AddSpecialType(IComIIDGuidInterfaceName.Identifier.ValueText, ifaceDecl);
         });
@@ -1442,11 +1429,10 @@ public partial class Generator
 
         IdentifierNameSyntax name = IdentifierName(this.Reader.GetString(typeDef.Name));
         Guid guid = this.FindGuidFromAttribute(typeDef) ?? throw new ArgumentException("Type does not have a GuidAttribute.");
-        SyntaxTokenList classModifiers = TokenList(TokenWithSpace(this.Visibility));
-        classModifiers = classModifiers.Add(TokenWithSpace(SyntaxKind.PartialKeyword));
+        SyntaxTokenList classModifiers = [TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.PartialKeyword)];
         ClassDeclarationSyntax result = ClassDeclaration(name.Identifier)
             .WithModifiers(classModifiers)
-            .AddAttributeLists(AttributeList().AddAttributes(GUID(guid)).AddAttributes(canUseComImport ? [ComImportAttributeSyntax] : []));
+            .AddAttributeLists(AttributeList(GUID(guid)).AddAttributes(canUseComImport ? [ComImportAttributeSyntax] : []));
 
         if (!canUseComImport && !this.Options.ComInterop.UseIntPtrForComOutPointers)
         {
@@ -1458,9 +1444,8 @@ public partial class Generator
             // private static readonly Guid CLSID_Foo = new Guid(...);
             SyntaxToken clsidFieldName = Identifier($"CLSID_{name.Identifier}");
             FieldDeclarationSyntax clsidField = FieldDeclaration(
-                    VariableDeclaration(IdentifierName(nameof(Guid)))
-                        .AddVariables(VariableDeclarator(clsidFieldName).WithInitializer(EqualsValueClause(GuidValue(guid)))))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PrivateKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword));
+                [TokenWithSpace(SyntaxKind.PrivateKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword)],
+                VariableDeclaration(IdentifierName(nameof(Guid)), [VariableDeclarator(clsidFieldName, EqualsValueClause(GuidValue(guid)))]));
             result = result.AddMembers(clsidField);
 
             // If using source generators or marshalling is disabled, generate a constructor with obsolete attribute like this:
@@ -1472,15 +1457,13 @@ public partial class Generator
                         AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(obsoleteMessage))));
             ConstructorDeclarationSyntax constructor = ConstructorDeclaration(name.Identifier)
                 .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword))
-                .AddAttributeLists(AttributeList().AddAttributes(obsoleteAttribute))
+                .AddAttributeLists(AttributeList(obsoleteAttribute))
                 .WithBody(
                     Block(
                         ThrowStatement(
-                            ObjectCreationExpression(IdentifierName(nameof(NotSupportedException)))
-                                .WithArgumentList(
-                                    ArgumentList().AddArguments(
-                                        Argument(
-                                            LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(obsoleteMessage))))))));
+                            ObjectCreationExpression(
+                                IdentifierName(nameof(NotSupportedException)),
+                                [Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(obsoleteMessage)))]))));
             result = result.AddMembers(constructor);
 
             this.MainGenerator.TryGenerateExternMethod("CoCreateInstance", out IReadOnlyCollection<string> preciseApi);
@@ -1495,18 +1478,18 @@ public partial class Generator
                 //    return ret;
                 // }
                 TypeParameterSyntax typeParameter = TypeParameter(Identifier("T"));
-                GenericNameSyntax genericName = GenericName("CreateInstance").AddTypeArgumentListArguments(IdentifierName("T"));
+                GenericNameSyntax genericName = GenericName("CreateInstance", [IdentifierName("T")]);
                 MethodDeclarationSyntax createInstanceMethod = MethodDeclaration(IdentifierName("T"), genericName.Identifier)
                     .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))
                     .AddTypeParameterListParameters(typeParameter)
                     .AddConstraintClauses(
-                        TypeParameterConstraintClause(IdentifierName("T"), SingletonSeparatedList<TypeParameterConstraintSyntax>(ClassOrStructConstraint(SyntaxKind.ClassConstraint))))
+                        TypeParameterConstraintClause(IdentifierName("T"), [ClassOrStructConstraint(SyntaxKind.ClassConstraint)]))
                     .WithBody(
                         Block(
                             ThrowOnHRFailure(
-                                InvocationExpression(QualifiedName(ParseName($"{this.Win32NamespacePrefix}.{this.options.ClassName}"), GenericName("CoCreateInstance").AddTypeArgumentListArguments(IdentifierName("T"))))
-                                .WithArgumentList(
-                                    ArgumentList().AddArguments(
+                                InvocationExpression(
+                                    QualifiedName(ParseName($"{this.Win32NamespacePrefix}.{this.options.ClassName}"), GenericName("CoCreateInstance", [IdentifierName("T")])),
+                                    [
                                         Argument(IdentifierName(clsidFieldName)),
                                         Argument(LiteralExpression(SyntaxKind.NullLiteralExpression)),
                                         Argument(
@@ -1514,7 +1497,8 @@ public partial class Generator
                                                 SyntaxKind.SimpleMemberAccessExpression,
                                                 QualifiedName(ParseName($"{this.Win32NamespacePrefix}.System.Com"), IdentifierName("CLSCTX")),
                                                 IdentifierName("CLSCTX_SERVER"))),
-                                        Argument(DeclarationExpression(IdentifierName("T").WithTrailingTrivia(Space), SingleVariableDesignation(Identifier("ret")))).WithRefKindKeyword(Token(SyntaxKind.OutKeyword))))),
+                                        Argument(DeclarationExpression(IdentifierName("T").WithTrailingTrivia(Space), SingleVariableDesignation(Identifier("ret")))).WithRefKindKeyword(Token(SyntaxKind.OutKeyword))
+                                    ])),
                             ReturnStatement(IdentifierName("ret"))));
                 result = result.AddMembers(createInstanceMethod);
             }
@@ -1526,23 +1510,21 @@ public partial class Generator
                 //    return PInvoke.CoCreateInstance<T>(CLSID_Foo, null, CLSCTX.CLSCTX_SERVER, out instance);
                 // }
                 TypeParameterSyntax typeParameter = TypeParameter(Identifier("T"));
-                GenericNameSyntax genericName = GenericName("CreateInstance").AddTypeArgumentListArguments(IdentifierName("T"));
+                GenericNameSyntax genericName = GenericName("CreateInstance", [IdentifierName("T")]);
                 MethodDeclarationSyntax createInstanceMethod = MethodDeclaration(IdentifierName($"{this.Win32NamespacePrefix}.Foundation.HRESULT"), genericName.Identifier)
                     .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword))
                     .AddTypeParameterListParameters(typeParameter)
                     .AddConstraintClauses(
-                        TypeParameterConstraintClause(IdentifierName("T"), SingletonSeparatedList<TypeParameterConstraintSyntax>(TypeConstraint(IdentifierName("unmanaged")))))
+                        TypeParameterConstraintClause(IdentifierName("T"), [TypeConstraint(IdentifierName("unmanaged"))]))
                     .WithParameterList(
-                        ParameterList().AddParameters(
-                            Parameter(Identifier("instance"))
-                            .WithType(PointerType(IdentifierName("T")))
-                            .WithModifiers(TokenList(Token(SyntaxKind.OutKeyword)))))
+                        ParameterList(
+                            Parameter(PointerType(IdentifierName("T")), Identifier("instance")).WithModifiers([Token(SyntaxKind.OutKeyword)])))
                     .WithBody(
                         Block(
                             ReturnStatement(
-                                InvocationExpression(QualifiedName(ParseName($"{this.Win32NamespacePrefix}.{this.options.ClassName}"), GenericName("CoCreateInstance").AddTypeArgumentListArguments(IdentifierName("T"))))
-                                .WithArgumentList(
-                                    ArgumentList().AddArguments(
+                                InvocationExpression(
+                                    QualifiedName(ParseName($"{this.Win32NamespacePrefix}.{this.options.ClassName}"), GenericName("CoCreateInstance", [IdentifierName("T")])),
+                                    [
                                         Argument(IdentifierName(clsidFieldName)),
                                         Argument(LiteralExpression(SyntaxKind.NullLiteralExpression)),
                                         Argument(
@@ -1550,7 +1532,8 @@ public partial class Generator
                                                 SyntaxKind.SimpleMemberAccessExpression,
                                                 QualifiedName(ParseName($"{this.Win32NamespacePrefix}.System.Com"), IdentifierName("CLSCTX")),
                                                 IdentifierName("CLSCTX_SERVER"))),
-                                        Argument(IdentifierName("instance")).WithRefKindKeyword(Token(SyntaxKind.OutKeyword)))))));
+                                        Argument(IdentifierName("instance")).WithRefKindKeyword(Token(SyntaxKind.OutKeyword))
+                                    ]))));
                 result = result.AddMembers(createInstanceMethod);
             }
         }

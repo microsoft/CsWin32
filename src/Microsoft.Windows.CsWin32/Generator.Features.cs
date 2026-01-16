@@ -92,17 +92,16 @@ public partial class Generator
                 MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(AttributeTargets)), IdentifierName(nameof(AttributeTargets.Property))),
                 MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(AttributeTargets)), IdentifierName(nameof(AttributeTargets.Parameter))),
             };
-            AttributeListSyntax usageAttr = AttributeList().AddAttributes(
+            AttributeListSyntax usageAttr = AttributeList(
                 Attribute(IdentifierName(nameof(AttributeUsageAttribute))).AddArgumentListArguments(
                     AttributeArgument(CompoundExpression(SyntaxKind.BitwiseOrExpression, uses)),
                     AttributeArgument(LiteralExpression(SyntaxKind.FalseLiteralExpression)).WithNameEquals(NameEquals(IdentifierName("AllowMultiple"))),
                     AttributeArgument(LiteralExpression(SyntaxKind.FalseLiteralExpression)).WithNameEquals(NameEquals(IdentifierName("Inherited")))));
             ClassDeclarationSyntax attrDecl = ClassDeclaration(Identifier("UnscopedRefAttribute"))
-                .WithBaseList(BaseList(SingletonSeparatedList<BaseTypeSyntax>(SimpleBaseType(IdentifierName("Attribute")))))
+                .WithBaseList(BaseList(SimpleBaseType(IdentifierName("Attribute"))))
                 .AddModifiers(Token(SyntaxKind.InternalKeyword), TokenWithSpace(SyntaxKind.SealedKeyword))
                 .AddAttributeLists(usageAttr);
-            NamespaceDeclarationSyntax nsDeclaration = NamespaceDeclaration(ParseName("System.Diagnostics.CodeAnalysis"))
-                .AddMembers(attrDecl);
+            NamespaceDeclarationSyntax nsDeclaration = NamespaceDeclaration(ParseName("System.Diagnostics.CodeAnalysis"), [attrDecl]);
 
             this.volatileCode.AddSpecialType(name, nsDeclaration, topLevel: true);
         });
@@ -122,7 +121,7 @@ public partial class Generator
             MemberDeclarationSyntax templateNamespace = compilationUnit.Members.Single();
 
             // templateNamespace is System.Runtime.InteropServices, nest it within this generator's root namespace
-            templateNamespace = NamespaceDeclaration(ParseName(this.Namespace)).AddMembers(templateNamespace);
+            templateNamespace = NamespaceDeclaration(ParseName(this.Namespace), [templateNamespace]);
             this.volatileCode.AddSpecialType(name, templateNamespace, topLevel: true);
         });
     }

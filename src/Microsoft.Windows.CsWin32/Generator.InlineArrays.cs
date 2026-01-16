@@ -9,7 +9,7 @@ public partial class Generator
     {
         if (context.AllowMarshaling && this.IsManagedType(fieldTypeHandleInfo) && !this.useSourceGenerators)
         {
-            ArrayTypeSyntax ranklessArray = arrayType.WithRankSpecifiers(new SyntaxList<ArrayRankSpecifierSyntax>(ArrayRankSpecifier()));
+            ArrayTypeSyntax ranklessArray = arrayType.WithRankSpecifiers([ArrayRankSpecifier()]);
             AttributeSyntax marshalAs = MarshalAs(UnmanagedType.ByValArray, sizeConst: arrayType.RankSpecifiers[0].Sizes[0]);
             return (ranklessArray, default(SyntaxList<MemberDeclarationSyntax>), marshalAs);
         }
@@ -91,29 +91,27 @@ public partial class Generator
         IdentifierNameSyntax lengthInstanceProperty = IdentifierName("Length");
 
         // private const int SpanLength = 8;
-        MemberDeclarationSyntax spanLengthDeclaration = FieldDeclaration(VariableDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)))
-            .AddVariables(VariableDeclarator(lengthConstant.Identifier)
-                .WithInitializer(EqualsValueClause(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(length))))))
-            .AddModifiers(TokenWithSpace(SyntaxKind.PrivateKeyword), TokenWithSpace(SyntaxKind.ConstKeyword));
+        MemberDeclarationSyntax spanLengthDeclaration = FieldDeclaration(
+            [TokenWithSpace(SyntaxKind.PrivateKeyword), TokenWithSpace(SyntaxKind.ConstKeyword)],
+            VariableDeclaration(
+                PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)),
+                [VariableDeclarator(lengthConstant.Identifier, EqualsValueClause(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(length))))]));
 
         //// internal readonly int Length => SpanLength;
         MemberDeclarationSyntax lengthDeclaration = PropertyDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), lengthInstanceProperty.Identifier)
             .WithExpressionBody(ArrowExpressionClause(lengthConstant))
             .WithSemicolonToken(Semicolon)
             .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
-            .WithLeadingTrivia(Trivia(DocumentationCommentTrivia(SyntaxKind.SingleLineDocumentationCommentTrivia).AddContent(
-                DocCommentStart,
-                XmlElement("summary", List(new XmlNodeSyntax[]
-                {
-                            XmlText("The length of the inline array."),
-                })),
-                DocCommentEnd)));
+            .WithLeadingTrivia(Trivia(DocumentationCommentTrivia(
+                SyntaxKind.SingleLineDocumentationCommentTrivia,
+                [
+                    DocCommentStart,
+                    XmlElement("summary", [XmlText("The length of the inline array.")]),
+                    DocCommentEnd
+                ])));
 
-        StructDeclarationSyntax? fixedLengthStruct = StructDeclaration(fixedLengthStructName.Identifier)
-            .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.PartialKeyword))
-            .AddMembers(
-                spanLengthDeclaration,
-                lengthDeclaration);
+        StructDeclarationSyntax? fixedLengthStruct = StructDeclaration(fixedLengthStructName.Identifier, [spanLengthDeclaration, lengthDeclaration])
+            .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.PartialKeyword));
 
         IdentifierNameSyntax? valueFieldName = null;
         IdentifierNameSyntax? firstElementName = null;
@@ -122,18 +120,15 @@ public partial class Generator
             // internal unsafe fixed TheStruct Value[SpanLength];
             valueFieldName = IdentifierName("Value");
             fixedLengthStruct = fixedLengthStruct.AddMembers(
-                FieldDeclaration(VariableDeclaration(elementType)
-                    .AddVariables(VariableDeclarator(valueFieldName.Identifier).AddArgumentListArguments(
-                        Argument(lengthConstant))))
-                    .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword), TokenWithSpace(SyntaxKind.FixedKeyword)));
+                FieldDeclaration(
+                    [TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword), TokenWithSpace(SyntaxKind.FixedKeyword)],
+                    VariableDeclaration(elementType, [VariableDeclarator(valueFieldName.Identifier).AddArgumentListArguments(Argument(lengthConstant))])));
         }
         else
         {
             // internal TheStruct _0, _1, _2, ...;
             firstElementName = IdentifierName("_0");
-            FieldDeclarationSyntax fieldDecl = FieldDeclaration(VariableDeclaration(elementType)
-                .AddVariables(Enumerable.Range(0, length).Select(i => VariableDeclarator(Identifier(Invariant($"_{i}")))).ToArray()))
-                .AddModifiers(TokenWithSpace(this.Visibility));
+            FieldDeclarationSyntax fieldDecl = FieldDeclaration([TokenWithSpace(this.Visibility)], VariableDeclaration(elementType, [.. Enumerable.Range(0, length).Select(i => VariableDeclarator(Identifier(Invariant($"_{i}"))))]));
             if (RequiresUnsafe(elementType))
             {
                 fieldDecl = fieldDecl.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));
@@ -147,19 +142,18 @@ public partial class Generator
         // fixed (TheStruct* p0 = &_0) ...
         FixedStatementSyntax FixedBlock(SyntaxToken pointerLocalIdentifier, StatementSyntax body) =>
             FixedStatement(
-                VariableDeclaration(PointerType(elementType)).AddVariables(VariableDeclarator(pointerLocalIdentifier).WithInitializer(EqualsValueClause((ExpressionSyntax?)valueFieldName ?? PrefixUnaryExpression(SyntaxKind.AddressOfExpression, firstElementName!)))),
+                VariableDeclaration(PointerType(elementType), [VariableDeclarator(pointerLocalIdentifier, EqualsValueClause((ExpressionSyntax?)valueFieldName ?? PrefixUnaryExpression(SyntaxKind.AddressOfExpression, firstElementName!)))]),
                 body);
 
         if (valueFieldName is not null)
         {
             // [UnscopedRef] internal unsafe ref TheStruct this[int index] => ref Value[index];
-            IndexerDeclarationSyntax indexer = IndexerDeclaration(RefType(elementType).WithTrailingTrivia(TriviaList(Space)))
+            IndexerDeclarationSyntax indexer = IndexerDeclaration(RefType(elementType).WithTrailingTrivia(TriviaList(Space)), [Parameter(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), Identifier("index"))])
                 .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword))
-                .AddParameterListParameters(Parameter(Identifier("index")).WithType(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))))
                 .WithExpressionBody(ArrowExpressionClause(RefExpression(
-                    ElementAccessExpression(valueFieldName).AddArgumentListArguments(Argument(IdentifierName("index"))))))
+                    ElementAccessExpression(valueFieldName, [Argument(IdentifierName("index"))]))))
                 .WithSemicolonToken(SemicolonWithLineFeed)
-                .AddAttributeLists(AttributeList().AddAttributes(UnscopedRefAttributeSyntax))
+                .AddAttributeLists(AttributeList(UnscopedRefAttributeSyntax))
                 .WithLeadingTrivia(InlineArrayUnsafeIndexerComment);
             fixedLengthStruct = fixedLengthStruct.AddMembers(indexer);
             this.DeclareUnscopedRefAttributeIfNecessary();
@@ -188,22 +182,23 @@ public partial class Generator
         {
             // Value[0]
             ExpressionSyntax value0 = valueFieldName is not null
-                ? ElementAccessExpression(valueFieldName).AddArgumentListArguments(Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))))
+                ? ElementAccessExpression(valueFieldName, [Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)))])
                 : firstElementName!;
 
             // ref Value[0]
             ArgumentSyntax refValue0 = Argument(nameColon: null, TokenWithSpace(SyntaxKind.RefKeyword), value0);
 
             // MemoryMarshal.CreateSpan(ref Value[0], Length)
-            InvocationExpressionSyntax createSpanInvocation = InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("MemoryMarshal"), IdentifierName("CreateSpan")))
-                .WithArgumentList(FixTrivia(ArgumentList().AddArguments(refValue0, Argument(lengthConstant))));
+            InvocationExpressionSyntax createSpanInvocation = InvocationExpression(
+                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("MemoryMarshal"), IdentifierName("CreateSpan")),
+                FixTrivia(ArgumentList(refValue0, Argument(lengthConstant))));
 
             // [UnscopedRef] internal unsafe Span<TheStruct> AsSpan() => MemoryMarshal.CreateSpan(ref Value[0], Length);
             MethodDeclarationSyntax asSpanMethod = MethodDeclaration(MakeSpanOfT(elementType).WithTrailingTrivia(TriviaList(Space)), Identifier("AsSpan"))
                 .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword))
                 .WithExpressionBody(ArrowExpressionClause(createSpanInvocation))
                 .WithSemicolonToken(SemicolonWithLineFeed)
-                .AddAttributeLists(AttributeList().AddAttributes(UnscopedRefAttributeSyntax))
+                .AddAttributeLists(AttributeList(UnscopedRefAttributeSyntax))
                 .WithLeadingTrivia(InlineArrayUnsafeAsSpanComment);
             this.DeclareUnscopedRefAttributeIfNecessary();
 
@@ -211,12 +206,14 @@ public partial class Generator
             ArgumentSyntax refUnsafeValue0 = Argument(
                 nameColon: null,
                 TokenWithSpace(SyntaxKind.RefKeyword),
-                InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Unsafe)), IdentifierName(nameof(Unsafe.AsRef))))
-                    .WithArgumentList(ArgumentList().AddArguments(Argument(value0).WithRefKindKeyword(Token(SyntaxKind.InKeyword)))));
+                InvocationExpression(
+                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Unsafe)), IdentifierName(nameof(Unsafe.AsRef))),
+                    [Argument(value0).WithRefKindKeyword(Token(SyntaxKind.InKeyword))]));
 
             // MemoryMarshal.CreateReadOnlySpan(ref Unsafe.AsRef(Value[0]), Length)
-            InvocationExpressionSyntax createReadOnlySpanInvocation = InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("MemoryMarshal"), IdentifierName("CreateReadOnlySpan")))
-                .WithArgumentList(FixTrivia(ArgumentList().AddArguments(refUnsafeValue0, Argument(lengthConstant))));
+            InvocationExpressionSyntax createReadOnlySpanInvocation = InvocationExpression(
+                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("MemoryMarshal"), IdentifierName("CreateReadOnlySpan")),
+                FixTrivia(ArgumentList(refUnsafeValue0, Argument(lengthConstant))));
 
             // [UnscopedRef] internal unsafe readonly ReadOnlySpan<TheStruct> AsReadOnlySpan() => MemoryMarshal.CreateReadOnlySpan(ref Unsafe.AsRef(Value[0]), Length);
             asReadOnlyMethodName = IdentifierName("AsReadOnlySpan");
@@ -224,7 +221,7 @@ public partial class Generator
                 .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
                 .WithExpressionBody(ArrowExpressionClause(createReadOnlySpanInvocation))
                 .WithSemicolonToken(SemicolonWithLineFeed)
-                .AddAttributeLists(AttributeList().AddAttributes(UnscopedRefAttributeSyntax))
+                .AddAttributeLists(AttributeList(UnscopedRefAttributeSyntax))
                 .WithLeadingTrivia(InlineArrayUnsafeAsSpanComment);
 
             fixedLengthStruct = fixedLengthStruct.AddMembers(asSpanMethod, asReadOnlySpanMethod);
@@ -243,8 +240,8 @@ public partial class Generator
             MethodDeclarationSyntax copyToMethod = MethodDeclaration(PredefinedType(Token(SyntaxKind.VoidKeyword)), copyToMethodName.Identifier)
                 .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
                 .AddParameterListParameters(
-                    Parameter(targetParameterName.Identifier).WithType(MakeSpanOfT(elementType).WithTrailingTrivia(Space)),
-                    Parameter(lengthParameterName.Identifier).WithType(PredefinedType(Token(SyntaxKind.IntKeyword)).WithTrailingTrivia(Space)).WithDefault(EqualsValueClause(lengthConstant)));
+                    Parameter(MakeSpanOfT(elementType).WithTrailingTrivia(Space), targetParameterName.Identifier),
+                    Parameter(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), lengthParameterName.Identifier).WithDefault(EqualsValueClause(lengthConstant)));
 
             // x.Slice(0, length).CopyTo(target)
             InvocationExpressionSyntax CopyToExpression(ExpressionSyntax readOnlySpanExpression) =>
@@ -252,16 +249,16 @@ public partial class Generator
                     MemberAccessExpression(
                         SyntaxKind.SimpleMemberAccessExpression,
                         InvocationExpression(
-                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, readOnlySpanExpression, IdentifierName(nameof(ReadOnlySpan<int>.Slice))),
-                            ArgumentList().AddArguments(Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))), Argument(lengthParameterName))),
-                        IdentifierName(nameof(ReadOnlySpan<int>.CopyTo))),
-                    ArgumentList().AddArguments(Argument(targetParameterName)));
+                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, readOnlySpanExpression, IdentifierName(nameof(ReadOnlySpan<>.Slice))),
+                            [Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))), Argument(lengthParameterName)]),
+                        IdentifierName(nameof(ReadOnlySpan<>.CopyTo))),
+                    [Argument(targetParameterName)]);
 
             if (asReadOnlyMethodName is not null)
             {
                 // => AsReadOnlySpan().Slice(0, length).CopyTo(target);
                 copyToMethod = copyToMethod
-                    .WithExpressionBody(ArrowExpressionClause(CopyToExpression(InvocationExpression(asReadOnlyMethodName, ArgumentList()))))
+                    .WithExpressionBody(ArrowExpressionClause(CopyToExpression(InvocationExpression(asReadOnlyMethodName))))
                     .WithSemicolonToken(SemicolonWithLineFeed);
             }
             else
@@ -269,20 +266,20 @@ public partial class Generator
                 IdentifierNameSyntax p0Local = IdentifierName("p0");
                 copyToMethod = copyToMethod
                     .AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword))
-                    .WithBody(Block().AddStatements(
-                    //// fixed (TheStruct* p0 = Value) new ReadOnlySpan<char>(p0, Length).Slice(0, length).CopyTo(target);
-                    FixedBlock(
-                        p0Local.Identifier,
-                        ExpressionStatement(CopyToExpression(ObjectCreationExpression(MakeReadOnlySpanOfT(elementType)).AddArgumentListArguments(Argument(p0Local), Argument(lengthConstant)))))));
+                    .WithBody(Block(
+                        //// fixed (TheStruct* p0 = Value) new ReadOnlySpan<char>(p0, Length).Slice(0, length).CopyTo(target);
+                        FixedBlock(
+                            p0Local.Identifier,
+                            ExpressionStatement(CopyToExpression(ObjectCreationExpression(MakeReadOnlySpanOfT(elementType), [Argument(p0Local), Argument(lengthConstant)]))))));
             }
 
             fixedLengthStruct = fixedLengthStruct.AddMembers(copyToMethod);
 
             // internal readonly TheStruct[] ToArray(int length = Length)
-            MethodDeclarationSyntax toArrayMethod = MethodDeclaration(ArrayType(elementType, SingletonList(ArrayRankSpecifier())), Identifier("ToArray"))
+            MethodDeclarationSyntax toArrayMethod = MethodDeclaration(ArrayType(elementType, [ArrayRankSpecifier()]), Identifier("ToArray"))
                 .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
                 .AddParameterListParameters(
-                    Parameter(lengthParameterName.Identifier).WithType(PredefinedType(Token(SyntaxKind.IntKeyword)).WithTrailingTrivia(Space)).WithDefault(EqualsValueClause(lengthConstant)));
+                    Parameter(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), lengthParameterName.Identifier).WithDefault(EqualsValueClause(lengthConstant)));
 
             // x.Slice(0, length).ToArray()
             InvocationExpressionSyntax ToArrayExpression(ExpressionSyntax readOnlySpanExpression) =>
@@ -290,16 +287,15 @@ public partial class Generator
                     MemberAccessExpression(
                         SyntaxKind.SimpleMemberAccessExpression,
                         InvocationExpression(
-                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, readOnlySpanExpression, IdentifierName(nameof(ReadOnlySpan<int>.Slice))),
-                            ArgumentList().AddArguments(Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))), Argument(lengthParameterName))),
-                        IdentifierName(nameof(ReadOnlySpan<int>.ToArray))),
-                    ArgumentList());
+                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, readOnlySpanExpression, IdentifierName(nameof(ReadOnlySpan<>.Slice))),
+                            [Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))), Argument(lengthParameterName)]),
+                        IdentifierName(nameof(ReadOnlySpan<>.ToArray))));
 
             if (asReadOnlyMethodName is not null)
             {
                 // => AsReadOnlySpan().Slice(0, length).ToArray()
                 toArrayMethod = toArrayMethod
-                    .WithExpressionBody(ArrowExpressionClause(ToArrayExpression(InvocationExpression(asReadOnlyMethodName, ArgumentList()))))
+                    .WithExpressionBody(ArrowExpressionClause(ToArrayExpression(InvocationExpression(asReadOnlyMethodName))))
                     .WithSemicolonToken(SemicolonWithLineFeed);
                 if (RequiresUnsafe(elementType))
                 {
@@ -311,12 +307,12 @@ public partial class Generator
                 IdentifierNameSyntax p0Local = IdentifierName("p0");
                 toArrayMethod = toArrayMethod
                     .AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword))
-                    .WithBody(Block().AddStatements(
-                    //// fixed (TheStruct* p0 = Value)
-                    FixedBlock(
-                        p0Local.Identifier,
-                        //// return new ReadOnlySpan<char>(p0, Length).Slice(0, length).ToArray();
-                        ReturnStatement(ToArrayExpression(ObjectCreationExpression(MakeReadOnlySpanOfT(elementType)).AddArgumentListArguments(Argument(p0Local), Argument(lengthConstant)))))));
+                    .WithBody(Block(
+                        //// fixed (TheStruct* p0 = Value)
+                        FixedBlock(
+                            p0Local.Identifier,
+                            //// return new ReadOnlySpan<char>(p0, Length).Slice(0, length).ToArray();
+                            ReturnStatement(ToArrayExpression(ObjectCreationExpression(MakeReadOnlySpanOfT(elementType), [Argument(p0Local), Argument(lengthConstant)]))))));
             }
 
             fixedLengthStruct = fixedLengthStruct.AddMembers(toArrayMethod);
@@ -329,36 +325,36 @@ public partial class Generator
             MethodDeclarationSyntax equalsSpanMethod = MethodDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), Identifier(nameof(object.Equals)))
                 .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
                 .AddParameterListParameters(
-                    Parameter(valueParameterName.Identifier).WithType(MakeReadOnlySpanOfT(elementType).WithTrailingTrivia(Space)));
+                    Parameter(MakeReadOnlySpanOfT(elementType).WithTrailingTrivia(Space), valueParameterName.Identifier));
 
             ExpressionSyntax EqualsBoolExpression(ExpressionSyntax readOnlySpanExpression) => elementType is PredefinedTypeSyntax { Keyword.RawKind: (int)SyntaxKind.CharKeyword }
                 ? ConditionalExpression(
                     //// value.Length == Length
                     BinaryExpression(
                         SyntaxKind.EqualsExpression,
-                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameterName, IdentifierName(nameof(ReadOnlySpan<int>.Length))),
+                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParameterName, IdentifierName(nameof(ReadOnlySpan<>.Length))),
                         lengthConstant),
                     //// span.SequenceEqual(value)
                     InvocationExpression(
                         MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, readOnlySpanExpression, IdentifierName(nameof(Enumerable.SequenceEqual))),
-                        ArgumentList().AddArguments(Argument(valueParameterName))),
+                        [Argument(valueParameterName)]),
                     //// span.SliceAtNull().SequenceEqual(value)
                     InvocationExpression(
                         MemberAccessExpression(
                             SyntaxKind.SimpleMemberAccessExpression,
-                            InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, readOnlySpanExpression, SliceAtNullMethodName), ArgumentList()),
+                            InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, readOnlySpanExpression, SliceAtNullMethodName)),
                             IdentifierName(nameof(Enumerable.SequenceEqual))),
-                        ArgumentList().AddArguments(Argument(valueParameterName))))
+                        [Argument(valueParameterName)]))
                 : InvocationExpression(
                         MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, readOnlySpanExpression, IdentifierName(nameof(Enumerable.SequenceEqual))),
-                        ArgumentList().AddArguments(Argument(valueParameterName))); // span.SequenceEqual(value);
+                        [Argument(valueParameterName)]); // span.SequenceEqual(value);
             this.DeclareSliceAtNullExtensionMethodIfNecessary();
 
             if (asReadOnlyMethodName is not null)
             {
                 // => value.Length == Length ? AsReadOnlySpan().SequenceEqual(value) : AsReadOnlySpan().SliceAtNull().SequenceEqual(value);
                 equalsSpanMethod = equalsSpanMethod
-                    .WithExpressionBody(ArrowExpressionClause(EqualsBoolExpression(InvocationExpression(asReadOnlyMethodName, ArgumentList()))))
+                    .WithExpressionBody(ArrowExpressionClause(EqualsBoolExpression(InvocationExpression(asReadOnlyMethodName))))
                     .WithSemicolonToken(Semicolon);
             }
             else
@@ -367,15 +363,18 @@ public partial class Generator
                 IdentifierNameSyntax spanLocal = IdentifierName("span");
                 equalsSpanMethod = equalsSpanMethod
                     .AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword))
-                    .WithBody(Block().AddStatements(
+                    .WithBody(Block(
                         // fixed (TheStruct* p0 = Value)
                         FixedBlock(
                             p0Local.Identifier,
-                            Block().AddStatements(
+                            Block(
                                 // ReadOnlySpan<char> span = new(p0, Length);
-                                LocalDeclarationStatement(VariableDeclaration(MakeReadOnlySpanOfT(elementType)).AddVariables(
-                                    VariableDeclarator(spanLocal.Identifier).WithInitializer(EqualsValueClause(
-                                        ObjectCreationExpression(MakeReadOnlySpanOfT(elementType)).AddArgumentListArguments(Argument(p0Local), Argument(lengthConstant)))))),
+                                LocalDeclarationStatement(VariableDeclaration(
+                                    MakeReadOnlySpanOfT(elementType),
+                                    [
+                                        VariableDeclarator(spanLocal.Identifier, EqualsValueClause(
+                                            ObjectCreationExpression(MakeReadOnlySpanOfT(elementType), [Argument(p0Local), Argument(lengthConstant)])))
+                                    ])),
                                 // return value.Length == Length ? span.SequenceEqual(value) : span.SliceAtNull().SequenceEqual(value);
                                 ReturnStatement(EqualsBoolExpression(spanLocal))))));
             }
@@ -394,13 +393,10 @@ public partial class Generator
                 fixedLengthStruct = fixedLengthStruct.AddMembers(
                     MethodDeclaration(PredefinedType(Token(SyntaxKind.BoolKeyword)), Identifier("Equals"))
                         .AddModifiers(Token(this.Visibility), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
-                        .AddParameterListParameters(Parameter(Identifier("value")).WithType(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword))))
+                        .AddParameterListParameters(Parameter(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword)), Identifier("value")))
                         .WithExpressionBody(ArrowExpressionClause(InvocationExpression(
                             IdentifierName("Equals"),
-                            ArgumentList().AddArguments(Argument(
-                                InvocationExpression(
-                                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("value"), IdentifierName("AsSpan")),
-                                    ArgumentList()))))))
+                            [Argument(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("value"), IdentifierName("AsSpan"))))])))
                         .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
             }
 
@@ -410,7 +406,7 @@ public partial class Generator
                 MethodDeclaration(PredefinedType(Token(SyntaxKind.StringKeyword)), Identifier(nameof(this.ToString)))
                     .AddModifiers(Token(this.Visibility), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
                     .AddParameterListParameters(
-                        Parameter(lengthParameterName.Identifier).WithType(PredefinedType(Token(SyntaxKind.IntKeyword)).WithTrailingTrivia(Space)))
+                        Parameter(PredefinedType(Token(SyntaxKind.IntKeyword)).WithTrailingTrivia(Space), lengthParameterName.Identifier))
                     .WithLeadingTrivia(InlineCharArrayToStringWithLengthComment);
 
             // x.Slice(0, length).ToString()
@@ -420,17 +416,17 @@ public partial class Generator
                         SyntaxKind.SimpleMemberAccessExpression,
                         InvocationExpression(
                             MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, readOnlySpan, IdentifierName("Slice")),
-                            ArgumentList().AddArguments(
+                            [
                                 Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))),
-                                Argument(lengthParameterName))),
-                        IdentifierName(nameof(object.ToString))),
-                    ArgumentList());
+                                Argument(lengthParameterName)
+                            ]),
+                        IdentifierName(nameof(this.ToString))));
 
             if (asReadOnlyMethodName is not null)
             {
                 // => AsReadOnlySpan().Slice(0, length).ToString()
                 toStringLengthMethod = toStringLengthMethod
-                    .WithExpressionBody(ArrowExpressionClause(SliceAtLengthToString(InvocationExpression(asReadOnlyMethodName, ArgumentList()))))
+                    .WithExpressionBody(ArrowExpressionClause(SliceAtLengthToString(InvocationExpression(asReadOnlyMethodName))))
                     .WithSemicolonToken(Semicolon);
             }
             else if (this.canUseSpan)
@@ -439,10 +435,10 @@ public partial class Generator
                 IdentifierNameSyntax p0Local = IdentifierName("p0");
                 toStringLengthMethod = toStringLengthMethod
                     .AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword))
-                    .WithBody(Block().AddStatements(
+                    .WithBody(Block(
                         FixedBlock(
                             p0Local.Identifier,
-                            ReturnStatement(SliceAtLengthToString(ObjectCreationExpression(MakeReadOnlySpanOfT(elementType)).AddArgumentListArguments(Argument(p0Local), Argument(lengthConstant)))))));
+                            ReturnStatement(SliceAtLengthToString(ObjectCreationExpression(MakeReadOnlySpanOfT(elementType), [Argument(p0Local), Argument(lengthConstant)]))))));
             }
             else
             {
@@ -459,17 +455,23 @@ public partial class Generator
                                  SyntaxKind.LogicalOrExpression,
                                  BinaryExpression(SyntaxKind.LessThanExpression, lengthParameterName, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))),
                                  BinaryExpression(SyntaxKind.GreaterThanExpression, lengthParameterName, lengthConstant)),
-                             ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentOutOfRangeException))).AddArgumentListArguments(
-                                 Argument(NameOfExpression(lengthParameterName)),
-                                 Argument(lengthParameterName),
-                                 Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal("Length must be between 0 and the fixed array length, inclusive.")))))),
+                             ThrowStatement(ObjectCreationExpression(
+                                 IdentifierName(nameof(ArgumentOutOfRangeException)),
+                                 [
+                                     Argument(NameOfExpression(lengthParameterName)),
+                                     Argument(lengthParameterName),
+                                     Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal("Length must be between 0 and the fixed array length, inclusive.")))
+                                 ]))),
                          FixedBlock(
                              p0Local.Identifier,
                              ReturnStatement(
-                                 ObjectCreationExpression(PredefinedType(Token(SyntaxKind.StringKeyword))).AddArgumentListArguments(
-                                     Argument(p0Local),
-                                     Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))),
-                                     Argument(lengthParameterName))))));
+                                 ObjectCreationExpression(
+                                     PredefinedType(Token(SyntaxKind.StringKeyword)),
+                                     [
+                                         Argument(p0Local),
+                                         Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))),
+                                         Argument(lengthParameterName)
+                                     ])))));
             }
 
             fixedLengthStruct = fixedLengthStruct.AddMembers(toStringLengthMethod);
@@ -488,17 +490,15 @@ public partial class Generator
                     MemberAccessExpression(
                         SyntaxKind.SimpleMemberAccessExpression,
                         InvocationExpression(
-                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, readOnlySpan, SliceAtNullMethodName),
-                            ArgumentList()),
-                        IdentifierName(nameof(object.ToString))),
-                    ArgumentList());
+                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, readOnlySpan, SliceAtNullMethodName)),
+                        IdentifierName(nameof(object.ToString))));
             }
 
             if (asReadOnlyMethodName is not null)
             {
                 // => AsReadOnlySpan().SliceAtNull().ToString();
                 toStringOverride = toStringOverride
-                    .WithExpressionBody(ArrowExpressionClause(SliceAtNullToString(InvocationExpression(asReadOnlyMethodName, ArgumentList()))))
+                    .WithExpressionBody(ArrowExpressionClause(SliceAtNullToString(InvocationExpression(asReadOnlyMethodName))))
                     .WithSemicolonToken(Semicolon);
             }
             else if (this.canUseSpan)
@@ -507,10 +507,10 @@ public partial class Generator
                 IdentifierNameSyntax p0Local = IdentifierName("p0");
                 toStringOverride = toStringOverride
                     .AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword))
-                    .WithBody(Block().AddStatements(
+                    .WithBody(Block(
                         FixedBlock(
                             p0Local.Identifier,
-                            ReturnStatement(SliceAtNullToString(ObjectCreationExpression(MakeReadOnlySpanOfT(elementType)).AddArgumentListArguments(Argument(p0Local), Argument(lengthConstant)))))));
+                            ReturnStatement(SliceAtNullToString(ObjectCreationExpression(MakeReadOnlySpanOfT(elementType), [Argument(p0Local), Argument(lengthConstant)]))))));
             }
             else
             {
@@ -530,15 +530,16 @@ public partial class Generator
                 IdentifierNameSyntax pCh = IdentifierName("pCh");
                 lengthDeclarationStatements = new StatementSyntax[]
                 {
-                    LocalDeclarationStatement(VariableDeclaration(PredefinedType(Token(SyntaxKind.IntKeyword))).AddVariables(
-                            VariableDeclarator(lengthLocalVar.Identifier))),
+                    LocalDeclarationStatement(VariableDeclaration(PredefinedType(Token(SyntaxKind.IntKeyword)), [VariableDeclarator(lengthLocalVar.Identifier)])),
                     FixedBlock(
                         p.Identifier,
-                        Block().AddStatements(
-                            LocalDeclarationStatement(VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword)))).AddVariables(
-                                VariableDeclarator(pLastExclusive.Identifier).WithInitializer(EqualsValueClause(BinaryExpression(SyntaxKind.AddExpression, p, IdentifierName("Length")))))),
-                            LocalDeclarationStatement(VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword)))).AddVariables(
-                                VariableDeclarator(pCh.Identifier).WithInitializer(EqualsValueClause(p)))),
+                        Block(
+                            LocalDeclarationStatement(VariableDeclaration(
+                                PointerType(PredefinedType(Token(SyntaxKind.CharKeyword))),
+                                [VariableDeclarator(pLastExclusive.Identifier, EqualsValueClause(BinaryExpression(SyntaxKind.AddExpression, p, IdentifierName("Length"))))])),
+                            LocalDeclarationStatement(VariableDeclaration(
+                                PointerType(PredefinedType(Token(SyntaxKind.CharKeyword))),
+                                [VariableDeclarator(pCh.Identifier, EqualsValueClause(p))])),
                             ForStatement(
                                 null,
                                 BinaryExpression(
@@ -551,7 +552,7 @@ public partial class Generator
                                             SyntaxKind.NotEqualsExpression,
                                             PrefixUnaryExpression(SyntaxKind.PointerIndirectionExpression, pCh),
                                             LiteralExpression(SyntaxKind.CharacterLiteralExpression, Literal('\0')))),
-                                SingletonSeparatedList<ExpressionSyntax>(PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, pCh)),
+                                [PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, pCh)],
                                 EmptyStatement()),
                             ExpressionStatement(AssignmentExpression(
                                 SyntaxKind.SimpleAssignmentExpression,
@@ -564,10 +565,13 @@ public partial class Generator
                 // return ToString(length);
                 toStringOverride = toStringOverride
                     .AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword))
-                    .WithBody(Block(lengthDeclarationStatements).AddStatements(
+                    .WithBody(Block(
+                    [
+                        .. lengthDeclarationStatements,
                         ReturnStatement(InvocationExpression(
                             IdentifierName("ToString"),
-                            ArgumentList().AddArguments(Argument(lengthLocalVar))))));
+                            [Argument(lengthLocalVar)]))
+                    ]));
             }
 
             fixedLengthStruct = fixedLengthStruct.AddMembers(toStringOverride);
@@ -578,14 +582,14 @@ public partial class Generator
                 fixedLengthStruct = fixedLengthStruct.AddMembers(
                     ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), fixedLengthStructName)
                         .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword))
-                        .AddParameterListParameters(Parameter(Identifier("value")).WithType(PredefinedType(Token(SyntaxKind.StringKeyword)).WithTrailingTrivia(TriviaList(Space))))
+                        .AddParameterListParameters(Parameter(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword)), Identifier("value")))
                         .WithExpressionBody(ArrowExpressionClause(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("value"), IdentifierName(nameof(MemoryExtensions.AsSpan))))))
                         .WithSemicolonToken(Token(SyntaxKind.SemicolonToken)));
             }
 
             // Make sure .NET marshals these `char` arrays as UTF-16.
             fixedLengthStruct = fixedLengthStruct
-                .AddAttributeLists(AttributeList().AddAttributes(StructLayout(TypeAttributes.SequentialLayout, charSet: CharSet.Unicode)));
+                .AddAttributeLists(AttributeList(StructLayout(TypeAttributes.SequentialLayout, charSet: CharSet.Unicode)));
         }
 
         // public static implicit operator __TheStruct_64(ReadOnlySpan<TheStruct> value)
@@ -595,7 +599,7 @@ public partial class Generator
             ConversionOperatorDeclarationSyntax implicitSpanToStruct =
                 ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), fixedLengthStructName)
                     .AddModifiers(Token(SyntaxKind.PublicKeyword), Token(SyntaxKind.StaticKeyword))
-                    .AddParameterListParameters(Parameter(valueParam.Identifier).WithType(MakeReadOnlySpanOfT(elementType).WithTrailingTrivia(TriviaList(Space))))
+                    .AddParameterListParameters(Parameter(MakeReadOnlySpanOfT(elementType).WithTrailingTrivia(TriviaList(Space)), valueParam.Identifier))
                     .WithBody(Block());
 
             IdentifierNameSyntax resultLocal = IdentifierName("result");
@@ -611,13 +615,12 @@ public partial class Generator
                 implicitSpanToStruct = implicitSpanToStruct.AddBodyStatements(
                     ExpressionStatement(InvocationExpression(
                         MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Unsafe)), IdentifierName("SkipInit")),
-                        ArgumentList().AddArguments(Argument(nameColon: null, Token(SyntaxKind.OutKeyword), DeclarationExpression(fixedLengthStructName.WithTrailingTrivia(Space), SingleVariableDesignation(resultLocal.Identifier)))))));
+                        [Argument(nameColon: null, Token(SyntaxKind.OutKeyword), DeclarationExpression(fixedLengthStructName.WithTrailingTrivia(Space), SingleVariableDesignation(resultLocal.Identifier)))])));
             }
             else
             {
                 implicitSpanToStruct = implicitSpanToStruct.AddBodyStatements(
-                    LocalDeclarationStatement(VariableDeclaration(fixedLengthStructName)).AddDeclarationVariables(
-                        VariableDeclarator(resultLocal.Identifier).WithInitializer(EqualsValueClause(DefaultExpression(fixedLengthStructName)))));
+                    LocalDeclarationStatement(VariableDeclaration(fixedLengthStructName, [VariableDeclarator(resultLocal.Identifier, EqualsValueClause(DefaultExpression(fixedLengthStructName)))])));
             }
 
             // x.Slice(initLength, Length - initLength).Clear();
@@ -626,33 +629,34 @@ public partial class Generator
                     MemberAccessExpression(
                         SyntaxKind.SimpleMemberAccessExpression,
                         InvocationExpression(
-                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, span, IdentifierName(nameof(Span<int>.Slice))),
-                            ArgumentList().AddArguments(
+                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, span, IdentifierName(nameof(Span<>.Slice))),
+                            [
                                 Argument(initLengthLocal),
-                                Argument(BinaryExpression(SyntaxKind.SubtractExpression, lengthConstant, initLengthLocal)))),
-                        IdentifierName(nameof(Span<int>.Clear))),
-                    ArgumentList()));
+                                Argument(BinaryExpression(SyntaxKind.SubtractExpression, lengthConstant, initLengthLocal))
+                            ]),
+                        IdentifierName(nameof(Span<>.Clear)))));
 
             if (this.canUseSpan)
             {
                 //// int initLength = value.Length;
                 LocalDeclarationStatementSyntax declareInitLength =
-                    LocalDeclarationStatement(VariableDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword))).AddVariables(
-                        VariableDeclarator(initLengthLocal.Identifier).WithInitializer(EqualsValueClause(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParam, IdentifierName(nameof(ReadOnlySpan<int>.Length)))))));
+                    LocalDeclarationStatement(VariableDeclaration(
+                        PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)),
+                        [VariableDeclarator(initLengthLocal.Identifier, EqualsValueClause(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParam, IdentifierName(nameof(ReadOnlySpan<>.Length)))))]));
 
                 if (this.canCallCreateSpan)
                 {
                     // value.CopyTo(result.AsSpan());
                     StatementSyntax valueCopyToResult =
                         ExpressionStatement(InvocationExpression(
-                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParam, IdentifierName(nameof(ReadOnlySpan<int>.CopyTo))),
-                            ArgumentList().AddArguments(Argument(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, resultLocal, IdentifierName("AsSpan")), ArgumentList())))));
+                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParam, IdentifierName(nameof(ReadOnlySpan<>.CopyTo))),
+                            [Argument(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, resultLocal, IdentifierName("AsSpan"))))]));
                     implicitSpanToStruct = implicitSpanToStruct
                         .AddBodyStatements(
                             valueCopyToResult,
                             declareInitLength,
                             //// result.AsSpan().Slice(initLength, Length - initLength).Clear();
-                            ClearSlice(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, resultLocal, IdentifierName("AsSpan")), ArgumentList())));
+                            ClearSlice(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, resultLocal, IdentifierName("AsSpan")))));
                 }
                 else
                 {
@@ -660,11 +664,9 @@ public partial class Generator
 
                     // Span<char> target = new Span<char>(result.Value, Length);
                     StatementSyntax declareTargetLocal =
-                        LocalDeclarationStatement(VariableDeclaration(MakeSpanOfT(elementType)).AddVariables(
-                                VariableDeclarator(targetLocal.Identifier).WithInitializer(EqualsValueClause(
-                                    ObjectCreationExpression(MakeSpanOfT(elementType)).AddArgumentListArguments(
-                                        Argument(firstElement),
-                                        Argument(lengthConstant))))));
+                        LocalDeclarationStatement(VariableDeclaration(
+                            MakeSpanOfT(elementType),
+                            [VariableDeclarator(targetLocal.Identifier, EqualsValueClause(ObjectCreationExpression(MakeSpanOfT(elementType), [Argument(firstElement), Argument(lengthConstant)])))]));
 
                     implicitSpanToStruct = implicitSpanToStruct
                         .AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword))
@@ -672,8 +674,8 @@ public partial class Generator
                             declareTargetLocal,
                             ////value.CopyTo(target);
                             ExpressionStatement(InvocationExpression(
-                                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParam, IdentifierName(nameof(ReadOnlySpan<int>.CopyTo))),
-                                ArgumentList().AddArguments(Argument(targetLocal)))),
+                                MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParam, IdentifierName(nameof(ReadOnlySpan<>.CopyTo))),
+                                [Argument(targetLocal)])),
                             declareInitLength,
                             ////target.Slice(initLength, Length - initLength).Clear();
                             ClearSlice(targetLocal));
@@ -688,28 +690,30 @@ public partial class Generator
                 StatementSyntax checkRange = IfStatement(
                     BinaryExpression(
                         SyntaxKind.GreaterThanExpression,
-                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParam, IdentifierName(nameof(ReadOnlySpan<int>.Length))),
+                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParam, IdentifierName(nameof(ReadOnlySpan<>.Length))),
                         MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, resultLocal, lengthConstant)),
-                    ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentException))).AddArgumentListArguments(Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal("Length exceeds fixed array size."))))));
+                    ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentException)), [Argument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal("Length exceeds fixed array size.")))])));
 
                 implicitSpanToStruct = implicitSpanToStruct
                     .AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword))
                     .AddBodyStatements(
                         checkRange,
                         //// TheStruct* p = result.Value;
-                        LocalDeclarationStatement(VariableDeclaration(PointerType(PredefinedType(Token(SyntaxKind.CharKeyword)))).AddVariables(
-                            VariableDeclarator(pLocal.Identifier).WithInitializer(EqualsValueClause(firstElement)))),
+                        LocalDeclarationStatement(VariableDeclaration(
+                            PointerType(PredefinedType(Token(SyntaxKind.CharKeyword))),
+                            [VariableDeclarator(pLocal.Identifier, EqualsValueClause(firstElement))])),
                         //// for (int i = 0; i < value.Length; i++) *p++ = value[i];
                         ForStatement(
-                            VariableDeclaration(PredefinedType(Token(SyntaxKind.IntKeyword))).AddVariables(
-                                VariableDeclarator(iLocal.Identifier).WithInitializer(EqualsValueClause(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))))),
-                            BinaryExpression(SyntaxKind.LessThanExpression, iLocal, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParam, IdentifierName(nameof(ReadOnlySpan<char>.Length)))),
-                            SingletonSeparatedList<ExpressionSyntax>(PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, iLocal)),
-                            Block().AddStatements(
-                            ExpressionStatement(AssignmentExpression(
-                                SyntaxKind.SimpleAssignmentExpression,
-                                PrefixUnaryExpression(SyntaxKind.PointerIndirectionExpression, PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, pLocal)),
-                                ElementAccessExpression(valueParam).AddArgumentListArguments(Argument(iLocal)))))));
+                            VariableDeclaration(
+                                PredefinedType(Token(SyntaxKind.IntKeyword)),
+                                [VariableDeclarator(iLocal.Identifier, EqualsValueClause(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))))]),
+                            BinaryExpression(SyntaxKind.LessThanExpression, iLocal, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, valueParam, IdentifierName(nameof(ReadOnlySpan<>.Length)))),
+                            [PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, iLocal)],
+                            Block(
+                                ExpressionStatement(AssignmentExpression(
+                                    SyntaxKind.SimpleAssignmentExpression,
+                                    PrefixUnaryExpression(SyntaxKind.PointerIndirectionExpression, PostfixUnaryExpression(SyntaxKind.PostIncrementExpression, pLocal)),
+                                    ElementAccessExpression(valueParam, [Argument(iLocal)]))))));
             }
 
             // return result;
@@ -742,14 +746,13 @@ public partial class Generator
             TypeSyntaxSettings extensionMethodSignatureTypeSettings = context.Filter(this.extensionMethodSignatureTypeSettings);
 
             // internal static unsafe ref readonly TheStruct ReadOnlyItemRef(this in MainAVIHeader.__dwReserved_4 @this, int index) => ref @this.Value[index]
-            ParameterSyntax thisParameter = Parameter(atThis.Identifier)
-                .WithType(qualifiedFixedLengthStructName.WithTrailingTrivia(Space))
+            ParameterSyntax thisParameter = Parameter(qualifiedFixedLengthStructName.WithTrailingTrivia(Space), atThis.Identifier)
                 .AddModifiers(TokenWithSpace(SyntaxKind.ThisKeyword), TokenWithSpace(SyntaxKind.InKeyword));
-            ParameterSyntax indexParameter = Parameter(indexParamName.Identifier).WithType(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)));
+            ParameterSyntax indexParameter = Parameter(PredefinedType(TokenWithSpace(SyntaxKind.IntKeyword)), indexParamName.Identifier);
             MethodDeclarationSyntax getAtMethod = MethodDeclaration(RefType(qualifiedElementType.WithTrailingTrivia(TriviaList(Space))).WithReadOnlyKeyword(TokenWithSpace(SyntaxKind.ReadOnlyKeyword)), Identifier("ReadOnlyItemRef"))
                 .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword))
-                .WithParameterList(FixTrivia(ParameterList().AddParameters(thisParameter, indexParameter)))
-                .WithExpressionBody(ArrowExpressionClause(RefExpression(ElementAccessExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, atThis, valueFieldName)).AddArgumentListArguments(Argument(indexParamName)))))
+                .WithParameterList(FixTrivia(ParameterList([thisParameter, indexParameter])))
+                .WithExpressionBody(ArrowExpressionClause(RefExpression(ElementAccessExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, atThis, valueFieldName), [Argument(indexParamName)]))))
                 .WithSemicolonToken(Semicolon);
 
             this.volatileCode.AddInlineArrayIndexerExtension(getAtMethod);
@@ -766,8 +769,7 @@ public partial class Generator
                     throw new NotSupportedException($"The {structNamespace}.{fixedLengthStructNameString} struct must be under the metadata's common namespace.");
                 }
 
-                fixedLengthStructInNamespace = NamespaceDeclaration(ParseName(structNamespace.Substring(GlobalWinmdRootNamespaceAlias.Length + 1)))
-                    .AddMembers(fixedLengthStruct);
+                fixedLengthStructInNamespace = NamespaceDeclaration(ParseName(structNamespace.Substring(GlobalWinmdRootNamespaceAlias.Length + 1)), [fixedLengthStruct]);
             }
 
             fixedLengthStructInNamespace = fixedLengthStructInNamespace
@@ -780,7 +782,7 @@ public partial class Generator
         else
         {
             // This struct will be injected as a nested type, to match the element type.
-            return (fixedLengthStructName, List<MemberDeclarationSyntax>().Add(fixedLengthStruct), null);
+            return (fixedLengthStructName, [fixedLengthStruct], null);
         }
     }
 
@@ -788,11 +790,10 @@ public partial class Generator
     {
         var filteredExtensionMethods =
             this.committedCode.InlineArrayIndexerExtensions.Where(e =>
-                this.FindExtensionMethodIfAlreadyAvailable($"{this.Namespace}.{InlineArrayIndexerExtensionsClassName}", e.Identifier.ValueText) is null).ToArray();
+                this.FindExtensionMethodIfAlreadyAvailable($"{this.Namespace}.{InlineArrayIndexerExtensionsClassName}", e.Identifier.ValueText) is null);
 
-        return ClassDeclaration(InlineArrayIndexerExtensionsClassName.Identifier)
-            .AddMembers(filteredExtensionMethods)
-            .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)))
-            .AddAttributeLists(AttributeList().AddAttributes(GeneratedCodeAttribute));
+        return ClassDeclaration(InlineArrayIndexerExtensionsClassName.Identifier, [.. filteredExtensionMethods])
+            .WithModifiers([TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)])
+            .AddAttributeLists(AttributeList(GeneratedCodeAttribute));
     }
 }

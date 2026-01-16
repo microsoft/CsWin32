@@ -119,39 +119,35 @@ public partial class Generator
 
             // private static readonly IntPtr INVALID_HANDLE_VALUE = new IntPtr(-1);
             IdentifierNameSyntax invalidValueFieldName = IdentifierName("INVALID_HANDLE_VALUE");
-            members.Add(FieldDeclaration(VariableDeclaration(IntPtrTypeSyntax).AddVariables(
-                VariableDeclarator(invalidValueFieldName.Identifier).WithInitializer(EqualsValueClause(invalidHandleIntPtr))))
-                .AddModifiers(TokenWithSpace(SyntaxKind.PrivateKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword)));
+            members.Add(FieldDeclaration(
+                [TokenWithSpace(SyntaxKind.PrivateKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword)],
+                VariableDeclaration(IntPtrTypeSyntax, [VariableDeclarator(invalidValueFieldName.Identifier, EqualsValueClause(invalidHandleIntPtr))])));
 
             SyntaxToken visibilityModifier = TokenWithSpace(this.Visibility);
 
             // public SafeHandle() : base(INVALID_HANDLE_VALUE, true)
             members.Add(ConstructorDeclaration(safeHandleTypeIdentifier.Identifier)
                 .AddModifiers(visibilityModifier)
-                .WithInitializer(ConstructorInitializer(SyntaxKind.BaseConstructorInitializer, ArgumentList().AddArguments(
-                    Argument(invalidValueFieldName),
-                    Argument(LiteralExpression(SyntaxKind.TrueLiteralExpression)))))
+                .WithInitializer(ConstructorInitializer(SyntaxKind.BaseConstructorInitializer, [Argument(invalidValueFieldName), Argument(LiteralExpression(SyntaxKind.TrueLiteralExpression))]))
                 .WithBody(Block()));
 
             // public SafeHandle(IntPtr preexistingHandle, bool ownsHandle = true) : base(INVALID_HANDLE_VALUE, ownsHandle) { this.SetHandle(preexistingHandle); }
             IdentifierNameSyntax preexistingHandleName = IdentifierName("preexistingHandle");
             IdentifierNameSyntax ownsHandleName = IdentifierName("ownsHandle");
-            members.Add(ConstructorDeclaration(safeHandleTypeIdentifier.Identifier)
+            members.Add(ConstructorDeclaration(
+                safeHandleTypeIdentifier.Identifier,
+                [
+                    Parameter(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space)), preexistingHandleName.Identifier),
+                    Parameter(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), ownsHandleName.Identifier)
+                        .WithDefault(EqualsValueClause(LiteralExpression(SyntaxKind.TrueLiteralExpression)))
+                ])
                 .AddModifiers(visibilityModifier)
-                .AddParameterListParameters(
-                    Parameter(preexistingHandleName.Identifier).WithType(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space))),
-                    Parameter(ownsHandleName.Identifier)
-                        .WithType(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)))
-                        .WithDefault(EqualsValueClause(LiteralExpression(SyntaxKind.TrueLiteralExpression))))
-                .WithInitializer(ConstructorInitializer(SyntaxKind.BaseConstructorInitializer, ArgumentList().AddArguments(
-                    Argument(invalidValueFieldName),
-                    Argument(ownsHandleName))))
-                .WithBody(Block().AddStatements(
-                    ExpressionStatement(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("SetHandle")))
-                        .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(preexistingHandleName))))))));
+                .WithInitializer(ConstructorInitializer(SyntaxKind.BaseConstructorInitializer, [Argument(invalidValueFieldName), Argument(ownsHandleName)]))
+                .WithBody(Block(
+                    ExpressionStatement(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName("SetHandle")), [Argument(preexistingHandleName)])))));
 
             // public override bool IsInvalid => this.handle.ToInt64() == 0 || this.handle.ToInt64() == -1;
-            ExpressionSyntax thisHandleToInt64 = InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, thisHandle, IdentifierName(nameof(IntPtr.ToInt64))), ArgumentList());
+            ExpressionSyntax thisHandleToInt64 = InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, thisHandle, IdentifierName(nameof(IntPtr.ToInt64))));
             ExpressionSyntax overallTest = invalidHandleValues.Count == 0
                 ? LiteralExpression(SyntaxKind.FalseLiteralExpression)
                 : CompoundExpression(SyntaxKind.LogicalOrExpression, invalidHandleValues.Select(v => BinaryExpression(SyntaxKind.EqualsExpression, thisHandleToInt64, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(v.ToInt64())))));
@@ -186,7 +182,7 @@ public partial class Generator
                     SyntaxKind.SimpleMemberAccessExpression,
                     IdentifierName(this.options.ClassName),
                     IdentifierName(renamedReleaseMethod ?? releaseMethod)),
-                ArgumentList().AddArguments(releaseHandleArgument));
+                [releaseHandleArgument]);
             BlockSyntax? releaseBlock = null;
 
             // Reserved parameters can be pointers.
@@ -292,11 +288,10 @@ public partial class Generator
 
             IEnumerable<TypeSyntax> xmlDocParameterTypes = releaseMethodSignature.ParameterTypes.Select(p => p.ToTypeSyntax(this.externSignatureTypeSettings, GeneratingElement.HelperClassMember, default).Type);
 
-            ClassDeclarationSyntax safeHandleDeclaration = ClassDeclaration(Identifier(safeHandleClassName))
+            ClassDeclarationSyntax safeHandleDeclaration = ClassDeclaration(Identifier(safeHandleClassName), [.. members])
                 .AddModifiers(visibilityModifier, TokenWithSpace(SyntaxKind.PartialKeyword))
-                .WithBaseList(BaseList(SingletonSeparatedList<BaseTypeSyntax>(SimpleBaseType(SafeHandleTypeSyntax))))
-                .AddMembers(members.ToArray())
-                .AddAttributeLists(AttributeList().AddAttributes(GeneratedCodeAttribute))
+                .WithBaseList(BaseList(SimpleBaseType(SafeHandleTypeSyntax)))
+                .AddAttributeLists(AttributeList(GeneratedCodeAttribute))
                 .WithLeadingTrivia(ParseLeadingTrivia($@"
 /// <summary>
 /// Represents a Win32 handle that can be closed with <see cref=""{this.options.ClassName}.{renamedReleaseMethod ?? releaseMethod}({string.Join(", ", xmlDocParameterTypes)})""/>.

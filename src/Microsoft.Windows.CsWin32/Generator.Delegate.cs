@@ -63,7 +63,7 @@ public partial class Generator
 
         if (callingConvention.HasValue)
         {
-            result = result.AddAttributeLists(AttributeList().AddAttributes(UnmanagedFunctionPointer(callingConvention.Value)).WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken)));
+            result = result.AddAttributeLists(AttributeList(UnmanagedFunctionPointer(callingConvention.Value)).WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken)));
         }
 
         return result;
@@ -75,15 +75,16 @@ public partial class Generator
         IdentifierNameSyntax valueFieldName = IdentifierName("Value");
 
         // internal IntPtr Value;
-        FieldDeclarationSyntax valueField = FieldDeclaration(VariableDeclaration(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space)))
-            .AddVariables(VariableDeclarator(valueFieldName.Identifier))).AddModifiers(TokenWithSpace(this.Visibility));
+        FieldDeclarationSyntax valueField = FieldDeclaration(
+            [TokenWithSpace(this.Visibility)],
+            VariableDeclaration(IntPtrTypeSyntax.WithTrailingTrivia(TriviaList(Space)), [VariableDeclarator(valueFieldName.Identifier)]));
 
         // internal T CreateDelegate<T>() => Marshal.GetDelegateForFunctionPointer<T>(this.Value);
         IdentifierNameSyntax typeParameter = IdentifierName("TDelegate");
         MemberAccessExpressionSyntax methodToCall = this.getDelegateForFunctionPointerGenericExists
-            ? MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Marshal)), GenericName(nameof(Marshal.GetDelegateForFunctionPointer)).AddTypeArgumentListArguments(typeParameter))
+            ? MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Marshal)), GenericName(nameof(Marshal.GetDelegateForFunctionPointer), [typeParameter]))
             : MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(Marshal)), IdentifierName(nameof(Marshal.GetDelegateForFunctionPointer)));
-        ArgumentListSyntax arguments = ArgumentList().AddArguments(Argument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), valueFieldName)));
+        ArgumentListSyntax arguments = ArgumentList(Argument(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), valueFieldName)));
         if (!this.getDelegateForFunctionPointerGenericExists)
         {
             arguments = arguments.AddArguments(Argument(TypeOfExpression(typeParameter)));
@@ -97,16 +98,19 @@ public partial class Generator
 
         MethodDeclarationSyntax createDelegateMethod = MethodDeclaration(typeParameter, Identifier("CreateDelegate"))
             .AddTypeParameterListParameters(TypeParameter(typeParameter.Identifier))
-            .AddConstraintClauses(TypeParameterConstraintClause(typeParameter, SingletonSeparatedList<TypeParameterConstraintSyntax>(TypeConstraint(IdentifierName("Delegate")))))
+            .AddConstraintClauses(TypeParameterConstraintClause(typeParameter, [TypeConstraint(IdentifierName("Delegate"))]))
             .WithExpressionBody(ArrowExpressionClause(bodyExpression))
             .AddModifiers(TokenWithSpace(this.Visibility))
             .WithSemicolonToken(SemicolonWithLineFeed);
 
-        StructDeclarationSyntax typedefStruct = StructDeclaration(name.Identifier)
-            .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.PartialKeyword)))
-            .AddMembers(valueField)
-            .AddMembers(this.CreateCommonTypeDefMembers(name, IntPtrTypeSyntax, valueFieldName).ToArray())
-            .AddMembers(createDelegateMethod);
+        StructDeclarationSyntax typedefStruct = StructDeclaration(
+            name.Identifier,
+            [
+                valueField,
+                .. this.CreateCommonTypeDefMembers(name, IntPtrTypeSyntax, valueFieldName),
+                createDelegateMethod
+            ])
+            .WithModifiers([TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.PartialKeyword)]);
         return typedefStruct;
     }
 
@@ -121,7 +125,7 @@ public partial class Generator
     {
         FunctionPointerCallingConventionSyntax callingConventionSyntax = FunctionPointerCallingConvention(
             Token(SyntaxKind.UnmanagedKeyword),
-            FunctionPointerUnmanagedCallingConventionList(SingletonSeparatedList(ToUnmanagedCallingConventionSyntax(CallingConvention.StdCall))));
+            FunctionPointerUnmanagedCallingConventionList(ToUnmanagedCallingConventionSyntax(CallingConvention.StdCall)));
 
         FunctionPointerParameterListSyntax parametersList = FunctionPointerParameterList();
 
@@ -165,14 +169,12 @@ public partial class Generator
 
         // public readonly delegate* unmanaged<...> Value;
         FieldDeclarationSyntax valueField = FieldDeclaration(
-            VariableDeclaration(fpType.WithTrailingTrivia(TriviaList(Space)))
-                .AddVariables(VariableDeclarator(Identifier("Value"))))
-            .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword));
+            [TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword)],
+            VariableDeclaration(fpType.WithTrailingTrivia(TriviaList(Space)), [VariableDeclarator(Identifier("Value"))]));
 
         // public <Name>(delegate* unmanaged<...> value) => Value = value;
-        ConstructorDeclarationSyntax ctor = ConstructorDeclaration(Identifier(name))
+        ConstructorDeclarationSyntax ctor = ConstructorDeclaration(Identifier(name), [Parameter(fpType, Identifier("value"))])
             .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword))
-            .AddParameterListParameters(Parameter(Identifier("value")).WithType(fpType))
             .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, IdentifierName("Value"), IdentifierName("value"))))
             .WithSemicolonToken(SemicolonWithLineFeed);
 
@@ -191,20 +193,19 @@ public partial class Generator
         // public static implicit operator <Name>(delegate* unmanaged<...> value) => new(value);
         ConversionOperatorDeclarationSyntax implicitFromPointer = ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), IdentifierName(name))
             .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))
-            .AddParameterListParameters(Parameter(Identifier("value")).WithType(fpType))
-            .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(IdentifierName(name)).AddArgumentListArguments(Argument(IdentifierName("value")))))
+            .AddParameterListParameters(Parameter(fpType, Identifier("value")))
+            .WithExpressionBody(ArrowExpressionClause(ObjectCreationExpression(IdentifierName(name), [Argument(IdentifierName("value"))])))
             .WithSemicolonToken(SemicolonWithLineFeed);
 
         // public static implicit operator delegate* unmanaged<...>(<Name> value) => value.Value;
         ConversionOperatorDeclarationSyntax implicitToPointer = ConversionOperatorDeclaration(Token(SyntaxKind.ImplicitKeyword), fpType)
             .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))
-            .AddParameterListParameters(Parameter(Identifier("value")).WithType(IdentifierName(name).WithTrailingTrivia(Space)))
+            .AddParameterListParameters(Parameter(IdentifierName(name).WithTrailingTrivia(Space), Identifier("value")))
             .WithExpressionBody(ArrowExpressionClause(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("value"), IdentifierName("Value"))))
             .WithSemicolonToken(SemicolonWithLineFeed);
 
-        StructDeclarationSyntax result = StructDeclaration(Identifier(name))
-            .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
-            .AddMembers(valueField, ctor, nullProperty, isNullProperty, implicitFromPointer, implicitToPointer);
+        StructDeclarationSyntax result = StructDeclaration(Identifier(name), [valueField, ctor, nullProperty, isNullProperty, implicitFromPointer, implicitToPointer])
+            .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword));
 
         return result;
     }

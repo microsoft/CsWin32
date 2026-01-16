@@ -227,7 +227,7 @@ public partial class Generator
                     i++;
                 }
 
-                return ObjectCreationExpression(targetType).AddArgumentListArguments(argExpressions);
+                return ObjectCreationExpression(targetType, [.. argExpressions]);
             }
         }
 
@@ -259,7 +259,7 @@ public partial class Generator
 
         return ObjectCreationExpression(targetType)
             .WithArgumentList(null)
-            .WithInitializer(InitializerExpression(SyntaxKind.ObjectInitializerExpression, SeparatedList<ExpressionSyntax>()).AddExpressions(fieldAssignmentExpressions));
+            .WithInitializer(InitializerExpression(SyntaxKind.ObjectInitializerExpression).AddExpressions(fieldAssignmentExpressions));
     }
 
     private ExpressionSyntax CreateConstant(ReadOnlyMemory<char> argsAsString, TypeHandleInfo targetType, out bool unsafeRequired)
@@ -312,8 +312,7 @@ public partial class Generator
         TypeSyntax byteTypeSyntax = PredefinedType(Token(SyntaxKind.ByteKeyword));
         return CastExpression(
             MakeReadOnlySpanOfT(byteTypeSyntax),
-            ArrayCreationExpression(ArrayType(byteTypeSyntax).AddRankSpecifiers(ArrayRankSpecifier())).WithInitializer(InitializerExpression(SyntaxKind.ArrayInitializerExpression, SeparatedList<ExpressionSyntax>())
-            .AddExpressions(args.Select(b => ToExpressionSyntax(PrimitiveTypeCode.Byte, b)).ToArray())));
+            ArrayCreationExpression(ArrayType(byteTypeSyntax, [ArrayRankSpecifier()]), InitializerExpression(SyntaxKind.ArrayInitializerExpression, [.. args.Select(b => ToExpressionSyntax(PrimitiveTypeCode.Byte, b))])));
     }
 
     private ExpressionSyntax CreateGuidConstant(List<ReadOnlyMemory<char>> guidArgs)
@@ -338,7 +337,7 @@ public partial class Generator
             Literal(byte.Parse(guidArgs[10].ToString(), CultureInfo.InvariantCulture)),
         };
 
-        return ObjectCreationExpression(GuidTypeSyntax).AddArgumentListArguments(ctorArgs.Select(t => Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, t))).ToArray());
+        return ObjectCreationExpression(GuidTypeSyntax, [.. ctorArgs.Select(t => Argument(LiteralExpression(SyntaxKind.NumericLiteralExpression, t)))]);
     }
 
     private ExpressionSyntax CreateConstant(CustomAttribute constantAttribute, TypeHandleInfo targetType, out bool unsafeRequired)
@@ -389,7 +388,7 @@ public partial class Generator
                 }
             }
 
-            SyntaxTokenList modifiers = TokenList(TokenWithSpace(this.Visibility));
+            SyntaxTokenList modifiers = [TokenWithSpace(this.Visibility)];
             if (this.IsTypeDefStruct(fieldTypeInfo) || value is ObjectCreationExpressionSyntax)
             {
                 modifiers = modifiers.Add(TokenWithSpace(SyntaxKind.StaticKeyword)).Add(TokenWithSpace(SyntaxKind.ReadOnlyKeyword));
@@ -404,9 +403,7 @@ public partial class Generator
                 modifiers = modifiers.Add(TokenWithSpace(SyntaxKind.UnsafeKeyword));
             }
 
-            FieldDeclarationSyntax? result = FieldDeclaration(VariableDeclaration(fieldType.Type).AddVariables(
-                VariableDeclarator(Identifier(name)).WithInitializer(EqualsValueClause(value))))
-                .WithModifiers(modifiers);
+            FieldDeclarationSyntax? result = FieldDeclaration(modifiers, VariableDeclaration(fieldType.Type, [VariableDeclarator(Identifier(name), EqualsValueClause(value))]));
             result = fieldType.AddMarshalAs(result);
             result = this.AddApiDocumentation(result.Declaration.Variables[0].Identifier.ValueText, result);
 
@@ -423,8 +420,7 @@ public partial class Generator
 
     private ClassDeclarationSyntax DeclareConstantDefiningClass()
     {
-        return ClassDeclaration(this.methodsAndConstantsClassName.Identifier)
-            .AddMembers(this.committedCode.TopLevelFields.ToArray())
-            .WithModifiers(TokenList(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)));
+        return ClassDeclaration(this.methodsAndConstantsClassName.Identifier, [.. this.committedCode.TopLevelFields])
+            .WithModifiers([TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)]);
     }
 }

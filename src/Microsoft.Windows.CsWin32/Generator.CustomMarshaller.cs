@@ -67,9 +67,8 @@ public partial class Generator
             // }
             MethodDeclarationSyntax convertToManagedMethod = MethodDeclaration(enumTypeSyntax, Identifier("ConvertToManaged"))
                 .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword))
-                .AddParameterListParameters(Parameter(Identifier("unmanaged")).WithType(unmanagedTypeSyntax.WithTrailingTrivia(Space)))
-                .WithBody(Block().AddStatements(
-                    ReturnStatement(UncheckedExpression(CastExpression(enumTypeSyntax, IdentifierName("unmanaged"))))));
+                .AddParameterListParameters(Parameter(unmanagedTypeSyntax.WithTrailingTrivia(Space), Identifier("unmanaged")))
+                .WithBody(Block(ReturnStatement(UncheckedExpression(CastExpression(enumTypeSyntax, IdentifierName("unmanaged"))))));
 
             // Create ConvertToUnmanaged method
             // public static uint ConvertToUnmanaged(Enum managed)
@@ -78,9 +77,8 @@ public partial class Generator
             // }
             MethodDeclarationSyntax convertToUnmanagedMethod = MethodDeclaration(unmanagedTypeSyntax, Identifier("ConvertToUnmanaged"))
                 .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))
-                .AddParameterListParameters(Parameter(Identifier("managed")).WithType(enumTypeSyntax.WithTrailingTrivia(Space)))
-                .WithBody(Block().AddStatements(
-                    ReturnStatement(UncheckedExpression(CastExpression(unmanagedTypeSyntax, IdentifierName("managed"))))));
+                .AddParameterListParameters(Parameter(enumTypeSyntax.WithTrailingTrivia(Space), Identifier("managed")))
+                .WithBody(Block(ReturnStatement(UncheckedExpression(CastExpression(unmanagedTypeSyntax, IdentifierName("managed"))))));
 
             // Create Free method
             // public static void Free(uint unmanaged)
@@ -88,14 +86,13 @@ public partial class Generator
             // }
             MethodDeclarationSyntax freeMethod = MethodDeclaration(PredefinedType(Token(SyntaxKind.VoidKeyword)), Identifier("Free"))
                 .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))
-                .AddParameterListParameters(Parameter(Identifier("unmanaged")).WithType(unmanagedTypeSyntax.WithTrailingTrivia(Space)))
+                .AddParameterListParameters(Parameter(unmanagedTypeSyntax.WithTrailingTrivia(Space), Identifier("unmanaged")))
                 .WithBody(Block()); // Empty body
 
             // Create the class declaration
-            ClassDeclarationSyntax marshallerClass = ClassDeclaration(Identifier(customTypeMarshallerName))
+            ClassDeclarationSyntax marshallerClass = ClassDeclaration(Identifier(customTypeMarshallerName), [convertToManagedMethod, convertToUnmanagedMethod, freeMethod])
                 .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword))
-                .AddAttributeLists(customMarshallerAttributes.Select(attr => AttributeList().AddAttributes(attr)).ToArray())
-                .AddMembers(convertToManagedMethod, convertToUnmanagedMethod, freeMethod);
+                .AddAttributeLists(customMarshallerAttributes.Select(attr => AttributeList(attr)).ToArray());
 
             marshallerClass = marshallerClass.WithAdditionalAnnotations(new SyntaxAnnotation(NamespaceContainerAnnotation, shortNamespace));
 
@@ -140,20 +137,18 @@ public partial class Generator
             // public static unsafe void* ConvertToUnmanaged(HWND managed) => managed.Value;
             MethodDeclarationSyntax toUnmanaged = MethodDeclaration(unmanagedTypeSyntax, Identifier("ConvertToUnmanaged"))
                 .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword))
-                .AddParameterListParameters(Parameter(Identifier("managed")).WithType(typedefTypeSyntax.WithTrailingTrivia(Space)))
+                .AddParameterListParameters(Parameter(typedefTypeSyntax.WithTrailingTrivia(Space), Identifier("managed")))
                 .WithBody(Block(ReturnStatement(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("managed"), IdentifierName("Value")))));
 
             // public static unsafe HWND ConvertToManaged(void* unmanaged) => new(unmanaged);
             MethodDeclarationSyntax toManaged = MethodDeclaration(typedefTypeSyntax, Identifier("ConvertToManaged"))
                 .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword))
-                .AddParameterListParameters(Parameter(Identifier("unmanaged")).WithType(unmanagedTypeSyntax.WithTrailingTrivia(Space)))
-                .WithBody(Block(ReturnStatement(ObjectCreationExpression(typedefTypeSyntax)
-                    .WithArgumentList(ArgumentList(SingletonSeparatedList(Argument(IdentifierName("unmanaged"))))))));
+                .AddParameterListParameters(Parameter(unmanagedTypeSyntax.WithTrailingTrivia(Space), Identifier("unmanaged")))
+                .WithBody(Block(ReturnStatement(ObjectCreationExpression(typedefTypeSyntax, [Argument(IdentifierName("unmanaged"))]))));
 
-            ClassDeclarationSyntax marshallerClass = ClassDeclaration(Identifier(customTypeMarshallerName))
+            ClassDeclarationSyntax marshallerClass = ClassDeclaration(Identifier(customTypeMarshallerName), [toUnmanaged, toManaged])
                 .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword))
-                .AddAttributeLists(AttributeList().AddAttributes(attribute))
-                .AddMembers(toUnmanaged, toManaged)
+                .AddAttributeLists(AttributeList(attribute))
                 .WithAdditionalAnnotations(new SyntaxAnnotation(NamespaceContainerAnnotation, shortNamespace));
 
             string qualifiedName = $"global::{this.Namespace}.{shortNamespace}.{customTypeMarshallerName}";
@@ -215,15 +210,14 @@ public partial class Generator
             // }
             MethodDeclarationSyntax convertToManagedMethod = MethodDeclaration(winrtTypeSyntax, Identifier("ConvertToManaged"))
                 .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword))
-                .AddParameterListParameters(Parameter(Identifier("unmanaged")).WithType(unmanagedTypeSyntax.WithTrailingTrivia(Space)))
-                .WithBody(Block().AddStatements(
+                .AddParameterListParameters(Parameter(unmanagedTypeSyntax.WithTrailingTrivia(Space), Identifier("unmanaged")))
+                .WithBody(Block(
                     ReturnStatement(InvocationExpression(
                         MemberAccessExpression(
                             SyntaxKind.SimpleMemberAccessExpression,
-                            GenericName("global::WinRT.MarshalInterface")
-                                .AddTypeArgumentListArguments(winrtTypeSyntax),
+                            GenericName("global::WinRT.MarshalInterface", [winrtTypeSyntax]),
                             IdentifierName("FromAbi")),
-                        ArgumentList().AddArguments(Argument(IdentifierName("unmanaged")))))));
+                        [Argument(IdentifierName("unmanaged"))]))));
 
             // Create ConvertToUnmanaged method
             // public static nint ConvertToUnmanaged(T managed)
@@ -232,15 +226,14 @@ public partial class Generator
             // }
             MethodDeclarationSyntax convertToUnmanagedMethod = MethodDeclaration(unmanagedTypeSyntax, Identifier("ConvertToUnmanaged"))
                 .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))
-                .AddParameterListParameters(Parameter(Identifier("managed")).WithType(winrtTypeSyntax.WithTrailingTrivia(Space)))
-                .WithBody(Block().AddStatements(
+                .AddParameterListParameters(Parameter(winrtTypeSyntax.WithTrailingTrivia(Space), Identifier("managed")))
+                .WithBody(Block(
                     ReturnStatement(InvocationExpression(
                         MemberAccessExpression(
                             SyntaxKind.SimpleMemberAccessExpression,
-                            GenericName("global::WinRT.MarshalInterface")
-                                .AddTypeArgumentListArguments(winrtTypeSyntax),
+                            GenericName("global::WinRT.MarshalInterface", [winrtTypeSyntax]),
                             IdentifierName("FromManaged")),
-                        ArgumentList().AddArguments(Argument(IdentifierName("managed")))))));
+                        [Argument(IdentifierName("managed"))]))));
 
             // Create Free method
             // public static void Free(nint unmanaged)
@@ -249,21 +242,19 @@ public partial class Generator
             // }
             MethodDeclarationSyntax freeMethod = MethodDeclaration(PredefinedType(Token(SyntaxKind.VoidKeyword)), Identifier("Free"))
                 .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))
-                .AddParameterListParameters(Parameter(Identifier("unmanaged")).WithType(unmanagedTypeSyntax.WithTrailingTrivia(Space)))
-                .WithBody(Block().AddStatements(
+                .AddParameterListParameters(Parameter(unmanagedTypeSyntax.WithTrailingTrivia(Space), Identifier("unmanaged")))
+                .WithBody(Block(
                     ExpressionStatement(InvocationExpression(
                         MemberAccessExpression(
                             SyntaxKind.SimpleMemberAccessExpression,
-                            GenericName("global::WinRT.MarshalInterface")
-                                .AddTypeArgumentListArguments(winrtTypeSyntax),
+                            GenericName("global::WinRT.MarshalInterface", [winrtTypeSyntax]),
                             IdentifierName("DisposeAbi")),
-                        ArgumentList().AddArguments(Argument(IdentifierName("unmanaged")))))));
+                        [Argument(IdentifierName("unmanaged"))]))));
 
             // Create the class declaration
-            ClassDeclarationSyntax marshallerClass = ClassDeclaration(Identifier(customTypeMarshallerName))
+            ClassDeclarationSyntax marshallerClass = ClassDeclaration(Identifier(customTypeMarshallerName), [convertToManagedMethod, convertToUnmanagedMethod, freeMethod])
                 .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword))
-                .AddAttributeLists(customMarshallerAttributes.Select(attr => AttributeList().AddAttributes(attr)).ToArray())
-                .AddMembers(convertToManagedMethod, convertToUnmanagedMethod, freeMethod);
+                .AddAttributeLists(customMarshallerAttributes.Select(attr => AttributeList(attr)).ToArray());
 
             marshallerClass = marshallerClass.WithAdditionalAnnotations(new SyntaxAnnotation(NamespaceContainerAnnotation, marshallerNamespace));
 

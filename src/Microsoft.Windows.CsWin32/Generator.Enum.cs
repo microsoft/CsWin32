@@ -38,20 +38,19 @@ public partial class Generator
         }
 
         string? name = this.Reader.GetString(typeDef.Name);
-        EnumDeclarationSyntax result = EnumDeclaration(Identifier(name))
-            .WithMembers(SeparatedList<EnumMemberDeclarationSyntax>(enumValues))
-            .WithModifiers(TokenList(TokenWithSpace(this.Visibility)));
+        EnumDeclarationSyntax result = EnumDeclaration(Identifier(name), SeparatedList<EnumMemberDeclarationSyntax>(enumValues))
+            .WithModifiers([TokenWithSpace(this.Visibility)]);
 
         if (!(enumBaseType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.IntKeyword } }))
         {
             result = result.WithIdentifier(result.Identifier.WithTrailingTrivia(Space))
-                .WithBaseList(BaseList(SingletonSeparatedList<BaseTypeSyntax>(SimpleBaseType(enumBaseType).WithTrailingTrivia(LineFeed))).WithColonToken(TokenWithSpace(SyntaxKind.ColonToken)));
+                .WithBaseList(BaseList(SimpleBaseType(enumBaseType).WithTrailingTrivia(LineFeed)).WithColonToken(TokenWithSpace(SyntaxKind.ColonToken)));
         }
 
         if (flagsEnum)
         {
             result = result.AddAttributeLists(
-                AttributeList().WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken)).AddAttributes(FlagsAttributeSyntax));
+                AttributeList(FlagsAttributeSyntax).WithCloseBracketToken(TokenWithLineFeed(SyntaxKind.CloseBracketToken)));
         }
 
         result = this.AddApiDocumentation(name, result);
@@ -71,8 +70,7 @@ public partial class Generator
 
             bool enumBaseTypeIsSigned = enumBaseType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.LongKeyword or (int)SyntaxKind.IntKeyword or (int)SyntaxKind.ShortKeyword or (int)SyntaxKind.SByteKeyword } };
             ExpressionSyntax enumValue = flagsEnum ? ToHexExpressionSyntax(this.Reader, valueHandle, enumBaseTypeIsSigned) : ToExpressionSyntax(this.Reader, valueHandle);
-            EnumMemberDeclarationSyntax enumMember = EnumMemberDeclaration(SafeIdentifier(enumValueName))
-                .WithEqualsValue(EqualsValueClause(enumValue));
+            EnumMemberDeclarationSyntax enumMember = EnumMemberDeclaration(SafeIdentifier(enumValueName), EqualsValueClause(enumValue));
             enumValues.Add(enumMember);
             enumValues.Add(TokenWithLineFeed(SyntaxKind.CommaToken));
         }

@@ -411,13 +411,12 @@ public partial class Generator
     private StructDeclarationSyntax DeclareVariableLengthInlineArrayHelper(Context context, TypeSyntax fieldType)
     {
         IdentifierNameSyntax firstElementFieldName = IdentifierName("e0");
-        List<MemberDeclarationSyntax> members =
-        [
-            // internal unsafe T e0;
-            FieldDeclaration(
-                [TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword)],
-                VariableDeclaration(fieldType, [VariableDeclarator(firstElementFieldName.Identifier)])),
-        ];
+        List<MemberDeclarationSyntax> members = new();
+
+        // internal unsafe T e0;
+        members.Add(FieldDeclaration(
+            [TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword)],
+            VariableDeclaration(fieldType, [VariableDeclarator(firstElementFieldName.Identifier)])));
 
         if (this.canUseUnsafeAdd)
         {

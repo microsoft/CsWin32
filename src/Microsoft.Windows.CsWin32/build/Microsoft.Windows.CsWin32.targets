@@ -41,7 +41,7 @@
   </Target>
 
   <Target Name="GenerateCsWin32Code"
-          Inputs="@(AdditionalFiles);@(ProjectionMetadataWinmd);@(ProjectionDocs);@(CsWin32AppLocalAllowedLibraries);@(ReferencePath);@(CsWin32GeneratorInputs)"
+          Inputs="@(AdditionalFiles);@(ProjectionMetadataWinmd);@(ProjectionDocs);@(AppLocalAllowedLibraries);@(ReferencePath);@(CsWin32GeneratorInputs)"
           Outputs="$(CsWin32GeneratorGeneratedFilesList);@(CsWin32GeneratorPreviousOutputs);$(CsWin32GeneratorSucceededMarker)"
           Condition="'$(CsWin32RunAsBuildTask)'=='true' and '@(ProjectionMetadataWinmd)'!=''">
     <ItemGroup>
@@ -62,7 +62,7 @@
       NativeMethodsJson="@(CsWin32NativeMethodsJson)"
       MetadataPaths="$(CsWin32MetadataPaths)"
       DocPaths="@(ProjectionDocs)"
-      AppLocalAllowedLibraries="@(CsWin32AppLocalAllowedLibraries)"
+      AppLocalAllowedLibraries="@(AppLocalAllowedLibraries->'%(FullPath)')"
       OutputPath="$(CsWin32GeneratorGeneratedFilesPath)"
       GeneratorToolPath="$(CsWin32GeneratorToolPath)CsWin32Generator.dll"
       TargetFramework="$(TargetFramework)"

@@ -483,9 +483,13 @@ public partial class Generator
                         ExpressionStatement(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName(nameof(SafeHandle.DangerousRelease))))))
                     .WithCloseParenToken(TokenWithLineFeed(SyntaxKind.CloseParenToken)));
 
-                // Accept the SafeHandle instead.
-                parameters[paramIndex] = externParam
-                    .WithType(IdentifierName(nameof(SafeHandle)).WithTrailingTrivia(TriviaList(Space)));
+                // Accept the SafeHandle instead. Use concrete safe handle type to help avoid cases when wrong safe handle is passed to the method
+                // unless it is a basic HANDLE, which is annotated in metadata to be closed with CloseHandle function but is widely used across
+                // Windows API in places where it is closed via some domain-specific function
+                TypeSyntax safeHandleSyntax = releaseMethod != "CloseHandle" && this.RequestSafeHandle(releaseMethod) is { } safeHandleType ?
+                    safeHandleType
+                    : IdentifierName(nameof(SafeHandle));
+                parameters[paramIndex] = externParam.WithType(safeHandleSyntax.WithTrailingTrivia(TriviaList(Space)));
 
                 // hParamNameLocal;
                 arguments[paramIndex] = Argument(typeDefHandleName);

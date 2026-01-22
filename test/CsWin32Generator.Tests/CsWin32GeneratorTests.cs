@@ -192,18 +192,18 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         ["ID3D11DeviceChild", "GetPrivateData", "this winmdroot.Graphics.Direct3D11.ID3D11DeviceChild @this, in global::System.Guid guid, ref uint pDataSize, [Optional] Span<byte> pData"],
         ["WriteFile", "WriteFile", "SafeHandle hFile, in byte lpBuffer, uint* lpNumberOfBytesWritten, global::System.Threading.NativeOverlapped* lpOverlapped", false],
         // All params included
-        ["SetupDiGetDeviceInterfaceDetail", "SetupDiGetDeviceInterfaceDetail", "SafeHandle DeviceInfoSet, in winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVICE_INTERFACE_DATA DeviceInterfaceData, [Optional] Span<byte> DeviceInterfaceDetailData, out uint RequiredSize, ref winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVINFO_DATA DeviceInfoData"],
+        ["SetupDiGetDeviceInterfaceDetail", "SetupDiGetDeviceInterfaceDetail", "global::Windows.Win32.SetupDiDestroyDeviceInfoListSafeHandle DeviceInfoSet, in winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVICE_INTERFACE_DATA DeviceInterfaceData, [Optional] Span<byte> DeviceInterfaceDetailData, out uint RequiredSize, ref winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVINFO_DATA DeviceInfoData"],
         // Optional params omitted
-        ["SetupDiGetDeviceInterfaceDetail", "SetupDiGetDeviceInterfaceDetail", "SafeHandle DeviceInfoSet, in winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVICE_INTERFACE_DATA DeviceInterfaceData, [Optional] Span<byte> DeviceInterfaceDetailData"],
+        ["SetupDiGetDeviceInterfaceDetail", "SetupDiGetDeviceInterfaceDetail", "global::Windows.Win32.SetupDiDestroyDeviceInfoListSafeHandle DeviceInfoSet, in winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVICE_INTERFACE_DATA DeviceInterfaceData, [Optional] Span<byte> DeviceInterfaceDetailData"],
         // We should _not_ have a struct param overload for flexible arrays
-        ["SetupDiGetDeviceInterfaceDetail", "SetupDiGetDeviceInterfaceDetail", "SafeHandle DeviceInfoSet, in winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVICE_INTERFACE_DATA DeviceInterfaceData, out winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVICE_INTERFACE_DETAIL_DATA_W DeviceInterfaceDetailData, out uint RequiredSize, ref winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVINFO_DATA DeviceInfoData", false],
+        ["SetupDiGetDeviceInterfaceDetail", "SetupDiGetDeviceInterfaceDetail", "global::Windows.Win32.SetupDiDestroyDeviceInfoListSafeHandle DeviceInfoSet, in winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVICE_INTERFACE_DATA DeviceInterfaceData, out winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVICE_INTERFACE_DETAIL_DATA_W DeviceInterfaceDetailData, out uint RequiredSize, ref winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVINFO_DATA DeviceInfoData", false],
         ["WinHttpReadData", "WinHttpReadData", "void* hRequest, Span<byte> lpBuffer, ref uint lpdwNumberOfBytesRead"],
         ["IsTextUnicode", "IsTextUnicode", "ReadOnlySpan<byte> lpv, ref winmdroot.Globalization.IS_TEXT_UNICODE_RESULT lpiResult"],
         // Omitted ref param
         ["IsTextUnicode", "IsTextUnicode", "ReadOnlySpan<byte> lpv"],
         ["GetAce", "GetAce", "in winmdroot.Security.ACL pAcl, uint dwAceIndex, out void* pAce"],
         // Optional and MemorySize-d struct params, optional params included
-        ["SetupDiGetClassInstallParams", "SetupDiGetClassInstallParams", "SafeHandle DeviceInfoSet, [Optional] winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVINFO_DATA? DeviceInfoData, [Optional] Span<byte> ClassInstallParams, out uint RequiredSize"],
+        ["SetupDiGetClassInstallParams", "SetupDiGetClassInstallParams", "global::Windows.Win32.SetupDiDestroyDeviceInfoListSafeHandle DeviceInfoSet, [Optional] winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVINFO_DATA? DeviceInfoData, [Optional] Span<byte> ClassInstallParams, out uint RequiredSize"],
         ["IEnumString", "Next", "this winmdroot.System.Com.IEnumString @this, Span<winmdroot.Foundation.PWSTR> rgelt, out uint pceltFetched"],
         ["PSCreateMemoryPropertyStore", "PSCreateMemoryPropertyStore", "in global::System.Guid riid, out object ppv"],
         ["DeviceIoControl", "DeviceIoControl", "SafeHandle hDevice, uint dwIoControlCode, [Optional] ReadOnlySpan<byte> lpInBuffer, [Optional] Span<byte> lpOutBuffer, out uint lpBytesReturned, [Optional] global::System.Threading.NativeOverlapped* lpOverlapped"],
@@ -213,12 +213,12 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         ["ITsSbResourcePluginStore", "EnumerateTargets", "winmdroot.Foundation.BSTR FarmName, winmdroot.Foundation.BSTR EnvName, winmdroot.System.RemoteDesktop.TS_SB_SORT_BY sortByFieldId, winmdroot.Foundation.BSTR sortyByPropName, ref uint pdwCount, out winmdroot.System.RemoteDesktop.ITsSbTarget_unmanaged** pVal"],
         ["MFEnumDeviceSources", "MFEnumDeviceSources", "winmdroot.Media.MediaFoundation.IMFAttributes pAttributes, out winmdroot.Media.MediaFoundation.IMFActivate_unmanaged** pppSourceActivate, out uint pcSourceActivate"],
         // Check that GetObject optional parameters got an overload with marshalled interface types
-        ["IWbemServices", "GetObject", "this winmdroot.System.Wmi.IWbemServices @this, SafeHandle strObjectPath, winmdroot.System.Wmi.WBEM_GENERIC_FLAG_TYPE lFlags, winmdroot.System.Wmi.IWbemContext pCtx, ref winmdroot.System.Wmi.IWbemClassObject ppObject, ref winmdroot.System.Wmi.IWbemCallResult ppCallResult"],
+        ["IWbemServices", "GetObject", "this winmdroot.System.Wmi.IWbemServices @this, global::Windows.Win32.SysFreeStringSafeHandle strObjectPath, winmdroot.System.Wmi.WBEM_GENERIC_FLAG_TYPE lFlags, winmdroot.System.Wmi.IWbemContext pCtx, ref winmdroot.System.Wmi.IWbemClassObject ppObject, ref winmdroot.System.Wmi.IWbemCallResult ppCallResult"],
         // NativeOverlapped should be pointer even when not [Retained] as in CancelIoEx.
         ["CancelIoEx", "CancelIoEx", "SafeHandle hFile, [Optional] global::System.Threading.NativeOverlapped* lpOverlapped"],
         ["ITypeInfo", "GetNames", "this winmdroot.System.Com.ITypeInfo @this, int memid, Span<winmdroot.Foundation.BSTR> rgBstrNames, out uint pcNames"],
         ["EnumProcessModules", "EnumProcessModules", "SafeHandle hProcess, Span<byte> lphModule, out uint lpcbNeeded"],
-        ["Windows.Win32.NetworkManagement.WindowsFilteringPlatform.FwpmProviderAdd0", "FwpmProviderAdd0", "SafeHandle engineHandle, in winmdroot.NetworkManagement.WindowsFilteringPlatform.FWPM_PROVIDER0 provider, [Optional] winmdroot.Security.PSECURITY_DESCRIPTOR sd"],
+        ["Windows.Win32.NetworkManagement.WindowsFilteringPlatform.FwpmProviderAdd0", "FwpmProviderAdd0", "global::Windows.Win32.FwpmEngineClose0SafeHandle engineHandle, in winmdroot.NetworkManagement.WindowsFilteringPlatform.FWPM_PROVIDER0 provider, [Optional] winmdroot.Security.PSECURITY_DESCRIPTOR sd"],
         // Verify the ABI signature has [Optional] on Optional and Reserved parameters.
         ["Windows.Win32.NetworkManagement.WindowsFilteringPlatform.FwpmEngineOpen0", "FwpmEngineOpen0", "[Optional] winmdroot.Foundation.PCWSTR serverName, uint authnService, [Optional] winmdroot.System.Rpc.SEC_WINNT_AUTH_IDENTITY_W* authIdentity, [Optional] winmdroot.NetworkManagement.WindowsFilteringPlatform.FWPM_SESSION0* session, winmdroot.NetworkManagement.WindowsFilteringPlatform.FWPM_ENGINE_HANDLE* engineHandle"],
         // WlanCloseHandle accepts an additional reserved parameter. We can still generate safe hanlde for WlanOpenHandle then

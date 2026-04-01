@@ -247,11 +247,7 @@ using System.Runtime.CompilerServices;
                 }
             }
 
-            // Filter out SYSLIB1092 diagnostics (related to DisableRuntimeMarshalling) as they are expected
-            var filteredGeneratorDiagnostics = generatorDiagnostics.Where(d =>
-                !(d.Descriptor.Id == "SYSLIB1092" && d.Descriptor.Title.ToString().Contains("The return value in the managed definition will be converted to an additional 'out' parameter at the end of the parameter list when calling the unmanaged COM method.", StringComparison.OrdinalIgnoreCase)));
-
-            allDiagnostics.AddRange(filteredGeneratorDiagnostics);
+            allDiagnostics.AddRange(generatorDiagnostics.Where(d => !d.IsSuppressed));
         }
         else
         {

@@ -223,6 +223,8 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         ["Windows.Win32.NetworkManagement.WindowsFilteringPlatform.FwpmEngineOpen0", "FwpmEngineOpen0", "[Optional] winmdroot.Foundation.PCWSTR serverName, uint authnService, [Optional] winmdroot.System.Rpc.SEC_WINNT_AUTH_IDENTITY_W* authIdentity, [Optional] winmdroot.NetworkManagement.WindowsFilteringPlatform.FWPM_SESSION0* session, winmdroot.NetworkManagement.WindowsFilteringPlatform.FWPM_ENGINE_HANDLE* engineHandle"],
         // WlanCloseHandle accepts an additional reserved parameter. We can still generate safe hanlde for WlanOpenHandle then
         ["WlanOpenHandle", "WlanOpenHandle", "uint dwClientVersion, out uint pdwNegotiatedVersion, out global::Windows.Win32.WlanCloseHandleSafeHandle phClientHandle"],
+        // Has an out reference of a handle that cannot be trivially converted to a SafeHandle
+        ["Windows.Win32.NetworkManagement.WindowsFilteringPlatform.FwpmFilterCreateEnumHandle0", "FwpmFilterCreateEnumHandle0", "SafeHandle engineHandle, [Optional] winmdroot.NetworkManagement.WindowsFilteringPlatform.FWPM_FILTER_ENUM_TEMPLATE0? enumTemplate, out winmdroot.NetworkManagement.WindowsFilteringPlatform.FWPM_FILTER_ENUM_HANDLE enumHandle"]
     ];
 
     [Theory]

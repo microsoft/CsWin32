@@ -28,28 +28,23 @@
 .subsystem 0x0003
 .corflags 0x00000001
 
-.class public abstract auto autochar sealed beforefieldinit OSClient.Repro.NamespaceAnchor
-       extends [netstandard]System.Object
-{
-} // end of class OSClient.Repro.NamespaceAnchor
-
-.class public abstract auto autochar sealed beforefieldinit OSClient.WNF.Apis
+.class public abstract auto autochar sealed beforefieldinit WNF.Apis
        extends [netstandard]System.Object
 {
   .method public hidebysig static pinvokeimpl("ntdll.dll" nomangle winapi)
           valuetype [Windows.Win32.winmd]Windows.Win32.Foundation.NTSTATUS
-          RtlSubscribeWnfStateChangeNotification([out] valuetype OSClient.WNF.PWNF_USER_SUBSCRIPTION* Subscription) cil managed
+          RtlSubscribeWnfStateChangeNotification([out] valuetype WNF.Types.PWNF_USER_SUBSCRIPTION* Subscription) cil managed
   {
   }
 
   .method public hidebysig static pinvokeimpl("ntdll.dll" nomangle winapi)
           valuetype [Windows.Win32.winmd]Windows.Win32.Foundation.NTSTATUS
-          RtlUnsubscribeWnfStateChangeNotification([in] valuetype OSClient.WNF.PWNF_USER_SUBSCRIPTION Subscription) cil managed
+          RtlUnsubscribeWnfStateChangeNotification([in] valuetype WNF.Types.PWNF_USER_SUBSCRIPTION Subscription) cil managed
   {
   }
-} // end of class OSClient.WNF.Apis
+} // end of class WNF.Apis
 
-.class public sequential ansi sealed beforefieldinit OSClient.WNF.PWNF_USER_SUBSCRIPTION
+.class public sequential ansi sealed beforefieldinit WNF.Types.PWNF_USER_SUBSCRIPTION
        extends [netstandard]System.ValueType
 {
   .custom instance void [Windows.Win32.winmd]Windows.Win32.Foundation.Metadata.RAIIFreeAttribute::.ctor(string) = ( 01 00 28 52 74 6C 55 6E 73 75 62 73 63 72 69 62   // ..(RtlUnsubscrib
@@ -58,4 +53,4 @@
   .custom instance void [Windows.Win32.winmd]Windows.Win32.Foundation.Metadata.InvalidHandleValueAttribute::.ctor(int64) = ( 01 00 00 00 00 00 00 00 00 00 00 00 )
   .custom instance void [Windows.Win32.winmd]Windows.Win32.Foundation.Metadata.NativeTypedefAttribute::.ctor() = ( 01 00 00 00 )
   .field public void* Value
-} // end of class OSClient.WNF.PWNF_USER_SUBSCRIPTION
+} // end of class WNF.Types.PWNF_USER_SUBSCRIPTION

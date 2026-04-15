@@ -364,13 +364,13 @@ public partial class Generator
                 pointedElementInfo.Generator.TryGetHandleReleaseMethod(pointedElementInfo.Handle, paramAttributes, out string? outReleaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, outReleaseMethod) &&
                 (memorySize is null) && !isArray)
             {
+                signatureChanged = true;
+
+                IdentifierNameSyntax localName = IdentifierName(externParam.Identifier.ValueText + "Local");
+
                 // NOTE: We don't handle scenarios where the parameter is [MemorySize] annotated (e.g. EnumProcessModules) or [NativeArrayInfo] (e.g. ITypeInfo.GetNames)
                 if (this.RequestSafeHandle(outReleaseMethod) is TypeSyntax safeHandleType)
                 {
-                    signatureChanged = true;
-
-                    IdentifierNameSyntax typeDefHandleName = IdentifierName(externParam.Identifier.ValueText + "Local");
-
                     // out SafeHandle
                     parameters[paramIndex] = externParam
                         .WithType(safeHandleType.WithTrailingTrivia(TriviaList(Space)))
@@ -381,7 +381,7 @@ public partial class Generator
                         LocalDeclarationStatement(
                             VariableDeclaration(
                                 pointedElementInfo.ToTypeSyntax(parameterTypeSyntaxSettings, GeneratingElement.FriendlyOverload, null).Type,
-                                [VariableDeclarator(typeDefHandleName.Identifier)])));
+                                [VariableDeclarator(localName.Identifier)])));
 
                     ArgumentSyntax ownsHandleArgument = Argument(
                         NameColon(IdentifierName("ownsHandle")),
@@ -408,7 +408,7 @@ public partial class Generator
                                         IdentifierName("InitHandle")),
                                     [
                                         Argument(origName),
-                                        Argument(this.GetIntPtrFromTypeDef(typeDefHandleName, pointedElementInfo)),
+                                        Argument(this.GetIntPtrFromTypeDef(localName, pointedElementInfo)),
                                     ])));
                     }
                     else
@@ -417,11 +417,32 @@ public partial class Generator
                         trailingStatements.Add(ExpressionStatement(AssignmentExpression(
                             SyntaxKind.SimpleAssignmentExpression,
                             origName,
-                            ObjectCreationExpression(safeHandleType, [Argument(this.GetIntPtrFromTypeDef(typeDefHandleName, pointedElementInfo)), ownsHandleArgument]))));
+                            ObjectCreationExpression(safeHandleType, [Argument(this.GetIntPtrFromTypeDef(localName, pointedElementInfo)), ownsHandleArgument]))));
                     }
 
                     // Argument: &SomeLocal
-                    arguments[paramIndex] = Argument(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, typeDefHandleName));
+                    arguments[paramIndex] = Argument(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, localName));
+                }
+                else
+                {
+                    // If we were not able to upgrade the handle to a SafeHandle, at least make it a managed out reference
+                    TypeSyntax underlyingType = ((PointerTypeSyntax)externParam.Type).ElementType;
+
+                    // out ORIGINAL_HANDLE_TYPE
+                    parameters[paramIndex] = externParam
+                        .WithType(underlyingType.WithTrailingTrivia(TriviaList(Space)))
+                        .WithModifiers([TokenWithSpace(SyntaxKind.OutKeyword)]);
+
+                    // fixed (ORIGINAL_HANDLE_TYPE* someHandleLocal = &someHandle)
+                    fixedBlocks.Add(
+                        VariableDeclaration(
+                            externParam.Type,
+                            [VariableDeclarator(
+                                localName.Identifier,
+                                EqualsValueClause(
+                                    PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName(externParam.Identifier))))]));
+
+                    arguments[paramIndex] = Argument(localName);
                 }
             }
             else if (this.options.UseSafeHandles && isIn && !isOut && !isReleaseMethod && parameterTypeInfo is HandleTypeHandleInfo parameterHandleTypeInfo && this.TryGetHandleReleaseMethod(parameterHandleTypeInfo.Handle, paramAttributes, out string? releaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, releaseMethod)

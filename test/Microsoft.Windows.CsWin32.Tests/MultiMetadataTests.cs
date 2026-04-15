@@ -31,4 +31,14 @@ public class MultiMetadataTests : GeneratorTestBase
         this.generator = this.CreateSuperGenerator([.. DefaultMetadataPaths, CustomIInspectableMetadataPath], options);
         this.GenerateApi("ITestDerivedFromInspectable");
     }
+
+    [Fact]
+    public void CrossWinMD_NTSTATUSSafeHandleConstant()
+    {
+        this.generator = this.CreateSuperGenerator([WnfWithoutStatusSuccessMetadataPath, MetadataPath], DefaultTestGeneratorOptions);
+        this.GenerateApi("RtlSubscribeWnfStateChangeNotification");
+
+        Assert.Contains(this.FindGeneratedType("RtlUnsubscribeWnfStateChangeNotificationSafeHandle"), static type => type is ClassDeclarationSyntax);
+        Assert.NotEmpty(this.FindGeneratedConstant("STATUS_SUCCESS"));
+    }
 }

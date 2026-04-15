@@ -607,6 +607,17 @@ using global::System.Runtime.Versioning;
     }
 
     [Fact]
+    public async Task CrossWinMD_NTSTATUSSafeHandleConstant()
+    {
+        this.compilation = this.starterCompilations["net8.0"];
+        this.win32winmdPaths = [WnfWithoutStatusSuccessMetadataPath, .. this.win32winmdPaths!];
+        this.nativeMethods.Add("RtlSubscribeWnfStateChangeNotification");
+        await this.InvokeGeneratorAndCompileFromFact();
+
+        Assert.Contains(this.FindGeneratedType("RtlUnsubscribeWnfStateChangeNotificationSafeHandle"), static type => type is ClassDeclarationSyntax);
+    }
+
+    [Fact]
     public async Task TestComVariantReturnValue()
     {
         // IUIAutomationElement has methods that return VARIANT, they should be translated to ComVariant

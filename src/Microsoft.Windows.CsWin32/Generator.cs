@@ -1522,10 +1522,17 @@ public partial class Generator : IGenerator, IDisposable
 
     private void TryGenerateConstantOrThrow(string possiblyQualifiedName)
     {
-        if (!this.TryGenerateConstant(possiblyQualifiedName, out _))
+        if (this.TryGenerateConstant(possiblyQualifiedName, out _))
         {
-            throw new GenerationFailedException("Unable to find expected constant: " + possiblyQualifiedName);
+            return;
         }
+
+        if (this.SuperGenerator?.TryGenerateConstant(possiblyQualifiedName, out _) is true)
+        {
+            return;
+        }
+
+        throw new GenerationFailedException("Unable to find expected constant: " + possiblyQualifiedName);
     }
 
     private MethodDeclarationSyntax CreateAsSpanMethodOverValueAndLength(TypeSyntax spanType)

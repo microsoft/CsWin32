@@ -241,6 +241,20 @@ public class SuperGenerator : IGenerator, IDisposable
         }
     }
 
+    internal bool TryGenerateConstant(string possiblyQualifiedName, out IReadOnlyCollection<string> preciseApi)
+    {
+        List<string> preciseApiAccumulator = new();
+        bool success = false;
+        foreach (Generator generator in this.Generators.Values)
+        {
+            success |= generator.TryGenerateConstant(possiblyQualifiedName, out preciseApi);
+            preciseApiAccumulator.AddRange(preciseApi);
+        }
+
+        preciseApi = preciseApiAccumulator;
+        return success;
+    }
+
     /// <summary>
     /// Looks up the <see cref="Generator"/> that owns a referenced type.
     /// </summary>

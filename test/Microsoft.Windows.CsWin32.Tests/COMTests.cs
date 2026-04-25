@@ -552,4 +552,34 @@ public class COMTests : GeneratorTestBase
 
         // TODO: Check "GetResourceAllocationInfo"
     }
+
+    /// <summary>
+    /// Verifies that under COM source generators, structs whose only "managed" trait is a pointer-to-COM-interface field
+    /// are not duplicated as a separate <c>_unmanaged</c> variant. Both projections would be byte-for-byte identical, so
+    /// we should route callers to the safe variant rather than force them through the redundant unsafe one.
+    /// </summary>
+    /// <seealso href="https://github.com/microsoft/CsWin32/issues/1682"/>
+    [Fact]
+    public void StructWithComInterfaceField_NoUnmanagedDuplicate_UnderSourceGenerators()
+    {
+        this.compilation = this.starterCompilations["net8.0"];
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with
+        {
+            AllowMarshaling = true,
+            ComInterop = new GeneratorOptions.ComInteropOptions { UseComSourceGenerators = true },
+        });
+        this.GenerateApi("ID2D1DeviceContext6");
+
+        // The CreateBitmapFromDxgiSurface parameter must reference D2D1_BITMAP_PROPERTIES1, not D2D1_BITMAP_PROPERTIES1_unmanaged,
+        // because under source generators the two struct projections are layout-equivalent.
+        Assert.Empty(this.FindGeneratedType("D2D1_BITMAP_PROPERTIES1_unmanaged"));
+        Assert.NotEmpty(this.FindGeneratedType("D2D1_BITMAP_PROPERTIES1"));
+
+        MethodDeclarationSyntax createBitmapFromDxgiSurface = this.FindGeneratedMethod("CreateBitmapFromDxgiSurface")
+            .First(m => m.Parent is InterfaceDeclarationSyntax);
+        ParameterSyntax bitmapPropertiesParameter = createBitmapFromDxgiSurface.ParameterList.Parameters[1];
+        string parameterTypeText = bitmapPropertiesParameter.Type!.ToString();
+        Assert.Contains("D2D1_BITMAP_PROPERTIES1", parameterTypeText);
+        Assert.DoesNotContain("D2D1_BITMAP_PROPERTIES1_unmanaged", parameterTypeText);
+    }
 }

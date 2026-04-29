@@ -7,9 +7,9 @@ using System.Diagnostics;
 /// Tests that generate everything possible, or subsets of everything.
 /// </summary>
 /// <remarks>
-/// These tests tend to be slow, and some require 4GB of memory, and thus some cannot be run on Azure Pipelines
-/// as the test host process gets too large and gets terminated.
-/// The <see cref="Everything"/> test should be run in all its combinations manually prior to sending a pull request.
+/// These tests tend to be slow and require ~4GB of memory each. They are tagged with
+/// <c>[Trait("TestCategory", "HighMemory")]</c> and run in a dedicated CI job with
+/// limited parallelism to avoid OOM on memory-constrained agents.
 /// </remarks>
 public class FullGenerationTests : GeneratorTestBase
 {
@@ -18,14 +18,14 @@ public class FullGenerationTests : GeneratorTestBase
     {
     }
 
-    [Trait("TestCategory", "FailsInCloudTest")] // these take ~4GB of memory to run.
+    [Trait("TestCategory", "HighMemory")] // these take ~4GB of memory to run.
     [Fact]
     public void Everything_NoFriendlyOverloads()
     {
         this.TestHelper(new GeneratorOptions { FriendlyOverloads = new() { Enabled = false } }, Platform.X64, "net8.0", generator => generator.GenerateAll(CancellationToken.None));
     }
 
-    [Trait("TestCategory", "FailsInCloudTest")] // these take ~4GB of memory to run.
+    [Trait("TestCategory", "HighMemory")] // these take ~4GB of memory to run.
     [Theory, PairwiseData]
     public void Everything(
         MarshalingOptions marshaling,
@@ -36,7 +36,7 @@ public class FullGenerationTests : GeneratorTestBase
         this.TestHelper(OptionsForMarshaling(marshaling, useIntPtrForComOutPtr), platform, tfm, generator => generator.GenerateAll(CancellationToken.None));
     }
 
-    [Trait("TestCategory", "FailsInCloudTest")] // these take ~4GB of memory to run.
+    [Trait("TestCategory", "HighMemory")] // these take ~4GB of memory to run.
     [Theory, PairwiseData]
     public void InteropTypes(
         MarshalingOptions marshaling,
@@ -53,7 +53,7 @@ public class FullGenerationTests : GeneratorTestBase
     }
 
     [Theory, PairwiseData]
-    [Trait("TestCategory", "FailsInCloudTest")] // these take ~4GB of memory to run.
+    [Trait("TestCategory", "HighMemory")] // these take ~4GB of memory to run.
     public void ExternMethods(
         MarshalingOptions marshaling,
         bool useIntPtrForComOutPtr,

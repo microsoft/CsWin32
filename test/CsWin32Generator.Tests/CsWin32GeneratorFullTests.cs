@@ -14,7 +14,7 @@ public partial class CsWin32GeneratorFullTests : CsWin32GeneratorTestsBase
     }
 
     [Theory]
-    [Trait("TestCategory", "FailsInCloudTest")] // these take ~4GB of memory to run.
+    [Trait("TestCategory", "HighMemory")] // these take ~4GB of memory to run.
     [InlineData("net8.0", LanguageVersion.CSharp12)]
     [InlineData("net9.0", LanguageVersion.CSharp13)]
     [InlineData("net9.0", LanguageVersion.CSharp13, true)]

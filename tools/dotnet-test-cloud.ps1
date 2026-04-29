@@ -50,7 +50,7 @@ $testDiagLog = Join-Path $ArtifactStagingFolder (Join-Path test_logs diag.log)
 & $dotnet test $RepoRoot `
     --no-build `
     -c $Configuration `
-    --filter "TestCategory!=FailsInCloudTest$env:TESTFILTER" `
+    --filter "TestCategory!=HighMemory&TestCategory!=RequiresHardware$env:TESTFILTER" `
     --collect "Code Coverage;Format=cobertura" `
     --settings "$PSScriptRoot/test.runsettings" `
     --blame-hang-timeout 1500s `

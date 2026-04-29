@@ -44,7 +44,7 @@ public class COMTests
 #endif
 
     [Fact]
-    [Trait("TestCategory", "FailsInCloudTest")] // D3D APIs fail in cloud VMs
+    [Trait("TestCategory", "RequiresHardware")] // D3D APIs fail in cloud VMs
     public unsafe void ReturnValueMarshalsCorrectly()
     {
         // Create an ID2D1HwndRenderTarget and verify GetHwnd returns the original HWND.

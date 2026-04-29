@@ -20,9 +20,9 @@ env:
   BuildConfiguration: Release
 
 jobs:
-  build:
-    name: 🛠️ Build
-    runs-on: ubuntu-latest
+  test-fast-windows:
+    name: 🧪 Tests (Windows)
+    runs-on: windows-latest
     steps:
     - uses: actions/checkout@v4
       with:
@@ -32,29 +32,6 @@ jobs:
       shell: pwsh
     - name: 🛠️ Build
       run: dotnet build -t:build,pack -c ${{ env.BuildConfiguration }} -warnAsError -warnNotAsError:NU1901,NU1902,NU1903,NU1904
-    - name: 📦 Upload build output
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-output
-        path: bin/
-        retention-days: 1
-
-  test-fast-windows:
-    name: 🧪 Tests (Windows)
-    needs: build
-    runs-on: windows-latest
-    steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-    - name: ⚙️ Install prerequisites
-      run: ./init.ps1 -UpgradePrerequisites -NoNuGetCredProvider
-      shell: pwsh
-    - name: 📦 Download build
-      uses: actions/download-artifact@v4
-      with:
-        name: build-output
-        path: bin/
     - name: 🧪 Run tests
       run: |
         dotnet test --no-build -c ${{ env.BuildConfiguration }} `
@@ -74,7 +51,6 @@ jobs:
 
   test-fast-linux:
     name: 🧪 Tests (Linux)
-    needs: build
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -83,11 +59,8 @@ jobs:
     - name: ⚙️ Install prerequisites
       run: ./init.ps1 -UpgradePrerequisites -NoNuGetCredProvider
       shell: pwsh
-    - name: 📦 Download build
-      uses: actions/download-artifact@v4
-      with:
-        name: build-output
-        path: bin/
+    - name: 🛠️ Build
+      run: dotnet build -t:build,pack -c ${{ env.BuildConfiguration }} -warnAsError -warnNotAsError:NU1901,NU1902,NU1903,NU1904
     - name: 🧪 Run tests
       run: |
         dotnet test --no-build -c ${{ env.BuildConfiguration }} `
@@ -107,7 +80,6 @@ jobs:
 
   test-heavy:
     name: 🧪 Heavy tests (Windows)
-    needs: build
     runs-on: windows-latest
     steps:
     - uses: actions/checkout@v4
@@ -116,14 +88,10 @@ jobs:
     - name: ⚙️ Install prerequisites
       run: ./init.ps1 -UpgradePrerequisites -NoNuGetCredProvider
       shell: pwsh
-    - name: 📦 Download build
-      uses: actions/download-artifact@v4
-      with:
-        name: build-output
-        path: bin/
+    - name: 🛠️ Build
+      run: dotnet build -t:build,pack -c ${{ env.BuildConfiguration }} -warnAsError -warnNotAsError:NU1901,NU1902,NU1903,NU1904
     - name: 🧪 Run heavy tests (parallelism limited to fit in 16GB)
       run: |
-        # Run each heavy test project separately with limited parallelism.
         # Each test uses ~4GB peak memory; with maxParallelThreads=2, peak is ~8GB which fits in 16GB.
         dotnet test --no-build -c ${{ env.BuildConfiguration }} `
           --filter "TestCategory=HighMemory" `

@@ -90,6 +90,7 @@ jobs:
   test-heavy:
     name: 🧪 Heavy tests (Windows)
     runs-on: windows-latest
+    timeout-minutes: 240
     steps:
     - uses: actions/checkout@v4
       with:
@@ -103,15 +104,16 @@ jobs:
       run: |
         # Each test uses ~4GB peak memory; with maxParallelThreads=2, peak is ~8GB which fits in 16GB.
         # Target only the projects that have HighMemory tests to avoid "no tests matched" failures.
+        # Use a long hang timeout — individual FullGeneration tests can take 30-60 minutes each.
         dotnet test test/Microsoft.Windows.CsWin32.Tests --no-build -c ${{ env.BuildConfiguration }} `
           --filter "TestCategory=HighMemory" `
-          --blame-hang-timeout 1800s `
+          --blame-hang-timeout 7200s `
           --blame-crash `
           --logger trx `
           --results-directory TestResults
         dotnet test test/CsWin32Generator.Tests --no-build -c ${{ env.BuildConfiguration }} `
           --filter "TestCategory=HighMemory" `
-          --blame-hang-timeout 1800s `
+          --blame-hang-timeout 7200s `
           --blame-crash `
           --logger trx `
           --results-directory TestResults

@@ -14,6 +14,9 @@ on:
     - azure-pipelines/release.yml
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   NBGV_GitEngine: Disabled
@@ -88,9 +91,25 @@ jobs:
         retention-days: 5
 
   test-heavy:
-    name: 🧪 Heavy tests (Windows)
+    name: 🧪 Heavy (${{ matrix.name }})
     runs-on: windows-latest
-    timeout-minutes: 240
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ExternMethods
+            project: test/Microsoft.Windows.CsWin32.Tests
+            filter: "TestCategory=HighMemory&FullyQualifiedName~ExternMethods"
+          - name: Everything
+            project: test/Microsoft.Windows.CsWin32.Tests
+            filter: "TestCategory=HighMemory&FullyQualifiedName~Everything"
+          - name: InteropTypes
+            project: test/Microsoft.Windows.CsWin32.Tests
+            filter: "TestCategory=HighMemory&FullyQualifiedName~InteropTypes"
+          - name: FullGeneration
+            project: test/CsWin32Generator.Tests
+            filter: "TestCategory=HighMemory"
     steps:
     - uses: actions/checkout@v4
       with:
@@ -100,19 +119,10 @@ jobs:
       shell: pwsh
     - name: 🛠️ Build
       run: dotnet build -t:build,pack -c ${{ env.BuildConfiguration }} -warnAsError -warnNotAsError:NU1901,NU1902,NU1903,NU1904
-    - name: 🧪 Run heavy tests (parallelism limited to fit in 16GB)
+    - name: 🧪 Run heavy tests
       run: |
-        # Each test uses ~4GB peak memory; with maxParallelThreads=2, peak is ~8GB which fits in 16GB.
-        # Target only the projects that have HighMemory tests to avoid "no tests matched" failures.
-        # Use a long hang timeout — individual FullGeneration tests can take 30-60 minutes each.
-        dotnet test test/Microsoft.Windows.CsWin32.Tests --no-build -c ${{ env.BuildConfiguration }} `
-          --filter "TestCategory=HighMemory" `
-          --blame-hang-timeout 7200s `
-          --blame-crash `
-          --logger trx `
-          --results-directory TestResults
-        dotnet test test/CsWin32Generator.Tests --no-build -c ${{ env.BuildConfiguration }} `
-          --filter "TestCategory=HighMemory" `
+        dotnet test ${{ matrix.project }} --no-build -c ${{ env.BuildConfiguration }} `
+          --filter "${{ matrix.filter }}" `
           --blame-hang-timeout 7200s `
           --blame-crash `
           --logger trx `
@@ -124,6 +134,6 @@ jobs:
       uses: actions/upload-artifact@v4
       if: always()
       with:
-        name: test-results-heavy
+        name: test-results-heavy-${{ matrix.name }}
         path: TestResults/
         retention-days: 5

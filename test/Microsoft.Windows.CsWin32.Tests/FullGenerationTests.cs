@@ -19,6 +19,7 @@ public class FullGenerationTests : GeneratorTestBase
     }
 
     [Trait("TestCategory", "HighMemory")] // these take ~4GB of memory to run.
+    [Trait("TestShard", "3")]
     [Fact]
     public void Everything_NoFriendlyOverloads()
     {
@@ -26,6 +27,7 @@ public class FullGenerationTests : GeneratorTestBase
     }
 
     [Trait("TestCategory", "HighMemory")] // these take ~4GB of memory to run.
+    [Trait("TestShard", "2")]
     [Theory, PairwiseData]
     public void Everything(
         MarshalingOptions marshaling,
@@ -37,6 +39,7 @@ public class FullGenerationTests : GeneratorTestBase
     }
 
     [Trait("TestCategory", "HighMemory")] // these take ~4GB of memory to run.
+    [Trait("TestShard", "3")]
     [Theory, PairwiseData]
     public void InteropTypes(
         MarshalingOptions marshaling,
@@ -54,6 +57,7 @@ public class FullGenerationTests : GeneratorTestBase
 
     [Theory, PairwiseData]
     [Trait("TestCategory", "HighMemory")] // these take ~4GB of memory to run.
+    [Trait("TestShard", "1")]
     public void ExternMethods(
         MarshalingOptions marshaling,
         bool useIntPtrForComOutPtr,

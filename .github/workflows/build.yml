@@ -98,18 +98,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: ExternMethods
-            project: test/Microsoft.Windows.CsWin32.Tests
-            filter: "TestCategory=HighMemory&FullyQualifiedName~ExternMethods"
-          - name: Everything
-            project: test/Microsoft.Windows.CsWin32.Tests
-            filter: "TestCategory=HighMemory&FullyQualifiedName~Everything"
-          - name: InteropTypes
-            project: test/Microsoft.Windows.CsWin32.Tests
-            filter: "TestCategory=HighMemory&FullyQualifiedName~InteropTypes"
-          - name: FullGeneration
-            project: test/CsWin32Generator.Tests
-            filter: "TestCategory=HighMemory"
+          - name: Shard1
+            filter: "TestCategory=HighMemory&TestShard=1"
+          - name: Shard2
+            filter: "TestCategory=HighMemory&TestShard=2"
+          - name: Shard3
+            filter: "TestCategory=HighMemory&TestShard=3"
+          - name: Default
+            filter: "TestCategory=HighMemory&TestShard!=1&TestShard!=2&TestShard!=3"
     steps:
     - uses: actions/checkout@v4
       with:
@@ -121,12 +117,20 @@ jobs:
       run: dotnet build -t:build,pack -c ${{ env.BuildConfiguration }} -warnAsError -warnNotAsError:NU1901,NU1902,NU1903,NU1904
     - name: 🧪 Run heavy tests
       run: |
-        dotnet test ${{ matrix.project }} --no-build -c ${{ env.BuildConfiguration }} `
+        dotnet test test/Microsoft.Windows.CsWin32.Tests --no-build -c ${{ env.BuildConfiguration }} `
           --filter "${{ matrix.filter }}" `
           --blame-hang-timeout 7200s `
           --blame-crash `
           --logger trx `
-          --results-directory TestResults
+          --results-directory TestResults `
+          -- RunConfiguration.TreatNoTestsAsError=false
+        dotnet test test/CsWin32Generator.Tests --no-build -c ${{ env.BuildConfiguration }} `
+          --filter "${{ matrix.filter }}" `
+          --blame-hang-timeout 7200s `
+          --blame-crash `
+          --logger trx `
+          --results-directory TestResults `
+          -- RunConfiguration.TreatNoTestsAsError=false
       shell: pwsh
       env:
         XUNIT_MAX_PARALLEL_THREADS: 2

@@ -23,8 +23,8 @@ env:
   BuildConfiguration: Release
 
 jobs:
-  test-fast-windows:
-    name: 🧪 Tests (Windows)
+  build:
+    name: 🛠️ Build
     runs-on: windows-latest
     steps:
     - uses: actions/checkout@v4
@@ -35,6 +35,29 @@ jobs:
       shell: pwsh
     - name: 🛠️ Build
       run: dotnet build -t:build,pack -c ${{ env.BuildConfiguration }} -warnAsError -warnNotAsError:NU1901,NU1902,NU1903,NU1904
+    - name: 📦 Upload build output
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-windows
+        path: bin/
+        retention-days: 1
+
+  test-fast-windows:
+    name: 🧪 Tests (Windows)
+    needs: build
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: ⚙️ Install prerequisites
+      run: ./init.ps1 -UpgradePrerequisites -NoNuGetCredProvider
+      shell: pwsh
+    - name: 📦 Download build
+      uses: actions/download-artifact@v4
+      with:
+        name: build-windows
+        path: bin/
     - name: 🧪 Run tests
       run: |
         dotnet test --no-build -c ${{ env.BuildConfiguration }} `
@@ -92,20 +115,34 @@ jobs:
 
   test-heavy:
     name: 🧪 Heavy (${{ matrix.name }})
+    needs: build
     runs-on: windows-latest
     timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: Shard1
-            filter: "TestCategory=HighMemory&TestShard=1"
-          - name: Shard2
-            filter: "TestCategory=HighMemory&TestShard=2"
-          - name: Shard3
-            filter: "TestCategory=HighMemory&TestShard=3"
+          - name: FastMethods
+            filter: "TestCategory=HighMemory&TestShard=FastMethods"
+            threads: "2"
+          - name: EverythingModern
+            filter: "TestCategory=HighMemory&TestShard=EverythingModern"
+            threads: "2"
+          - name: EverythingLegacy
+            filter: "TestCategory=HighMemory&TestShard=EverythingLegacy"
+            threads: "2"
+          - name: FullGen-Net8
+            filter: "TestCategory=HighMemory&TestShard=FullGen-Net8"
+            threads: "1"
+          - name: FullGen-Net9
+            filter: "TestCategory=HighMemory&TestShard=FullGen-Net9"
+            threads: "1"
+          - name: FullGen-Net9-Ptrs
+            filter: "TestCategory=HighMemory&TestShard=FullGen-Net9-Ptrs"
+            threads: "1"
           - name: Default
-            filter: "TestCategory=HighMemory&TestShard!=1&TestShard!=2&TestShard!=3"
+            filter: "TestCategory=HighMemory&TestShard!=FastMethods&TestShard!=EverythingModern&TestShard!=EverythingLegacy&TestShard!=FullGen-Net8&TestShard!=FullGen-Net9&TestShard!=FullGen-Net9-Ptrs"
+            threads: "1"
     steps:
     - uses: actions/checkout@v4
       with:
@@ -113,8 +150,11 @@ jobs:
     - name: ⚙️ Install prerequisites
       run: ./init.ps1 -UpgradePrerequisites -NoNuGetCredProvider
       shell: pwsh
-    - name: 🛠️ Build
-      run: dotnet build -t:build,pack -c ${{ env.BuildConfiguration }} -warnAsError -warnNotAsError:NU1901,NU1902,NU1903,NU1904
+    - name: 📦 Download build
+      uses: actions/download-artifact@v4
+      with:
+        name: build-windows
+        path: bin/
     - name: 🧪 Run heavy tests
       run: |
         dotnet test test/Microsoft.Windows.CsWin32.Tests --no-build -c ${{ env.BuildConfiguration }} `
@@ -133,7 +173,7 @@ jobs:
           -- RunConfiguration.TreatNoTestsAsError=false
       shell: pwsh
       env:
-        XUNIT_MAX_PARALLEL_THREADS: 2
+        XUNIT_MAX_PARALLEL_THREADS: ${{ matrix.threads }}
     - name: 📢 Upload test results
       uses: actions/upload-artifact@v4
       if: always()

@@ -110,7 +110,7 @@ public partial class COMTests(ITestOutputHelper outputHelper)
 
 
     [Fact]
-    [Trait("TestCategory", "FailsInCloudTest")] // D3D APIs fail in cloud VMs
+    [Trait("TestCategory", "RequiresHardware")] // D3D APIs fail in cloud VMs
     public void ReturnValueMarshalsCorrectly()
     {
         // Create an ID2D1HwndRenderTarget and verify GetHwnd returns the original HWND.
@@ -202,7 +202,7 @@ public partial class COMTests(ITestOutputHelper outputHelper)
     }
 
     [Fact]
-    [Trait("TestCategory", "FailsInCloudTest")] // WMI APIs don't work in cloud VMs.
+    [Trait("TestCategory", "RequiresHardware")] // WMI APIs don't work in cloud VMs.
     public void IWbemServices_GetObject_Works()
     {
         Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
@@ -237,7 +237,7 @@ public partial class COMTests(ITestOutputHelper outputHelper)
     }
 
     [Fact]
-    [Trait("TestCategory", "FailsInCloudTest")]
+    [Trait("TestCategory", "RequiresHardware")]
     public void CanCallINetFwMgrApis()
     {
         Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
@@ -267,7 +267,7 @@ public partial class COMTests(ITestOutputHelper outputHelper)
     }
 
     [Fact]
-    [Trait("TestCategory", "FailsInCloudTest")]
+    [Trait("TestCategory", "RequiresHardware")]
     public unsafe void CanCallPnPAPIs()
     {
         Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");

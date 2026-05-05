@@ -13,17 +13,39 @@ public partial class CsWin32GeneratorFullTests : CsWin32GeneratorTestsBase
     {
     }
 
-    [Theory]
-    [Trait("TestCategory", "FailsInCloudTest")] // these take ~4GB of memory to run.
-    [InlineData("net8.0", LanguageVersion.CSharp12)]
-    [InlineData("net9.0", LanguageVersion.CSharp13)]
-    [InlineData("net9.0", LanguageVersion.CSharp13, true)]
-    public async Task FullGeneration(string tfm, LanguageVersion langVersion, bool includePointerOverloads = false)
+    [Fact]
+    [Trait("TestCategory", "HighMemory")]
+    [Trait("TestShard", "FullGen-Net8")]
+    public async Task FullGeneration_Net8()
     {
         this.fullGeneration = true;
-        this.compilation = this.starterCompilations[tfm];
-        this.parseOptions = this.parseOptions.WithLanguageVersion(langVersion);
-        this.nativeMethodsJson = includePointerOverloads ? "NativeMethods.IncludePointerOverloads.json" : "NativeMethods.EmitSingleFile.json";
-        await this.InvokeGeneratorAndCompile($"FullGeneration_{tfm}_{langVersion}{(includePointerOverloads ? "_pointers" : string.Empty)}", TestOptions.None);
+        this.compilation = this.starterCompilations["net8.0"];
+        this.parseOptions = this.parseOptions.WithLanguageVersion(LanguageVersion.CSharp12);
+        this.nativeMethodsJson = "NativeMethods.EmitSingleFile.json";
+        await this.InvokeGeneratorAndCompile("FullGeneration_net8.0_CSharp12", TestOptions.None);
+    }
+
+    [Fact]
+    [Trait("TestCategory", "HighMemory")]
+    [Trait("TestShard", "FullGen-Net9")]
+    public async Task FullGeneration_Net9()
+    {
+        this.fullGeneration = true;
+        this.compilation = this.starterCompilations["net9.0"];
+        this.parseOptions = this.parseOptions.WithLanguageVersion(LanguageVersion.CSharp13);
+        this.nativeMethodsJson = "NativeMethods.EmitSingleFile.json";
+        await this.InvokeGeneratorAndCompile("FullGeneration_net9.0_CSharp13", TestOptions.None);
+    }
+
+    [Fact]
+    [Trait("TestCategory", "HighMemory")]
+    [Trait("TestShard", "FullGen-Net9-Ptrs")]
+    public async Task FullGeneration_Net9_Pointers()
+    {
+        this.fullGeneration = true;
+        this.compilation = this.starterCompilations["net9.0"];
+        this.parseOptions = this.parseOptions.WithLanguageVersion(LanguageVersion.CSharp13);
+        this.nativeMethodsJson = "NativeMethods.IncludePointerOverloads.json";
+        await this.InvokeGeneratorAndCompile("FullGeneration_net9.0_CSharp13_pointers", TestOptions.None);
     }
 }

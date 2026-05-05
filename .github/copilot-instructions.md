@@ -14,7 +14,7 @@
 
 * There should generally be one test project (under the `test` directory) per shipping project (under the `src` directory). Test projects are named after the project being tested with a `.Test` suffix.
 * Tests should use the Xunit testing framework.
-* Some tests are known to be unstable. When running tests, you should skip the unstable ones by running `dotnet test --filter "TestCategory!=FailsInCloudTest"`.
+* Some tests are known to be unstable or require special hardware. When running tests locally, you can skip hardware-dependent tests by running `dotnet test --filter "TestCategory!=RequiresHardware"`. To also skip high-memory tests (which each consume ~4GB), add `&TestCategory!=HighMemory` to the filter.
 
 ## Coding style
 

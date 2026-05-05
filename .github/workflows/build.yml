@@ -1,0 +1,203 @@
+name: 🏗️ Build & Test
+
+on:
+  pull_request:
+  push:
+    branches:
+    - main
+    - 'v*.*'
+    - 'validate/*'
+    paths-ignore:
+    - doc/
+    - '*.md'
+    - .vscode/
+    - azure-pipelines/release.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  NBGV_GitEngine: Disabled
+  BuildConfiguration: Release
+
+jobs:
+  build:
+    name: 🛠️ Build
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: ⚙️ Install prerequisites
+      run: ./init.ps1 -UpgradePrerequisites -NoNuGetCredProvider
+      shell: pwsh
+    - name: 🛠️ Build
+      run: dotnet build -t:build,pack -c ${{ env.BuildConfiguration }} -warnAsError -warnNotAsError:NU1901,NU1902,NU1903,NU1904
+    - name: 📦 Upload build output
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-windows
+        path: bin/
+        retention-days: 1
+
+  test-fast-windows:
+    name: 🧪 Tests (Windows)
+    needs: build
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: ⚙️ Install prerequisites
+      run: ./init.ps1 -UpgradePrerequisites -NoNuGetCredProvider
+      shell: pwsh
+    - name: 📦 Download build
+      uses: actions/download-artifact@v4
+      with:
+        name: build-windows
+        path: bin/
+    - name: 🧪 Run tests
+      run: |
+        dotnet test --no-build -c ${{ env.BuildConfiguration }} `
+          --filter "TestCategory!=HighMemory&TestCategory!=RequiresHardware" `
+          --blame-hang-timeout 600s `
+          --blame-crash `
+          --logger trx `
+          --results-directory TestResults
+      shell: pwsh
+    - name: 📢 Upload test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: test-results-windows
+        path: TestResults/
+        retention-days: 5
+
+  test-fast-linux:
+    name: 🧪 Tests (Linux)
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: ⚙️ Install prerequisites
+      run: ./init.ps1 -UpgradePrerequisites -NoNuGetCredProvider
+      shell: pwsh
+    - name: 🛠️ Build
+      run: dotnet build -t:build,pack -c ${{ env.BuildConfiguration }} -warnAsError -warnNotAsError:NU1901,NU1902,NU1903,NU1904
+    - name: 🧪 Run tests
+      run: |
+        # Only run cross-platform test projects. Windows-specific projects
+        # (GenerationSandbox.*, SpellChecker, WinRTInteropTest) use Windows TFMs
+        # and produce app hosts that cannot execute on Linux.
+        dotnet test test/CsWin32Generator.Tests --no-build -c ${{ env.BuildConfiguration }} `
+          --filter "TestCategory!=HighMemory&TestCategory!=RequiresHardware" `
+          --blame-hang-timeout 600s `
+          --blame-crash `
+          --logger trx `
+          --results-directory TestResults
+        dotnet test test/Microsoft.Windows.CsWin32.Tests --no-build -c ${{ env.BuildConfiguration }} `
+          --filter "TestCategory!=HighMemory&TestCategory!=RequiresHardware" `
+          --blame-hang-timeout 600s `
+          --blame-crash `
+          --logger trx `
+          --results-directory TestResults
+      shell: pwsh
+    - name: 📢 Upload test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: test-results-linux
+        path: TestResults/
+        retention-days: 5
+
+  test-heavy:
+    name: 🧪 Heavy (${{ matrix.name }})
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: FastMethods
+            filter: "TestCategory=HighMemory&TestShard=FastMethods"
+            threads: "2"
+          - name: EverythingModern
+            filter: "TestCategory=HighMemory&TestShard=EverythingModern"
+            threads: "2"
+          - name: EverythingLegacy
+            filter: "TestCategory=HighMemory&TestShard=EverythingLegacy"
+            threads: "2"
+          - name: FullGen-Net8
+            filter: "TestCategory=HighMemory&TestShard=FullGen-Net8"
+            threads: "1"
+          - name: FullGen-Net9
+            filter: "TestCategory=HighMemory&TestShard=FullGen-Net9"
+            threads: "1"
+          - name: FullGen-Net9-Ptrs
+            filter: "TestCategory=HighMemory&TestShard=FullGen-Net9-Ptrs"
+            threads: "1"
+          - name: Default
+            filter: "TestCategory=HighMemory&TestShard!=FastMethods&TestShard!=EverythingModern&TestShard!=EverythingLegacy&TestShard!=FullGen-Net8&TestShard!=FullGen-Net9&TestShard!=FullGen-Net9-Ptrs"
+            threads: "1"
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: ⚙️ Install prerequisites
+      run: ./init.ps1 -UpgradePrerequisites -NoNuGetCredProvider
+      shell: pwsh
+    - name: 📦 Download build
+      uses: actions/download-artifact@v4
+      with:
+        name: build-windows
+        path: bin/
+    - name: 🧪 Run heavy tests
+      run: |
+        dotnet test test/Microsoft.Windows.CsWin32.Tests --no-build -c ${{ env.BuildConfiguration }} `
+          --filter "${{ matrix.filter }}" `
+          --blame-hang-timeout 7200s `
+          --blame-crash `
+          --logger trx `
+          --results-directory TestResults `
+          -- RunConfiguration.TreatNoTestsAsError=false
+        dotnet test test/CsWin32Generator.Tests --no-build -c ${{ env.BuildConfiguration }} `
+          --filter "${{ matrix.filter }}" `
+          --blame-hang-timeout 7200s `
+          --blame-crash `
+          --logger trx `
+          --results-directory TestResults `
+          -- RunConfiguration.TreatNoTestsAsError=false
+      shell: pwsh
+      env:
+        XUNIT_MAX_PARALLEL_THREADS: ${{ matrix.threads }}
+    - name: 📢 Upload test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: test-results-heavy-${{ matrix.name }}
+        path: TestResults/
+        retention-days: 5
+
+  validate:
+    name: ✅ Validate
+    if: always()
+    needs: [build, test-fast-windows, test-fast-linux, test-heavy]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check results
+      run: |
+        echo "Build: ${{ needs.build.result }}"
+        echo "Windows tests: ${{ needs.test-fast-windows.result }}"
+        echo "Linux tests: ${{ needs.test-fast-linux.result }}"
+        echo "Heavy tests: ${{ needs.test-heavy.result }}"
+        if [[ "${{ needs.build.result }}" != "success" ||
+              "${{ needs.test-fast-windows.result }}" != "success" ||
+              "${{ needs.test-fast-linux.result }}" != "success" ||
+              "${{ needs.test-heavy.result }}" != "success" ]]; then
+          echo "::error::One or more required jobs failed or were cancelled."
+          exit 1
+        fi

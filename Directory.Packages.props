@@ -14,7 +14,7 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- We have to use the MessagePack version used by win32metadata (https://github.com/microsoft/CsWin32/issues/371) -->
-    <PackageVersion Include="MessagePack" Version="2.2.85" />
+    <PackageVersion Include="MessagePack" Version="2.5.187" />
     <PackageVersion Include="MessagePackAnalyzer" Version="2.5.192" />
     <PackageVersion Include="Microsoft.Bcl.AsyncInterfaces" Version="9.0.0" />
     <PackageVersion Include="Microsoft.Build.Utilities.Core" Version="16.11.6" />

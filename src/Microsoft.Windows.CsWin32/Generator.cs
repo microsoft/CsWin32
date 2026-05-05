@@ -1219,6 +1219,11 @@ public partial class Generator : IGenerator, IDisposable
     /// <summary>
     /// Determines whether the given type definition needs an "_unmanaged" suffix in its projection.
     /// </summary>
+    /// <param name="reader">The metadata reader for the assembly containing the type.</param>
+    /// <param name="typeDef">The type definition to check.</param>
+    /// <param name="allowMarshaling">A value indicating whether marshaling is allowed.</param>
+    /// <param name="isManagedType">A value indicating whether the type is a managed type.</param>
+    /// <returns><see langword="true"/> if the type should have an "_unmanaged" suffix; otherwise <see langword="false"/>.</returns>
     /// <remarks>
     /// Under COM source generators, structs cannot have a marshaled projection that differs from the unmanaged one
     /// (managed pointer fields always demote to _unmanaged*), so the two variants would be byte-for-byte identical.

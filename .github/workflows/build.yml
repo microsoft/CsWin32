@@ -181,3 +181,23 @@ jobs:
         name: test-results-heavy-${{ matrix.name }}
         path: TestResults/
         retention-days: 5
+
+  validate:
+    name: ✅ Validate
+    if: always()
+    needs: [build, test-fast-windows, test-fast-linux, test-heavy]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check results
+      run: |
+        echo "Build: ${{ needs.build.result }}"
+        echo "Windows tests: ${{ needs.test-fast-windows.result }}"
+        echo "Linux tests: ${{ needs.test-fast-linux.result }}"
+        echo "Heavy tests: ${{ needs.test-heavy.result }}"
+        if [[ "${{ needs.build.result }}" != "success" ||
+              "${{ needs.test-fast-windows.result }}" != "success" ||
+              "${{ needs.test-fast-linux.result }}" != "success" ||
+              "${{ needs.test-heavy.result }}" != "success" ]]; then
+          echo "::error::One or more required jobs failed or were cancelled."
+          exit 1
+        fi

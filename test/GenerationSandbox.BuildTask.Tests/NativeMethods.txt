@@ -70,6 +70,12 @@ WBEM_GENERIC_FLAG_TYPE
 WbemLocator
 CLSCTX
 CoSetProxyBlanket
+CoRegisterClassObject
+CoRevokeClassObject
+CoInitializeEx
+CoUninitialize
+COINIT
+REGCLS
 RPC_C_AUTHN_LEVEL
 RPC_C_IMP_LEVEL
 InitializeProcThreadAttributeList

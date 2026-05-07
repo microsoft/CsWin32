@@ -90,7 +90,7 @@ public partial class Generator
 
         bool improvePointersToSpansAndRefs = this.canUseSpan;
         FriendlyMethodBookkeeping bookkeeping = new();
-        foreach (MethodDeclarationSyntax method in this.DeclareFriendlyOverload(methodDefinition, externMethodDeclaration, declaringTypeName, overloadOf, helperMethodsAdded, avoidWinmdRootAlias, improvePointersToSpansAndRefs, omitOptionalParams: false, bookkeeping))
+        foreach (MethodDeclarationSyntax method in this.DeclareFriendlyOverload(methodDefinition, externMethodDeclaration, declaringTypeName, overloadOf, helperMethodsAdded, avoidWinmdRootAlias, improvePointersToSpansAndRefs, omitOptionalParams: false, promoteUnconvertibleHandles: true, bookkeeping))
         {
             yield return method;
         }
@@ -98,7 +98,7 @@ public partial class Generator
         if (this.Options.FriendlyOverloads.IncludePointerOverloads && improvePointersToSpansAndRefs && bookkeeping.NumSpanByteParameters > 0)
         {
             // If we could use Span and _did_ use span Span and the pointer overloads were requested, then Generate overloads that use pointer types instead of Span<byte>/ReadOnlySpan<byte>.
-            foreach (MethodDeclarationSyntax method in this.DeclareFriendlyOverload(methodDefinition, externMethodDeclaration, declaringTypeName, overloadOf, helperMethodsAdded, avoidWinmdRootAlias, improvePointersToSpansAndRefs: false, omitOptionalParams: false))
+            foreach (MethodDeclarationSyntax method in this.DeclareFriendlyOverload(methodDefinition, externMethodDeclaration, declaringTypeName, overloadOf, helperMethodsAdded, avoidWinmdRootAlias, improvePointersToSpansAndRefs: false, omitOptionalParams: false, promoteUnconvertibleHandles: true))
             {
                 yield return method;
             }
@@ -114,6 +114,7 @@ public partial class Generator
         bool avoidWinmdRootAlias,
         bool improvePointersToSpansAndRefs,
         bool omitOptionalParams,
+        bool promoteUnconvertibleHandles,
         FriendlyMethodBookkeeping? bookkeeping = null)
     {
 #pragma warning disable SA1114 // Parameter list should follow declaration
@@ -152,6 +153,7 @@ public partial class Generator
         int numSpanByteParameters = 0;
         SyntaxToken friendlyMethodName = externMethodDeclaration.Identifier;
         bool emulateMemberFunctionCallConv = friendlyMethodName.ValueText.EndsWith(EmulateMemberFunctionCallConvSuffix);
+        bool hasUnconvertibleHandles = false;
 
         foreach (ParameterHandle paramHandle in methodDefinition.GetParameters())
         {
@@ -448,68 +450,74 @@ public partial class Generator
             else if (this.options.UseSafeHandles && isIn && !isOut && !isReleaseMethod && parameterTypeInfo is HandleTypeHandleInfo parameterHandleTypeInfo && this.TryGetHandleReleaseMethod(parameterHandleTypeInfo.Handle, paramAttributes, out string? releaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, releaseMethod)
                 && !(this.TryGetTypeDefFieldType(parameterHandleTypeInfo, out TypeHandleInfo? fieldType) && !this.IsSafeHandleCompatibleTypeDefFieldType(fieldType)))
             {
-                IdentifierNameSyntax typeDefHandleName = IdentifierName(externParam.Identifier.ValueText + "Local");
-                signatureChanged = true;
+                var isUnconvertibelHandle = this.RequestSafeHandle(releaseMethod) is null;
+                hasUnconvertibleHandles |= isUnconvertibelHandle;
 
-                IdentifierNameSyntax refAddedName = IdentifierName(externParam.Identifier.ValueText + "AddRef");
-
-                // bool hParamNameAddRef = false;
-                leadingOutsideTryStatements.Add(LocalDeclarationStatement(
-                    VariableDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), [VariableDeclarator(refAddedName.Identifier, EqualsValueClause(LiteralExpression(SyntaxKind.FalseLiteralExpression)))])));
-
-                // HANDLE hTemplateFileLocal;
-                leadingStatements.Add(LocalDeclarationStatement(VariableDeclaration(externParam.Type, [VariableDeclarator(typeDefHandleName.Identifier)])));
-
-                // throw new ArgumentNullException(nameof(hTemplateFile));
-                StatementSyntax nullHandleStatement = ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentNullException))).WithArgumentList(ArgumentList(Argument(NameOfExpression(IdentifierName(externParam.Identifier.ValueText))))));
-                if (isOptional)
+                if (!isUnconvertibelHandle || promoteUnconvertibleHandles)
                 {
-                    // (HANDLE)new IntPtr(-1);
-                    HashSet<IntPtr> invalidValues = this.GetInvalidHandleValues(parameterHandleTypeInfo.Handle);
-                    IntPtr invalidValue = invalidValues.Count > 0 ? GetPreferredInvalidHandleValue(invalidValues) : IntPtr.Zero;
-                    ExpressionSyntax invalidExpression = CastExpression(externParam.Type, IntPtrExpr(invalidValue));
+                    IdentifierNameSyntax typeDefHandleName = IdentifierName(externParam.Identifier.ValueText + "Local");
+                    signatureChanged = true;
 
-                    // hTemplateFileLocal = invalid-handle-value;
-                    nullHandleStatement = ExpressionStatement(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, typeDefHandleName, invalidExpression));
+                    IdentifierNameSyntax refAddedName = IdentifierName(externParam.Identifier.ValueText + "AddRef");
+
+                    // bool hParamNameAddRef = false;
+                    leadingOutsideTryStatements.Add(LocalDeclarationStatement(
+                        VariableDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), [VariableDeclarator(refAddedName.Identifier, EqualsValueClause(LiteralExpression(SyntaxKind.FalseLiteralExpression)))])));
+
+                    // HANDLE hTemplateFileLocal;
+                    leadingStatements.Add(LocalDeclarationStatement(VariableDeclaration(externParam.Type, [VariableDeclarator(typeDefHandleName.Identifier)])));
+
+                    // throw new ArgumentNullException(nameof(hTemplateFile));
+                    StatementSyntax nullHandleStatement = ThrowStatement(ObjectCreationExpression(IdentifierName(nameof(ArgumentNullException))).WithArgumentList(ArgumentList(Argument(NameOfExpression(IdentifierName(externParam.Identifier.ValueText))))));
+                    if (isOptional)
+                    {
+                        // (HANDLE)new IntPtr(-1);
+                        HashSet<IntPtr> invalidValues = this.GetInvalidHandleValues(parameterHandleTypeInfo.Handle);
+                        IntPtr invalidValue = invalidValues.Count > 0 ? GetPreferredInvalidHandleValue(invalidValues) : IntPtr.Zero;
+                        ExpressionSyntax invalidExpression = CastExpression(externParam.Type, IntPtrExpr(invalidValue));
+
+                        // hTemplateFileLocal = invalid-handle-value;
+                        nullHandleStatement = ExpressionStatement(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, typeDefHandleName, invalidExpression));
+                    }
+
+                    // if (hTemplateFile is object)
+                    leadingStatements.Add(IfStatement(
+                        BinaryExpression(SyntaxKind.IsExpression, origName, PredefinedType(Token(SyntaxKind.ObjectKeyword))),
+                        Block(
+                            //// hTemplateFile.DangerousAddRef(ref hTemplateFileAddRef);
+                            ExpressionStatement(InvocationExpression(
+                                MemberAccessExpression(
+                                    SyntaxKind.SimpleMemberAccessExpression,
+                                    origName,
+                                    IdentifierName(nameof(SafeHandle.DangerousAddRef))),
+                                [Argument(refAddedName).WithRefKindKeyword(TokenWithSpace(SyntaxKind.RefKeyword))])),
+                            //// hTemplateFileLocal = (HANDLE)hTemplateFile.DangerousGetHandle();
+                            ExpressionStatement(
+                                AssignmentExpression(
+                                    SyntaxKind.SimpleAssignmentExpression,
+                                    typeDefHandleName,
+                                    CastExpression(
+                                        externParam.Type.WithoutTrailingTrivia(),
+                                        InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName(nameof(SafeHandle.DangerousGetHandle))))))
+                                .WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken)))),
+                        //// else hTemplateFileLocal = default;
+                        ElseClause(nullHandleStatement)));
+
+                    // if (hTemplateFileAddRef)
+                    //     hTemplateFile.DangerousRelease();
+                    finallyStatements.Add(
+                        IfStatement(
+                            refAddedName,
+                            ExpressionStatement(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName(nameof(SafeHandle.DangerousRelease))))))
+                        .WithCloseParenToken(TokenWithLineFeed(SyntaxKind.CloseParenToken)));
+
+                    // Accept the SafeHandle instead.
+                    parameters[paramIndex] = externParam
+                        .WithType(IdentifierName(nameof(SafeHandle)).WithTrailingTrivia(TriviaList(Space)));
+
+                    // hParamNameLocal;
+                    arguments[paramIndex] = Argument(typeDefHandleName);
                 }
-
-                // if (hTemplateFile is object)
-                leadingStatements.Add(IfStatement(
-                    BinaryExpression(SyntaxKind.IsExpression, origName, PredefinedType(Token(SyntaxKind.ObjectKeyword))),
-                    Block(
-                        //// hTemplateFile.DangerousAddRef(ref hTemplateFileAddRef);
-                        ExpressionStatement(InvocationExpression(
-                            MemberAccessExpression(
-                                SyntaxKind.SimpleMemberAccessExpression,
-                                origName,
-                                IdentifierName(nameof(SafeHandle.DangerousAddRef))),
-                            [Argument(refAddedName).WithRefKindKeyword(TokenWithSpace(SyntaxKind.RefKeyword))])),
-                        //// hTemplateFileLocal = (HANDLE)hTemplateFile.DangerousGetHandle();
-                        ExpressionStatement(
-                            AssignmentExpression(
-                                SyntaxKind.SimpleAssignmentExpression,
-                                typeDefHandleName,
-                                CastExpression(
-                                    externParam.Type.WithoutTrailingTrivia(),
-                                    InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName(nameof(SafeHandle.DangerousGetHandle))))))
-                            .WithOperatorToken(TokenWithSpaces(SyntaxKind.EqualsToken)))),
-                    //// else hTemplateFileLocal = default;
-                    ElseClause(nullHandleStatement)));
-
-                // if (hTemplateFileAddRef)
-                //     hTemplateFile.DangerousRelease();
-                finallyStatements.Add(
-                    IfStatement(
-                        refAddedName,
-                        ExpressionStatement(InvocationExpression(MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName(nameof(SafeHandle.DangerousRelease))))))
-                    .WithCloseParenToken(TokenWithLineFeed(SyntaxKind.CloseParenToken)));
-
-                // Accept the SafeHandle instead.
-                parameters[paramIndex] = externParam
-                    .WithType(IdentifierName(nameof(SafeHandle)).WithTrailingTrivia(TriviaList(Space)));
-
-                // hParamNameLocal;
-                arguments[paramIndex] = Argument(typeDefHandleName);
             }
             else if ((externParam.Type is PointerTypeSyntax { ElementType: TypeSyntax ptrElementType }
                 && (!IsVoid(ptrElementType) || (improvePointersToSpansAndRefs && isArray))
@@ -1387,7 +1395,16 @@ public partial class Generator
         if (numOptionalParams > 0 && !omitOptionalParams && improvePointersToSpansAndRefs)
         {
             // Generate overloads for optional parameters.
-            foreach (MethodDeclarationSyntax method in this.DeclareFriendlyOverload(methodDefinition, externMethodDeclaration, declaringTypeName, overloadOf, helperMethodsAdded, avoidWinmdRootAlias, improvePointersToSpansAndRefs, omitOptionalParams: true))
+            foreach (MethodDeclarationSyntax method in this.DeclareFriendlyOverload(methodDefinition, externMethodDeclaration, declaringTypeName, overloadOf, helperMethodsAdded, avoidWinmdRootAlias, improvePointersToSpansAndRefs, omitOptionalParams: true, promoteUnconvertibleHandles))
+            {
+                yield return method;
+            }
+        }
+
+        if (promoteUnconvertibleHandles && hasUnconvertibleHandles && !omitOptionalParams)
+        {
+            // Generate overloads with raw unconvertible handles in the signature.
+            foreach (MethodDeclarationSyntax method in this.DeclareFriendlyOverload(methodDefinition, externMethodDeclaration, declaringTypeName, overloadOf, helperMethodsAdded, avoidWinmdRootAlias, improvePointersToSpansAndRefs, omitOptionalParams: false, promoteUnconvertibleHandles: false))
             {
                 yield return method;
             }

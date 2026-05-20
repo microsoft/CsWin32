@@ -243,7 +243,7 @@ public partial class Generator
                                 break;
                             case "LRESULT" when releaseMethod == "ICClose":
                                 this.TryGenerateConstantOrThrow("ICERR_OK");
-                                noerror = CastExpression(ParseName("global::Windows.Win32.Foundation.LRESULT"), MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("PInvoke"), IdentifierName("ICERR_OK")));
+                                noerror = CastExpression(ParseName("global::Windows.Win32.Foundation.LRESULT"), MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, this.methodsAndConstantsClassName, IdentifierName("ICERR_OK")));
                                 releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, noerror);
                                 break;
                             case "HGLOBAL":

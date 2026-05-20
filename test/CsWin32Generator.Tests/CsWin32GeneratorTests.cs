@@ -606,6 +606,18 @@ using global::System.Runtime.Versioning;
         await this.InvokeGeneratorAndCompile($"{nameof(this.CrossWinMD_IInspectable)}_{tfm}_{allowMarshaling}_{pinvokeClassName ?? "null"}");
     }
 
+    [Theory, CombinatorialData]
+    public async Task ICCloseSafeHandle_CustomClassName(
+        [CombinatorialValues([null, "MyPInvoke"])] string? pinvokeClassName)
+    {
+        this.nativeMethodsJsonOptions = new NativeMethodsJsonOptions
+        {
+            ClassName = pinvokeClassName,
+        };
+        this.nativeMethods.Add("ICOpen");
+        await this.InvokeGeneratorAndCompile($"{nameof(this.ICCloseSafeHandle_CustomClassName)}_{pinvokeClassName ?? "null"}");
+    }
+
     [Fact]
     public async Task CrossWinMD_NTSTATUSSafeHandleConstant()
     {

@@ -25,7 +25,7 @@
 /// </remarks>
 partial struct NTSTATUS
 {
-	public static implicit operator uint(NTSTATUS value) => (uint)value.Value;
+	public static implicit operator uint(NTSTATUS value) => unchecked((uint)value.Value);
 	public static explicit operator NTSTATUS(uint value) => new NTSTATUS(unchecked((int)value));
 
 	internal Severity SeverityCode => (Severity)unchecked(((uint)this.Value & 0xc0000000) >> 30);

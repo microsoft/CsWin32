@@ -1,0 +1,148 @@
+{
+  "properties": {
+    "helpUri": "https://eng.ms/docs/microsoft-security/security/azure-security/cloudai-security-fundamentals-engineering/security-integration/guardian-wiki/microsoft-guardian/general/baselines"
+  },
+  "version": "1.0.0",
+  "baselines": {
+    "default": {
+      "name": "default",
+      "createdDate": "2026-05-21 03:29:01Z",
+      "lastUpdatedDate": "2026-05-21 03:29:01Z"
+    }
+  },
+  "results": {
+    "6e2b1c1ce09c9bdd497a5d281ada228fcec603ceb46514ae0c3dd57cbcf678cb": {
+      "signature": "6e2b1c1ce09c9bdd497a5d281ada228fcec603ceb46514ae0c3dd57cbcf678cb",
+      "alternativeSignatures": [
+        "55b78cb648ba2f2b04dfb8bafeeea6dd9a115c422307988b26c4f61e3fc4f9c2",
+        "5bdf37d771a5c8df82be43b00bd6a13fcdf35bcd799b001e28f8b368cbcc3b1e",
+        "a3a3e064a4d0dab80d928e4d3e6e4a05189d71a121872d28ee669ced84044566"
+      ],
+      "target": "src/Microsoft.Windows.CsWin32/Generator.cs",
+      "line": 1241,
+      "uriBaseId": "file:///D:/a/_work/1/s/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "roslynanalyzers",
+      "ruleId": "CA1310",
+      "createdDate": "2026-05-21 03:29:01Z",
+      "expirationDate": "2026-11-07 03:54:17Z",
+      "justification": "This error is baselined with an expiration date of 180 days from 2026-05-21 03:54:17Z"
+    },
+    "910922f8d0ba765d47e06ff5de6f818a1d8c1ba4aa0a5af113ed934a4c2d7e95": {
+      "signature": "910922f8d0ba765d47e06ff5de6f818a1d8c1ba4aa0a5af113ed934a4c2d7e95",
+      "alternativeSignatures": [
+        "61b8c4ffc410789e733694ed0ddaf133646f9c89c3b0b982064e8c870eb2597d",
+        "a0363b3683dd991743d937a56cd2dade80b5df4b7459cd37edfc5b8bfcf38d5b",
+        "3e76e58f45fb1a8cc6670f0e8d674f42284c5bb0dacffbff0f6b030f7632e60d"
+      ],
+      "target": "src/Microsoft.Windows.CsWin32/Generator.FriendlyOverloads.cs",
+      "line": 154,
+      "uriBaseId": "file:///D:/a/_work/1/s/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "roslynanalyzers",
+      "ruleId": "CA1310",
+      "createdDate": "2026-05-21 03:29:01Z",
+      "expirationDate": "2026-11-07 03:54:17Z",
+      "justification": "This error is baselined with an expiration date of 180 days from 2026-05-21 03:54:17Z"
+    },
+    "a1331c95148a1289986183b36c1da7d02bb8881804021447d8a9a8de7e566254": {
+      "signature": "a1331c95148a1289986183b36c1da7d02bb8881804021447d8a9a8de7e566254",
+      "alternativeSignatures": [
+        "ba2469ec5d671b1182b099b32f5fce40ea8bee625765a93ab0c5b19b837154ef",
+        "177f73a2f6366e3e60c1cdc99f3941bb3cade8ee188eb074a72692ca9027a95a",
+        "96d854cff0a9091043cdf134e0ec159b30035fa741061a7e03c3dd7ca00f5e3d"
+      ],
+      "target": "src/Microsoft.Windows.CsWin32/Generator.InlineArrays.cs",
+      "line": 26,
+      "uriBaseId": "file:///D:/a/_work/1/s/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "roslynanalyzers",
+      "ruleId": "CA1310",
+      "createdDate": "2026-05-21 03:29:01Z",
+      "expirationDate": "2026-11-07 03:54:17Z",
+      "justification": "This error is baselined with an expiration date of 180 days from 2026-05-21 03:54:17Z"
+    },
+    "73ce4c4a130620f48775ad2742f8dc9f8cedd7ae85ae6215f161f5f06bb2c955": {
+      "signature": "73ce4c4a130620f48775ad2742f8dc9f8cedd7ae85ae6215f161f5f06bb2c955",
+      "alternativeSignatures": [
+        "4b8504025fcfcf3d280fef1452f9d9b62f882e0ddd3d83c297425f98e7b1a34d",
+        "f1ff6598550ec5ef66d1687d2c7daafeb3599a8e19e3a6d59beb8fd11fd7e8cb",
+        "994e3a4fd64941beeb1c106b3dbd492d48a5ec60923674a6d6e1db49b1a50500"
+      ],
+      "target": "src/Microsoft.Windows.CsWin32/HandleTypeHandleInfo.cs",
+      "line": 208,
+      "uriBaseId": "file:///D:/a/_work/1/s/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "roslynanalyzers",
+      "ruleId": "CA1310",
+      "createdDate": "2026-05-21 03:29:01Z",
+      "expirationDate": "2026-11-07 03:54:17Z",
+      "justification": "This error is baselined with an expiration date of 180 days from 2026-05-21 03:54:17Z"
+    },
+    "20df1f1b609aec23436f6554a3593ecf62dda63b9998732788631ef92ec168b4": {
+      "signature": "20df1f1b609aec23436f6554a3593ecf62dda63b9998732788631ef92ec168b4",
+      "alternativeSignatures": [
+        "d87280b408a562c3d1011e85666ef465a257793d7da21cd4b9e14a39306ebd79",
+        "74f7a2f3fd26004fc469d9488fae516d49db225ab772b9c98f25da3b9956f115",
+        "e597ecb9d31e9dffbccd162e0e8384ff35e2335d519bbeb9bf63a68e99ae71b9"
+      ],
+      "target": "src/Microsoft.Windows.CsWin32.BuildTasks/CsWin32CodeGeneratorTask.cs",
+      "line": 255,
+      "uriBaseId": "file:///D:/a/_work/1/s/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "roslynanalyzers",
+      "ruleId": "CA1310",
+      "createdDate": "2026-05-21 03:29:01Z",
+      "expirationDate": "2026-11-07 03:54:17Z",
+      "justification": "This error is baselined with an expiration date of 180 days from 2026-05-21 03:54:17Z"
+    },
+    "af2959344543d571a298b2fb337b497db6761e9c0ba4d7e2fb474d689fa2409f": {
+      "signature": "af2959344543d571a298b2fb337b497db6761e9c0ba4d7e2fb474d689fa2409f",
+      "alternativeSignatures": [
+        "0205f471efd38f736389b1d8ee8f2a222f51010fa836d9a8db1e1fe1610e1434",
+        "a74d1ee7e4404e31cefea71d88400def62915d59fecedef85c21b3510650f2cb",
+        "56cef2c15f182abe18068fd5a0a7c94077ce8720fef775df6ce8d1124166dfce"
+      ],
+      "target": "test/Microsoft.Windows.CsWin32.Tests/GeneratorTestBase.cs",
+      "line": 119,
+      "uriBaseId": "file:///D:/a/_work/1/s/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "roslynanalyzers",
+      "ruleId": "CA1310",
+      "createdDate": "2026-05-21 03:29:01Z",
+      "expirationDate": "2026-11-07 03:54:17Z",
+      "justification": "This error is baselined with an expiration date of 180 days from 2026-05-21 03:54:17Z"
+    },
+    "10b503e92b9e8615b88169fa5c2d8c251e79889315974b7d9f1414f314bcff06": {
+      "signature": "10b503e92b9e8615b88169fa5c2d8c251e79889315974b7d9f1414f314bcff06",
+      "alternativeSignatures": [
+        "88063d82a7f8772e3ab74529a506122ee4f5f934c34f2216ff6e25e4aa1cc5a0",
+        "2dde0bac17f4d3c5a4d30a6db4433eaa8c84dcf06dc312a950ad7268659a31ed",
+        "bab2600f4bd4c54bb97afea015949720676d1062e47e100d00d6fa907b52fa90"
+      ],
+      "target": "test/Microsoft.Windows.CsWin32.Tests/GeneratorTestBase.cs",
+      "line": 124,
+      "uriBaseId": "file:///D:/a/_work/1/s/",
+      "memberOf": [
+        "default"
+      ],
+      "tool": "roslynanalyzers",
+      "ruleId": "CA1310",
+      "createdDate": "2026-05-21 03:29:01Z",
+      "expirationDate": "2026-11-07 03:54:17Z",
+      "justification": "This error is baselined with an expiration date of 180 days from 2026-05-21 03:54:17Z"
+    }
+  }
+}

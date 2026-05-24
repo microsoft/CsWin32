@@ -52,6 +52,8 @@ public partial class Generator : IGenerator, IDisposable
     private readonly Dictionary<TypeDefinitionHandle, bool> managedTypesCheck = new();
     private readonly Dictionary<TypeDefinitionHandle, bool> structTypesCheck = new();
     private MethodDeclarationSyntax? sliceAtNullMethodDecl;
+    private INamedTypeSymbol? extensionReceiverSymbolCache;
+    private bool extensionReceiverSymbolResolved;
 
     static Generator()
     {
@@ -334,7 +336,7 @@ public partial class Generator : IGenerator, IDisposable
             int i = 0;
             foreach (IGrouping<string, MemberDeclarationSyntax> entry in members)
             {
-                ClassDeclarationSyntax partialClass = DeclarePInvokeClass(entry.Key, [.. entry])
+                ClassDeclarationSyntax partialClass = DeclarePInvokeClass(entry.Key, this.WrapAsExtensionMembers([.. entry]))
                     .WithLeadingTrivia(ParseLeadingTrivia(string.Format(CultureInfo.InvariantCulture, PartialPInvokeContentComment, entry.Key)));
                 if (i == 0)
                 {
@@ -348,7 +350,7 @@ public partial class Generator : IGenerator, IDisposable
                 i++;
             }
 
-            ClassDeclarationSyntax macrosPartialClass = DeclarePInvokeClass("Macros", [.. this.committedCode.Macros])
+            ClassDeclarationSyntax macrosPartialClass = DeclarePInvokeClass("Macros", this.WrapAsExtensionMembers([.. this.committedCode.Macros]))
                 .WithLeadingTrivia(ParseLeadingTrivia(PartialPInvokeMacrosContentComment));
             if (macrosPartialClass.Members.Count > 0)
             {
@@ -1403,6 +1405,355 @@ public partial class Generator : IGenerator, IDisposable
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Wraps a list of members in an <c>extension (Receiver) { ... }</c> block when <see cref="GeneratorOptions.ExtensionReceiver"/> is configured; otherwise returns the input unchanged. Under the Roslyn 4 leg the wrap is a no-op (the feature is gated to Roslyn 5 + C# 14).
+    /// </summary>
+    /// <param name="members">The members that would otherwise be added directly to the host static class.</param>
+    /// <returns>A new member list (length 1) containing an extension block, or the original list when no extension receiver is configured, the input is empty, or the analyzer is the Roslyn 4 leg.</returns>
+    private SyntaxList<MemberDeclarationSyntax> WrapAsExtensionMembers(SyntaxList<MemberDeclarationSyntax> members)
+    {
+#if ROSLYN5
+        if (this.options.ExtensionReceiver is null || members.Count == 0)
+        {
+            return members;
+        }
+
+        // Per-generator gate: if THIS generator's namespace doesn't contain the receiver type (common when
+        // multiple metadata pipelines run, e.g. Windows.Win32 + Windows.Wdk and the receiver only exists
+        // in one), skip the wrap for this generator instead of failing the whole compilation.
+        if (this.GetExtensionReceiverSymbol() is null)
+        {
+            return members;
+        }
+
+        // Use a global-qualified name so the receiver is unambiguous regardless of `using`s in the consuming file.
+        TypeSyntax receiverType = ParseName($"global::{this.Namespace}.{this.options.ExtensionReceiver}");
+        ExtensionBlockDeclarationSyntax extensionBlock = ExtensionBlock(receiverType, members);
+        return SyntaxFactory.SingletonList<MemberDeclarationSyntax>(extensionBlock);
+#else
+        return members;
+#endif
+    }
+
+    /// <summary>
+    /// Resolves <see cref="GeneratorOptions.ExtensionReceiver"/> against this generator's <see cref="Namespace"/> and verifies it names a usable static class.
+    /// </summary>
+    /// <param name="symbol">Receives the resolved receiver symbol on success.</param>
+    /// <param name="errorReason">Receives a human-readable explanation on failure, suitable for use as a diagnostic message argument.</param>
+    /// <returns><see langword="true"/> if the receiver resolves and is valid; <see langword="false"/> otherwise. Also returns <see langword="false"/> with both out parameters <see langword="null"/> when no extension receiver is configured.</returns>
+#pragma warning disable SA1202 // Element ordering: keep validation helper near other Find* helpers it depends on.
+    public bool TryResolveExtensionReceiver(out INamedTypeSymbol? symbol, out string? errorReason)
+#pragma warning restore SA1202
+    {
+        symbol = null;
+        errorReason = null;
+
+        if (this.options.ExtensionReceiver is not string receiverName)
+        {
+            return false;
+        }
+
+        if (string.Equals(receiverName, this.options.ClassName, StringComparison.Ordinal))
+        {
+            errorReason = "it equals ClassName (self-reference is not allowed)";
+            return false;
+        }
+
+        if (this.compilation is null)
+        {
+            errorReason = "no compilation context is available to resolve the receiver type";
+            return false;
+        }
+
+        string fullyQualifiedName = $"{this.Namespace}.{receiverName}";
+        IReadOnlyList<ISymbol> matches = this.FindTypeSymbolsIfAlreadyAvailable(fullyQualifiedName);
+        if (matches.Count == 0)
+        {
+            errorReason = $"the type \"{fullyQualifiedName}\" was not found in the compilation or any referenced assembly (or it is not accessible)";
+            return false;
+        }
+
+        if (matches.Count > 1)
+        {
+            errorReason = $"the type \"{fullyQualifiedName}\" is declared in multiple places, which makes the receiver ambiguous";
+            return false;
+        }
+
+        if (matches[0] is not INamedTypeSymbol named)
+        {
+            errorReason = $"\"{fullyQualifiedName}\" did not resolve to a named type";
+            return false;
+        }
+
+        if (named.TypeKind != TypeKind.Class || !named.IsStatic)
+        {
+            errorReason = $"\"{fullyQualifiedName}\" must be a static class";
+            return false;
+        }
+
+        symbol = named;
+        return true;
+    }
+
+    /// <summary>
+    /// Returns the cached, resolved extension receiver symbol or <see langword="null"/> when the option is unset or invalid.
+    /// </summary>
+    /// <returns>The receiver named type symbol, or <see langword="null"/>.</returns>
+    private INamedTypeSymbol? GetExtensionReceiverSymbol()
+    {
+        if (!this.extensionReceiverSymbolResolved)
+        {
+            this.extensionReceiverSymbolResolved = true;
+            this.TryResolveExtensionReceiver(out this.extensionReceiverSymbolCache, out _);
+        }
+
+        return this.extensionReceiverSymbolCache;
+    }
+
+    /// <summary>
+    /// Tests whether the configured extension receiver type already exposes an accessible member with a matching signature (name + parameter count + per-parameter type name) as an extension member, across the compilation and any referenced assemblies. Supports multi-assembly composition of CsWin32 outputs. Always returns <see langword="false"/> on the Roslyn 4 leg of the analyzer (which lacks the extension-symbol API).
+    /// </summary>
+    /// <param name="memberName">The simple member name to look for.</param>
+    /// <param name="parameterTypeNames">The CsWin32-projected textual form of each parameter type, in declaration order. Pass an empty array when probing for a field/property/parameterless member (e.g. a constant). The strings are compared after a normalization that strips <c>global::</c> prefixes and leading namespace segments, so callers may pass fully-qualified names produced by <c>ToTypeSyntax(...)</c>.</param>
+    /// <returns><see langword="true"/> if a matching extension member is already declared on the receiver in scope; <see langword="false"/> otherwise (including when no extension receiver is configured or running on the Roslyn 4 leg).</returns>
+#pragma warning disable SA1202 // Keep dedup helper next to TryResolveExtensionReceiver / receiver-related code.
+    internal bool IsExtensionMemberAlreadyOnReceiver(string memberName, IReadOnlyList<string> parameterTypeNames)
+#pragma warning restore SA1202
+    {
+#if ROSLYN5
+        if (this.options.ExtensionReceiver is null)
+        {
+            return false;
+        }
+
+        if (this.compilation is null)
+        {
+            return false;
+        }
+
+        INamedTypeSymbol? receiver = this.GetExtensionReceiverSymbol();
+        if (receiver is null)
+        {
+            return false;
+        }
+
+        INamespaceSymbol? targetNamespace = receiver.ContainingNamespace;
+        if (targetNamespace is null)
+        {
+            return false;
+        }
+
+        // Pre-normalize the metadata-side parameter names once.
+        string[] normalizedMetadataParams = new string[parameterTypeNames.Count];
+        for (int i = 0; i < parameterTypeNames.Count; i++)
+        {
+            normalizedMetadataParams[i] = NormalizeParameterTypeName(parameterTypeNames[i]);
+        }
+
+        foreach (IAssemblySymbol assembly in this.EnumerateAccessibleAssemblies())
+        {
+            INamespaceSymbol? ns = ResolveNamespaceIn(assembly, targetNamespace);
+            if (ns is null)
+            {
+                continue;
+            }
+
+            foreach (INamedTypeSymbol hostCandidate in ns.GetTypeMembers())
+            {
+                if (hostCandidate.TypeKind != TypeKind.Class || !hostCandidate.IsStatic)
+                {
+                    continue;
+                }
+
+                foreach (INamedTypeSymbol nested in hostCandidate.GetTypeMembers())
+                {
+                    if (!nested.IsExtension)
+                    {
+                        continue;
+                    }
+
+                    ITypeSymbol? receiverParameterType = nested.ExtensionParameter?.Type;
+                    if (receiverParameterType is null || !SymbolEqualityComparer.Default.Equals(receiverParameterType, receiver))
+                    {
+                        continue;
+                    }
+
+                    foreach (ISymbol member in nested.GetMembers(memberName))
+                    {
+                        if (!this.compilation.IsSymbolAccessibleWithin(member, this.compilation.Assembly))
+                        {
+                            continue;
+                        }
+
+                        if (SignatureMatches(member, normalizedMetadataParams))
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+
+        return false;
+#else
+        // The Roslyn 4 symbol model has no IsExtension / ExtensionParameter API. The feature is gated to
+        // Roslyn 5; on this leg the option itself is rejected via PInvoke013 in SourceGenerator.Execute.
+        _ = memberName;
+        _ = parameterTypeNames;
+        return false;
+#endif
+    }
+
+#if ROSLYN5
+#pragma warning disable SA1201 // Keep dedup helpers (display format + signature/name normalization) co-located.
+    private static readonly SymbolDisplayFormat ParameterTypeDisplayFormat = new SymbolDisplayFormat(
+        typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameOnly,
+        genericsOptions: SymbolDisplayGenericsOptions.IncludeTypeParameters,
+        miscellaneousOptions: SymbolDisplayMiscellaneousOptions.UseSpecialTypes | SymbolDisplayMiscellaneousOptions.ExpandNullable);
+#pragma warning restore SA1201
+
+    /// <summary>
+    /// Tests whether the given Roslyn member's signature matches the metadata-side parameter type names.
+    /// For fields / properties / parameterless accessors, expects an empty <paramref name="normalizedMetadataParams"/> array.
+    /// </summary>
+    private static bool SignatureMatches(ISymbol member, string[] normalizedMetadataParams)
+    {
+        ImmutableArray<IParameterSymbol> parameters;
+        switch (member)
+        {
+            case IMethodSymbol method:
+                parameters = method.Parameters;
+                break;
+            case IPropertySymbol property:
+                parameters = property.Parameters;
+                break;
+            case IFieldSymbol:
+                return normalizedMetadataParams.Length == 0;
+            default:
+                return false;
+        }
+
+        if (parameters.Length != normalizedMetadataParams.Length)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < parameters.Length; i++)
+        {
+            string symbolTypeName = NormalizeParameterTypeName(parameters[i].Type.ToDisplayString(ParameterTypeDisplayFormat));
+            if (!string.Equals(symbolTypeName, normalizedMetadataParams[i], StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Normalizes a parameter type's textual form for cross-source comparison: strips a <c>global::</c>
+    /// prefix, drops leading namespace segments (so <c>Windows.Win32.Foundation.HANDLE</c> and <c>HANDLE</c>
+    /// compare equal), and removes whitespace from any trailing pointer/array shape.
+    /// </summary>
+    /// <remarks>
+    /// This is a textual heuristic, not a semantic comparison. It deliberately does not attempt to handle
+    /// generics, alias projections (e.g. <c>BYTE</c> ↔ <c>byte</c>) where the two sides project to different
+    /// names, or differences in <c>ref</c>/<c>out</c>/<c>in</c> modifiers. The CsWin32 projection that drives
+    /// the metadata side already normalizes primitive types to their C# keyword form, which the
+    /// <see cref="ParameterTypeDisplayFormat"/> also produces for the symbol side, so this textual match is
+    /// sufficient for the common multi-assembly-composition case.
+    /// </remarks>
+    private static string NormalizeParameterTypeName(string text)
+    {
+        // Strip a leading global:: prefix.
+        const string GlobalPrefix = "global::";
+        if (text.StartsWith(GlobalPrefix, StringComparison.Ordinal))
+        {
+            text = text.Substring(GlobalPrefix.Length);
+        }
+
+        // Separate the trailing pointer/array shape (and any whitespace) from the named type portion.
+        int suffixStart = text.Length;
+        while (suffixStart > 0 && (text[suffixStart - 1] == '*' || text[suffixStart - 1] == ']' || text[suffixStart - 1] == '[' || char.IsWhiteSpace(text[suffixStart - 1])))
+        {
+            suffixStart--;
+        }
+
+        string namePath = text.Substring(0, suffixStart);
+        string suffix = text.Substring(suffixStart);
+
+        // Drop all leading namespace segments — keep only the last dot-separated identifier.
+        int lastDot = namePath.LastIndexOf('.');
+        if (lastDot >= 0)
+        {
+            namePath = namePath.Substring(lastDot + 1);
+        }
+
+        // Strip whitespace inside the suffix so `byte *` and `byte*` compare equal.
+        if (suffix.Length > 0)
+        {
+            System.Text.StringBuilder sb = new(suffix.Length);
+            foreach (char c in suffix)
+            {
+                if (!char.IsWhiteSpace(c))
+                {
+                    sb.Append(c);
+                }
+            }
+
+            suffix = sb.ToString();
+        }
+
+        return namePath + suffix;
+    }
+#endif
+
+    private static INamespaceSymbol? ResolveNamespaceIn(IAssemblySymbol assembly, INamespaceSymbol templateNamespace)
+    {
+        // Walk the namespace chain from the template (e.g. Windows.Win32) and look up each segment in the target assembly.
+        var segments = new Stack<string>();
+        for (INamespaceSymbol? n = templateNamespace; n is not null && !n.IsGlobalNamespace; n = n.ContainingNamespace)
+        {
+            segments.Push(n.Name);
+        }
+
+        INamespaceSymbol current = assembly.GlobalNamespace;
+        foreach (string segment in segments)
+        {
+            INamespaceSymbol? next = current.GetNamespaceMembers().FirstOrDefault(n => string.Equals(n.Name, segment, StringComparison.Ordinal));
+            if (next is null)
+            {
+                return null;
+            }
+
+            current = next;
+        }
+
+        return current;
+    }
+
+    private IEnumerable<IAssemblySymbol> EnumerateAccessibleAssemblies()
+    {
+        if (this.compilation is null)
+        {
+            yield break;
+        }
+
+        yield return this.compilation.Assembly;
+        foreach (MetadataReference reference in this.compilation.References)
+        {
+            if (!reference.Properties.Aliases.IsEmpty)
+            {
+                continue;
+            }
+
+            if (this.compilation.GetAssemblyOrModuleSymbol(reference) is IAssemblySymbol referenced)
+            {
+                yield return referenced;
+            }
+        }
     }
 
     private MemberDeclarationSyntax? RequestInteropTypeHelper(TypeDefinitionHandle typeDefHandle, Context context)

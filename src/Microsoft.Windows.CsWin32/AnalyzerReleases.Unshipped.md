@@ -1,7 +1,8 @@
 ﻿; Unshipped analyzer release
-; https://github.com/dotnet/roslyn-analyzers/blob/master/src/Microsoft.CodeAnalysis.Analyzers/ReleaseTrackingAnalyzers.Help.md
+; <https://github.com/dotnet/roslyn-analyzers/blob/master/src/Microsoft.CodeAnalysis.Analyzers/ReleaseTrackingAnalyzers.Help.md>
 
 ### New Rules
+
 Rule ID | Category | Severity | Notes
 --------|----------|----------|-------
 PInvoke000 | Functionality | Error | SourceGenerator
@@ -15,3 +16,6 @@ PInvoke007 | Functionality | Error | SourceGenerator
 PInvoke008 | Configuration | Error | SourceGenerator
 PInvoke009 | Configuration | Warning | SourceGenerator
 PInvoke010 | Configuration | Error | SourceGenerator
+PInvoke011 | Configuration | Error | SourceGenerator
+PInvoke012 | Configuration | Error | SourceGenerator
+PInvoke013 | Configuration | Error | SourceGenerator

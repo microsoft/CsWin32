@@ -1,14 +1,20 @@
 <Project>
   <PropertyGroup>
-    <CodeAnalysisVersionForAnalyzers>4.11.0</CodeAnalysisVersionForAnalyzers>
+    <!--
+      Default analyzer Roslyn version. The analyzer is multi-targeted so it ships an assembly
+      built against Roslyn 4.11 (the floor that supports VS 2022 Update 14 / .NET 8 SDK) AND
+      an assembly built against Roslyn 5.0 (required for C# 14 ExtensionBlockDeclarationSyntax).
+      Projects override $(CodeAnalysisVersionForAnalyzers) per Roslyn leg.
+    -->
+    <CodeAnalysisVersionForAnalyzers Condition="'$(CodeAnalysisVersionForAnalyzers)'==''">4.11.0</CodeAnalysisVersionForAnalyzers>
   </PropertyGroup>
   <ItemGroup>
     <!-- These versions carefully chosen to support VS 2022 Update 14 and also run down to .NET 8. -->
     <PackageVersion Update="Microsoft.CodeAnalysis.Common" Version="$(CodeAnalysisVersionForAnalyzers)" />
     <PackageVersion Update="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="$(CodeAnalysisVersionForAnalyzers)" />
     <PackageVersion Update="Microsoft.CodeAnalysis.CSharp" Version="$(CodeAnalysisVersionForAnalyzers)" />
-    <PackageVersion Update="System.Collections.Immutable" Version="8.0.0" />
-    <PackageVersion Update="System.Memory" Version="4.5.5" />
+    <PackageVersion Update="System.Collections.Immutable" Version="9.0.0" />
+    <PackageVersion Update="System.Memory" Version="4.6.0" />
     <PackageVersion Update="System.Reflection.Metadata" Version="8.0.0" />
     <PackageVersion Include="System.Text.Encodings.Web" Version="8.0.0" />
     <PackageVersion Update="System.Text.Json" Version="8.0.5" />

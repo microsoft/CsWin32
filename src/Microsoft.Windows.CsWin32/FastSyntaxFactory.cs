@@ -158,6 +158,35 @@ internal static class FastSyntaxFactory
 
     internal static StructDeclarationSyntax StructDeclaration(SyntaxToken identifier, SyntaxList<MemberDeclarationSyntax> members = default) => SyntaxFactory.StructDeclaration(default, default, TokenWithSpace(SyntaxKind.StructKeyword), identifier.WithTrailingTrivia(TriviaList(LineFeed)), null, null, default, OpenBrace, members, CloseBrace, default);
 
+#if ROSLYN5
+    /// <summary>
+    /// Creates a C# 14 <c>extension (Receiver) { ... }</c> block declaration suitable for inclusion in a static class. Only available in the Roslyn 5 leg of the analyzer.
+    /// </summary>
+    /// <param name="receiverType">The type that is being extended (the receiver).</param>
+    /// <param name="members">The members of the extension block.</param>
+    /// <returns>An <see cref="ExtensionBlockDeclarationSyntax"/>.</returns>
+    internal static ExtensionBlockDeclarationSyntax ExtensionBlock(TypeSyntax receiverType, SyntaxList<MemberDeclarationSyntax> members)
+    {
+        ParameterSyntax receiverParameter = SyntaxFactory.Parameter(default, default, receiverType, default(SyntaxToken), null);
+        ParameterListSyntax parameterList = SyntaxFactory.ParameterList(
+            Token(SyntaxKind.OpenParenToken),
+            SyntaxFactory.SeparatedList<ParameterSyntax>([receiverParameter]),
+            Token(SyntaxKind.CloseParenToken).WithTrailingTrivia(TriviaList(LineFeed)));
+
+        return SyntaxFactory.ExtensionBlockDeclaration(
+            attributeLists: default,
+            modifiers: default,
+            keyword: TokenWithSpace(SyntaxKind.ExtensionKeyword),
+            typeParameterList: null,
+            parameterList: parameterList,
+            constraintClauses: default,
+            openBraceToken: OpenBrace,
+            members: members,
+            closeBraceToken: CloseBrace,
+            semicolonToken: default);
+    }
+#endif
+
     internal static ConstructorInitializerSyntax ConstructorInitializer(SyntaxKind kind, SeparatedSyntaxList<ArgumentSyntax> arguments = default) => SyntaxFactory.ConstructorInitializer(kind, Token(SyntaxKind.ColonToken), Token(GetConstructorInitializerThisOrBaseKeywordKind(kind)), ArgumentList(arguments));
 
     internal static PropertyDeclarationSyntax PropertyDeclaration(TypeSyntax type, string identifier) => PropertyDeclaration(type, Identifier(identifier));

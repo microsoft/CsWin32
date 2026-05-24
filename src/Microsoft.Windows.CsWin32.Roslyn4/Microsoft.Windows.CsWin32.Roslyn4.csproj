@@ -1,0 +1,79 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Microsoft.Windows.CsWin32.Roslyn4 — the Roslyn 4.11 (floor) leg of the analyzer.
+
+    Builds the same source as the sibling Microsoft.Windows.CsWin32 project, against the
+    floor Roslyn package version, with the ROSLYN5 symbol omitted. The Roslyn 4 leg
+    refuses the ExtensionReceiver feature with diagnostic PInvoke013 and otherwise behaves
+    identically to the original CsWin32 analyzer.
+
+    The DLL produced here is consumed by the original project's nuspec to pack a second
+    analyzer assembly under `analyzers/dotnet/roslyn4.11/cs/`. NuGet's analyzer loader
+    picks the appropriate folder based on the host's Roslyn version.
+
+    This project is NOT independently packable; it is a sibling that contributes its
+    output to the parent package.
+  -->
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <Platforms>AnyCPU</Platforms>
+    <Nullable>enable</Nullable>
+
+    <!-- Force the Roslyn 4 floor version for this leg. -->
+    <CodeAnalysisVersionForAnalyzers>4.11.0</CodeAnalysisVersionForAnalyzers>
+
+    <!-- Produce the same DLL filename + assembly identity as the Roslyn 5 leg. -->
+    <AssemblyName>Microsoft.Windows.CsWin32</AssemblyName>
+    <RootNamespace>Microsoft.Windows.CsWin32</RootNamespace>
+
+    <!-- Source comes from the sibling project (single source of truth). -->
+    <CsWin32SharedSourceRoot>$(MSBuildThisFileDirectory)..\Microsoft.Windows.CsWin32\</CsWin32SharedSourceRoot>
+
+    <!-- Special properties for analyzer packages (mirror the Roslyn 5 csproj). -->
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <IncludeSymbols>false</IncludeSymbols>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <NoWarn>$(NoWarn);NU5128;NU5127;NU5104</NoWarn>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+
+    <!-- Do NOT define ROSLYN5. Wave A/B feature code is conditionally compiled on this symbol;
+         on this leg the ExtensionReceiver feature is rejected via PInvoke013. -->
+  </PropertyGroup>
+
+  <!-- Pull in all source from the Roslyn 5 leg via a wildcard, mirroring its file layout. -->
+  <ItemGroup>
+    <Compile Remove="**\*.cs" />
+    <Compile Include="$(CsWin32SharedSourceRoot)**\*.cs" Exclude="$(CsWin32SharedSourceRoot)bin\**\*.cs;$(CsWin32SharedSourceRoot)obj\**\*.cs;$(CsWin32SharedSourceRoot)templates\**\*.cs" />
+    <EmbeddedResource Include="$(CsWin32SharedSourceRoot)templates\**\*.cs" />
+    <AdditionalFiles Include="$(CsWin32SharedSourceRoot)BannedSymbols.txt" />
+    <AdditionalFiles Include="$(CsWin32SharedSourceRoot)AnalyzerReleases.Shipped.md" />
+    <AdditionalFiles Include="$(CsWin32SharedSourceRoot)AnalyzerReleases.Unshipped.md" />
+  </ItemGroup>
+
+  <ItemDefinitionGroup>
+    <PackageReference>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemDefinitionGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MessagePack" />
+    <PackageReference Include="MessagePackAnalyzer" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+    <PackageReference Include="Microsoft.Windows.SDK.Win32Metadata" GeneratePathProperty="true" PrivateAssets="none" />
+    <PackageReference Include="Microsoft.Windows.SDK.Win32Docs" GeneratePathProperty="true" PrivateAssets="none" />
+    <PackageReference Include="Microsoft.Windows.WDK.Win32Metadata" GeneratePathProperty="true" PrivateAssets="none" />
+    <PackageReference Include="System.Reflection.Metadata" />
+    <PackageReference Include="System.Text.Encodings.Web" />
+    <PackageReference Include="System.Text.Json" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)'=='net472'">
+    <PackageReference Include="System.Memory" PrivateAssets="none" />
+  </ItemGroup>
+
+</Project>

@@ -34,6 +34,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "test", "test", "{36CCE840-6
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Microsoft.Windows.CsWin32", "src\Microsoft.Windows.CsWin32\Microsoft.Windows.CsWin32.csproj", "{E3E96466-44B6-41AF-BBC8-9D30183ED8A9}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Microsoft.Windows.CsWin32.Roslyn4", "src\Microsoft.Windows.CsWin32.Roslyn4\Microsoft.Windows.CsWin32.Roslyn4.csproj", "{93A6CCA2-5A52-46B9-8A91-928AFA67429D}"
+EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Microsoft.Windows.CsWin32.Tests", "test\Microsoft.Windows.CsWin32.Tests\Microsoft.Windows.CsWin32.Tests.csproj", "{0129FE6E-3480-408A-BF40-9E6343CDB06C}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "GenerationSandbox.Tests", "test\GenerationSandbox.Tests\GenerationSandbox.Tests.csproj", "{7E8A5179-F94C-410F-8BBE-FDAAA95A19C3}"
@@ -74,6 +76,14 @@ Global
 		{E3E96466-44B6-41AF-BBC8-9D30183ED8A9}.Release|Any CPU.Build.0 = Release|Any CPU
 		{E3E96466-44B6-41AF-BBC8-9D30183ED8A9}.Release|NonWindows.ActiveCfg = Release|Any CPU
 		{E3E96466-44B6-41AF-BBC8-9D30183ED8A9}.Release|NonWindows.Build.0 = Release|Any CPU
+		{93A6CCA2-5A52-46B9-8A91-928AFA67429D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{93A6CCA2-5A52-46B9-8A91-928AFA67429D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{93A6CCA2-5A52-46B9-8A91-928AFA67429D}.Debug|NonWindows.ActiveCfg = Debug|Any CPU
+		{93A6CCA2-5A52-46B9-8A91-928AFA67429D}.Debug|NonWindows.Build.0 = Debug|Any CPU
+		{93A6CCA2-5A52-46B9-8A91-928AFA67429D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{93A6CCA2-5A52-46B9-8A91-928AFA67429D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{93A6CCA2-5A52-46B9-8A91-928AFA67429D}.Release|NonWindows.ActiveCfg = Release|Any CPU
+		{93A6CCA2-5A52-46B9-8A91-928AFA67429D}.Release|NonWindows.Build.0 = Release|Any CPU
 		{0129FE6E-3480-408A-BF40-9E6343CDB06C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{0129FE6E-3480-408A-BF40-9E6343CDB06C}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{0129FE6E-3480-408A-BF40-9E6343CDB06C}.Debug|NonWindows.ActiveCfg = Debug|Any CPU

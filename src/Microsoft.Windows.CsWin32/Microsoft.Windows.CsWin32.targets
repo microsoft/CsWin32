@@ -10,10 +10,12 @@
     <PropertyGroup>
       <CsWin32GeneratorBasePath>$([MSBuild]::NormalizePath('$(BaseOutputPath)..\CsWin32Generator\$(Configuration)\$(CsWin32GeneratorTargetFramework)\'))</CsWin32GeneratorBasePath>
       <CsWin32GeneratorBuildTasksPath>$([MSBuild]::NormalizePath('$(BaseOutputPath)..\Microsoft.Windows.CsWin32.BuildTasks\$(Configuration)\netstandard2.0\'))</CsWin32GeneratorBuildTasksPath>
+      <Roslyn4BaseOutputPath>$([MSBuild]::NormalizePath('$(BaseOutputPath)..\Microsoft.Windows.CsWin32.Roslyn4\$(Configuration)\netstandard2.0'))\</Roslyn4BaseOutputPath>
       <NuspecProperties>
         $(NuspecProperties);
         Version=$(Version);
         BaseOutputPath=$(OutputPath);
+        Roslyn4BaseOutputPath=$(Roslyn4BaseOutputPath);
         MetadataVersion=$(MetadataVersion);
         WDKMetadataVersion=$(WDKMetadataVersion);
         ApiDocsVersion=$(ApiDocsVersion);
@@ -29,19 +31,19 @@
   <Target Name="PackBuildOutputs" DependsOnTargets="ResolveProjectReferences;SatelliteDllsProjectOutputGroup;SatelliteDllsProjectOutputGroupDependencies" Condition="$(TargetFramework)=='netstandard2.0'">
     <ItemGroup>
       <!-- Analysis of C# projects -->
-      <TfmSpecificPackageFile Include="$(TargetPath)" PackagePath="analyzers\cs\" />
-      <TfmSpecificPackageFile Include="@(ReferencePath)" PackagePath="analyzers\cs\" Condition=" '%(FileName)%(Extension)' == 'MessagePack.dll' " Authenticode="3PartySHA2" />
-      <TfmSpecificPackageFile Include="@(ReferencePath)" PackagePath="analyzers\cs\" Condition=" '%(FileName)%(Extension)' == 'MessagePack.Annotations.dll' " Authenticode="3PartySHA2" />
-      <TfmSpecificPackageFile Include="@(ReferencePath)" PackagePath="analyzers\cs\" Condition=" '%(FileName)%(Extension)' == 'Microsoft.Bcl.AsyncInterfaces.dll' " />
-      <TfmSpecificPackageFile Include="@(ReferencePath)" PackagePath="analyzers\cs\" Condition=" '%(FileName)%(Extension)' == 'System.Text.Json.dll' " />
-      <TfmSpecificPackageFile Include="@(ReferencePath)" PackagePath="analyzers\cs\" Condition=" '%(FileName)%(Extension)' == 'System.Text.Encodings.Web.dll' " />
-      <TfmSpecificPackageFile Include="@(ReferencePath)" PackagePath="analyzers\cs\" Condition=" '%(FileName)%(Extension)' == 'System.Numerics.Vectors.dll' " />
-      <TfmSpecificPackageFile Include="@(ReferencePath)" PackagePath="analyzers\cs\" Condition=" '%(FileName)%(Extension)' == 'System.Threading.Tasks.Extensions.dll' " />
-      <TfmSpecificPackageFile Include="@(ReferencePath)" PackagePath="analyzers\cs\" Condition=" '%(FileName)%(Extension)' == 'System.Memory.dll' " />
-      <TfmSpecificPackageFile Include="@(ReferencePath)" PackagePath="analyzers\cs\" Condition=" '%(FileName)%(Extension)' == 'System.Buffers.dll' " />
-      <TfmSpecificPackageFile Include="@(SatelliteDllsProjectOutputGroupDependency)" PackagePath="analyzers\cs\%(SatelliteDllsProjectOutputGroupDependency.DestinationSubDirectory)" Condition=" '%(SatelliteDllsProjectOutputGroupDependency.DestinationSubDirectory)' != '' " />
-      <TfmSpecificPackageFile Include="@(SatelliteDllsProjectOutputGroupOutput->'%(FinalOutputPath)')" PackagePath="analyzers\cs\%(SatelliteDllsProjectOutputGroupOutput.Culture)\" />
-      <TfmSpecificPackageFile Include="%(_ResolvedProjectReferencePaths.Identity)" PackagePath="analyzers\cs\" />
+      <TfmSpecificPackageFile Include="$(TargetPath)" PackagePath="analyzers\dotnet\roslyn5.0\cs\" />
+      <TfmSpecificPackageFile Include="@(ReferencePath)" PackagePath="analyzers\dotnet\roslyn5.0\cs\" Condition=" '%(FileName)%(Extension)' == 'MessagePack.dll' " Authenticode="3PartySHA2" />
+      <TfmSpecificPackageFile Include="@(ReferencePath)" PackagePath="analyzers\dotnet\roslyn5.0\cs\" Condition=" '%(FileName)%(Extension)' == 'MessagePack.Annotations.dll' " Authenticode="3PartySHA2" />
+      <TfmSpecificPackageFile Include="@(ReferencePath)" PackagePath="analyzers\dotnet\roslyn5.0\cs\" Condition=" '%(FileName)%(Extension)' == 'Microsoft.Bcl.AsyncInterfaces.dll' " />
+      <TfmSpecificPackageFile Include="@(ReferencePath)" PackagePath="analyzers\dotnet\roslyn5.0\cs\" Condition=" '%(FileName)%(Extension)' == 'System.Text.Json.dll' " />
+      <TfmSpecificPackageFile Include="@(ReferencePath)" PackagePath="analyzers\dotnet\roslyn5.0\cs\" Condition=" '%(FileName)%(Extension)' == 'System.Text.Encodings.Web.dll' " />
+      <TfmSpecificPackageFile Include="@(ReferencePath)" PackagePath="analyzers\dotnet\roslyn5.0\cs\" Condition=" '%(FileName)%(Extension)' == 'System.Numerics.Vectors.dll' " />
+      <TfmSpecificPackageFile Include="@(ReferencePath)" PackagePath="analyzers\dotnet\roslyn5.0\cs\" Condition=" '%(FileName)%(Extension)' == 'System.Threading.Tasks.Extensions.dll' " />
+      <TfmSpecificPackageFile Include="@(ReferencePath)" PackagePath="analyzers\dotnet\roslyn5.0\cs\" Condition=" '%(FileName)%(Extension)' == 'System.Memory.dll' " />
+      <TfmSpecificPackageFile Include="@(ReferencePath)" PackagePath="analyzers\dotnet\roslyn5.0\cs\" Condition=" '%(FileName)%(Extension)' == 'System.Buffers.dll' " />
+      <TfmSpecificPackageFile Include="@(SatelliteDllsProjectOutputGroupDependency)" PackagePath="analyzers\dotnet\roslyn5.0\cs\%(SatelliteDllsProjectOutputGroupDependency.DestinationSubDirectory)" Condition=" '%(SatelliteDllsProjectOutputGroupDependency.DestinationSubDirectory)' != '' " />
+      <TfmSpecificPackageFile Include="@(SatelliteDllsProjectOutputGroupOutput->'%(FinalOutputPath)')" PackagePath="analyzers\dotnet\roslyn5.0\cs\%(SatelliteDllsProjectOutputGroupOutput.Culture)\" />
+      <TfmSpecificPackageFile Include="%(_ResolvedProjectReferencePaths.Identity)" PackagePath="analyzers\dotnet\roslyn5.0\cs\" />
     </ItemGroup>
   </Target>
 

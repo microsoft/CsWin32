@@ -37,25 +37,25 @@ dotnet add package System.Memory
 dotnet add package System.Runtime.CompilerServices.Unsafe
 ```
 
-Projects targeting .NET do *not* need to add these package references, although it is harmless to do so.
+Projects targeting .NET do _not_ need to add these package references, although it is harmless to do so.
 
 Note that while the `System.Memory` package depends on the `System.Runtime.CompilerServices.Unsafe` package,
 referencing the latter directly is still important to get the latest version of the APIs it provides.
 
 Your project must allow unsafe code to support the generated code that will likely use pointers.
-This does *not* automatically make all your code *unsafe*.
+This does _not_ automatically make all your code _unsafe_.
 Use of the `unsafe` keyword is required anywhere you use pointers.
 The source generator NuGet package sets the default value of the `AllowUnsafeBlocks` property for your project to `true`,
 but if you explicitly set it to `false` in your project file, generated code may produce compiler errors.
 
 Create a `NativeMethods.txt` file in your project directory that lists the APIs to generate code for.
-Each line may consist of *one* of the following:
+Each line may consist of _one_ of the following:
 
-* Exported method name (e.g. `CreateFile`). This *may* include the `A` or `W` suffix, where applicable. This *may* be qualified with a namespace but is only recommended in cases of ambiguity, which CsWin32 will prompt where appropriate.
+* Exported method name (e.g. `CreateFile`). This _may_ include the `A` or `W` suffix, where applicable. This _may_ be qualified with a namespace but is only recommended in cases of ambiguity, which CsWin32 will prompt where appropriate.
 * A macro name (e.g. `HRESULT_FROM_WIN32`). These are generated into the same class with extern methods. Macros must be hand-authored into CsWin32, so let us know if you want to see a macro added.
 * A namespace to generate all APIs from (e.g. `Windows.Win32.Storage.FileSystem` would search the metadata for all APIs within that namespace and generate them).
 * Module name followed by `.*` to generate all methods exported from that module (e.g. `Kernel32.*`).
-* The name of a struct, enum, constant or interface to generate. This *may* be qualified with a namespace but is only recommended in cases of ambiguity, which CsWin32 will prompt where appropriate.
+* The name of a struct, enum, constant or interface to generate. This _may_ be qualified with a namespace but is only recommended in cases of ambiguity, which CsWin32 will prompt where appropriate.
 * A prefix shared by many constants, followed by `*`, to generate all constants that share that prefix (e.g. `ALG_SID_MD*`).
 * A comment (i.e. any line starting with `//`) or white space line, which will be ignored.
 * A prefix `-` to indicate a name that should not be generated. The rest of the line can be a name (e.g. `BSTR`), fully namespaced name (e.g. `Windows.Win32.Foundation.BSTR`), or name ending in wildcard (e.g. `Windows.Win32.Foundation..*`)
@@ -99,6 +99,7 @@ Several aspects of the generated code can be customized, including:
 * Whether to emit ANSI functions as well where Wide character functions also exist
 * Set `PreserveSig` for COM interfaces or individual members
 * Force generation of blittable structs, COM structs instead of interfaces (for super high performance with 0 GC pressure), etc.
+* Layered composition: have multiple assemblies contribute to a single shared `PInvoke` symbol so callers reach every API through one discovery point. See [Layered composition](composition.md) for the design, dispatch rules, and a migration playbook for existing multi-layer projects.
 
 To configure these settings, create a `NativeMethods.json` file in your project directory.
 Specifying the `$schema` property that points to [the schema](https://github.com/microsoft/CsWin32/blob/main/src/Microsoft.Windows.CsWin32/settings.schema.json) adds completions, descriptions and validation in many JSON editors, and in fact is where all the documentation for the available settings is found.
@@ -112,7 +113,7 @@ Specifying the `$schema` property that points to [the schema](https://github.com
 
 Most generated types include the `partial` modifier so you can add your own members to that type within your code.
 
-When you need to *replace* a generated type, simply copy and paste it from generated code into your own source files
+When you need to _replace_ a generated type, simply copy and paste it from generated code into your own source files
 and remove the `partial` modifier.
 Be sure to keep the name and namespace exactly the same.
 CsWin32 will notice that your project already declares the type and skip generating it, but generate everything else.
@@ -144,8 +145,8 @@ To make this chaining work, you have to request CsWin32 to run as a build task t
 ```
 
 It is also strongly recommended to set DisableRuntimeMarshalling=true as shown here to ensure that the COM source generators handle
-all the marshalling correctly. See https://learn.microsoft.com/en-us/dotnet/standard/native-interop/pinvoke-source-generation and
-https://learn.microsoft.com/en-us/dotnet/standard/native-interop/comwrappers-source-generation for more information on these .NET source
+all the marshalling correctly. See <https://learn.microsoft.com/en-us/dotnet/standard/native-interop/pinvoke-source-generation> and
+<https://learn.microsoft.com/en-us/dotnet/standard/native-interop/comwrappers-source-generation> for more information on these .NET source
 generators.
 
 #### Disable runtime marshalling
@@ -196,6 +197,7 @@ static BOOL InitializeAcl(Span<byte> pAcl, ACE_REVISION dwAclRevision) { ... }
 ```
 
 And you would call this by creating a buffer to receive the ACL. Then, after the call you can reinterpret the buffer as an ACL:
+
 ```c#
 // Make a buffer
 Span<byte> buffer = new byte[CalculateAclSize(...)];

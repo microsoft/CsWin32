@@ -148,6 +148,32 @@ public partial class Generator
             }
         }
 
+        // Multi-assembly composition: if another CsWin32-emitted assembly already exposes a method with
+        // a matching signature (name AND parameter count AND parameter type names) as an extension member
+        // on the configured receiver, skip regeneration. Matching by name alone is unsafe: a user-authored
+        // helper wrapper (e.g. `extension(PInvoke) { string GetThemeDocumentationProperty(string, string) {...} }`)
+        // would falsely match the raw P/Invoke (`GetThemeDocumentationProperty(HTHEME, PCWSTR, PWSTR, int)`),
+        // causing the wrapper to silently recurse into itself at runtime. We require a full signature match.
+        if (this.options.ExtensionReceiver is not null)
+        {
+            MethodSignature<TypeHandleInfo> sig = methodDefinition.DecodeSignature(this.SignatureHandleProvider, null);
+            string[] parameterTypeNames = new string[sig.ParameterTypes.Length];
+            for (int i = 0; i < sig.ParameterTypes.Length; i++)
+            {
+                // Use the same projection settings the extern emission uses, so the textual form of each
+                // parameter type matches what a CsWin32-emitted extension member in another assembly would
+                // also produce (subject to the normalization in IsExtensionMemberAlreadyOnReceiver).
+                parameterTypeNames[i] = sig.ParameterTypes[i]
+                    .ToTypeSyntax(this.externSignatureTypeSettings, GeneratingElement.ExternMethod, null)
+                    .Type.ToString();
+            }
+
+            if (this.IsExtensionMemberAlreadyOnReceiver(this.Reader.GetString(methodDefinition.Name), parameterTypeNames))
+            {
+                return;
+            }
+        }
+
         this.volatileCode.GenerateMethod(methodDefinitionHandle, () => this.DeclareExternMethod(methodDefinitionHandle));
     }
 

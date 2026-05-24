@@ -4,7 +4,16 @@
     <IsPackable>true</IsPackable>
     <TargetFramework>netstandard2.0</TargetFramework>
     <Nullable>enable</Nullable>
-    
+
+    <!--
+      This project builds the Roslyn 5.0 leg of the analyzer (required to use C# 14
+      ExtensionBlockDeclarationSyntax for the `extensionReceiver` feature). A sibling
+      project Microsoft.Windows.CsWin32.Roslyn4 builds the Roslyn 4.11 floor leg that
+      omits the C# 14 feature and emits a diagnostic if requested.
+    -->
+    <CodeAnalysisVersionForAnalyzers>5.0.0</CodeAnalysisVersionForAnalyzers>
+    <DefineConstants>$(DefineConstants);ROSLYN5</DefineConstants>
+
     <!-- Special properties for analyzer packages. -->
     <IncludeBuildOutput>false</IncludeBuildOutput>
     <IncludeSymbols>false</IncludeSymbols>
@@ -28,6 +37,22 @@
 
   <ItemGroup>
     <AdditionalFiles Include="BannedSymbols.txt" />
+  </ItemGroup>
+
+  <!--
+    Force the Roslyn 4 sibling leg to build (and restore) whenever this project builds so that the
+    nuspec can pack its output under `analyzers/dotnet/roslyn4.11/cs/`. We do NOT consume its
+    assembly as a reference (ReferenceOutputAssembly=false) — only the build trigger and the
+    output paths surfaced via $(Roslyn4BaseOutputPath) in the nuspec properties.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Microsoft.Windows.CsWin32.Roslyn4\Microsoft.Windows.CsWin32.Roslyn4.csproj"
+                      ReferenceOutputAssembly="false"
+                      SkipGetTargetFrameworkProperties="true"
+                      SetPlatform="Platform=AnyCPU"
+                      Private="false"
+                      IncludeAssets="none"
+                      ExcludeAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
@@ -54,7 +79,7 @@
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFramework)'=='net472'">
-    <PackageReference Include="System.Memory" PrivateAssets="none" />    
+    <PackageReference Include="System.Memory" PrivateAssets="none" />
   </ItemGroup>
 
   <Import Project="$(MSBuildProjectName).targets" />

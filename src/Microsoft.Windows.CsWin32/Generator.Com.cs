@@ -1165,53 +1165,83 @@ public partial class Generator
             {
                 baseTypes.Add(SimpleBaseType(IComIIDGuidInterfaceName));
 
-                IdentifierNameSyntax dataLocal = IdentifierName("data");
-
-                // Rather than just `return ref IID_Guid`, which returns a pointer to a 'movable' field,
-                // We leverage C# syntax that we know the modern C# compiler will turn into a pointer directly into the dll image,
-                // so that the pointer does not move.
-                // This does rely on at least the generated code running on a little endian machine, since we're laying raw bytes on top of integer fields.
-                // But at the moment, we also assume this source generator is running on little endian for convenience for the reverse operation.
-                if (!BitConverter.IsLittleEndian)
-                {
-                    throw new NotSupportedException("Conversion from big endian to little endian is not implemented.");
-                }
-
-                // ReadOnlySpan<byte> data = new byte[] { ... };
-                ReadOnlySpan<byte> guidBytes = new((byte*)&guidAttributeValue, sizeof(Guid));
-                LocalDeclarationStatementSyntax dataDecl = LocalDeclarationStatement(
-                    VariableDeclaration(
-                        MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.ByteKeyword))),
-                        [VariableDeclarator(dataLocal.Identifier, EqualsValueClause(NewByteArray(guidBytes)))]));
-
-                // return ref Unsafe.As<byte, Guid>(ref MemoryMarshal.GetReference(data));
-                ReturnStatementSyntax returnStatement = ReturnStatement(RefExpression(
-                    InvocationExpression(
-                        MemberAccessExpression(
-                            SyntaxKind.SimpleMemberAccessExpression,
-                            IdentifierName(nameof(Unsafe)),
-                            GenericName(nameof(Unsafe.As), [PredefinedType(Token(SyntaxKind.ByteKeyword)), IdentifierName(nameof(Guid))])),
-                        [
-                            Argument(
-                                InvocationExpression(
-                                    MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(MemoryMarshal)), IdentifierName(nameof(MemoryMarshal.GetReference))),
-                                    [Argument(dataLocal)]))
-                            .WithRefOrOutKeyword(Token(SyntaxKind.RefKeyword))
-                        ])));
+                bool canUseStaticAbstract = this.IsFeatureAvailable(Feature.InterfaceStaticMembers);
 
                 // The native assembly code for this property getter is just a `mov` and a `ret.
                 // For our callers to also enjoy just the `mov` instruction, we have to attribute for aggressive inlining.
                 // [MethodImpl(MethodImplOptions.AggressiveInlining)]
                 AttributeListSyntax methodImplAttr = AttributeList(MethodImpl(MethodImplOptions.AggressiveInlining));
 
-                BlockSyntax getBody = Block(dataDecl, returnStatement);
+                if (canUseStaticAbstract)
+                {
+                    IdentifierNameSyntax dataLocal = IdentifierName("data");
 
-                // static ref readonly Guid IComIID.Guid { get { ... } }
-                PropertyDeclarationSyntax guidProperty = PropertyDeclaration(IdentifierName(nameof(Guid)).WithTrailingTrivia(Space), ComIIDGuidPropertyName.Identifier)
-                    .WithExplicitInterfaceSpecifier(ExplicitInterfaceSpecifier(IComIIDGuidInterfaceName))
-                    .AddModifiers(TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.RefKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
-                    .WithAccessorList(AccessorList(AccessorDeclaration(SyntaxKind.GetAccessorDeclaration, getBody).AddAttributeLists(methodImplAttr)));
-                members.Add(guidProperty);
+                    // Rather than just `return ref IID_Guid`, which returns a pointer to a 'movable' field,
+                    // We leverage C# syntax that we know the modern C# compiler will turn into a pointer directly into the dll image,
+                    // so that the pointer does not move.
+                    // This does rely on at least the generated code running on a little endian machine, since we're laying raw bytes on top of integer fields.
+                    // But at the moment, we also assume this source generator is running on little endian for convenience for the reverse operation.
+                    if (!BitConverter.IsLittleEndian)
+                    {
+                        throw new NotSupportedException("Conversion from big endian to little endian is not implemented.");
+                    }
+
+                    // ReadOnlySpan<byte> data = new byte[] { ... };
+                    ReadOnlySpan<byte> guidBytes = new((byte*)&guidAttributeValue, sizeof(Guid));
+                    LocalDeclarationStatementSyntax dataDecl = LocalDeclarationStatement(
+                        VariableDeclaration(
+                            MakeReadOnlySpanOfT(PredefinedType(Token(SyntaxKind.ByteKeyword))),
+                            [VariableDeclarator(dataLocal.Identifier, EqualsValueClause(NewByteArray(guidBytes)))]));
+
+                    // return ref Unsafe.As<byte, Guid>(ref MemoryMarshal.GetReference(data));
+                    ReturnStatementSyntax returnStatement = ReturnStatement(RefExpression(
+                        InvocationExpression(
+                            MemberAccessExpression(
+                                SyntaxKind.SimpleMemberAccessExpression,
+                                IdentifierName(nameof(Unsafe)),
+                                GenericName(nameof(Unsafe.As), [PredefinedType(Token(SyntaxKind.ByteKeyword)), IdentifierName(nameof(Guid))])),
+                            [
+                                Argument(
+                                    InvocationExpression(
+                                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(nameof(MemoryMarshal)), IdentifierName(nameof(MemoryMarshal.GetReference))),
+                                        [Argument(dataLocal)]))
+                                .WithRefOrOutKeyword(Token(SyntaxKind.RefKeyword))
+                            ])));
+
+                    BlockSyntax getBody = Block(dataDecl, returnStatement);
+
+                    // static ref readonly Guid IComIID.Guid { get { ... } }
+                    PropertyDeclarationSyntax guidProperty = PropertyDeclaration(IdentifierName(nameof(Guid)).WithTrailingTrivia(Space), ComIIDGuidPropertyName.Identifier)
+                        .WithExplicitInterfaceSpecifier(ExplicitInterfaceSpecifier(IComIIDGuidInterfaceName))
+                        .AddModifiers(TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.RefKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
+                        .WithAccessorList(AccessorList(AccessorDeclaration(SyntaxKind.GetAccessorDeclaration, getBody).AddAttributeLists(methodImplAttr)));
+                    members.Add(guidProperty);
+                }
+                else
+                {
+                    // Downlevel TFMs (net472 / netstandard2.0) do not support static abstract interface members.
+                    // Emit an instance-form explicit interface implementation matching the shape used by
+                    // dotnet/winforms' polyfill (see https://github.com/microsoft/CsWin32/issues/1704):
+                    //   readonly ref readonly Guid IComIID.Guid => ref Unsafe.AsRef(in IID_Guid);
+                    // This preserves the `ref readonly Guid` signature so generic helpers written against
+                    // `ref readonly Guid` can target both the upper (static-abstract) and downlevel forms.
+                    ExpressionSyntax body = RefExpression(
+                        InvocationExpression(
+                            MemberAccessExpression(
+                                SyntaxKind.SimpleMemberAccessExpression,
+                                IdentifierName(nameof(Unsafe)),
+                                IdentifierName(nameof(Unsafe.AsRef))),
+                            [Argument(iidGuidFieldName).WithRefKindKeyword(Token(SyntaxKind.InKeyword))]));
+                    AccessorDeclarationSyntax getter = AccessorDeclaration(SyntaxKind.GetAccessorDeclaration)
+                        .WithExpressionBody(ArrowExpressionClause(body))
+                        .WithSemicolonToken(Semicolon)
+                        .AddAttributeLists(methodImplAttr);
+                    PropertyDeclarationSyntax guidProperty = PropertyDeclaration(IdentifierName(nameof(Guid)).WithTrailingTrivia(Space), ComIIDGuidPropertyName.Identifier)
+                        .WithExplicitInterfaceSpecifier(ExplicitInterfaceSpecifier(IComIIDGuidInterfaceName))
+                        .AddModifiers(TokenWithSpace(SyntaxKind.ReadOnlyKeyword), TokenWithSpace(SyntaxKind.RefKeyword), TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
+                        .WithAccessorList(AccessorList(getter));
+                    members.Add(guidProperty);
+                }
             }
         }
 
@@ -1385,29 +1415,43 @@ public partial class Generator
 
     private bool TryDeclareCOMGuidInterfaceIfNecessary()
     {
-        // Static interface members require C# 11 and .NET 7 at minimum.
-        if (!this.IsFeatureAvailable(Feature.InterfaceStaticMembers))
-        {
-            return false;
-        }
-
         if (this.comIIDInterfacePredefined)
         {
             return true;
         }
 
+        bool canUseStaticAbstract = this.IsFeatureAvailable(Feature.InterfaceStaticMembers);
+
         this.volatileCode.GenerateSpecialType(IComIIDGuidInterfaceName.Identifier.ValueText, delegate
         {
-            // internal static abstract ref readonly Guid Guid { get; }
-            PropertyDeclarationSyntax guidProperty = PropertyDeclaration(IdentifierName(nameof(Guid)).WithTrailingTrivia(Space), ComIIDGuidPropertyName.Identifier)
-                .AddModifiers(
-                    TokenWithSpace(this.Visibility),
-                    TokenWithSpace(SyntaxKind.StaticKeyword),
-                    TokenWithSpace(SyntaxKind.AbstractKeyword),
-                    TokenWithSpace(SyntaxKind.RefKeyword),
-                    TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
-                .WithAccessorList(AccessorList(AccessorDeclaration(SyntaxKind.GetAccessorDeclaration).WithSemicolonToken(Semicolon)))
-                .WithLeadingTrivia(ParseLeadingTrivia($"/// <summary>The IID guid for this interface.</summary>\n/// <remarks>The <see cref=\"Guid\" /> reference that is returned comes from a permanent memory address, and is therefore safe to convert to a pointer and pass around or hold long-term.</remarks>\n"));
+            PropertyDeclarationSyntax guidProperty;
+            if (canUseStaticAbstract)
+            {
+                // internal static abstract ref readonly Guid Guid { get; }
+                guidProperty = PropertyDeclaration(IdentifierName(nameof(Guid)).WithTrailingTrivia(Space), ComIIDGuidPropertyName.Identifier)
+                    .AddModifiers(
+                        TokenWithSpace(this.Visibility),
+                        TokenWithSpace(SyntaxKind.StaticKeyword),
+                        TokenWithSpace(SyntaxKind.AbstractKeyword),
+                        TokenWithSpace(SyntaxKind.RefKeyword),
+                        TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
+                    .WithAccessorList(AccessorList(AccessorDeclaration(SyntaxKind.GetAccessorDeclaration).WithSemicolonToken(Semicolon)))
+                    .WithLeadingTrivia(ParseLeadingTrivia($"/// <summary>The IID guid for this interface.</summary>\n/// <remarks>The <see cref=\"Guid\" /> reference that is returned comes from a permanent memory address, and is therefore safe to convert to a pointer and pass around or hold long-term.</remarks>\n"));
+            }
+            else
+            {
+                // Downlevel polyfill form (see https://github.com/microsoft/CsWin32/issues/1704):
+                // internal ref readonly Guid Guid { get; }
+                // Matches the dotnet/winforms polyfill shape so a single `ref readonly Guid` signature
+                // works for both the upper (static-abstract) and downlevel forms.
+                guidProperty = PropertyDeclaration(IdentifierName(nameof(Guid)).WithTrailingTrivia(Space), ComIIDGuidPropertyName.Identifier)
+                    .AddModifiers(
+                        TokenWithSpace(this.Visibility),
+                        TokenWithSpace(SyntaxKind.RefKeyword),
+                        TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
+                    .WithAccessorList(AccessorList(AccessorDeclaration(SyntaxKind.GetAccessorDeclaration).WithSemicolonToken(Semicolon)))
+                    .WithLeadingTrivia(ParseLeadingTrivia($"/// <summary>The IID guid for this interface.</summary>\n"));
+            }
 
             // internal interface IComIID { ... }
             InterfaceDeclarationSyntax ifaceDecl = InterfaceDeclaration(IComIIDGuidInterfaceName.Identifier, [guidProperty])

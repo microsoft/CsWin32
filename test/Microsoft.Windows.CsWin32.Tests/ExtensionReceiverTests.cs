@@ -524,6 +524,89 @@ namespace Windows.Win32
         Assert.NotEmpty(hostMethods);
     }
 
+    /// <summary>
+    /// Member-kind discrimination: a constant must NOT be suppressed by a parameterless extension
+    /// <em>method</em> of the same simple name on the receiver. Both probe with zero parameters, so a
+    /// kind-agnostic match would have falsely deduped them; the constant must still be emitted.
+    /// </summary>
+    [Fact]
+    public void Dedup_ConstantVsParameterlessMethodSameName_StillEmitsConstant()
+    {
+        // A "lower" layer publishes a parameterless METHOD named WM_NULL on the receiver. The metadata
+        // WM_NULL is a CONSTANT of the same name. Different member kinds => must NOT dedup.
+        this.compilation = this.AddCode(
+            $@"namespace Windows.Win32
+{{
+    internal static class {ReceiverName} {{ }}
+    internal static class CoreLayer
+    {{
+        extension ({ReceiverName})
+        {{
+            public static uint WM_NULL() => 0u;
+        }}
+    }}
+}}",
+            fileName: "ExistingMethod.cs");
+
+        this.generator = this.CreateGenerator(new GeneratorOptions
+        {
+            EmitSingleFile = true,
+            ClassName = HostClassName,
+            ExtensionReceiver = ReceiverName,
+        });
+        Assert.True(this.generator.TryGenerate("WM_NULL", TestContext.Current.CancellationToken));
+        this.CollectGeneratedCode(this.generator);
+
+        // The constant's backing field must still be emitted under the host class because the pre-existing
+        // member is a method (different kind), not a field/property.
+        IEnumerable<FieldDeclarationSyntax> hostFields = this.FindGeneratedType(HostClassName)
+            .OfType<ClassDeclarationSyntax>()
+            .SelectMany(c => c.DescendantNodes().OfType<FieldDeclarationSyntax>())
+            .Where(f => f.Declaration.Variables.Any(v => v.Identifier.ValueText == "WM_NULL"));
+        Assert.NotEmpty(hostFields);
+    }
+
+    /// <summary>
+    /// Member-kind discrimination (the converse case): a parameterless extern method must NOT be suppressed
+    /// by an extension <em>property</em> of the same simple name on the receiver. The method must still be emitted.
+    /// </summary>
+    [Fact]
+    public void Dedup_ParameterlessMethodVsPropertySameName_StillEmitsExtern()
+    {
+        // A "lower" layer publishes a PROPERTY named GetTickCount on the receiver. The metadata
+        // GetTickCount() is a parameterless METHOD of the same name. Different member kinds => must NOT dedup.
+        this.compilation = this.AddCode(
+            $@"namespace Windows.Win32
+{{
+    internal static class {ReceiverName} {{ }}
+    internal static class CoreLayer
+    {{
+        extension ({ReceiverName})
+        {{
+            public static uint GetTickCount => 0u;
+        }}
+    }}
+}}",
+            fileName: "ExistingProperty.cs");
+
+        this.generator = this.CreateGenerator(new GeneratorOptions
+        {
+            EmitSingleFile = true,
+            ClassName = HostClassName,
+            ExtensionReceiver = ReceiverName,
+        });
+        Assert.True(this.generator.TryGenerate("GetTickCount", TestContext.Current.CancellationToken));
+        this.CollectGeneratedCode(this.generator);
+
+        // The raw parameterless extern must still be emitted because the pre-existing member is a property
+        // (different kind), not a method.
+        IEnumerable<MethodDeclarationSyntax> hostMethods = this.FindGeneratedType(HostClassName)
+            .OfType<ClassDeclarationSyntax>()
+            .SelectMany(c => c.DescendantNodes().OfType<MethodDeclarationSyntax>())
+            .Where(m => m.Identifier.ValueText == "GetTickCount" && m.ParameterList.Parameters.Count == 0);
+        Assert.NotEmpty(hostMethods);
+    }
+
     private static ClassDeclarationSyntax SingleHostClass(IEnumerable<BaseTypeDeclarationSyntax> types)
     {
         // A single emitted host class with members (the one that actually has the wrap).

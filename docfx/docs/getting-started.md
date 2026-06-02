@@ -9,7 +9,7 @@ WPF projects have [additional requirements](https://github.com/microsoft/CsWin32
 This source generator generates code compatible with .NET Framework, .NET Standard 2.0, and .NET, as applicable to the project that uses it.
 .NET Framework 4.7.2 is the oldest target framework that is officially supported, but community contributions have made a subset of the generated code work in .NET Framework 3.5 projects.
 
-When targeting .NET Standard or .NET Framework, it is necessary to explicitly update the C# language version to at _least_ C# 9+ (`<LangVersion>9</LangVersion>` in your project file).
+When targeting .NET Standard or .NET Framework, it is necessary to explicitly update the C# language version to at least C# 9+ (`<LangVersion>9</LangVersion>` in your project file).
 C# 11 is sometimes required depending on the code being generated.
 See [issue #4](https://github.com/microsoft/CsWin32/issues/4) for more on this.
 Newer is generally better.
@@ -37,25 +37,25 @@ dotnet add package System.Memory
 dotnet add package System.Runtime.CompilerServices.Unsafe
 ```
 
-Projects targeting .NET do _not_ need to add these package references, although it is harmless to do so.
+Projects targeting .NET do not need to add these package references, although it is harmless to do so.
 
 Note that while the `System.Memory` package depends on the `System.Runtime.CompilerServices.Unsafe` package,
 referencing the latter directly is still important to get the latest version of the APIs it provides.
 
 Your project must allow unsafe code to support the generated code that will likely use pointers.
-This does _not_ automatically make all your code _unsafe_.
+This does not automatically make all your code unsafe.
 Use of the `unsafe` keyword is required anywhere you use pointers.
 The source generator NuGet package sets the default value of the `AllowUnsafeBlocks` property for your project to `true`,
 but if you explicitly set it to `false` in your project file, generated code may produce compiler errors.
 
 Create a `NativeMethods.txt` file in your project directory that lists the APIs to generate code for.
-Each line may consist of _one_ of the following:
+Each line may consist of one of the following:
 
-* Exported method name (e.g. `CreateFile`). This _may_ include the `A` or `W` suffix, where applicable. This _may_ be qualified with a namespace but is only recommended in cases of ambiguity, which CsWin32 will prompt where appropriate.
+* Exported method name (e.g. `CreateFile`). This may include the `A` or `W` suffix, where applicable. This may be qualified with a namespace but is only recommended in cases of ambiguity, which CsWin32 will prompt where appropriate.
 * A macro name (e.g. `HRESULT_FROM_WIN32`). These are generated into the same class with extern methods. Macros must be hand-authored into CsWin32, so let us know if you want to see a macro added.
 * A namespace to generate all APIs from (e.g. `Windows.Win32.Storage.FileSystem` would search the metadata for all APIs within that namespace and generate them).
 * Module name followed by `.*` to generate all methods exported from that module (e.g. `Kernel32.*`).
-* The name of a struct, enum, constant or interface to generate. This _may_ be qualified with a namespace but is only recommended in cases of ambiguity, which CsWin32 will prompt where appropriate.
+* The name of a struct, enum, constant or interface to generate. This may be qualified with a namespace but is only recommended in cases of ambiguity, which CsWin32 will prompt where appropriate.
 * A prefix shared by many constants, followed by `*`, to generate all constants that share that prefix (e.g. `ALG_SID_MD*`).
 * A comment (i.e. any line starting with `//`) or white space line, which will be ignored.
 * A prefix `-` to indicate a name that should not be generated. The rest of the line can be a name (e.g. `BSTR`), fully namespaced name (e.g. `Windows.Win32.Foundation.BSTR`), or name ending in wildcard (e.g. `Windows.Win32.Foundation..*`)
@@ -113,7 +113,7 @@ Specifying the `$schema` property that points to [the schema](https://github.com
 
 Most generated types include the `partial` modifier so you can add your own members to that type within your code.
 
-When you need to _replace_ a generated type, simply copy and paste it from generated code into your own source files
+When you need to replace a generated type, simply copy and paste it from generated code into your own source files
 and remove the `partial` modifier.
 Be sure to keep the name and namespace exactly the same.
 CsWin32 will notice that your project already declares the type and skip generating it, but generate everything else.
@@ -137,7 +137,7 @@ Then you have two options:
 #### Enable CsWin32RunAsBuildTask
 
 CsWin32 now supports AOT by generating code which relies on `GeneratedComInterface` and `LibraryImport`, which are source generators.
-To make this chaining work, you have to request CsWin32 to run as a build task to generate the source code _before_ compile. Do this by adding this to your csproj:
+To make this chaining work, you have to request CsWin32 to run as a build task to generate the source code before compile. Do this by adding this to your csproj:
 
 ```xml
 <CsWin32RunAsBuildTask>true</CsWin32RunAsBuildTask>

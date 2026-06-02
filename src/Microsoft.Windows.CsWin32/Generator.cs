@@ -1506,6 +1506,13 @@ public partial class Generator : IGenerator, IDisposable
         if (!this.extensionReceiverSymbolResolved)
         {
             this.extensionReceiverSymbolResolved = true;
+
+            // The error reason is intentionally discarded here. This accessor feeds the per-generator
+            // no-op paths (WrapAsExtensionMembers / IsExtensionMemberAlreadyOnReceiver) where an
+            // unresolved receiver simply means "this generator doesn't own the receiver" (common when
+            // SuperGenerator runs several generators side by side). The user-facing PInvoke011 diagnostic
+            // is raised once in SourceGenerator.Execute, and only when NO generator can resolve the
+            // receiver, so reporting the reason here would produce duplicate or false diagnostics.
             this.TryResolveExtensionReceiver(out this.extensionReceiverSymbolCache, out _);
         }
 
@@ -1513,13 +1520,28 @@ public partial class Generator : IGenerator, IDisposable
     }
 
     /// <summary>
-    /// Tests whether the configured extension receiver type already exposes an accessible member with a matching signature (name + parameter count + per-parameter type name) as an extension member, across the compilation and any referenced assemblies. Supports multi-assembly composition of CsWin32 outputs. Always returns <see langword="false"/> on the Roslyn 4 leg of the analyzer (which lacks the extension-symbol API).
+    /// Identifies the kind of member being probed for by <see cref="IsExtensionMemberAlreadyOnReceiver"/>, so a constant and a same-named parameterless method cannot falsely suppress one another across composed assemblies.
+    /// </summary>
+#pragma warning disable SA1201 // Keep the discriminator next to the dedup helper that consumes it.
+    internal enum ReceiverMemberKind
+#pragma warning restore SA1201
+    {
+        /// <summary>A method member (a generated extern P/Invoke). Matches only methods on the receiver.</summary>
+        Method,
+
+        /// <summary>A value member (a generated constant). Matches only fields and parameterless properties on the receiver.</summary>
+        Value,
+    }
+
+    /// <summary>
+    /// Tests whether the configured extension receiver type already exposes an accessible member with a matching signature (name + member kind + parameter count + per-parameter type name) as an extension member, across the compilation and any referenced assemblies. Supports multi-assembly composition of CsWin32 outputs. Always returns <see langword="false"/> on the Roslyn 4 leg of the analyzer (which lacks the extension-symbol API).
     /// </summary>
     /// <param name="memberName">The simple member name to look for.</param>
-    /// <param name="parameterTypeNames">The CsWin32-projected textual form of each parameter type, in declaration order. Pass an empty array when probing for a field/property/parameterless member (e.g. a constant). The strings are compared after a normalization that strips <c>global::</c> prefixes and leading namespace segments, so callers may pass fully-qualified names produced by <c>ToTypeSyntax(...)</c>.</param>
+    /// <param name="parameterTypeNames">The CsWin32-projected textual form of each parameter type, in declaration order. Pass an empty array when probing for a value member (e.g. a constant). The strings are compared after a normalization that strips <c>global::</c> prefixes and leading namespace segments, so callers may pass fully-qualified names produced by <c>ToTypeSyntax(...)</c>.</param>
+    /// <param name="memberKind">The kind of member being probed for. A constant probes as <see cref="ReceiverMemberKind.Value"/> (matches fields and parameterless properties); an extern method probes as <see cref="ReceiverMemberKind.Method"/> (matches methods only). This prevents a constant in one assembly from being falsely suppressed by a parameterless method of the same name in another, and vice versa.</param>
     /// <returns><see langword="true"/> if a matching extension member is already declared on the receiver in scope; <see langword="false"/> otherwise (including when no extension receiver is configured or running on the Roslyn 4 leg).</returns>
 #pragma warning disable SA1202 // Keep dedup helper next to TryResolveExtensionReceiver / receiver-related code.
-    internal bool IsExtensionMemberAlreadyOnReceiver(string memberName, IReadOnlyList<string> parameterTypeNames)
+    internal bool IsExtensionMemberAlreadyOnReceiver(string memberName, IReadOnlyList<string> parameterTypeNames, ReceiverMemberKind memberKind)
 #pragma warning restore SA1202
     {
 #if ROSLYN5
@@ -1587,7 +1609,7 @@ public partial class Generator : IGenerator, IDisposable
                             continue;
                         }
 
-                        if (SignatureMatches(member, normalizedMetadataParams))
+                        if (SignatureMatches(member, normalizedMetadataParams, memberKind))
                         {
                             return true;
                         }
@@ -1602,6 +1624,7 @@ public partial class Generator : IGenerator, IDisposable
         // Roslyn 5; on this leg the option itself is rejected via PInvoke013 in SourceGenerator.Execute.
         _ = memberName;
         _ = parameterTypeNames;
+        _ = memberKind;
         return false;
 #endif
     }
@@ -1615,22 +1638,35 @@ public partial class Generator : IGenerator, IDisposable
 #pragma warning restore SA1201
 
     /// <summary>
-    /// Tests whether the given Roslyn member's signature matches the metadata-side parameter type names.
-    /// For fields / properties / parameterless accessors, expects an empty <paramref name="normalizedMetadataParams"/> array.
+    /// Tests whether the given Roslyn member's signature matches the metadata-side parameter type names and the requested member kind.
+    /// For a <see cref="ReceiverMemberKind.Value"/> probe (a constant), matches a field or a parameterless property and expects an empty <paramref name="normalizedMetadataParams"/> array.
+    /// For a <see cref="ReceiverMemberKind.Method"/> probe, matches a method whose parameter types line up with <paramref name="normalizedMetadataParams"/>.
     /// </summary>
-    private static bool SignatureMatches(ISymbol member, string[] normalizedMetadataParams)
+    private static bool SignatureMatches(ISymbol member, string[] normalizedMetadataParams, ReceiverMemberKind memberKind)
     {
         ImmutableArray<IParameterSymbol> parameters;
         switch (member)
         {
             case IMethodSymbol method:
+                if (memberKind != ReceiverMemberKind.Method)
+                {
+                    // A constant must not be suppressed by a (parameterless) method of the same name.
+                    return false;
+                }
+
                 parameters = method.Parameters;
                 break;
             case IPropertySymbol property:
+                if (memberKind != ReceiverMemberKind.Value)
+                {
+                    // A method must not be suppressed by a property of the same name.
+                    return false;
+                }
+
                 parameters = property.Parameters;
                 break;
             case IFieldSymbol:
-                return normalizedMetadataParams.Length == 0;
+                return memberKind == ReceiverMemberKind.Value && normalizedMetadataParams.Length == 0;
             default:
                 return false;
         }

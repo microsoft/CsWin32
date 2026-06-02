@@ -168,7 +168,7 @@ public partial class Generator
                     .Type.ToString();
             }
 
-            if (this.IsExtensionMemberAlreadyOnReceiver(this.Reader.GetString(methodDefinition.Name), parameterTypeNames))
+            if (this.IsExtensionMemberAlreadyOnReceiver(this.Reader.GetString(methodDefinition.Name), parameterTypeNames, ReceiverMemberKind.Method))
             {
                 return;
             }

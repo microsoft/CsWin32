@@ -149,7 +149,7 @@ public partial class Generator
             if (this.options.ExtensionReceiver is not null)
             {
                 string constantName = this.Reader.GetString(fieldDef.Name);
-                if (this.IsExtensionMemberAlreadyOnReceiver(constantName, Array.Empty<string>()))
+                if (this.IsExtensionMemberAlreadyOnReceiver(constantName, Array.Empty<string>(), ReceiverMemberKind.Value))
                 {
                     return;
                 }

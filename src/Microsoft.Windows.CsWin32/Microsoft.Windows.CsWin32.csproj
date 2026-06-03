@@ -78,6 +78,29 @@
     <PackageReference Include="System.Text.Json" />
   </ItemGroup>
 
+  <!--
+    PER-LEG SUPPORT-ASSEMBLY VERSION OVERRIDES (Roslyn 5.0 leg ONLY).
+
+    The shared central versions in Directory.Packages.Analyzers.props are intentionally
+    pinned to the Roslyn 4.11 FLOOR values (System.Collections.Immutable 8.0.0,
+    System.Memory 4.5.5) so the floor leg ships assemblies that load cleanly in older
+    VS 2022 Update 14 / .NET 8 hosts (see issue #1555).
+
+    This Roslyn 5.0 leg, however, references Microsoft.CodeAnalysis.CSharp 5.0.0, which
+    transitively requires System.Collections.Immutable >= 9.0.0 and System.Memory >= 4.6.0.
+    Keeping the floor versions here produces NU1109 package-downgrade errors. Because the
+    Roslyn 5.0 leg only ever loads inside a newer host whose compiler already ships these
+    higher assembly versions, bumping them HERE (and only here) is safe.
+
+    Override locally via VersionOverride instead of raising the shared floor. If you add a
+    newer Roslyn version that pulls in additional higher support assemblies, add the
+    corresponding override below rather than editing the central props.
+  -->
+  <ItemGroup>
+    <PackageReference Include="System.Collections.Immutable" VersionOverride="9.0.0" />
+    <PackageReference Include="System.Memory" VersionOverride="4.6.0" PrivateAssets="none" />
+  </ItemGroup>
+
   <ItemGroup Condition="'$(TargetFramework)'=='net472'">
     <PackageReference Include="System.Memory" PrivateAssets="none" />
   </ItemGroup>

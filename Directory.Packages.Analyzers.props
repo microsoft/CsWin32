@@ -13,10 +13,29 @@
     <PackageVersion Update="Microsoft.CodeAnalysis.Common" Version="$(CodeAnalysisVersionForAnalyzers)" />
     <PackageVersion Update="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="$(CodeAnalysisVersionForAnalyzers)" />
     <PackageVersion Update="Microsoft.CodeAnalysis.CSharp" Version="$(CodeAnalysisVersionForAnalyzers)" />
-    <PackageVersion Update="System.Collections.Immutable" Version="9.0.0" />
-    <PackageVersion Update="System.Memory" Version="4.6.0" />
+
+    <!--
+      ANALYZER SUPPORT-ASSEMBLY VERSION BINDINGS — DO NOT BUMP HERE.
+
+      The following System.* versions are the support assemblies that get copied next to
+      the analyzer (CopyLocalLockFileAssemblies=true) and shipped inside the NuGet package.
+      They are intentionally pinned to the FLOOR (Roslyn 4.11 / VS 2022 Update 14 / .NET 8)
+      versions because the analyzer must load inside older Visual Studio and `dotnet build`
+      hosts that ship exactly these assembly versions in the compiler's load context.
+      Shipping a NEWER version than the host provides risks an assembly-load/version
+      mismatch at analysis time (the root cause behind issue #1555).
+
+      These are the central defaults consumed by the Roslyn 4.11 floor leg
+      (Microsoft.Windows.CsWin32.Roslyn4). The Roslyn 5.0 leg
+      (Microsoft.Windows.CsWin32) runs in a newer host whose compiler genuinely ships
+      newer System.* assemblies, so that leg — and ONLY that leg — overrides these
+      versions locally via <VersionOverride> in its .csproj. Keep the floor numbers here
+      and add per-leg overrides there; never raise the floor to satisfy the newer leg.
+    -->
+    <PackageVersion Update="System.Collections.Immutable" Version="8.0.0" />
+    <PackageVersion Update="System.Memory" Version="4.5.5" />
     <PackageVersion Update="System.Reflection.Metadata" Version="8.0.0" />
     <PackageVersion Include="System.Text.Encodings.Web" Version="8.0.0" />
-    <PackageVersion Update="System.Text.Json" Version="8.0.5" />
+    <PackageVersion Update="System.Text.Json" Version="8.0.0" />
   </ItemGroup>
 </Project>

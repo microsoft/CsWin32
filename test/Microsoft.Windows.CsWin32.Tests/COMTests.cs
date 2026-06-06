@@ -35,6 +35,28 @@ public class COMTests : GeneratorTestBase
     }
 
     [Fact]
+    public void InheritedCOMInterfaceMethodsUseBaseMethodDocs()
+    {
+        this.generator = this.CreateGenerator(includeDocs: true);
+        this.GenerateApi("IShellDispatch2");
+
+        InterfaceDeclarationSyntax baseInterface = Assert.Single(this.FindGeneratedType("IShellDispatch").OfType<InterfaceDeclarationSyntax>());
+        MethodDeclarationSyntax baseFileRun = Assert.Single(baseInterface.Members.OfType<MethodDeclarationSyntax>(), m => m.Identifier.ValueText == "FileRun");
+
+        InterfaceDeclarationSyntax derivedInterface = Assert.Single(this.FindGeneratedType("IShellDispatch2").OfType<InterfaceDeclarationSyntax>());
+        MethodDeclarationSyntax derivedFileRun = Assert.Single(derivedInterface.Members.OfType<MethodDeclarationSyntax>(), m => m.Identifier.ValueText == "FileRun");
+        MethodDeclarationSyntax derivedIsRestricted = Assert.Single(derivedInterface.Members.OfType<MethodDeclarationSyntax>(), m => m.Identifier.ValueText == "IsRestricted");
+
+        Assert.Equal("void", derivedFileRun.ReturnType.ToString());
+        Assert.Empty(derivedFileRun.ParameterList.Parameters);
+        Assert.Contains(derivedFileRun.Modifiers, m => m.IsKind(SyntaxKind.NewKeyword));
+        string? baseFileRunDocs = GetDocumentationComment(baseFileRun);
+        Assert.NotNull(baseFileRunDocs);
+        Assert.Equal(baseFileRunDocs, GetDocumentationComment(derivedFileRun));
+        Assert.NotNull(GetDocumentationComment(derivedIsRestricted));
+    }
+
+    [Fact]
     public void CreateDispatcherQueueController_CreatesWinRTCustomMarshaler()
     {
         this.GenerateApi("CreateDispatcherQueueController");
@@ -1073,4 +1095,11 @@ public class COMTests : GeneratorTestBase
 
     private static string StripWarningDisablePragmas(string code) =>
         string.Join("\n", code.Split('\n').Where(line => !line.TrimStart().StartsWith("#pragma warning disable", StringComparison.Ordinal)));
+
+    private static string? GetDocumentationComment(MemberDeclarationSyntax member) =>
+        member.GetLeadingTrivia()
+            .Select(t => t.GetStructure())
+            .OfType<DocumentationCommentTriviaSyntax>()
+            .SingleOrDefault()
+            ?.ToFullString();
 }

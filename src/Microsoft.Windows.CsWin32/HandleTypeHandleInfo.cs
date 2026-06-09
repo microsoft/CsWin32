@@ -89,7 +89,7 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
         {
             case HandleKind.TypeDefinition:
                 TypeDefinition td = this.reader.GetTypeDefinition((TypeDefinitionHandle)this.Handle);
-                bool hasUnmanagedSuffix = inputs.Generator?.HasUnmanagedSuffix(this.reader, td.Name, inputs.AllowMarshaling, isManagedType) ?? false;
+                bool hasUnmanagedSuffix = inputs.Generator?.HasUnmanagedSuffix(this.reader, td, inputs.AllowMarshaling, isManagedType) ?? false;
                 string simpleNameSuffix = hasUnmanagedSuffix ? Generator.UnmanagedInteropSuffix : string.Empty;
                 nameSyntax = inputs.QualifyNames ? GetNestingQualifiedName(inputs.Generator, this.reader, td, hasUnmanagedSuffix, isInterfaceNestedInStruct: false) : IdentifierName(this.reader.GetString(td.Name) + simpleNameSuffix);
                 isInterface = (td.Attributes & TypeAttributes.Interface) == TypeAttributes.Interface;
@@ -99,15 +99,24 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
             case HandleKind.TypeReference:
                 var trh = (TypeReferenceHandle)this.Handle;
                 TypeReference tr = this.reader.GetTypeReference(trh);
-                hasUnmanagedSuffix = inputs.Generator?.HasUnmanagedSuffix(this.Reader, tr.Name, inputs.AllowMarshaling, isManagedType) ?? false;
+
+                // If we can resolve the TypeReference to a TypeDefinition, use the TypeDefinition-aware overload so the
+                // source-generator suppression in HasUnmanagedSuffix can decide based on the type's kind (struct vs interface).
+                if (this.generator.TryGetTypeDefHandle(this.Handle, out QualifiedTypeDefinitionHandle qtdhTmp))
+                {
+                    qtdh = qtdhTmp;
+                    TypeDefinition resolvedTypeDef = qtdhTmp.Reader.GetTypeDefinition(qtdhTmp.DefinitionHandle);
+                    hasUnmanagedSuffix = inputs.Generator?.HasUnmanagedSuffix(qtdhTmp.Reader, resolvedTypeDef, inputs.AllowMarshaling, isManagedType) ?? false;
+                }
+                else
+                {
+                    hasUnmanagedSuffix = inputs.Generator?.HasUnmanagedSuffix(this.Reader, tr.Name, inputs.AllowMarshaling, isManagedType) ?? false;
+                }
+
                 simpleNameSuffix = hasUnmanagedSuffix ? Generator.UnmanagedInteropSuffix : string.Empty;
                 nameSyntax = inputs.QualifyNames ? GetNestingQualifiedName(inputs, this.reader, tr, hasUnmanagedSuffix) : IdentifierName(this.reader.GetString(tr.Name) + simpleNameSuffix);
                 isInterface = this.generator.IsInterface(trh) is true;
                 isNonCOMConformingInterface = isInterface && this.generator.IsNonCOMInterface(trh) is true;
-                if (this.generator.TryGetTypeDefHandle(this.Handle, out QualifiedTypeDefinitionHandle qtdhTmp))
-                {
-                    qtdh = qtdhTmp;
-                }
 
                 break;
             default:

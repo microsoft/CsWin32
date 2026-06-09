@@ -19,7 +19,7 @@ public partial class Generator
     {
         TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefHandle);
         bool isManagedType = this.IsManagedType(typeDefHandle);
-        IdentifierNameSyntax name = IdentifierName(this.GetMangledIdentifier(this.Reader.GetString(typeDef.Name), context.AllowMarshaling, isManagedType));
+        IdentifierNameSyntax name = IdentifierName(this.GetMangledIdentifier(this.Reader.GetString(typeDef.Name), this.Reader, typeDef, context.AllowMarshaling, isManagedType));
         bool explicitLayout = (typeDef.Attributes & TypeAttributes.ExplicitLayout) == TypeAttributes.ExplicitLayout;
         if (explicitLayout)
         {

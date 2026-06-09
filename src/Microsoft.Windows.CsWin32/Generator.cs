@@ -1040,7 +1040,7 @@ public partial class Generator : IGenerator, IDisposable
                 }
             }
 
-            bool hasUnmanagedName = this.HasUnmanagedSuffix(this.Reader, typeDef.Name, context.AllowMarshaling, this.IsManagedType(typeDefHandle));
+            bool hasUnmanagedName = this.HasUnmanagedSuffix(this.Reader, typeDef, context.AllowMarshaling, this.IsManagedType(typeDefHandle));
             this.volatileCode.GenerateType(typeDefHandle, hasUnmanagedName, delegate
             {
                 if (this.RequestInteropTypeHelper(typeDefHandle, context) is MemberDeclarationSyntax typeDeclaration)
@@ -1216,8 +1216,37 @@ public partial class Generator : IGenerator, IDisposable
 
     internal bool HasUnmanagedSuffix(MetadataReader reader, StringHandle typeName, bool allowMarshaling, bool isManagedType) => !allowMarshaling && isManagedType && this.options.AllowMarshaling && !reader.StringComparer.Equals(typeName, "IUnknown");
 
+    /// <summary>
+    /// Determines whether the given type definition needs an "_unmanaged" suffix in its projection.
+    /// </summary>
+    /// <param name="reader">The metadata reader for the assembly containing the type.</param>
+    /// <param name="typeDef">The type definition to check.</param>
+    /// <param name="allowMarshaling">A value indicating whether marshaling is allowed.</param>
+    /// <param name="isManagedType">A value indicating whether the type is a managed type.</param>
+    /// <returns><see langword="true"/> if the type should have an "_unmanaged" suffix; otherwise <see langword="false"/>.</returns>
+    /// <remarks>
+    /// Under COM source generators, structs cannot have a marshaled projection that differs from the unmanaged one
+    /// (managed pointer fields always demote to _unmanaged*), so the two variants would be byte-for-byte identical.
+    /// Skip the suffix in that case so callers don't need a redundant struct type. See https://github.com/microsoft/CsWin32/issues/1682.
+    /// </remarks>
+    internal bool HasUnmanagedSuffix(MetadataReader reader, TypeDefinition typeDef, bool allowMarshaling, bool isManagedType)
+    {
+        if (!this.HasUnmanagedSuffix(reader, typeDef.Name, allowMarshaling, isManagedType))
+        {
+            return false;
+        }
+
+        // Source generators force every managed-pointer struct field through the unmanaged projection,
+        // so a struct's _managed and _unmanaged variants are layout-equivalent. Skip the duplicate emission.
+        bool isInterface = (typeDef.Attributes & TypeAttributes.Interface) == TypeAttributes.Interface;
+        return isInterface || !this.useSourceGenerators;
+    }
+
     internal string GetMangledIdentifier(string normalIdentifier, bool allowMarshaling, bool isManagedType) =>
         this.HasUnmanagedSuffix(normalIdentifier, allowMarshaling, isManagedType) ? normalIdentifier + UnmanagedInteropSuffix : normalIdentifier;
+
+    internal string GetMangledIdentifier(string normalIdentifier, MetadataReader reader, TypeDefinition typeDef, bool allowMarshaling, bool isManagedType) =>
+        this.HasUnmanagedSuffix(reader, typeDef, allowMarshaling, isManagedType) ? normalIdentifier + UnmanagedInteropSuffix : normalIdentifier;
 
     internal Generator GetGeneratorFromReader(MetadataReader reader)
     {
@@ -1417,7 +1446,7 @@ public partial class Generator : IGenerator, IDisposable
         string name = this.Reader.GetString(typeDef.Name);
         string ns = this.Reader.GetString(typeDef.Namespace);
         bool isManagedType = this.IsManagedType(typeDefHandle);
-        string fullyQualifiedName = this.GetMangledIdentifier(ns + "." + name, context.AllowMarshaling, isManagedType);
+        string fullyQualifiedName = this.GetMangledIdentifier(ns + "." + name, this.Reader, typeDef, context.AllowMarshaling, isManagedType);
 
         // Skip if the compilation already defines this type or can access it from elsewhere.
         // But if we have more than one match, the compiler won't be able to resolve our type references.

@@ -43,6 +43,7 @@ IDirectorySearch
 IEnumDebugPropertyInfo
 IPersistFile
 IServiceProvider
+IShellItem
 IShellWindows
 IStream
 KEY_EVENT_RECORD
@@ -69,6 +70,7 @@ RmRegisterResources
 RmRegisterResources
 RmStartSession
 S_OK
+SHCreateItemFromParsingName
 SetupDiGetDeviceInterfaceDetail
 SHDESCRIPTIONID
 SHELLFLAGSTATE

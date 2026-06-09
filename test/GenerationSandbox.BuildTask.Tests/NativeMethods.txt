@@ -31,6 +31,7 @@ IEventSubscription
 InitializeAcl
 IPersistFile
 ISequentialStream
+IShellItem
 IShellLinkW
 IShellWindows
 IStream
@@ -47,6 +48,7 @@ S_OK
 SetTimer
 SetupDiCreateDeviceInterface
 ShellLink
+SHCreateItemFromParsingName
 SHGetFileInfo
 SHGFI_FLAGS
 STATFLAG

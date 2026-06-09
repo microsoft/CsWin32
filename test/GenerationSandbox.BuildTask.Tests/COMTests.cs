@@ -289,4 +289,42 @@ public partial class COMTests(ITestOutputHelper outputHelper)
             this.outputHelper.WriteLine($"Device {devInfo.ClassGuid} Instance ID: {instanceIdSpan.ToString()}");
         }
     }
+
+    /// <summary>
+    /// Regression test for <see href="https://github.com/microsoft/CsWin32/issues/1716">#1716</see>.
+    /// Calls <see cref="IStream.Read"/> via the friendly Span overload on an IStream obtained from
+    /// <see cref="IShellItem.BindToHandler"/> when CsWin32 is configured with <c>useComSourceGenerators</c>.
+    /// Shell-returned IStream objects do not honor QueryInterface for <c>IID_ISequentialStream</c>, so the
+    /// friendly overload must dispatch via the derived IStream interface rather than upcasting to
+    /// ISequentialStream.
+    /// </summary>
+    [Fact]
+    [Trait("TestCategory", "RequiresHardware")]
+    public void IShellItem_BindToHandler_IStream_ReadWorks()
+    {
+        Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
+
+        // {1CEBB3AB-7C10-499a-A417-92CA16C4CB83}
+        Guid bhidStream = new Guid(0x1cebb3ab, 0x7c10, 0x499a, 0xa4, 0x17, 0x92, 0xca, 0x16, 0xc4, 0xcb, 0x83);
+
+        string filePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "win.ini");
+        Assert.True(File.Exists(filePath), $"Expected '{filePath}' to exist on Windows.");
+
+        unsafe
+        {
+            PInvoke.SHCreateItemFromParsingName(filePath, null, typeof(IShellItem).GUID, out object shellItemObj).ThrowOnFailure();
+            IShellItem shellItem = (IShellItem)shellItemObj;
+            shellItem.BindToHandler(null, bhidStream, typeof(IStream).GUID, out object streamObj);
+            IStream stream = (IStream)streamObj;
+
+            // Friendly Span overload — the original repro for #1716. In source-generator mode this used to
+            // throw InvalidCastException because the extension method's `this` parameter was typed as
+            // ISequentialStream, forcing an upcast that triggered QI for IID_ISequentialStream on the
+            // Shell-returned IStream (which fails).
+            byte[] buffer = new byte[16];
+            stream.Read(buffer, out uint bytesRead);
+
+            Assert.True(bytesRead > 0, "Expected to read at least one byte from win.ini.");
+        }
+    }
 }

@@ -458,6 +458,126 @@ public class COMTests : GeneratorTestBase
         }
     }
 
+    /// <summary>
+    /// Regression test for <see href="https://github.com/microsoft/CsWin32/issues/1704">issue 1704</see>:
+    /// the <c>IComIID</c> interface (and its attachment on generated COM structs) must also be emitted
+    /// on target frameworks that do not support static abstract interface members
+    /// (<c>net472</c>, <c>netstandard2.0</c>), using an instance-form property.
+    /// </summary>
+    [Theory]
+    [CombinatorialData]
+    public void COMInterfaceIIDInterfaceOnDownlevelTFMs(
+        [CombinatorialValues("net472", "netstandard2.0")] string tfm)
+    {
+        const string structName = "IEnumBstr";
+        this.compilation = this.starterCompilations[tfm];
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = false });
+        this.GenerateApi(structName);
+
+        BaseTypeDeclarationSyntax type = this.FindGeneratedType(structName).Single();
+        Assert.IsType<StructDeclarationSyntax>(type);
+        IEnumerable<BaseTypeSyntax> baseTypes = type.BaseList?.Types ?? Enumerable.Empty<BaseTypeSyntax>();
+        Assert.Contains(baseTypes, t => t.Type.ToString().Contains("IComIID"));
+
+        // The IComIID interface itself must be generated.
+        InterfaceDeclarationSyntax icomIidDecl = Assert.IsType<InterfaceDeclarationSyntax>(this.FindGeneratedType("IComIID").Single());
+
+        // Its Guid property must be instance-form (no 'static' modifier) on these TFMs,
+        // and must be `ref readonly Guid` to match the dotnet/winforms polyfill shape.
+        PropertyDeclarationSyntax guidProp = icomIidDecl.Members.OfType<PropertyDeclarationSyntax>().Single(p => p.Identifier.ValueText == "Guid");
+        Assert.DoesNotContain(guidProp.Modifiers, m => m.IsKind(SyntaxKind.StaticKeyword));
+        Assert.DoesNotContain(guidProp.Modifiers, m => m.IsKind(SyntaxKind.AbstractKeyword));
+        string guidPropText = guidProp.NormalizeWhitespace().ToFullString();
+        Assert.Contains("ref readonly Guid Guid", guidPropText);
+
+        // And the struct must contain an explicit interface implementation of IComIID.Guid,
+        // also as `ref readonly Guid` (matching the WinForms `ref Unsafe.AsRef(in IID_Guid)` pattern).
+        var explicitImpl = ((StructDeclarationSyntax)type).Members.OfType<PropertyDeclarationSyntax>()
+            .SingleOrDefault(p => p.ExplicitInterfaceSpecifier is not null && p.Identifier.ValueText == "Guid");
+        Assert.NotNull(explicitImpl);
+        Assert.DoesNotContain(explicitImpl!.Modifiers, m => m.IsKind(SyntaxKind.StaticKeyword));
+        string implText = explicitImpl.NormalizeWhitespace().ToFullString();
+        Assert.Contains("ref readonly Guid IComIID.Guid", implText);
+        Assert.Contains("Unsafe.AsRef(in IID_Guid)", implText);
+    }
+
+    /// <summary>
+    /// Multi-targeting regression test for <see href="https://github.com/microsoft/CsWin32/issues/1704">issue 1704</see>.
+    /// Mirrors the issue's repro project (TargetFrameworks = net10.0;net472 with the exact
+    /// NativeMethods.txt content) and asserts that <c>IComIID</c> is generated, attached, and
+    /// usable as a generic type constraint on every TFM a typical multi-targeted project
+    /// might build for — not only those that support static abstract interface members.
+    /// </summary>
+    [Theory]
+    [CombinatorialData]
+    public void IComIID_MultiTargeting_Issue1704(
+        [CombinatorialValues("net472", "netstandard2.0", "net8.0", "net9.0", "net10.0")] string tfm)
+    {
+        this.compilation = this.starterCompilations[tfm];
+        this.parseOptions = this.parseOptions.WithLanguageVersion(GetLanguageVersionForTfm(tfm) ?? LanguageVersion.Latest);
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = false });
+
+        // The exact NativeMethods.txt content from the issue repro.
+        Assert.True(this.generator.TryGenerate("GetRunningObjectTable", CancellationToken.None));
+        Assert.True(this.generator.TryGenerate("IRunningObjectTable", CancellationToken.None));
+        Assert.True(this.generator.TryGenerate("IMoniker", CancellationToken.None));
+        Assert.True(this.generator.TryGenerate("CoCreateInstance", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        // 1. The IComIID interface itself must be generated on every TFM.
+        InterfaceDeclarationSyntax icomIidDecl = Assert.IsType<InterfaceDeclarationSyntax>(this.FindGeneratedType("IComIID").Single());
+
+        // 2. Every generated COM struct must list IComIID in its base list.
+        foreach (string structName in new[] { "IRunningObjectTable", "IMoniker" })
+        {
+            BaseTypeDeclarationSyntax type = this.FindGeneratedType(structName).Single();
+            Assert.IsType<StructDeclarationSyntax>(type);
+            IEnumerable<BaseTypeSyntax> baseTypes = type.BaseList?.Types ?? Enumerable.Empty<BaseTypeSyntax>();
+            Assert.Contains(baseTypes, t => t.Type.ToString().Contains("IComIID"));
+        }
+
+        // 3. Consumer code that uses IComIID as a generic constraint must compile on every TFM.
+        //    Use the WinForms-style `ref readonly Guid` pattern (see dotnet/winforms IDataObject.cs)
+        //    which is uniform across both static-abstract and downlevel forms — only the call site differs.
+        bool hasStaticAbstract = this.parseOptions.LanguageVersion >= LanguageVersion.CSharp11
+            && (tfm.StartsWith("net8", StringComparison.Ordinal)
+                || tfm.StartsWith("net9", StringComparison.Ordinal)
+                || tfm.StartsWith("net10", StringComparison.Ordinal));
+
+        string consumerSnippet = hasStaticAbstract
+            ? """
+                using System;
+                using Windows.Win32;
+                using Windows.Win32.System.Com;
+
+                internal static unsafe class Issue1704Consumer
+                {
+                    private static ref readonly Guid GetIID<T>() where T : unmanaged, IComIID => ref T.Guid;
+                    public static Guid M() => GetIID<IRunningObjectTable>();
+                }
+                """
+            : """
+                using System;
+                using Windows.Win32;
+                using Windows.Win32.System.Com;
+
+                internal static unsafe class Issue1704Consumer
+                {
+                    private static ref readonly Guid GetIID<T>() where T : unmanaged, IComIID
+                    {
+                        T local = default;
+                        return ref ((IComIID)local).Guid;
+                    }
+
+                    public static Guid M() => GetIID<IRunningObjectTable>();
+                }
+                """;
+
+        this.compilation = this.AddCode(consumerSnippet);
+        this.AssertNoDiagnostics(this.compilation, logAllGeneratedCode: false);
+    }
+
     [Fact]
     public void FunctionPointersAsParameters()
     {

@@ -256,7 +256,7 @@ public class ComRuntimeTests(ITestOutputHelper outputHelper)
             stream.Seek(0, System.IO.SeekOrigin.Begin, out ulong newPosition);
             Assert.Equal(0UL, newPosition);
 
-            STATSTG stat;
+            Windows.Win32.System.Com.STATSTG stat;
             stream.Stat(&stat, STATFLAG.STATFLAG_NONAME);
             Assert.True(stat.cbSize > 0, "Expected Stat to report a non-empty file size.");
 

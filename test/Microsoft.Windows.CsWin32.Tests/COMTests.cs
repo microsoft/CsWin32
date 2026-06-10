@@ -672,4 +672,107 @@ public class COMTests : GeneratorTestBase
 
         // TODO: Check "GetResourceAllocationInfo"
     }
+
+    /// <summary>
+    /// Regression test for <see href="https://github.com/microsoft/CsWin32/issues/1703">issue 1703</see>:
+    /// generated COM struct wrappers contain CCW thunks annotated with
+    /// <c>[UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvStdcall) })]</c>, which trips
+    /// <c>CS3016 "Arrays as attribute arguments is not CLS-compliant"</c> under
+    /// <c>[assembly: CLSCompliant(true)]</c>. The generator must mark such COM struct wrappers
+    /// <c>[CLSCompliant(false)]</c> so consumers do not have to hand-author partials per type.
+    /// </summary>
+    [Theory]
+    [CombinatorialData]
+    public void COMStructWrappers_AreCLSCompliantFalse_Issue1703(
+        [CombinatorialValues("net8.0", "net9.0", "net10.0")] string tfm)
+    {
+        this.compilation = this.starterCompilations[tfm];
+        this.parseOptions = this.parseOptions.WithLanguageVersion(GetLanguageVersionForTfm(tfm) ?? LanguageVersion.Latest);
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = false });
+
+        // The exact NativeMethods.txt content from the issue repro.
+        Assert.True(this.generator.TryGenerate("ITypeInfo", CancellationToken.None));
+        Assert.True(this.generator.TryGenerate("ITypeLib", CancellationToken.None));
+        Assert.True(this.generator.TryGenerate("IRecordInfo", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        // Every generated COM struct wrapper that carries CCW thunks (annotated with
+        // [UnmanagedCallersOnly(CallConvs = new[]{...})]) must itself bear [CLSCompliant(false)].
+        foreach (string structName in new[] { "ITypeInfo", "ITypeLib", "IRecordInfo" })
+        {
+            var type = Assert.IsType<StructDeclarationSyntax>(this.FindGeneratedType(structName).Single());
+            Assert.Contains(
+                type.AttributeLists.SelectMany(al => al.Attributes),
+                a => a.Name.ToString() is "CLSCompliant" or "System.CLSCompliant"
+                    && a.ArgumentList?.Arguments.Count == 1
+                    && a.ArgumentList.Arguments[0].Expression is LiteralExpressionSyntax { Token.ValueText: "false" });
+        }
+
+        // End-to-end: a consuming assembly marked [assembly: CLSCompliant(true)] must compile
+        // entirely clean — no CS3016, no CS3019, no CS3021. The generator suppresses CS3019/CS3021
+        // in the generated-file pragma so consumers do not have to author per-file overrides.
+        this.compilation = this.AddCode("""
+            using System;
+
+            [assembly: CLSCompliant(true)]
+
+            internal static class Issue1703Consumer
+            {
+                public static void Touch()
+                {
+                    // Mere presence of the generated types in this CLS-compliant assembly used to trip CS3016.
+                    _ = typeof(Windows.Win32.System.Com.ITypeInfo);
+                    _ = typeof(Windows.Win32.System.Com.ITypeLib);
+                    _ = typeof(Windows.Win32.System.Ole.IRecordInfo);
+                }
+            }
+            """);
+        this.AssertNoDiagnostics(this.compilation, logAllGeneratedCode: false);
+    }
+
+    /// <summary>
+    /// Negative coverage for #1703: on downlevel TFMs (<c>net472</c>, <c>netstandard2.0</c>)
+    /// the generator does not emit <c>[UnmanagedCallersOnly]</c>-decorated CCW thunks, so there is
+    /// no array-valued attribute argument and no CS3016 to suppress. The generator must therefore
+    /// not emit <c>[CLSCompliant(false)]</c> in that case — the attribute would be unmotivated noise.
+    /// </summary>
+    [Theory]
+    [CombinatorialData]
+    public void COMStructWrappers_NoCLSCompliantFalse_OnDownlevelTFMs_Issue1703(
+        [CombinatorialValues("net472", "netstandard2.0")] string tfm)
+    {
+        this.compilation = this.starterCompilations[tfm];
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = false });
+
+        Assert.True(this.generator.TryGenerate("ITypeInfo", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+
+        var type = Assert.IsType<StructDeclarationSyntax>(this.FindGeneratedType("ITypeInfo").Single());
+        Assert.DoesNotContain(
+            type.AttributeLists.SelectMany(al => al.Attributes),
+            a => a.Name.ToString() is "CLSCompliant" or "System.CLSCompliant");
+    }
+
+    /// <summary>
+    /// Negative coverage for #1703: when the generator is configured to emit public types
+    /// (<see cref="GeneratorOptions.Public"/> = <see langword="true"/>), the COM struct wrapper
+    /// is part of the consumer's CLS surface and they own its CLS-compliance contract — the
+    /// generator must not unilaterally stamp <c>[CLSCompliant(false)]</c> on it.
+    /// </summary>
+    [Fact]
+    public void COMStructWrappers_NoCLSCompliantFalse_WhenPublic_Issue1703()
+    {
+        this.compilation = this.starterCompilations["net10.0"];
+        this.parseOptions = this.parseOptions.WithLanguageVersion(GetLanguageVersionForTfm("net10.0") ?? LanguageVersion.Latest);
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = false, Public = true });
+
+        Assert.True(this.generator.TryGenerate("ITypeInfo", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+
+        var type = Assert.IsType<StructDeclarationSyntax>(this.FindGeneratedType("ITypeInfo").Single());
+        Assert.DoesNotContain(
+            type.AttributeLists.SelectMany(al => al.Attributes),
+            a => a.Name.ToString() is "CLSCompliant" or "System.CLSCompliant");
+    }
 }

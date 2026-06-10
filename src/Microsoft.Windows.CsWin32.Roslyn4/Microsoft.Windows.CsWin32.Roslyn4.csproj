@@ -47,7 +47,17 @@
   <ItemGroup>
     <Compile Remove="**\*.cs" />
     <Compile Include="$(CsWin32SharedSourceRoot)**\*.cs" Exclude="$(CsWin32SharedSourceRoot)bin\**\*.cs;$(CsWin32SharedSourceRoot)obj\**\*.cs;$(CsWin32SharedSourceRoot)templates\**\*.cs" />
-    <EmbeddedResource Include="$(CsWin32SharedSourceRoot)templates\**\*.cs" />
+    <!--
+      The templates are embedded resources fetched at runtime by name (see Generator.FetchTemplateText,
+      which looks them up as "{RootNamespace}.templates.{name}.cs"). Because these files live OUTSIDE
+      this project's directory (under the sibling Roslyn 5 project), MSBuild cannot infer the
+      "templates\" subfolder for the manifest resource name and would drop it, producing the wrong
+      name (e.g. "Microsoft.Windows.CsWin32.IVTable.cs" instead of
+      "Microsoft.Windows.CsWin32.templates.IVTable.cs") and making every template lookup fail at
+      runtime (Generator's static constructor throws). Set Link to reproduce the in-project layout so
+      the embedded resource names match the Roslyn 5 leg exactly.
+    -->
+    <EmbeddedResource Include="$(CsWin32SharedSourceRoot)templates\**\*.cs" Link="templates\%(RecursiveDir)%(Filename)%(Extension)" />
     <AdditionalFiles Include="$(CsWin32SharedSourceRoot)BannedSymbols.txt" />
     <AdditionalFiles Include="$(CsWin32SharedSourceRoot)AnalyzerReleases.Shipped.md" />
     <AdditionalFiles Include="$(CsWin32SharedSourceRoot)AnalyzerReleases.Unshipped.md" />

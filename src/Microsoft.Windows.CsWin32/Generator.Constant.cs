@@ -140,6 +140,21 @@ public partial class Generator
         this.volatileCode.GenerateConstant(fieldDefHandle, delegate
         {
             FieldDefinition fieldDef = this.Reader.GetFieldDefinition(fieldDefHandle);
+
+            // Multi-assembly composition: if another assembly already exposes this constant as an extension
+            // property (or as a plain field/property on the receiver type), skip regeneration so layered
+            // CsWin32 outputs compose without duplicates. Constants are name-unique per type (no
+            // overloading), so we look for any member of the same name with zero parameters
+            // (field / property / parameterless accessor) by passing an empty parameter-types list.
+            if (this.options.ExtensionReceiver is not null)
+            {
+                string constantName = this.Reader.GetString(fieldDef.Name);
+                if (this.IsExtensionMemberAlreadyOnReceiver(constantName, Array.Empty<string>(), ReceiverMemberKind.Value))
+                {
+                    return;
+                }
+            }
+
             FieldDeclarationSyntax constantDeclaration = this.DeclareConstant(fieldDef);
 
             TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature<TypeHandleInfo, SignatureHandleProvider.IGenericContext?>(this.SignatureHandleProvider, null) with { IsConstantField = true };
@@ -420,7 +435,68 @@ public partial class Generator
 
     private ClassDeclarationSyntax DeclareConstantDefiningClass()
     {
+#if ROSLYN5
+        // Skip the field-split when no receiver is configured OR when THIS generator's namespace can't
+        // resolve the configured receiver (multi-namespace pipeline edge case — see Generator.WrapAsExtensionMembers).
+        if (this.options.ExtensionReceiver is null || this.GetExtensionReceiverSymbol() is null)
+        {
+            return ClassDeclaration(this.methodsAndConstantsClassName.Identifier, [.. this.committedCode.TopLevelFields])
+                .WithModifiers([TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)]);
+        }
+
+        // When an extension receiver is configured, constants must remain on the host class because
+        // fields are not legal members of a C# 14 extension block. To still expose them through the
+        // receiver, we emit a forwarding static property inside the extension block that returns the
+        // underlying field. The backing field keeps its original visibility (typically <c>public</c>
+        // because const fields need to be reachable from C# constant contexts such as enum initializers,
+        // attribute arguments, and `fixed` array sizes — none of which can flow through a property).
+        // Consumers reach the constant either as `<HostClass>.X` (works in const contexts) or as
+        // `<Receiver>.X` via the extension property (works in any runtime context).
+        SyntaxToken publicVisibility = TokenWithSpace(this.Visibility);
+
+        var backingFields = new System.Collections.Generic.List<MemberDeclarationSyntax>(this.committedCode.TopLevelFields.Count());
+        var forwarderProperties = new System.Collections.Generic.List<MemberDeclarationSyntax>(this.committedCode.TopLevelFields.Count());
+
+        // Use a global-qualified host expression so the forwarder body is unambiguous even when the extension
+        // block's own scope shadows the host class name.
+        ExpressionSyntax qualifiedHost = ParseName($"global::{this.Namespace}.{this.options.ClassName}");
+
+        foreach (FieldDeclarationSyntax originalField in this.committedCode.TopLevelFields)
+        {
+            // Keep the field as-is on the host class (original visibility preserved) so consumers can use
+            // `<HostClass>.<Name>` in const contexts. The forwarder property below adds the receiver-qualified
+            // discovery path for runtime contexts.
+            backingFields.Add(originalField);
+
+            // Build the forwarder property: <visibility> static <Type> <Name> => <Host>.<Name>;
+            TypeSyntax fieldType = originalField.Declaration.Type;
+            foreach (VariableDeclaratorSyntax declarator in originalField.Declaration.Variables)
+            {
+                SyntaxToken nameIdent = declarator.Identifier;
+                ExpressionSyntax forwardExpr = MemberAccessExpression(
+                    SyntaxKind.SimpleMemberAccessExpression,
+                    qualifiedHost,
+                    IdentifierName(nameIdent.WithoutTrivia()));
+                PropertyDeclarationSyntax property = SyntaxFactory.PropertyDeclaration(fieldType.WithTrailingTrivia(TriviaList(Space)), nameIdent.WithoutTrivia())
+                    .WithModifiers(SyntaxFactory.TokenList(publicVisibility, TokenWithSpace(SyntaxKind.StaticKeyword)))
+                    .WithExpressionBody(ArrowExpressionClause(forwardExpr))
+                    .WithSemicolonToken(SemicolonWithLineFeed);
+                forwarderProperties.Add(property);
+            }
+        }
+
+        var classMembers = new System.Collections.Generic.List<MemberDeclarationSyntax>(backingFields);
+        if (forwarderProperties.Count > 0)
+        {
+            classMembers.Add(ExtensionBlock(ParseName($"global::{this.Namespace}.{this.options.ExtensionReceiver}"), SyntaxFactory.List(forwarderProperties)));
+        }
+
+        return ClassDeclaration(this.methodsAndConstantsClassName.Identifier, SyntaxFactory.List(classMembers))
+            .WithModifiers([TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)]);
+#else
+        // The Roslyn 4 leg ignores ExtensionReceiver (rejected at validation time via PInvoke013).
         return ClassDeclaration(this.methodsAndConstantsClassName.Identifier, [.. this.committedCode.TopLevelFields])
             .WithModifiers([TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)]);
+#endif
     }
 }

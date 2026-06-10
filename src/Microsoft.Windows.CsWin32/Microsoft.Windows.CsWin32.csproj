@@ -4,7 +4,16 @@
     <IsPackable>true</IsPackable>
     <TargetFramework>netstandard2.0</TargetFramework>
     <Nullable>enable</Nullable>
-    
+
+    <!--
+      This project builds the Roslyn 5.0 leg of the analyzer (required to use C# 14
+      ExtensionBlockDeclarationSyntax for the `extensionReceiver` feature). A sibling
+      project Microsoft.Windows.CsWin32.Roslyn4 builds the Roslyn 4.11 floor leg that
+      omits the C# 14 feature and emits a diagnostic if requested.
+    -->
+    <CodeAnalysisVersionForAnalyzers>5.0.0</CodeAnalysisVersionForAnalyzers>
+    <DefineConstants>$(DefineConstants);ROSLYN5</DefineConstants>
+
     <!-- Special properties for analyzer packages. -->
     <IncludeBuildOutput>false</IncludeBuildOutput>
     <IncludeSymbols>false</IncludeSymbols>
@@ -30,6 +39,22 @@
     <AdditionalFiles Include="BannedSymbols.txt" />
   </ItemGroup>
 
+  <!--
+    Force the Roslyn 4 sibling leg to build (and restore) whenever this project builds so that the
+    nuspec can pack its output under `analyzers/dotnet/roslyn4.11/cs/`. We do NOT consume its
+    assembly as a reference (ReferenceOutputAssembly=false) — only the build trigger and the
+    output paths surfaced via $(Roslyn4BaseOutputPath) in the nuspec properties.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Microsoft.Windows.CsWin32.Roslyn4\Microsoft.Windows.CsWin32.Roslyn4.csproj"
+                      ReferenceOutputAssembly="false"
+                      SkipGetTargetFrameworkProperties="true"
+                      SetPlatform="Platform=AnyCPU"
+                      Private="false"
+                      IncludeAssets="none"
+                      ExcludeAssets="all" />
+  </ItemGroup>
+
   <ItemGroup>
     <EmbeddedResource Include="templates\**\*.cs" />
   </ItemGroup>
@@ -53,8 +78,31 @@
     <PackageReference Include="System.Text.Json" />
   </ItemGroup>
 
+  <!--
+    PER-LEG SUPPORT-ASSEMBLY VERSION OVERRIDES (Roslyn 5.0 leg ONLY).
+
+    The shared central versions in Directory.Packages.Analyzers.props are intentionally
+    pinned to the Roslyn 4.11 FLOOR values (System.Collections.Immutable 8.0.0,
+    System.Memory 4.5.5) so the floor leg ships assemblies that load cleanly in older
+    VS 2022 Update 14 / .NET 8 hosts (see issue #1555).
+
+    This Roslyn 5.0 leg, however, references Microsoft.CodeAnalysis.CSharp 5.0.0, which
+    transitively requires System.Collections.Immutable >= 9.0.0 and System.Memory >= 4.6.0.
+    Keeping the floor versions here produces NU1109 package-downgrade errors. Because the
+    Roslyn 5.0 leg only ever loads inside a newer host whose compiler already ships these
+    higher assembly versions, bumping them HERE (and only here) is safe.
+
+    Override locally via VersionOverride instead of raising the shared floor. If you add a
+    newer Roslyn version that pulls in additional higher support assemblies, add the
+    corresponding override below rather than editing the central props.
+  -->
+  <ItemGroup>
+    <PackageReference Include="System.Collections.Immutable" VersionOverride="9.0.0" />
+    <PackageReference Include="System.Memory" VersionOverride="4.6.0" PrivateAssets="none" />
+  </ItemGroup>
+
   <ItemGroup Condition="'$(TargetFramework)'=='net472'">
-    <PackageReference Include="System.Memory" PrivateAssets="none" />    
+    <PackageReference Include="System.Memory" PrivateAssets="none" />
   </ItemGroup>
 
   <Import Project="$(MSBuildProjectName).targets" />

@@ -99,6 +99,7 @@ Several aspects of the generated code can be customized, including:
 * Whether to emit ANSI functions as well where Wide character functions also exist
 * Set `PreserveSig` for COM interfaces or individual members
 * Force generation of blittable structs, COM structs instead of interfaces (for super high performance with 0 GC pressure), etc.
+* Layered composition: have multiple assemblies contribute to a single shared `PInvoke` symbol so callers reach every API through one discovery point. See [Layered composition](composition.md) for the design, dispatch rules, and a migration playbook for existing multi-layer projects.
 
 To configure these settings, create a `NativeMethods.json` file in your project directory.
 Specifying the `$schema` property that points to [the schema](https://github.com/microsoft/CsWin32/blob/main/src/Microsoft.Windows.CsWin32/settings.schema.json) adds completions, descriptions and validation in many JSON editors, and in fact is where all the documentation for the available settings is found.

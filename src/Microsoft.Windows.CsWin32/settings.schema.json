@@ -84,6 +84,11 @@
       "default": "PInvoke",
       "pattern": "^\\w+$"
     },
+    "extensionReceiver": {
+      "description": "The simple (unqualified) name of a CsWin32-generated static class in the same namespace whose members the generated APIs should appear as C# 14 extension members of. When set, the host className class wraps its p/invoke methods, friendly overloads, macros and helper methods in an `extension (Receiver) { ... }` block; constants are stored as private fields on the host class and surfaced through static properties inside the extension block. Requires C# 14 (LangVersion 14+).",
+      "type": "string",
+      "pattern": "^\\w+$"
+    },
     "public": {
       "description": "A value indicating whether to expose the generated APIs publicly (as opposed to internally).",
       "type": "boolean",

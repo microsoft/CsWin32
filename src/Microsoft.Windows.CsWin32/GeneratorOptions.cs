@@ -20,6 +20,20 @@ public record GeneratorOptions
     public string ClassName { get; set; } = "PInvoke";
 
     /// <summary>
+    /// Gets or sets the simple (unqualified) name of a CsWin32-generated static class in the same namespace whose members the generated APIs should appear as C# 14 extension members of.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// When set, the generated <see cref="ClassName"/> class wraps its p/invoke methods, friendly overloads, macros and helper methods in an <c>extension (Receiver) { ... }</c> block so callers may discover them through the receiver type. Constants remain on the host class as <see langword="private"/> fields and are surfaced through generated <see langword="static"/> properties inside the extension block.
+    /// </para>
+    /// <para>
+    /// The receiver type must be another CsWin32-generated static class in the same namespace, visible to the consuming compilation (either <see langword="public"/> or via <c>[InternalsVisibleTo]</c>). Requires C# 14 (<c>LangVersion</c> 14 or later) and the Roslyn 5 leg of the analyzer; otherwise a diagnostic is reported.
+    /// </para>
+    /// </remarks>
+    /// <value>The default value is <see langword="null"/>, which means no extension block is generated.</value>
+    public string? ExtensionReceiver { get; set; }
+
+    /// <summary>
     /// Gets or sets a value indicating whether to emit a single source file as opposed to types spread across many files, 'null' indicates to use the recommended default for the environment.
     /// </summary>
     /// <value>The default value is <see langword="null" />.</value>
@@ -68,6 +82,14 @@ public record GeneratorOptions
         {
             throw new InvalidOperationException("The ClassName property must not be null or empty.");
         }
+
+        if (this.ExtensionReceiver is { } receiver && string.IsNullOrWhiteSpace(receiver))
+        {
+            throw new InvalidOperationException("The ExtensionReceiver property must not be empty or whitespace when set.");
+        }
+
+        // Note: ExtensionReceiver == ClassName (self-reference) is detected at generation time and surfaces as the
+        // PInvoke011 diagnostic, allowing the rest of generation to continue without the extension wrap.
     }
 
     /// <summary>

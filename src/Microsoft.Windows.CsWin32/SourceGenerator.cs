@@ -143,6 +143,31 @@ public partial class SourceGenerator : ISourceGenerator
         "Configuration",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor ExtensionReceiverInvalid = new(
+        "PInvoke011",
+        "Invalid ExtensionReceiver",
+        "The configured ExtensionReceiver \"{0}\" is invalid: {1}",
+        "Configuration",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "ExtensionReceiver must name a static class in the same namespace as the generated host class, must not equal ClassName, and must be accessible to the consuming compilation.");
+
+    public static readonly DiagnosticDescriptor ExtensionReceiverRequiresCSharp14 = new(
+        "PInvoke012",
+        "ExtensionReceiver requires C# 14",
+        "ExtensionReceiver was set to \"{0}\" but the consuming compilation is using C# {1}. C# 14 (LangVersion 14 or later) is required.",
+        "Configuration",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor ExtensionReceiverRequiresRoslyn5 = new(
+        "PInvoke013",
+        "ExtensionReceiver requires Roslyn 5 analyzer",
+        "ExtensionReceiver was set to \"{0}\" but the loaded CsWin32 analyzer was built against Roslyn 4 which does not support extension blocks. Upgrade the host (e.g. VS / .NET SDK) so a Roslyn 5+ analyzer is loaded.",
+        "Configuration",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
 #pragma warning restore CS1591 // Missing XML comment for publicly visible type or member
 
     private const string InputProjectionErrorId = "PInvoke010";
@@ -230,6 +255,66 @@ public partial class SourceGenerator : ISourceGenerator
         {
             context.ReportDiagnostic(Diagnostic.Create(NonUniqueMetadataInputs, null, nonUniqueGenerator.Value));
             return;
+        }
+
+        // Validate the ExtensionReceiver option (if set). On the Roslyn 5 leg, validation runs per-Generator:
+        // if a generator's namespace doesn't contain the receiver type, the wrap is silently disabled for
+        // *that* generator only (each generator caches its own resolution and gates WrapAsExtensionMembers
+        // accordingly) — but a diagnostic still surfaces if NO generator can resolve the receiver. This
+        // supports multi-namespace pipelines (e.g. Windows.Win32 + Windows.Wdk) where the receiver only
+        // exists in one of them. Per the "refuse, don't fall back silently" decision, the diagnostic is
+        // emitted in error cases; the option is cleared only on global failures (LangVersion / Roslyn 4 leg).
+        if (options.ExtensionReceiver is string requestedReceiver)
+        {
+#if !ROSLYN5
+            // The Roslyn 4 leg lacks the API surface needed to emit C# 14 extension blocks. Tell the
+            // user to upgrade the host (VS / SDK) so that the Roslyn 5 leg of the analyzer loads instead.
+            context.ReportDiagnostic(Diagnostic.Create(ExtensionReceiverRequiresRoslyn5, location: null, requestedReceiver));
+            options.ExtensionReceiver = null;
+#else
+            LanguageVersion langVersion = parseOptions.LanguageVersion == LanguageVersion.Default
+                ? LanguageVersion.Default.MapSpecifiedToEffectiveVersion()
+                : parseOptions.LanguageVersion;
+            if (langVersion < LanguageVersion.CSharp14 && langVersion != LanguageVersion.Preview && langVersion != LanguageVersion.Latest && langVersion != LanguageVersion.LatestMajor)
+            {
+                context.ReportDiagnostic(Diagnostic.Create(ExtensionReceiverRequiresCSharp14, location: null, requestedReceiver, langVersion.ToDisplayString()));
+                options.ExtensionReceiver = null;
+            }
+            else
+            {
+                int resolvedCount = 0;
+                List<string> failureReasons = new();
+                foreach (Generator generator in generators)
+                {
+                    if (generator.TryResolveExtensionReceiver(out _, out string? errorReason))
+                    {
+                        resolvedCount++;
+                    }
+                    else if (errorReason is not null)
+                    {
+                        failureReasons.Add(errorReason);
+                    }
+                }
+
+                // Multi-namespace pipelines (e.g. Windows.Win32 + Windows.Wdk) commonly resolve the receiver
+                // in only one namespace. Suppress per-generator failure diagnostics when at least one
+                // generator was able to wrap — the user has a working setup and shouldn't be pestered.
+                // Each unresolved generator's WrapAsExtensionMembers is already a no-op for its own emit.
+                if (resolvedCount == 0 && failureReasons.Count > 0)
+                {
+                    HashSet<string> reported = new(StringComparer.Ordinal);
+                    foreach (string reason in failureReasons)
+                    {
+                        if (reported.Add(reason))
+                        {
+                            context.ReportDiagnostic(Diagnostic.Create(ExtensionReceiverInvalid, location: null, requestedReceiver, reason));
+                        }
+                    }
+
+                    options.ExtensionReceiver = null;
+                }
+            }
+#endif
         }
 
         using SuperGenerator superGenerator = SuperGenerator.Combine(generators);

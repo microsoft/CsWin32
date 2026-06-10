@@ -35,8 +35,7 @@ public class COMTests
         Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
 
         ShellLink.CreateInstance(out IShellLinkW* shellLinkWPtr).ThrowOnFailure();
-        shellLinkWPtr->QueryInterface(typeof(IPersistFile).GUID, out void* ppv).ThrowOnFailure();
-        IPersistFile* persistFilePtr = (IPersistFile*)ppv;
+        shellLinkWPtr->QueryInterface(out IPersistFile* persistFilePtr).ThrowOnFailure();
         Assert.NotNull(persistFilePtr);
         persistFilePtr->Release();
         shellLinkWPtr->Release();

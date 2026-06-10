@@ -205,7 +205,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         // Optional and MemorySize-d struct params, optional params included
         ["SetupDiGetClassInstallParams", "SetupDiGetClassInstallParams", "SafeHandle DeviceInfoSet, [Optional] winmdroot.Devices.DeviceAndDriverInstallation.SP_DEVINFO_DATA? DeviceInfoData, [Optional] Span<byte> ClassInstallParams, out uint RequiredSize"],
         ["IEnumString", "Next", "this winmdroot.System.Com.IEnumString @this, Span<winmdroot.Foundation.PWSTR> rgelt, out uint pceltFetched"],
-        ["PSCreateMemoryPropertyStore", "PSCreateMemoryPropertyStore", "in global::System.Guid riid, out object ppv"],
+        ["PSCreateMemoryPropertyStore", "PSCreateMemoryPropertyStore", "out T ppv"],
         ["DeviceIoControl", "DeviceIoControl", "SafeHandle hDevice, uint dwIoControlCode, [Optional] ReadOnlySpan<byte> lpInBuffer, [Optional] Span<byte> lpOutBuffer, out uint lpBytesReturned, [Optional] global::System.Threading.NativeOverlapped* lpOverlapped"],
         ["DeviceIoControl", "DeviceIoControl", "SafeHandle hDevice, uint dwIoControlCode, [Optional] ReadOnlySpan<byte> lpInBuffer, [Optional] Span<byte> lpOutBuffer, out uint lpBytesReturned, [Optional] global::System.Threading.NativeOverlapped* lpOverlapped", true, "NativeMethods.IncludePointerOverloads.json"],
         ["NtQueryObject", "NtQueryObject", "[Optional] global::Windows.Win32.Foundation.HANDLE Handle, winmdroot.Foundation.OBJECT_INFORMATION_CLASS ObjectInformationClass, [Optional] Span<byte> ObjectInformation, out uint ReturnLength"],

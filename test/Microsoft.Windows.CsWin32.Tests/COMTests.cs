@@ -351,6 +351,132 @@ public class COMTests : GeneratorTestBase
         Assert.Contains(this.FindGeneratedMethod(methodName), m => m.ParameterList.Parameters.Last() is { } last && last.Modifiers.Any(SyntaxKind.OutKeyword) && last.Type is IdentifierNameSyntax { Identifier: { ValueText: "IntPtr" } });
     }
 
+    [Fact]
+    public void ComOutPtrGenericOverload_Marshaling_IShellItem()
+    {
+        const string methodName = "BindToHandler";
+        this.generator = this.CreateGenerator(new GeneratorOptions { AllowMarshaling = true });
+        this.GenerateApi("IShellItem");
+
+        // Verify a generic <T> overload was generated with `out T` and `where T : class`.
+        // Scope to the IShellItem extension class by checking the first parameter has `this` and refers to IShellItem.
+        MethodDeclarationSyntax genericOverload = Assert.Single(
+            this.FindGeneratedMethod(methodName),
+            m => m.TypeParameterList?.Parameters.Count == 1
+                && m.ParameterList.Parameters.FirstOrDefault() is { } first
+                && first.Modifiers.Any(SyntaxKind.ThisKeyword)
+                && first.Type?.ToString().Contains("IShellItem") == true);
+        Assert.Contains(genericOverload.ConstraintClauses, cc => cc.Constraints.Any(c => c is ClassOrStructConstraintSyntax { ClassOrStructKeyword.RawKind: (int)SyntaxKind.ClassKeyword }));
+
+        // The last parameter should be `out T`.
+        ParameterSyntax ppvParam = genericOverload.ParameterList.Parameters.Last();
+        Assert.True(ppvParam.Modifiers.Any(SyntaxKind.OutKeyword));
+        Assert.IsType<IdentifierNameSyntax>(ppvParam.Type);
+        Assert.Equal("T", ((IdentifierNameSyntax)ppvParam.Type).Identifier.ValueText);
+    }
+
+    [Fact]
+    public void ComOutPtrGenericOverload_NoMarshaling_IShellItem()
+    {
+        const string methodName = "BindToHandler";
+        this.generator = this.CreateGenerator(new GeneratorOptions { AllowMarshaling = false });
+        this.GenerateApi("IShellItem");
+
+        // Verify a generic <T> overload was generated with `out T*` and `where T : unmanaged`.
+        MethodDeclarationSyntax genericOverload = Assert.Single(
+            this.FindGeneratedMethod(methodName),
+            m => m.TypeParameterList?.Parameters.Count == 1 && m.Parent is StructDeclarationSyntax { Identifier.ValueText: "IShellItem" });
+        Assert.Contains(genericOverload.ConstraintClauses, cc => cc.Constraints.Any(c => c is TypeConstraintSyntax { Type: IdentifierNameSyntax { Identifier.ValueText: "unmanaged" } }));
+
+        // The last parameter should be `out T*`.
+        ParameterSyntax ppvParam = genericOverload.ParameterList.Parameters.Last();
+        Assert.True(ppvParam.Modifiers.Any(SyntaxKind.OutKeyword));
+        Assert.IsType<PointerTypeSyntax>(ppvParam.Type);
+        Assert.Equal("T", ((IdentifierNameSyntax)((PointerTypeSyntax)ppvParam.Type).ElementType).Identifier.ValueText);
+    }
+
+    [Fact]
+    public void ComOutPtrGenericOverload_OptOut()
+    {
+        const string methodName = "BindToHandler";
+        this.generator = this.CreateGenerator(new GeneratorOptions
+        {
+            AllowMarshaling = true,
+            FriendlyOverloads = new GeneratorOptions.FriendlyOverloadOptions { ComOutPtrGenericOverloads = false },
+        });
+        this.GenerateApi("IShellItem");
+
+        // With the opt-out, no generic overloads should be generated for COM interface methods.
+        Assert.DoesNotContain(
+            this.FindGeneratedMethod(methodName),
+            m => m.TypeParameterList?.Parameters.Count == 1);
+    }
+
+    [Fact]
+    public void ComOutPtrGenericOverload_CoCreateInstance()
+    {
+        // CoCreateInstance follows the IID_PPV_ARGS pattern — the friendly overload should be generic.
+        const string methodName = "CoCreateInstance";
+        this.GenerateApi(methodName);
+
+        MethodDeclarationSyntax genericOverload = Assert.Single(
+            this.FindGeneratedMethod(methodName),
+            m => m.TypeParameterList?.Parameters.Count == 1);
+
+        // 4 parameters: rclsid, pUnkOuter, dwClsContext, ppv (riid removed).
+        Assert.Equal(4, genericOverload.ParameterList.Parameters.Count);
+    }
+
+    [Fact]
+    public void ComOutPtrGenericOverload_IntPtrMode_Skipped()
+    {
+        // When UseIntPtrForComOutPointers is true, no generic overload should be generated.
+        const string methodName = "BindToHandler";
+        this.generator = this.CreateGenerator(new GeneratorOptions
+        {
+            AllowMarshaling = true,
+            ComInterop = new GeneratorOptions.ComInteropOptions { UseIntPtrForComOutPointers = true },
+        });
+        this.GenerateApi("IShellItem");
+
+        Assert.DoesNotContain(
+            this.FindGeneratedMethod(methodName),
+            m => m.TypeParameterList?.Parameters.Count == 1);
+    }
+
+    /// <summary>
+    /// Regression test for <see href="https://github.com/microsoft/CsWin32/issues/1604">#1604</see>.
+    /// D3D12 device creation methods like CreateCommandQueue should get generic overloads.
+    /// </summary>
+    [Theory, PairwiseData]
+    public void ComOutPtrGenericOverload_D3D12_CreateCommandQueue(bool allowMarshaling)
+    {
+        const string methodName = "CreateCommandQueue";
+        this.generator = this.CreateGenerator(new GeneratorOptions { AllowMarshaling = allowMarshaling });
+        this.GenerateApi("ID3D12Device");
+
+        // Verify a generic <T> overload was generated.
+        Assert.Contains(
+            this.FindGeneratedMethod(methodName),
+            m => m.TypeParameterList?.Parameters.Count == 1);
+    }
+
+    /// <summary>
+    /// Regression test for <see href="https://github.com/microsoft/CsWin32/issues/374">#374</see>.
+    /// IMoniker.BindToObject should get a generic overload.
+    /// </summary>
+    [Theory, PairwiseData]
+    public void ComOutPtrGenericOverload_IMoniker_BindToObject(bool allowMarshaling)
+    {
+        const string methodName = "BindToObject";
+        this.generator = this.CreateGenerator(new GeneratorOptions { AllowMarshaling = allowMarshaling });
+        this.GenerateApi("IMoniker");
+
+        Assert.Contains(
+            this.FindGeneratedMethod(methodName),
+            m => m.TypeParameterList?.Parameters.Count == 1);
+    }
+
     [Theory, PairwiseData]
     public void NonCOMInterfaceReferences(bool allowMarshaling)
     {

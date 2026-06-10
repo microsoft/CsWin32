@@ -134,5 +134,13 @@ public record GeneratorOptions
         /// which normally appear as spans.
         /// </summary>
         public bool IncludePointerOverloads { get; set; } = false;
+
+        /// <summary>
+        /// Gets or sets a value indicating whether to generate generic <c>&lt;T&gt;</c> overloads for methods
+        /// with the IID_PPV_ARGS pattern (a <c>Guid*</c> parameter immediately preceding a <c>void**</c> <c>[ComOutPtr]</c> parameter),
+        /// where the GUID is derived from <c>typeof(T).GUID</c> and the output pointer is typed as <c>T</c>.
+        /// </summary>
+        /// <value>The default value is <see langword="true"/>.</value>
+        public bool ComOutPtrGenericOverloads { get; set; } = true;
     }
 }

@@ -175,16 +175,18 @@ public class ComRuntimeTests(ITestOutputHelper outputHelper)
             phwnd: out _,
             ShellWindowFindWindowOptions.SWFO_NEEDDISPATCH);
 
-        serviceProvider.QueryService(PInvoke.SID_STopLevelBrowser, typeof(IShellBrowser).GUID, out var shellBrowserAsObject);
-        var shellBrowser = (IShellBrowser)shellBrowserAsObject;
+        serviceProvider.QueryService<IShellBrowser>(PInvoke.SID_STopLevelBrowser, out IShellBrowser shellBrowser);
 
         shellBrowser.QueryActiveShellView(out var shellView);
 
-        var iid_IDispatch = new Guid("00020400-0000-0000-C000-000000000046");
-        shellView.GetItemObject((uint)_SVGIO.SVGIO_BACKGROUND, iid_IDispatch, out var folderViewAsObject);
-        var folderView = (IShellFolderViewDual)folderViewAsObject;
+        unsafe
+        {
+            var iid_IDispatch = new Guid("00020400-0000-0000-C000-000000000046");
+            shellView.GetItemObject((uint)_SVGIO.SVGIO_BACKGROUND, &iid_IDispatch, out var folderViewAsObject);
+            var folderView = (IShellFolderViewDual)folderViewAsObject;
 
-        _ = folderView.Application; // Throws InvalidOleVariantTypeException "Specified OLE variant is invalid"
+            _ = folderView.Application; // Throws InvalidOleVariantTypeException "Specified OLE variant is invalid"
+        }
     }
 
     [Fact]
@@ -237,10 +239,8 @@ public class ComRuntimeTests(ITestOutputHelper outputHelper)
 
         unsafe
         {
-            PInvoke.SHCreateItemFromParsingName(filePath, null, typeof(IShellItem).GUID, out object shellItemObj).ThrowOnFailure();
-            IShellItem shellItem = (IShellItem)shellItemObj;
-            shellItem.BindToHandler(null, bhidStream, typeof(IStream).GUID, out object streamObj);
-            IStream stream = (IStream)streamObj;
+            PInvoke.SHCreateItemFromParsingName<IShellItem>(filePath, null, out IShellItem shellItem).ThrowOnFailure();
+            shellItem.BindToHandler<IStream>(null, bhidStream, out IStream stream);
 
             // Friendly Span overload — the original repro for #1716. In source-generator mode this used to
             // throw InvalidCastException because the extension method's `this` parameter was typed as
@@ -262,6 +262,56 @@ public class ComRuntimeTests(ITestOutputHelper outputHelper)
 
             stream.Read(buffer, out uint bytesReadAfterSeek);
             Assert.Equal(bytesRead, bytesReadAfterSeek);
+        }
+    }
+
+    /// <summary>
+    /// Verifies the generic <c>BindToHandler&lt;T&gt;</c> overload (IID_PPV_ARGS pattern) works at runtime.
+    /// The generic overload removes the explicit IID parameter and types the output as <c>T</c>.
+    /// </summary>
+    [Fact]
+    [Trait("TestCategory", "RequiresHardware")]
+    public void IShellItem_BindToHandler_GenericOverload()
+    {
+        Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
+
+        Guid bhidStream = new Guid(0x1cebb3ab, 0x7c10, 0x499a, 0xa4, 0x17, 0x92, 0xca, 0x16, 0xc4, 0xcb, 0x83);
+
+        string filePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "win.ini");
+        Assert.True(File.Exists(filePath), $"Expected '{filePath}' to exist on Windows.");
+
+        unsafe
+        {
+            PInvoke.SHCreateItemFromParsingName<IShellItem>(filePath, null, out IShellItem shellItem).ThrowOnFailure();
+
+            // Use the generic <T> overload instead of passing typeof(IStream).GUID + out object manually.
+            shellItem.BindToHandler<IStream>(null, bhidStream, out IStream stream);
+
+            byte[] buffer = new byte[16];
+            stream.Read(buffer, out uint bytesRead);
+            Assert.True(bytesRead > 0, "Expected to read at least one byte from win.ini via generic overload.");
+        }
+    }
+
+    /// <summary>
+    /// Verifies the generic <c>SHCreateItemFromParsingName&lt;T&gt;</c> overload (IID_PPV_ARGS pattern) works at runtime.
+    /// </summary>
+    [Fact]
+    [Trait("TestCategory", "RequiresHardware")]
+    public void SHCreateItemFromParsingName_GenericOverload()
+    {
+        Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
+
+        string filePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "win.ini");
+        Assert.True(File.Exists(filePath), $"Expected '{filePath}' to exist on Windows.");
+
+        unsafe
+        {
+            // Use the generic <T> overload — no explicit typeof(IShellItem).GUID needed.
+            PInvoke.SHCreateItemFromParsingName<IShellItem>(filePath, null, out IShellItem shellItem).ThrowOnFailure();
+
+            // Verify the returned object is usable.
+            Assert.NotNull(shellItem);
         }
     }
 }

@@ -48,6 +48,10 @@ jobs:
     displayName: 🧪 dotnet build
     workingDirectory: $(Pipeline.Workspace)\integration-tests\sdk
     condition: eq(variables.currentSdk, 'true')
+  - pwsh: dotnet build
+    displayName: 🧪 dotnet build sdk-roslyn5 (extensionReceiver)
+    workingDirectory: $(Pipeline.Workspace)\integration-tests\sdk-roslyn5
+    condition: eq(variables.currentSdk, 'true')
   - task: MSBuild@1
     displayName: 🧪 MSBuild buildtask-sdk-style
     inputs:

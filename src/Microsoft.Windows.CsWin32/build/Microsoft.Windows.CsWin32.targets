@@ -80,7 +80,7 @@
     Name="AddGeneratedCsWin32FilesToCompile"
     AfterTargets="GenerateCsWin32Code"
     Condition="'$(CsWin32RunAsBuildTask)'=='true'">
-    
+
     <ReadLinesFromFile
       File="$(CsWin32GeneratorGeneratedFilesList)"
       Condition="Exists('$(CsWin32GeneratorGeneratedFilesList)')">
@@ -94,5 +94,52 @@
       <FileWrites Include="$(CsWin32GeneratorGeneratedFilesList)" Condition="Exists('$(CsWin32GeneratorGeneratedFilesList)')" />
     </ItemGroup>
 
+  </Target>
+
+  <!--
+    ============================================================================================
+    Drop the Roslyn 5.0 analyzer leg on hosts that do not understand Roslyn component versioning.
+
+    This package ships its source generator twice, following the NuGet "Roslyn component
+    versioning" convention:
+
+        analyzers/dotnet/roslyn4.11/cs/   (floor leg, built against Microsoft.CodeAnalysis 4.11)
+        analyzers/dotnet/roslyn5.0/cs/    (C# 14 'extensionReceiver' leg, Microsoft.CodeAnalysis 5.0)
+
+    The .NET SDK understands this convention: it advertises $(SupportsRoslynComponentVersioning)
+    =='true' and selects exactly one folder that matches the host compiler version. We must not
+    interfere with that, so this target is a no-op for SDK-style projects.
+
+    Hosts that do NOT understand the convention - classic (non-SDK-style) projects, which resolve
+    analyzers via NuGet.BuildTasks' ResolveNuGetPackageAssets - add EVERY analyzer DLL under
+    analyzers/ to @(Analyzer), i.e. BOTH legs. The two Microsoft.Windows.CsWin32.dll copies share
+    an assembly identity but were compiled separately (different MVIDs), so the C# compiler aborts:
+
+        "analyzer assembly '...roslyn5.0...' has MVID 'X' but loaded assembly '...roslyn4.11...'
+         has MVID 'Y'"
+
+    which fails the source generator (CS8785) and leaves every requested Win32 API ungenerated
+    (CS0103). Per the design of this feature (dotnet/sdk#20355, dotnet/sdk#41352) the prescriptive
+    fix is for the package to keep only the LOWEST (floor) Roslyn leg in this case; non-SDK
+    consumers get the floor generator (the C# 14 'extensionReceiver' feature is unavailable there,
+    which is expected - it requires an SDK-style project on a Roslyn 5.0+ toolset anyway).
+
+    We scope the removal to THIS package's own roslyn5.0 directory (resolved relative to this
+    targets file) so we never disturb analyzers contributed by other packages.
+    ============================================================================================
+  -->
+  <Target Name="CsWin32SelectAnalyzerRoslynLeg"
+          BeforeTargets="CoreCompile"
+          Condition="'$(SupportsRoslynComponentVersioning)' != 'true'">
+
+    <PropertyGroup>
+      <_CsWin32Roslyn5LegDir>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)..\analyzers\dotnet\roslyn5.0'))</_CsWin32Roslyn5LegDir>
+      <_CsWin32Roslyn5LegDir>$(_CsWin32Roslyn5LegDir.ToLowerInvariant())</_CsWin32Roslyn5LegDir>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <Analyzer Remove="@(Analyzer)"
+                Condition="$([System.String]::new('%(FullPath)').ToLowerInvariant().StartsWith('$(_CsWin32Roslyn5LegDir)'))" />
+    </ItemGroup>
   </Target>
 </Project>

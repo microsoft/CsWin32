@@ -849,10 +849,10 @@ public partial class Generator
                     topMostBaseTypeSyntax = SimpleBaseType(baseTypeSyntax);
 
                     // ComInterop requires that you re-declare all base methods. GeneratedComInterface fixes this so you just declare the derived interface.
-                    if (!this.useSourceGenerators)
-                    {
-                        allMethods.AddRange(baseType.Definition.GetMethods().Select(methodHandle => new QualifiedMethodDefinitionHandle(baseType.Generator, methodHandle)));
-                    }
+                    // We still iterate over the base methods even in source-generator mode so that we can emit friendly overload extension methods on the
+                    // derived interface. This avoids forcing callers to upcast to the base interface (which fails for COM objects, like Shell's IStream,
+                    // that do not honor QueryInterface for their base interfaces).
+                    allMethods.AddRange(baseType.Definition.GetMethods().Select(methodHandle => new QualifiedMethodDefinitionHandle(baseType.Generator, methodHandle)));
                 }
             }
         }
@@ -1024,7 +1024,15 @@ public partial class Generator
 
                 // Add documentation if we can find it.
                 propertyOrMethod = this.AddApiDocumentation($"{ifaceName}.{methodName}", propertyOrMethod);
-                members.Add(propertyOrMethod);
+
+                // In source-generator mode, GeneratedComInterface handles inheritance automatically, so inherited
+                // methods are NOT re-declared on the derived interface. We still need to emit the friendly overloads
+                // on the derived interface (below) so callers don't have to upcast to the base interface to invoke them.
+                bool addAsInterfaceMember = inheritedMethods < 0 || !this.useSourceGenerators;
+                if (addAsInterfaceMember)
+                {
+                    members.Add(propertyOrMethod);
+                }
 
                 if (methodDeclaration is not null)
                 {

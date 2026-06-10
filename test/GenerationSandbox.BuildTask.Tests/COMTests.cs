@@ -325,6 +325,19 @@ public partial class COMTests(ITestOutputHelper outputHelper)
             stream.Read(buffer, out uint bytesRead);
 
             Assert.True(bytesRead > 0, "Expected to read at least one byte from win.ini.");
+
+            // Also call methods declared on IStream itself (Seek and Stat) to verify that adding friendly
+            // overloads for inherited methods did not perturb the IStream interface's vtable layout.
+            stream.Seek(0, System.IO.SeekOrigin.Begin, out ulong newPosition);
+            Assert.Equal(0UL, newPosition);
+
+            STATSTG stat;
+            stream.Stat(&stat, STATFLAG.STATFLAG_NONAME);
+            Assert.True(stat.cbSize > 0, "Expected Stat to report a non-empty file size.");
+
+            // Read again after Seek to confirm the seek took effect on the same vtable slot.
+            stream.Read(buffer, out uint bytesReadAfterSeek);
+            Assert.Equal(bytesRead, bytesReadAfterSeek);
         }
     }
 }

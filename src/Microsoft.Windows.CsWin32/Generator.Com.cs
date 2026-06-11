@@ -714,11 +714,8 @@ public partial class Generator
             return typedPointer is not null ? CastExpression(typedPointer, invocation) : invocation;
         }
 
-        // Add helper methods when appropriate.
-        if (hasIUnknownMembers && this.Options.FriendlyOverloads.Enabled)
-        {
-            members.AddRange(this.ExtractMembersFromTemplate("IUnknownHelperMethods"));
-        }
+        // The IID_PPV_ARGS pattern in DeclareFriendlyOverload now handles QueryInterface<T> generically,
+        // so the IUnknownHelperMethods template is no longer needed.
 
         // We expose the vtbl struct to support CCWs.
         IdentifierNameSyntax vtblStructName = IdentifierName("Vtbl");

@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 namespace Microsoft.Windows.CsWin32;
@@ -75,17 +75,14 @@ public partial class Generator
             yield return (MethodDeclarationSyntax)templateFriendlyOverload;
         }
 
-        if (externMethodDeclaration.Identifier.ValueText != "CoCreateInstance" || !this.options.ComInterop.UseIntPtrForComOutPointers)
+        if (this.options.AllowMarshaling && this.TryFetchTemplate("marshaling/" + externMethodDeclaration.Identifier.ValueText, out templateFriendlyOverload))
         {
-            if (this.options.AllowMarshaling && this.TryFetchTemplate("marshaling/" + externMethodDeclaration.Identifier.ValueText, out templateFriendlyOverload))
-            {
-                yield return (MethodDeclarationSyntax)templateFriendlyOverload;
-            }
+            yield return (MethodDeclarationSyntax)templateFriendlyOverload;
+        }
 
-            if (!this.options.AllowMarshaling && this.TryFetchTemplate("no_marshaling/" + externMethodDeclaration.Identifier.ValueText, out templateFriendlyOverload))
-            {
-                yield return (MethodDeclarationSyntax)templateFriendlyOverload;
-            }
+        if (!this.options.AllowMarshaling && this.TryFetchTemplate("no_marshaling/" + externMethodDeclaration.Identifier.ValueText, out templateFriendlyOverload))
+        {
+            yield return (MethodDeclarationSyntax)templateFriendlyOverload;
         }
 
         bool improvePointersToSpansAndRefs = this.canUseSpan;
@@ -153,6 +150,51 @@ public partial class Generator
         SyntaxToken friendlyMethodName = externMethodDeclaration.Identifier;
         bool emulateMemberFunctionCallConv = friendlyMethodName.ValueText.EndsWith(EmulateMemberFunctionCallConvSuffix);
 
+        // Pre-scan for IID_PPV_ARGS pattern: a Guid* [In] parameter immediately followed by a void** [ComOutPtr] parameter.
+        int iidPpvRiidOrigIndex = -1;
+        int iidPpvPpvOrigIndex = -1;
+        bool iidPpvMarshalingMode = false;
+
+        if (this.options.FriendlyOverloads.ComOutPtrGenericOverloads)
+        {
+            var metadataParamsForScan = new List<(Parameter Param, int OrigIndex)>();
+            foreach (ParameterHandle ph in methodDefinition.GetParameters())
+            {
+                Parameter p = this.Reader.GetParameter(ph);
+                if (p.SequenceNumber > 0 && p.SequenceNumber - 1 < originalSignature.ParameterTypes.Length)
+                {
+                    metadataParamsForScan.Add((p, p.SequenceNumber - 1));
+                }
+            }
+
+            // Only match when the Guid* + void** [ComOutPtr] pair are the final two parameters (the canonical IID_PPV_ARGS position).
+            if (metadataParamsForScan.Count >= 2)
+            {
+                int i = metadataParamsForScan.Count - 2;
+                int riidOrig = metadataParamsForScan[i].OrigIndex;
+                int ppvOrig = metadataParamsForScan[i + 1].OrigIndex;
+
+                if (ppvOrig == riidOrig + 1
+                    && originalSignature.ParameterTypes[riidOrig] is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo guidInfo }
+                    && guidInfo.IsType("Guid")
+                    && this.FindInteropDecorativeAttribute(metadataParamsForScan[i + 1].Param.GetCustomAttributes(), "ComOutPtrAttribute") is not null
+                    && originalSignature.ParameterTypes[ppvOrig] is PointerTypeHandleInfo { ElementType: PointerTypeHandleInfo { ElementType: PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.Void } } }
+                    && riidOrig < parameters.Count && ppvOrig < parameters.Count)
+                {
+                    ParameterSyntax ppvExtern = externMethodDeclaration.ParameterList.Parameters[ppvOrig];
+
+                    // Skip if ppv is typed as IntPtr (UseIntPtrForComOutPointers mode).
+                    if (ppvExtern.Type is not IdentifierNameSyntax { Identifier.ValueText: nameof(IntPtr) })
+                    {
+                        iidPpvRiidOrigIndex = riidOrig;
+                        iidPpvPpvOrigIndex = ppvOrig;
+                        iidPpvMarshalingMode = ppvExtern.Modifiers.Any(SyntaxKind.OutKeyword)
+                            && ppvExtern.Type is PredefinedTypeSyntax { Keyword.RawKind: (int)SyntaxKind.ObjectKeyword };
+                    }
+                }
+            }
+        }
+
         foreach (ParameterHandle paramHandle in methodDefinition.GetParameters())
         {
             Parameter param = this.Reader.GetParameter(paramHandle);
@@ -173,6 +215,80 @@ public partial class Generator
             {
                 // We added an additional parameter to the externMethodDeclaration which we need to adjust for.
                 paramIndex++;
+            }
+
+            // Handle IID_PPV_ARGS pattern: riid parameter is removed, ppv parameter is genericized.
+            if (origParamIndex == iidPpvRiidOrigIndex)
+            {
+                signatureChanged = true;
+                ParameterSyntax riidExternParam = externMethodDeclaration.ParameterList.Parameters[origParamIndex];
+                ExpressionSyntax typeofTGuid = MemberAccessExpression(
+                    SyntaxKind.SimpleMemberAccessExpression,
+                    TypeOfExpression(IdentifierName("T")),
+                    IdentifierName("GUID"));
+
+                if (riidExternParam.Type is PointerTypeSyntax)
+                {
+                    leadingStatements.Add(LocalDeclarationStatement(
+                        VariableDeclaration(
+                            ParseTypeName("global::System.Guid"),
+                            [VariableDeclarator(Identifier("__riid"), EqualsValueClause(typeofTGuid))])));
+                    arguments[paramIndex] = Argument(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName("__riid")));
+                }
+                else
+                {
+                    arguments[paramIndex] = Argument(typeofTGuid);
+                }
+
+                parametersToRemove.Add(paramIndex);
+                continue;
+            }
+
+            if (origParamIndex == iidPpvPpvOrigIndex)
+            {
+                signatureChanged = true;
+                IdentifierNameSyntax tName = IdentifierName("T");
+
+                if (iidPpvMarshalingMode)
+                {
+                    parameters[paramIndex] = StripAttributes(externMethodDeclaration.ParameterList.Parameters[paramIndex])
+                        .WithType(tName.WithTrailingTrivia(TriviaList(Space)))
+                        .WithModifiers([TokenWithSpace(SyntaxKind.OutKeyword)]);
+
+                    arguments[paramIndex] = Argument(DeclarationExpression(
+                        PredefinedType(TokenWithSpace(SyntaxKind.ObjectKeyword)),
+                        SingleVariableDesignation(Identifier("__ppv"))))
+                        .WithRefKindKeyword(TokenWithSpace(SyntaxKind.OutKeyword));
+
+                    IdentifierNameSyntax ppvName = IdentifierName(externMethodDeclaration.ParameterList.Parameters[paramIndex].Identifier.ValueText);
+                    trailingStatements.Add(ExpressionStatement(
+                        AssignmentExpression(
+                            SyntaxKind.SimpleAssignmentExpression,
+                            ppvName,
+                            CastExpression(tName, IdentifierName("__ppv")))));
+                }
+                else
+                {
+                    parameters[paramIndex] = StripAttributes(externMethodDeclaration.ParameterList.Parameters[paramIndex])
+                        .WithType(PointerType(tName).WithTrailingTrivia(TriviaList(Space)))
+                        .WithModifiers([TokenWithSpace(SyntaxKind.OutKeyword)]);
+
+                    leadingStatements.Add(LocalDeclarationStatement(
+                        VariableDeclaration(
+                            PointerType(PredefinedType(Token(SyntaxKind.VoidKeyword))),
+                            [VariableDeclarator(Identifier("__ppv"))])));
+
+                    arguments[paramIndex] = Argument(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName("__ppv")));
+
+                    IdentifierNameSyntax ppvName = IdentifierName(externMethodDeclaration.ParameterList.Parameters[paramIndex].Identifier.ValueText);
+                    trailingStatements.Add(ExpressionStatement(
+                        AssignmentExpression(
+                            SyntaxKind.SimpleAssignmentExpression,
+                            ppvName,
+                            CastExpression(PointerType(tName), IdentifierName("__ppv")))));
+                }
+
+                continue;
             }
 
             bool isOptional = (param.Attributes & ParameterAttributes.Optional) == ParameterAttributes.Optional;
@@ -1343,6 +1459,17 @@ public partial class Generator
                 .WithParameterList(FixTrivia(ParameterList([.. parameters])))
                 .WithBody(body)
                 .WithSemicolonToken(default);
+
+            // If the IID_PPV_ARGS pattern was detected, make this method generic.
+            if (iidPpvRiidOrigIndex >= 0)
+            {
+                TypeParameterConstraintClauseSyntax constraintClause = iidPpvMarshalingMode
+                    ? TypeParameterConstraintClause(IdentifierName("T"), [ClassOrStructConstraint(SyntaxKind.ClassConstraint)])
+                    : TypeParameterConstraintClause(IdentifierName("T"), [TypeConstraint(IdentifierName("unmanaged"))]);
+                friendlyDeclaration = friendlyDeclaration
+                    .AddTypeParameterListParameters(TypeParameter(Identifier("T")))
+                    .AddConstraintClauses(constraintClause);
+            }
 
             if (returnSafeHandleType is object)
             {

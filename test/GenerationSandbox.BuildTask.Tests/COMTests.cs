@@ -312,10 +312,8 @@ public partial class COMTests(ITestOutputHelper outputHelper)
 
         unsafe
         {
-            PInvoke.SHCreateItemFromParsingName(filePath, null, typeof(IShellItem).GUID, out object shellItemObj).ThrowOnFailure();
-            IShellItem shellItem = (IShellItem)shellItemObj;
-            shellItem.BindToHandler(null, bhidStream, typeof(IStream).GUID, out object streamObj);
-            IStream stream = (IStream)streamObj;
+            PInvoke.SHCreateItemFromParsingName<IShellItem>(filePath, null, out IShellItem shellItem).ThrowOnFailure();
+            shellItem.BindToHandler<IStream>(null, bhidStream, out IStream stream);
 
             // Friendly Span overload — the original repro for #1716. In source-generator mode this used to
             // throw InvalidCastException because the extension method's `this` parameter was typed as

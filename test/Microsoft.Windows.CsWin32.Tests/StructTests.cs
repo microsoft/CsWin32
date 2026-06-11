@@ -350,6 +350,87 @@ namespace Microsoft.Windows.Sdk
             e => e.Name.ToString() == "inheritdoc" && e.Attributes.OfType<XmlCrefAttributeSyntax>().Any());
     }
 
+    [Fact]
+    public void FlattenNestedAnonymousTypes_SupportsNumberedAndMultipleHolders()
+    {
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { FlattenNestedAnonymousTypes = true });
+        this.GenerateApi("DECIMAL");
+        var structDecl = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("DECIMAL"));
+
+        // Fields reached through the first numbered holder (Anonymous1) and its inner struct.
+        AssertFlattenedAccessor(FindProperty(structDecl, "signscale"), "this.Anonymous1.signscale");
+        AssertFlattenedAccessor(FindProperty(structDecl, "scale"), "this.Anonymous1.Anonymous.scale");
+        AssertFlattenedAccessor(FindProperty(structDecl, "sign"), "this.Anonymous1.Anonymous.sign");
+
+        // Fields reached through the second numbered holder (Anonymous2) and its inner struct.
+        AssertFlattenedAccessor(FindProperty(structDecl, "Lo64"), "this.Anonymous2.Lo64");
+        AssertFlattenedAccessor(FindProperty(structDecl, "Lo32"), "this.Anonymous2.Anonymous.Lo32");
+        AssertFlattenedAccessor(FindProperty(structDecl, "Mid32"), "this.Anonymous2.Anonymous.Mid32");
+
+        // No flattened accessor name is emitted more than once.
+        List<string> accessorNames = structDecl.Members.OfType<PropertyDeclarationSyntax>()
+            .Where(p => p.AttributeLists.SelectMany(al => al.Attributes).Any(a => a.Name.ToString() == "UnscopedRef"))
+            .Select(p => p.Identifier.ValueText)
+            .ToList();
+        Assert.Equal(accessorNames.Count, accessorNames.Distinct().Count());
+    }
+
+    [Fact]
+    public void FlattenNestedAnonymousTypes_PointerLeafProducesUnsafeAccessor()
+    {
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { FlattenNestedAnonymousTypes = true });
+        this.GenerateApi("VARDESC");
+        var structDecl = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("VARDESC"));
+
+        // A non-pointer leaf is surfaced without the 'unsafe' modifier.
+        PropertyDeclarationSyntax oInst = FindProperty(structDecl, "oInst");
+        AssertFlattenedAccessor(oInst, "this.Anonymous.oInst");
+        Assert.DoesNotContain(oInst.Modifiers, m => m.IsKind(SyntaxKind.UnsafeKeyword));
+
+        // A pointer-typed leaf is surfaced as an 'unsafe' ref to the pointer type.
+        PropertyDeclarationSyntax lpvarValue = FindProperty(structDecl, "lpvarValue");
+        AssertFlattenedAccessor(lpvarValue, "this.Anonymous.lpvarValue");
+        Assert.Contains(lpvarValue.Modifiers, m => m.IsKind(SyntaxKind.UnsafeKeyword));
+        RefTypeSyntax refType = Assert.IsType<RefTypeSyntax>(lpvarValue.Type);
+        Assert.IsType<PointerTypeSyntax>(refType.Type);
+    }
+
+    [Fact]
+    public void FlattenNestedAnonymousTypes_RespectsPublicVisibility()
+    {
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { Public = true, FlattenNestedAnonymousTypes = true });
+        this.GenerateApi("SYSTEM_INFO");
+        var structDecl = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("SYSTEM_INFO"));
+        PropertyDeclarationSyntax accessor = FindProperty(structDecl, "wProcessorArchitecture");
+        Assert.Contains(accessor.Modifiers, m => m.IsKind(SyntaxKind.PublicKeyword));
+    }
+
+    [Theory, PairwiseData]
+    public void FlattenNestedAnonymousTypes_ExplicitLayoutManagedUnionGeneratesValidCode(bool allowMarshaling)
+    {
+        // Regression: an explicit-layout (union) nested type forces its fields to be generated without
+        // marshaling. The flattened accessor must decode the leaf field with that same context, or the
+        // ref-return type won't match the underlying field's type (CS8151). GenerateApi asserts no diagnostics.
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling, FlattenNestedAnonymousTypes = true });
+        this.GenerateApi("ELEMDESC");
+        var structDecl = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("ELEMDESC"));
+        AssertFlattenedAccessor(FindProperty(structDecl, "paramdesc"), "this.Anonymous.paramdesc");
+    }
+
+    [Theory, PairwiseData]
+    public void FlattenNestedAnonymousTypes_DeepNestedManagedUnionCrefResolves(bool allowMarshaling)
+    {
+        // Regression: in marshaling mode, managed nested types receive the "_unmanaged" suffix. The
+        // <inheritdoc cref="..."/> on deeply nested accessors must use the mangled type name or the cref
+        // fails to resolve (CS1574). GenerateApi asserts no diagnostics, which catches an unresolved cref.
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling, FlattenNestedAnonymousTypes = true });
+        this.GenerateApi("PROPVARIANT");
+        var structDecl = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("PROPVARIANT"));
+
+        // A field three levels deep (union -> struct -> union) is surfaced on the outer struct.
+        AssertFlattenedAccessor(FindProperty(structDecl, "intVal"), "this.Anonymous.Anonymous.Anonymous.intVal");
+    }
+
     private static PropertyDeclarationSyntax FindProperty(StructDeclarationSyntax structDecl, string name) =>
         Assert.Single(structDecl.Members.OfType<PropertyDeclarationSyntax>(), p => p.Identifier.ValueText == name);
 

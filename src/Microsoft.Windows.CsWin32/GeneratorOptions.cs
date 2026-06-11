@@ -67,6 +67,20 @@ public record GeneratorOptions
     public bool MultiTargetingFriendlyAPIs { get; set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether fields nested within anonymous structs and unions are surfaced as ref-returning properties on the declaring struct.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Windows metadata models anonymous nested structs and unions as named nested types (e.g. <c>_Anonymous_e__Union</c>) reached through a generated holder field named <c>Anonymous</c> (or <c>Anonymous1</c>, <c>Anonymous2</c>, etc.). This forces awkward access such as <c>value.Anonymous.Anonymous.field</c>. When this option is enabled, a <c>[UnscopedRef] ref</c> property is generated on the declaring struct for each such nested field so the field may be read, written, and pointed to directly as <c>value.field</c>.
+    /// </para>
+    /// <para>
+    /// Only fields reached exclusively through anonymous holders are flattened; named nested members are left alone. The generated accessors require C# 11 or later (for <see cref="System.Diagnostics.CodeAnalysis.UnscopedRefAttribute"/>); when an older language version is in use, no accessors are generated and the <c>Anonymous</c> holder remains the only access path.
+    /// </para>
+    /// </remarks>
+    /// <value>The default value is <see langword="false"/>.</value>
+    public bool FlattenNestedAnonymousTypes { get; set; }
+
+    /// <summary>
     /// Gets or sets a value indicating whether friendly overloads should use safe handles.
     /// </summary>
     /// <value>The default value is <see langword="true"/>.</value>

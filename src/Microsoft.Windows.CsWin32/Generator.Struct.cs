@@ -15,6 +15,29 @@ public partial class Generator
         _ => throw new NotSupportedException($"Unsupported primitive type code: {code}"),
     };
 
+    /// <summary>
+    /// Gets a value indicating whether the given field name is the generated holder for an anonymous nested struct or union
+    /// (e.g. <c>Anonymous</c>, <c>Anonymous1</c>, <c>Anonymous2</c>).
+    /// </summary>
+    private static bool IsAnonymousFieldName(string name)
+    {
+        const string Prefix = "Anonymous";
+        if (!name.StartsWith(Prefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        for (int i = Prefix.Length; i < name.Length; i++)
+        {
+            if (!char.IsDigit(name[i]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private StructDeclarationSyntax DeclareStruct(TypeDefinitionHandle typeDefHandle, Context context)
     {
         TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefHandle);
@@ -388,6 +411,9 @@ public partial class Generator
                 break;
         }
 
+        // Surface fields nested within anonymous structs and unions as ref-returning properties on this struct.
+        this.AddFlattenedAnonymousMembers(typeDef, context, members);
+
         StructDeclarationSyntax result = StructDeclaration(name.Identifier, [.. members])
             .WithModifiers([TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.PartialKeyword)]);
 
@@ -404,6 +430,23 @@ public partial class Generator
         }
 
         result = this.AddApiDocumentation(name.Identifier.ValueText, result);
+
+        // When flattening anonymous nested types, give the leaf fields documentation inherited from the
+        // root declaring type's API docs so that the generated ref accessors (which <inheritdoc/> from them)
+        // surface meaningful IntelliSense.
+        if (this.options.FlattenNestedAnonymousTypes && this.canUseUnscopedRef && typeDef.IsNested && this.ApiDocs is not null)
+        {
+            TypeDefinition rootDef = typeDef;
+            while (rootDef.GetDeclaringType() is { IsNil: false } declaringHandle)
+            {
+                rootDef = this.Reader.GetTypeDefinition(declaringHandle);
+            }
+
+            if (this.ApiDocs.TryGetApiDocs(this.Reader.GetString(rootDef.Name), out ApiDetails? rootDocs))
+            {
+                result = this.ApplyFieldDocs(result, rootDocs);
+            }
+        }
 
         return result;
     }
@@ -571,5 +614,249 @@ public partial class Generator
                 generator.RequestVariableLengthInlineArrayHelper2(context);
             });
         }
+    }
+
+    /// <summary>
+    /// Surfaces fields nested within anonymous structs and unions as <c>[UnscopedRef] ref</c> properties on the declaring struct
+    /// so they can be read, written, and pointed to directly (e.g. <c>value.field</c> instead of <c>value.Anonymous.Anonymous.field</c>).
+    /// </summary>
+    /// <param name="typeDef">The definition of the struct being generated.</param>
+    /// <param name="context">The context the struct is being generated with.</param>
+    /// <param name="members">The member list being built for the struct. Generated accessors are appended to the end so that the indices of existing members are preserved.</param>
+    private void AddFlattenedAnonymousMembers(TypeDefinition typeDef, Context context, List<MemberDeclarationSyntax> members)
+    {
+        // The accessors return a ref into a field, which requires [UnscopedRef] (C# 11+).
+        if (!this.options.FlattenNestedAnonymousTypes || !this.canUseUnscopedRef)
+        {
+            return;
+        }
+
+        // Collect the names already declared directly on this struct so we never collide with them.
+        HashSet<string> reservedNames = new(StringComparer.Ordinal);
+        foreach (MemberDeclarationSyntax member in members)
+        {
+            switch (member)
+            {
+                case FieldDeclarationSyntax field:
+                    foreach (VariableDeclaratorSyntax variable in field.Declaration.Variables)
+                    {
+                        reservedNames.Add(variable.Identifier.ValueText);
+                    }
+
+                    break;
+                case PropertyDeclarationSyntax property:
+                    reservedNames.Add(property.Identifier.ValueText);
+                    break;
+                case MethodDeclarationSyntax method:
+                    reservedNames.Add(method.Identifier.ValueText);
+                    break;
+            }
+        }
+
+        List<MemberDeclarationSyntax> accessors = new();
+        HashSet<string> surfacedNames = new(StringComparer.Ordinal);
+
+        foreach (FieldDefinitionHandle fieldDefHandle in typeDef.GetFields())
+        {
+            FieldDefinition fieldDef = this.Reader.GetFieldDefinition(fieldDefHandle);
+            if (fieldDef.Attributes.HasFlag(FieldAttributes.Static))
+            {
+                continue;
+            }
+
+            string fieldName = this.Reader.GetString(fieldDef.Name);
+            if (!IsAnonymousFieldName(fieldName) || !this.TryGetNestedTypeForAnonymousField(typeDef, fieldDef, out TypeDefinitionHandle nestedTypeHandle))
+            {
+                continue;
+            }
+
+            TypeDefinition nestedTypeDef = this.Reader.GetTypeDefinition(nestedTypeHandle);
+            ExpressionSyntax accessPrefix = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName(SafeIdentifier(fieldName)));
+            NameSyntax crefPrefix = IdentifierName(this.GetMangledIdentifier(this.Reader.GetString(nestedTypeDef.Name), context.AllowMarshaling, this.IsManagedType(nestedTypeHandle)));
+            this.GatherFlattenedAnonymousAccessors(nestedTypeHandle, accessPrefix, crefPrefix, context, accessors, surfacedNames, reservedNames, depth: 0);
+        }
+
+        members.AddRange(accessors);
+    }
+
+    /// <summary>
+    /// Recursively gathers <c>[UnscopedRef] ref</c> accessors for the leaf fields reachable through anonymous holders.
+    /// </summary>
+    /// <param name="containingTypeHandle">The anonymous nested type currently being walked.</param>
+    /// <param name="accessPrefix">The expression that accesses an instance of <paramref name="containingTypeHandle"/> from the outer struct (e.g. <c>this.Anonymous.Anonymous</c>).</param>
+    /// <param name="crefTypePrefix">The qualified type-name chain (relative to the outer struct) used to build the <c>cref</c> for inherited documentation.</param>
+    /// <param name="containingContext">The context that <paramref name="containingTypeHandle"/> is generated with.</param>
+    /// <param name="accessors">The list that generated accessors are appended to.</param>
+    /// <param name="surfacedNames">The set of leaf names already surfaced, used to skip duplicates.</param>
+    /// <param name="reservedNames">The set of names already declared on the outer struct, used to skip collisions.</param>
+    /// <param name="depth">The current recursion depth, used as a guard against unexpectedly deep nesting.</param>
+    private void GatherFlattenedAnonymousAccessors(
+        TypeDefinitionHandle containingTypeHandle,
+        ExpressionSyntax accessPrefix,
+        NameSyntax crefTypePrefix,
+        Context containingContext,
+        List<MemberDeclarationSyntax> accessors,
+        HashSet<string> surfacedNames,
+        HashSet<string> reservedNames,
+        int depth)
+    {
+        // Guard against unexpectedly deep or cyclic nesting.
+        if (depth > 8)
+        {
+            return;
+        }
+
+        TypeDefinition containingType = this.Reader.GetTypeDefinition(containingTypeHandle);
+
+        // An explicit-layout type (such as a union) forces its fields to be generated without marshaling,
+        // so decode this type's fields with the same context its own members were generated with.
+        bool explicitLayout = (containingType.Attributes & TypeAttributes.ExplicitLayout) == TypeAttributes.ExplicitLayout;
+        Context bodyContext = containingContext.AllowMarshaling && explicitLayout ? containingContext with { AllowMarshaling = false } : containingContext;
+        TypeSyntaxSettings typeSettings = bodyContext.Filter(this.fieldTypeSettings);
+
+        foreach (FieldDefinitionHandle fieldDefHandle in containingType.GetFields())
+        {
+            FieldDefinition fieldDef = this.Reader.GetFieldDefinition(fieldDefHandle);
+            if (fieldDef.Attributes.HasFlag(FieldAttributes.Static))
+            {
+                continue;
+            }
+
+            string fieldName = this.Reader.GetString(fieldDef.Name);
+            CustomAttributeHandleCollection fieldAttributes = fieldDef.GetCustomAttributes();
+
+            // Recurse through anonymous holder fields; named nested members are not flattened.
+            if (IsAnonymousFieldName(fieldName) && this.TryGetNestedTypeForAnonymousField(containingType, fieldDef, out TypeDefinitionHandle deeperTypeHandle))
+            {
+                TypeDefinition deeperTypeDef = this.Reader.GetTypeDefinition(deeperTypeHandle);
+                ExpressionSyntax deeperAccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, accessPrefix, IdentifierName(SafeIdentifier(fieldName)));
+                NameSyntax deeperCref = QualifiedName(crefTypePrefix, IdentifierName(this.GetMangledIdentifier(this.Reader.GetString(deeperTypeDef.Name), bodyContext.AllowMarshaling, this.IsManagedType(deeperTypeHandle))));
+                this.GatherFlattenedAnonymousAccessors(deeperTypeHandle, deeperAccess, deeperCref, bodyContext, accessors, surfacedNames, reservedNames, depth + 1);
+                continue;
+            }
+
+            // Skip fields whose generated representation is not a plain, ref-returnable field of the decoded type.
+            if (this.FindAssociatedEnum(fieldAttributes) is not null)
+            {
+                // Surfaced as a by-value property rather than a field.
+                continue;
+            }
+
+            if (this.FindAttribute(fieldAttributes, SystemRuntimeCompilerServices, nameof(FixedBufferAttribute)).HasValue)
+            {
+                continue;
+            }
+
+            if (MetadataUtilities.FindAttribute(this.Reader, fieldAttributes, InteropDecorationNamespace, FlexibleArrayAttribute) is not null)
+            {
+                continue;
+            }
+
+            TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature(this.SignatureHandleProvider, null);
+
+            // Skip field types that are reinterpreted during struct generation (delegates become function pointers,
+            // COM interface pointers become arrays, marshaled managed types become unmanaged pointers); the generated
+            // member would not be a simple ref-returnable field of the decoded type.
+            if (this.IsDelegateReference(fieldTypeInfo, out _))
+            {
+                continue;
+            }
+
+            if (bodyContext.AllowMarshaling && fieldTypeInfo is PointerTypeHandleInfo pointerInfo && this.IsInterface(pointerInfo.ElementType))
+            {
+                continue;
+            }
+
+            if (bodyContext.AllowMarshaling && this.useSourceGenerators && this.IsManagedType(fieldTypeInfo))
+            {
+                continue;
+            }
+
+            TypeSyntax fieldType = fieldTypeInfo.ToTypeSyntax(typeSettings, GeneratingElement.StructMember, fieldAttributes.QualifyWith(this)).Type;
+
+            // Fixed-length arrays are reinterpreted into a helper struct field, which is not a simple ref target.
+            if (fieldType is ArrayTypeSyntax)
+            {
+                continue;
+            }
+
+            // Skip collisions with an existing member or another flattened accessor.
+            if (reservedNames.Contains(fieldName) || !surfacedNames.Add(fieldName))
+            {
+                continue;
+            }
+
+            accessors.Add(this.CreateFlattenedAnonymousAccessor(fieldName, fieldType, accessPrefix, crefTypePrefix));
+            this.DeclareUnscopedRefAttributeIfNecessary();
+        }
+    }
+
+    /// <summary>
+    /// Creates a single <c>[UnscopedRef] ref</c> property that forwards to a field reached through anonymous holders,
+    /// with documentation inherited from the underlying field.
+    /// </summary>
+    private PropertyDeclarationSyntax CreateFlattenedAnonymousAccessor(string fieldName, TypeSyntax fieldType, ExpressionSyntax accessPrefix, NameSyntax crefTypePrefix)
+    {
+        // ref <FieldType> <FieldName> => ref <accessPrefix>.<FieldName>;
+        ExpressionSyntax leafAccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, accessPrefix, IdentifierName(SafeIdentifier(fieldName)));
+        PropertyDeclarationSyntax accessor = PropertyDeclaration(RefType(fieldType.WithoutTrailingTrivia()).WithTrailingTrivia(Space), SafeIdentifier(fieldName))
+            .AddModifiers(TokenWithSpace(this.Visibility))
+            .WithExpressionBody(ArrowExpressionClause(RefExpression(leafAccess)))
+            .WithSemicolonToken(SemicolonWithLineFeed)
+            .AddAttributeLists(AttributeList(UnscopedRefAttributeSyntax));
+
+        if (RequiresUnsafe(fieldType))
+        {
+            accessor = accessor.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));
+        }
+
+        // /// <inheritdoc cref="NestedType.FieldName"/>
+        CrefSyntax cref = SyntaxFactory.NameMemberCref(QualifiedName(crefTypePrefix, SafeIdentifierName(fieldName)));
+        SyntaxTrivia inheritDoc = Trivia(DocumentationCommentTrivia(
+            SyntaxKind.SingleLineDocumentationCommentTrivia,
+            [
+                XmlText("/// "),
+                XmlEmptyElement("inheritdoc", [XmlCrefAttribute(cref)]),
+                XmlText(XmlTextNewLine("\n", continueXmlDocumentationComment: false)),
+            ]));
+
+        return accessor.WithLeadingTrivia(inheritDoc);
+    }
+
+    /// <summary>
+    /// Resolves the nested type definition referenced by an anonymous holder field, if the field's type is in fact
+    /// a type nested within <paramref name="containingType"/>.
+    /// </summary>
+    private bool TryGetNestedTypeForAnonymousField(TypeDefinition containingType, FieldDefinition fieldDef, out TypeDefinitionHandle nestedTypeHandle)
+    {
+        nestedTypeHandle = default;
+        if (fieldDef.DecodeSignature(this.SignatureHandleProvider, null) is not HandleTypeHandleInfo fieldTypeInfo || !this.IsNestedType(fieldTypeInfo.Handle))
+        {
+            return false;
+        }
+
+        TypeDefinitionHandle candidate;
+        switch (fieldTypeInfo.Handle.Kind)
+        {
+            case HandleKind.TypeDefinition:
+                candidate = (TypeDefinitionHandle)fieldTypeInfo.Handle;
+                break;
+            case HandleKind.TypeReference when this.TryGetTypeDefHandle((TypeReferenceHandle)fieldTypeInfo.Handle, out QualifiedTypeDefinitionHandle qualifiedHandle) && qualifiedHandle.Generator == this:
+                candidate = qualifiedHandle.DefinitionHandle;
+                break;
+            default:
+                return false;
+        }
+
+        foreach (TypeDefinitionHandle nested in containingType.GetNestedTypes())
+        {
+            if (nested == candidate)
+            {
+                nestedTypeHandle = nested;
+                return true;
+            }
+        }
+
+        return false;
     }
 }

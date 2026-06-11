@@ -7,6 +7,111 @@ public partial class Generator
 {
     internal Docs? ApiDocs { get; }
 
+    private static void EmitLine(StringBuilder stringBuilder, string yamlDocSrc)
+    {
+        stringBuilder.Append(yamlDocSrc.Trim());
+    }
+
+    private static void EmitDoc(string yamlDocSrc, StringBuilder docCommentsBuilder, ApiDetails? docs, string docsAnchor)
+    {
+        if (yamlDocSrc.Contains('\n'))
+        {
+            docCommentsBuilder.AppendLine();
+            var docReader = new StringReader(yamlDocSrc);
+            string? paramDocLine;
+
+            bool inParagraph = false;
+            bool inComment = false;
+            int blankLineCounter = 0;
+            while ((paramDocLine = docReader.ReadLine()) is object)
+            {
+                if (string.IsNullOrWhiteSpace(paramDocLine))
+                {
+                    if (++blankLineCounter >= 2 && inParagraph)
+                    {
+                        docCommentsBuilder.AppendLine("</para>");
+                        inParagraph = false;
+                        inComment = false;
+                    }
+
+                    continue;
+                }
+                else if (blankLineCounter > 0)
+                {
+                    blankLineCounter = 0;
+                }
+                else if (docCommentsBuilder.Length > 0 && docCommentsBuilder[docCommentsBuilder.Length - 1] != '\n')
+                {
+                    docCommentsBuilder.Append(' ');
+                }
+
+                if (inParagraph)
+                {
+                    if (docCommentsBuilder.Length > 0 && docCommentsBuilder[docCommentsBuilder.Length - 1] is not (' ' or '\n'))
+                    {
+                        docCommentsBuilder.Append(' ');
+                    }
+                }
+                else
+                {
+                    docCommentsBuilder.Append("/// <para>");
+                    inParagraph = true;
+                    inComment = true;
+                }
+
+                if (!inComment)
+                {
+                    docCommentsBuilder.Append("/// ");
+                }
+
+                if (paramDocLine.IndexOf("<table", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    paramDocLine.IndexOf("<img", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    paramDocLine.IndexOf("<ul", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    paramDocLine.IndexOf("<ol", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    paramDocLine.IndexOf("```", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    paramDocLine.IndexOf("<<", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    // We don't try to format tables, so truncate at this point.
+                    if (inParagraph)
+                    {
+                        docCommentsBuilder.AppendLine("</para>");
+                        inParagraph = false;
+                        inComment = false;
+                    }
+
+                    docCommentsBuilder.AppendLine($@"/// <para>This doc was truncated.</para>");
+
+                    break; // is this the right way?
+                }
+
+                EmitLine(docCommentsBuilder, paramDocLine);
+            }
+
+            if (inParagraph)
+            {
+                if (!inComment)
+                {
+                    docCommentsBuilder.Append("/// ");
+                }
+
+                docCommentsBuilder.AppendLine("</para>");
+                inParagraph = false;
+                inComment = false;
+            }
+
+            if (docs is object)
+            {
+                docCommentsBuilder.AppendLine($@"/// <para><see href=""{docs.HelpLink}#{docsAnchor}"">Read more on learn.microsoft.com</see>.</para>");
+            }
+
+            docCommentsBuilder.Append("/// ");
+        }
+        else
+        {
+            EmitLine(docCommentsBuilder, yamlDocSrc);
+        }
+    }
+
     private T AddApiDocumentation<T>(string api, T memberDeclaration)
         where T : MemberDeclarationSyntax
     {
@@ -41,50 +146,7 @@ public partial class Generator
 
             if (docs.Fields is object)
             {
-                var fieldsDocBuilder = new StringBuilder();
-                switch (memberDeclaration)
-                {
-                    case StructDeclarationSyntax structDeclaration:
-                        memberDeclaration = memberDeclaration.ReplaceNodes(
-                            structDeclaration.Members.OfType<FieldDeclarationSyntax>(),
-                            (_, field) =>
-                            {
-                                VariableDeclaratorSyntax? variable = field.Declaration.Variables.Single();
-                                if (docs.Fields.TryGetValue(variable.Identifier.ValueText, out string? fieldDoc))
-                                {
-                                    fieldsDocBuilder.Append("/// <summary>");
-                                    EmitDoc(fieldDoc, fieldsDocBuilder, docs, "members");
-                                    fieldsDocBuilder.AppendLine("</summary>");
-                                    if (field.Declaration.Type.HasAnnotations(OriginalDelegateAnnotation))
-                                    {
-                                        fieldsDocBuilder.AppendLine(@$"/// <remarks>See the <see cref=""{field.Declaration.Type.GetAnnotations(OriginalDelegateAnnotation).Single().Data}"" /> delegate for more about this function.</remarks>");
-                                    }
-
-                                    field = field.WithLeadingTrivia(ParseLeadingTrivia(fieldsDocBuilder.ToString().Replace("\r\n", "\n")));
-                                    fieldsDocBuilder.Clear();
-                                }
-
-                                return field;
-                            });
-                        break;
-                    case EnumDeclarationSyntax enumDeclaration:
-                        memberDeclaration = memberDeclaration.ReplaceNodes(
-                            enumDeclaration.Members,
-                            (_, field) =>
-                            {
-                                if (docs.Fields.TryGetValue(field.Identifier.ValueText, out string? fieldDoc))
-                                {
-                                    fieldsDocBuilder.Append($@"/// <summary>");
-                                    EmitDoc(fieldDoc, fieldsDocBuilder, docs, "members");
-                                    fieldsDocBuilder.AppendLine("</summary>");
-                                    field = field.WithLeadingTrivia(ParseLeadingTrivia(fieldsDocBuilder.ToString().Replace("\r\n", "\n")));
-                                    fieldsDocBuilder.Clear();
-                                }
-
-                                return field;
-                            });
-                        break;
-                }
+                memberDeclaration = this.ApplyFieldDocs(memberDeclaration, docs);
             }
 
             if (docs.ReturnValue is object)
@@ -116,110 +178,61 @@ public partial class Generator
         }
 
         return memberDeclaration;
+    }
 
-        static void EmitLine(StringBuilder stringBuilder, string yamlDocSrc)
+    private T ApplyFieldDocs<T>(T memberDeclaration, ApiDetails docs)
+        where T : MemberDeclarationSyntax
+    {
+        if (docs.Fields is null)
         {
-            stringBuilder.Append(yamlDocSrc.Trim());
+            return memberDeclaration;
         }
 
-        static void EmitDoc(string yamlDocSrc, StringBuilder docCommentsBuilder, ApiDetails? docs, string docsAnchor)
+        var fieldsDocBuilder = new StringBuilder();
+        switch (memberDeclaration)
         {
-            if (yamlDocSrc.Contains('\n'))
-            {
-                docCommentsBuilder.AppendLine();
-                var docReader = new StringReader(yamlDocSrc);
-                string? paramDocLine;
-
-                bool inParagraph = false;
-                bool inComment = false;
-                int blankLineCounter = 0;
-                while ((paramDocLine = docReader.ReadLine()) is object)
-                {
-                    if (string.IsNullOrWhiteSpace(paramDocLine))
+            case StructDeclarationSyntax structDeclaration:
+                memberDeclaration = memberDeclaration.ReplaceNodes(
+                    structDeclaration.Members.OfType<FieldDeclarationSyntax>(),
+                    (_, field) =>
                     {
-                        if (++blankLineCounter >= 2 && inParagraph)
+                        VariableDeclaratorSyntax? variable = field.Declaration.Variables.Single();
+                        if (docs.Fields.TryGetValue(variable.Identifier.ValueText, out string? fieldDoc))
                         {
-                            docCommentsBuilder.AppendLine("</para>");
-                            inParagraph = false;
-                            inComment = false;
+                            fieldsDocBuilder.Append("/// <summary>");
+                            EmitDoc(fieldDoc, fieldsDocBuilder, docs, "members");
+                            fieldsDocBuilder.AppendLine("</summary>");
+                            if (field.Declaration.Type.HasAnnotations(OriginalDelegateAnnotation))
+                            {
+                                fieldsDocBuilder.AppendLine(@$"/// <remarks>See the <see cref=""{field.Declaration.Type.GetAnnotations(OriginalDelegateAnnotation).Single().Data}"" /> delegate for more about this function.</remarks>");
+                            }
+
+                            field = field.WithLeadingTrivia(ParseLeadingTrivia(fieldsDocBuilder.ToString().Replace("\r\n", "\n")));
+                            fieldsDocBuilder.Clear();
                         }
 
-                        continue;
-                    }
-                    else if (blankLineCounter > 0)
+                        return field;
+                    });
+                break;
+            case EnumDeclarationSyntax enumDeclaration:
+                memberDeclaration = memberDeclaration.ReplaceNodes(
+                    enumDeclaration.Members,
+                    (_, field) =>
                     {
-                        blankLineCounter = 0;
-                    }
-                    else if (docCommentsBuilder.Length > 0 && docCommentsBuilder[docCommentsBuilder.Length - 1] != '\n')
-                    {
-                        docCommentsBuilder.Append(' ');
-                    }
-
-                    if (inParagraph)
-                    {
-                        if (docCommentsBuilder.Length > 0 && docCommentsBuilder[docCommentsBuilder.Length - 1] is not (' ' or '\n'))
+                        if (docs.Fields.TryGetValue(field.Identifier.ValueText, out string? fieldDoc))
                         {
-                            docCommentsBuilder.Append(' ');
-                        }
-                    }
-                    else
-                    {
-                        docCommentsBuilder.Append("/// <para>");
-                        inParagraph = true;
-                        inComment = true;
-                    }
-
-                    if (!inComment)
-                    {
-                        docCommentsBuilder.Append("/// ");
-                    }
-
-                    if (paramDocLine.IndexOf("<table", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        paramDocLine.IndexOf("<img", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        paramDocLine.IndexOf("<ul", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        paramDocLine.IndexOf("<ol", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        paramDocLine.IndexOf("```", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        paramDocLine.IndexOf("<<", StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        // We don't try to format tables, so truncate at this point.
-                        if (inParagraph)
-                        {
-                            docCommentsBuilder.AppendLine("</para>");
-                            inParagraph = false;
-                            inComment = false;
+                            fieldsDocBuilder.Append($@"/// <summary>");
+                            EmitDoc(fieldDoc, fieldsDocBuilder, docs, "members");
+                            fieldsDocBuilder.AppendLine("</summary>");
+                            field = field.WithLeadingTrivia(ParseLeadingTrivia(fieldsDocBuilder.ToString().Replace("\r\n", "\n")));
+                            fieldsDocBuilder.Clear();
                         }
 
-                        docCommentsBuilder.AppendLine($@"/// <para>This doc was truncated.</para>");
-
-                        break; // is this the right way?
-                    }
-
-                    EmitLine(docCommentsBuilder, paramDocLine);
-                }
-
-                if (inParagraph)
-                {
-                    if (!inComment)
-                    {
-                        docCommentsBuilder.Append("/// ");
-                    }
-
-                    docCommentsBuilder.AppendLine("</para>");
-                    inParagraph = false;
-                    inComment = false;
-                }
-
-                if (docs is object)
-                {
-                    docCommentsBuilder.AppendLine($@"/// <para><see href=""{docs.HelpLink}#{docsAnchor}"">Read more on learn.microsoft.com</see>.</para>");
-                }
-
-                docCommentsBuilder.Append("/// ");
-            }
-            else
-            {
-                EmitLine(docCommentsBuilder, yamlDocSrc);
-            }
+                        return field;
+                    });
+                break;
         }
+
+        return memberDeclaration;
     }
 }

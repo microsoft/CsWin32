@@ -283,4 +283,92 @@ namespace Microsoft.Windows.Sdk
         this.generator = this.CreateGenerator(options);
         this.GenerateApi(name);
     }
+
+    [Theory, PairwiseData]
+    public void FlattenNestedAnonymousTypes_GeneratesRefAccessors(bool allowMarshaling)
+    {
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling, FlattenNestedAnonymousTypes = true });
+        this.GenerateApi("SYSTEM_INFO");
+        var structDecl = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("SYSTEM_INFO"));
+
+        // A field one level deep (directly in the anonymous union) is surfaced.
+        AssertFlattenedAccessor(FindProperty(structDecl, "dwOemId"), "this.Anonymous.dwOemId");
+
+        // Fields two levels deep (through the union, then the nested anonymous struct) are surfaced.
+        AssertFlattenedAccessor(FindProperty(structDecl, "wProcessorArchitecture"), "this.Anonymous.Anonymous.wProcessorArchitecture");
+        AssertFlattenedAccessor(FindProperty(structDecl, "wReserved"), "this.Anonymous.Anonymous.wReserved");
+    }
+
+    [Fact]
+    public void FlattenNestedAnonymousTypes_DisabledByDefault()
+    {
+        this.GenerateApi("SYSTEM_INFO");
+        var structDecl = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("SYSTEM_INFO"));
+        Assert.DoesNotContain(structDecl.Members.OfType<PropertyDeclarationSyntax>(), p => p.Identifier.ValueText == "wProcessorArchitecture");
+    }
+
+    [Fact]
+    public void FlattenNestedAnonymousTypes_RequiresCSharp11()
+    {
+        this.parseOptions = this.parseOptions.WithLanguageVersion(LanguageVersion.CSharp10);
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { FlattenNestedAnonymousTypes = true });
+        this.GenerateApi("SYSTEM_INFO");
+        var structDecl = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("SYSTEM_INFO"));
+        Assert.DoesNotContain(structDecl.Members.OfType<PropertyDeclarationSyntax>(), p => p.Identifier.ValueText == "wProcessorArchitecture");
+    }
+
+    [Fact]
+    public void FlattenNestedAnonymousTypes_LeavesNamedNestedTypesAlone()
+    {
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { FlattenNestedAnonymousTypes = true });
+        this.GenerateApi("KEY_EVENT_RECORD");
+        var structDecl = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("KEY_EVENT_RECORD"));
+
+        // uChar is a *named* nested union (reached as KEY_EVENT_RECORD.uChar), so its fields are not flattened.
+        Assert.DoesNotContain(structDecl.Members.OfType<PropertyDeclarationSyntax>(), p => p.Identifier.ValueText is "UnicodeChar" or "AsciiChar");
+    }
+
+    [Fact]
+    public void FlattenNestedAnonymousTypes_InheritsFieldDocumentation()
+    {
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { FlattenNestedAnonymousTypes = true }, includeDocs: true);
+        this.GenerateApi("SYSTEM_INFO");
+
+        // The leaf field deep in the nested struct receives a summary inherited from SYSTEM_INFO's API docs.
+        var nestedStruct = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("_Anonymous_e__Struct"));
+        (FieldDeclarationSyntax Field, VariableDeclaratorSyntax Variable)? leafField = this.FindFieldDeclaration(nestedStruct, "wProcessorArchitecture");
+        Assert.NotNull(leafField);
+        Assert.Contains(
+            leafField!.Value.Field.GetLeadingTrivia().Select(t => t.GetStructure()).OfType<DocumentationCommentTriviaSyntax>().SelectMany(d => d.Content.OfType<XmlElementSyntax>()),
+            e => e.StartTag.Name.ToString() == "summary");
+
+        // The flattened accessor inherits documentation from that field.
+        var structDecl = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("SYSTEM_INFO"));
+        PropertyDeclarationSyntax accessor = FindProperty(structDecl, "wProcessorArchitecture");
+        Assert.Contains(
+            accessor.GetLeadingTrivia().Select(t => t.GetStructure()).OfType<DocumentationCommentTriviaSyntax>().SelectMany(d => d.Content.OfType<XmlEmptyElementSyntax>()),
+            e => e.Name.ToString() == "inheritdoc" && e.Attributes.OfType<XmlCrefAttributeSyntax>().Any());
+    }
+
+    private static PropertyDeclarationSyntax FindProperty(StructDeclarationSyntax structDecl, string name) =>
+        Assert.Single(structDecl.Members.OfType<PropertyDeclarationSyntax>(), p => p.Identifier.ValueText == name);
+
+    private static void AssertFlattenedAccessor(PropertyDeclarationSyntax property, string expectedRefTarget)
+    {
+        // It returns by ref.
+        Assert.IsType<RefTypeSyntax>(property.Type);
+
+        // It is annotated with [UnscopedRef].
+        Assert.Contains(property.AttributeLists.SelectMany(al => al.Attributes), a => a.Name.ToString() == "UnscopedRef");
+
+        // The expression body forwards a ref to the nested field.
+        ArrowExpressionClauseSyntax body = Assert.IsType<ArrowExpressionClauseSyntax>(property.ExpressionBody);
+        RefExpressionSyntax refExpr = Assert.IsType<RefExpressionSyntax>(body.Expression);
+        Assert.Equal(expectedRefTarget, refExpr.Expression.ToString());
+
+        // It inherits documentation via <inheritdoc cref="..."/>.
+        Assert.Contains(
+            property.GetLeadingTrivia().Select(t => t.GetStructure()).OfType<DocumentationCommentTriviaSyntax>().SelectMany(d => d.Content.OfType<XmlEmptyElementSyntax>()),
+            e => e.Name.ToString() == "inheritdoc" && e.Attributes.OfType<XmlCrefAttributeSyntax>().Any());
+    }
 }

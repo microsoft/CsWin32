@@ -63,6 +63,11 @@
       "type": "boolean",
       "default": false
     },
+    "flattenNestedAnonymousTypes": {
+      "description": "Surface fields nested within anonymous structs and unions as ref-returning properties on the declaring struct, so they can be accessed directly (e.g. value.field) instead of through the generated Anonymous holder (e.g. value.Anonymous.Anonymous.field). The generated accessors require C# 11 or later; otherwise no accessors are generated.",
+      "type": "boolean",
+      "default": false
+    },
     "useSafeHandles": {
       "description": "A value indicating whether friendly overloads should use safe handles.",
       "type": "boolean",

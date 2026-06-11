@@ -47,6 +47,21 @@ if ($x86) {
 $testBinLog = Join-Path $ArtifactStagingFolder (Join-Path build_logs test.binlog)
 $testDiagLog = Join-Path $ArtifactStagingFolder (Join-Path test_logs diag.log)
 
+# On Linux/macOS, limit test parallelism to avoid OOM kills.
+# The generator test projects each consume several GB of RAM; running multiple test hosts
+# simultaneously on memory-constrained Linux agents causes the OOM killer to terminate
+# test processes (exit code 137). We limit all layers:
+#   1. xunit parallelism within each test assembly (XUNIT_MAX_PARALLEL_THREADS=1)
+#   2. MSBuild project-level parallelism (BuildInParallel=false)
+#   3. vstest host parallelism (MaxCpuCount=1 via runsettings)
+# Windows agents have enough RAM for full parallelism.
+$extraTestArgs = @()
+if (!$IsWindows) {
+    $env:XUNIT_MAX_PARALLEL_THREADS = '1'
+    $extraTestArgs = @('-p:BuildInParallel=false', '--', 'RunConfiguration.MaxCpuCount=1')
+    Write-Host "Limiting test parallelism to avoid OOM on Linux" -ForegroundColor Cyan
+}
+
 & $dotnet test $RepoRoot `
     --no-build `
     -c $Configuration `
@@ -58,6 +73,7 @@ $testDiagLog = Join-Path $ArtifactStagingFolder (Join-Path test_logs diag.log)
     -bl:"$testBinLog" `
     --diag "$testDiagLog;TraceLevel=info" `
     --logger trx `
+    @extraTestArgs
 
 $unknownCounter = 0
 Get-ChildItem -Recurse -Path $RepoRoot\test\*.trx |% {

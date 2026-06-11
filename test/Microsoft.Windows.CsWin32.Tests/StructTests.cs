@@ -463,6 +463,58 @@ namespace Microsoft.Windows.Sdk
         Assert.NotNull(this.FindFieldDeclaration(nestedUnion, "rgBytes"));
     }
 
+    [Theory, PairwiseData]
+    public void FlattenNestedAnonymousTypes_DoesNotFlattenNestedStructValues(bool allowMarshaling)
+    {
+        // INPUT's anonymous union overlaps three whole struct *values* (MOUSEINPUT, KEYBDINPUT, HARDWAREINPUT).
+        // Flattening the union surfaces each struct value as a single ref, but the *fields inside* those nested
+        // structs must NOT be hoisted onto INPUT: we flatten the union, never the struct values reached through it.
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling, FlattenNestedAnonymousTypes = true });
+        this.GenerateApi("INPUT");
+        var structDecl = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("INPUT"));
+
+        // The union's members are surfaced, each as a ref to the whole nested struct value (not its inner fields).
+        PropertyDeclarationSyntax mi = FindProperty(structDecl, "mi");
+        AssertFlattenedAccessor(mi, "this.Anonymous.mi");
+        Assert.EndsWith("MOUSEINPUT", ((RefTypeSyntax)mi.Type).Type.ToString(), StringComparison.Ordinal);
+        AssertFlattenedAccessor(FindProperty(structDecl, "ki"), "this.Anonymous.ki");
+        AssertFlattenedAccessor(FindProperty(structDecl, "hi"), "this.Anonymous.hi");
+
+        // The fields declared *inside* those nested struct values are not flattened onto INPUT.
+        string[] nestedStructFields = ["dx", "dy", "mouseData", "wVk", "wScan", "uMsg", "wParamL", "wParamH"];
+        Assert.DoesNotContain(
+            structDecl.Members.OfType<PropertyDeclarationSyntax>(),
+            p => nestedStructFields.Contains(p.Identifier.ValueText));
+    }
+
+    [Theory, PairwiseData]
+    public void FlattenNestedAnonymousTypes_DoesNotFlattenIntoNestedStructContainingUnions(bool allowMarshaling)
+    {
+        // PROPVARIANT reaches a DECIMAL struct *value* (decVal) through its anonymous union, and DECIMAL itself
+        // contains anonymous unions. Flattening surfaces decVal as a single ref to the whole struct, but DECIMAL's
+        // own union members must NOT be hoisted onto PROPVARIANT: flattening stops at the nested struct-value
+        // boundary rather than digging through it into the inner unions.
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling, FlattenNestedAnonymousTypes = true });
+        this.GenerateApi("PROPVARIANT");
+        var structDecl = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("PROPVARIANT"));
+
+        // The DECIMAL struct value is surfaced as a single ref to the whole struct.
+        PropertyDeclarationSyntax decVal = FindProperty(structDecl, "decVal");
+        AssertFlattenedAccessor(decVal, "this.Anonymous.decVal");
+        Assert.EndsWith("DECIMAL", ((RefTypeSyntax)decVal.Type).Type.ToString(), StringComparison.Ordinal);
+
+        // DECIMAL's union-derived members are flattened onto DECIMAL itself, never onto PROPVARIANT.
+        string[] decimalUnionMembers = ["Lo64", "Lo32", "Mid32", "scale", "sign", "signscale"];
+        Assert.DoesNotContain(
+            structDecl.Members.OfType<PropertyDeclarationSyntax>(),
+            p => decimalUnionMembers.Contains(p.Identifier.ValueText));
+
+        // Sanity check: those members really are surfaced on DECIMAL itself, so the assertion above is meaningful
+        // (the members exist and are flattened, but only onto DECIMAL — not transitively onto PROPVARIANT).
+        var decimalDecl = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("DECIMAL"));
+        AssertFlattenedAccessor(FindProperty(decimalDecl, "Lo64"), "this.Anonymous2.Lo64");
+    }
+
     private static PropertyDeclarationSyntax FindProperty(StructDeclarationSyntax structDecl, string name) =>
         Assert.Single(structDecl.Members.OfType<PropertyDeclarationSyntax>(), p => p.Identifier.ValueText == name);
 

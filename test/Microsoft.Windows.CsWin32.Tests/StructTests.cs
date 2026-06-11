@@ -300,8 +300,18 @@ namespace Microsoft.Windows.Sdk
     }
 
     [Fact]
-    public void FlattenNestedAnonymousTypes_DisabledByDefault()
+    public void FlattenNestedAnonymousTypes_EnabledByDefault()
     {
+        // The DefaultTestGeneratorOptions leave FlattenNestedAnonymousTypes unset, so this exercises the shipping default (true).
+        this.GenerateApi("SYSTEM_INFO");
+        var structDecl = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("SYSTEM_INFO"));
+        AssertFlattenedAccessor(FindProperty(structDecl, "wProcessorArchitecture"), "this.Anonymous.Anonymous.wProcessorArchitecture");
+    }
+
+    [Fact]
+    public void FlattenNestedAnonymousTypes_CanBeDisabled()
+    {
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { FlattenNestedAnonymousTypes = false });
         this.GenerateApi("SYSTEM_INFO");
         var structDecl = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("SYSTEM_INFO"));
         Assert.DoesNotContain(structDecl.Members.OfType<PropertyDeclarationSyntax>(), p => p.Identifier.ValueText == "wProcessorArchitecture");
@@ -429,6 +439,49 @@ namespace Microsoft.Windows.Sdk
 
         // A field three levels deep (union -> struct -> union) is surfaced on the outer struct.
         AssertFlattenedAccessor(FindProperty(structDecl, "intVal"), "this.Anonymous.Anonymous.Anonymous.intVal");
+    }
+
+    [Theory, PairwiseData]
+    public void FlattenNestedAnonymousTypes_NestedManagedStructValueRefTypeMatchesField(bool allowMarshaling)
+    {
+        // Regression (CS8151): MSP_EVENT_INFO's anonymous union overlaps several *managed* nested struct
+        // values (they contain BSTR/COM-pointer fields). In marshaling mode such a leaf struct is emitted
+        // with the "_unmanaged" suffix on the leaf type only, while its holder (_Anonymous_e__Union) keeps
+        // its managed name. The flattened ref accessor must therefore reference the leaf type *relative* to
+        // the declaring struct (matching the type actually reached through this.Anonymous). Fully qualifying
+        // it applied the suffix to every ancestor and named the unmanaged twin
+        // (MSP_EVENT_INFO_unmanaged._Anonymous_e__Union_unmanaged...), which does not match the field reached
+        // through this.Anonymous, so the ref-return type mismatched (CS8151). GenerateApi asserts no
+        // diagnostics. The option is set explicitly here so this guard survives even if the default flips.
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling, FlattenNestedAnonymousTypes = true });
+        this.GenerateApi("MSP_EVENT_INFO");
+        var structDecl = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("MSP_EVENT_INFO"));
+
+        // The managed nested struct value is surfaced as a single ref to the whole value.
+        PropertyDeclarationSyntax accessor = FindProperty(structDecl, "MSP_ADDRESS_EVENT_INFO");
+        AssertFlattenedAccessor(accessor, "this.Anonymous.MSP_ADDRESS_EVENT_INFO");
+
+        // The ref-return type must be relative to the declaring struct, never the mis-qualified
+        // "_unmanaged" twin chain that names a type the field doesn't actually have.
+        string refReturnType = ((RefTypeSyntax)accessor.Type).Type.ToString();
+        Assert.DoesNotContain("MSP_EVENT_INFO_unmanaged", refReturnType, StringComparison.Ordinal);
+    }
+
+    [Theory, PairwiseData]
+    public void FlattenNestedAnonymousTypes_ObsoleteLeafProducesObsoleteAccessor(bool allowMarshaling)
+    {
+        // Regression (CS0612): PEER_GROUP_EVENT_DATA's anonymous union has [Obsolete] fields. The flattened
+        // accessor's body references one of those fields, so the accessor itself must be marked [Obsolete] or
+        // the reference is an error under warnings-as-errors. GenerateApi asserts no diagnostics. The option is
+        // set explicitly here so this guard survives even if the default flips.
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling, FlattenNestedAnonymousTypes = true });
+        this.GenerateApi("PEER_GROUP_EVENT_DATA");
+        var structDecl = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("PEER_GROUP_EVENT_DATA"));
+
+        // The accessor for an obsolete union field is surfaced and carries [Obsolete].
+        PropertyDeclarationSyntax accessor = FindProperty(structDecl, "dwStatus");
+        AssertFlattenedAccessor(accessor, "this.Anonymous.dwStatus");
+        Assert.Contains(accessor.AttributeLists.SelectMany(al => al.Attributes), a => a.Name.ToString() == "Obsolete");
     }
 
     [Fact]

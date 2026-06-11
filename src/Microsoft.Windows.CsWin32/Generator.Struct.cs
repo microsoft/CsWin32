@@ -673,7 +673,7 @@ public partial class Generator
             TypeDefinition nestedTypeDef = this.Reader.GetTypeDefinition(nestedTypeHandle);
             ExpressionSyntax accessPrefix = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName(SafeIdentifier(fieldName)));
             NameSyntax crefPrefix = IdentifierName(this.GetMangledIdentifier(this.Reader.GetString(nestedTypeDef.Name), context.AllowMarshaling, this.IsManagedType(nestedTypeHandle)));
-            this.GatherFlattenedAnonymousAccessors(nestedTypeHandle, accessPrefix, crefPrefix, context, accessors, surfacedNames, reservedNames, depth: 0);
+            this.GatherFlattenedAnonymousAccessors(nestedTypeHandle, accessPrefix, crefPrefix, context, accessors, surfacedNames, reservedNames, ancestorObsolete: this.HasObsoleteAttribute(fieldDef.GetCustomAttributes()), depth: 0);
         }
 
         members.AddRange(accessors);
@@ -689,6 +689,7 @@ public partial class Generator
     /// <param name="accessors">The list that generated accessors are appended to.</param>
     /// <param name="surfacedNames">The set of leaf names already surfaced, used to skip duplicates.</param>
     /// <param name="reservedNames">The set of names already declared on the outer struct, used to skip collisions.</param>
+    /// <param name="ancestorObsolete"><see langword="true"/> if any anonymous holder field along the path to this type was marked <c>[Obsolete]</c>; such accessors must themselves be marked obsolete to legally reference the obsolete member in their body.</param>
     /// <param name="depth">The current recursion depth, used as a guard against unexpectedly deep nesting.</param>
     private void GatherFlattenedAnonymousAccessors(
         TypeDefinitionHandle containingTypeHandle,
@@ -698,6 +699,7 @@ public partial class Generator
         List<MemberDeclarationSyntax> accessors,
         HashSet<string> surfacedNames,
         HashSet<string> reservedNames,
+        bool ancestorObsolete,
         int depth)
     {
         // Guard against unexpectedly deep or cyclic nesting.
@@ -731,7 +733,7 @@ public partial class Generator
                 TypeDefinition deeperTypeDef = this.Reader.GetTypeDefinition(deeperTypeHandle);
                 ExpressionSyntax deeperAccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, accessPrefix, IdentifierName(SafeIdentifier(fieldName)));
                 NameSyntax deeperCref = QualifiedName(crefTypePrefix, IdentifierName(this.GetMangledIdentifier(this.Reader.GetString(deeperTypeDef.Name), bodyContext.AllowMarshaling, this.IsManagedType(deeperTypeHandle))));
-                this.GatherFlattenedAnonymousAccessors(deeperTypeHandle, deeperAccess, deeperCref, bodyContext, accessors, surfacedNames, reservedNames, depth + 1);
+                this.GatherFlattenedAnonymousAccessors(deeperTypeHandle, deeperAccess, deeperCref, bodyContext, accessors, surfacedNames, reservedNames, ancestorObsolete || this.HasObsoleteAttribute(fieldAttributes), depth + 1);
                 continue;
             }
 
@@ -772,7 +774,23 @@ public partial class Generator
                 continue;
             }
 
-            TypeSyntax fieldType = fieldTypeInfo.ToTypeSyntax(typeSettings, GeneratingElement.StructMember, fieldAttributes.QualifyWith(this)).Type;
+            TypeSyntax fieldType;
+            if (this.TryGetNestedTypeForAnonymousField(containingType, fieldDef, out TypeDefinitionHandle leafNestedTypeHandle))
+            {
+                // The leaf is a struct/union *value* nested directly within this container (e.g. an anonymous
+                // _X_e__Struct). Reference it relative to the outer struct through the same per-twin container
+                // chain already used for the cref. The fully qualified form produced by ToTypeSyntax applies the
+                // "_unmanaged" suffix uniformly to every ancestor, which names the unmanaged twin
+                // (e.g. MSP_EVENT_INFO_unmanaged._Anonymous_e__Union_unmanaged...) rather than the type actually
+                // reachable through this.Anonymous on the declaring struct, producing a ref-return mismatch (CS8151).
+                TypeDefinition leafNestedType = this.Reader.GetTypeDefinition(leafNestedTypeHandle);
+                string leafTypeName = this.GetMangledIdentifier(this.Reader.GetString(leafNestedType.Name), bodyContext.AllowMarshaling, this.IsManagedType(leafNestedTypeHandle));
+                fieldType = QualifiedName(crefTypePrefix, IdentifierName(leafTypeName));
+            }
+            else
+            {
+                fieldType = fieldTypeInfo.ToTypeSyntax(typeSettings, GeneratingElement.StructMember, fieldAttributes.QualifyWith(this)).Type;
+            }
 
             // Fixed-length arrays are reinterpreted into a helper struct field, which is not a simple ref target.
             if (fieldType is ArrayTypeSyntax)
@@ -786,7 +804,10 @@ public partial class Generator
                 continue;
             }
 
-            accessors.Add(this.CreateFlattenedAnonymousAccessor(fieldName, fieldType, accessPrefix, crefTypePrefix));
+            // Mark the accessor obsolete when the leaf field (or any holder along its access path) is obsolete,
+            // so its body may legally reference the obsolete member without triggering CS0612.
+            bool isObsolete = ancestorObsolete || this.HasObsoleteAttribute(fieldAttributes);
+            accessors.Add(this.CreateFlattenedAnonymousAccessor(fieldName, fieldType, accessPrefix, crefTypePrefix, isObsolete));
             this.DeclareUnscopedRefAttributeIfNecessary();
         }
     }
@@ -795,7 +816,7 @@ public partial class Generator
     /// Creates a single <c>[UnscopedRef] ref</c> property that forwards to a field reached through anonymous holders,
     /// with documentation inherited from the underlying field.
     /// </summary>
-    private PropertyDeclarationSyntax CreateFlattenedAnonymousAccessor(string fieldName, TypeSyntax fieldType, ExpressionSyntax accessPrefix, NameSyntax crefTypePrefix)
+    private PropertyDeclarationSyntax CreateFlattenedAnonymousAccessor(string fieldName, TypeSyntax fieldType, ExpressionSyntax accessPrefix, NameSyntax crefTypePrefix, bool isObsolete)
     {
         // ref <FieldType> <FieldName> => ref <accessPrefix>.<FieldName>;
         ExpressionSyntax leafAccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, accessPrefix, IdentifierName(SafeIdentifier(fieldName)));
@@ -808,6 +829,11 @@ public partial class Generator
         if (RequiresUnsafe(fieldType))
         {
             accessor = accessor.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));
+        }
+
+        if (isObsolete)
+        {
+            accessor = accessor.AddAttributeLists(AttributeList(ObsoleteAttributeSyntax));
         }
 
         // /// <inheritdoc cref="NestedType.FieldName"/>

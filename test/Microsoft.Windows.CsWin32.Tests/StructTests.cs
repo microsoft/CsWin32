@@ -431,6 +431,38 @@ namespace Microsoft.Windows.Sdk
         AssertFlattenedAccessor(FindProperty(structDecl, "intVal"), "this.Anonymous.Anonymous.Anonymous.intVal");
     }
 
+    [Fact]
+    public void FlattenNestedAnonymousTypes_NoOpForStructWithoutAnonymousMembers()
+    {
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { FlattenNestedAnonymousTypes = true });
+        this.GenerateApi("LUID");
+        var structDecl = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("LUID"));
+
+        // The struct has no anonymous holder fields, so the option produces no flattening accessors.
+        Assert.DoesNotContain(
+            structDecl.Members.OfType<PropertyDeclarationSyntax>(),
+            p => p.AttributeLists.SelectMany(al => al.Attributes).Any(a => a.Name.ToString() == "UnscopedRef"));
+    }
+
+    [Fact]
+    public void FlattenNestedAnonymousTypes_SkipsReinterpretedArrayLeaf()
+    {
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { FlattenNestedAnonymousTypes = true });
+        this.GenerateApi("BLUETOOTH_ADDRESS");
+        var structDecl = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("BLUETOOTH_ADDRESS"));
+
+        // The scalar member of the anonymous union is flattened.
+        AssertFlattenedAccessor(FindProperty(structDecl, "ullLong"), "this.Anonymous.ullLong");
+
+        // The fixed-length array member (reinterpreted into a helper struct, not a plain ref-returnable
+        // field) is NOT surfaced as a flattened accessor on the outer struct.
+        Assert.DoesNotContain(structDecl.Members.OfType<PropertyDeclarationSyntax>(), p => p.Identifier.ValueText == "rgBytes");
+
+        // The array field is still present inside the nested union itself.
+        var nestedUnion = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("_Anonymous_e__Union"));
+        Assert.NotNull(this.FindFieldDeclaration(nestedUnion, "rgBytes"));
+    }
+
     private static PropertyDeclarationSyntax FindProperty(StructDeclarationSyntax structDecl, string name) =>
         Assert.Single(structDecl.Members.OfType<PropertyDeclarationSyntax>(), p => p.Identifier.ValueText == name);
 

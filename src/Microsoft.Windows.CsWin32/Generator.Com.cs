@@ -766,20 +766,6 @@ public partial class Generator
             iface = iface.AddAttributeLists(AttributeList(GUID(DecodeGuidFromAttribute(guidAttribute.Value))));
         }
 
-        // CS3016 ("Arrays as attribute arguments is not CLS-compliant") fires under
-        // [assembly: CLSCompliant(true)] on the CCW thunks we emit with
-        // [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvStdcall) })]. CCW thunks are
-        // only emitted when canUseUnmanagedCallersOnlyAttribute is true (.NET 5+); on
-        // net472 / netstandard2.0 the generator produces no array-valued attribute arguments and
-        // [CLSCompliant(false)] is unnecessary. The attribute is also a no-op on public types
-        // (which the consumer's CLS surface owns), so we only emit it on internal struct
-        // wrappers that we know carry the array-valued attribute.
-        // See https://github.com/microsoft/CsWin32/issues/1703.
-        if (ccwThisParameter is not null && this.Visibility == SyntaxKind.InternalKeyword)
-        {
-            iface = iface.AddAttributeLists(AttributeList(CLSCompliantFalse()));
-        }
-
         if (this.GetSupportedOSPlatformAttribute(typeDef.GetCustomAttributes()) is AttributeSyntax supportedOSPlatformAttribute)
         {
             iface = iface.AddAttributeLists(AttributeList(supportedOSPlatformAttribute));

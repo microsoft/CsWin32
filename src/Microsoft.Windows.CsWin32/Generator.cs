@@ -42,6 +42,7 @@ public partial class Generator : IGenerator, IDisposable
     private readonly GeneratorOptions options;
     private readonly CSharpCompilation? compilation;
     private readonly CSharpParseOptions? parseOptions;
+    private readonly SyntaxTriviaList fileHeader;
     private readonly bool comIIDInterfacePredefined;
     private readonly bool getDelegateForFunctionPointerGenericExists;
     private readonly GeneratedCode committedCode = new();
@@ -106,6 +107,10 @@ public partial class Generator : IGenerator, IDisposable
         this.compilation = compilation;
         this.parseOptions = parseOptions;
         this.volatileCode = new(this.committedCode);
+
+        // Suppress CS3016 (the CLS array-attribute-argument warning our CCW thunks trip) in the generated file header,
+        // but only for internal projections. For public projections the consumer owns their public surface's CLS contract.
+        this.fileHeader = this.options.Public ? FileHeader : FileHeaderWithClsArrayAttributeSuppression;
 
         // UnscopedRefAttribute may be emitted to work on downlevel *runtimes*, but we can't use it
         // on downlevel *compilers*. Only .NET 8+ SDK compilers support it. Since we cannot detect
@@ -854,7 +859,7 @@ public partial class Generator : IGenerator, IDisposable
             CompilationUnitSyntax? compilationUnit = ((CompilationUnitSyntax)kv.Value
                 .AddUsings(usingDirectives.ToArray())
                 .Accept(new WhitespaceRewriter())!)
-                .WithLeadingTrivia(FileHeader);
+                .WithLeadingTrivia(this.fileHeader);
 
             lock (normalizedResults)
             {
@@ -871,7 +876,7 @@ public partial class Generator : IGenerator, IDisposable
             }
             else
             {
-                normalizedResults.Add(string.Format(CultureInfo.InvariantCulture, FilenamePattern, "CsWin32Stamp"), CompilationUnit().AddAttributeLists(CsWin32StampAttribute).WithLeadingTrivia(FileHeader));
+                normalizedResults.Add(string.Format(CultureInfo.InvariantCulture, FilenamePattern, "CsWin32Stamp"), CompilationUnit().AddAttributeLists(CsWin32StampAttribute).WithLeadingTrivia(this.fileHeader));
             }
         }
 

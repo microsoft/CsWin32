@@ -197,12 +197,6 @@ internal static class SimpleSyntaxFactory
             AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(guid.ToString().ToUpperInvariant()))));
     }
 
-    internal static AttributeSyntax CLSCompliantFalse()
-    {
-        return Attribute(IdentifierName("CLSCompliant")).AddArgumentListArguments(
-            AttributeArgument(LiteralExpression(SyntaxKind.FalseLiteralExpression)));
-    }
-
     internal static AttributeSyntax InterfaceType(ComInterfaceType interfaceType)
     {
         return Attribute(IdentifierName("InterfaceType")).AddArgumentListArguments(

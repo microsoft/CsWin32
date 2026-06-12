@@ -676,14 +676,15 @@ public class COMTests : GeneratorTestBase
     /// <summary>
     /// Regression test for <see href="https://github.com/microsoft/CsWin32/issues/1703">issue 1703</see>:
     /// generated COM struct wrappers contain CCW thunks annotated with
-    /// <c>[UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvStdcall) })]</c>, which trips
-    /// <c>CS3016 "Arrays as attribute arguments is not CLS-compliant"</c> under
-    /// <c>[assembly: CLSCompliant(true)]</c>. The generator must mark such COM struct wrappers
-    /// <c>[CLSCompliant(false)]</c> so consumers do not have to hand-author partials per type.
+    /// <c>[UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvStdcall) })]</c>, whose array-valued argument
+    /// trips <c>CS3016 "Arrays as attribute arguments is not CLS-compliant"</c> under
+    /// <c>[assembly: CLSCompliant(true)]</c> (a Roslyn limitation, dotnet/roslyn#68526). The generator suppresses
+    /// <c>CS3016</c> in the generated file's header pragma — at the thunk site where it is reported — rather than by
+    /// stamping <c>[CLSCompliant(false)]</c> on the struct, so consumers do not have to hand-author partials per type.
     /// </summary>
     [Theory]
     [CombinatorialData]
-    public void COMStructWrappers_AreCLSCompliantFalse_Issue1703(
+    public void COMStructWrappers_AreClsClean_Issue1703(
         [CombinatorialValues("net8.0", "net9.0", "net10.0")] string tfm)
     {
         this.compilation = this.starterCompilations[tfm];
@@ -697,21 +698,19 @@ public class COMTests : GeneratorTestBase
         this.CollectGeneratedCode(this.generator);
         this.AssertNoDiagnostics();
 
-        // Every generated COM struct wrapper that carries CCW thunks (annotated with
-        // [UnmanagedCallersOnly(CallConvs = new[]{...})]) must itself bear [CLSCompliant(false)].
+        // The generator suppresses CS3016 at the thunk site; it does NOT stamp [CLSCompliant(false)] on the struct,
+        // because that type-level attribute would induce CS3019/CS3021 that leak onto consumer partials (see
+        // COMStructWrappers_FriendlyHelperPartial_*). No generated COM struct should carry a CLSCompliant attribute.
         foreach (string structName in new[] { "ITypeInfo", "ITypeLib", "IRecordInfo" })
         {
             var type = Assert.IsType<StructDeclarationSyntax>(this.FindGeneratedType(structName).Single());
-            Assert.Contains(
+            Assert.DoesNotContain(
                 type.AttributeLists.SelectMany(al => al.Attributes),
-                a => a.Name.ToString() is "CLSCompliant" or "System.CLSCompliant"
-                    && a.ArgumentList?.Arguments.Count == 1
-                    && a.ArgumentList.Arguments[0].Expression is LiteralExpressionSyntax { Token.ValueText: "false" });
+                a => a.Name.ToString() is "CLSCompliant" or "System.CLSCompliant");
         }
 
         // End-to-end: a consuming assembly marked [assembly: CLSCompliant(true)] must compile
-        // entirely clean — no CS3016, no CS3019, no CS3021. The generator suppresses CS3019/CS3021
-        // in the generated-file pragma so consumers do not have to author per-file overrides.
+        // entirely clean — no CS3016, no CS3019, no CS3021.
         this.compilation = this.AddCode("""
             using System;
 
@@ -732,47 +731,220 @@ public class COMTests : GeneratorTestBase
     }
 
     /// <summary>
-    /// Negative coverage for #1703: on downlevel TFMs (<c>net472</c>, <c>netstandard2.0</c>)
-    /// the generator does not emit <c>[UnmanagedCallersOnly]</c>-decorated CCW thunks, so there is
-    /// no array-valued attribute argument and no CS3016 to suppress. The generator must therefore
-    /// not emit <c>[CLSCompliant(false)]</c> in that case — the attribute would be unmotivated noise.
+    /// Cross-compilation matrix for <see href="https://github.com/microsoft/CsWin32/issues/1703">issue 1703</see> over the
+    /// default (internal) projection: every combination of target framework (<c>net472</c> / <c>net10.0</c>) and whether the
+    /// consuming assembly declares <c>[assembly: CLSCompliant(true)]</c> must compile free of the issue-1703 CLS diagnostics,
+    /// and no generated COM struct may carry a <c>[CLSCompliant]</c> attribute.
     /// </summary>
+    /// <remarks>
+    /// The relevant diagnostics are genuinely enabled in every cell (see
+    /// <see cref="COMStructWrappers_ClsPragmaSuppressionsAreLoadBearing_Issue1703"/>):
+    /// <list type="bullet">
+    /// <item><c>CS3016</c> (array-valued attribute arguments) fires on the CCW thunks when the consuming assembly is CLS-compliant; the generator suppresses it in the generated file's header pragma, at the thunk site where it is reported.</item>
+    /// <item><c>CS3019</c>/<c>CS3021</c> never arise because the generator emits no <c>[CLSCompliant(false)]</c> attribute.</item>
+    /// </list>
+    /// The CCW thunks (and thus the array-valued attribute) exist only on modern .NET; downlevel TFMs emit neither and are
+    /// trivially clean. The <em>public</em> projection is intentionally excluded here and covered separately by
+    /// <see cref="COMStructWrappers_PublicProjection_OmitsClsSuppression_Issue1703"/>.
+    /// </remarks>
     [Theory]
     [CombinatorialData]
-    public void COMStructWrappers_NoCLSCompliantFalse_OnDownlevelTFMs_Issue1703(
-        [CombinatorialValues("net472", "netstandard2.0")] string tfm)
+    public void COMStructWrappers_ClsComplianceMatrix_Issue1703(
+        [CombinatorialValues("net472", "net10.0")] string tfm,
+        bool assemblyClsCompliant)
     {
         this.compilation = this.starterCompilations[tfm];
+        if (GetLanguageVersionForTfm(tfm) is LanguageVersion languageVersion)
+        {
+            this.parseOptions = this.parseOptions.WithLanguageVersion(languageVersion);
+        }
+
         this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = false });
 
         Assert.True(this.generator.TryGenerate("ITypeInfo", CancellationToken.None));
+        Assert.True(this.generator.TryGenerate("ITypeLib", CancellationToken.None));
+        Assert.True(this.generator.TryGenerate("IRecordInfo", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
 
-        var type = Assert.IsType<StructDeclarationSyntax>(this.FindGeneratedType("ITypeInfo").Single());
+        // No generated COM struct (nor its nested CCW Interface subtype) carries a CLSCompliant attribute in any cell.
+        foreach (string structName in new[] { "ITypeInfo", "ITypeLib", "IRecordInfo" })
+        {
+            var type = Assert.IsType<StructDeclarationSyntax>(this.FindGeneratedType(structName).Single());
+            Assert.DoesNotContain(
+                type.AttributeLists.SelectMany(al => al.Attributes),
+                a => a.Name.ToString() is "CLSCompliant" or "System.CLSCompliant");
+
+            var nestedInterface = type.Members.OfType<InterfaceDeclarationSyntax>().SingleOrDefault(i => i.Identifier.ValueText == "Interface");
+            Assert.NotNull(nestedInterface);
+            Assert.DoesNotContain(
+                nestedInterface!.AttributeLists.SelectMany(al => al.Attributes),
+                a => a.Name.ToString() is "CLSCompliant" or "System.CLSCompliant");
+        }
+
+        // End-to-end: the internal-projection consumer build is free of the issue-1703 diagnostics regardless of its
+        // assembly-level CLS posture.
+        // - With [assembly: CLSCompliant(true)]: CS3016 (array attr args) is at risk; suppressed at the thunk site.
+        // - Without it: nothing CLS-related fires (no attribute, and CS3016 only fires under assembly CLS-compliance).
+        string assemblyAttribute = assemblyClsCompliant ? "[assembly: System.CLSCompliant(true)]" : string.Empty;
+        this.compilation = this.AddCode($$"""
+            {{assemblyAttribute}}
+
+            internal static class ClsMatrixConsumer
+            {
+                public static void Touch()
+                {
+                    _ = typeof(Windows.Win32.System.Com.ITypeInfo);
+                    _ = typeof(Windows.Win32.System.Com.ITypeLib);
+                    _ = typeof(Windows.Win32.System.Ole.IRecordInfo);
+                }
+            }
+            """);
         Assert.DoesNotContain(
-            type.AttributeLists.SelectMany(al => al.Attributes),
-            a => a.Name.ToString() is "CLSCompliant" or "System.CLSCompliant");
+            this.compilation.GetDiagnostics(TestContext.Current.CancellationToken),
+            d => d.Id is "CS3016" or "CS3019" or "CS3021");
     }
 
     /// <summary>
-    /// Negative coverage for #1703: when the generator is configured to emit public types
-    /// (<see cref="GeneratorOptions.Public"/> = <see langword="true"/>), the COM struct wrapper
-    /// is part of the consumer's CLS surface and they own its CLS-compliance contract — the
-    /// generator must not unilaterally stamp <c>[CLSCompliant(false)]</c> on it.
+    /// Coverage for <see href="https://github.com/microsoft/CsWin32/issues/1703">issue 1703</see> when the generator emits
+    /// <em>public</em> types (<see cref="GeneratorOptions.Public"/> = <see langword="true"/>): the CS3016 suppression is
+    /// <em>not</em> baked into the generated file. A public projection is part of the consumer's CLS surface, which they own;
+    /// CsWin32 must not unilaterally silence a CLS diagnostic about it (and public COM interop is inherently non-CLS-compliant
+    /// anyway). The internal projection — the default and the #1703 scenario — does carry the suppression, asserted here as a
+    /// contrast so a regression in either direction is caught.
     /// </summary>
     [Fact]
-    public void COMStructWrappers_NoCLSCompliantFalse_WhenPublic_Issue1703()
+    public void COMStructWrappers_PublicProjection_OmitsClsSuppression_Issue1703()
     {
         this.compilation = this.starterCompilations["net10.0"];
         this.parseOptions = this.parseOptions.WithLanguageVersion(GetLanguageVersionForTfm("net10.0") ?? LanguageVersion.Latest);
-        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = false, Public = true });
 
-        Assert.True(this.generator.TryGenerate("ITypeInfo", CancellationToken.None));
-        this.CollectGeneratedCode(this.generator);
+        // Internal (default) projection: the generated file header suppresses CS3016.
+        var internalGenerator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = false });
+        Assert.True(internalGenerator.TryGenerate("ITypeInfo", CancellationToken.None));
+        Assert.True(GeneratedFilesDisableWarning(internalGenerator, "CS3016"));
 
+        // Public projection: the generated file header does NOT suppress CS3016 — the consumer owns their public CLS surface.
+        var publicGenerator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = false, Public = true });
+        Assert.True(publicGenerator.TryGenerate("ITypeInfo", CancellationToken.None));
+        Assert.False(GeneratedFilesDisableWarning(publicGenerator, "CS3016"));
+
+        // Neither projection emits a [CLSCompliant] attribute on the struct.
+        this.CollectGeneratedCode(publicGenerator);
         var type = Assert.IsType<StructDeclarationSyntax>(this.FindGeneratedType("ITypeInfo").Single());
         Assert.DoesNotContain(
             type.AttributeLists.SelectMany(al => al.Attributes),
             a => a.Name.ToString() is "CLSCompliant" or "System.CLSCompliant");
+
+        bool GeneratedFilesDisableWarning(IGenerator generator, string warningId) =>
+            generator.GetCompilationUnits(TestContext.Current.CancellationToken)
+                .Any(unit => unit.Value.GetText(Encoding.UTF8).ToString() is string text
+                    && text.Contains("#pragma warning disable", StringComparison.Ordinal)
+                    && System.Text.RegularExpressions.Regex.IsMatch(text, $@"#pragma warning disable[^\r\n]*\b{warningId}\b"));
     }
+
+    /// <summary>
+    /// Regression for the dotnet/winforms#14639 scenario behind <see href="https://github.com/microsoft/CsWin32/issues/1703">issue 1703</see>:
+    /// a consumer adds a friendly-helper <c>partial</c> to a generated CCW-bearing COM struct (extremely common) and the
+    /// consuming assembly does <em>not</em> declare <c>[assembly: CLSCompliant]</c>. The earlier
+    /// <c>[CLSCompliant(false)]</c> approach broke this: that type-level attribute induces <c>CS3021</c>, which Roslyn
+    /// reports against the <em>type symbol</em> at the consumer's partial — a file the generated header pragma cannot
+    /// reach. Suppressing <c>CS3016</c> at the thunk site instead (and emitting no attribute) keeps this clean.
+    /// </summary>
+    [Theory]
+    [CombinatorialData]
+    public void COMStructWrappers_FriendlyHelperPartial_NoAssemblyClsAttribute_Issue1703(
+        [CombinatorialValues("net472", "net10.0")] string tfm)
+    {
+        this.compilation = this.starterCompilations[tfm];
+        if (GetLanguageVersionForTfm(tfm) is LanguageVersion languageVersion)
+        {
+            this.parseOptions = this.parseOptions.WithLanguageVersion(languageVersion);
+        }
+
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = false });
+        Assert.True(this.generator.TryGenerate("ITypeInfo", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+
+        // A consumer-authored partial of the generated struct, with no [assembly: CLSCompliant] anywhere.
+        this.compilation = this.AddCode("""
+            namespace Windows.Win32.System.Com
+            {
+                internal unsafe partial struct ITypeInfo
+                {
+                    internal int FriendlyHelper() => 42;
+                }
+            }
+            """);
+        this.AssertNoDiagnostics(this.compilation, logAllGeneratedCode: false);
+    }
+
+    /// <summary>
+    /// Companion to <see cref="COMStructWrappers_FriendlyHelperPartial_NoAssemblyClsAttribute_Issue1703"/> for the
+    /// CLS-compliant consumer: a friendly-helper <c>partial</c> on a generated CCW-bearing COM struct under
+    /// <c>[assembly: CLSCompliant(true)]</c> must also stay clean. The earlier attribute approach induced <c>CS3019</c>
+    /// on the consumer's partial here; suppressing <c>CS3016</c> at the thunk site (no attribute) avoids it.
+    /// </summary>
+    [Fact]
+    public void COMStructWrappers_FriendlyHelperPartial_WithAssemblyClsAttribute_Issue1703()
+    {
+        this.compilation = this.starterCompilations["net10.0"];
+        this.parseOptions = this.parseOptions.WithLanguageVersion(GetLanguageVersionForTfm("net10.0") ?? LanguageVersion.Latest);
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = false });
+        Assert.True(this.generator.TryGenerate("ITypeInfo", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+
+        this.compilation = this.AddCode("""
+            [assembly: System.CLSCompliant(true)]
+
+            namespace Windows.Win32.System.Com
+            {
+                internal unsafe partial struct ITypeInfo
+                {
+                    internal int FriendlyHelper() => 42;
+                }
+            }
+            """);
+        this.AssertNoDiagnostics(this.compilation, logAllGeneratedCode: false);
+    }
+
+    /// <summary>
+    /// Proves the <c>CS3016</c> suppression for <see href="https://github.com/microsoft/CsWin32/issues/1703">issue 1703</see>
+    /// is load-bearing: <c>CS3016</c> is genuinely enabled by the compiler and would fire on the CCW thunks if the
+    /// generated file's header pragma were absent. This guards against the matrix tests passing vacuously because CLS
+    /// checking was somehow disabled in the harness.
+    /// </summary>
+    [Fact]
+    public void COMStructWrappers_ClsPragmaSuppressionsAreLoadBearing_Issue1703()
+    {
+        this.compilation = this.starterCompilations["net10.0"];
+        this.parseOptions = this.parseOptions.WithLanguageVersion(GetLanguageVersionForTfm("net10.0") ?? LanguageVersion.Latest);
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = false });
+        Assert.True(this.generator.TryGenerate("ITypeInfo", CancellationToken.None));
+
+        // Re-parse the generated code with the file-level "#pragma warning disable" directives removed.
+        SyntaxTree[] unsuppressedTrees = this.generator.GetCompilationUnits(CancellationToken.None)
+            .Select(unit => CSharpSyntaxTree.ParseText(
+                StripWarningDisablePragmas(unit.Value.GetText(Encoding.UTF8).ToString()),
+                this.parseOptions,
+                path: unit.Key))
+            .ToArray();
+
+        // With the pragma removed and the assembly marked CLS-compliant, the CCW thunks' array-valued
+        // [UnmanagedCallersOnly(CallConvs = new[]{...})] attribute surfaces CS3016.
+        CSharpCompilation unsuppressed = this.compilation
+            .AddSyntaxTrees(unsuppressedTrees)
+            .AddSyntaxTrees(CSharpSyntaxTree.ParseText("[assembly: System.CLSCompliant(true)]", this.parseOptions, path: "AssemblyInfo.cs", cancellationToken: TestContext.Current.CancellationToken));
+        Assert.Contains(unsuppressed.GetDiagnostics(TestContext.Current.CancellationToken), d => d.Id == "CS3016");
+
+        // And because the generator emits no [CLSCompliant] attribute, the unsuppressed code shows neither CS3019 nor CS3021.
+        Assert.DoesNotContain(unsuppressed.GetDiagnostics(TestContext.Current.CancellationToken), d => d.Id is "CS3019" or "CS3021");
+
+        // Sanity: as actually generated (pragma intact), a CLS-compliant consumer sees none of CS3016/3019/3021.
+        this.CollectGeneratedCode(this.generator);
+        this.compilation = this.AddCode("[assembly: System.CLSCompliant(true)]");
+        Assert.DoesNotContain(this.compilation.GetDiagnostics(TestContext.Current.CancellationToken), d => d.Id is "CS3016" or "CS3019" or "CS3021");
+    }
+
+    private static string StripWarningDisablePragmas(string code) =>
+        string.Join("\n", code.Split('\n').Where(line => !line.TrimStart().StartsWith("#pragma warning disable", StringComparison.Ordinal)));
 }

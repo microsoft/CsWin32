@@ -38,6 +38,25 @@ public partial class Generator
         return true;
     }
 
+    /// <summary>
+    /// Computes the C# type of a bitfield sub-property given the backing field's primitive type and the bit length.
+    /// This mirrors the property-type selection used when bitfields are emitted on their declaring struct in
+    /// <see cref="DeclareStruct"/>, so a forwarded accessor's type matches the nested property it forwards to.
+    /// </summary>
+    private static TypeSyntax GetBitfieldProjectedType(PrimitiveTypeCode backingTypeCode, byte propLength)
+    {
+        bool signed = backingTypeCode is PrimitiveTypeCode.SByte or PrimitiveTypeCode.Int16 or PrimitiveTypeCode.Int32 or PrimitiveTypeCode.Int64 or PrimitiveTypeCode.IntPtr;
+        return propLength switch
+        {
+            1 => PredefinedType(Token(SyntaxKind.BoolKeyword)),
+            <= 8 => PredefinedType(Token(signed ? SyntaxKind.SByteKeyword : SyntaxKind.ByteKeyword)),
+            <= 16 => PredefinedType(Token(signed ? SyntaxKind.ShortKeyword : SyntaxKind.UShortKeyword)),
+            <= 32 => PredefinedType(Token(signed ? SyntaxKind.IntKeyword : SyntaxKind.UIntKeyword)),
+            <= 64 => PredefinedType(Token(signed ? SyntaxKind.LongKeyword : SyntaxKind.ULongKeyword)),
+            _ => throw new NotSupportedException(),
+        };
+    }
+
     private StructDeclarationSyntax DeclareStruct(TypeDefinitionHandle typeDefHandle, Context context)
     {
         TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefHandle);
@@ -761,6 +780,39 @@ public partial class Generator
                 continue;
             }
 
+            // Forward computed bitfield sub-properties (e.g. PSAPI_WORKING_SET_EX_BLOCK's Valid/ShareCount/...) as value
+            // get/set properties on the outer struct. They are generated on the nested struct from NativeBitfieldAttribute
+            // decorations on a backing field; Phase 1 only surfaces the raw backing field as a ref, so without this the
+            // friendly bitfield members would only be reachable through the Anonymous holder chain. This runs in addition to
+            // (not instead of) surfacing the backing field below, mirroring the nested struct, which exposes both.
+            bool fieldObsolete = ancestorObsolete || this.HasObsoleteAttribute(fieldAttributes);
+            foreach (CustomAttribute bitfieldAttribute in MetadataUtilities.FindAttributes(this.Reader, fieldAttributes, InteropDecorationNamespace, NativeBitfieldAttribute))
+            {
+                if (fieldDef.DecodeSignature(this.SignatureHandleProvider, null) is not PrimitiveTypeHandleInfo bitfieldBackingType)
+                {
+                    continue;
+                }
+
+                CustomAttributeValue<TypeSyntax> decodedBitfield = bitfieldAttribute.DecodeValue(CustomAttributeTypeProvider.Instance);
+                string bitfieldPropName = (string)decodedBitfield.FixedArguments[0].Value!;
+                byte bitfieldPropLength = (byte)(long)decodedBitfield.FixedArguments[2].Value!;
+
+                // A zero-length bitfield produces no property on the nested struct, so there is nothing to forward.
+                if (bitfieldPropLength == 0)
+                {
+                    continue;
+                }
+
+                // Skip collisions with an existing member or another flattened accessor.
+                if (reservedNames.Contains(bitfieldPropName) || !surfacedNames.Add(bitfieldPropName))
+                {
+                    continue;
+                }
+
+                TypeSyntax bitfieldPropType = GetBitfieldProjectedType(bitfieldBackingType.PrimitiveTypeCode, bitfieldPropLength);
+                accessors.Add(this.CreateFlattenedBitfieldAccessor(bitfieldPropName, bitfieldPropType, accessPrefix, crefTypePrefix, fieldObsolete));
+            }
+
             // Skip fields whose generated representation is not a plain, ref-returnable field of the decoded type.
             if (this.FindAssociatedEnum(fieldAttributes) is not null)
             {
@@ -829,8 +881,7 @@ public partial class Generator
 
             // Mark the accessor obsolete when the leaf field (or any holder along its access path) is obsolete,
             // so its body may legally reference the obsolete member without triggering CS0612.
-            bool isObsolete = ancestorObsolete || this.HasObsoleteAttribute(fieldAttributes);
-            accessors.Add(this.CreateFlattenedAnonymousAccessor(fieldName, fieldType, accessPrefix, crefTypePrefix, isObsolete));
+            accessors.Add(this.CreateFlattenedAnonymousAccessor(fieldName, fieldType, accessPrefix, crefTypePrefix, fieldObsolete));
             this.DeclareUnscopedRefAttributeIfNecessary();
         }
     }
@@ -861,6 +912,46 @@ public partial class Generator
 
         // /// <inheritdoc cref="NestedType.FieldName"/>
         CrefSyntax cref = SyntaxFactory.NameMemberCref(QualifiedName(crefTypePrefix, SafeIdentifierName(fieldName)));
+        SyntaxTrivia inheritDoc = Trivia(DocumentationCommentTrivia(
+            SyntaxKind.SingleLineDocumentationCommentTrivia,
+            [
+                XmlText("/// "),
+                XmlEmptyElement("inheritdoc", [XmlCrefAttribute(cref)]),
+                XmlText(XmlTextNewLine("\n", continueXmlDocumentationComment: false)),
+            ]));
+
+        return accessor.WithLeadingTrivia(inheritDoc);
+    }
+
+    /// <summary>
+    /// Creates a value <c>get/set</c> property that forwards to a computed bitfield sub-property reached through anonymous
+    /// holders (e.g. <c>value.Valid</c> instead of <c>value.Anonymous.Anonymous.Valid</c>), with documentation inherited
+    /// from the underlying bitfield property. Unlike the scalar accessor this is a by-value property, not a <c>ref</c>:
+    /// the bitfield property has no addressable backing storage of its own (it reads and writes bits of a shared field).
+    /// </summary>
+    private PropertyDeclarationSyntax CreateFlattenedBitfieldAccessor(string propName, TypeSyntax propertyType, ExpressionSyntax accessPrefix, NameSyntax crefTypePrefix, bool isObsolete)
+    {
+        // <propertyType> <propName> { readonly get => <accessPrefix>.<propName>; set => <accessPrefix>.<propName> = value; }
+        ExpressionSyntax target = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, accessPrefix, IdentifierName(SafeIdentifier(propName)));
+        AccessorDeclarationSyntax getter = AccessorDeclaration(SyntaxKind.GetAccessorDeclaration)
+            .AddModifiers(TokenWithSpace(SyntaxKind.ReadOnlyKeyword))
+            .WithExpressionBody(ArrowExpressionClause(target))
+            .WithSemicolonToken(SemicolonWithLineFeed);
+        AccessorDeclarationSyntax setter = AccessorDeclaration(SyntaxKind.SetAccessorDeclaration)
+            .WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, target, IdentifierName("value"))))
+            .WithSemicolonToken(SemicolonWithLineFeed);
+
+        PropertyDeclarationSyntax accessor = PropertyDeclaration(propertyType.WithTrailingTrivia(Space), SafeIdentifier(propName))
+            .AddModifiers(TokenWithSpace(this.Visibility))
+            .WithAccessorList(AccessorList(getter, setter));
+
+        if (isObsolete)
+        {
+            accessor = accessor.AddAttributeLists(AttributeList(ObsoleteAttributeSyntax));
+        }
+
+        // /// <inheritdoc cref="NestedType.PropName"/>
+        CrefSyntax cref = SyntaxFactory.NameMemberCref(QualifiedName(crefTypePrefix, SafeIdentifierName(propName)));
         SyntaxTrivia inheritDoc = Trivia(DocumentationCommentTrivia(
             SyntaxKind.SingleLineDocumentationCommentTrivia,
             [

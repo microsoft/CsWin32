@@ -568,8 +568,86 @@ namespace Microsoft.Windows.Sdk
         AssertFlattenedAccessor(FindProperty(decimalDecl, "Lo64"), "this.Anonymous2.Lo64");
     }
 
+    [Theory, PairwiseData]
+    public void FlattenNestedAnonymousTypes_ForwardsBitfieldProperties(bool allowMarshaling)
+    {
+        // PSAPI_WORKING_SET_EX_BLOCK is a union whose anonymous _Anonymous_e__Struct (reached via Anonymous.Anonymous)
+        // carries bitfields packed into a single nuint backing field. Phase 1 surfaces only the raw _bitfield as a ref;
+        // Phase 2 also forwards the computed bitfield sub-properties (Valid, ShareCount, Win32Protection, ...) as value
+        // get/set properties on the outer struct so they can be read and written directly.
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling, FlattenNestedAnonymousTypes = true });
+        this.GenerateApi("PSAPI_WORKING_SET_EX_BLOCK");
+        var structDecl = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("PSAPI_WORKING_SET_EX_BLOCK"));
+
+        // A 1-bit field is forwarded as a bool; a multi-bit field as the smallest unsigned integer that fits.
+        AssertForwardedBitfieldAccessor(FindProperty(structDecl, "Valid"), "this.Anonymous.Anonymous.Valid");
+        Assert.Equal(SyntaxKind.BoolKeyword, ((PredefinedTypeSyntax)FindProperty(structDecl, "Valid").Type).Keyword.Kind());
+        AssertForwardedBitfieldAccessor(FindProperty(structDecl, "ShareCount"), "this.Anonymous.Anonymous.ShareCount");
+        Assert.Equal(SyntaxKind.ByteKeyword, ((PredefinedTypeSyntax)FindProperty(structDecl, "ShareCount").Type).Keyword.Kind());
+        AssertForwardedBitfieldAccessor(FindProperty(structDecl, "Win32Protection"), "this.Anonymous.Anonymous.Win32Protection");
+        Assert.Equal(SyntaxKind.UShortKeyword, ((PredefinedTypeSyntax)FindProperty(structDecl, "Win32Protection").Type).Keyword.Kind());
+
+        // The raw backing field is still surfaced as a ref (Phase 1 behavior is unchanged).
+        AssertFlattenedAccessor(FindProperty(structDecl, "_bitfield"), "this.Anonymous.Anonymous._bitfield");
+    }
+
+    [Fact]
+    public void FlattenNestedAnonymousTypes_DoesNotForwardBitfieldsThroughNamedHolder()
+    {
+        // PSAPI_WORKING_SET_EX_BLOCK's union also has a *named* member 'Invalid' (_Invalid_e__Struct) whose bitfields
+        // include Reserved0/Reserved1. Named holders are surfaced as a single ref to the whole value, never flattened,
+        // so those bitfields must NOT appear on the outer struct.
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { FlattenNestedAnonymousTypes = true });
+        this.GenerateApi("PSAPI_WORKING_SET_EX_BLOCK");
+        var structDecl = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("PSAPI_WORKING_SET_EX_BLOCK"));
+
+        // 'Invalid' is surfaced as a whole-value ref...
+        AssertFlattenedAccessor(FindProperty(structDecl, "Invalid"), "this.Anonymous.Invalid");
+
+        // ...but its bitfields (unique names Reserved0/Reserved1) are not hoisted onto the outer struct.
+        Assert.DoesNotContain(
+            structDecl.Members.OfType<PropertyDeclarationSyntax>(),
+            p => p.Identifier.ValueText is "Reserved0" or "Reserved1");
+    }
+
+    [Fact]
+    public void FlattenNestedAnonymousTypes_BitfieldForwardingRequiresCSharp11()
+    {
+        // The whole flattening feature (including bitfield forwarding) is gated on C# 11 (for [UnscopedRef]).
+        this.parseOptions = this.parseOptions.WithLanguageVersion(LanguageVersion.CSharp10);
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { FlattenNestedAnonymousTypes = true });
+        this.GenerateApi("PSAPI_WORKING_SET_EX_BLOCK");
+        var structDecl = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("PSAPI_WORKING_SET_EX_BLOCK"));
+        Assert.DoesNotContain(structDecl.Members.OfType<PropertyDeclarationSyntax>(), p => p.Identifier.ValueText == "ShareCount");
+    }
+
     private static PropertyDeclarationSyntax FindProperty(StructDeclarationSyntax structDecl, string name) =>
         Assert.Single(structDecl.Members.OfType<PropertyDeclarationSyntax>(), p => p.Identifier.ValueText == name);
+
+    private static void AssertForwardedBitfieldAccessor(PropertyDeclarationSyntax property, string expectedTarget)
+    {
+        // It is a by-value property (not ref-returning) and is not annotated [UnscopedRef].
+        Assert.IsNotType<RefTypeSyntax>(property.Type);
+        Assert.DoesNotContain(property.AttributeLists.SelectMany(al => al.Attributes), a => a.Name.ToString() == "UnscopedRef");
+
+        SyntaxList<AccessorDeclarationSyntax> accessors = Assert.IsType<AccessorListSyntax>(property.AccessorList).Accessors;
+
+        // readonly get => <target>;
+        AccessorDeclarationSyntax getter = Assert.Single(accessors, a => a.IsKind(SyntaxKind.GetAccessorDeclaration));
+        Assert.Contains(getter.Modifiers, m => m.IsKind(SyntaxKind.ReadOnlyKeyword));
+        Assert.Equal(expectedTarget, Assert.IsType<ArrowExpressionClauseSyntax>(getter.ExpressionBody).Expression.ToString());
+
+        // set => <target> = value;
+        AccessorDeclarationSyntax setter = Assert.Single(accessors, a => a.IsKind(SyntaxKind.SetAccessorDeclaration));
+        var assignment = Assert.IsType<AssignmentExpressionSyntax>(Assert.IsType<ArrowExpressionClauseSyntax>(setter.ExpressionBody).Expression);
+        Assert.Equal(expectedTarget, assignment.Left.ToString());
+        Assert.Equal("value", assignment.Right.ToString());
+
+        // It inherits documentation via <inheritdoc cref="..."/>.
+        Assert.Contains(
+            property.GetLeadingTrivia().Select(t => t.GetStructure()).OfType<DocumentationCommentTriviaSyntax>().SelectMany(d => d.Content.OfType<XmlEmptyElementSyntax>()),
+            e => e.Name.ToString() == "inheritdoc" && e.Attributes.OfType<XmlCrefAttributeSyntax>().Any());
+    }
 
     private static void AssertFlattenedAccessor(PropertyDeclarationSyntax property, string expectedRefTarget)
     {

@@ -632,7 +632,12 @@ public partial class Generator
         }
 
         // Collect the names already declared directly on this struct so we never collide with them.
+        // Also capture each holder field's *actual* declared type syntax, so flattened accessors can be typed
+        // relative to it. This matters because the holder field may be typed as the "_unmanaged" twin of a
+        // nested type (e.g. when COM source generators force a struct blittable), and the accessor's ref-return
+        // type must match the type actually reached through that field rather than a reconstructed name.
         HashSet<string> reservedNames = new(StringComparer.Ordinal);
+        Dictionary<string, NameSyntax> holderFieldTypes = new(StringComparer.Ordinal);
         foreach (MemberDeclarationSyntax member in members)
         {
             switch (member)
@@ -641,6 +646,10 @@ public partial class Generator
                     foreach (VariableDeclaratorSyntax variable in field.Declaration.Variables)
                     {
                         reservedNames.Add(variable.Identifier.ValueText);
+                        if (field.Declaration.Variables.Count == 1 && field.Declaration.Type is NameSyntax holderName)
+                        {
+                            holderFieldTypes[variable.Identifier.ValueText] = holderName;
+                        }
                     }
 
                     break;
@@ -670,10 +679,17 @@ public partial class Generator
                 continue;
             }
 
+            // The holder field's generated type is the authoritative root for typing accessors that forward
+            // through it. If we couldn't recover it (e.g. the field was emitted in an unexpected shape), skip.
+            if (!holderFieldTypes.TryGetValue(SafeIdentifier(fieldName).ValueText, out NameSyntax? holderType))
+            {
+                continue;
+            }
+
             TypeDefinition nestedTypeDef = this.Reader.GetTypeDefinition(nestedTypeHandle);
             ExpressionSyntax accessPrefix = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName(SafeIdentifier(fieldName)));
             NameSyntax crefPrefix = IdentifierName(this.GetMangledIdentifier(this.Reader.GetString(nestedTypeDef.Name), context.AllowMarshaling, this.IsManagedType(nestedTypeHandle)));
-            this.GatherFlattenedAnonymousAccessors(nestedTypeHandle, accessPrefix, crefPrefix, context, accessors, surfacedNames, reservedNames, ancestorObsolete: this.HasObsoleteAttribute(fieldDef.GetCustomAttributes()), depth: 0);
+            this.GatherFlattenedAnonymousAccessors(nestedTypeHandle, accessPrefix, crefPrefix, (NameSyntax)holderType.WithoutTrailingTrivia(), context, accessors, surfacedNames, reservedNames, ancestorObsolete: this.HasObsoleteAttribute(fieldDef.GetCustomAttributes()), depth: 0);
         }
 
         members.AddRange(accessors);
@@ -685,6 +701,7 @@ public partial class Generator
     /// <param name="containingTypeHandle">The anonymous nested type currently being walked.</param>
     /// <param name="accessPrefix">The expression that accesses an instance of <paramref name="containingTypeHandle"/> from the outer struct (e.g. <c>this.Anonymous.Anonymous</c>).</param>
     /// <param name="crefTypePrefix">The qualified type-name chain (relative to the outer struct) used to build the <c>cref</c> for inherited documentation.</param>
+    /// <param name="containingTypeSyntax">The actual type syntax of <paramref name="containingTypeHandle"/> as reached from the outer struct (i.e. the holder field's declared type, with deeper holder names appended). Used to type accessors so their ref-return type matches the field actually reached.</param>
     /// <param name="containingContext">The context that <paramref name="containingTypeHandle"/> is generated with.</param>
     /// <param name="accessors">The list that generated accessors are appended to.</param>
     /// <param name="surfacedNames">The set of leaf names already surfaced, used to skip duplicates.</param>
@@ -695,6 +712,7 @@ public partial class Generator
         TypeDefinitionHandle containingTypeHandle,
         ExpressionSyntax accessPrefix,
         NameSyntax crefTypePrefix,
+        NameSyntax containingTypeSyntax,
         Context containingContext,
         List<MemberDeclarationSyntax> accessors,
         HashSet<string> surfacedNames,
@@ -732,8 +750,14 @@ public partial class Generator
             {
                 TypeDefinition deeperTypeDef = this.Reader.GetTypeDefinition(deeperTypeHandle);
                 ExpressionSyntax deeperAccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, accessPrefix, IdentifierName(SafeIdentifier(fieldName)));
-                NameSyntax deeperCref = QualifiedName(crefTypePrefix, IdentifierName(this.GetMangledIdentifier(this.Reader.GetString(deeperTypeDef.Name), bodyContext.AllowMarshaling, this.IsManagedType(deeperTypeHandle))));
-                this.GatherFlattenedAnonymousAccessors(deeperTypeHandle, deeperAccess, deeperCref, bodyContext, accessors, surfacedNames, reservedNames, ancestorObsolete || this.HasObsoleteAttribute(fieldAttributes), depth + 1);
+                IdentifierNameSyntax deeperTypeName = IdentifierName(this.GetMangledIdentifier(this.Reader.GetString(deeperTypeDef.Name), bodyContext.AllowMarshaling, this.IsManagedType(deeperTypeHandle)));
+                NameSyntax deeperCref = QualifiedName(crefTypePrefix, deeperTypeName);
+
+                // Extend the container type by the deeper holder's nested type name. Because the root of the chain
+                // is the outer holder field's *actual* type (which already selects the correct managed/unmanaged twin),
+                // appending the simple nested names keeps the whole chain resolving to the types actually reached.
+                NameSyntax deeperContainingType = QualifiedName(containingTypeSyntax, deeperTypeName);
+                this.GatherFlattenedAnonymousAccessors(deeperTypeHandle, deeperAccess, deeperCref, deeperContainingType, bodyContext, accessors, surfacedNames, reservedNames, ancestorObsolete || this.HasObsoleteAttribute(fieldAttributes), depth + 1);
                 continue;
             }
 
@@ -778,14 +802,13 @@ public partial class Generator
             if (this.TryGetNestedTypeForAnonymousField(containingType, fieldDef, out TypeDefinitionHandle leafNestedTypeHandle))
             {
                 // The leaf is a struct/union *value* nested directly within this container (e.g. an anonymous
-                // _X_e__Struct). Reference it relative to the outer struct through the same per-twin container
-                // chain already used for the cref. The fully qualified form produced by ToTypeSyntax applies the
-                // "_unmanaged" suffix uniformly to every ancestor, which names the unmanaged twin
-                // (e.g. MSP_EVENT_INFO_unmanaged._Anonymous_e__Union_unmanaged...) rather than the type actually
-                // reachable through this.Anonymous on the declaring struct, producing a ref-return mismatch (CS8151).
+                // _X_e__Struct). Qualify it onto the container's *actual* type syntax (rooted at the holder field's
+                // declared type) so the ref-return type matches the field actually reached through this.Anonymous.
+                // The fully qualified form produced by ToTypeSyntax instead applies the "_unmanaged" suffix uniformly
+                // to every ancestor, which may name the wrong twin and produce a ref-return mismatch (CS8151).
                 TypeDefinition leafNestedType = this.Reader.GetTypeDefinition(leafNestedTypeHandle);
                 string leafTypeName = this.GetMangledIdentifier(this.Reader.GetString(leafNestedType.Name), bodyContext.AllowMarshaling, this.IsManagedType(leafNestedTypeHandle));
-                fieldType = QualifiedName(crefTypePrefix, IdentifierName(leafTypeName));
+                fieldType = QualifiedName(containingTypeSyntax, IdentifierName(leafTypeName));
             }
             else
             {

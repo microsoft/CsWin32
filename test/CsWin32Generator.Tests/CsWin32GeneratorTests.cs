@@ -18,6 +18,26 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
     }
 
     [Fact]
+    public async Task FlattenedAnonymousAccessorsCompileWithComSourceGenerators()
+    {
+        // Regression: the CLI/source-generator path defaults UseComSourceGenerators=true, which can type an
+        // anonymous holder field as the "_unmanaged" twin of its nested union. Flattened ref accessors must be
+        // typed relative to that holder field's actual type, or the ref-return type mismatches the field reached
+        // through it (CS8151). These structs each expose anonymous unions of managed nested struct values
+        // (MSP_EVENT_INFO, VDS_ASYNC_OUTPUT, SSVARIANT) and an obsolete-field union (PEER_GROUP_EVENT_DATA).
+        // InvokeGeneratorAndCompile compiles the generated code and fails on any diagnostic, including CS8151/CS0612.
+        this.nativeMethods.Add("MSP_EVENT_INFO");
+        this.nativeMethods.Add("PEER_GROUP_EVENT_DATA");
+        this.nativeMethods.Add("VDS_ASYNC_OUTPUT");
+        this.nativeMethods.Add("SSVARIANT");
+        await this.InvokeGeneratorAndCompileFromFact();
+
+        // The flattened accessors are surfaced on the declaring struct.
+        var mspType = Assert.Single(this.FindGeneratedType("MSP_EVENT_INFO").OfType<StructDeclarationSyntax>());
+        Assert.Contains(mspType.Members.OfType<PropertyDeclarationSyntax>(), p => p.Identifier.ValueText == "MSP_ADDRESS_EVENT_INFO");
+    }
+
+    [Fact]
     public async Task TestGenerateIDispatch()
     {
         // IDispatch is not normally emitted, but we need it for source generated com so check that it got generated.

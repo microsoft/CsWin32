@@ -515,6 +515,34 @@ public class BasicTests
     }
 
     [Fact]
+    public void FlattenedAnonymousFieldsAliasNestedFields()
+    {
+        Windows.Win32.System.SystemInformation.SYSTEM_INFO si = default;
+
+        // Writing through the flattened accessor writes through to the nested union field.
+        si.dwOemId = 0x12345678;
+        Assert.Equal(0x12345678u, si.Anonymous.dwOemId);
+
+        // A field two levels deep (through the union, then the nested struct) is aliased in both directions.
+        si.Anonymous.Anonymous.wReserved = 0x4321;
+        Assert.Equal((ushort)0x4321, si.wReserved);
+    }
+
+    [Fact]
+    public unsafe void FlattenedAnonymousFieldSupportsPointers()
+    {
+        Windows.Win32.System.SystemInformation.SYSTEM_INFO si = default;
+
+        // The ref-returning accessor is addressable, so callers can take a pointer to the nested field.
+        fixed (uint* p = &si.dwOemId)
+        {
+            *p = 0xABCDEF01;
+        }
+
+        Assert.Equal(0xABCDEF01u, si.Anonymous.dwOemId);
+    }
+
+    [Fact]
     public void FieldWithAssociatedEnum()
     {
         SHDESCRIPTIONID s = default;

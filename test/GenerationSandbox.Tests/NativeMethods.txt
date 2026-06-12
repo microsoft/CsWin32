@@ -80,6 +80,7 @@ ShellWindows
 ShellWindowTypeConstants
 SHFILEOPSTRUCTW
 SIZE
+SYSTEM_INFO
 VARDESC
 WER_REPORT_INFORMATION
 wglGetProcAddress

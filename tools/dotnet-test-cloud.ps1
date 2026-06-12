@@ -46,20 +46,75 @@ if ($x86) {
 
 $testBinLog = Join-Path $ArtifactStagingFolder (Join-Path build_logs test.binlog)
 $testDiagLog = Join-Path $ArtifactStagingFolder (Join-Path test_logs diag.log)
+$dumpStagingFolder = Join-Path $ArtifactStagingFolder 'crashDumps'
 
-# On Linux/macOS, limit test parallelism to avoid OOM kills.
-# The generator test projects each consume several GB of RAM; running multiple test hosts
-# simultaneously on memory-constrained Linux agents causes the OOM killer to terminate
-# test processes (exit code 137). We limit all layers:
-#   1. xunit parallelism within each test assembly (XUNIT_MAX_PARALLEL_THREADS=1)
-#   2. MSBuild project-level parallelism (BuildInParallel=false)
-#   3. vstest host parallelism (MaxCpuCount=1 via runsettings)
-# Windows agents have enough RAM for full parallelism.
+function Write-MemorySnapshot([string]$Label) {
+    if (-not $IsLinux) { return }
+    Write-Host ""
+    Write-Host "==== $Label ====" -ForegroundColor Yellow
+    & free -h 2>&1 | Out-Host
+    Write-Host "---- /proc/meminfo (top 12) ----"
+    Get-Content /proc/meminfo -TotalCount 12 -ErrorAction SilentlyContinue | Out-Host
+}
+
+function Write-DmesgTail {
+    if (-not $IsLinux) { return }
+    Write-Host ""
+    Write-Host "==== dmesg tail (looking for OOM killer messages) ====" -ForegroundColor Yellow
+    # dmesg requires CAP_SYSLOG on most agents; try sudo (passwordless on ADO Linux pools).
+    # Filter to entries that mention oom/kill/Killed so the log stays compact.
+    $cmd = "(sudo -n dmesg --ctime 2>/dev/null || dmesg --ctime 2>/dev/null) | tail -n 400"
+    $out = & bash -c $cmd 2>$null
+    if (-not $out) {
+        Write-Host '(dmesg unavailable: kernel.dmesg_restrict=1 and sudo not permitted)' -ForegroundColor DarkGray
+        return
+    }
+    # Surface OOM-relevant lines first, then a compact tail of everything else.
+    $oomLines = $out | Select-String -Pattern '(oom|killed|Killed|invoked oom-killer|Out of memory|memory cgroup)' -CaseSensitive:$false
+    if ($oomLines) {
+        Write-Host "---- OOM-related entries ----" -ForegroundColor Red
+        $oomLines | ForEach-Object { Write-Host $_.Line }
+    } else {
+        Write-Host "(no OOM-killer entries detected in dmesg tail)" -ForegroundColor DarkGray
+    }
+}
+
+# Enable .NET runtime crash dumps on managed unhandled exceptions / aborts.
+# These are emitted in addition to the dumps captured by `--blame-crash`,
+# and survive scenarios where blame's createdump invocation cannot fire
+# (for example, SIGKILL by the kernel OOM-killer never reaches managed code,
+# but a runtime abort / unhandled exception that precedes the kill is captured).
+New-Item -ItemType Directory -Force -Path $dumpStagingFolder | Out-Null
+# Always drop a readme so the artifact upload has at least one file to publish.
+@'
+This artifact collects test-host crash dumps captured by `dotnet test --blame-crash`
+and by the .NET runtime (DOTNET_DbgEnableMiniDump).
+
+If the artifact only contains this README, no managed crashes were captured. That is
+often the case when a test host is killed by the kernel (e.g. the Linux OOM-killer
+sends SIGKILL), since SIGKILL gives the runtime no opportunity to write a dump.
+In that case, inspect the test step's console output for memory diagnostics and
+the `dmesg` tail that the test script captures after a failure.
+'@ | Set-Content -Path (Join-Path $dumpStagingFolder 'README.txt')
+$env:DOTNET_DbgEnableMiniDump = '1'
+$env:DOTNET_DbgMiniDumpType = '2' # 2 = Heap (managed heap + threads; smaller than full memory)
+$env:DOTNET_DbgMiniDumpName = (Join-Path $dumpStagingFolder 'coredump.%p.%t.dmp')
+$env:DOTNET_CreateDumpDiagnostics = '1'
+
+# On Linux/macOS, the heavy generator test projects each consume several GB of RAM,
+# and the default `dotnet test <slnFile>` schedules MSBuild's VSTest target for multiple
+# projects in parallel — causing the kernel OOM-killer to terminate test hosts on the
+# memory-constrained ADO agents (exit code 137 = SIGKILL). Force a single MSBuild node
+# so VSTest is invoked one project at a time. Use the solution-level invocation so that
+# the sln's `NonWindows` configuration correctly filters out Windows-only projects.
 $extraTestArgs = @()
-if (!$IsWindows) {
+if (-not $IsWindows -and -not $x86) {
+    Write-Host 'Non-Windows agent: forcing single MSBuild node (-m:1) to serialize test runs.' -ForegroundColor Cyan
+    $extraTestArgs += '-m:1'
+    # Also restrain xunit's intra-assembly parallelism: while it does not prevent
+    # cross-project OOM on its own, it reduces peak RSS during the heavy test runs.
     $env:XUNIT_MAX_PARALLEL_THREADS = '1'
-    $extraTestArgs = @('-p:BuildInParallel=false', '--', 'RunConfiguration.MaxCpuCount=1')
-    Write-Host "Limiting test parallelism to avoid OOM on Linux" -ForegroundColor Cyan
+    Write-MemorySnapshot 'Pre-test memory state'
 }
 
 & $dotnet test $RepoRoot `
@@ -74,6 +129,27 @@ if (!$IsWindows) {
     --diag "$testDiagLog;TraceLevel=info" `
     --logger trx `
     @extraTestArgs
+
+$overallExitCode = $LASTEXITCODE
+if ($overallExitCode -ne 0) {
+    Write-Host "❌ dotnet test exited with code $overallExitCode" -ForegroundColor Red
+    Write-MemorySnapshot 'Post-failure memory state'
+    Write-DmesgTail
+}
+
+# Move any captured crash dumps (from --blame-crash or DOTNET_DbgEnableMiniDump) into
+# the dedicated staging folder so they're easy to find in the published artifact.
+Get-ChildItem -Path "$RepoRoot/test" -Recurse -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -like '*.dmp' -or $_.Name -like 'core.*' -or $_.Name -like 'coredump.*' } |
+    ForEach-Object {
+        $dest = Join-Path $dumpStagingFolder $_.Name
+        try {
+            Move-Item -Path $_.FullName -Destination $dest -Force -ErrorAction Stop
+            Write-Host "Collected crash dump: $($_.Name) ($([math]::Round($_.Length / 1MB, 1)) MB)"
+        } catch {
+            Write-Host "Failed to move crash dump $($_.FullName): $_" -ForegroundColor Yellow
+        }
+    }
 
 $unknownCounter = 0
 Get-ChildItem -Recurse -Path $RepoRoot\test\*.trx |% {
@@ -100,3 +176,5 @@ Get-ChildItem -Recurse -Path $RepoRoot\test\*.trx |% {
     Write-Host "##vso[results.publish type=VSTest;runTitle=$runTitle;publishRunAttachments=true;resultFiles=$_;failTaskOnFailedTests=true;testRunSystem=VSTS - PTR;]"
   }
 }
+
+exit $overallExitCode

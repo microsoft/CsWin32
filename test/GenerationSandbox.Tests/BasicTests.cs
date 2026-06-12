@@ -605,13 +605,13 @@ public class BasicTests
 
         // (b) The raw backing field holds exactly those bits and no others.
         nuint expected =
-            ((nuint)1 << 0) |        // Valid
-            ((nuint)5 << 1) |        // ShareCount
-            ((nuint)0x6AB << 4) |    // Win32Protection
-            ((nuint)0x2A << 16) |    // Node
-            ((nuint)1 << 22) |       // Locked
-            ((nuint)0x55 << 24) |    // Reserved
-            ((nuint)1 << 31);        // Bad
+            ((nuint)1 << 0) | // Valid
+            ((nuint)5 << 1) | // ShareCount
+            ((nuint)0x6AB << 4) | // Win32Protection
+            ((nuint)0x2A << 16) | // Node
+            ((nuint)1 << 22) | // Locked
+            ((nuint)0x55 << 24) | // Reserved
+            ((nuint)1 << 31); // Bad
         Assert.Equal(expected, block._bitfield);
     }
 

@@ -48,53 +48,34 @@ $testBinLog = Join-Path $ArtifactStagingFolder (Join-Path build_logs test.binlog
 $testDiagLog = Join-Path $ArtifactStagingFolder (Join-Path test_logs diag.log)
 $dumpStagingFolder = Join-Path $ArtifactStagingFolder 'crashDumps'
 
-function Invoke-DotnetTest {
-    param(
-        [Parameter(Mandatory)][string]$Target,
-        [string]$BinLogSuffix = ''
-    )
-
-    $binLogPath = if ($BinLogSuffix) {
-        Join-Path $ArtifactStagingFolder (Join-Path build_logs "test.$BinLogSuffix.binlog")
-    } else {
-        $testBinLog
-    }
-
-    & $dotnet test $Target `
-        --no-build `
-        -c $Configuration `
-        --filter "TestCategory!=HighMemory&TestCategory!=RequiresHardware$env:TESTFILTER" `
-        --collect "Code Coverage;Format=cobertura" `
-        --settings "$PSScriptRoot/test.runsettings" `
-        --blame-hang-timeout 1500s `
-        --blame-crash `
-        -bl:"$binLogPath" `
-        --diag "$testDiagLog;TraceLevel=info" `
-        --logger trx
-}
-
 function Write-MemorySnapshot([string]$Label) {
     if (-not $IsLinux) { return }
     Write-Host ""
     Write-Host "==== $Label ====" -ForegroundColor Yellow
     & free -h 2>&1 | Out-Host
-    Write-Host "---- /proc/meminfo (top 10) ----"
-    Get-Content /proc/meminfo -TotalCount 10 -ErrorAction SilentlyContinue | Out-Host
+    Write-Host "---- /proc/meminfo (top 12) ----"
+    Get-Content /proc/meminfo -TotalCount 12 -ErrorAction SilentlyContinue | Out-Host
 }
 
 function Write-DmesgTail {
     if (-not $IsLinux) { return }
     Write-Host ""
     Write-Host "==== dmesg tail (looking for OOM killer messages) ====" -ForegroundColor Yellow
-    # dmesg requires CAP_SYSLOG; try direct first, then sudo (most ADO Linux agents have passwordless sudo).
-    $out = & dmesg --ctime 2>$null | Select-Object -Last 200
-    if ($LASTEXITCODE -ne 0 -or -not $out) {
-        $out = & sudo -n dmesg --ctime 2>$null | Select-Object -Last 200
-    }
-    if ($LASTEXITCODE -ne 0 -or -not $out) {
+    # dmesg requires CAP_SYSLOG on most agents; try sudo (passwordless on ADO Linux pools).
+    # Filter to entries that mention oom/kill/Killed so the log stays compact.
+    $cmd = "(sudo -n dmesg --ctime 2>/dev/null || dmesg --ctime 2>/dev/null) | tail -n 400"
+    $out = & bash -c $cmd 2>$null
+    if (-not $out) {
         Write-Host '(dmesg unavailable: kernel.dmesg_restrict=1 and sudo not permitted)' -ForegroundColor DarkGray
+        return
+    }
+    # Surface OOM-relevant lines first, then a compact tail of everything else.
+    $oomLines = $out | Select-String -Pattern '(oom|killed|Killed|invoked oom-killer|Out of memory|memory cgroup)' -CaseSensitive:$false
+    if ($oomLines) {
+        Write-Host "---- OOM-related entries ----" -ForegroundColor Red
+        $oomLines | ForEach-Object { Write-Host $_.Line }
     } else {
-        $out | Out-Host
+        Write-Host "(no OOM-killer entries detected in dmesg tail)" -ForegroundColor DarkGray
     }
 }
 
@@ -120,44 +101,40 @@ $env:DOTNET_DbgMiniDumpType = '2' # 2 = Heap (managed heap + threads; smaller th
 $env:DOTNET_DbgMiniDumpName = (Join-Path $dumpStagingFolder 'coredump.%p.%t.dmp')
 $env:DOTNET_CreateDumpDiagnostics = '1'
 
-$overallExitCode = 0
-
+# On Linux/macOS, the heavy generator test projects each consume several GB of RAM,
+# and the default `dotnet test <slnFile>` schedules MSBuild's VSTest target for multiple
+# projects in parallel — causing the kernel OOM-killer to terminate test hosts on the
+# memory-constrained ADO agents (exit code 137 = SIGKILL). Force a single MSBuild node
+# so VSTest is invoked one project at a time. Use the solution-level invocation so that
+# the sln's `NonWindows` configuration correctly filters out Windows-only projects.
+$extraTestArgs = @()
 if (-not $IsWindows -and -not $x86) {
-    # On Linux/macOS the generator test projects each consume several GB of RAM.
-    # `dotnet test <slnFile>` runs vstest hosts for multiple test projects in parallel,
-    # and on memory-constrained agents that causes the kernel OOM-killer to terminate
-    # one of the hosts (exit code 137 = SIGKILL). The previous attempt to fix this
-    # via XUNIT_MAX_PARALLEL_THREADS / BuildInParallel / RunConfiguration.MaxCpuCount
-    # only limits parallelism *within* a single test assembly, not across them.
-    #
-    # Mirror the working GitHub Actions Linux workflow: enumerate test projects and
-    # invoke `dotnet test` once per project, serially.
-    Write-Host 'Non-Windows agent: serializing test runs project-by-project to avoid OOM kills.' -ForegroundColor Cyan
+    Write-Host 'Non-Windows agent: forcing single MSBuild node (-m:1) to serialize test runs.' -ForegroundColor Cyan
+    $extraTestArgs += '-m:1'
+    # Also restrain xunit's intra-assembly parallelism: while it does not prevent
+    # cross-project OOM on its own, it reduces peak RSS during the heavy test runs.
+    $env:XUNIT_MAX_PARALLEL_THREADS = '1'
     Write-MemorySnapshot 'Pre-test memory state'
+}
 
-    $testProjects = Get-ChildItem -Path "$RepoRoot/test" -Directory |
-        Where-Object Name -Like '*.Tests' |
-        Sort-Object Name |
-        ForEach-Object { Get-ChildItem -Path $_.FullName -Filter '*.csproj' | Select-Object -First 1 } |
-        Where-Object { $_ }
+& $dotnet test $RepoRoot `
+    --no-build `
+    -c $Configuration `
+    --filter "TestCategory!=HighMemory&TestCategory!=RequiresHardware$env:TESTFILTER" `
+    --collect "Code Coverage;Format=cobertura" `
+    --settings "$PSScriptRoot/test.runsettings" `
+    --blame-hang-timeout 1500s `
+    --blame-crash `
+    -bl:"$testBinLog" `
+    --diag "$testDiagLog;TraceLevel=info" `
+    --logger trx `
+    @extraTestArgs
 
-    foreach ($proj in $testProjects) {
-        $projName = $proj.BaseName
-        Write-Host ''
-        Write-Host "▶️  Running tests in $projName" -ForegroundColor Cyan
-        Write-MemorySnapshot "Memory before $projName"
-        Invoke-DotnetTest -Target $proj.FullName -BinLogSuffix $projName
-        $thisExit = $LASTEXITCODE
-        if ($thisExit -ne 0) {
-            Write-Host "❌ Tests in $projName exited with code $thisExit" -ForegroundColor Red
-            $overallExitCode = $thisExit
-            Write-MemorySnapshot "Post-failure memory state ($projName)"
-            Write-DmesgTail
-        }
-    }
-} else {
-    Invoke-DotnetTest -Target $RepoRoot
-    $overallExitCode = $LASTEXITCODE
+$overallExitCode = $LASTEXITCODE
+if ($overallExitCode -ne 0) {
+    Write-Host "❌ dotnet test exited with code $overallExitCode" -ForegroundColor Red
+    Write-MemorySnapshot 'Post-failure memory state'
+    Write-DmesgTail
 }
 
 # Move any captured crash dumps (from --blame-crash or DOTNET_DbgEnableMiniDump) into

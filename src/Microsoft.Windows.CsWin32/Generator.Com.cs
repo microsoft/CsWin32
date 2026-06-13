@@ -1014,13 +1014,17 @@ public partial class Generator
                     propertyOrMethod = methodDeclaration;
                 }
 
+                string apiDocsKey = $"{ifaceName}.{methodName}";
                 if (inheritedMethods >= 0)
                 {
                     propertyOrMethod = propertyOrMethod.AddModifiers(TokenWithSpace(SyntaxKind.NewKeyword));
+                    TypeDefinition declaringType = methodDefinition.Reader.GetTypeDefinition(methodDefinition.Method.GetDeclaringType());
+                    string declaringIfaceName = methodDefinition.Reader.GetString(declaringType.Name);
+                    apiDocsKey = $"{declaringIfaceName}.{methodName}";
                 }
 
                 // Add documentation if we can find it.
-                propertyOrMethod = this.AddApiDocumentation($"{ifaceName}.{methodName}", propertyOrMethod);
+                propertyOrMethod = this.AddApiDocumentation(apiDocsKey, propertyOrMethod);
 
                 // In source-generator mode, GeneratedComInterface handles inheritance automatically, so inherited
                 // methods are NOT re-declared on the derived interface. We still need to emit the friendly overloads

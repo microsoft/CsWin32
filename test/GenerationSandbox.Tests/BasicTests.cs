@@ -543,6 +543,105 @@ public class BasicTests
     }
 
     [Fact]
+    public void FlattenedBitfieldPropertiesAliasNestedBitfields()
+    {
+        // PSAPI_WORKING_SET_EX_BLOCK's anonymous union nests an anonymous struct of bitfields packed into one field.
+        // The flattened forwarding properties read and write the same underlying bits as the nested path.
+        Windows.Win32.System.ProcessStatus.PSAPI_WORKING_SET_EX_BLOCK block = default;
+
+        // Writing a forwarded multi-bit property writes through to the nested struct's bitfield.
+        block.ShareCount = 5;
+        Assert.Equal((byte)5, block.Anonymous.Anonymous.ShareCount);
+
+        // Reading a forwarded property reflects a write made through the nested path.
+        block.Anonymous.Anonymous.Win32Protection = 11;
+        Assert.Equal((ushort)11, block.Win32Protection);
+
+        // A 1-bit (bool) bitfield round-trips through the forwarding property.
+        block.Valid = true;
+        Assert.True(block.Anonymous.Anonymous.Valid);
+
+        // Independent bitfields packed into the same backing field do not disturb each other.
+        Assert.Equal((byte)5, block.ShareCount);
+        Assert.Equal((ushort)11, block.Win32Protection);
+    }
+
+    [Fact]
+    public void FlattenedBitfieldPropertiesPackWithoutOverlap()
+    {
+        // PSAPI_WORKING_SET_EX_BLOCK packs nine bitfields into one nuint:
+        //   Valid:bit0, ShareCount:bits1-3, Win32Protection:bits4-14, Shared:bit15,
+        //   Node:bits16-21, Locked:bit22, LargePage:bit23, Reserved:bits24-30, Bad:bit31.
+        // Set every sub-field (through the flattened outer properties) to a distinct in-range value chosen so each
+        // field's bits form a recognizable pattern, then assert (a) every value round-trips and (b) the raw backing
+        // field equals exactly the bitwise-OR of the shifted values — which can only hold if no two fields share a bit.
+        Windows.Win32.System.ProcessStatus.PSAPI_WORKING_SET_EX_BLOCK block = default;
+        block.Valid = true;             // bit 0
+        block.ShareCount = 5;           // bits 1-3   (0b101, max 7)
+        block.Win32Protection = 0x6AB;  // bits 4-14  (max 2047)
+        block.Shared = false;           // bit 15
+        block.Node = 0x2A;              // bits 16-21 (max 63)
+        block.Locked = true;            // bit 22
+        block.LargePage = false;        // bit 23
+        block.Reserved = 0x55;          // bits 24-30 (max 127)
+        block.Bad = true;               // bit 31
+
+        // (a) Every value round-trips through the flattened property (no cross-talk between adjacent fields).
+        Assert.True(block.Valid);
+        Assert.Equal((byte)5, block.ShareCount);
+        Assert.Equal((ushort)0x6AB, block.Win32Protection);
+        Assert.False(block.Shared);
+        Assert.Equal((byte)0x2A, block.Node);
+        Assert.True(block.Locked);
+        Assert.False(block.LargePage);
+        Assert.Equal((byte)0x55, block.Reserved);
+        Assert.True(block.Bad);
+
+        // The nested path observes identical values (the flattened properties truly alias the same storage).
+        Assert.Equal(block.ShareCount, block.Anonymous.Anonymous.ShareCount);
+        Assert.Equal(block.Win32Protection, block.Anonymous.Anonymous.Win32Protection);
+        Assert.Equal(block.Node, block.Anonymous.Anonymous.Node);
+        Assert.Equal(block.Reserved, block.Anonymous.Anonymous.Reserved);
+
+        // (b) The raw backing field holds exactly those bits and no others.
+        nuint expected =
+            ((nuint)1 << 0) | // Valid
+            ((nuint)5 << 1) | // ShareCount
+            ((nuint)0x6AB << 4) | // Win32Protection
+            ((nuint)0x2A << 16) | // Node
+            ((nuint)1 << 22) | // Locked
+            ((nuint)0x55 << 24) | // Reserved
+            ((nuint)1 << 31); // Bad
+        Assert.Equal(expected, block._bitfield);
+    }
+
+    [Fact]
+    public void FlattenedBitfieldPropertyWritesAreIsolatedFromNeighbors()
+    {
+        // Mutating one flattened bitfield must never disturb its immediate neighbors. ShareCount (bits 1-3) sits
+        // between Valid (bit 0) and Win32Protection (bits 4-14); drive its full range and confirm the neighbors hold.
+        Windows.Win32.System.ProcessStatus.PSAPI_WORKING_SET_EX_BLOCK block = default;
+        block.Valid = true;
+        block.Win32Protection = 0x7FF; // all 11 bits set
+
+        for (byte value = 0; value <= 7; value++)
+        {
+            block.ShareCount = value;
+            Assert.Equal(value, block.ShareCount);
+
+            // Neighbors on both sides are untouched no matter what ShareCount is set to.
+            Assert.True(block.Valid);
+            Assert.Equal((ushort)0x7FF, block.Win32Protection);
+        }
+
+        // Clearing the high neighbor likewise leaves ShareCount and Valid intact.
+        block.Win32Protection = 0;
+        Assert.True(block.Valid);
+        Assert.Equal((byte)7, block.ShareCount);
+        Assert.Equal((ushort)0, block.Win32Protection);
+    }
+
+    [Fact]
     public void FieldWithAssociatedEnum()
     {
         SHDESCRIPTIONID s = default;

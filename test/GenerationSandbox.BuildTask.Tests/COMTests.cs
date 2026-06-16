@@ -18,6 +18,7 @@ using Windows.Win32.Graphics.Direct2D;
 using Windows.Win32.Graphics.Direct2D.Common;
 using Windows.Win32.Graphics.Direct3D;
 using Windows.Win32.Graphics.Direct3D11;
+using Windows.Win32.Graphics.Direct3D12;
 using Windows.Win32.Graphics.Dxgi.Common;
 using Windows.Win32.NetworkManagement.WindowsFirewall;
 using Windows.Win32.Storage.FileSystem;
@@ -33,6 +34,8 @@ namespace GenerationSandbox.BuildTask.Tests;
 [Trait("WindowsOnly", "true")]
 public partial class COMTests(ITestOutputHelper outputHelper)
 {
+    private delegate void CreateCommittedResourceGenericOverloadCompileDelegate(ID3D12Device device, in D3D12_HEAP_PROPERTIES heapProperties, in D3D12_RESOURCE_DESC resourceDesc);
+
     private ITestOutputHelper outputHelper = outputHelper;
 
     [Fact]
@@ -106,6 +109,25 @@ public partial class COMTests(ITestOutputHelper outputHelper)
             FILE_FLAGS_AND_ATTRIBUTES.FILE_ATTRIBUTE_NORMAL,
             MemoryMarshal.AsBytes(new Span<SHFILEINFOW>(ref fileInfo)),
             SHGFI_FLAGS.SHGFI_DISPLAYNAME);
+    }
+
+    [Fact]
+    public void ID3D12Device_CreateCommittedResource_GenericOverloadsCompile()
+    {
+        CreateCommittedResourceGenericOverloadCompileDelegate compileOnly = CompileOnlyCreateCommittedResourceGenericOverload;
+        Assert.NotNull(compileOnly);
+    }
+
+    private static void CompileOnlyCreateCommittedResourceGenericOverload(ID3D12Device device, in D3D12_HEAP_PROPERTIES heapProperties, in D3D12_RESOURCE_DESC resourceDesc)
+    {
+        device.CreateCommittedResource<ID3D12Resource>(
+            in heapProperties,
+            D3D12_HEAP_FLAGS.D3D12_HEAP_FLAG_NONE,
+            in resourceDesc,
+            D3D12_RESOURCE_STATES.D3D12_RESOURCE_STATE_COMMON,
+            null,
+            out ID3D12Resource resource);
+        GC.KeepAlive(resource);
     }
 
 

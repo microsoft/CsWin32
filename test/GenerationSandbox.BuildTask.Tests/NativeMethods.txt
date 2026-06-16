@@ -25,6 +25,8 @@ HMENU
 ICompositorInterop
 ID2D1HwndRenderTarget
 ID2D1RenderTarget
+ID3D12Device
+ID3D12Resource
 IDebugProperty
 IDispatch
 IEventSubscription

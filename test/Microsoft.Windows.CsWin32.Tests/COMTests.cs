@@ -484,6 +484,46 @@ public class COMTests : GeneratorTestBase
     }
 
     /// <summary>
+    /// Regression test for <see href="https://github.com/microsoft/CsWin32/issues/1608">#1608</see>.
+    /// Optional IID_PPV_ARGS out parameters should still get managed generic overloads.
+    /// </summary>
+    [Theory, PairwiseData]
+    public void ComOutPtrGenericOverload_D3D12_OptionalOutCreateCommittedResource(bool useComSourceGenerators)
+    {
+        const string methodName = "CreateCommittedResource";
+        if (useComSourceGenerators)
+        {
+            this.compilation = this.starterCompilations["net10.0"];
+            this.parseOptions = this.parseOptions.WithLanguageVersion(GetLanguageVersionForTfm("net10.0") ?? LanguageVersion.Latest);
+        }
+
+        this.generator = this.CreateGenerator(new GeneratorOptions
+        {
+            AllowMarshaling = true,
+            ComInterop = new GeneratorOptions.ComInteropOptions { UseComSourceGenerators = useComSourceGenerators },
+        });
+        Assert.True(this.generator.TryGenerate("ID3D12Device", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics(
+            this.compilation,
+            logAllGeneratedCode: false,
+            acceptable: d => useComSourceGenerators && (d.Id is "CS8795" or "CS1574"));
+
+        List<MethodDeclarationSyntax> genericOverloads = this.FindGeneratedMethod(methodName)
+            .Where(m => m.TypeParameterList?.Parameters.Count == 1
+                && m.ParameterList.Parameters.FirstOrDefault() is { } first
+                && first.Modifiers.Any(SyntaxKind.ThisKeyword)
+                && first.Type?.ToString().Contains("ID3D12Device") == true)
+            .ToList();
+
+        Assert.Contains(genericOverloads, m =>
+            IsClassConstrainedGeneric(m)
+            && m.ParameterList.Parameters.All(p => p.Identifier.ValueText != "riidResource")
+            && m.ParameterList.Parameters.Last() is { Identifier.ValueText: "ppvResource", Type: IdentifierNameSyntax { Identifier.ValueText: "T" } } ppv
+            && ppv.Modifiers.Any(SyntaxKind.OutKeyword));
+    }
+
+    /// <summary>
     /// Regression test for <see href="https://github.com/microsoft/CsWin32/issues/374">#374</see>.
     /// IMoniker.BindToObject should get a generic overload.
     /// </summary>
@@ -1095,6 +1135,9 @@ public class COMTests : GeneratorTestBase
 
     private static string StripWarningDisablePragmas(string code) =>
         string.Join("\n", code.Split('\n').Where(line => !line.TrimStart().StartsWith("#pragma warning disable", StringComparison.Ordinal)));
+
+    private static bool IsClassConstrainedGeneric(MethodDeclarationSyntax method) =>
+        method.ConstraintClauses.Any(cc => cc.Constraints.Any(c => c is ClassOrStructConstraintSyntax { ClassOrStructKeyword.RawKind: (int)SyntaxKind.ClassKeyword }));
 
     private static string? GetDocumentationComment(MemberDeclarationSyntax member) =>
         member.GetLeadingTrivia()

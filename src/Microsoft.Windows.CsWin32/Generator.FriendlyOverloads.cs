@@ -154,6 +154,7 @@ public partial class Generator
         int iidPpvRiidOrigIndex = -1;
         int iidPpvPpvOrigIndex = -1;
         bool iidPpvMarshalingMode = false;
+        bool iidPpvUseNativeOutMarshaling = false;
 
         if (this.options.FriendlyOverloads.ComOutPtrGenericOverloads)
         {
@@ -186,10 +187,12 @@ public partial class Generator
                     // Skip if ppv is typed as IntPtr (UseIntPtrForComOutPointers mode).
                     if (ppvExtern.Type is not IdentifierNameSyntax { Identifier.ValueText: nameof(IntPtr) })
                     {
+                        bool ppvExternIsObjectOut = ppvExtern.Modifiers.Any(SyntaxKind.OutKeyword)
+                            && ppvExtern.Type is PredefinedTypeSyntax { Keyword.RawKind: (int)SyntaxKind.ObjectKeyword };
                         iidPpvRiidOrigIndex = riidOrig;
                         iidPpvPpvOrigIndex = ppvOrig;
-                        iidPpvMarshalingMode = ppvExtern.Modifiers.Any(SyntaxKind.OutKeyword)
-                            && ppvExtern.Type is PredefinedTypeSyntax { Keyword.RawKind: (int)SyntaxKind.ObjectKeyword };
+                        iidPpvMarshalingMode = this.options.AllowMarshaling;
+                        iidPpvUseNativeOutMarshaling = iidPpvMarshalingMode && !ppvExternIsObjectOut;
                     }
                 }
             }
@@ -248,28 +251,66 @@ public partial class Generator
             {
                 signatureChanged = true;
                 IdentifierNameSyntax tName = IdentifierName("T");
+                ParameterSyntax ppvExternParam = externMethodDeclaration.ParameterList.Parameters[paramIndex];
+                IdentifierNameSyntax ppvName = IdentifierName(ppvExternParam.Identifier.ValueText);
 
                 if (iidPpvMarshalingMode)
                 {
-                    parameters[paramIndex] = StripAttributes(externMethodDeclaration.ParameterList.Parameters[paramIndex])
+                    parameters[paramIndex] = StripAttributes(ppvExternParam)
                         .WithType(tName.WithTrailingTrivia(TriviaList(Space)))
                         .WithModifiers([TokenWithSpace(SyntaxKind.OutKeyword)]);
 
-                    arguments[paramIndex] = Argument(DeclarationExpression(
-                        PredefinedType(TokenWithSpace(SyntaxKind.ObjectKeyword)),
-                        SingleVariableDesignation(Identifier("__ppv"))))
-                        .WithRefKindKeyword(TokenWithSpace(SyntaxKind.OutKeyword));
+                    if (iidPpvUseNativeOutMarshaling)
+                    {
+                        IdentifierNameSyntax nativeLocal = IdentifierName("__ppv");
+                        leadingOutsideTryStatements.Add(
+                            LocalDeclarationStatement(VariableDeclaration(
+                                PointerType(PredefinedType(Token(SyntaxKind.VoidKeyword))),
+                                [VariableDeclarator(nativeLocal.Identifier, EqualsValueClause(LiteralExpression(SyntaxKind.NullLiteralExpression)))])));
 
-                    IdentifierNameSyntax ppvName = IdentifierName(externMethodDeclaration.ParameterList.Parameters[paramIndex].Identifier.ValueText);
-                    trailingStatements.Add(ExpressionStatement(
-                        AssignmentExpression(
-                            SyntaxKind.SimpleAssignmentExpression,
-                            ppvName,
-                            CastExpression(tName, IdentifierName("__ppv")))));
+                        arguments[paramIndex] = Argument(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, nativeLocal));
+
+                        ExpressionSyntax toManagedExpression = this.useSourceGenerators ?
+                            InvocationExpression(
+                                MemberAccessExpression(
+                                    SyntaxKind.SimpleMemberAccessExpression,
+                                    GenericName($"global::System.Runtime.InteropServices.Marshalling.ComInterfaceMarshaller", [tName]),
+                                    IdentifierName("ConvertToManaged")),
+                                [Argument(nativeLocal)]) :
+                            ParenthesizedExpression(ConditionalExpression(
+                                BinaryExpression(SyntaxKind.NotEqualsExpression, nativeLocal, LiteralExpression(SyntaxKind.NullLiteralExpression)),
+                                CastExpression(tName, InvocationExpression(
+                                    MemberAccessExpression(
+                                        SyntaxKind.SimpleMemberAccessExpression,
+                                        ParseTypeName($"global::System.Runtime.InteropServices.Marshal"),
+                                        IdentifierName("GetObjectForIUnknown")),
+                                    [Argument(CastExpression(ParseName("nint"), nativeLocal))])),
+                                LiteralExpression(SyntaxKind.NullLiteralExpression)));
+
+                        trailingStatements.Add(ExpressionStatement(
+                            AssignmentExpression(
+                                SyntaxKind.SimpleAssignmentExpression,
+                                ppvName,
+                                toManagedExpression)));
+                        finallyStatements.Add(this.COMFreeNativePointerStatement(nativeLocal, tName));
+                    }
+                    else
+                    {
+                        arguments[paramIndex] = Argument(DeclarationExpression(
+                            PredefinedType(TokenWithSpace(SyntaxKind.ObjectKeyword)),
+                            SingleVariableDesignation(Identifier("__ppv"))))
+                            .WithRefKindKeyword(TokenWithSpace(SyntaxKind.OutKeyword));
+
+                        trailingStatements.Add(ExpressionStatement(
+                            AssignmentExpression(
+                                SyntaxKind.SimpleAssignmentExpression,
+                                ppvName,
+                                CastExpression(tName, IdentifierName("__ppv")))));
+                    }
                 }
                 else
                 {
-                    parameters[paramIndex] = StripAttributes(externMethodDeclaration.ParameterList.Parameters[paramIndex])
+                    parameters[paramIndex] = StripAttributes(ppvExternParam)
                         .WithType(PointerType(tName).WithTrailingTrivia(TriviaList(Space)))
                         .WithModifiers([TokenWithSpace(SyntaxKind.OutKeyword)]);
 
@@ -280,7 +321,6 @@ public partial class Generator
 
                     arguments[paramIndex] = Argument(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName("__ppv")));
 
-                    IdentifierNameSyntax ppvName = IdentifierName(externMethodDeclaration.ParameterList.Parameters[paramIndex].Identifier.ValueText);
                     trailingStatements.Add(ExpressionStatement(
                         AssignmentExpression(
                             SyntaxKind.SimpleAssignmentExpression,

@@ -35,7 +35,7 @@ public class ComRuntimeTests(ITestOutputHelper outputHelper)
     }
 
     [Fact]
-    [Trait("TestCategory", "RequiresHardware")] // D3D APIs fail in cloud VMs
+    [Trait("TestCategory", "RequiresHardware")] // Excluded from the locked-down ADO 1ES build pool; runs on GitHub Actions (Direct2D uses WARP).
     public void ReturnValueMarshalsCorrectly()
     {
         // Create an ID2D1HwndRenderTarget and verify GetHwnd returns the original HWND.
@@ -90,7 +90,9 @@ public class ComRuntimeTests(ITestOutputHelper outputHelper)
         // 3. Prepare render target properties.
         D2D1_RENDER_TARGET_PROPERTIES rtProps = new()
         {
-            type = D2D1_RENDER_TARGET_TYPE.D2D1_RENDER_TARGET_TYPE_DEFAULT,
+            // Use WARP (software) rendering so this exercises the same D2D render-target
+            // creation and HWND marshaling code paths on GPU-less CI VMs without a hardware GPU.
+            type = D2D1_RENDER_TARGET_TYPE.D2D1_RENDER_TARGET_TYPE_SOFTWARE,
             pixelFormat = new D2D1_PIXEL_FORMAT
             {
                 format = DXGI_FORMAT.DXGI_FORMAT_UNKNOWN,
@@ -126,7 +128,7 @@ public class ComRuntimeTests(ITestOutputHelper outputHelper)
     }
 
     [Fact]
-    [Trait("TestCategory", "RequiresHardware")] // WMI APIs don't work in cloud VMs.
+    [Trait("TestCategory", "RequiresHardware")] // Excluded from the locked-down ADO 1ES build pool; runs on GitHub Actions.
     public void IWbemServices_GetObject_Works()
     {
         Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
@@ -161,7 +163,7 @@ public class ComRuntimeTests(ITestOutputHelper outputHelper)
     }
 
     [Fact]
-    [Trait("TestCategory", "RequiresHardware")] // WMI APIs don't work in cloud VMs.
+    [Trait("TestCategory", "RequiresHardware")] // Needs Shell/Explorer COM; excluded from the locked-down ADO 1ES build pool, runs on GitHub Actions.
     public void CanCallIDispatchOnlyMethods()
     {
         Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");

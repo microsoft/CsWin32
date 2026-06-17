@@ -75,6 +75,43 @@ jobs:
         path: TestResults/
         retention-days: 5
 
+  test-hardware-windows:
+    name: 🧪 Tests (Windows, Hardware)
+    needs: build
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: ⚙️ Install prerequisites
+      run: ./init.ps1 -UpgradePrerequisites -NoNuGetCredProvider
+      shell: pwsh
+    - name: 📦 Download build
+      uses: actions/download-artifact@v4
+      with:
+        name: build-windows
+        path: bin/
+    # GitHub-hosted windows-latest runners can execute these COM/Direct2D/WMI/Shell runtime
+    # tests (Direct2D uses the WARP software rasterizer, so no GPU is required). They remain
+    # tagged RequiresHardware so the locked-down Azure DevOps 1ES build pool keeps excluding
+    # them, but we exercise the real runtime code paths here rather than only on dev machines.
+    - name: 🧪 Run hardware-dependent tests
+      run: |
+        dotnet test --no-build -c ${{ env.BuildConfiguration }} `
+          --filter "TestCategory=RequiresHardware" `
+          --blame-hang-timeout 600s `
+          --blame-crash `
+          --logger trx `
+          --results-directory TestResults
+      shell: pwsh
+    - name: 📢 Upload test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: test-results-hardware-windows
+        path: TestResults/
+        retention-days: 5
+
   test-fast-linux:
     name: 🧪 Tests (Linux)
     runs-on: ubuntu-latest
@@ -242,18 +279,20 @@ jobs:
   validate:
     name: ✅ Validate
     if: always()
-    needs: [build, test-fast-windows, test-fast-linux, test-heavy, integration-test]
+    needs: [build, test-fast-windows, test-hardware-windows, test-fast-linux, test-heavy, integration-test]
     runs-on: ubuntu-latest
     steps:
     - name: Check results
       run: |
         echo "Build: ${{ needs.build.result }}"
         echo "Windows tests: ${{ needs.test-fast-windows.result }}"
+        echo "Windows hardware tests: ${{ needs.test-hardware-windows.result }}"
         echo "Linux tests: ${{ needs.test-fast-linux.result }}"
         echo "Heavy tests: ${{ needs.test-heavy.result }}"
         echo "Integration tests: ${{ needs.integration-test.result }}"
         if [[ "${{ needs.build.result }}" != "success" ||
               "${{ needs.test-fast-windows.result }}" != "success" ||
+              "${{ needs.test-hardware-windows.result }}" != "success" ||
               "${{ needs.test-fast-linux.result }}" != "success" ||
               "${{ needs.test-heavy.result }}" != "success" ||
               "${{ needs.integration-test.result }}" != "success" ]]; then

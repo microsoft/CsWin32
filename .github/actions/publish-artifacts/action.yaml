@@ -14,46 +14,46 @@ runs:
 
   - name: 📢 Upload project.assets.json files
     if: always()
-    uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+    uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
     with:
       name: projectAssetsJson-${{ runner.os }}
       path: ${{ runner.temp }}/_artifacts/projectAssetsJson
     continue-on-error: true
   - name: 📢 Upload variables
-    uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+    uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
     with:
       name: variables-${{ runner.os }}
       path: ${{ runner.temp }}/_artifacts/Variables
     continue-on-error: true
   - name: 📢 Upload build_logs
     if: always()
-    uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+    uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
     with:
       name: build_logs-${{ runner.os }}
       path: ${{ runner.temp }}/_artifacts/build_logs
     continue-on-error: true
   - name: 📢 Upload testResults
     if: always()
-    uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+    uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
     with:
       name: testResults-${{ runner.os }}
       path: ${{ runner.temp }}/_artifacts/testResults
     continue-on-error: true
   - name: 📢 Upload coverageResults
     if: always()
-    uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+    uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
     with:
       name: coverageResults-${{ runner.os }}
       path: ${{ runner.temp }}/_artifacts/coverageResults
     continue-on-error: true
   - name: 📢 Upload symbols
-    uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+    uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
     with:
       name: symbols-${{ runner.os }}
       path: ${{ runner.temp }}/_artifacts/symbols
     continue-on-error: true
   - name: 📢 Upload deployables
-    uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+    uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
     with:
       name: deployables-${{ runner.os }}
       path: ${{ runner.temp }}/_artifacts/deployables

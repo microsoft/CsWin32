@@ -27,7 +27,7 @@ jobs:
     name: 🛠️ Build
     runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       with:
         fetch-depth: 0
     - name: ⚙️ Install prerequisites
@@ -47,7 +47,7 @@ jobs:
     needs: build
     runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       with:
         fetch-depth: 0
     - name: ⚙️ Install prerequisites
@@ -80,7 +80,7 @@ jobs:
     needs: build
     runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       with:
         fetch-depth: 0
     - name: ⚙️ Install prerequisites
@@ -116,7 +116,7 @@ jobs:
     name: 🧪 Tests (Linux)
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       with:
         fetch-depth: 0
     - name: ⚙️ Install prerequisites
@@ -181,7 +181,7 @@ jobs:
             filter: "TestCategory=HighMemory&TestShard!=FastMethods&TestShard!=EverythingModern&TestShard!=EverythingLegacy&TestShard!=FullGen-Net8&TestShard!=FullGen-Net9&TestShard!=FullGen-Net9-Ptrs"
             threads: "1"
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       with:
         fetch-depth: 0
     - name: ⚙️ Install prerequisites
@@ -224,7 +224,7 @@ jobs:
     needs: build
     runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       with:
         fetch-depth: 1
     - name: ⚙️ Install prerequisites

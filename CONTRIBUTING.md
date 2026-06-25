@@ -44,6 +44,25 @@ Building, testing, and packing this repository can be done by using the standard
 The win32metadata has [these little "gems"](https://github.com/microsoft/win32metadata/blob/main/docs/projections.md) that CsWin32 should consider consuming to improve the quality of the generated APIs.
 When we identify a gem that we should support but do not yet support, file [an issue with a `metadata gem` label](https://github.com/microsoft/CsWin32/issues?q=is%3Aissue+is%3Aopen+label%3A%22metadata+gem%22).
 
+## Updating the win32metadata version
+
+To consume a newer [win32metadata](https://github.com/microsoft/win32metadata) release, update the `MetadataVersion` (and, when a new WDK metadata package ships, `WDKMetadataVersion`) property in `Directory.Packages.props`.
+
+CsWin32 restores these packages from the `msft_consumption` feed (`azure-public/vside`), which pulls them from nuget.org via an upstream source. A new package version is **not** available on the feed until it has been *pulled through* at least once, and only a feed **Collaborator/Contributor** can trigger that. Regular contributors typically only have **Reader** access, so a plain `dotnet restore` of the new version fails with `NU1102` until the package is on the feed.
+
+To pull the new version through:
+
+1. Push your branch (with the bumped `MetadataVersion`) to GitHub.
+2. Queue the **CsWin32 unofficial** Azure Pipeline (`devdiv/DevDiv`, definition `25100`, YAML `azure-pipelines/unofficial.yml`) against your branch. Its build agent runs as a feed Collaborator, so its restore pulls the new package onto the feed automatically.
+3. Wait until the pipeline reaches its `dotnet build` step, then confirm the version is on the feed (it is then restorable by everyone, including the GitHub Actions PR build):
+
+   ```pwsh
+   $idx = Invoke-RestMethod "https://pkgs.dev.azure.com/azure-public/vside/_packaging/msft_consumption/nuget/v3/flat2/microsoft.windows.sdk.win32metadata/index.json"
+   $idx.versions | Where-Object { $_ -like '<new-version>*' }
+   ```
+
+After the package is on the feed, build and run the tests (`dotnet test --filter "TestCategory!=RequiresHardware"`) and fix any regressions before opening the PR.
+
 [pwsh]: https://learn.microsoft.com/powershell/scripting/install/installing-powershell
 
 ## Releases

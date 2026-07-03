@@ -904,17 +904,34 @@ public partial class Generator
                     signatureChanged = true;
                     parameters[paramIndex] = parameters[paramIndex]
                         .WithType(NullableType(elementType).WithTrailingTrivia(TriviaList(Space)));
-                    leadingStatements.Add(
-                        LocalDeclarationStatement(VariableDeclaration(
-                            elementType,
-                            [
-                                VariableDeclarator(localName.Identifier, EqualsValueClause(
-                                    BinaryExpression(SyntaxKind.CoalesceExpression, origName, DefaultExpression(elementType))))
-                            ])));
-                    arguments[paramIndex] = Argument(ConditionalExpression(
-                        MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName("HasValue")),
-                        PrefixUnaryExpression(SyntaxKind.AddressOfExpression, localName),
-                        LiteralExpression(SyntaxKind.NullLiteralExpression)));
+                    if (externParam.Type is ArrayTypeSyntax)
+                    {
+                        // The extern method exposes this [In, Optional] managed (non-blittable) struct parameter as an
+                        // array because a pointer to a managed type is illegal and an `in` modifier cannot represent a
+                        // null pointer (passing null would make the marshaler dereference a null reference). Pass a
+                        // single-element array when a value is provided, or null to omit it. A null array marshals to a
+                        // null pointer. See https://github.com/microsoft/CsWin32/issues/1739.
+                        arguments[paramIndex] = Argument(ConditionalExpression(
+                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName(nameof(Nullable<int>.HasValue))),
+                            ImplicitArrayCreationExpression(InitializerExpression(
+                                SyntaxKind.ArrayInitializerExpression,
+                                [MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName(nameof(Nullable<int>.Value)))])),
+                            LiteralExpression(SyntaxKind.NullLiteralExpression)));
+                    }
+                    else
+                    {
+                        leadingStatements.Add(
+                            LocalDeclarationStatement(VariableDeclaration(
+                                elementType,
+                                [
+                                    VariableDeclarator(localName.Identifier, EqualsValueClause(
+                                        BinaryExpression(SyntaxKind.CoalesceExpression, origName, DefaultExpression(elementType))))
+                                ])));
+                        arguments[paramIndex] = Argument(ConditionalExpression(
+                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, origName, IdentifierName("HasValue")),
+                            PrefixUnaryExpression(SyntaxKind.AddressOfExpression, localName),
+                            LiteralExpression(SyntaxKind.NullLiteralExpression)));
+                    }
                 }
                 else if (isIn && isOut)
                 {

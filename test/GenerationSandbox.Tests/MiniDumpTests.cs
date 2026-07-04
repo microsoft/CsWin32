@@ -21,8 +21,8 @@ public class MiniDumpTests
         // Note: this deliberately passes null for CallbackParam so that no managed callback
         // runs while the process is being dumped. Supplying a callback here would let dbghelp
         // invoke managed code while other threads are suspended for the dump, which can
-        // deadlock; the non-null marshaling is instead verified deterministically by the
-        // generator test MiniDumpWriteDump_OptionalNonBlittableStructMarshaledViaArray.
+        // deadlock; the non-null marshaling is instead verified at runtime by
+        // ThreadpoolCallbackTests.NonNullOptionalNonBlittableStructIsMarshaled.
         using Process process = Process.GetCurrentProcess();
         string dumpPath = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
         try

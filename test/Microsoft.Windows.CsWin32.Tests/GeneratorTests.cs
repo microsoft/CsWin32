@@ -960,35 +960,6 @@ class Program
         Assert.All(externMethod.ParameterList.Parameters.Reverse().Take(3), p => Assert.IsType<NullableTypeSyntax>(p.Type));
     }
 
-    [Theory]
-    [MemberData(nameof(TFMDataNoNetFx35MemberData))]
-    public void MiniDumpWriteDump_OptionalNonBlittableStructMarshaledViaArray(string tfm)
-    {
-        // Regression test for https://github.com/microsoft/CsWin32/issues/1739.
-        // CallbackParam points at MINIDUMP_CALLBACK_INFORMATION, a non-blittable managed struct
-        // (it contains a delegate field). The extern cannot expose it as a pointer, so the friendly
-        // overload must forward it via a single-element array (or null): a null array marshals to a
-        // null pointer (no NullReferenceException) and a one-element array marshals to a pointer to
-        // the struct.
-        this.compilation = this.starterCompilations[tfm].WithOptions(this.compilation.Options.WithPlatform(Platform.X64));
-        this.GenerateApi("MiniDumpWriteDump");
-
-        MethodDeclarationSyntax friendlyOverload = Assert.Single(this.FindGeneratedMethod("MiniDumpWriteDump"), m => !m.Modifiers.Any(SyntaxKind.ExternKeyword));
-
-        // CallbackParam is exposed as a nullable value...
-        ParameterSyntax callbackParam = Assert.Single(friendlyOverload.ParameterList.Parameters, p => p.Identifier.ValueText == "CallbackParam");
-        Assert.IsType<NullableTypeSyntax>(callbackParam.Type);
-
-        // ...and forwarded to the extern method as `CallbackParam.HasValue ? new[] { CallbackParam.Value } : null`.
-        InvocationExpressionSyntax externInvocation = Assert.Single(
-            friendlyOverload.DescendantNodes().OfType<InvocationExpressionSyntax>(),
-            i => i.Expression is MemberAccessExpressionSyntax { Name.Identifier.ValueText: "MiniDumpWriteDump" });
-        ArgumentSyntax callbackArgument = Assert.Single(externInvocation.ArgumentList.Arguments, a => a.Expression is ConditionalExpressionSyntax { Condition: MemberAccessExpressionSyntax { Expression: IdentifierNameSyntax { Identifier.ValueText: "CallbackParam" } } });
-        ConditionalExpressionSyntax conditional = Assert.IsType<ConditionalExpressionSyntax>(callbackArgument.Expression);
-        Assert.IsType<ImplicitArrayCreationExpressionSyntax>(conditional.WhenTrue);
-        Assert.True(conditional.WhenFalse.IsKind(SyntaxKind.NullLiteralExpression));
-    }
-
     [Fact]
     public void ContainsIllegalCharactersForAPIName_InvisibleCharacters()
     {

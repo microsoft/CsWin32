@@ -30,7 +30,7 @@ public class ThreadpoolCallbackTests
         {
             BOOL submitted = PInvoke.TrySubmitThreadpoolCallback(callback, environment);
             Assert.True(submitted, $"TrySubmitThreadpoolCallback failed with error 0x{Marshal.GetLastWin32Error():X}.");
-            Assert.True(callbackRan.Wait(TimeSpan.FromSeconds(30)), "The threadpool callback did not run.");
+            Assert.True(callbackRan.Wait(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken), "The threadpool callback did not run.");
         }
         finally
         {

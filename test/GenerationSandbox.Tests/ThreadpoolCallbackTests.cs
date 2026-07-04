@@ -9,22 +9,34 @@ using Windows.Win32.System.Threading;
 [Trait("WindowsOnly", "true")]
 public class ThreadpoolCallbackTests
 {
+    // Regression tests for https://github.com/microsoft/CsWin32/issues/1739.
+    // TP_CALLBACK_ENVIRON_V3 is non-blittable (it contains delegate fields), so in the default
+    // marshaling mode CsWin32 exposes the optional pcbe parameter as a nullable value type and
+    // forwards it to the native method through an array: a non-null value becomes a single-element
+    // array and null becomes a null array. These tests exercise both paths end to end by actually
+    // submitting work to the native threadpool and confirming the callback runs. Passing null must
+    // marshal to a null pointer rather than dereferencing a null reference (the original bug).
     [Fact]
-    public unsafe void NonNullOptionalNonBlittableStructIsMarshaled()
+    public void NonNullOptionalNonBlittableStructIsMarshaled()
     {
-        // Regression test for https://github.com/microsoft/CsWin32/issues/1739.
-        // TP_CALLBACK_ENVIRON_V3 is non-blittable (it contains delegate fields), so in the default
-        // marshaling mode CsWin32 exposes the optional pcbe parameter as a nullable value type and
-        // forwards a non-null value through a single-element array. This test exercises that array
-        // marshaling path end to end: the environment must reach the native threadpool intact for
-        // the submitted callback to actually run.
-        using ManualResetEventSlim callbackRan = new(false);
-        PTP_SIMPLE_CALLBACK callback = (instance, context) => callbackRan.Set();
-
         TP_CALLBACK_ENVIRON_V3 environment = default;
         environment.Version = 3;
         environment.CallbackPriority = TP_CALLBACK_PRIORITY.TP_CALLBACK_PRIORITY_NORMAL;
         environment.Size = (uint)Marshal.SizeOf<TP_CALLBACK_ENVIRON_V3>();
+
+        AssertCallbackRuns(environment);
+    }
+
+    [Fact]
+    public void NullOptionalNonBlittableStructDoesNotThrow()
+    {
+        AssertCallbackRuns(null);
+    }
+
+    private static unsafe void AssertCallbackRuns(TP_CALLBACK_ENVIRON_V3? environment)
+    {
+        using ManualResetEventSlim callbackRan = new(false);
+        PTP_SIMPLE_CALLBACK callback = (instance, context) => callbackRan.Set();
 
         try
         {

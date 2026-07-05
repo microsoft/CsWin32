@@ -51,6 +51,23 @@ internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleIn
             bool xIn = (parameterAttributes & ParameterAttributes.In) == ParameterAttributes.In;
             bool xOut = (parameterAttributes & ParameterAttributes.Out) == ParameterAttributes.Out;
 
+            // An optional [In] (but not [Out]) parameter that points to a managed (non-blittable) struct cannot be
+            // exposed as a pointer (pointers to managed types are illegal) and an `in` modifier cannot represent a
+            // null pointer: passing null makes the marshaler dereference a null reference (NullReferenceException).
+            // Represent it as an array instead (as we already do for such struct fields below): a null array marshals
+            // to a null pointer and a single-element array marshals to a pointer to the struct. A friendly overload
+            // exposes this as a nullable value. See https://github.com/microsoft/CsWin32/issues/1739.
+            if (xIn && !xOut && xOptional && inputs.AllowMarshaling && nativeArrayInfo is null
+                && forElement == Generator.GeneratingElement.ExternMethod
+                && inputs.Generator?.IsManagedType(this.ElementType) is true
+                && this.ElementType.IsValueType(inputs) is true)
+            {
+                return new TypeSyntaxAndMarshaling(
+                    ArrayType(elementTypeDetails.Type, [ArrayRankSpecifier()]),
+                    elementTypeDetails.MarshalAsAttribute is object ? new MarshalAsAttribute(UnmanagedType.LPArray) { ArraySubType = elementTypeDetails.MarshalAsAttribute.Value } : null,
+                    elementTypeDetails.NativeArrayInfo);
+            }
+
             // A pointer to a marshaled object is not allowed.
             if (inputs.AllowMarshaling && customAttributes.HasValue && nativeArrayInfo is not null)
             {

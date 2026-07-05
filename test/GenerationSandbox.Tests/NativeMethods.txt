@@ -82,6 +82,7 @@ ShellWindowTypeConstants
 SHFILEOPSTRUCTW
 SIZE
 SYSTEM_INFO
+TrySubmitThreadpoolCallback
 VARDESC
 WER_REPORT_INFORMATION
 wglGetProcAddress

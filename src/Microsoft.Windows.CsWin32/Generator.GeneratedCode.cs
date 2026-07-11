@@ -16,7 +16,7 @@ public partial class Generator
         /// </summary>
         private readonly Dictionary<(TypeDefinitionHandle Type, bool HasUnmanagedName), MemberDeclarationSyntax> types = new();
 
-        private readonly Dictionary<FieldDefinitionHandle, (FieldDeclarationSyntax FieldDeclaration, TypeDefinitionHandle? FieldType)> fieldsToSyntax = new();
+        private readonly Dictionary<FieldDefinitionHandle, (FieldDeclarationSyntax FieldDeclaration, TypeDefinitionHandle? FieldType, string? ExtensionTypeName)> fieldsToSyntax = new();
 
         private readonly List<ClassDeclarationSyntax> safeHandleTypes = new();
 
@@ -86,6 +86,13 @@ public partial class Generator
                                                                        where @field.FieldType is null || !this.types.ContainsKey((@field.FieldType.Value, false))
                                                                        select @field.FieldDeclaration;
 
+        /// <summary>
+        /// Gets the top-level constant fields paired with the fully-qualified metadata name of the typedef struct they are typed as (or <see langword="null"/> when the constant is not typed as a typedef struct). Used by the <c>extensionReceiver</c> feature to attach struct-typed constants to their struct via a C# 14 extension block.
+        /// </summary>
+        internal IEnumerable<(FieldDeclarationSyntax Field, string? ExtensionTypeName)> TopLevelFieldsWithExtensionType => from @field in this.fieldsToSyntax.Values
+                                                                                                                          where @field.FieldType is null || !this.types.ContainsKey((@field.FieldType.Value, false))
+                                                                                                                          select (@field.FieldDeclaration, @field.ExtensionTypeName);
+
         internal IEnumerable<IGrouping<string, MemberDeclarationSyntax>> MembersByModule
         {
             get
@@ -132,10 +139,10 @@ public partial class Generator
             this.NeedsWinRTCustomMarshaler |= members.Any(m => RequiresWinRTCustomMarshaler(m));
         }
 
-        internal void AddConstant(FieldDefinitionHandle fieldDefHandle, FieldDeclarationSyntax constantDeclaration, TypeDefinitionHandle? fieldType)
+        internal void AddConstant(FieldDefinitionHandle fieldDefHandle, FieldDeclarationSyntax constantDeclaration, TypeDefinitionHandle? fieldType, string? extensionTypeName)
         {
             this.ThrowIfNotGenerating();
-            this.fieldsToSyntax.Add(fieldDefHandle, (constantDeclaration, fieldType));
+            this.fieldsToSyntax.Add(fieldDefHandle, (constantDeclaration, fieldType, extensionTypeName));
         }
 
         internal void AddMacro(string macroName, MethodDeclarationSyntax macro)

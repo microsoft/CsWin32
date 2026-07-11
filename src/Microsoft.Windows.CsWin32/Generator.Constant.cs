@@ -141,35 +141,56 @@ public partial class Generator
         {
             FieldDefinition fieldDef = this.Reader.GetFieldDefinition(fieldDefHandle);
 
-            // Multi-assembly composition: if another assembly already exposes this constant as an extension
-            // property (or as a plain field/property on the receiver type), skip regeneration so layered
-            // CsWin32 outputs compose without duplicates. Constants are name-unique per type (no
-            // overloading), so we look for any member of the same name with zero parameters
-            // (field / property / parameterless accessor) by passing an empty parameter-types list.
+            // Decode the field type up front to learn whether this constant is typed as a typedef struct
+            // (e.g. HRESULT, NTSTATUS, HWND). Two pieces of information come out of this:
+            //   * fieldType — a TypeDefinitionHandle in THIS metadata, set only when the struct is defined
+            //     in this same winmd. It drives constant "nesting" (injecting the field directly into the
+            //     struct declaration when that struct is generated locally).
+            //   * extensionStructName — the fully-qualified metadata name of the typedef struct, captured
+            //     even for cross-winmd references (e.g. a Windows.Wdk constant typed as the SDK's NTSTATUS).
+            //     It drives the extensionReceiver feature's `extension(<struct>)` attachment.
+            TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature<TypeHandleInfo, SignatureHandleProvider.IGenericContext?>(this.SignatureHandleProvider, null) with { IsConstantField = true };
+            TypeDefinitionHandle? fieldType = null;
+            string? extensionStructName = null;
+            if (fieldTypeInfo is HandleTypeHandleInfo handleInfo && this.IsTypeDefStruct(handleInfo) && handleInfo.Handle.Kind == HandleKind.TypeReference)
+            {
+                TypeReference tr = this.Reader.GetTypeReference((TypeReferenceHandle)handleInfo.Handle);
+                string fieldTypeName = this.Reader.GetString(tr.Name);
+                if (!TypeDefsThatDoNotNestTheirConstants.Contains(fieldTypeName))
+                {
+                    string fieldTypeNamespace = this.Reader.GetString(tr.Namespace);
+                    extensionStructName = fieldTypeNamespace.Length == 0 ? fieldTypeName : $"{fieldTypeNamespace}.{fieldTypeName}";
+                    if (this.TryGetTypeDefHandle(tr, out TypeDefinitionHandle candidate))
+                    {
+                        fieldType = candidate;
+                    }
+                }
+            }
+
+            // Multi-assembly composition: if another assembly already exposes this constant, skip regeneration
+            // so layered CsWin32 outputs compose without duplicates. Constants are name-unique per type (no
+            // overloading), so we look for any member of the same name with zero parameters (field / property /
+            // parameterless accessor). A struct-typed constant is deduped against the typedef struct it attaches
+            // to (which the owning assembly may have injected the constant directly into); every other constant
+            // is deduped against the configured receiver.
             if (this.options.ExtensionReceiver is not null)
             {
                 string constantName = this.Reader.GetString(fieldDef.Name);
-                if (this.IsExtensionMemberAlreadyOnReceiver(constantName, Array.Empty<string>(), ReceiverMemberKind.Value))
+                if (extensionStructName is not null)
+                {
+                    if (this.IsConstantAlreadyOnStructType(extensionStructName, constantName))
+                    {
+                        return;
+                    }
+                }
+                else if (this.IsExtensionMemberAlreadyOnReceiver(constantName, Array.Empty<string>(), ReceiverMemberKind.Value))
                 {
                     return;
                 }
             }
 
             FieldDeclarationSyntax constantDeclaration = this.DeclareConstant(fieldDef);
-
-            TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature<TypeHandleInfo, SignatureHandleProvider.IGenericContext?>(this.SignatureHandleProvider, null) with { IsConstantField = true };
-            TypeDefinitionHandle? fieldType = null;
-            if (fieldTypeInfo is HandleTypeHandleInfo handleInfo && this.IsTypeDefStruct(handleInfo) && handleInfo.Handle.Kind == HandleKind.TypeReference)
-            {
-                TypeReference tr = this.Reader.GetTypeReference((TypeReferenceHandle)handleInfo.Handle);
-                string fieldTypeName = this.Reader.GetString(tr.Name);
-                if (!TypeDefsThatDoNotNestTheirConstants.Contains(fieldTypeName) && this.TryGetTypeDefHandle(tr, out TypeDefinitionHandle candidate))
-                {
-                    fieldType = candidate;
-                }
-            }
-
-            this.volatileCode.AddConstant(fieldDefHandle, constantDeclaration, fieldType);
+            this.volatileCode.AddConstant(fieldDefHandle, constantDeclaration, fieldType, extensionStructName);
         });
     }
 
@@ -436,67 +457,97 @@ public partial class Generator
     private ClassDeclarationSyntax DeclareConstantDefiningClass()
     {
 #if ROSLYN5
-        // Skip the field-split when no receiver is configured OR when THIS generator's namespace can't
-        // resolve the configured receiver (multi-namespace pipeline edge case — see Generator.WrapAsExtensionMembers).
-        if (this.options.ExtensionReceiver is null || this.GetExtensionReceiverSymbol() is null)
+        if (this.options.ExtensionReceiver is null)
         {
-            return ClassDeclaration(this.methodsAndConstantsClassName.Identifier, [.. this.committedCode.TopLevelFields])
-                .WithModifiers([TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)]);
+            return this.DeclarePlainConstantDefiningClass();
         }
 
-        // When an extension receiver is configured, constants must remain on the host class because
-        // fields are not legal members of a C# 14 extension block. To still expose them through the
-        // receiver, we emit a forwarding static property inside the extension block that returns the
-        // underlying field. The backing field keeps its original visibility (typically <c>public</c>
-        // because const fields need to be reachable from C# constant contexts such as enum initializers,
-        // attribute arguments, and `fixed` array sizes — none of which can flow through a property).
-        // Consumers reach the constant either as `<HostClass>.X` (works in const contexts) or as
-        // `<Receiver>.X` via the extension property (works in any runtime context).
-        SyntaxToken publicVisibility = TokenWithSpace(this.Visibility);
+        // With extensionReceiver configured, constants cannot live inside a C# 14 extension block (fields are
+        // not legal extension members). Each constant's real field therefore stays on the host class, and a
+        // forwarding static property is emitted inside an extension block so the value is also reachable through
+        // the extension target:
+        //   * A constant typed as a typedef struct (HRESULT, NTSTATUS, HWND, ...) attaches to THAT struct, so it
+        //     reads as `<Struct>.<Name>` — matching how the struct's owning assembly surfaces its own constants.
+        //     This composes across assemblies and across winmds (e.g. a Windows.Wdk layer contributing
+        //     NTSTATUS-typed defines onto the SDK's NTSTATUS).
+        //   * Every other constant forwards through the configured receiver as `<Receiver>.<Name>`.
+        // When neither target resolves (the struct isn't in a referenced assembly, or this generator can't see
+        // the receiver), the constant silently remains reachable through the host class only.
+        SyntaxToken memberVisibility = TokenWithSpace(this.Visibility);
+        bool receiverResolvable = this.GetExtensionReceiverSymbol() is not null;
 
-        var backingFields = new System.Collections.Generic.List<MemberDeclarationSyntax>(this.committedCode.TopLevelFields.Count());
-        var forwarderProperties = new System.Collections.Generic.List<MemberDeclarationSyntax>(this.committedCode.TopLevelFields.Count());
-
-        // Use a global-qualified host expression so the forwarder body is unambiguous even when the extension
+        // Use a global-qualified host expression so the forwarder body is unambiguous even when an extension
         // block's own scope shadows the host class name.
         ExpressionSyntax qualifiedHost = ParseName($"global::{this.Namespace}.{this.options.ClassName}");
 
-        foreach (FieldDeclarationSyntax originalField in this.committedCode.TopLevelFields)
+        var backingFields = new List<MemberDeclarationSyntax>();
+        var forwardersByTarget = new Dictionary<string, List<MemberDeclarationSyntax>>(StringComparer.Ordinal);
+        var targetOrder = new List<string>();
+
+        foreach ((FieldDeclarationSyntax originalField, string? extensionTypeName) in this.committedCode.TopLevelFieldsWithExtensionType)
         {
-            // Keep the field as-is on the host class (original visibility preserved) so consumers can use
-            // `<HostClass>.<Name>` in const contexts. The forwarder property below adds the receiver-qualified
-            // discovery path for runtime contexts.
+            // The real field always stays on the host class (fields cannot live in an extension block), with its
+            // original visibility preserved so `<HostClass>.<Name>` keeps working in C# constant contexts.
             backingFields.Add(originalField);
+
+            // Resolve the extension target: the typedef struct itself (when available as a referenced symbol),
+            // otherwise the configured receiver (for non-struct constants), otherwise none (silent fallback).
+            string? target = null;
+            if (extensionTypeName is not null)
+            {
+                if (this.FindTypeSymbolsIfAlreadyAvailable(extensionTypeName).OfType<INamedTypeSymbol>().Any())
+                {
+                    target = $"global::{extensionTypeName}";
+                }
+            }
+            else if (receiverResolvable)
+            {
+                target = $"global::{this.Namespace}.{this.options.ExtensionReceiver}";
+            }
+
+            if (target is null)
+            {
+                continue;
+            }
+
+            if (!forwardersByTarget.TryGetValue(target, out List<MemberDeclarationSyntax>? forwarders))
+            {
+                forwardersByTarget.Add(target, forwarders = new List<MemberDeclarationSyntax>());
+                targetOrder.Add(target);
+            }
 
             // Build the forwarder property: <visibility> static <Type> <Name> => <Host>.<Name>;
             TypeSyntax fieldType = originalField.Declaration.Type;
             foreach (VariableDeclaratorSyntax declarator in originalField.Declaration.Variables)
             {
-                SyntaxToken nameIdent = declarator.Identifier;
+                SyntaxToken nameIdent = declarator.Identifier.WithoutTrivia();
                 ExpressionSyntax forwardExpr = MemberAccessExpression(
                     SyntaxKind.SimpleMemberAccessExpression,
                     qualifiedHost,
-                    IdentifierName(nameIdent.WithoutTrivia()));
-                PropertyDeclarationSyntax property = SyntaxFactory.PropertyDeclaration(fieldType.WithTrailingTrivia(TriviaList(Space)), nameIdent.WithoutTrivia())
-                    .WithModifiers(SyntaxFactory.TokenList(publicVisibility, TokenWithSpace(SyntaxKind.StaticKeyword)))
+                    IdentifierName(nameIdent));
+                PropertyDeclarationSyntax property = SyntaxFactory.PropertyDeclaration(fieldType.WithTrailingTrivia(TriviaList(Space)), nameIdent)
+                    .WithModifiers(SyntaxFactory.TokenList(memberVisibility, TokenWithSpace(SyntaxKind.StaticKeyword)))
                     .WithExpressionBody(ArrowExpressionClause(forwardExpr))
                     .WithSemicolonToken(SemicolonWithLineFeed);
-                forwarderProperties.Add(property);
+                forwarders.Add(property);
             }
         }
 
-        var classMembers = new System.Collections.Generic.List<MemberDeclarationSyntax>(backingFields);
-        if (forwarderProperties.Count > 0)
+        var classMembers = new List<MemberDeclarationSyntax>(backingFields);
+        foreach (string target in targetOrder)
         {
-            classMembers.Add(ExtensionBlock(ParseName($"global::{this.Namespace}.{this.options.ExtensionReceiver}"), SyntaxFactory.List(forwarderProperties)));
+            classMembers.Add(ExtensionBlock(ParseName(target), SyntaxFactory.List(forwardersByTarget[target])));
         }
 
         return ClassDeclaration(this.methodsAndConstantsClassName.Identifier, SyntaxFactory.List(classMembers))
             .WithModifiers([TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)]);
 #else
         // The Roslyn 4 leg ignores ExtensionReceiver (rejected at validation time via PInvoke013).
-        return ClassDeclaration(this.methodsAndConstantsClassName.Identifier, [.. this.committedCode.TopLevelFields])
-            .WithModifiers([TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)]);
+        return this.DeclarePlainConstantDefiningClass();
 #endif
     }
+
+    private ClassDeclarationSyntax DeclarePlainConstantDefiningClass()
+        => ClassDeclaration(this.methodsAndConstantsClassName.Identifier, [.. this.committedCode.TopLevelFields])
+            .WithModifiers([TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)]);
 }

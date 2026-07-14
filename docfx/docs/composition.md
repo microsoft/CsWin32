@@ -219,6 +219,41 @@ For an extender (e.g. `PInvokeHelpers`), the const lives on the extender's host 
 (`PInvokeHelpers.X`) and the forwarder lives on the receiver (`PInvoke.X`). You can always reach
 the const via the host class.
 
+### Constants typed as a typedef struct
+
+Some constants are typed as a *typedef struct* rather than a primitive — for example `HRESULT`,
+`NTSTATUS`, `HWND`, `BOOL`, or `HKEY`. Outside of composition, CsWin32 nests these directly onto the
+struct (so `S_OK` reads as `HRESULT.S_OK`). Under `extensionReceiver`, when the struct is owned by a
+*referenced* assembly, the extender cannot add members to it directly, so CsWin32 attaches the
+constant to the struct with an `extension(<Struct>)` block instead. This keeps it reachable as
+`<Struct>.<Name>` — the same shape the owning assembly uses for its own constants of that type:
+
+```csharp
+public static partial class AppPInvokes
+{
+    // 1. The real field stays on the extender's host class.
+    public static readonly global::Windows.Win32.Foundation.HRESULT MY_HR = (global::Windows.Win32.Foundation.HRESULT)unchecked((int)0x80040001);
+
+    extension (global::Windows.Win32.Foundation.HRESULT)
+    {
+        // 2. A forwarder surfaces it as HRESULT.MY_HR, alongside the owner's HRESULT.S_OK etc.
+        public static global::Windows.Win32.Foundation.HRESULT MY_HR => global::Windows.Win32.AppPInvokes.MY_HR;
+    }
+}
+```
+
+Note that this attaches to the struct, *not* the receiver — a struct-typed constant is never
+forwarded through `PInvoke`. The behavior composes across assemblies and across winmds (an
+extender may contribute constants onto a struct defined in a different metadata's namespace). Three
+edge cases round it out:
+
+- If the struct is generated in the *same* assembly, the constant is injected directly into the
+  struct as usual — no extension block is emitted, because the assembly owns the struct.
+- If a lower layer already exposes a constant of that name on the struct (typically the owner, which
+  injected it directly), the higher layer does not re-emit it.
+- If the struct cannot be found in any referenced assembly, the constant silently remains reachable
+  through the host class only.
+
 ## How duplicates are handled across layers
 
 When an extender's `NativeMethods.txt` requests something the owner (or any other referenced

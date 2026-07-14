@@ -607,6 +607,156 @@ namespace Windows.Win32
         Assert.NotEmpty(hostMethods);
     }
 
+    /// <summary>
+    /// A constant typed as a typedef struct (e.g. <c>HWND_BOTTOM</c> typed as <c>HWND</c>) attaches to that
+    /// struct via an <c>extension(&lt;struct&gt;)</c> block — so it reads as <c>HWND.HWND_BOTTOM</c> — rather
+    /// than through the receiver. This is the composition case: the struct is owned by a referenced assembly.
+    /// </summary>
+    [Fact]
+    public void Option_StructTypedConstant_AttachesToStructExtensionNotReceiver()
+    {
+        // Both the receiver and the typedef struct live in a referenced assembly. They are simulated here as
+        // non-partial stubs so FindTypeSymbolsIfAlreadyAvailable resolves them and CsWin32 does not regenerate them.
+        this.compilation = this.AddCode(
+            @"namespace Windows.Win32 { internal static class PInvoke { } }
+namespace Windows.Win32.Foundation { internal readonly struct HWND { } }",
+            fileName: "Refs.cs");
+        this.generator = this.CreateGenerator(new GeneratorOptions
+        {
+            EmitSingleFile = true,
+            ClassName = HostClassName,
+            ExtensionReceiver = ReceiverName,
+        });
+        Assert.True(this.generator.TryGenerate("HWND_BOTTOM", TestContext.Current.CancellationToken));
+        Assert.True(this.generator.TryGenerate("WM_NULL", TestContext.Current.CancellationToken));
+        this.CollectGeneratedCode(this.generator);
+
+        ClassDeclarationSyntax host = SingleHostClass(this.FindGeneratedType(HostClassName));
+
+        // The real field for the struct-typed constant stays on the host class.
+        Assert.Contains(
+            host.Members.OfType<FieldDeclarationSyntax>(),
+            f => f.Declaration.Variables.Any(v => v.Identifier.ValueText == "HWND_BOTTOM"));
+
+        // HWND_BOTTOM is surfaced through extension(HWND) — the struct itself — not the receiver.
+        ExtensionBlockDeclarationSyntax hwndExtension = Assert.Single(
+            host.Members.OfType<ExtensionBlockDeclarationSyntax>(),
+            b => ReceiverTypeName(b) == "global::Windows.Win32.Foundation.HWND");
+        Assert.Contains(hwndExtension.Members.OfType<PropertyDeclarationSyntax>(), p => p.Identifier.ValueText == "HWND_BOTTOM");
+
+        // The plain constant WM_NULL still forwards through the receiver, and the receiver block must NOT carry the struct-typed constant.
+        ExtensionBlockDeclarationSyntax receiverExtension = Assert.Single(
+            host.Members.OfType<ExtensionBlockDeclarationSyntax>(),
+            b => ReceiverTypeName(b) == $"global::Windows.Win32.{ReceiverName}");
+        Assert.Contains(receiverExtension.Members.OfType<PropertyDeclarationSyntax>(), p => p.Identifier.ValueText == "WM_NULL");
+        Assert.DoesNotContain(receiverExtension.Members.OfType<PropertyDeclarationSyntax>(), p => p.Identifier.ValueText == "HWND_BOTTOM");
+    }
+
+    /// <summary>
+    /// Multi-assembly composition: when the typedef struct already exposes the constant (as the owning assembly
+    /// does after injecting it directly into the struct), a higher layer must not re-emit it — neither the
+    /// backing field nor the extension forwarder.
+    /// </summary>
+    [Fact]
+    public void Dedup_StructConstantAlreadyOnStruct_NotRegenerated()
+    {
+        this.compilation = this.AddCode(
+            @"namespace Windows.Win32 { internal static class PInvoke { } }
+namespace Windows.Win32.Foundation
+{
+    internal readonly struct HWND
+    {
+        public static readonly HWND HWND_BOTTOM;
+    }
+}",
+            fileName: "Refs.cs");
+        this.generator = this.CreateGenerator(new GeneratorOptions
+        {
+            EmitSingleFile = true,
+            ClassName = HostClassName,
+            ExtensionReceiver = ReceiverName,
+        });
+        Assert.True(this.generator.TryGenerate("HWND_BOTTOM", TestContext.Current.CancellationToken));
+        this.CollectGeneratedCode(this.generator);
+
+        // Neither a backing field nor a forwarder property for HWND_BOTTOM should appear under the host class.
+        List<ClassDeclarationSyntax> hostClasses = this.FindGeneratedType(HostClassName).OfType<ClassDeclarationSyntax>().ToList();
+        Assert.DoesNotContain(
+            hostClasses.SelectMany(c => c.DescendantNodes().OfType<FieldDeclarationSyntax>()),
+            f => f.Declaration.Variables.Any(v => v.Identifier.ValueText == "HWND_BOTTOM"));
+        Assert.DoesNotContain(
+            hostClasses.SelectMany(c => c.DescendantNodes().OfType<PropertyDeclarationSyntax>()),
+            p => p.Identifier.ValueText == "HWND_BOTTOM");
+    }
+
+    /// <summary>
+    /// When the typedef struct is generated locally (this assembly owns it), the struct-typed constant is
+    /// injected directly into the struct declaration exactly as without the feature — no <c>extension(&lt;struct&gt;)</c>
+    /// block is created, since we can add the member to the struct we own.
+    /// </summary>
+    [Fact]
+    public void Option_StructTypedConstant_StructGeneratedLocally_IsInjectedNotExtended()
+    {
+        // Only the receiver is stubbed; HWND is NOT, so CsWin32 generates it locally and injects the constant.
+        this.compilation = this.AddCode(
+            $"namespace Windows.Win32 {{ internal static class {ReceiverName} {{ }} }}",
+            fileName: "ReceiverStub.cs");
+        this.generator = this.CreateGenerator(new GeneratorOptions
+        {
+            EmitSingleFile = true,
+            ClassName = HostClassName,
+            ExtensionReceiver = ReceiverName,
+        });
+        Assert.True(this.generator.TryGenerate("HWND_BOTTOM", TestContext.Current.CancellationToken));
+        this.CollectGeneratedCode(this.generator);
+
+        // HWND is generated locally with HWND_BOTTOM injected as a member (unchanged nesting behavior).
+        StructDeclarationSyntax hwnd = Assert.Single(this.FindGeneratedType("HWND").OfType<StructDeclarationSyntax>());
+        Assert.Contains(
+            hwnd.Members.OfType<FieldDeclarationSyntax>(),
+            f => f.Declaration.Variables.Any(v => v.Identifier.ValueText == "HWND_BOTTOM"));
+
+        // No extension block targets HWND: we own the struct, so we inject directly instead.
+        IEnumerable<ExtensionBlockDeclarationSyntax> allExtensions = this.compilation.SyntaxTrees
+            .SelectMany(t => t.GetRoot().DescendantNodes().OfType<ExtensionBlockDeclarationSyntax>());
+        Assert.DoesNotContain(allExtensions, b => ReceiverTypeName(b).EndsWith(".HWND", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// End-to-end: a struct-typed constant attached through an <c>extension(&lt;struct&gt;)</c> block produces
+    /// source that compiles cleanly under C# 14, with the struct provided by a (stubbed) referenced assembly.
+    /// </summary>
+    [Fact]
+    public void Option_StructTypedConstant_GeneratedCodeCompiles()
+    {
+        this.compilation = this.starterCompilations["net10.0"];
+        this.parseOptions = this.parseOptions.WithLanguageVersion(LanguageVersion.CSharp14);
+
+        // Simulate the owning assembly: the receiver plus a usable HWND struct the extender attaches a constant to.
+        this.compilation = this.AddCode(
+            @"namespace Windows.Win32 { internal static class PInvoke { } }
+namespace Windows.Win32.Foundation
+{
+    internal readonly struct HWND
+    {
+        public HWND(nint value) { }
+
+        public static explicit operator HWND(nint value) => new HWND(value);
+    }
+}",
+            fileName: "Refs.cs");
+
+        this.generator = this.CreateGenerator(new GeneratorOptions
+        {
+            EmitSingleFile = true,
+            ClassName = HostClassName,
+            ExtensionReceiver = ReceiverName,
+        });
+        Assert.True(this.generator.TryGenerate("HWND_BOTTOM", TestContext.Current.CancellationToken));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+    }
+
     private static ClassDeclarationSyntax SingleHostClass(IEnumerable<BaseTypeDeclarationSyntax> types)
     {
         // A single emitted host class with members (the one that actually has the wrap).

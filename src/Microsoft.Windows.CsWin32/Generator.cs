@@ -1634,6 +1634,45 @@ public partial class Generator : IGenerator, IDisposable
 #endif
     }
 
+    /// <summary>
+    /// Tests whether the typedef struct named by <paramref name="structFullMetadataName"/> already exposes an accessible value member (a field or a parameterless property) named <paramref name="memberName"/> in this or a referenced assembly. Supports multi-assembly composition: when a lower layer already surfaced a struct-typed constant (typically by injecting it directly into the generated struct), a higher layer must not re-emit it as an <c>extension(&lt;struct&gt;)</c> member and cause a duplicate. Always returns <see langword="false"/> on the Roslyn 4 leg (the feature is gated to Roslyn 5).
+    /// </summary>
+    /// <param name="structFullMetadataName">The fully-qualified metadata name of the typedef struct (e.g. <c>Windows.Win32.Foundation.NTSTATUS</c>).</param>
+    /// <param name="memberName">The simple constant name to look for.</param>
+    /// <returns><see langword="true"/> if the struct already exposes a matching accessible value member; otherwise <see langword="false"/>.</returns>
+    internal bool IsConstantAlreadyOnStructType(string structFullMetadataName, string memberName)
+    {
+#if ROSLYN5
+        if (this.compilation is null)
+        {
+            return false;
+        }
+
+        foreach (ISymbol symbol in this.FindTypeSymbolsIfAlreadyAvailable(structFullMetadataName))
+        {
+            if (symbol is not INamedTypeSymbol structType)
+            {
+                continue;
+            }
+
+            foreach (ISymbol member in structType.GetMembers(memberName))
+            {
+                bool isValueMember = member is IFieldSymbol || (member is IPropertySymbol property && property.Parameters.IsEmpty);
+                if (isValueMember && this.compilation.IsSymbolAccessibleWithin(member, this.compilation.Assembly))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+#else
+        _ = structFullMetadataName;
+        _ = memberName;
+        return false;
+#endif
+    }
+
 #if ROSLYN5
 #pragma warning disable SA1201 // Keep dedup helpers (display format + signature/name normalization) co-located.
     private static readonly SymbolDisplayFormat ParameterTypeDisplayFormat = new SymbolDisplayFormat(

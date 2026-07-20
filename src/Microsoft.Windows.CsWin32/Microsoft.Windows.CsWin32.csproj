@@ -98,7 +98,7 @@
   -->
   <ItemGroup>
     <PackageReference Include="System.Collections.Immutable" VersionOverride="9.0.0" />
-    <PackageReference Include="System.Memory" VersionOverride="4.6.0" PrivateAssets="none" />
+    <PackageReference Include="System.Memory" VersionOverride="4.6.3" PrivateAssets="none" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFramework)'=='net472'">

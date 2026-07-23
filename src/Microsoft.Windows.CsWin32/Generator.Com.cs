@@ -279,6 +279,7 @@ public partial class Generator
 
             ParameterListSyntax parameterList = methodDefinition.Generator.CreateParameterList(methodDefinition.Method, signature, typeSettings, GeneratingElement.InterfaceAsStructMember);
             ParameterListSyntax parameterListPreserveSig = parameterList; // preserve a copy that has no mutations.
+            bool preserveSig = methodDefinition.Generator.UsePreserveSigForComMethod(methodDefinition.Method, signature, ifaceName.Identifier.ValueText, methodName) || emulateMemberFunctionCallConv;
             bool requiresMarshaling = parameterList.Parameters.Any(p => p.AttributeLists.SelectMany(al => al.Attributes).Any(a => a.Name is IdentifierNameSyntax { Identifier.ValueText: "MarshalAs" }) || p.Modifiers.Any(SyntaxKind.RefKeyword) || p.Modifiers.Any(SyntaxKind.OutKeyword) || p.Modifiers.Any(SyntaxKind.InKeyword));
             FunctionPointerParameterListSyntax funcPtrParameters = FunctionPointerParameterList(FunctionPointerParameter(PointerType(ifaceName)))
                 .AddParameters(emulateMemberFunctionCallConv ? [FunctionPointerParameter(PointerType(returnType))] : [])
@@ -328,8 +329,9 @@ public partial class Generator
                     ArgumentSyntax arg;
 
                     // Can't use "out" or "ref" with runtime marshaling disabled. We're in an unsafe context so just use fixed + pointers like friendly overloads.
-                    // Only do this for parameters, not the parameter that will be moved to the return value.
-                    if ((p.Modifiers.Any(SyntaxKind.OutKeyword) || p.Modifiers.Any(SyntaxKind.RefKeyword)) && !p.HasAnnotation(IsRetValAnnotation))
+                    // Skip a RetVal parameter only when it will actually be moved to the managed return value.
+                    bool willMoveToReturnValue = p.HasAnnotation(IsRetValAnnotation) && !preserveSig;
+                    if ((p.Modifiers.Any(SyntaxKind.OutKeyword) || p.Modifiers.Any(SyntaxKind.RefKeyword)) && !willMoveToReturnValue)
                     {
                         string origName = p.Identifier.ValueText;
                         IdentifierNameSyntax localName = IdentifierName(origName + "Local");
@@ -431,7 +433,6 @@ public partial class Generator
                         [VariableDeclarator(emulatedMemberFunctionCallConvReturnLocal!.Identifier).WithInitializer(EqualsValueClause(DefaultExpression(returnType)))]));
                 }
 
-                bool preserveSig = methodDefinition.Generator.UsePreserveSigForComMethod(methodDefinition.Method, signature, ifaceName.Identifier.ValueText, methodName) || emulateMemberFunctionCallConv;
                 if (preserveSig)
                 {
                     if (emulateMemberFunctionCallConv)
@@ -954,6 +955,11 @@ public partial class Generator
                     ParameterListSyntax? parameterList = methodDefinition.Generator.CreateParameterList(methodDefinition.Method, signature, functionSignatureSettings, GeneratingElement.InterfaceMember);
 
                     bool preserveSig = interfaceAsSubtype || this.UsePreserveSigForComMethod(methodDefinition.Method, signature, actualIfaceName, methodName) || emulateMemberFunctionCallConv;
+                    if (this.useSourceGenerators && preserveSig && IsHresult(signature.ReturnType))
+                    {
+                        parameterList = this.RenameRetValParametersForComSourceGenerator(parameterList);
+                    }
+
                     if (!preserveSig)
                     {
                         ParameterSyntax? lastParameter = parameterList.Parameters.Count > 0 ? parameterList.Parameters[parameterList.Parameters.Count - 1] : null;
@@ -1255,6 +1261,32 @@ public partial class Generator
         }
 
         return (members, baseTypes);
+    }
+
+    private ParameterListSyntax RenameRetValParametersForComSourceGenerator(ParameterListSyntax parameterList)
+    {
+        SeparatedSyntaxList<ParameterSyntax> parameters = parameterList.Parameters;
+        var parameterNames = new HashSet<string>(parameters.Select(parameter => parameter.Identifier.ValueText), StringComparer.Ordinal);
+        foreach (ParameterSyntax parameter in parameters)
+        {
+            if (parameter.Identifier.ValueText == "retVal" &&
+                (parameter.Modifiers.Any(SyntaxKind.OutKeyword) || parameter.Modifiers.Any(SyntaxKind.RefKeyword) || parameter.Modifiers.Any(SyntaxKind.InKeyword)))
+            {
+                // ComInterfaceGenerator uses __retVal_native for a custom-marshaled return and for a parameter named retVal.
+                string replacementName = "retValParameter";
+                while (!parameterNames.Add(replacementName))
+                {
+                    replacementName += "_";
+                }
+
+                SyntaxToken replacementIdentifier = Identifier(replacementName)
+                    .WithLeadingTrivia(parameter.Identifier.LeadingTrivia)
+                    .WithTrailingTrivia(parameter.Identifier.TrailingTrivia);
+                parameters = parameters.Replace(parameter, parameter.WithIdentifier(replacementIdentifier));
+            }
+        }
+
+        return parameterList.WithParameters(parameters);
     }
 
     private bool UsePreserveSigForComMethod(MethodDefinition methodDefinition, MethodSignature<TypeHandleInfo> signature, string ifaceName, string methodName)

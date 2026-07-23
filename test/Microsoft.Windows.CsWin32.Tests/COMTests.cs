@@ -20,6 +20,29 @@ public class COMTests : GeneratorTestBase
         Assert.Contains(this.FindGeneratedMethod("Next"), m => m.ParameterList.Parameters.Count == 3 && m.ParameterList.Parameters[0].Modifiers.Any(SyntaxKind.ThisKeyword));
     }
 
+    [Fact]
+    public void PreserveSigRetValParametersInUnmanagedComWrappersCompile()
+    {
+        this.compilation = this.starterCompilations["net10.0"];
+        this.parseOptions = this.parseOptions.WithLanguageVersion(LanguageVersion.CSharp14);
+        this.generator = this.CreateGenerator(new GeneratorOptions
+        {
+            AllowMarshaling = true,
+            ComInterop = new()
+            {
+                PreserveSigMethods = ["*"],
+                UseComSourceGenerators = true,
+            },
+        });
+
+        Assert.True(this.generator.TryGenerate("LPFNACCESSIBLECHILDREN", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics(
+            this.compilation,
+            logAllGeneratedCode: false,
+            acceptable: d => d.Id is "CS8795" or "CS1574");
+    }
+
     [Theory]
     [InlineData("IHTMLDocument")]
     [InlineData("IHTMLDocument2")]

@@ -48,4 +48,16 @@ public partial class CsWin32GeneratorFullTests : CsWin32GeneratorTestsBase
         this.nativeMethodsJson = "NativeMethods.IncludePointerOverloads.json";
         await this.InvokeGeneratorAndCompile("FullGeneration_net9.0_CSharp13_pointers", TestOptions.None);
     }
+
+    [Fact]
+    [Trait("TestCategory", "HighMemory")]
+    [Trait("TestShard", "FullGen-Net10-PreserveSig")]
+    public async Task FullGeneration_Net10_PreserveSig()
+    {
+        this.fullGeneration = true;
+        this.compilation = this.starterCompilations["net10.0"];
+        this.parseOptions = this.parseOptions.WithLanguageVersion(LanguageVersion.CSharp14);
+        this.nativeMethodsJson = "NativeMethods.PreserveSig.json";
+        await this.InvokeGeneratorAndCompile("FullGeneration_net10.0_CSharp14_preserveSig", TestOptions.None);
+    }
 }

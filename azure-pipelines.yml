@@ -13,6 +13,12 @@ trigger:
     - .github/
     - azure-pipelines/release.yml
 
+# PR validation has moved to GitHub Actions (.github/workflows/build.yml), which runs more
+# of the test matrix and works on forks. Disable Azure Pipelines PR validation so it no longer
+# queues a build or posts a status check on GitHub pull requests. CI on the branches above and
+# release builds continue to run.
+pr: none
+
 parameters:
 - name: EnableMacOSBuild
   displayName: Build on macOS

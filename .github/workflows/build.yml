@@ -36,7 +36,7 @@ jobs:
     - name: 🛠️ Build
       run: dotnet build -t:build,pack -c ${{ env.BuildConfiguration }} -warnAsError -warnNotAsError:NU1901,NU1902,NU1903,NU1904
     - name: 📦 Upload build output
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
         name: build-windows
         path: bin/
@@ -68,7 +68,7 @@ jobs:
           --results-directory TestResults
       shell: pwsh
     - name: 📢 Upload test results
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       if: always()
       with:
         name: test-results-windows
@@ -105,7 +105,7 @@ jobs:
           --results-directory TestResults
       shell: pwsh
     - name: 📢 Upload test results
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       if: always()
       with:
         name: test-results-hardware-windows
@@ -143,7 +143,7 @@ jobs:
           --results-directory TestResults
       shell: pwsh
     - name: 📢 Upload test results
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       if: always()
       with:
         name: test-results-linux
@@ -212,7 +212,7 @@ jobs:
       env:
         XUNIT_MAX_PARALLEL_THREADS: ${{ matrix.threads }}
     - name: 📢 Upload test results
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       if: always()
       with:
         name: test-results-heavy-${{ matrix.name }}

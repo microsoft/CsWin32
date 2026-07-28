@@ -4,6 +4,7 @@
 #pragma warning disable SA1402
 
 using System.Collections.Immutable;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Microsoft.CodeAnalysis;
@@ -302,9 +303,18 @@ using System.Runtime.CompilerServices;
         {
             // Load the assembly from the analyzer path
             var assembly = System.Reflection.Assembly.LoadFrom(analyzerPath);
+            Type[] assemblyTypes;
+            try
+            {
+                assemblyTypes = assembly.GetTypes();
+            }
+            catch (ReflectionTypeLoadException ex)
+            {
+                assemblyTypes = ex.Types.OfType<Type>().ToArray();
+            }
 
             // Look for types that have the [Generator] attribute
-            var generatorTypes = assembly.GetTypes()
+            var generatorTypes = assemblyTypes
                 .Where(t => t.GetCustomAttributes(typeof(GeneratorAttribute), inherit: false).Length > 0)
                 .Where(t => typeof(IIncrementalGenerator).IsAssignableFrom(t) && !t.IsAbstract)
                 .ToList();
@@ -314,7 +324,7 @@ using System.Runtime.CompilerServices;
                 generators.Add((IIncrementalGenerator?)Activator.CreateInstance(type) ?? throw new InvalidOperationException($"Could not construct {type} generator"));
             }
 
-            var analyzerTypes = assembly.GetTypes()
+            var analyzerTypes = assemblyTypes
                 .Where(t => typeof(DiagnosticAnalyzer).IsAssignableFrom(t) && !t.IsAbstract)
                 .ToList();
 

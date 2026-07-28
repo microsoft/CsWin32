@@ -17,7 +17,7 @@
     <!--
       ANALYZER SUPPORT-ASSEMBLY VERSION BINDINGS — DO NOT BUMP HERE.
 
-      The following System.* versions are the support assemblies that get copied next to
+      The following versions are the support assemblies that get copied next to
       the analyzer (CopyLocalLockFileAssemblies=true) and shipped inside the NuGet package.
       They are intentionally pinned to the FLOOR (Roslyn 4.11 / VS 2022 Update 14 / .NET 8)
       versions because the analyzer must load inside older Visual Studio and `dotnet build`
@@ -32,6 +32,7 @@
       versions locally via <VersionOverride> in its .csproj. Keep the floor numbers here
       and add per-leg overrides there; never raise the floor to satisfy the newer leg.
     -->
+    <PackageVersion Update="Microsoft.Bcl.AsyncInterfaces" Version="9.0.0" />
     <PackageVersion Update="System.Collections.Immutable" Version="8.0.0" />
     <PackageVersion Update="System.Memory" Version="4.5.5" />
     <PackageVersion Update="System.Reflection.Metadata" Version="8.0.0" />

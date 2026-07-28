@@ -4,6 +4,11 @@
 		"github>microsoft/vs-renovate-presets:microbuild",
 		"github>microsoft/vs-renovate-presets:vs_main_dependencies"
 	],
+	"prConcurrentLimit": 1,
+	"prHourlyLimit": 1,
+	"prCreation": "not-pending",
+	"separateMajorMinor": false,
+	"separateMultipleMajor": false,
 	"packageRules": [
 		{
 			"matchPackageNames": ["MessagePack", "MessagePackAnalyzer"],
@@ -12,6 +17,11 @@
 		{
 			"matchFileNames": ["Directory.Packages.Analyzers.props"],
 			"enabled": false
+		},
+		{
+			"matchPackageNames": ["*"],
+			"groupName": "dependency updates",
+			"groupSlug": "dependency-updates"
 		}
 	]
 }

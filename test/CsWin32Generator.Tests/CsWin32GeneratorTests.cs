@@ -38,6 +38,22 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
     }
 
     [Fact]
+    public async Task PreserveSigRetValParametersCompileWithComSourceGenerators()
+    {
+        this.compilation = this.starterCompilations["net10.0"];
+        this.parseOptions = this.parseOptions.WithLanguageVersion(LanguageVersion.CSharp14);
+        this.nativeMethodsJson = "NativeMethods.PreserveSig.json";
+        this.nativeMethods.Add("IUIAutomationScrollPattern");
+        await this.InvokeGeneratorAndCompileFromFact();
+
+        IEnumerable<MethodDeclarationSyntax> methods = this.FindGeneratedType("IUIAutomationScrollPattern")
+            .OfType<InterfaceDeclarationSyntax>()
+            .SelectMany(type => type.Members.OfType<MethodDeclarationSyntax>());
+        MethodDeclarationSyntax method = Assert.Single(methods, method => method.Identifier.ValueText == "get_CurrentHorizontalScrollPercent");
+        Assert.Equal("retValParameter", Assert.Single(method.ParameterList.Parameters).Identifier.ValueText);
+    }
+
+    [Fact]
     public async Task TestGenerateIDispatch()
     {
         // IDispatch is not normally emitted, but we need it for source generated com so check that it got generated.

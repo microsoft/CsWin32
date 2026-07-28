@@ -177,8 +177,11 @@ jobs:
           - name: FullGen-Net9-Ptrs
             filter: "TestCategory=HighMemory&TestShard=FullGen-Net9-Ptrs"
             threads: "1"
+          - name: FullGen-Net10-PreserveSig
+            filter: "TestCategory=HighMemory&TestShard=FullGen-Net10-PreserveSig"
+            threads: "1"
           - name: Default
-            filter: "TestCategory=HighMemory&TestShard!=FastMethods&TestShard!=EverythingModern&TestShard!=EverythingLegacy&TestShard!=FullGen-Net8&TestShard!=FullGen-Net9&TestShard!=FullGen-Net9-Ptrs"
+            filter: "TestCategory=HighMemory&TestShard!=FastMethods&TestShard!=EverythingModern&TestShard!=EverythingLegacy&TestShard!=FullGen-Net8&TestShard!=FullGen-Net9&TestShard!=FullGen-Net9-Ptrs&TestShard!=FullGen-Net10-PreserveSig"
             threads: "1"
     steps:
     - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0

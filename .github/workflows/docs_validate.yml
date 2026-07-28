@@ -17,7 +17,7 @@ jobs:
       with:
         fetch-depth: 0 # avoid shallow clone so nbgv can do its work.
     - name: 🔗 Markup Link Checker (mlc)
-      uses: becheran/mlc@18a06b3aa2901ca197de59c8b0b1f54fdba6b3fa # v1.0.0
+      uses: becheran/mlc@7ec24825cefe0c9c8c6bac48430e1f69e3ec356e # v1.2.0
       with:
         args: --do-not-warn-for-redirect-to https://learn.microsoft.com*,https://dotnet.microsoft.com/*,https://dev.azure.com/*,https://app.codecov.io/* -p docfx -i https://aka.ms/onboardsupport,https://aka.ms/spot,https://msrc.microsoft.com/*,https://www.microsoft.com/msrc*,https://microsoft.com/msrc*,https://www.npmjs.com/package/*,https://get.dot.net/
     - name: ⚙ Install prerequisites

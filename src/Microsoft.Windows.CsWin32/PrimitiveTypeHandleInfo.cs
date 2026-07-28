@@ -44,7 +44,7 @@ internal record PrimitiveTypeHandleInfo(PrimitiveTypeCode PrimitiveTypeCode) : T
 
     internal override bool? IsValueType(TypeSyntaxSettings inputs)
     {
-        return this.PrimitiveTypeCode is not PrimitiveTypeCode.Object or PrimitiveTypeCode.Void;
+        return this.PrimitiveTypeCode is not (PrimitiveTypeCode.Object or PrimitiveTypeCode.Void);
     }
 
     internal static TypeSyntax ToTypeSyntax(PrimitiveTypeCode typeCode, bool preferNativeInt)

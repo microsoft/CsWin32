@@ -1,14 +1,46 @@
-# Design note: policy-based COM output pointer marshalling
+# Design note: COM object out-parameter marshalling policies
 
 ## Status
 
 Proposed.
 
-This note describes a design for friendly overloads over native COM output pointers. It is intended to guide a prototype and collect feedback before the API is considered final.
+This note proposes caller-controlled managed projection for objects returned through COM `IID`/`void**` out-parameter pairs.
 
-## Summary
+## Problem and motivation
 
-CsWin32 should preserve its existing generic friendly overloads for methods with an `IID`/`void**` pair and add a policy-bearing overload:
+A native COM object out parameter returns an ABI interface pointer. The managed caller still needs to choose how that pointer is wrapped:
+
+- As an identity-cached source-generated COM `ComObject`.
+- As a C#/WinRT projected object.
+- As a unique source-generated COM object that can be released independently.
+
+CsWin32's current generic friendly overloads do not expose that choice. They always project the returned pointer through `ComInterfaceMarshaller<T>`, which creates or resolves an identity-cached `ComObject`. That is the right behavior for ordinary COM interfaces and should remain the default because most callers need nothing more.
+
+It is the wrong projection when the returned object needs to be used through a C#/WinRT interface:
+
+```csharp
+shellItem.BindToHandler<IStorageItem>(
+    null,
+    bhidStorageItem,
+    out IStorageItem storageItem);
+```
+
+The generated COM marshaller creates a `System.Runtime.InteropServices.Marshalling.ComObject`. That wrapper cannot be cast to the C#/WinRT projection `Windows.Storage.IStorageItem`.
+
+The problem is not limited to calls whose `T` is visibly a WinRT interface. A caller may receive the value as `object` or through a COM interface and cast it to a C#/WinRT interface later. The wrapper family must therefore be selected when the ABI pointer is first projected, before that later cast occurs.
+
+CsWin32 could probe every returned pointer with `QueryInterface(IInspectable)` and choose a wrapper dynamically. That would add a QI to every COM object out parameter and could change existing wrapper behavior even when ordinary COM projection is all the caller needs. Since most outputs should remain `ComObject`, automatic runtime probing is not an acceptable default.
+
+CsWin32 needs a call-site control knob that:
+
+- Preserves existing COM projection and cost by default.
+- Allows callers to explicitly request Windows Runtime projection.
+- Automatically selects Windows Runtime projection when the closed generic `T` reliably identifies a C#/WinRT type.
+- Does not inspect the returned object merely because it might support `IInspectable`.
+
+## Proposed solution
+
+CsWin32 should replace its existing generic friendly method with a policy-bearing method using these choices:
 
 ```csharp
 public enum ComOutPtrMarshalling
@@ -21,13 +53,13 @@ public enum ComOutPtrMarshalling
 ```
 
 ```csharp
-// Existing overload remains for source and binary compatibility.
+// Omitting the policy uses type-directed Default behavior.
 shellItem.BindToHandler<IStorageItem>(
     null,
     bhidStorageItem,
     out IStorageItem storageItem);
 
-// New overload makes an otherwise ambiguous policy explicit.
+// An explicit policy resolves cases where T does not express the intent.
 shellItem.BindToHandler<object>(
     null,
     bhidStorageItem,
@@ -35,38 +67,20 @@ shellItem.BindToHandler<object>(
     ComOutPtrMarshalling.WindowsRuntime);
 ```
 
-The existing overload forwards to the new overload with `Default`.
+The single friendly method has an optional policy parameter whose default value is `Default`. A separate forwarding overload is unnecessary.
 
 `Default` is type-directed:
 
 - A C#/WinRT projected interface uses `WindowsRuntime`.
 - `object` and a source-generated COM interface use `ComObject`.
 
-The source generator cannot know the call site's closed generic `T`. The generated method therefore classifies `typeof(T)` once per closed generic instantiation and caches the result. This is static with respect to the managed type, but it is not source-generation-time specialization. It does not probe the returned object and therefore does not add a `QueryInterface(IInspectable)` operation to ordinary COM calls. Callers use an explicit enum value when the desired wrapper family cannot be inferred from `T`, most importantly when requesting `out object`.
+The source generator cannot know the call site's closed generic `T` while generating the method. The preferred implementation therefore classifies `typeof(T)` once per closed generic instantiation and caches the result. This is type-directed and stable for that `T`, but it is not source-generation-time specialization. It does not inspect the returned object and therefore does not add a `QueryInterface(IInspectable)` operation to ordinary COM calls.
 
-The friendly overload should receive the raw ABI pointer and select the managed projection after the native call. The underlying public P/Invoke and COM interface declarations remain unchanged for compatibility.
+Callers use an explicit enum value when the desired wrapper family cannot be inferred from `T`, most importantly when requesting `out object` or a COM interface that will later be cast to a C#/WinRT interface.
 
-## Motivation
+If CsWin32 cannot reliably classify every supported C#/WinRT `T` from the generated method, `Default` should preserve today's `ComObject` behavior and a static analyzer should detect calls whose closed `T` is a C#/WinRT type. The diagnostic should require `ComOutPtrMarshalling.WindowsRuntime`, and a code fix should append that argument. An analyzer can see an explicit WinRT `T`, but it still cannot infer a future WinRT cast after a value has escaped as `object`; those calls must select `WindowsRuntime` explicitly.
 
-CsWin32 generates generic friendly overloads for methods that follow the `IID_PPV_ARGS` pattern:
-
-```csharp
-shellItem.BindToHandler<IStream>(
-    null,
-    bhidStream,
-    out IStream stream);
-```
-
-With source-generated COM, the current overload projects the returned pointer through `ComInterfaceMarshaller<T>`. This works for CsWin32-generated COM interfaces, but it does not work for C#/WinRT interfaces:
-
-```csharp
-shellItem.BindToHandler<IStorageItem>(
-    null,
-    bhidStorageItem,
-    out IStorageItem storageItem);
-```
-
-The generated COM marshaller creates a `System.Runtime.InteropServices.Marshalling.ComObject`. That wrapper cannot be cast to the C#/WinRT projection `Windows.Storage.IStorageItem`.
+The friendly method should receive the raw ABI pointer and select the managed projection after the native call. Eligible flat P/Invoke declarations can expose that pointer directly. COM interface declarations need separate treatment because the same declaration also defines the managed method implemented by a source-generated COM server.
 
 The opposite problem also exists for ownership. `ComInterfaceMarshaller<T>` uses the normal identity cache. Some callers instead need `UniqueComInterfaceMarshaller<T>` so they can deterministically release a wrapper without affecting other managed references to the same COM identity.
 
@@ -79,8 +93,8 @@ A method allowlist cannot select the correct behavior. The same native method ca
 - Allow callers to request an identity-cached or unique source-generated COM wrapper.
 - Make `Default` choose from the closed managed type rather than inspecting the returned object.
 - Allow an explicit policy when `T` does not express the desired wrapper family.
-- Preserve existing generated method signatures.
-- Preserve the managed signature implemented by `[GeneratedComInterface]` implementers.
+- Provide an analyzer and code fix if automatic C#/WinRT type classification cannot be made reliable.
+- Keep `[GeneratedComInterface]` methods usable for managed implementers without requiring them to manage raw output pointers.
 - Support Native AOT.
 - Balance every native reference on success and failure.
 
@@ -93,6 +107,7 @@ A method allowlist cannot select the correct behavior. The same native method ca
 - Apply the policy to COM interface return values or arrays of COM pointers.
 - Apply the first implementation to every fixed-type COM output parameter.
 - Change built-in COM or no-marshalling projections in the first implementation.
+- Preserve the exact source or binary signatures of generated projections.
 
 ## Initial support
 
@@ -101,7 +116,7 @@ The first implementation targets:
 - `allowMarshaling: true`.
 - `comInterop.useComSourceGenerators: true`.
 - `comInterop.useIntPtrForComOutPointers: false`.
-- Build-task mode (`CsWin32RunAsBuildTask=true`), which allows generated `[LibraryImport]` declarations to be processed in the consuming compilation.
+- Build-task mode (`CsWin32RunAsBuildTask=true`), which allows generated interop declarations to be processed in the consuming compilation.
 
 Built-in COM and no-marshalling generation retain their current overloads. The raw ABI architecture may make future Windows Runtime support possible in those modes, but `ComObjectUniqueInstance` is specifically implemented by `UniqueComInterfaceMarshaller<T>` in source-generated COM mode.
 
@@ -125,34 +140,7 @@ public enum ComOutPtrMarshalling
 
 The enum follows the configured visibility of generated APIs.
 
-### Compatibility overload
-
-The existing signature remains:
-
-```csharp
-public static void BindToHandler<T>(
-    this IShellItem @this,
-    IBindCtx? pbc,
-    in Guid bhid,
-    out T ppv)
-    where T : class;
-```
-
-Its implementation becomes equivalent to:
-
-```csharp
-@this.BindToHandler(
-    pbc,
-    bhid,
-    out ppv,
-    ComOutPtrMarshalling.Default);
-```
-
-Keeping this overload is important even though CsWin32 emits source. Generated APIs may be compiled into a public library and consumed by already-built assemblies. Replacing the method with a signature that only differs by an optional parameter would be a binary breaking change.
-
-### Policy-bearing overload
-
-The new overload appends a required policy parameter:
+### Friendly method
 
 ```csharp
 public static void BindToHandler<T>(
@@ -160,11 +148,11 @@ public static void BindToHandler<T>(
     IBindCtx? pbc,
     in Guid bhid,
     out T ppv,
-    ComOutPtrMarshalling marshalling)
+    ComOutPtrMarshalling marshalling = ComOutPtrMarshalling.Default)
     where T : class;
 ```
 
-The parameter is required on this overload. `Default` is used by the compatibility overload and is also available to callers that select the policy-bearing overload explicitly.
+The generated signature changes in place. CsWin32 projections are primarily generated as internal implementation details, so preserving the exact source or binary signature is not a design requirement. The optional value keeps the common type-directed call concise; callers pass an explicit policy when `T` does not communicate the desired projection.
 
 ## Policy semantics
 
@@ -221,34 +209,30 @@ Applying `ComInterfaceMarshaller<object>` first is insufficient:
 - It creates the wrong wrapper family for C#/WinRT.
 - Converting that intermediate wrapper back to ABI adds work and leaves an unnecessary managed wrapper in the identity cache.
 
-The policy-bearing overload therefore invokes a raw ABI path, then projects the pointer exactly once.
-
-The public generated declaration should not be changed merely to provide that raw path. Direct callers may rely on its existing managed signature.
+The policy-bearing method therefore invokes a raw ABI path, then projects the pointer exactly once.
 
 ## Flat P/Invoke methods
 
-For a flat Win32 method, CsWin32 should emit a private raw companion that shares the native entry point and calling convention:
+For a flat Win32 method, CsWin32 should expose the policy-relevant output as a raw pointer in the generated P/Invoke declaration:
 
 ```csharp
 [LibraryImport("shell32.dll", EntryPoint = "SHCreateItemFromParsingName")]
-private static partial HRESULT SHCreateItemFromParsingName__ComOutPtr(
+public static partial HRESULT SHCreateItemFromParsingName(
     string pszPath,
     IBindCtx? pbc,
     in Guid riid,
     out nint ppv);
 ```
 
-The companion keeps the source-generated marshalling for ordinary inputs and exposes only the COM output pointer as `nint`. The existing public declaration remains unchanged. Only the friendly overload calls the raw companion.
-
-This changes the generated implementation path, not the native ABI and not the public raw API.
-
-The private `[LibraryImport]` companion requires build-task mode. In ordinary analyzer/source-generator mode, one source generator cannot process another generator's output, so a generated partial `[LibraryImport]` method would not receive an implementation.
+The friendly method calls this declaration and projects the returned `nint`. No duplicate private entry point is needed. This changes the generated managed signature, but not the native ABI.
 
 ## COM interface methods
 
-### Preserve the public interface declaration
+### Keep a managed implementer shape
 
-The generated interface should retain its existing method:
+Source and binary compatibility do not require the generated interface method to remain unchanged. There is still an implementation-usability reason to retain a managed output shape: `[GeneratedComInterface]` uses the same declaration for RCW calls and CCW implementations. Changing this method to `out nint` would require every managed COM implementer to construct, transfer, and release an ABI pointer correctly.
+
+The generated interface should therefore keep an object-shaped output:
 
 ```csharp
 [GeneratedComInterface]
@@ -262,7 +246,7 @@ public partial interface IShellItem
 }
 ```
 
-Changing this method to `void**` would force every managed implementer to handle an unsafe ABI pointer. Adding the managed-only policy parameter to the interface would also be incorrect because it is not part of the native ABI.
+Adding the managed-only policy parameter to the interface would be incorrect because it is not part of the native ABI.
 
 ### Private same-IID raw companion
 
@@ -283,14 +267,14 @@ internal partial interface IShellItem__ComOutPtrRaw
 
 The companion preserves managed marshalling for every other parameter. When the receiver is already an RCW, the policy-bearing extension uses its dynamic interface cast to obtain the companion, invokes the same COM slot, and projects the returned `nint`.
 
-A direct managed implementation of the public interface does not implement the private companion, so that cast alone would break the historical ability to call a friendly overload directly on a managed object. For that case, the extension temporarily obtains the public interface's CCW pointer with `ComInterfaceMarshaller<TPublic>.ConvertToUnmanaged`, projects a unique raw-companion RCW over the same IID, invokes it, and deterministically releases both temporary references. Existing RCWs stay on the direct fast path.
+A direct managed implementation of the public interface does not implement the private companion. To keep the friendly method usable directly on managed implementations, the extension temporarily obtains the public interface's CCW pointer with `ComInterfaceMarshaller<TPublic>.ConvertToUnmanaged`, projects a unique raw-companion RCW over the same IID, invokes it, and deterministically releases both temporary references. Existing RCWs stay on the direct fast path.
 
 Two `[GeneratedComInterface]` types with the same IID are supported because source-generated COM binds projection behavior to the managed interface type rather than a process-wide IID-to-type registration. A prototype successfully:
 
 - Cast a native `IShellItem` RCW to a same-IID raw companion.
 - Passed a managed `IBindCtx` input while receiving `out nint`.
 - Invoked a managed `[GeneratedComClass]` implementation of the normal interface through the raw companion.
-- Invoked the compatibility overload directly on a managed `[GeneratedComClass]` implementation.
+- Invoked the policy-bearing friendly method directly on a managed `[GeneratedComClass]` implementation.
 - Ran on .NET 9 and .NET 10 without compiler diagnostics.
 
 The companion must preserve the complete inherited and declared vtable layout through the target method. Mirroring the interface hierarchy is safer than calculating and invoking function-pointer slots in each friendly overload.
@@ -299,7 +283,7 @@ The companion is an RCW consumption detail. CsWin32-generated managed classes mu
 
 ### Managed interface implementers
 
-The original managed interface remains unchanged, so a managed implementation still writes an `object`:
+The managed interface keeps an object-shaped output, so an implementation writes an `object`:
 
 ```csharp
 public void BindToHandler(..., out object value)
@@ -386,20 +370,23 @@ Each output is projected independently and each returned reference is cleaned up
 
 The broader metadata set contains 96 methods with multiple fixed-type COM outputs: 87 with two and 9 with three. Applying this policy to all fixed-type COM outputs would add a large generated API surface. The first implementation should remain scoped to IID/output generic overloads. The raw projection helper can be reused if a later proposal generalizes unique-instance selection to fixed-type outputs.
 
-## Source and binary compatibility
+## Generated API changes
 
-- Existing generic overload signatures remain present.
-- Existing calls resolve to the compatibility overload and use `Default`.
+- The generic friendly method gains an optional `ComOutPtrMarshalling` parameter.
+- Eligible flat P/Invoke declarations expose the policy-relevant output as `out nint`.
 - Native COM `T` continues to use the identity-cached source-generated COM projection.
 - A projected WinRT `T` changes from a failing cast to the C#/WinRT projection.
-- The existing public P/Invoke and COM interface declarations remain unchanged.
-- Managed `[GeneratedComInterface]` implementations retain their existing method signatures.
-- The generated enum and policy-bearing overload are additive.
+- COM interface declarations keep an object-shaped output for managed implementer usability, not compatibility.
+- The native ABI does not change.
 - Projects without a C#/WinRT reference do not gain a mandatory C#/WinRT dependency.
 
 ## Diagnostics
 
-The generated method must validate unsupported combinations before invoking native code. An analyzer can provide earlier and more actionable diagnostics for:
+The generated method must validate unsupported combinations before invoking native code.
+
+The preferred `Default` implementation uses cached runtime classification of the closed `T`. If that classification cannot reliably cover the supported C#/WinRT type shapes, an analyzer becomes required for calls whose `T` is statically known to be a C#/WinRT type. It should report an omitted policy or explicit `Default`, require explicit `WindowsRuntime`, and offer a code fix that appends or replaces the policy argument. This preserves COM as the runtime default without adding `QueryInterface(IInspectable)` to every output.
+
+Even when type-directed `Default` is reliable, an analyzer can provide earlier and more actionable diagnostics for:
 
 - `ComObject` or `ComObjectUniqueInstance` with a projected WinRT `T`.
 - `WindowsRuntime` with a generated COM interface `T`.
@@ -412,9 +399,9 @@ An analyzer cannot generally infer that an `object` will later be cast to a WinR
 ## Prototype plan
 
 1. Replace the named `AsWinRT<T>` prototype with `ComOutPtrMarshalling`.
-2. Generate the enum and compatibility/policy overload pair.
+2. Generate the enum and replace the friendly method with the optional policy-bearing signature.
 3. Add a shared raw-pointer projection helper.
-4. Add a private raw companion for flat P/Invokes.
+4. Change eligible flat P/Invoke outputs to `out nint`.
 5. Add internal same-IID raw companion interfaces without changing the public interface declaration.
 6. Expand IID/output pair discovery beyond the final two parameters.
 7. Validate a managed `[GeneratedComInterface]` implementation returning a C#/WinRT object.
@@ -460,9 +447,9 @@ Named methods are clear but multiply overloads as policies and multiple output p
 
 A method-level opt-in cannot express that one call returns native COM while another call to the same method returns WinRT. It also moves a call-site decision into project-wide configuration.
 
-### Change public interop declarations to raw pointers
+### Use raw pointers for all generated declarations
 
-This makes policy application straightforward but breaks direct callers and forces managed COM implementers to work at the ABI level.
+This design uses raw outputs for flat P/Invokes. It does not use them for `[GeneratedComInterface]` methods because those declarations also define the managed method implemented by COM servers. Requiring every implementer to construct and transfer ABI pointers would make the managed interface substantially harder to implement.
 
 ### Put an adaptive custom marshaller on `out object`
 
@@ -470,8 +457,9 @@ The marshaller cannot observe `T` or the friendly overload's policy. Probing the
 
 ## Review questions
 
-1. Is preserving the existing generic overload as a forwarding compatibility shim worth the additional overload?
+1. Is cached classification of the closed `T` reliable enough for `Default`, or should an analyzer require explicit `WindowsRuntime` whenever the call site uses a C#/WinRT `T`?
 2. Should explicit `WindowsRuntime` support only `object` and projected WinRT interfaces, as proposed?
 3. Should missing C#/WinRT support be a generated runtime guard, an analyzer error, or both?
-4. Are internal same-IID raw companion interfaces acceptable as an implementation detail?
-5. Should fixed-type COM outputs be considered in this change or remain a follow-up?
+4. Should COM interface declarations keep an object-shaped output for implementer usability, or should they also expose `out nint`?
+5. Are internal same-IID raw companion interfaces acceptable as an implementation detail?
+6. Should fixed-type COM outputs be considered in this change or remain a follow-up?

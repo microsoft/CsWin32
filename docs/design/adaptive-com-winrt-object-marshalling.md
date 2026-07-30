@@ -4,13 +4,18 @@
 
 Proposed alternative.
 
+Related documents:
+
+- [Caller-selected COM and WinRT object out-parameter marshalling](caller-selected-com-winrt-object-marshalling.md)
+- [COM and WinRT object out-parameter marshalling options](com-winrt-object-marshalling-options.md)
+
 This note explores accepting one `QueryInterface(IInspectable)` operation for each relevant COM object out parameter in exchange for substantially simpler generated APIs and automatic COM/WinRT projection in the generated caller path.
 
 ## Summary
 
 CsWin32 currently projects an object returned through an `IID`/`void**` pair as a source-generated COM `ComObject`. That works for ordinary COM interfaces, but it prevents later casts to C#/WinRT interfaces such as `Windows.Storage.IStorageItem`.
 
-The policy-based proposal avoids probing returned objects. It therefore needs a caller-visible policy, type classification, raw ABI paths, and same-IID companion interfaces for source-generated COM methods.
+The [caller-selected proposal](caller-selected-com-winrt-object-marshalling.md) avoids probing returned objects. It therefore needs a caller-visible policy, type classification, raw ABI paths, and same-IID companion interfaces for source-generated COM methods.
 
 This alternative makes the opposite tradeoff:
 
@@ -282,6 +287,22 @@ No raw duplicate `[LibraryImport]` entry point is required, so this option does 
 
 The first implementation remains scoped to the source-generated interop modes in which the custom marshaller is available.
 
+## Multiple IID/output pairs
+
+Each recognized IID/output pair independently uses the same object marshaller. The one SDK method with two canonical pairs remains one COM declaration:
+
+```csharp
+void GetCurrentResourceAndCommandQueue(
+    in Guid riidResource,
+    [MarshalUsing(typeof(ComOrWinRTObjectMarshaller))] out object resource,
+    in Guid riidQueue,
+    [MarshalUsing(typeof(ComOrWinRTObjectMarshaller))] out object queue);
+```
+
+The friendly generic overload computes and passes each requested IID independently. Each output is then adaptively projected and released independently. The marshaller does not need to read either sibling IID because those parameters select what native code returns, while each output pointer independently determines its managed wrapper family.
+
+Unlike the policy proposal, this does not add one caller-visible policy parameter per output. Generator integration still must validate the two-output method and the 15 canonical pairs that are not the final two parameters.
+
 ## Adjacent IID behavior in managed COM servers
 
 The marshaller operates on one parameter and cannot read the neighboring `riid`.
@@ -318,6 +339,12 @@ An inspectable object is represented primarily by its C#/WinRT wrapper, even whe
 
 This changes managed wrapper identity and type observations for inspectable objects that previously appeared as `ComObject`.
 
+### Existing generated callers
+
+The adaptive rule is an observable behavior change for existing generated calls. A call that previously returned `ComObject` can return a C#/WinRT wrapper when the native identity implements `IInspectable`, even when its source signature is unchanged.
+
+CsWin32 projections are primarily internal, so this proposal does not require forwarding overloads or cross-module ABI compatibility. Consumers must still accept the wrapper-family transition and avoid depending on concrete wrapper types. If preserving the old behavior for existing generated code is required, adaptive projection would need an adoption switch or version boundary.
+
 ### C#/WinRT dependency
 
 When C#/WinRT is referenced, CsWin32 emits the adaptive marshaller. Without C#/WinRT, the output retains the existing COM-only marshalling behavior.
@@ -353,22 +380,9 @@ The prototype required no raw companion interface and no managed receiver adapte
 
 Under Native AOT, the WinRT output used a generic `WinRT.IInspectable` wrapper instead of the concrete `StorageFile` wrapper seen under JIT. The requested `IStorageItem` interface remained fully usable.
 
-## Comparison with caller-selected policy
+## Decision comparison
 
-| Concern | Caller-selected policy | Adaptive `IInspectable` QI |
-| --- | --- | --- |
-| Ordinary COM output | No extra QI | One failed QI |
-| WinRT output | Caller/type selects WinRT | Runtime identity selects WinRT |
-| `out object` followed by WinRT cast | Requires explicit policy | Works automatically |
-| Inspectable object used through COM | Explicit COM policy | WinRT wrapper dynamically casts to COM |
-| COM interface RCW | Raw same-IID companion | Existing interface plus custom marshaller |
-| COM interface CCW used by generated caller | Raw companion and adapter | Managed `out object` returns either family |
-| COM interface CCW used by arbitrary native caller | Does not solve sibling `riid` correlation | Does not solve sibling `riid` correlation and relies more heavily on object-shaped output |
-| Public policy API | Required | None |
-| Analyzer for WinRT `T` | Potentially required | Not required |
-| Multiple outputs | One policy per output | Same rule applied independently |
-| Unique COM ownership | Included in policy | Separate future proposal |
-| Runtime cost | No detection QI | One QI per relevant output |
+See [COM and WinRT object out-parameter marshalling options](com-winrt-object-marshalling-options.md) for the side-by-side evaluation of this proposal and the caller-selected alternative.
 
 ## Required validation
 

@@ -57,7 +57,7 @@
           "default": false
         },
         "comOutPtrGenericOverloads": {
-          "description": "A value indicating whether to generate generic <T> overloads for methods with the IID_PPV_ARGS pattern (a Guid* parameter immediately preceding a void** [ComOutPtr] parameter), where the GUID is derived from typeof(T).GUID and the output pointer is typed as T.",
+          "description": "A value indicating whether to generate generic <T> overloads for methods with the IID_PPV_ARGS pattern (a Guid* parameter immediately preceding a void** [ComOutPtr] parameter), where the GUID is derived from T and the output pointer is typed as T. With source-generated COM these overloads come in pairs: the historical signature plus one that takes a required trailing ComOutPtrMarshalling parameter.",
           "type": "boolean",
           "default": true
         }

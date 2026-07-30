@@ -57,7 +57,7 @@ public partial class Generator
         return intPtrValue;
     }
 
-    private IEnumerable<MethodDeclarationSyntax> DeclareFriendlyOverloads(MethodDefinition methodDefinition, MethodDeclarationSyntax externMethodDeclaration, NameSyntax declaringTypeName, FriendlyOverloadOf overloadOf, HashSet<string> helperMethodsAdded, bool avoidWinmdRootAlias)
+    private IEnumerable<MethodDeclarationSyntax> DeclareFriendlyOverloads(MethodDefinition methodDefinition, MethodDeclarationSyntax externMethodDeclaration, NameSyntax declaringTypeName, FriendlyOverloadOf overloadOf, HashSet<string> helperMethodsAdded, bool avoidWinmdRootAlias, NameSyntax? comOutPtrRawInterfaceName = null)
     {
         if (!this.options.FriendlyOverloads.Enabled)
         {
@@ -85,9 +85,36 @@ public partial class Generator
             yield return (MethodDeclarationSyntax)templateFriendlyOverload;
         }
 
+        // The policy-bearing overload projects the raw ABI pointer, so it needs a companion that exposes one.
+        ComOutPtrRawTarget? comOutPtrRawTarget = null;
+        if (this.EmitComOutPtrMarshallingPolicy && overloadOf is FriendlyOverloadOf.ExternMethod or FriendlyOverloadOf.InterfaceMethod)
+        {
+            MethodSignature<TypeHandleInfo> signature = methodDefinition.DecodeSignature(this.SignatureHandleProvider, null);
+            if (this.TryFindComOutPtrFriendlyPair(methodDefinition, signature, externMethodDeclaration, out _, out int ppvIndex, out _))
+            {
+                if (overloadOf == FriendlyOverloadOf.InterfaceMethod)
+                {
+                    if (comOutPtrRawInterfaceName is not null)
+                    {
+                        comOutPtrRawTarget = new(IdentifierName(externMethodDeclaration.Identifier.ValueText), comOutPtrRawInterfaceName);
+                    }
+                }
+                else if (this.DeclareComOutPtrRawExternMethod(externMethodDeclaration, ppvIndex) is { } rawExternMethod)
+                {
+                    comOutPtrRawTarget = new(IdentifierName(rawExternMethod.Identifier.ValueText), null);
+                    yield return rawExternMethod;
+                }
+            }
+        }
+
+        if (comOutPtrRawTarget is not null)
+        {
+            this.volatileCode.GenerationTransaction(this.RequestComOutPtrMarshallingPolicy);
+        }
+
         bool improvePointersToSpansAndRefs = this.canUseSpan;
         FriendlyMethodBookkeeping bookkeeping = new();
-        foreach (MethodDeclarationSyntax method in this.DeclareFriendlyOverload(methodDefinition, externMethodDeclaration, declaringTypeName, overloadOf, helperMethodsAdded, avoidWinmdRootAlias, improvePointersToSpansAndRefs, omitOptionalParams: false, bookkeeping))
+        foreach (MethodDeclarationSyntax method in this.DeclareFriendlyOverload(methodDefinition, externMethodDeclaration, declaringTypeName, overloadOf, helperMethodsAdded, avoidWinmdRootAlias, improvePointersToSpansAndRefs, omitOptionalParams: false, comOutPtrRawTarget, bookkeeping))
         {
             yield return method;
         }
@@ -95,7 +122,7 @@ public partial class Generator
         if (this.Options.FriendlyOverloads.IncludePointerOverloads && improvePointersToSpansAndRefs && bookkeeping.NumSpanByteParameters > 0)
         {
             // If we could use Span and _did_ use span Span and the pointer overloads were requested, then Generate overloads that use pointer types instead of Span<byte>/ReadOnlySpan<byte>.
-            foreach (MethodDeclarationSyntax method in this.DeclareFriendlyOverload(methodDefinition, externMethodDeclaration, declaringTypeName, overloadOf, helperMethodsAdded, avoidWinmdRootAlias, improvePointersToSpansAndRefs: false, omitOptionalParams: false))
+            foreach (MethodDeclarationSyntax method in this.DeclareFriendlyOverload(methodDefinition, externMethodDeclaration, declaringTypeName, overloadOf, helperMethodsAdded, avoidWinmdRootAlias, improvePointersToSpansAndRefs: false, omitOptionalParams: false, comOutPtrRawTarget))
             {
                 yield return method;
             }
@@ -111,6 +138,7 @@ public partial class Generator
         bool avoidWinmdRootAlias,
         bool improvePointersToSpansAndRefs,
         bool omitOptionalParams,
+        ComOutPtrRawTarget? comOutPtrRawTarget = null,
         FriendlyMethodBookkeeping? bookkeeping = null)
     {
 #pragma warning disable SA1114 // Parameter list should follow declaration
@@ -155,47 +183,15 @@ public partial class Generator
         int iidPpvPpvOrigIndex = -1;
         bool iidPpvMarshalingMode = false;
         bool iidPpvUseNativeOutMarshaling = false;
+        bool iidPpvPolicyMode = false;
 
-        if (this.options.FriendlyOverloads.ComOutPtrGenericOverloads)
+        if (this.TryFindComOutPtrFriendlyPair(methodDefinition, originalSignature, externMethodDeclaration, out int riidOrig, out int ppvOrig, out bool ppvExternIsObjectOut))
         {
-            var metadataParamsForScan = new List<(Parameter Param, int OrigIndex)>();
-            foreach (ParameterHandle ph in methodDefinition.GetParameters())
-            {
-                Parameter p = this.Reader.GetParameter(ph);
-                if (p.SequenceNumber > 0 && p.SequenceNumber - 1 < originalSignature.ParameterTypes.Length)
-                {
-                    metadataParamsForScan.Add((p, p.SequenceNumber - 1));
-                }
-            }
-
-            // Only match when the Guid* + void** [ComOutPtr] pair are the final two parameters (the canonical IID_PPV_ARGS position).
-            if (metadataParamsForScan.Count >= 2)
-            {
-                int i = metadataParamsForScan.Count - 2;
-                int riidOrig = metadataParamsForScan[i].OrigIndex;
-                int ppvOrig = metadataParamsForScan[i + 1].OrigIndex;
-
-                if (ppvOrig == riidOrig + 1
-                    && originalSignature.ParameterTypes[riidOrig] is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo guidInfo }
-                    && guidInfo.IsType("Guid")
-                    && this.FindInteropDecorativeAttribute(metadataParamsForScan[i + 1].Param.GetCustomAttributes(), "ComOutPtrAttribute") is not null
-                    && originalSignature.ParameterTypes[ppvOrig] is PointerTypeHandleInfo { ElementType: PointerTypeHandleInfo { ElementType: PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.Void } } }
-                    && riidOrig < parameters.Count && ppvOrig < parameters.Count)
-                {
-                    ParameterSyntax ppvExtern = externMethodDeclaration.ParameterList.Parameters[ppvOrig];
-
-                    // Skip if ppv is typed as IntPtr (UseIntPtrForComOutPointers mode).
-                    if (ppvExtern.Type is not IdentifierNameSyntax { Identifier.ValueText: nameof(IntPtr) })
-                    {
-                        bool ppvExternIsObjectOut = ppvExtern.Modifiers.Any(SyntaxKind.OutKeyword)
-                            && ppvExtern.Type is PredefinedTypeSyntax { Keyword.RawKind: (int)SyntaxKind.ObjectKeyword };
-                        iidPpvRiidOrigIndex = riidOrig;
-                        iidPpvPpvOrigIndex = ppvOrig;
-                        iidPpvMarshalingMode = this.options.AllowMarshaling;
-                        iidPpvUseNativeOutMarshaling = iidPpvMarshalingMode && !ppvExternIsObjectOut;
-                    }
-                }
-            }
+            iidPpvRiidOrigIndex = riidOrig;
+            iidPpvPpvOrigIndex = ppvOrig;
+            iidPpvMarshalingMode = this.options.AllowMarshaling;
+            iidPpvUseNativeOutMarshaling = iidPpvMarshalingMode && !ppvExternIsObjectOut;
+            iidPpvPolicyMode = iidPpvMarshalingMode && comOutPtrRawTarget is not null;
         }
 
         foreach (ParameterHandle paramHandle in methodDefinition.GetParameters())
@@ -225,22 +221,29 @@ public partial class Generator
             {
                 signatureChanged = true;
                 ParameterSyntax riidExternParam = externMethodDeclaration.ParameterList.Parameters[origParamIndex];
-                ExpressionSyntax typeofTGuid = MemberAccessExpression(
-                    SyntaxKind.SimpleMemberAccessExpression,
-                    TypeOfExpression(IdentifierName("T")),
-                    IdentifierName("GUID"));
+                ExpressionSyntax iidExpression = iidPpvPolicyMode
+                    ? InvocationExpression(
+                        MemberAccessExpression(
+                            SyntaxKind.SimpleMemberAccessExpression,
+                            this.ComOutPtrHelpersTypeSyntax,
+                            GenericName("GetIID", [IdentifierName("T")])),
+                        [Argument(ComOutPtrPolicyLocalName)])
+                    : MemberAccessExpression(
+                        SyntaxKind.SimpleMemberAccessExpression,
+                        TypeOfExpression(IdentifierName("T")),
+                        IdentifierName("GUID"));
 
                 if (riidExternParam.Type is PointerTypeSyntax)
                 {
                     leadingStatements.Add(LocalDeclarationStatement(
                         VariableDeclaration(
                             ParseTypeName("global::System.Guid"),
-                            [VariableDeclarator(Identifier("__riid"), EqualsValueClause(typeofTGuid))])));
+                            [VariableDeclarator(Identifier("__riid"), EqualsValueClause(iidExpression))])));
                     arguments[paramIndex] = Argument(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName("__riid")));
                 }
                 else
                 {
-                    arguments[paramIndex] = Argument(typeofTGuid);
+                    arguments[paramIndex] = Argument(iidExpression);
                 }
 
                 parametersToRemove.Add(paramIndex);
@@ -254,7 +257,52 @@ public partial class Generator
                 ParameterSyntax ppvExternParam = externMethodDeclaration.ParameterList.Parameters[paramIndex];
                 IdentifierNameSyntax ppvName = IdentifierName(ppvExternParam.Identifier.ValueText);
 
-                if (iidPpvMarshalingMode)
+                if (iidPpvPolicyMode)
+                {
+                    parameters[paramIndex] = StripAttributes(ppvExternParam)
+                        .WithType(tName.WithTrailingTrivia(TriviaList(Space)))
+                        .WithModifiers([TokenWithSpace(SyntaxKind.OutKeyword)]);
+
+                    // ComOutPtrMarshalling __marshalling = ComOutPtrHelpers.Resolve<T>(marshalling);
+                    leadingOutsideTryStatements.Add(LocalDeclarationStatement(
+                        VariableDeclaration(
+                            this.ComOutPtrMarshallingTypeSyntax,
+                            [VariableDeclarator(
+                                ComOutPtrPolicyLocalName.Identifier,
+                                EqualsValueClause(InvocationExpression(
+                                    MemberAccessExpression(
+                                        SyntaxKind.SimpleMemberAccessExpression,
+                                        this.ComOutPtrHelpersTypeSyntax,
+                                        GenericName("Resolve", [tName])),
+                                    [Argument(ComOutPtrPolicyParameterName)])))])));
+
+                    // nint __ppv = 0;
+                    leadingOutsideTryStatements.Add(LocalDeclarationStatement(
+                        VariableDeclaration(
+                            NIntTypeSyntax,
+                            [VariableDeclarator(ComOutPtrNativeLocalName.Identifier, EqualsValueClause(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))))])));
+
+                    arguments[paramIndex] = Argument(ComOutPtrNativeLocalName).WithRefKindKeyword(TokenWithSpace(SyntaxKind.OutKeyword));
+
+                    trailingStatements.Add(ExpressionStatement(
+                        AssignmentExpression(
+                            SyntaxKind.SimpleAssignmentExpression,
+                            ppvName,
+                            InvocationExpression(
+                                MemberAccessExpression(
+                                    SyntaxKind.SimpleMemberAccessExpression,
+                                    this.ComOutPtrHelpersTypeSyntax,
+                                    GenericName("ConvertToManaged", [tName])),
+                                [Argument(ComOutPtrNativeLocalName), Argument(ComOutPtrPolicyLocalName)]))));
+
+                    finallyStatements.Add(ExpressionStatement(InvocationExpression(
+                        MemberAccessExpression(
+                            SyntaxKind.SimpleMemberAccessExpression,
+                            this.ComOutPtrHelpersTypeSyntax,
+                            GenericName("Free", [tName])),
+                        [Argument(ComOutPtrNativeLocalName), Argument(ComOutPtrPolicyLocalName)])));
+                }
+                else if (iidPpvMarshalingMode)
                 {
                     parameters[paramIndex] = StripAttributes(ppvExternParam)
                         .WithType(tName.WithTrailingTrivia(TriviaList(Space)))
@@ -1414,12 +1462,54 @@ public partial class Generator
                         XmlEmptyElement("inheritdoc", [XmlCrefAttribute(NameMemberCref(docRefExternName, ToCref(externMethodDeclaration.ParameterList)))]),
                         XmlText(XmlTextNewLine("\n", continueXmlDocumentationComment: false))
                     ]));
+            ExpressionSyntax interfaceReceiver = IdentifierName("@this");
+            if (iidPpvPolicyMode && overloadOf == FriendlyOverloadOf.InterfaceMethod)
+            {
+                NameSyntax publicInterfaceType = declaringTypeName;
+                NameSyntax rawInterfaceType = comOutPtrRawTarget!.InterfaceCastType!;
+                IdentifierNameSyntax rawThis = IdentifierName("__thisRaw");
+                IdentifierNameSyntax rawThisNative = IdentifierName("__thisRawNative");
+
+                // nint __thisRawNative;
+                leadingOutsideTryStatements.Add(LocalDeclarationStatement(
+                    VariableDeclaration(NIntTypeSyntax, [VariableDeclarator(rawThisNative.Identifier)])));
+
+                // TRaw __thisRaw = ComOutPtrHelpers.GetRawInterface<TPublic, TRaw>(@this, out __thisRawNative);
+                leadingOutsideTryStatements.Add(LocalDeclarationStatement(
+                    VariableDeclaration(
+                        rawInterfaceType,
+                        [
+                            VariableDeclarator(
+                                rawThis.Identifier,
+                                EqualsValueClause(InvocationExpression(
+                                    MemberAccessExpression(
+                                        SyntaxKind.SimpleMemberAccessExpression,
+                                        this.ComOutPtrHelpersTypeSyntax,
+                                        GenericName("GetRawInterface", [publicInterfaceType, rawInterfaceType])),
+                                    [
+                                        Argument(IdentifierName("@this")),
+                                        Argument(rawThisNative).WithRefKindKeyword(TokenWithSpace(SyntaxKind.OutKeyword)),
+                                    ])))
+                        ])));
+
+                finallyStatements.Add(ExpressionStatement(InvocationExpression(
+                    MemberAccessExpression(
+                        SyntaxKind.SimpleMemberAccessExpression,
+                        this.ComOutPtrHelpersTypeSyntax,
+                        GenericName("FreeRawInterface", [publicInterfaceType, rawInterfaceType])),
+                    [Argument(rawThis), Argument(rawThisNative)])));
+
+                interfaceReceiver = rawThis;
+            }
+
             ExpressionSyntax externInvocation = InvocationExpression(
                 overloadOf switch
                 {
-                    FriendlyOverloadOf.ExternMethod => QualifiedName(declaringTypeName, IdentifierName(externMethodDeclaration.Identifier.Text)),
+                    FriendlyOverloadOf.ExternMethod => QualifiedName(declaringTypeName, iidPpvPolicyMode ? comOutPtrRawTarget!.MethodName : IdentifierName(externMethodDeclaration.Identifier.Text)),
                     FriendlyOverloadOf.StructMethod => MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName(externMethodDeclaration.Identifier.Text)),
-                    FriendlyOverloadOf.InterfaceMethod => MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("@this"), IdentifierName(externMethodDeclaration.Identifier.Text)),
+                    FriendlyOverloadOf.InterfaceMethod => iidPpvPolicyMode
+                        ? MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, interfaceReceiver, comOutPtrRawTarget!.MethodName)
+                        : MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName("@this"), IdentifierName(externMethodDeclaration.Identifier.Text)),
                     _ => throw new NotSupportedException("Unrecognized friendly overload mode " + overloadOf),
                 },
                 [.. arguments]);
@@ -1504,6 +1594,15 @@ public partial class Generator
                 parameters.Insert(0, Parameter(declaringTypeName.WithTrailingTrivia(TriviaList(Space)), Identifier("@this")).AddModifiers(TokenWithSpace(SyntaxKind.ThisKeyword)));
             }
 
+            // The compatibility overload keeps the historical parameter count; the policy overload appends the policy.
+            int compatibilityParameterCount = parameters.Count;
+            if (iidPpvPolicyMode)
+            {
+                parameters.Add(Parameter(
+                    this.ComOutPtrMarshallingTypeSyntax.WithTrailingTrivia(TriviaList(Space)),
+                    Identifier(ComOutPtrPolicyParameterName.Identifier.ValueText)));
+            }
+
             body = body
                 .WithOpenBraceToken(Token(TriviaList(LineFeed), SyntaxKind.OpenBraceToken, TriviaList(LineFeed)))
                 .WithCloseBraceToken(TokenWithLineFeed(SyntaxKind.CloseBraceToken));
@@ -1523,8 +1622,15 @@ public partial class Generator
                 TypeParameterConstraintClauseSyntax constraintClause = iidPpvMarshalingMode
                     ? TypeParameterConstraintClause(IdentifierName("T"), [ClassOrStructConstraint(SyntaxKind.ClassConstraint)])
                     : TypeParameterConstraintClause(IdentifierName("T"), [TypeConstraint(IdentifierName("unmanaged"))]);
+                TypeParameterSyntax typeParameter = TypeParameter(Identifier("T"));
+                if (iidPpvPolicyMode)
+                {
+                    // C#/WinRT IID generation reflects over the type's fields.
+                    typeParameter = typeParameter.AddAttributeLists(AttributeList(DynamicallyAccessedPublicFieldsAttributeSyntax));
+                }
+
                 friendlyDeclaration = friendlyDeclaration
-                    .AddTypeParameterListParameters(TypeParameter(Identifier("T")))
+                    .AddTypeParameterListParameters(typeParameter)
                     .AddConstraintClauses(constraintClause);
             }
 
@@ -1539,7 +1645,8 @@ public partial class Generator
             }
 
             // If we're using C# 13 or later, consider adding the overload resolution attribute if it would likely resolve ambiguities.
-            if (this.LanguageVersion >= (LanguageVersion)1300 && parameters.Count == externMethodDeclaration.ParameterList.Parameters.Count)
+            bool addOverloadResolutionPriority = this.LanguageVersion >= (LanguageVersion)1300 && compatibilityParameterCount == externMethodDeclaration.ParameterList.Parameters.Count;
+            if (addOverloadResolutionPriority && !iidPpvPolicyMode)
             {
                 this.volatileCode.GenerationTransaction(() => this.DeclareOverloadResolutionPriorityAttributeIfNecessary());
                 friendlyDeclaration = friendlyDeclaration.AddAttributeLists(AttributeList(OverloadResolutionPriorityAttribute(1)));
@@ -1551,6 +1658,12 @@ public partial class Generator
             if (bookkeeping is not null)
             {
                 bookkeeping.NumSpanByteParameters = numSpanByteParameters;
+            }
+
+            if (iidPpvPolicyMode)
+            {
+                // The historical signature is preserved for source and binary compatibility and forwards with Default.
+                yield return this.DeclareComOutPtrCompatibilityOverload(friendlyDeclaration, addOverloadResolutionPriority);
             }
 
             yield return friendlyDeclaration;
@@ -1571,7 +1684,7 @@ public partial class Generator
         if (numOptionalParams > 0 && !omitOptionalParams && improvePointersToSpansAndRefs)
         {
             // Generate overloads for optional parameters.
-            foreach (MethodDeclarationSyntax method in this.DeclareFriendlyOverload(methodDefinition, externMethodDeclaration, declaringTypeName, overloadOf, helperMethodsAdded, avoidWinmdRootAlias, improvePointersToSpansAndRefs, omitOptionalParams: true))
+            foreach (MethodDeclarationSyntax method in this.DeclareFriendlyOverload(methodDefinition, externMethodDeclaration, declaringTypeName, overloadOf, helperMethodsAdded, avoidWinmdRootAlias, improvePointersToSpansAndRefs, omitOptionalParams: true, comOutPtrRawTarget))
             {
                 yield return method;
             }

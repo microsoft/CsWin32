@@ -127,7 +127,7 @@ public partial class Generator
 
         public override SyntaxNode? VisitAttributeList(AttributeListSyntax node)
         {
-            if (node.Parent is ParameterSyntax)
+            if (node.Parent is ParameterSyntax or TypeParameterSyntax)
             {
                 return node.WithCloseBracketToken(TokenWithSpace(SyntaxKind.CloseBracketToken));
             }

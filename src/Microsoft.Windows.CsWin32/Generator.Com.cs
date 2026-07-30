@@ -868,6 +868,16 @@ public partial class Generator
         var friendlyOverloads = new List<MethodDeclarationSyntax>();
         ISet<string> declaredProperties = this.GetDeclarableProperties(allMethods.Select(method => method.Resolve()), actualIfaceName, allowNonConsecutiveAccessors: false, context);
 
+        // Every vtable slot in order, so a raw ABI companion with the same IID can be declared when a method
+        // follows the IID/output pointer pattern.
+        string ifaceNamespace = this.Reader.GetString(typeDef.Namespace);
+        List<(MethodDeclarationSyntax Method, int RawOutParameterIndex)> vtableMethods = new();
+        bool comOutPtrRawCompanionApplies = this.EmitComOutPtrMarshallingPolicy && !interfaceAsSubtype && declaredProperties.Count == 0;
+        bool comOutPtrRawCompanionNeeded = false;
+        NameSyntax? comOutPtrRawInterfaceName = comOutPtrRawCompanionApplies
+            ? ParseName($"global::{ifaceNamespace}.{actualIfaceName}{ComOutPtrRawSuffix}")
+            : null;
+
         foreach (QualifiedMethodDefinitionHandle methodDefHandle in allMethods)
         {
             QualifiedMethodDefinition methodDefinition = methodDefHandle.Resolve();
@@ -1045,8 +1055,22 @@ public partial class Generator
                 {
                     bool avoidWinmdRootAlias = this != methodDefinition.Generator;
                     NameSyntax declaringTypeName = HandleTypeHandleInfo.GetNestingQualifiedName(this, this.Reader, typeDef, hasUnmanagedSuffix: false, isInterfaceNestedInStruct: interfaceAsSubtype);
+
+                    int rawOutParameterIndex = -1;
+                    if (comOutPtrRawCompanionApplies)
+                    {
+                        MethodSignature<TypeHandleInfo> methodSignature = methodDefinition.Method.DecodeSignature(methodDefinition.Generator.SignatureHandleProvider, null);
+                        if (methodDefinition.Generator.TryFindComOutPtrFriendlyPair(methodDefinition.Method, methodSignature, methodDeclaration, out _, out int ppvIndex, out _))
+                        {
+                            rawOutParameterIndex = ppvIndex;
+                            comOutPtrRawCompanionNeeded = true;
+                        }
+                    }
+
+                    vtableMethods.Add((methodDeclaration, rawOutParameterIndex));
+
                     friendlyOverloads.AddRange(
-                        methodDefinition.Generator.DeclareFriendlyOverloads(methodDefinition.Method, methodDeclaration, declaringTypeName, FriendlyOverloadOf.InterfaceMethod, this.injectedPInvokeHelperMethodsToFriendlyOverloadsExtensions, avoidWinmdRootAlias));
+                        methodDefinition.Generator.DeclareFriendlyOverloads(methodDefinition.Method, methodDeclaration, declaringTypeName, FriendlyOverloadOf.InterfaceMethod, this.injectedPInvokeHelperMethodsToFriendlyOverloadsExtensions, avoidWinmdRootAlias, comOutPtrRawInterfaceName));
                 }
             }
             catch (Exception ex)
@@ -1087,6 +1111,18 @@ public partial class Generator
         if (this.generateSupportedOSPlatformAttributesOnInterfaces && this.GetSupportedOSPlatformAttribute(typeDef.GetCustomAttributes()) is AttributeSyntax supportedOSPlatformAttribute)
         {
             ifaceDeclaration = ifaceDeclaration.AddAttributeLists(AttributeList(supportedOSPlatformAttribute));
+        }
+
+        if (comOutPtrRawCompanionApplies && comOutPtrRawCompanionNeeded && guidAttribute.HasValue)
+        {
+            // Only an IDispatch base contributes vtable slots that vtableMethods does not already enumerate.
+            BaseTypeSyntax? companionBaseType = foundIDispatch && this.GenerateIDispatch ? topMostBaseTypeSyntax : null;
+            this.DeclareComOutPtrRawInterface(
+                actualIfaceName,
+                ifaceNamespace,
+                AttributeList(GUID(DecodeGuidFromAttribute(guidAttribute.Value)), ifaceType, GeneratedComInterfaceAttributeSyntax),
+                companionBaseType,
+                vtableMethods);
         }
 
         // Only add overloads to instance collections after everything else is done,

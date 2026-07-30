@@ -97,7 +97,7 @@
     corresponding override below rather than editing the central props.
   -->
   <ItemGroup>
-    <PackageReference Include="System.Collections.Immutable" VersionOverride="9.0.18" />
+    <PackageReference Include="System.Collections.Immutable" VersionOverride="10.0.9" />
     <PackageReference Include="System.Memory" VersionOverride="4.6.3" PrivateAssets="none" />
   </ItemGroup>
 

@@ -171,16 +171,16 @@ public partial class ComOutPtrMarshallingTests
 
             Assert.Equal(1, managed.BindToHandlerCallCount);
             Assert.NotNull(bound);
-            bound.GetDisplayName(SIGDN.SIGDN_NORMALDISPLAY, out PWSTR displayName);
+            bound.GetDisplayName(SIGDN.SIGDN_FILESYSPATH, out PWSTR fileSystemPath);
             try
             {
-                Assert.Equal("win.ini", displayName.ToString(), ignoreCase: true);
+                Assert.Equal(WinIniPath, fileSystemPath.ToString(), ignoreCase: true);
             }
             finally
             {
                 unsafe
                 {
-                    Marshal.FreeCoTaskMem((nint)displayName.Value);
+                    Marshal.FreeCoTaskMem((nint)fileSystemPath.Value);
                 }
             }
         }

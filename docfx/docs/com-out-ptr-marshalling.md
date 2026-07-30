@@ -231,14 +231,14 @@ For a flat Win32 method, CsWin32 should emit a private raw companion that shares
 
 ```csharp
 [LibraryImport("shell32.dll", EntryPoint = "SHCreateItemFromParsingName")]
-private static unsafe partial HRESULT SHCreateItemFromParsingName__ComOutPtr(
-    PCWSTR pszPath,
+private static partial HRESULT SHCreateItemFromParsingName__ComOutPtr(
+    string pszPath,
     IBindCtx? pbc,
-    Guid* riid,
-    void** ppv);
+    in Guid riid,
+    out nint ppv);
 ```
 
-The existing public declaration remains unchanged. Only the friendly overload calls the raw companion.
+The companion keeps the source-generated marshalling for ordinary inputs and exposes only the COM output pointer as `nint`. The existing public declaration remains unchanged. Only the friendly overload calls the raw companion.
 
 This changes the generated implementation path, not the native ABI and not the public raw API.
 
@@ -264,17 +264,35 @@ public partial interface IShellItem
 
 Changing this method to `void**` would force every managed implementer to handle an unsafe ABI pointer. Adding the managed-only policy parameter to the interface would also be incorrect because it is not part of the native ABI.
 
-### Friendly overload raw invocation
+### Private same-IID raw companion
 
-The policy-bearing extension method should:
+CsWin32 should generate an internal companion interface with the same IID and vtable layout as the public interface, but with policy-relevant outputs exposed as `nint`:
 
-1. Convert the interface instance to an ABI pointer for the declaring interface and balance that temporary reference.
-2. Invoke the known vtable slot with the raw `void**` signature.
-3. Apply HRESULT or exception semantics matching the public interface method.
-4. Project the returned pointer according to the policy.
-5. Release the temporary interface pointer and returned native reference.
+```csharp
+[GeneratedComInterface]
+[Guid("43826D1E-E718-42EE-BC55-A1E261C37BFE")]
+internal partial interface IShellItem__ComOutPtrRaw
+{
+    void BindToHandler(
+        IBindCtx? pbc,
+        Guid* bhid,
+        Guid* riid,
+        out nint ppv);
+}
+```
 
-This requires new code generation in source-generated COM mode. The generator must calculate the same vtable slot layout as `[GeneratedComInterface]`: the three `IUnknown` slots followed by inherited and declared methods in interface order. It must also synthesize the exact unmanaged function-pointer signature from metadata. Existing unmanaged COM struct generation provides useful signature logic, but it is not emitted in this mode and cannot be reused as-is.
+The companion preserves managed marshalling for every other parameter. The policy-bearing extension casts the RCW to the companion, invokes the same COM slot, and projects the returned `nint`.
+
+Two `[GeneratedComInterface]` types with the same IID are supported because source-generated COM binds projection behavior to the managed interface type rather than a process-wide IID-to-type registration. A prototype successfully:
+
+- Cast a native `IShellItem` RCW to a same-IID raw companion.
+- Passed a managed `IBindCtx` input while receiving `out nint`.
+- Invoked a managed `[GeneratedComClass]` implementation of the normal interface through the raw companion.
+- Ran on .NET 9 and .NET 10 without compiler diagnostics.
+
+The companion must preserve the complete inherited and declared vtable layout through the target method. Mirroring the interface hierarchy is safer than calculating and invoking function-pointer slots in each friendly overload.
+
+The companion is an RCW consumption detail. CsWin32-generated managed classes must not implement both the public interface and its same-IID companion because that would place duplicate IID entries on one CCW.
 
 ### Managed interface implementers
 
@@ -305,7 +323,7 @@ This path must be covered by a managed implementation test, not only by calls to
 - Replacing `out object` with a policy carrier would change the method implemented by managed COM servers.
 - An adaptive marshaller that probes `IInspectable` would add the QI and behavior change that this design intentionally avoids.
 
-A custom marshaller may still be useful inside a private generated companion if it reduces duplicated pointer-management code. It should not change the public COM interface contract, and manual raw invocation remains the baseline design until a prototype demonstrates that a private marshaller is simpler in both RCW and CCW scenarios.
+The private same-IID companion avoids a policy-aware custom marshaller: `out nint` uses built-in blittable marshalling, while the source-generated COM stub continues to marshal all other parameters. A custom marshaller may still reduce duplication for other output shapes, but it is not required for the IID/output design.
 
 ## Projection and ownership
 
@@ -394,7 +412,7 @@ An analyzer cannot generally infer that an `object` will later be cast to a WinR
 2. Generate the enum and compatibility/policy overload pair.
 3. Add a shared raw-pointer projection helper.
 4. Add a private raw companion for flat P/Invokes.
-5. Add a raw vtable invocation path for COM interface friendly overloads without changing the interface declaration.
+5. Add internal same-IID raw companion interfaces without changing the public interface declaration.
 6. Expand IID/output pair discovery beyond the final two parameters.
 7. Validate a managed `[GeneratedComInterface]` implementation returning a C#/WinRT object.
 8. Measure generated source size and compile-time impact.
@@ -452,5 +470,5 @@ The marshaller cannot observe `T` or the friendly overload's policy. Probing the
 1. Is preserving the existing generic overload as a forwarding compatibility shim worth the additional overload?
 2. Should explicit `WindowsRuntime` support only `object` and projected WinRT interfaces, as proposed?
 3. Should missing C#/WinRT support be a generated runtime guard, an analyzer error, or both?
-4. Is direct vtable invocation acceptable for COM interface friendly overloads, or should the prototype first explore a private policy-carrier custom marshaller?
+4. Are internal same-IID raw companion interfaces acceptable as an implementation detail?
 5. Should fixed-type COM outputs be considered in this change or remain a follow-up?

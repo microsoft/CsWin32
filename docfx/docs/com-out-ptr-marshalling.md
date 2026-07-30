@@ -281,13 +281,16 @@ internal partial interface IShellItem__ComOutPtrRaw
 }
 ```
 
-The companion preserves managed marshalling for every other parameter. The policy-bearing extension casts the RCW to the companion, invokes the same COM slot, and projects the returned `nint`.
+The companion preserves managed marshalling for every other parameter. When the receiver is already an RCW, the policy-bearing extension uses its dynamic interface cast to obtain the companion, invokes the same COM slot, and projects the returned `nint`.
+
+A direct managed implementation of the public interface does not implement the private companion, so that cast alone would break the historical ability to call a friendly overload directly on a managed object. For that case, the extension temporarily obtains the public interface's CCW pointer with `ComInterfaceMarshaller<TPublic>.ConvertToUnmanaged`, projects a unique raw-companion RCW over the same IID, invokes it, and deterministically releases both temporary references. Existing RCWs stay on the direct fast path.
 
 Two `[GeneratedComInterface]` types with the same IID are supported because source-generated COM binds projection behavior to the managed interface type rather than a process-wide IID-to-type registration. A prototype successfully:
 
 - Cast a native `IShellItem` RCW to a same-IID raw companion.
 - Passed a managed `IBindCtx` input while receiving `out nint`.
 - Invoked a managed `[GeneratedComClass]` implementation of the normal interface through the raw companion.
+- Invoked the compatibility overload directly on a managed `[GeneratedComClass]` implementation.
 - Ran on .NET 9 and .NET 10 without compiler diagnostics.
 
 The companion must preserve the complete inherited and declared vtable layout through the target method. Mirroring the interface hierarchy is safer than calculating and invoking function-pointer slots in each friendly overload.
@@ -311,7 +314,7 @@ The CCW does not understand the adjacent `riid` convention. For an `out object` 
 
 The caller-side friendly overload then chooses the requested projection. `ComObjectUniqueInstance` is likewise a caller-side ownership choice. The implementer does not need to know which policy the caller selected.
 
-This path must be covered by a managed implementation test, not only by calls to native shell objects.
+Calling the friendly overload directly on the managed implementation uses the temporary CCW/raw-RCW adapter described above; calling through an existing COM proxy uses the raw companion directly. Both paths must be covered by managed implementation tests, not only by calls to native shell objects.
 
 ## Why not put a custom marshaller on the public COM interface?
 

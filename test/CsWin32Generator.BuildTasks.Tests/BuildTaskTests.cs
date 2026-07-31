@@ -19,7 +19,7 @@ public class BuildTaskTests
     public void TestBuildTasks()
     {
         Mock<IBuildEngine> buildEngine = new();
-        buildEngine.Setup(x => x.LogErrorEvent(It.IsAny<BuildErrorEventArgs>())).Callback<BuildErrorEventArgs>(e => this.Logger.WriteLine(e.Message));
+        buildEngine.Setup(x => x.LogErrorEvent(It.IsAny<BuildErrorEventArgs>())).Callback<BuildErrorEventArgs>(e => this.Logger.WriteLine(e.Message ?? string.Empty));
 
         CsWin32CodeGeneratorTask task = new()
         {

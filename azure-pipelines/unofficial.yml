@@ -4,6 +4,7 @@ trigger:
     include:
     - main
     - microbuild
+    - 'renovate/*'
     - 'validate/*'
   paths:
     exclude:

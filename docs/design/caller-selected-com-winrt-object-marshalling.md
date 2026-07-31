@@ -2,14 +2,14 @@
 
 ## Status
 
-Proposed alternative.
+Not selected.
 
 Related documents:
 
 - [Adaptive COM and WinRT object out-parameter marshalling](adaptive-com-winrt-object-marshalling.md)
 - [COM and WinRT object out-parameter marshalling options](com-winrt-object-marshalling-options.md)
 
-This note proposes preserving ordinary COM projection by default and allowing each generated friendly call to select COM or Windows Runtime projection explicitly.
+This note records the caller-selected alternative that was evaluated. CsWin32 instead selected automatic runtime detection as described in the adaptive proposal.
 
 ## Summary
 

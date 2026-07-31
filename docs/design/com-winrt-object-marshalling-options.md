@@ -1,187 +1,154 @@
-# COM and WinRT object out-parameter marshalling options
+# COM and WinRT object out-parameter marshalling decision
 
 ## Status
 
-Decision document.
+Decided.
 
-This note compares two formal proposals for projecting objects returned through COM `IID`/`void**` out-parameter pairs:
+CsWin32 will use [automatic COM and Windows Runtime object out-parameter marshalling](adaptive-com-winrt-object-marshalling.md).
 
-1. [Caller-selected COM and WinRT object out-parameter marshalling](caller-selected-com-winrt-object-marshalling.md)
-2. [Adaptive COM and WinRT object out-parameter marshalling](adaptive-com-winrt-object-marshalling.md)
+The [caller-selected policy](caller-selected-com-winrt-object-marshalling.md) remains documented as the principal alternative that was evaluated. Unique COM ownership remains separate work.
 
-The primary decision is whether CsWin32 should preserve ordinary COM projection unless the caller selects WinRT, or query each relevant returned object for `IInspectable` and choose the wrapper family from the runtime identity.
+## Problem
 
-Unique COM ownership is intentionally outside this decision.
+Objects returned through COM `IID`/`void**` pairs may be ordinary COM objects or Windows Runtime objects. COM-only projection creates a `ComObject`, which cannot safely provide C#/WinRT behavior such as `IStorageItem.Name`.
 
-## Shared problem
+The immediate generic type is not a complete signal:
 
-The current source-generated COM path creates a `ComObject` for IID/output values. That wrapper cannot later become a C#/WinRT projection such as `IStorageItem`.
+- A caller may request `object` and cast to a WinRT interface later.
+- A WinRT object may be requested through a COM interface and used through both families.
+- A managed COM server may return either a COM or WinRT object from the same method.
 
-The fix must support:
+The native identity is the authoritative source: successful `QI(IInspectable)` identifies an inspectable object, while `E_NOINTERFACE` identifies ordinary COM.
 
-- Native methods returning COM or WinRT objects.
-- Generated COM interface RCW calls.
-- Managed `[GeneratedComClass]` implementations returning COM or WinRT objects.
-- `object`, projected WinRT interfaces, and generated COM interfaces.
-- Native AOT.
+## Options evaluated
 
-## Shared prototype findings
+### Caller-selected policy
 
-Both proposals build on facts validated by the policy and adaptive prototypes:
+The caller-selected proposal adds:
 
-- `ComInterfaceMarshaller<object>` accepts C#/WinRT wrappers, source-generated COM wrappers, and managed generated-COM objects on CCW output.
-- After projection from an `IInspectable` pointer, C#/WinRT wrappers on .NET 8 and later can dynamically cast to source-generated COM interfaces by using generated IID and vtable metadata.
-- A managed object-shaped CCW output cannot automatically correlate its pointer with a sibling `riid`.
-- Native AOT may use a generic `WinRT.IInspectable` wrapper while preserving the requested interface.
-- `out object` is not valid for APIs that require a semantic IID rather than `IID_IUnknown` or `IID_IInspectable`.
+```csharp
+public enum ComOutPtrMarshalling
+{
+    Default,
+    ComObject,
+    WindowsRuntime,
+}
+```
 
-## Side-by-side comparison
+The policy is passed to each generated friendly overload. `Default` classifies the closed generic `T`; callers must select `WindowsRuntime` explicitly when the immediate type does not reveal future WinRT use.
 
-| Concern | Caller-selected policy | Adaptive `IInspectable` QI |
+Flat P/Invokes need raw pointer declarations. Generated COM interfaces need same-IID raw companions and an adapter for direct managed implementations because the friendly call policy is not part of the COM method.
+
+### Automatic runtime detection
+
+The automatic proposal keeps the existing friendly API. Each eligible output:
+
+1. Queries `IInspectable`.
+2. Projects through C#/WinRT on success.
+3. Falls back to COM only for `E_NOINTERFACE`.
+4. Propagates other failures.
+
+Source-generated declarations use a custom marshaller. Built-in COM friendly overloads post-process the built-in wrapper because `[ComImport]` does not support source-generated custom marshalling.
+
+The behavior is enabled by default and can be disabled with:
+
+```json
+{
+  "comInterop": {
+    "autoWinRTMarshalling": false
+  }
+}
+```
+
+## Comparison
+
+| Concern | Caller-selected policy | Automatic runtime detection |
 | --- | --- | --- |
 | Selection rule | Caller and closed `T` | Returned native identity |
-| Ordinary COM output | Existing COM projection; no detection QI | One failed `QI(IInspectable)` |
-| WinRT output with WinRT `T` | `Default` selects WinRT | QI selects WinRT |
-| `out object` followed by WinRT cast | Caller must select `WindowsRuntime` | Works automatically |
-| COM `T` followed by WinRT cast | Caller must select `WindowsRuntime` | Works automatically if inspectable |
-| Inspectable object used through COM | Caller chooses COM or WinRT wrapper | WinRT wrapper dynamically casts to COM |
-| Non-inspectable COM object | `ComObject` | Failed QI then `ComObject` |
-| Wrapper identity | Explicit and predictable from policy | May change from `ComObject` to C#/WinRT based on identity |
-| Existing generated calls | `Default` preserves COM projection for `object` and generated COM `T` | Inspectable outputs can change wrapper family without a source-signature change |
-| Public API | Adds `ComOutPtrMarshalling` | No policy API |
-| Type classification | Required for `Default` | Required only for requested IID |
-| Analyzer | Possible fallback for WinRT `T` | Not needed for wrapper selection |
-| Flat P/Invoke | Raw `out nint` declaration | Existing object declaration plus custom marshaller |
-| COM interface RCW | Same-IID raw companion | Existing interface plus custom marshaller |
-| COM interface CCW used by generated caller | Raw companion plus direct-managed adapter | One bidirectional custom marshaller |
-| Direct managed implementation | Temporary CCW/raw-RCW adapter | Normal managed call |
-| Multiple IID/output pairs | One policy per output | Same adaptive rule per output |
-| C#/WinRT dynamic cast dependency | Only when `WindowsRuntime` is selected for generated COM `T` | Whenever an inspectable result is consumed as generated COM `T` |
-| Native AOT | Explicit projection; interface contract required | Adaptive projection; interface contract required |
-| Unexpected `IInspectable` QI failure | No detection QI | New failure unless result is `E_NOINTERFACE` |
-| Generated complexity | Policy helpers, raw paths, companions, adapter | Custom marshaller and feature-switch guard |
-| Runtime cost | No detection QI; raw-companion dispatch and direct-managed adaptation still have costs | One QI per relevant output |
-| Unique COM ownership | Separate future work | Separate future work |
+| Ordinary COM output | No detection QI | One failed `QI(IInspectable)` |
+| WinRT `T` | Usually inferred | Works automatically |
+| `object` followed by WinRT cast | Requires explicit policy | Works automatically |
+| COM `T` followed by WinRT cast | Requires explicit policy | Works when the object is inspectable |
+| Non-inspectable COM | COM projection | Failed QI then COM projection |
+| Public generated API | Adds policy enum and parameter | No new caller-facing API |
+| Flat P/Invoke | Raw pointer path | Existing declaration with custom marshaller |
+| Generated COM RCW | Same-IID raw companion | Custom output marshaller |
+| Generated COM CCW | Raw companion and managed adapter | Coordinated IID and output marshallers |
+| Managed implementation | Adapter path | Returns COM, WinRT, or null naturally |
+| Multiple outputs | One policy per output | Same detection rule per output |
+| Wrapper identity | Explicit policy | Determined by native identity |
+| Runtime cost | Avoids detection QI | One QI per eligible output |
+| Native AOT | Supported | Supported |
+| Unique COM ownership | Separate | Separate |
 
-## Caller-selected policy evaluation
+## Decision
 
-### Strengths
+Automatic runtime detection is selected.
 
-- Preserves current COM behavior and cost for the common case.
-- Makes wrapper identity an explicit caller decision.
-- Avoids changing an inspectable COM object into a WinRT wrapper unless requested.
-- Supports callers that know the semantic intent even when `T` is `object`.
-- Can provide a direct path to future ownership policies without affecting adaptive detection.
+### Reasons
 
-### Costs
+- Correctness should not depend on the immediate generic type revealing every later cast.
+- `object` and COM-interface requests should remain usable as WinRT when the returned identity is inspectable.
+- Callers expect COM APIs returning WinRT objects to work without a marshalling policy.
+- The generated API remains small and does not multiply policy parameters across output pairs.
+- One marshalling model covers flat P/Invoke, generated COM callers, managed COM implementations, and Native AOT.
+- The extra `QI(IInspectable)` is acceptable for the recognized set of object outputs.
 
-- Adds public generated API surface.
-- Ambiguous calls can be wrong if the caller omits the explicit policy.
-- A later WinRT cast from `object` cannot be inferred.
-- Source-generated COM methods need raw same-IID companions.
-- Direct managed implementations need a temporary CCW/raw-RCW adapter.
-- Raw-companion dispatch and direct-managed adaptation can add interop work even though ordinary COM outputs avoid the detection QI.
-- Multiple outputs add one policy parameter per output.
-- `Default` depends on reliable C#/WinRT type classification or an analyzer.
-- Explicit `WindowsRuntime` with a generated COM `T` adds a caller-requested `QI(IInspectable)` after the native call returns the requested COM interface.
+### Accepted consequences
 
-### COM interface consequence
+- Inspectable values that previously appeared as COM wrappers now appear as C#/WinRT wrappers.
+- Ordinary COM outputs pay one failed `QI(IInspectable)`.
+- Unexpected QI failures other than `E_NOINTERFACE` now propagate.
+- Inspectable values consumed through generated COM interfaces depend on C#/WinRT dynamic interface casting.
+- JIT and Native AOT may expose different concrete wrappers while preserving the requested interface.
 
-The policy belongs to the friendly caller, not the native COM method. The public `[GeneratedComInterface]` declaration cannot carry it.
+The opt-out exists for consumers that require prior COM-only wrapper behavior or cannot accept the probe.
 
-The design therefore keeps the managed `out object` interface for implementers but invokes the native slot through a raw same-IID companion. This preserves caller control, at the cost of the most generated machinery.
+## Managed COM server result
 
-## Adaptive QI evaluation
+The initial prototypes identified an ABI problem: an object output marshaller alone returns an identity pointer, while a native caller requires the exact interface pointer named by the sibling `riid`.
 
-### Strengths
+The selected implementation solves this with coordinated marshallers:
 
-- Fixes WinRT projection without a new caller-facing API.
-- Handles `object` and future WinRT casts automatically.
-- Uses one declaration and one bidirectional marshaller for COM RCW and CCW paths.
-- Lets the same managed implementation return COM or WinRT values naturally.
-- Avoids raw same-IID companions and direct-managed adapters.
-- Multiple outputs do not grow the friendly API.
+- The generated managed `riid` parameter uses an IID input marshaller.
+- During CCW dispatch, that marshaller places the requested IID in a thread-local stack.
+- The object output marshaller queries the returned object's identity for that exact IID.
+- Cleanup removes the IID context, including nested and reentrant calls.
 
-### Costs
+The native ABI remains `Guid*` plus `void**`. Managed implementations can return WinRT objects, inspectable COM objects, non-inspectable COM objects, or `null`, and external native callers receive the exact requested interface pointer.
 
-- Adds `QI(IInspectable)` to every recognized object output.
-- Changes wrapper identity for inspectable COM objects.
-- Adds a failure point for QI results other than `E_NOINTERFACE`.
-- Depends more broadly on C#/WinRT dynamic interface casting when an inspectable object is used through generated COM.
-- AOT and JIT may expose different concrete wrapper types.
-- Changes the observable wrapper family of existing calls that return inspectable objects.
+## Built-in COM result
 
-### COM interface consequence
+Built-in `[ComImport]` does not honor `[MarshalUsing]`. The friendly overload therefore:
 
-The custom marshaller can be placed directly on `out object` for both call directions:
+1. Obtains the built-in wrapper's identity.
+2. Queries `IInspectable`.
+3. Returns a C#/WinRT projection on success.
+4. Returns the original wrapper on `E_NOINTERFACE`.
 
-- RCW output queries and projects the native value.
-- CCW output converts either a WinRT or COM managed object to ABI.
+The transient built-in RCW is not final-released because it may be identity-cached and shared.
 
-This is the simplest COM-interface design, provided the QI cost and wrapper behavior are acceptable.
+## Scope
 
-## Shared managed-server limitation
+The initial implementation recognizes a canonical final `Guid*`/`void**` pair.
 
-Neither proposal makes an object-shaped managed COM server automatically return a pointer already adjusted to the sibling `riid`.
+Not included:
 
-Generated callers tolerate an identity pointer because they perform later QI during projection or casting. Arbitrary native callers may immediately dereference `ppv` as `riid` and are not covered unless the implementation guarantees the correct pointer.
+- Non-final pairs.
+- The SDK method with two pairs.
+- Fixed-type COM outputs that do not use the recognized pair.
+- Input marshalling changes.
+- Unique COM wrapper ownership.
 
-Possible future solutions are shared:
+## Validation
 
-- A result carrier containing the object and requested IID.
-- Marshaller support for consuming a sibling parameter.
-- A lower-level raw output signature for managed implementers.
+The selected design is covered by:
 
-This limitation should not be used to distinguish the two proposals, but it must bound claims about managed COM server support.
-
-## Unique COM ownership
-
-Unique versus identity-cached COM ownership requires caller intent and is orthogonal to COM-versus-WinRT detection.
-
-The policy prototype proved that `UniqueComInterfaceMarshaller<T>` can provide deterministic independent release. Neither core proposal requires exposing that feature now.
-
-The decision options are:
-
-- Omit unique ownership from this work.
-- Add a separate friendly API later.
-- Extend the caller-selected enum later with `ComObjectUniqueInstance`.
-
-## Decision guidance
-
-Prefer the caller-selected proposal if:
-
-- Avoiding an extra QI on ordinary COM output is a hard requirement.
-- Preserving existing wrapper identity is more important than generated simplicity.
-- Callers can reliably express WinRT intent at the call site.
-- The raw companion and adapter complexity is acceptable.
-
-Prefer the adaptive proposal if:
-
-- Correct behavior for `object` and later casts should be automatic.
-- One symmetric COM interface declaration is a priority.
-- One QI per relevant output is acceptable.
-- Inspectable COM objects being represented by C#/WinRT wrappers is acceptable.
-- C#/WinRT dynamic interface casting can be required.
-
-## Evidence still needed
-
-The policy architecture has broad generator and runtime coverage in draft PR #1771. The adaptive architecture currently has an isolated runtime and Native AOT proof.
-
-Before selecting the adaptive proposal, it should be integrated far enough to measure:
-
-- Generated source and compile-time impact.
-- Full generator test behavior.
-- Performance of successful and failed `QI(IInspectable)` paths.
-- Behavior with proxies, disconnected objects, and nonconforming QI implementations.
-- Diagnostics when dynamic interface casting is disabled.
-
-Before selecting the policy proposal, the explicit `WindowsRuntime` plus generated COM `T` path should be wired into the policy prototype and validated end to end: request the COM IID, query the returned pointer for `IInspectable`, project the C#/WinRT wrapper, and dynamically cast it back to the generated COM interface.
-
-## Decision questions
-
-1. Is avoiding one `QI(IInspectable)` on ordinary COM output a hard requirement or an optimization preference?
-2. Should `out object` automatically remain castable to WinRT interfaces?
-3. Is wrapper identity chosen by runtime capability acceptable?
-4. Is the same-IID companion and managed receiver adapter acceptable generated complexity?
-5. Can C#/WinRT dynamic interface casting be a required runtime setting?
-6. Should unique COM ownership be omitted from the initial decision?
+- Generator-shape tests.
+- Source-generated runtime tests on .NET 9 and .NET 10.
+- Built-in COM runtime tests that invoke WinRT members.
+- An opt-out regression that preserves the former cast failure.
+- Managed COM server tests for WinRT, inspectable COM, non-inspectable COM, and null.
+- Raw native-style tests that verify exact requested-IID pointers.
+- Native AOT publish and execution.
+- Full Windows build, ordinary test, and hardware-dependent test suites.

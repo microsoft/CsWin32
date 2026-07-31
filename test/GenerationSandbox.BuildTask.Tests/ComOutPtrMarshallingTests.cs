@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
 using Windows.Storage;
@@ -13,28 +14,29 @@ using Windows.Win32.UI.Shell;
 namespace GenerationSandbox.BuildTask.Tests;
 
 /// <summary>
-/// Runtime coverage for the <see cref="ComOutPtrMarshalling"/> policy that the generic COM output pointer
-/// friendly overloads carry.
+/// Runtime coverage for automatic COM and Windows Runtime output projection.
 /// </summary>
 [Trait("WindowsOnly", "true")]
 public partial class ComOutPtrMarshallingTests
 {
-    /// <summary>BHID_Stream: binds an <see cref="IStream"/> over the item's contents.</summary>
     private static readonly Guid BHID_Stream = new(0x1cebb3ab, 0x7c10, 0x499a, 0xa4, 0x17, 0x92, 0xca, 0x16, 0xc4, 0xcb, 0x83);
-
-    /// <summary>BHID_StorageItem: binds a Windows Runtime <c>Windows.Storage.IStorageItem</c>.</summary>
     private static readonly Guid BHID_StorageItem = new(0x404e2109, 0x77d2, 0x4699, 0xa5, 0xa0, 0x4f, 0xdf, 0x10, 0xdb, 0x98, 0x37);
-
-    /// <summary>CLSID_ShellLink, a cocreatable class that honors an <c>IID_IUnknown</c> activation request.</summary>
     private static readonly Guid CLSID_ShellLink = new(0x00021401, 0x0000, 0x0000, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46);
+
+    [GeneratedComInterface]
+    [Guid("43826d1e-e718-42ee-bc55-a1e261c37bfe")]
+    internal partial interface IShellItemRaw
+    {
+        unsafe void BindToHandler(IBindCtx pbc, Guid* bhid, in Guid riid, out nint ppv);
+    }
 
     private static string WinIniPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "win.ini");
 
     [Fact]
     [Trait("TestCategory", "RequiresHardware")]
-    public void Default_ProjectsGeneratedComInterface()
+    public void AutomaticProjection_PreservesGeneratedComInterface()
     {
-        IShellItem shellItem = CreateShellItem(WinIniPath);
+        IShellItem shellItem = CreateShellItem();
 
         shellItem.BindToHandler<IStream>(null, BHID_Stream, out IStream stream);
 
@@ -46,20 +48,30 @@ public partial class ComOutPtrMarshallingTests
 
     [Fact]
     [Trait("TestCategory", "RequiresHardware")]
-    public void ExplicitComObject_MatchesDefaultForGeneratedComInterface()
+    public void AutomaticProjection_ProjectsWindowsRuntimeInterface()
     {
-        IShellItem shellItem = CreateShellItem(WinIniPath);
+        IShellItem shellItem = CreateShellItem();
 
-        shellItem.BindToHandler<IStream>(null, BHID_Stream, out IStream stream, ComOutPtrMarshalling.ComObject);
+        shellItem.BindToHandler<IStorageItem>(null, BHID_StorageItem, out IStorageItem storageItem);
 
-        Assert.NotNull(stream);
-        stream.Seek(0, SeekOrigin.Begin, out ulong position);
-        Assert.Equal(0UL, position);
+        Assert.Equal("win.ini", storageItem.Name, ignoreCase: true);
     }
 
     [Fact]
     [Trait("TestCategory", "RequiresHardware")]
-    public void ExplicitComObject_WithObject_RequestsIUnknown()
+    public void AutomaticProjection_ProjectsObjectAsConcreteWindowsRuntimeObject()
+    {
+        IShellItem shellItem = CreateShellItem();
+
+        shellItem.BindToHandler<object>(null, BHID_StorageItem, out object storageItem);
+
+        StorageFile storageFile = Assert.IsType<StorageFile>(storageItem);
+        Assert.Equal("win.ini", storageFile.Name, ignoreCase: true);
+    }
+
+    [Fact]
+    [Trait("TestCategory", "RequiresHardware")]
+    public void AutomaticProjection_FallsBackToComObject()
     {
         Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
 
@@ -67,168 +79,150 @@ public partial class ComOutPtrMarshallingTests
             CLSID_ShellLink,
             null,
             CLSCTX.CLSCTX_INPROC_SERVER,
-            out object instance,
-            ComOutPtrMarshalling.ComObject).ThrowOnFailure();
+            out object instance).ThrowOnFailure();
 
-        Assert.NotNull(instance);
-
-        // The wrapper casts dynamically, so exercise the cast rather than reflection-based assignability.
         IShellLinkW link = (IShellLinkW)instance;
-        link.SetDescription("ComOutPtrMarshalling");
+        link.SetDescription(nameof(ComOutPtrMarshallingTests.AutomaticProjection_FallsBackToComObject));
     }
 
     [Fact]
     [Trait("TestCategory", "RequiresHardware")]
-    public void Default_ProjectsWindowsRuntimeInterface()
+    public async Task ManagedImplementer_CanReturnWindowsRuntimeObject()
     {
-        IShellItem shellItem = CreateShellItem(WinIniPath);
+        Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
+        StorageFile storageFile = await StorageFile.GetFileFromPathAsync(WinIniPath);
 
-        // typeof(IStorageItem) is a C#/WinRT projection, so Default resolves to WindowsRuntime.
-        shellItem.BindToHandler<IStorageItem>(null, BHID_StorageItem, out IStorageItem storageItem);
-
-        Assert.NotNull(storageItem);
-        Assert.Equal("win.ini", storageItem.Name, ignoreCase: true);
+        ComOutPtrMarshallingTests.VerifyManagedImplementer<IStorageItem>(
+            storageFile,
+            WinRT.GuidGenerator.CreateIID(typeof(IStorageItem)),
+            BHID_StorageItem,
+            storageItem => Assert.Equal("win.ini", storageItem.Name, ignoreCase: true));
     }
 
     [Fact]
     [Trait("TestCategory", "RequiresHardware")]
-    public void ExplicitWindowsRuntime_WithObject_ProjectsInspectable()
+    public void ManagedImplementer_CanReturnInspectableComObject()
     {
-        IShellItem shellItem = CreateShellItem(WinIniPath);
+        IShellItem shellItem = CreateShellItem();
+        shellItem.BindToHandler<IStream>(null, BHID_Stream, out IStream stream);
 
-        shellItem.BindToHandler<object>(null, BHID_StorageItem, out object storageItem, ComOutPtrMarshalling.WindowsRuntime);
-
-        Assert.NotNull(storageItem);
-        IStorageItem asStorageItem = Assert.IsAssignableFrom<IStorageItem>(storageItem);
-        Assert.Equal("win.ini", asStorageItem.Name, ignoreCase: true);
+        ComOutPtrMarshallingTests.VerifyManagedImplementer<IStream>(
+            stream,
+            typeof(IStream).GUID,
+            BHID_Stream,
+            returnedStream =>
+            {
+                byte[] buffer = new byte[8];
+                returnedStream.Read(buffer, out uint bytesRead);
+                Assert.True(bytesRead > 0);
+            });
     }
 
     [Fact]
     [Trait("TestCategory", "RequiresHardware")]
-    public void ComObjectUniqueInstance_AllowsDeterministicRelease()
+    public void ManagedImplementer_CanReturnNonInspectableComObject()
     {
-        IShellItem shellItem = CreateShellItem(WinIniPath);
+        Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
+        PInvoke.CoCreateInstance<object>(
+            CLSID_ShellLink,
+            null,
+            CLSCTX.CLSCTX_INPROC_SERVER,
+            out object shellLink).ThrowOnFailure();
 
-        shellItem.BindToHandler<IStream>(null, BHID_Stream, out IStream unique, ComOutPtrMarshalling.ComObjectUniqueInstance);
-
-        var wrapper = Assert.IsType<ComObject>((object)unique, exactMatch: false);
-        byte[] buffer = new byte[8];
-        unique.Read(buffer, out uint bytesRead);
-        Assert.True(bytesRead > 0);
-
-        wrapper.FinalRelease();
-        Assert.Throws<ObjectDisposedException>(() => unique.Read(buffer, out _));
-
-        // The identity-cached wrapper family is unaffected by the unique wrapper's release.
-        shellItem.BindToHandler<IStream>(null, BHID_Stream, out IStream identityCached);
-        identityCached.Read(buffer, out uint bytesReadAfterRelease);
-        Assert.True(bytesReadAfterRelease > 0);
+        ComOutPtrMarshallingTests.VerifyManagedImplementer<IShellLinkW>(
+            shellLink,
+            typeof(IShellLinkW).GUID,
+            BHID_Stream,
+            link => link.SetDescription(nameof(ComOutPtrMarshallingTests.ManagedImplementer_CanReturnNonInspectableComObject)));
     }
 
     [Fact]
     [Trait("TestCategory", "RequiresHardware")]
-    public void WindowsRuntimeWithGeneratedComInterface_ThrowsBeforeNativeCall()
+    public unsafe void ManagedImplementer_CanReturnNull()
     {
-        // A failing path would produce a failed HRESULT rather than an exception, so the throw proves
-        // the policy was validated before the native call.
-        Assert.Throws<ArgumentException>(() =>
-            PInvoke.SHCreateItemFromParsingName<IShellItem>(@"Z:\no\such\path", null, out _, ComOutPtrMarshalling.WindowsRuntime));
-    }
-
-    [Fact]
-    [Trait("TestCategory", "RequiresHardware")]
-    public void ComObjectWithWindowsRuntimeInterface_ThrowsBeforeNativeCall()
-    {
-        Assert.Throws<ArgumentException>(() =>
-            PInvoke.SHCreateItemFromParsingName<IStorageItem>(@"Z:\no\such\path", null, out _, ComOutPtrMarshalling.ComObject));
-    }
-
-    [Fact]
-    [Trait("TestCategory", "RequiresHardware")]
-    public void NonInterfaceType_ThrowsBeforeNativeCall()
-    {
-        Assert.Throws<NotSupportedException>(() =>
-            PInvoke.SHCreateItemFromParsingName<string>(@"Z:\no\such\path", null, out _, ComOutPtrMarshalling.Default));
-    }
-
-    /// <summary>
-    /// Verifies that the raw ABI companion dispatches to a managed <c>[GeneratedComClass]</c> implementation of the
-    /// public interface, and that the caller-side projection still produces the requested wrapper.
-    /// </summary>
-    [Fact]
-    [Trait("TestCategory", "RequiresHardware")]
-    public void ManagedImplementer_IsInvokedThroughRawCompanion()
-    {
-        ManagedShellItem managed = new(CreateShellItem(WinIniPath));
+        Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
+        ManagedShellItem managed = new(null!);
         StrategyBasedComWrappers comWrappers = new();
         nint ccw = comWrappers.GetOrCreateComInterfaceForObject(managed, CreateComInterfaceFlags.None);
+        object rcw = comWrappers.GetOrCreateObjectForComInstance(ccw, CreateObjectFlags.UniqueInstance);
+        Marshal.Release(ccw);
         try
         {
-            object rcw = comWrappers.GetOrCreateObjectForComInstance(ccw, CreateObjectFlags.UniqueInstance);
             IShellItem proxy = (IShellItem)rcw;
+            proxy.BindToHandler<object>(null, BHID_StorageItem, out object result);
+            Assert.Null(result);
 
-            proxy.BindToHandler<IShellItem>(null, BHID_Stream, out IShellItem bound);
-
-            Assert.Equal(1, managed.BindToHandlerCallCount);
-            Assert.NotNull(bound);
-            bound.GetDisplayName(SIGDN.SIGDN_FILESYSPATH, out PWSTR fileSystemPath);
-            try
-            {
-                Assert.Equal(WinIniPath, fileSystemPath.ToString(), ignoreCase: true);
-            }
-            finally
-            {
-                unsafe
-                {
-                    Marshal.FreeCoTaskMem((nint)fileSystemPath.Value);
-                }
-            }
+            Guid requestedIid = WinRT.GuidGenerator.CreateIID(typeof(IStorageItem));
+            Guid bindHandler = BHID_StorageItem;
+            IShellItemRaw rawProxy = (IShellItemRaw)rcw;
+            rawProxy.BindToHandler(null!, &bindHandler, in requestedIid, out nint rawResult);
+            Assert.Equal(0, rawResult);
+            Assert.Equal(2, managed.BindToHandlerCallCount);
         }
         finally
         {
-            Marshal.Release(ccw);
+            ((ComObject)rcw).FinalRelease();
         }
     }
 
-    /// <summary>
-    /// Verifies that the historical friendly overload remains callable directly on a managed implementation.
-    /// </summary>
-    [Fact]
-    [Trait("TestCategory", "RequiresHardware")]
-    public void ManagedImplementer_CanInvokeCompatibilityOverloadDirectly()
-    {
-        ManagedShellItem managed = new(CreateShellItem(WinIniPath));
-
-        managed.BindToHandler<IShellItem>(null, BHID_Stream, out IShellItem bound);
-
-        Assert.Equal(1, managed.BindToHandlerCallCount);
-        Assert.NotNull(bound);
-    }
-
-    private static IShellItem CreateShellItem(string path)
+    private static IShellItem CreateShellItem()
     {
         Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
-        Assert.True(File.Exists(path), $"Expected '{path}' to exist on Windows.");
-        PInvoke.SHCreateItemFromParsingName<IShellItem>(path, null, out IShellItem shellItem).ThrowOnFailure();
+        Assert.True(File.Exists(WinIniPath), $"Expected '{WinIniPath}' to exist on Windows.");
+        PInvoke.SHCreateItemFromParsingName<IShellItem>(WinIniPath, null, out IShellItem shellItem).ThrowOnFailure();
         return shellItem;
     }
 
-    /// <summary>
-    /// A managed COM server for <see cref="IShellItem"/> that forwards to a real shell item.
-    /// </summary>
-    /// <param name="inner">The shell item that satisfies the caller's requested interface.</param>
+    private static unsafe void VerifyManagedImplementer<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicFields)] T>(object returnedValue, Guid requestedIid, Guid bindHandler, Action<T> exercise)
+        where T : class
+    {
+        ManagedShellItem managed = new(returnedValue);
+        StrategyBasedComWrappers comWrappers = new();
+        nint ccw = comWrappers.GetOrCreateComInterfaceForObject(managed, CreateComInterfaceFlags.None);
+        object rcw = comWrappers.GetOrCreateObjectForComInstance(ccw, CreateObjectFlags.UniqueInstance);
+        Marshal.Release(ccw);
+        try
+        {
+            IShellItem proxy = (IShellItem)rcw;
+            proxy.BindToHandler<T>(null, bindHandler, out T result);
+            exercise(result);
+
+            IShellItemRaw rawProxy = (IShellItemRaw)rcw;
+            rawProxy.BindToHandler(null!, &bindHandler, in requestedIid, out nint rawResult);
+            try
+            {
+                Marshal.ThrowExceptionForHR(Marshal.QueryInterface(rawResult, in requestedIid, out nint queriedResult));
+                try
+                {
+                    Assert.Equal(rawResult, queriedResult);
+                }
+                finally
+                {
+                    Marshal.Release(queriedResult);
+                }
+            }
+            finally
+            {
+                Marshal.Release(rawResult);
+            }
+
+            Assert.Equal(2, managed.BindToHandlerCallCount);
+        }
+        finally
+        {
+            ((ComObject)rcw).FinalRelease();
+        }
+    }
+
     [GeneratedComClass]
-    private partial class ManagedShellItem(IShellItem inner) : IShellItem
+    private partial class ManagedShellItem(object returnedValue) : IShellItem
     {
         internal int BindToHandlerCallCount { get; private set; }
 
-        public unsafe void BindToHandler(IBindCtx pbc, Guid* bhid, Guid* riid, out object ppv)
+        public unsafe void BindToHandler(IBindCtx pbc, Guid* bhid, in Guid riid, out object ppv)
         {
             this.BindToHandlerCallCount++;
-
-            // A managed server does not honor the adjacent riid convention; the caller-side projection
-            // performs whatever QueryInterface the requested wrapper needs.
-            ppv = inner;
+            ppv = returnedValue;
         }
 
         public void GetParent(out IShellItem ppsi) => throw new NotImplementedException();

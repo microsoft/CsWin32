@@ -58,7 +58,11 @@ jobs:
       solution: $(Pipeline.Workspace)\integration-tests\buildtask-sdk\buildtask-sdk.slnx
       msbuildArguments: /r
     condition: eq(variables.currentSdk, 'true')
-  - pwsh: dotnet publish -r win-x64
+  - pwsh: dotnet publish -c Release -r win-x64
     displayName: 🧪 dotnet publish
+    workingDirectory: $(Pipeline.Workspace)\integration-tests\buildtask-sdk
+    condition: eq(variables.currentSdk, 'true')
+  - pwsh: .\auto-winrt-aot\bin\Release\net9.0-windows10.0.22621.0\win-x64\publish\buildtask-sdk-auto-winrt-aot.exe --validate-com-out-ptr
+    displayName: 🧪 Run Native AOT automatic WinRT marshalling
     workingDirectory: $(Pipeline.Workspace)\integration-tests\buildtask-sdk
     condition: eq(variables.currentSdk, 'true')

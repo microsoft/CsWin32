@@ -1,35 +1,15 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
+﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 namespace Microsoft.Windows.CsWin32;
 
 /// <content>
-/// Contains the generation of the <c>ComOutPtrMarshalling</c> policy, its shared projection helpers,
-/// and the raw ABI companions the policy-bearing friendly overloads invoke.
+/// Contains generation support for automatic COM and Windows Runtime object output projection.
 /// </content>
 public partial class Generator
 {
-    /// <summary>The simple name of the generated policy enum.</summary>
-    private const string ComOutPtrMarshallingEnumName = "ComOutPtrMarshalling";
-
-    /// <summary>The simple name of the generated class that resolves the policy and projects raw pointers.</summary>
-    private const string ComOutPtrHelpersClassName = "ComOutPtrHelpers";
-
-    /// <summary>
-    /// The suffix appended to a native method or interface name to produce its raw ABI companion.
-    /// </summary>
-    private const string ComOutPtrRawSuffix = "__ComOutPtrRaw";
-
-    private static readonly TypeSyntax NIntTypeSyntax = IdentifierName("nint");
-
-    /// <summary>The name of the policy parameter appended to the policy-bearing friendly overload.</summary>
-    private static readonly IdentifierNameSyntax ComOutPtrPolicyParameterName = IdentifierName("marshalling");
-
-    /// <summary>The name of the local that holds the resolved policy for the duration of the call.</summary>
-    private static readonly IdentifierNameSyntax ComOutPtrPolicyLocalName = IdentifierName("__marshalling");
-
-    /// <summary>The name of the local that receives the raw ABI pointer from native code.</summary>
-    private static readonly IdentifierNameSyntax ComOutPtrNativeLocalName = IdentifierName("__ppv");
+    /// <summary>The generated adaptive custom marshaller and built-in COM projection helper.</summary>
+    private const string ComOrWinRTObjectMarshallerClassName = "ComOrWinRTObjectMarshaller";
 
     /// <summary>Preserves the fields C#/WinRT reflects over when it generates an interface identifier.</summary>
     private static readonly AttributeSyntax DynamicallyAccessedPublicFieldsAttributeSyntax = Attribute(IdentifierName("DynamicallyAccessedMembers"))
@@ -39,57 +19,21 @@ public partial class Generator
             IdentifierName("PublicFields"))));
 
     /// <summary>
-    /// Gets a value indicating whether friendly overloads should carry a <c>ComOutPtrMarshalling</c> parameter.
+    /// Gets a value indicating whether recognized COM object outputs should be projected adaptively.
     /// </summary>
-    /// <remarks>
-    /// The policy is only meaningful when the projection is produced by the COM source generators, because the
-    /// wrapper families it selects between (<c>ComInterfaceMarshaller</c>, <c>UniqueComInterfaceMarshaller</c> and
-    /// the C#/WinRT marshallers) are only available there.
-    /// </remarks>
-    private bool EmitComOutPtrMarshallingPolicy => this.useSourceGenerators && this.options.FriendlyOverloads.ComOutPtrGenericOverloads;
+    private bool UseAutoWinRTMarshalling =>
+        this.options.AllowMarshaling &&
+        this.options.ComInterop.AutoWinRTMarshalling &&
+        this.canUseCsWinRT &&
+        (!this.useSourceGenerators || this.canUseCustomMarshaller);
 
-    /// <summary>
-    /// Gets the fully qualified name of the generated <c>ComOutPtrMarshalling</c> enum.
-    /// </summary>
-    private NameSyntax ComOutPtrMarshallingTypeSyntax => ParseName($"global::{this.MainGenerator.Namespace}.{ComOutPtrMarshallingEnumName}");
+    /// <summary>Gets the fully qualified name of the generated adaptive marshaller.</summary>
+    private NameSyntax ComOrWinRTObjectMarshallerTypeSyntax =>
+        ParseName($"global::{this.MainGenerator.Namespace}.{ComOrWinRTObjectMarshallerClassName}");
 
-    /// <summary>
-    /// Gets the fully qualified name of the generated projection helper class.
-    /// </summary>
-    private NameSyntax ComOutPtrHelpersTypeSyntax => ParseName($"global::{this.MainGenerator.Namespace}.{ComOutPtrHelpersClassName}");
-
-    /// <summary>
-    /// Reverses the visibility elevation that template fetching applies to the outermost declaration.
-    /// </summary>
-    /// <param name="member">The fetched template member.</param>
-    /// <returns>The member with an <see langword="internal"/> outermost declaration.</returns>
-    private static MemberDeclarationSyntax DemoteToInternal(MemberDeclarationSyntax member)
-    {
-        int indexOfPublic = member.Modifiers.IndexOf(SyntaxKind.PublicKeyword);
-        return indexOfPublic < 0
-            ? member
-            : member.WithModifiers(member.Modifiers.Replace(member.Modifiers[indexOfPublic], TokenWithSpace(SyntaxKind.InternalKeyword)));
-    }
-
-    /// <summary>
-    /// Applies the <c>GeneratedCode</c> attribute without displacing any documentation comment that precedes the declaration.
-    /// </summary>
-    /// <param name="member">The declaration to annotate.</param>
-    /// <returns>The annotated declaration.</returns>
-    private static MemberDeclarationSyntax AddGeneratedCodeAttributeBeforeDocs(MemberDeclarationSyntax member) =>
-        member
-            .WithoutLeadingTrivia()
-            .AddAttributeLists(AttributeList(GeneratedCodeAttribute))
-            .WithLeadingTrivia(member.GetLeadingTrivia());
-
-    /// <summary>
-    /// Rewrites a COM output pointer parameter so it carries the raw ABI pointer instead of a managed wrapper.
-    /// </summary>
-    /// <param name="parameter">The <c>void**</c> or <c>out object</c> parameter to rewrite.</param>
-    /// <returns>An <c>out nint</c> parameter with the same name.</returns>
-    private static ParameterSyntax AsRawComOutPtrParameter(ParameterSyntax parameter) =>
-        Parameter(NIntTypeSyntax.WithTrailingTrivia(TriviaList(Space)), parameter.Identifier)
-            .WithModifiers([TokenWithSpace(SyntaxKind.OutKeyword)]);
+    /// <summary>Gets the fully qualified name of the generated IID context marshaller.</summary>
+    private NameSyntax ComOutPtrIidMarshallerTypeSyntax =>
+        ParseName($"global::{this.MainGenerator.Namespace}.{ComOrWinRTObjectMarshallerClassName}.IidMarshaller");
 
     /// <summary>
     /// Locates the canonical <c>IID_PPV_ARGS</c> pair on a method: a <c>Guid*</c> parameter immediately followed by
@@ -120,7 +64,6 @@ public partial class Generator
             return false;
         }
 
-        // Only match when the pair are the final two parameters (the canonical IID_PPV_ARGS position).
         Parameter riidParam = metadataParams[metadataParams.Count - 2];
         Parameter ppvParam = metadataParams[metadataParams.Count - 1];
         int riid = riidParam.SequenceNumber - 1;
@@ -172,7 +115,6 @@ public partial class Generator
         ParameterSyntax ppvExtern = externMethodDeclaration.ParameterList.Parameters[ppvIndex];
         if (ppvExtern.Type is IdentifierNameSyntax { Identifier.ValueText: nameof(IntPtr) })
         {
-            // UseIntPtrForComOutPointers mode already gives the caller the raw pointer.
             riidIndex = -1;
             ppvIndex = -1;
             return false;
@@ -184,194 +126,123 @@ public partial class Generator
     }
 
     /// <summary>
-    /// Emits the <c>ComOutPtrMarshalling</c> enum and the projection helper class exactly once.
+    /// Applies the adaptive custom marshaller to a source-generated interop declaration when its final parameters
+    /// follow the canonical IID/output-pointer pattern.
     /// </summary>
-    private void RequestComOutPtrMarshallingPolicy()
+    /// <param name="methodDefinition">The metadata method represented by <paramref name="methodDeclaration"/>.</param>
+    /// <param name="signature">The decoded metadata signature.</param>
+    /// <param name="methodDeclaration">The generated P/Invoke or COM method declaration.</param>
+    /// <param name="marshalManagedImplementerOutput">
+    /// A value indicating whether the declaration can dispatch to a managed implementation, which requires carrying
+    /// the requested IID through generated COM marshalling.
+    /// </param>
+    /// <returns>The declaration with adaptive marshalling applied when appropriate.</returns>
+    private MethodDeclarationSyntax ApplyAutoWinRTMarshalling(
+        MethodDefinition methodDefinition,
+        MethodSignature<TypeHandleInfo> signature,
+        MethodDeclarationSyntax methodDeclaration,
+        bool marshalManagedImplementerOutput)
     {
-        // Always generate these in the context of the most common metadata so we don't emit them more than once.
+        if (!this.UseAutoWinRTMarshalling
+            || !this.useSourceGenerators
+            || !this.TryFindComOutPtrPair(methodDefinition, signature, out int riidIndex, out int ppvIndex)
+            || ppvIndex >= methodDeclaration.ParameterList.Parameters.Count)
+        {
+            return methodDeclaration;
+        }
+
+        ParameterSyntax ppv = methodDeclaration.ParameterList.Parameters[ppvIndex];
+        if (!ppv.Modifiers.Any(SyntaxKind.OutKeyword)
+            || ppv.Type is not PredefinedTypeSyntax { Keyword.RawKind: (int)SyntaxKind.ObjectKeyword })
+        {
+            return methodDeclaration;
+        }
+
+        SeparatedSyntaxList<ParameterSyntax> parameters = methodDeclaration.ParameterList.Parameters;
+        if (marshalManagedImplementerOutput)
+        {
+            if (riidIndex >= parameters.Count || parameters[riidIndex].Type is not TypeSyntax riidType)
+            {
+                return methodDeclaration;
+            }
+
+            TypeSyntax iidType;
+            SyntaxTokenList iidModifiers;
+            if (riidType is PointerTypeSyntax { ElementType: TypeSyntax elementType })
+            {
+                iidType = elementType;
+                iidModifiers = [TokenWithSpace(SyntaxKind.InKeyword)];
+            }
+            else if (parameters[riidIndex].Modifiers.Any(SyntaxKind.InKeyword))
+            {
+                iidType = riidType;
+                iidModifiers = parameters[riidIndex].Modifiers;
+            }
+            else
+            {
+                return methodDeclaration;
+            }
+
+            AttributeSyntax marshalUsingIid = Attribute(ParseName("global::System.Runtime.InteropServices.Marshalling.MarshalUsing"))
+                .AddArgumentListArguments(AttributeArgument(TypeOfExpression(this.ComOutPtrIidMarshallerTypeSyntax)));
+            ParameterSyntax riid = parameters[riidIndex]
+                .WithType(iidType.WithTrailingTrivia(TriviaList(Space)))
+                .WithModifiers(iidModifiers)
+                .AddAttributeLists(AttributeList(marshalUsingIid));
+            parameters = parameters.Replace(parameters[riidIndex], riid);
+        }
+
+        SyntaxList<AttributeListSyntax> attributeLists = default;
+        foreach (AttributeListSyntax attributeList in ppv.AttributeLists)
+        {
+            SeparatedSyntaxList<AttributeSyntax> attributes = attributeList.Attributes;
+            for (int i = attributes.Count - 1; i >= 0; i--)
+            {
+                if (attributes[i].Name.ToString() is "MarshalAs" or "MarshalAsAttribute")
+                {
+                    attributes = attributes.RemoveAt(i);
+                }
+            }
+
+            if (attributes.Count > 0)
+            {
+                attributeLists = attributeLists.Add(attributeList.WithAttributes(attributes));
+            }
+        }
+
+        AttributeSyntax marshalUsing = Attribute(ParseName("global::System.Runtime.InteropServices.Marshalling.MarshalUsing"))
+            .AddArgumentListArguments(AttributeArgument(TypeOfExpression(this.ComOrWinRTObjectMarshallerTypeSyntax)));
+        ppv = ppv
+            .WithAttributeLists(attributeLists)
+            .AddAttributeLists(AttributeList(marshalUsing));
+        parameters = parameters.Replace(parameters[ppvIndex], ppv);
+
+        this.volatileCode.GenerationTransaction(this.RequestComOrWinRTObjectMarshaller);
+        return methodDeclaration.WithParameterList(methodDeclaration.ParameterList.WithParameters(parameters));
+    }
+
+    /// <summary>Emits the adaptive marshaller and projection helper exactly once.</summary>
+    private void RequestComOrWinRTObjectMarshaller()
+    {
         if (!this.IsWin32Sdk)
         {
-            this.MainGenerator.volatileCode.GenerationTransaction(() => this.MainGenerator.RequestComOutPtrMarshallingPolicy());
+            this.MainGenerator.volatileCode.GenerationTransaction(() => this.MainGenerator.RequestComOrWinRTObjectMarshaller());
             return;
         }
 
-        this.volatileCode.GenerateSpecialType(ComOutPtrMarshallingEnumName, delegate
+        this.volatileCode.GenerateSpecialType(ComOrWinRTObjectMarshallerClassName, delegate
         {
-            if (!TryFetchTemplate(ComOutPtrMarshallingEnumName, this, out MemberDeclarationSyntax? enumDeclaration))
+            if (!TryFetchTemplate(ComOrWinRTObjectMarshallerClassName, this, out MemberDeclarationSyntax? declaration))
             {
-                throw new GenerationFailedException($"Failed to retrieve template: {ComOutPtrMarshallingEnumName}");
+                throw new GenerationFailedException($"Failed to retrieve template: {ComOrWinRTObjectMarshallerClassName}");
             }
 
-            this.volatileCode.AddSpecialType(ComOutPtrMarshallingEnumName, AddGeneratedCodeAttributeBeforeDocs(enumDeclaration));
+            this.volatileCode.AddSpecialType(
+                ComOrWinRTObjectMarshallerClassName,
+                declaration
+                    .WithoutLeadingTrivia()
+                    .AddAttributeLists(AttributeList(GeneratedCodeAttribute))
+                    .WithLeadingTrivia(declaration.GetLeadingTrivia()));
         });
-
-        this.volatileCode.GenerateSpecialType(ComOutPtrHelpersClassName, delegate
-        {
-            if (!TryFetchTemplate(ComOutPtrHelpersClassName, this, out MemberDeclarationSyntax? helpersDeclaration))
-            {
-                throw new GenerationFailedException($"Failed to retrieve template: {ComOutPtrHelpersClassName}");
-            }
-
-            // The helpers are an implementation detail of the generated overloads, so they never become public.
-            this.volatileCode.AddSpecialType(ComOutPtrHelpersClassName, AddGeneratedCodeAttributeBeforeDocs(DemoteToInternal(helpersDeclaration)));
-        });
-    }
-
-    /// <summary>
-    /// Declares an internal COM interface that shares the IID and vtable layout of <paramref name="publicInterfaceName"/>
-    /// but exposes the COM output pointer of the marked methods as <c>out nint</c>.
-    /// </summary>
-    /// <param name="publicInterfaceName">The simple name of the interface being mirrored.</param>
-    /// <param name="interfaceNamespace">The full metadata namespace that declares the interface.</param>
-    /// <param name="attributes">The <c>[Guid]</c>, <c>[InterfaceType]</c> and <c>[GeneratedComInterface]</c> attributes copied from the public interface.</param>
-    /// <param name="baseType">The base interface, when it contributes vtable slots that <paramref name="methods"/> does not enumerate.</param>
-    /// <param name="methods">Every method in vtable order, paired with the index of the COM output pointer to expose raw (or -1).</param>
-    private void DeclareComOutPtrRawInterface(
-        string publicInterfaceName,
-        string interfaceNamespace,
-        AttributeListSyntax attributes,
-        BaseTypeSyntax? baseType,
-        IReadOnlyList<(MethodDeclarationSyntax Method, int RawOutParameterIndex)> methods)
-    {
-        string rawName = publicInterfaceName + ComOutPtrRawSuffix;
-        string specialTypeName = $"{interfaceNamespace}.{rawName}";
-        this.volatileCode.GenerateSpecialType(specialTypeName, delegate
-        {
-            List<MemberDeclarationSyntax> members = new(methods.Count);
-            foreach ((MethodDeclarationSyntax method, int rawOutParameterIndex) in methods)
-            {
-                MethodDeclarationSyntax raw = method.WithLeadingTrivia();
-                int indexOfNew = raw.Modifiers.IndexOf(SyntaxKind.NewKeyword);
-                if (indexOfNew >= 0)
-                {
-                    raw = raw.WithModifiers(raw.Modifiers.RemoveAt(indexOfNew));
-                }
-
-                if (rawOutParameterIndex >= 0)
-                {
-                    ParameterSyntax ppv = raw.ParameterList.Parameters[rawOutParameterIndex];
-                    raw = raw.WithParameterList(FixTrivia(raw.ParameterList.WithParameters(
-                        raw.ParameterList.Parameters.Replace(ppv, AsRawComOutPtrParameter(ppv)))));
-                }
-
-                members.Add(raw);
-            }
-
-            InterfaceDeclarationSyntax rawInterface = InterfaceDeclaration(Identifier(rawName), [.. members])
-                .WithKeyword(TokenWithSpace(SyntaxKind.InterfaceKeyword))
-                .AddModifiers(TokenWithSpace(SyntaxKind.InternalKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword), TokenWithSpace(SyntaxKind.PartialKeyword))
-                .AddAttributeLists(attributes, AttributeList(GeneratedCodeAttribute))
-                .WithLeadingTrivia(ParseLeadingTrivia($"/// <summary>Shares the IID and vtable layout of <see cref=\"{rawName.Substring(0, rawName.Length - ComOutPtrRawSuffix.Length)}\"/> but receives COM output pointers as raw ABI pointers so the caller may choose the managed projection.</summary>\n"));
-
-            if (baseType is not null)
-            {
-                rawInterface = rawInterface.WithBaseList(BaseList(baseType));
-            }
-
-            MemberDeclarationSyntax declaration = rawInterface;
-            if (this.TryStripCommonNamespace(interfaceNamespace, out string? shortNamespace) && shortNamespace.Length > 0)
-            {
-                declaration = declaration.WithAdditionalAnnotations(new SyntaxAnnotation(NamespaceContainerAnnotation, shortNamespace));
-            }
-
-            this.volatileCode.AddSpecialType(specialTypeName, declaration);
-        });
-    }
-
-    /// <summary>
-    /// Declares a private <c>[LibraryImport]</c> companion that shares the native entry point of
-    /// <paramref name="externMethodDeclaration"/> but exposes its COM output pointer as <c>out nint</c>.
-    /// </summary>
-    /// <param name="externMethodDeclaration">The public generated p/invoke declaration.</param>
-    /// <param name="ppvIndex">The zero-based index of the COM output pointer parameter.</param>
-    /// <returns>The companion declaration, or <see langword="null"/> when the public declaration is not a direct <c>[LibraryImport]</c>.</returns>
-    private MethodDeclarationSyntax? DeclareComOutPtrRawExternMethod(MethodDeclarationSyntax externMethodDeclaration, int ppvIndex)
-    {
-        AttributeSyntax? libraryImport = externMethodDeclaration.AttributeLists
-            .SelectMany(al => al.Attributes)
-            .FirstOrDefault(a => a.Name.ToString() == "LibraryImport");
-        if (libraryImport is null)
-        {
-            return null;
-        }
-
-        // The entry point is implicit in the method name unless the attribute already names it.
-        if (libraryImport.ArgumentList?.Arguments.Any(a => a.NameEquals?.Name.Identifier.ValueText == "EntryPoint") is not true)
-        {
-            AttributeArgumentSyntax entryPoint = AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(externMethodDeclaration.Identifier.ValueText)))
-                .WithNameEquals(NameEquals(IdentifierName("EntryPoint")));
-            AttributeSyntax withEntryPoint = libraryImport.AddArgumentListArguments(entryPoint);
-            externMethodDeclaration = externMethodDeclaration.ReplaceNode(libraryImport, withEntryPoint);
-        }
-
-        ParameterSyntax ppv = externMethodDeclaration.ParameterList.Parameters[ppvIndex];
-        return externMethodDeclaration
-            .WithLeadingTrivia()
-            .WithIdentifier(Identifier(externMethodDeclaration.Identifier.ValueText + ComOutPtrRawSuffix))
-            .WithModifiers([TokenWithSpace(SyntaxKind.PrivateKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.UnsafeKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)])
-            .WithParameterList(FixTrivia(externMethodDeclaration.ParameterList.WithParameters(
-                externMethodDeclaration.ParameterList.Parameters.Replace(ppv, AsRawComOutPtrParameter(ppv)))));
-    }
-
-    /// <summary>
-    /// Derives the compatibility overload from a policy-bearing overload by dropping the trailing policy parameter
-    /// and forwarding to the policy overload with <c>ComOutPtrMarshalling.Default</c>.
-    /// </summary>
-    /// <param name="policyOverload">The generated policy-bearing overload.</param>
-    /// <param name="addOverloadResolutionPriority"><see langword="true"/> to apply <c>[OverloadResolutionPriority(1)]</c> to the result.</param>
-    /// <returns>The compatibility overload, whose signature matches what CsWin32 generated before the policy existed.</returns>
-    private MethodDeclarationSyntax DeclareComOutPtrCompatibilityOverload(MethodDeclarationSyntax policyOverload, bool addOverloadResolutionPriority)
-    {
-        SeparatedSyntaxList<ParameterSyntax> policyParameters = policyOverload.ParameterList.Parameters;
-        SeparatedSyntaxList<ParameterSyntax> compatParameters = policyParameters.RemoveAt(policyParameters.Count - 1);
-
-        List<ArgumentSyntax> arguments = new(compatParameters.Count + 1);
-        foreach (ParameterSyntax parameter in compatParameters)
-        {
-            arguments.Add(Argument(IdentifierName(parameter.Identifier.Text))
-                .WithRefKindKeyword(parameter.Modifiers.FirstOrDefault(m => m.Kind() is SyntaxKind.RefKeyword or SyntaxKind.OutKeyword or SyntaxKind.InKeyword)));
-        }
-
-        arguments.Add(Argument(MemberAccessExpression(
-            SyntaxKind.SimpleMemberAccessExpression,
-            this.ComOutPtrMarshallingTypeSyntax,
-            IdentifierName("Default"))));
-
-        // The forwarding call is unqualified so it binds to the sibling overload regardless of how the host class is shaped.
-        ExpressionSyntax invocation = InvocationExpression(
-            GenericName(policyOverload.Identifier.ValueText, TypeArgumentList(IdentifierName("T"))),
-            [.. arguments]);
-
-        bool hasVoidReturn = policyOverload.ReturnType is PredefinedTypeSyntax { Keyword.RawKind: (int)SyntaxKind.VoidKeyword };
-        BlockSyntax body = Block(hasVoidReturn ? ExpressionStatement(invocation) : ReturnStatement(invocation))
-            .WithOpenBraceToken(Token(TriviaList(LineFeed), SyntaxKind.OpenBraceToken, TriviaList(LineFeed)))
-            .WithCloseBraceToken(TokenWithLineFeed(SyntaxKind.CloseBraceToken));
-
-        MethodDeclarationSyntax compatOverload = policyOverload
-            .WithParameterList(FixTrivia(ParameterList(compatParameters)))
-            .WithBody(body);
-
-        if (addOverloadResolutionPriority)
-        {
-            this.volatileCode.GenerationTransaction(() => this.DeclareOverloadResolutionPriorityAttributeIfNecessary());
-            compatOverload = compatOverload
-                .WithoutLeadingTrivia()
-                .AddAttributeLists(AttributeList(OverloadResolutionPriorityAttribute(1)))
-                .WithLeadingTrivia(policyOverload.GetLeadingTrivia());
-        }
-
-        return compatOverload;
-    }
-
-    /// <summary>
-    /// Identifies the raw ABI companion that a policy-bearing friendly overload invokes.
-    /// </summary>
-    /// <param name="methodName">The name of the companion method.</param>
-    /// <param name="interfaceCastType">The companion interface the receiver must be cast to, or <see langword="null"/> for a flat p/invoke.</param>
-    private sealed class ComOutPtrRawTarget(SimpleNameSyntax methodName, NameSyntax? interfaceCastType)
-    {
-        internal SimpleNameSyntax MethodName { get; } = methodName;
-
-        internal NameSyntax? InterfaceCastType { get; } = interfaceCastType;
     }
 }

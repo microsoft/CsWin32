@@ -563,232 +563,170 @@ public class COMTests : GeneratorTestBase
     }
 
     [Fact]
-    public void ComOutPtrMarshalling_EnumIsGeneratedOnceWithStableValues()
+    public void AutoWinRTMarshalling_GeneratesOneInternalHelper()
     {
-        this.GenerateSourceGeneratedComApi("IShellItem");
+        this.GenerateMarshaledComApi("IShellItem");
 
-        var policyEnum = Assert.IsType<EnumDeclarationSyntax>(Assert.Single(this.FindGeneratedType("ComOutPtrMarshalling")));
-        Assert.Contains(policyEnum.Modifiers, m => m.IsKind(SyntaxKind.InternalKeyword));
-        Assert.Contains(policyEnum.AttributeLists, al => IsAttributePresent(al, "global::System.CodeDom.Compiler.GeneratedCode"));
-        Assert.NotNull(GetDocumentationComment(policyEnum));
-
-        Dictionary<string, string> members = policyEnum.Members.ToDictionary(m => m.Identifier.ValueText, m => m.EqualsValue!.Value.ToString());
-        Assert.Equal(
-            new Dictionary<string, string>
-            {
-                ["Default"] = "0",
-                ["ComObject"] = "1",
-                ["WindowsRuntime"] = "2",
-                ["ComObjectUniqueInstance"] = "3",
-            },
-            members);
-        Assert.All(policyEnum.Members, m => Assert.NotNull(GetDocumentationComment(m)));
-    }
-
-    [Fact]
-    public void ComOutPtrMarshalling_EnumHonorsPublicVisibility()
-    {
-        this.GenerateSourceGeneratedComApi("IShellItem", options => options with { Public = true });
-
-        var policyEnum = Assert.IsType<EnumDeclarationSyntax>(Assert.Single(this.FindGeneratedType("ComOutPtrMarshalling")));
-        Assert.Contains(policyEnum.Modifiers, m => m.IsKind(SyntaxKind.PublicKeyword));
-
-        // The projection helpers are an implementation detail and stay internal.
-        var helpers = Assert.IsType<ClassDeclarationSyntax>(Assert.Single(this.FindGeneratedType("ComOutPtrHelpers")));
-        Assert.Contains(helpers.Modifiers, m => m.IsKind(SyntaxKind.InternalKeyword));
-    }
-
-    [Fact]
-    public void ComOutPtrMarshalling_CompatibilityOverloadForwardsDefault()
-    {
-        this.GenerateSourceGeneratedComApi("IShellItem");
-
-        (MethodDeclarationSyntax compatibility, MethodDeclarationSyntax policy) = this.FindComOutPtrOverloadPair("BindToHandler", "IShellItem");
-
-        // The historical signature is unchanged: (this IShellItem, IBindCtx, in Guid, out T).
-        Assert.Equal(4, compatibility.ParameterList.Parameters.Count);
-        Assert.True(IsClassConstrainedGeneric(compatibility));
-        ParameterSyntax compatPpv = compatibility.ParameterList.Parameters.Last();
-        Assert.True(compatPpv.Modifiers.Any(SyntaxKind.OutKeyword));
-        Assert.Equal("T", compatPpv.Type?.ToString());
-
-        // The policy parameter is required on the new overload.
-        ParameterSyntax policyParameter = policy.ParameterList.Parameters.Last();
-        Assert.Null(policyParameter.Default);
-        Assert.EndsWith(".ComOutPtrMarshalling", policyParameter.Type!.ToString(), StringComparison.Ordinal);
-
-        string compatibilityBody = compatibility.Body!.ToFullString();
-        Assert.Contains("BindToHandler<T>(@this, pbc, in bhid, out ppv,", compatibilityBody, StringComparison.Ordinal);
-        Assert.Contains("ComOutPtrMarshalling.Default", compatibilityBody, StringComparison.Ordinal);
-
-        // Both overloads carry the trimming annotation C#/WinRT IID generation needs.
-        Assert.All(
-            new[] { compatibility, policy },
-            m => Assert.Contains(m.TypeParameterList!.Parameters.Single().AttributeLists, al => IsAttributePresent(al, "DynamicallyAccessedMembers")));
-    }
-
-    [Fact]
-    public void ComOutPtrMarshalling_PolicyOverloadProjectsRawPointerAndBalancesIt()
-    {
-        this.GenerateSourceGeneratedComApi("IShellItem");
-
-        (_, MethodDeclarationSyntax policy) = this.FindComOutPtrOverloadPair("BindToHandler", "IShellItem");
-        string body = policy.Body!.ToFullString();
-
-        Assert.Contains("ComOutPtrHelpers.Resolve<T>(marshalling)", body, StringComparison.Ordinal);
-        Assert.Contains("ComOutPtrHelpers.GetIID<T>(__marshalling)", body, StringComparison.Ordinal);
-        Assert.Contains("nint __ppv = 0", body, StringComparison.Ordinal);
-        Assert.Contains("ComOutPtrHelpers.ConvertToManaged<T>(__ppv, __marshalling)", body, StringComparison.Ordinal);
-        Assert.Contains("ComOutPtrHelpers.GetRawInterface<", body, StringComparison.Ordinal);
-        Assert.Contains("__thisRaw.BindToHandler(", body, StringComparison.Ordinal);
-
-        // The reference the native call produced is released on both the success and failure paths.
-        TryStatementSyntax tryStatement = Assert.Single(policy.Body.DescendantNodes().OfType<TryStatementSyntax>());
-        Assert.Contains("ComOutPtrHelpers.Free<T>(__ppv, __marshalling)", tryStatement.Finally!.Block.ToFullString(), StringComparison.Ordinal);
-        Assert.Contains("ComOutPtrHelpers.FreeRawInterface<", tryStatement.Finally.Block.ToFullString(), StringComparison.Ordinal);
-
-        // The policy is resolved (and invalid combinations rejected) before native code is invoked.
-        Assert.DoesNotContain("Resolve<T>", tryStatement.Block.ToFullString(), StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void ComOutPtrMarshalling_FlatPInvokeGetsRawCompanion()
-    {
-        this.GenerateSourceGeneratedComApi("SHCreateItemFromParsingName");
-
-        MethodDeclarationSyntax rawCompanion = Assert.Single(this.FindGeneratedMethod("SHCreateItemFromParsingName__ComOutPtrRaw"));
-        Assert.True(rawCompanion.Modifiers.Any(SyntaxKind.PrivateKeyword));
-        Assert.True(rawCompanion.Modifiers.Any(SyntaxKind.PartialKeyword));
-
-        AttributeSyntax libraryImport = Assert.Single(FindAttribute(rawCompanion.AttributeLists, "LibraryImport"));
-        AttributeArgumentSyntax entryPoint = Assert.Single(libraryImport.ArgumentList!.Arguments, a => a.NameEquals?.Name.Identifier.ValueText == "EntryPoint");
-        Assert.Equal("\"SHCreateItemFromParsingName\"", entryPoint.Expression.ToString());
-
-        // Ordinary managed input marshalling is retained; only the COM output pointer becomes raw.
-        Assert.Equal("winmdroot.System.Com.IBindCtx", rawCompanion.ParameterList.Parameters[1].Type!.ToString());
-        Assert.Equal("global::System.Guid*", rawCompanion.ParameterList.Parameters[2].Type!.ToString());
-        ParameterSyntax ppv = rawCompanion.ParameterList.Parameters.Last();
-        Assert.True(ppv.Modifiers.Any(SyntaxKind.OutKeyword));
-        Assert.Equal("nint", ppv.Type!.ToString());
-
-        // The public declaration is untouched.
-        MethodDeclarationSyntax publicDeclaration = Assert.Single(this.FindGeneratedMethod("SHCreateItemFromParsingName"), m => m.TypeParameterList is null);
-        Assert.True(publicDeclaration.Modifiers.Any(SyntaxKind.InternalKeyword));
-        Assert.Equal("object", publicDeclaration.ParameterList.Parameters.Last().Type!.ToString());
-
-        (_, MethodDeclarationSyntax policy) = this.FindComOutPtrOverloadPair("SHCreateItemFromParsingName", "PInvoke");
-        Assert.Contains("SHCreateItemFromParsingName__ComOutPtrRaw(", policy.Body!.ToFullString(), StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void ComOutPtrMarshalling_ComInterfaceGetsSameIidRawCompanion()
-    {
-        this.GenerateSourceGeneratedComApi("IShellItem");
-
-        var publicInterface = Assert.IsType<InterfaceDeclarationSyntax>(Assert.Single(this.FindGeneratedType("IShellItem")));
-        var rawCompanion = Assert.IsType<InterfaceDeclarationSyntax>(Assert.Single(this.FindGeneratedType("IShellItem__ComOutPtrRaw")));
-
-        Assert.Contains(rawCompanion.Modifiers, m => m.IsKind(SyntaxKind.InternalKeyword));
-        Assert.Equal(
-            Assert.Single(FindAttribute(publicInterface.AttributeLists, "Guid")).ToString(),
-            Assert.Single(FindAttribute(rawCompanion.AttributeLists, "Guid")).ToString());
-        Assert.Equal(
-            Assert.Single(FindAttribute(publicInterface.AttributeLists, "InterfaceType")).ToString(),
-            Assert.Single(FindAttribute(rawCompanion.AttributeLists, "InterfaceType")).ToString());
-        Assert.Single(FindAttribute(rawCompanion.AttributeLists, "GeneratedComInterface"));
-
-        // The vtable layout is mirrored slot for slot; only the marked output pointer changes shape.
-        List<MethodDeclarationSyntax> publicMethods = [.. publicInterface.Members.OfType<MethodDeclarationSyntax>()];
-        List<MethodDeclarationSyntax> rawMethods = [.. rawCompanion.Members.OfType<MethodDeclarationSyntax>()];
-        Assert.Equal(publicMethods.Count, rawMethods.Count);
-        Assert.Equal(publicMethods.Select(m => m.Identifier.ValueText), rawMethods.Select(m => m.Identifier.ValueText));
-
-        MethodDeclarationSyntax rawBindToHandler = rawMethods.Single(m => m.Identifier.ValueText == "BindToHandler");
-        Assert.Equal("out nint ppv", rawBindToHandler.ParameterList.Parameters.Last().ToString());
-        Assert.Equal("global::System.Guid* riid", rawBindToHandler.ParameterList.Parameters[2].ToString());
-
-        // No generated class may carry the same IID twice.
-        Assert.DoesNotContain(
-            this.compilation.SyntaxTrees.SelectMany(st => st.GetRoot().DescendantNodes().OfType<ClassDeclarationSyntax>()),
-            c => c.BaseList?.Types.Any(t => t.ToString().Contains("__ComOutPtrRaw", StringComparison.Ordinal)) is true);
-
-        (_, MethodDeclarationSyntax policy) = this.FindComOutPtrOverloadPair("BindToHandler", "IShellItem");
-        Assert.Contains("IShellItem__ComOutPtrRaw __thisRaw", policy.Body!.ToFullString(), StringComparison.Ordinal);
-        Assert.Contains("__thisRaw.BindToHandler(", policy.Body.ToFullString(), StringComparison.Ordinal);
-    }
-
-    /// <summary>
-    /// Verifies that a projection built without a C#/WinRT reference omits every C#/WinRT dependency
-    /// and still compiles.
-    /// </summary>
-    [Fact]
-    public void ComOutPtrMarshalling_WithoutCsWinRT_OmitsWindowsRuntimeProjection()
-    {
-        this.GenerateSourceGeneratedComApi("IShellItem", withCsWinRT: false);
-
-        var helpers = Assert.IsType<ClassDeclarationSyntax>(Assert.Single(this.FindGeneratedType("ComOutPtrHelpers")));
-        string helpersText = helpers.ToFullString();
-        Assert.DoesNotContain("global::WinRT.", helpersText, StringComparison.Ordinal);
-        Assert.DoesNotContain("IID_IInspectable", helpersText, StringComparison.Ordinal);
-
-        // The explicit policy is still declared, but selecting it throws before any native invocation.
-        Assert.Contains("ComOutPtrMarshalling.WindowsRuntime requires a reference to C#/WinRT.", helpersText, StringComparison.Ordinal);
-        Assert.Contains("ComInterfaceMarshaller<T>", helpersText, StringComparison.Ordinal);
-        Assert.Contains("UniqueComInterfaceMarshaller<T>", helpersText, StringComparison.Ordinal);
-    }
-
-    /// <summary>
-    /// Verifies that the C#/WinRT projection is used when C#/WinRT is referenced.
-    /// </summary>
-    [Fact]
-    public void ComOutPtrMarshalling_WithCsWinRT_UsesWindowsRuntimeProjection()
-    {
-        this.GenerateSourceGeneratedComApi("IShellItem");
-
-        var helpers = Assert.IsType<ClassDeclarationSyntax>(Assert.Single(this.FindGeneratedType("ComOutPtrHelpers")));
-        string helpersText = helpers.ToFullString();
-        Assert.Contains("global::WinRT.Projections.IsTypeWindowsRuntimeType(typeof(T))", helpersText, StringComparison.Ordinal);
-        Assert.Contains("global::WinRT.GuidGenerator.CreateIID(typeof(T))", helpersText, StringComparison.Ordinal);
-        Assert.Contains("global::WinRT.MarshalInspectable<object>.FromAbi", helpersText, StringComparison.Ordinal);
-        Assert.Contains("global::WinRT.MarshalInterface<T>.FromAbi", helpersText, StringComparison.Ordinal);
-        Assert.Contains("global::WinRT.MarshalInspectable<object>.DisposeAbi", helpersText, StringComparison.Ordinal);
-        Assert.Contains("global::WinRT.MarshalInterface<T>.DisposeAbi", helpersText, StringComparison.Ordinal);
-        Assert.Contains("IID_IInspectable", helpersText, StringComparison.Ordinal);
-    }
-
-    [Theory]
-    [InlineData(false, true)] // built-in COM
-    [InlineData(true, false)] // no marshaling
-    public void ComOutPtrMarshalling_OtherModesAreUnchanged(bool useComSourceGenerators, bool allowMarshaling)
-    {
-        this.compilation = this.starterCompilations["net10.0"];
-        this.parseOptions = this.parseOptions.WithLanguageVersion(GetLanguageVersionForTfm("net10.0") ?? LanguageVersion.Latest);
-        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with
-        {
-            AllowMarshaling = allowMarshaling,
-            ComInterop = new GeneratorOptions.ComInteropOptions { UseComSourceGenerators = useComSourceGenerators },
-        });
-        this.GenerateApi("IShellItem");
+        var helper = Assert.IsType<ClassDeclarationSyntax>(Assert.Single(this.FindGeneratedType("ComOrWinRTObjectMarshaller")));
+        Assert.Contains(helper.Modifiers, m => m.IsKind(SyntaxKind.InternalKeyword));
+        Assert.Contains(helper.AttributeLists, al => IsAttributePresent(al, "global::System.CodeDom.Compiler.GeneratedCode"));
 
         Assert.Empty(this.FindGeneratedType("ComOutPtrMarshalling"));
         Assert.Empty(this.FindGeneratedType("ComOutPtrHelpers"));
         Assert.Empty(this.FindGeneratedType("IShellItem__ComOutPtrRaw"));
-
-        List<MethodDeclarationSyntax> genericOverloads = [.. this.FindGeneratedMethod("BindToHandler").Where(m => m.TypeParameterList?.Parameters.Count == 1)];
-        Assert.NotEmpty(genericOverloads);
-        Assert.All(genericOverloads, m => Assert.DoesNotContain(m.ParameterList.Parameters, p => p.Type?.ToString().Contains("ComOutPtrMarshalling", StringComparison.Ordinal) is true));
     }
 
     [Fact]
-    public void ComOutPtrMarshalling_OptOutSuppressesPolicy()
+    public void AutoWinRTMarshalling_FriendlyOverloadSelectsIidFromType()
     {
-        this.GenerateSourceGeneratedComApi(
-            "IShellItem",
-            options => options with { FriendlyOverloads = new GeneratorOptions.FriendlyOverloadOptions { ComOutPtrGenericOverloads = false } });
+        this.GenerateMarshaledComApi("IShellItem");
 
-        Assert.Empty(this.FindGeneratedType("ComOutPtrMarshalling"));
-        Assert.Empty(this.FindGeneratedType("IShellItem__ComOutPtrRaw"));
+        MethodDeclarationSyntax overload = this.FindComOutPtrOverload("BindToHandler", "IShellItem");
+        Assert.Equal(4, overload.ParameterList.Parameters.Count);
+        Assert.True(IsClassConstrainedGeneric(overload));
+        Assert.Contains(overload.TypeParameterList!.Parameters.Single().AttributeLists, al => IsAttributePresent(al, "DynamicallyAccessedMembers"));
+        Assert.Equal("T", overload.ParameterList.Parameters.Last().Type!.ToString());
+
+        string body = overload.Body!.ToFullString();
+        Assert.Contains("ComOrWinRTObjectMarshaller.GetIID<T>()", body, StringComparison.Ordinal);
+        Assert.Contains("@this.BindToHandler(", body, StringComparison.Ordinal);
+        Assert.Contains("object __ppv", body, StringComparison.Ordinal);
+        Assert.Contains("out __ppv", body, StringComparison.Ordinal);
+        Assert.Contains("ppv = (T)__ppv", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AutoWinRTMarshalling_FlatPInvokeUsesCustomMarshaller()
+    {
+        this.GenerateMarshaledComApi("SHCreateItemFromParsingName");
+
+        MethodDeclarationSyntax declaration = Assert.Single(
+            this.FindGeneratedMethod("SHCreateItemFromParsingName"),
+            m => m.TypeParameterList is null && FindAttribute(m.AttributeLists, "LibraryImport").Any());
+        Assert.Equal("global::System.Guid*", declaration.ParameterList.Parameters[^2].Type!.ToString());
+
+        ParameterSyntax ppv = declaration.ParameterList.Parameters.Last();
+        Assert.True(ppv.Modifiers.Any(SyntaxKind.OutKeyword));
+        Assert.Equal("object", ppv.Type!.ToString());
+        Assert.Contains(
+            FindAttribute(ppv.AttributeLists, "global::System.Runtime.InteropServices.Marshalling.MarshalUsing"),
+            a => a.ToString().Contains("ComOrWinRTObjectMarshaller", StringComparison.Ordinal));
+        Assert.Empty(FindAttribute(ppv.AttributeLists, "MarshalAs"));
+
+        Assert.Empty(this.FindGeneratedMethod("SHCreateItemFromParsingName__ComOutPtrRaw"));
+        MethodDeclarationSyntax overload = this.FindComOutPtrOverload("SHCreateItemFromParsingName", "PInvoke");
+        Assert.Contains("PInvoke.SHCreateItemFromParsingName(", overload.Body!.ToFullString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AutoWinRTMarshalling_GeneratedComCarriesRequestedIidForManagedImplementers()
+    {
+        this.GenerateMarshaledComApi("IShellItem");
+
+        var iface = Assert.IsType<InterfaceDeclarationSyntax>(Assert.Single(this.FindGeneratedType("IShellItem")));
+        MethodDeclarationSyntax method = Assert.Single(iface.Members.OfType<MethodDeclarationSyntax>(), m => m.Identifier.ValueText == "BindToHandler");
+
+        ParameterSyntax riid = method.ParameterList.Parameters[^2];
+        Assert.Equal("global::System.Guid", riid.Type!.ToString());
+        Assert.True(riid.Modifiers.Any(SyntaxKind.InKeyword));
+        Assert.Contains(
+            FindAttribute(riid.AttributeLists, "global::System.Runtime.InteropServices.Marshalling.MarshalUsing"),
+            a => a.ToString().Contains("ComOrWinRTObjectMarshaller.IidMarshaller", StringComparison.Ordinal));
+
+        ParameterSyntax ppv = method.ParameterList.Parameters.Last();
+        Assert.Equal("object", ppv.Type!.ToString());
+        Assert.True(ppv.Modifiers.Any(SyntaxKind.OutKeyword));
+        Assert.Contains(
+            FindAttribute(ppv.AttributeLists, "global::System.Runtime.InteropServices.Marshalling.MarshalUsing"),
+            a => a.ToString().Contains("ComOrWinRTObjectMarshaller", StringComparison.Ordinal));
+        Assert.Empty(FindAttribute(ppv.AttributeLists, "MarshalAs"));
+    }
+
+    [Fact]
+    public void AutoWinRTMarshalling_SourceGeneratedHelperProjectsAndFallsBack()
+    {
+        this.GenerateMarshaledComApi("IShellItem");
+
+        string helper = Assert.Single(this.FindGeneratedType("ComOrWinRTObjectMarshaller")).ToFullString();
+        Assert.Contains("typeof(T) == typeof(object)", helper, StringComparison.Ordinal);
+        Assert.Contains("global::WinRT.Projections.IsTypeWindowsRuntimeType(typeof(T))", helper, StringComparison.Ordinal);
+        Assert.Contains("global::WinRT.GuidGenerator.CreateIID(typeof(T))", helper, StringComparison.Ordinal);
+        Assert.Contains("Marshal.QueryInterface(value, in iid, out nint inspectable)", helper, StringComparison.Ordinal);
+        Assert.Contains("global::WinRT.MarshalInspectable<object>.FromAbi(inspectable)", helper, StringComparison.Ordinal);
+        Assert.Contains("if (hr != E_NOINTERFACE)", helper, StringComparison.Ordinal);
+        Assert.Contains("ComInterfaceMarshaller<object>.ConvertToManaged", helper, StringComparison.Ordinal);
+        Assert.Contains("IidMarshaller.Current", helper, StringComparison.Ordinal);
+        Assert.Contains("Marshal.QueryInterface((nint)identity, in iid, out nint requestedInterface)", helper, StringComparison.Ordinal);
+        Assert.Contains("requestedIids.Pop()", helper, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AutoWinRTMarshalling_BuiltInComPostProcessesFriendlyOutput()
+    {
+        this.GenerateMarshaledComApi("IShellItem", useComSourceGenerators: false);
+
+        MethodDeclarationSyntax overload = this.FindComOutPtrOverload("BindToHandler", "IShellItem");
+        string body = overload.Body!.ToFullString();
+        Assert.Contains("ComOrWinRTObjectMarshaller.GetIID<T>()", body, StringComparison.Ordinal);
+        Assert.Contains("ComOrWinRTObjectMarshaller.ConvertToManaged(__ppv)", body, StringComparison.Ordinal);
+
+        string helper = Assert.Single(this.FindGeneratedType("ComOrWinRTObjectMarshaller")).ToFullString();
+        Assert.Contains("Marshal.GetIUnknownForObject(value)", helper, StringComparison.Ordinal);
+        Assert.Contains("return value", helper, StringComparison.Ordinal);
+        Assert.DoesNotContain("CustomMarshaller", helper, StringComparison.Ordinal);
+        Assert.DoesNotContain("ComInterfaceMarshaller", helper, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AutoWinRTMarshalling_NativeMethodsOptOutPreservesLegacyProjection()
+    {
+        this.GenerateMarshaledComApi(
+            "IShellItem",
+            options => options with
+            {
+                ComInterop = options.ComInterop with { AutoWinRTMarshalling = false },
+            });
+
+        Assert.Empty(this.FindGeneratedType("ComOrWinRTObjectMarshaller"));
+        var iface = Assert.IsType<InterfaceDeclarationSyntax>(Assert.Single(this.FindGeneratedType("IShellItem")));
+        MethodDeclarationSyntax method = Assert.Single(iface.Members.OfType<MethodDeclarationSyntax>(), m => m.Identifier.ValueText == "BindToHandler");
+        Assert.Equal("global::System.Guid*", method.ParameterList.Parameters[^2].Type!.ToString());
+        Assert.Contains(FindAttribute(method.ParameterList.Parameters.Last().AttributeLists, "MarshalAs"), a => a.ToString().Contains("UnmanagedType.Interface", StringComparison.Ordinal));
+
+        MethodDeclarationSyntax overload = this.FindComOutPtrOverload("BindToHandler", "IShellItem");
+        Assert.Contains("typeof(T).GUID", overload.Body!.ToFullString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("DynamicallyAccessedMembers", overload.TypeParameterList!.ToFullString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AutoWinRTMarshalling_WithoutCsWinRTOmitsAdaptiveProjection()
+    {
+        this.GenerateMarshaledComApi("IShellItem", withCsWinRT: false);
+
+        Assert.Empty(this.FindGeneratedType("ComOrWinRTObjectMarshaller"));
+        Assert.DoesNotContain(
+            this.compilation.SyntaxTrees.SelectMany(tree => tree.GetRoot().DescendantNodes().OfType<AttributeSyntax>()),
+            attribute => attribute.ToString().Contains("ComOrWinRTObjectMarshaller", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void AutoWinRTMarshalling_FriendlyOverloadOptOutStillMarshalsAbi()
+    {
+        this.GenerateMarshaledComApi(
+            "IShellItem",
+            options => options with
+            {
+                FriendlyOverloads = new GeneratorOptions.FriendlyOverloadOptions { ComOutPtrGenericOverloads = false },
+            });
+
+        Assert.Single(this.FindGeneratedType("ComOrWinRTObjectMarshaller"));
         Assert.DoesNotContain(this.FindGeneratedMethod("BindToHandler"), m => m.TypeParameterList?.Parameters.Count == 1);
+
+        var iface = Assert.IsType<InterfaceDeclarationSyntax>(Assert.Single(this.FindGeneratedType("IShellItem")));
+        MethodDeclarationSyntax method = Assert.Single(iface.Members.OfType<MethodDeclarationSyntax>(), m => m.Identifier.ValueText == "BindToHandler");
+        Assert.Contains(
+            FindAttribute(method.ParameterList.Parameters.Last().AttributeLists, "global::System.Runtime.InteropServices.Marshalling.MarshalUsing"),
+            a => a.ToString().Contains("ComOrWinRTObjectMarshaller", StringComparison.Ordinal));
     }
 
     [Theory, PairwiseData]
@@ -1399,12 +1337,17 @@ public class COMTests : GeneratorTestBase
             ?.ToFullString();
 
     /// <summary>
-    /// Generates an API with source-generated COM enabled, which is where the <c>ComOutPtrMarshalling</c> policy applies.
+    /// Generates an API with marshaling and C#/WinRT references enabled.
     /// </summary>
     /// <param name="apiName">The API to generate.</param>
     /// <param name="optionsModifier">An optional transformation of the generator options.</param>
     /// <param name="withCsWinRT"><see langword="false"/> to drop the C#/WinRT references from the compilation.</param>
-    private void GenerateSourceGeneratedComApi(string apiName, Func<GeneratorOptions, GeneratorOptions>? optionsModifier = null, bool withCsWinRT = true)
+    /// <param name="useComSourceGenerators"><see langword="true"/> to generate source-generated COM declarations.</param>
+    private void GenerateMarshaledComApi(
+        string apiName,
+        Func<GeneratorOptions, GeneratorOptions>? optionsModifier = null,
+        bool withCsWinRT = true,
+        bool useComSourceGenerators = true)
     {
         this.compilation = this.starterCompilations["net10.0"];
         if (!withCsWinRT)
@@ -1418,32 +1361,32 @@ public class COMTests : GeneratorTestBase
         GeneratorOptions options = DefaultTestGeneratorOptions with
         {
             AllowMarshaling = true,
-            ComInterop = new GeneratorOptions.ComInteropOptions { UseComSourceGenerators = true },
+            ComInterop = new GeneratorOptions.ComInteropOptions { UseComSourceGenerators = useComSourceGenerators },
         };
         this.generator = this.CreateGenerator(optionsModifier?.Invoke(options) ?? options);
         Assert.True(this.generator.TryGenerate(apiName, CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
 
         // CS8795: [LibraryImport] and [GeneratedComInterface] partials are implemented by build-task mode, which this harness does not run.
-        this.AssertNoDiagnostics(this.compilation, logAllGeneratedCode: false, acceptable: d => d.Id is "CS8795" or "CS1574");
+        this.AssertNoDiagnostics(
+            this.compilation,
+            logAllGeneratedCode: false,
+            acceptable: d => useComSourceGenerators && d.Id is "CS8795" or "CS1574");
     }
 
     /// <summary>
-    /// Finds the compatibility and policy-bearing overloads of a generic COM output pointer friendly overload.
+    /// Finds a generic COM output pointer friendly overload.
     /// </summary>
     /// <param name="methodName">The friendly overload name.</param>
     /// <param name="declaringTypeHint">A substring of the receiver type (for extension methods) or the host class name.</param>
-    /// <returns>The compatibility overload followed by the policy-bearing overload.</returns>
-    private (MethodDeclarationSyntax Compatibility, MethodDeclarationSyntax Policy) FindComOutPtrOverloadPair(string methodName, string declaringTypeHint)
+    /// <returns>The generic friendly overload.</returns>
+    private MethodDeclarationSyntax FindComOutPtrOverload(string methodName, string declaringTypeHint)
     {
         List<MethodDeclarationSyntax> overloads = [.. this.FindGeneratedMethod(methodName)
             .Where(m => m.TypeParameterList?.Parameters.Count == 1
                 && (m.ParameterList.Parameters.FirstOrDefault()?.Type?.ToString().Contains(declaringTypeHint, StringComparison.Ordinal) is true
                     || (m.Parent as ClassDeclarationSyntax)?.Identifier.ValueText == declaringTypeHint))];
 
-        Assert.Equal(2, overloads.Count);
-        MethodDeclarationSyntax policy = Assert.Single(overloads, m => m.ParameterList.Parameters.Last().Type!.ToString().EndsWith("ComOutPtrMarshalling", StringComparison.Ordinal));
-        MethodDeclarationSyntax compatibility = Assert.Single(overloads, m => m != policy);
-        return (compatibility, policy);
+        return Assert.Single(overloads);
     }
 }

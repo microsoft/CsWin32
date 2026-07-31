@@ -276,8 +276,12 @@ jobs:
         & $msbuild "${{ runner.temp }}\integration-tests\buildtask-sdk\buildtask-sdk.slnx" /r
       shell: pwsh
     - name: 🧪 dotnet publish buildtask-sdk-style
-      run: dotnet publish -r win-x64
+      run: dotnet publish -c Release -r win-x64
       working-directory: ${{ runner.temp }}/integration-tests/buildtask-sdk
+    - name: 🧪 Run Native AOT automatic WinRT marshalling
+      run: ./auto-winrt-aot/bin/Release/net9.0-windows10.0.22621.0/win-x64/publish/buildtask-sdk-auto-winrt-aot.exe --validate-com-out-ptr
+      working-directory: ${{ runner.temp }}/integration-tests/buildtask-sdk
+      shell: pwsh
 
   validate:
     name: ✅ Validate

@@ -1,3 +1,4 @@
+CreateBindCtx
 IStream
 IShellItem
 SHCreateItemFromParsingName

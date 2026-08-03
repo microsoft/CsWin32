@@ -1,5 +1,4 @@
 <Solution>
   <Project Path="app/buildtask-sdk.csproj" />
   <Project Path="dependency/buildtask-sdk-dependency.csproj" />
-  <Project Path="auto-winrt-aot/buildtask-sdk-auto-winrt-aot.csproj" />
 </Solution>

@@ -1,4 +1,0 @@
-CreateBindCtx
-IStream
-IShellItem
-SHCreateItemFromParsingName

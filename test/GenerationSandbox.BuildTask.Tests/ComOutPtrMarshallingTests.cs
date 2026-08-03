@@ -21,8 +21,9 @@ public partial class ComOutPtrMarshallingTests
 {
     private static readonly Guid BHID_Stream = new(0x1cebb3ab, 0x7c10, 0x499a, 0xa4, 0x17, 0x92, 0xca, 0x16, 0xc4, 0xcb, 0x83);
     private static readonly Guid BHID_StorageItem = new(0x404e2109, 0x77d2, 0x4699, 0xa5, 0xa0, 0x4f, 0xdf, 0x10, 0xdb, 0x98, 0x37);
-    private static readonly Guid CLSID_ShellLink = new(0x00021401, 0x0000, 0x0000, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46);
 
+    // CsWin32's IShellItem applies the marshaller under test. This same-IID raw projection keeps ppv as nint
+    // so the test can verify the exact interface pointer exposed to an external native caller.
     [GeneratedComInterface]
     [Guid("43826d1e-e718-42ee-bc55-a1e261c37bfe")]
     internal partial interface IShellItemRaw
@@ -76,7 +77,7 @@ public partial class ComOutPtrMarshallingTests
         Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
 
         PInvoke.CoCreateInstance<object>(
-            CLSID_ShellLink,
+            typeof(ShellLink).GUID,
             null,
             CLSCTX.CLSCTX_INPROC_SERVER,
             out object instance).ThrowOnFailure();
@@ -124,7 +125,7 @@ public partial class ComOutPtrMarshallingTests
     {
         Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
         PInvoke.CoCreateInstance<object>(
-            CLSID_ShellLink,
+            typeof(ShellLink).GUID,
             null,
             CLSCTX.CLSCTX_INPROC_SERVER,
             out object shellLink).ThrowOnFailure();

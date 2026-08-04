@@ -106,16 +106,14 @@ The opt-out exists for consumers that require prior COM-only wrapper behavior or
 
 ## Managed COM server result
 
-The initial prototypes identified an ABI problem: an object output marshaller alone returns an identity pointer, while a native caller requires the exact interface pointer named by the sibling `riid`.
+The selected implementation applies the adaptive object marshaller without coordinating with the
+sibling `riid`. A managed implementation returns a WinRT object, COM object, or `null`; the output
+marshaller returns its COM identity. A generated managed consumer applies the adaptive projection,
+then casts to `T`, which performs the requested-interface QI.
 
-The selected implementation solves this with coordinated marshallers:
-
-- The generated managed `riid` parameter uses an IID input marshaller.
-- During CCW dispatch, that marshaller places the requested IID in a thread-local stack.
-- The object output marshaller queries the returned object's identity for that exact IID.
-- Cleanup removes the IID context, including nested and reentrant calls.
-
-The native ABI remains `Guid*` plus `void**`. Managed implementations can return WinRT objects, inspectable COM objects, non-inspectable COM objects, or `null`, and external native callers receive the exact requested interface pointer.
+The native signature remains `Guid*` plus `void**`. Producing an exact `riid` interface pointer for
+arbitrary native callers of managed implementations is a separate generated COM marshalling concern
+and is not part of this proposal.
 
 ## Built-in COM result
 
@@ -138,6 +136,8 @@ Not included:
 - The SDK method with two pairs.
 - Fixed-type COM outputs that do not use the recognized pair.
 - Input marshalling changes.
+- Exact-`riid` output pointers from managed implementations consumed directly by arbitrary native
+  callers.
 - Unique COM wrapper ownership.
 
 ## Validation
@@ -149,6 +149,5 @@ The selected design is covered by:
 - Built-in COM runtime tests that invoke WinRT members.
 - An opt-out regression that preserves the former cast failure.
 - Managed COM server tests for WinRT, inspectable COM, non-inspectable COM, and null.
-- Raw native-style tests that verify exact requested-IID pointers.
-- Native AOT publish and execution.
+- Native AOT package-consumption publish.
 - Full Windows build, ordinary test, and hardware-dependent test suites.

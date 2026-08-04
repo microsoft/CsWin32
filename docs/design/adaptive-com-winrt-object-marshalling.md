@@ -38,7 +38,7 @@ For each eligible COM object output:
 4. On `E_NOINTERFACE`, use the normal COM projection.
 5. Propagate every other QI failure.
 
-This rule applies to source-generated flat P/Invokes, generated COM RCW and CCW calls, and built-in COM friendly overloads.
+This rule applies to source-generated flat P/Invokes, generated COM calls, and built-in COM friendly overloads.
 
 The generated friendly signature remains:
 
@@ -99,25 +99,26 @@ Eligible `[LibraryImport]` declarations apply `[MarshalUsing]` directly to `out 
 
 ## Generated COM interfaces
 
-The object marshaller alone cannot make a managed CCW ABI-correct. `ComInterfaceMarshaller<object>` normally returns an identity pointer, while native callers require the exact interface named by the sibling `riid`.
-
-CsWin32 changes the generated managed shape without changing the native ABI:
+CsWin32 applies the adaptive marshaller to the object output without changing the IID parameter:
 
 ```csharp
 void BindToHandler(
     IBindCtx? pbc,
     Guid* bhid,
-    [MarshalUsing(typeof(ComOrWinRTObjectMarshaller.IidMarshaller))]
-    in Guid riid,
+    Guid* riid,
     [MarshalUsing(typeof(ComOrWinRTObjectMarshaller))]
     out object ppv);
 ```
 
-The IID marshaller passes the IID through on RCW calls. On CCW calls it pushes the IID onto a thread-local stack for the duration of managed dispatch. A stack supports nested and reentrant calls and is popped during generated cleanup.
+For managed implementations, the output marshaller returns the object's COM identity. A generated
+managed consumer then applies the adaptive input projection, and the friendly overload casts the
+projected object to `T`. That cast performs the required interface QI, so no sibling-parameter state
+is needed.
 
-For managed-to-native output, the object marshaller converts the returned object to its COM identity, reads the active IID, queries for that IID, returns the requested interface pointer, and releases the temporary identity reference.
-
-Managed implementations may return WinRT objects, inspectable COM objects, non-inspectable COM objects, or `null`. Raw native test clients verify that the returned pointer is the exact requested interface, not merely `IUnknown`.
+Managed implementations may return WinRT objects, inspectable COM objects, non-inspectable COM
+objects, or `null`. Producing the exact interface pointer named by `riid` for arbitrary native callers
+of managed implementations is a separate generated COM marshalling concern and is not added by this
+proposal.
 
 ## Built-in COM interop
 
@@ -143,7 +144,7 @@ Consumers that disable C#/WinRT dynamic interface casting cannot rely on this be
 
 The design uses generated COM metadata and custom marshallers. Native AOT callers rely on interface contracts rather than concrete runtime-class wrapper types.
 
-The integration suite publishes and executes a Native AOT app covering native WinRT and COM outputs, managed CCW outputs, and exact requested-IID pointer conformance.
+The integration suite publishes a Native AOT package-consumption app.
 
 ## Behavior and cost
 
@@ -160,7 +161,8 @@ CsWin32 projections are primarily internal, so preserving previous generated sou
 - Every fixed-type COM output.
 - Non-final or multiple IID/output pairs in the initial implementation.
 - Concrete WinRT runtime-class wrapper identity.
+- Exact-`riid` output pointers from managed implementations consumed directly by arbitrary native callers.
 
 ## Validation
 
-Coverage includes generator-shape tests, source-generated and built-in runtime tests, enabled and disabled behavior, WinRT and COM outputs, managed servers, null output, raw native pointer conformance, and Native AOT execution.
+Coverage includes generator-shape tests, source-generated and built-in runtime tests, enabled and disabled behavior, WinRT and COM outputs, managed round trips, null output, and Native AOT package publication.

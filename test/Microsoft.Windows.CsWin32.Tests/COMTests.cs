@@ -619,7 +619,7 @@ public class COMTests : GeneratorTestBase
     }
 
     [Fact]
-    public void AutoWinRTMarshalling_GeneratedComCarriesRequestedIidForManagedImplementers()
+    public void AutoWinRTMarshalling_GeneratedComUsesAdaptiveOutputMarshaller()
     {
         this.GenerateMarshaledComApi("IShellItem");
 
@@ -627,11 +627,8 @@ public class COMTests : GeneratorTestBase
         MethodDeclarationSyntax method = Assert.Single(iface.Members.OfType<MethodDeclarationSyntax>(), m => m.Identifier.ValueText == "BindToHandler");
 
         ParameterSyntax riid = method.ParameterList.Parameters[^2];
-        Assert.Equal("global::System.Guid", riid.Type!.ToString());
-        Assert.True(riid.Modifiers.Any(SyntaxKind.InKeyword));
-        Assert.Contains(
-            FindAttribute(riid.AttributeLists, "global::System.Runtime.InteropServices.Marshalling.MarshalUsing"),
-            a => a.ToString().Contains("ComOrWinRTObjectMarshaller.IidMarshaller", StringComparison.Ordinal));
+        Assert.Equal("global::System.Guid*", riid.Type!.ToString());
+        Assert.Empty(FindAttribute(riid.AttributeLists, "global::System.Runtime.InteropServices.Marshalling.MarshalUsing"));
 
         ParameterSyntax ppv = method.ParameterList.Parameters.Last();
         Assert.Equal("object", ppv.Type!.ToString());
@@ -655,9 +652,9 @@ public class COMTests : GeneratorTestBase
         Assert.Contains("global::WinRT.MarshalInspectable<object>.FromAbi(inspectable)", helper, StringComparison.Ordinal);
         Assert.Contains("if (hr != E_NOINTERFACE)", helper, StringComparison.Ordinal);
         Assert.Contains("ComInterfaceMarshaller<object>.ConvertToManaged", helper, StringComparison.Ordinal);
-        Assert.Contains("IidMarshaller.Current", helper, StringComparison.Ordinal);
-        Assert.Contains("Marshal.QueryInterface((nint)identity, in iid, out nint requestedInterface)", helper, StringComparison.Ordinal);
-        Assert.Contains("requestedIids.Pop()", helper, StringComparison.Ordinal);
+        Assert.Contains(".ConvertToUnmanaged(value)", helper, StringComparison.Ordinal);
+        Assert.DoesNotContain("IidMarshaller", helper, StringComparison.Ordinal);
+        Assert.DoesNotContain("requestedIids", helper, StringComparison.Ordinal);
     }
 
     [Fact]

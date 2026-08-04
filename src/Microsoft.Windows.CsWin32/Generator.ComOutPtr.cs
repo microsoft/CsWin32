@@ -31,10 +31,6 @@ public partial class Generator
     private NameSyntax ComOrWinRTObjectMarshallerTypeSyntax =>
         ParseName($"global::{this.MainGenerator.Namespace}.{ComOrWinRTObjectMarshallerClassName}");
 
-    /// <summary>Gets the fully qualified name of the generated IID context marshaller.</summary>
-    private NameSyntax ComOutPtrIidMarshallerTypeSyntax =>
-        ParseName($"global::{this.MainGenerator.Namespace}.{ComOrWinRTObjectMarshallerClassName}.IidMarshaller");
-
     /// <summary>
     /// Locates the canonical <c>IID_PPV_ARGS</c> pair on a method: a <c>Guid*</c> parameter immediately followed by
     /// a <c>void**</c> parameter carrying <c>[ComOutPtr]</c>, positioned as the final two parameters.
@@ -132,20 +128,15 @@ public partial class Generator
     /// <param name="methodDefinition">The metadata method represented by <paramref name="methodDeclaration"/>.</param>
     /// <param name="signature">The decoded metadata signature.</param>
     /// <param name="methodDeclaration">The generated P/Invoke or COM method declaration.</param>
-    /// <param name="marshalManagedImplementerOutput">
-    /// A value indicating whether the declaration can dispatch to a managed implementation, which requires carrying
-    /// the requested IID through generated COM marshalling.
-    /// </param>
     /// <returns>The declaration with adaptive marshalling applied when appropriate.</returns>
     private MethodDeclarationSyntax ApplyAutoWinRTMarshalling(
         MethodDefinition methodDefinition,
         MethodSignature<TypeHandleInfo> signature,
-        MethodDeclarationSyntax methodDeclaration,
-        bool marshalManagedImplementerOutput)
+        MethodDeclarationSyntax methodDeclaration)
     {
         if (!this.UseAutoWinRTMarshalling
             || !this.useSourceGenerators
-            || !this.TryFindComOutPtrPair(methodDefinition, signature, out int riidIndex, out int ppvIndex)
+            || !this.TryFindComOutPtrPair(methodDefinition, signature, out _, out int ppvIndex)
             || ppvIndex >= methodDeclaration.ParameterList.Parameters.Count)
         {
             return methodDeclaration;
@@ -159,39 +150,6 @@ public partial class Generator
         }
 
         SeparatedSyntaxList<ParameterSyntax> parameters = methodDeclaration.ParameterList.Parameters;
-        if (marshalManagedImplementerOutput)
-        {
-            if (riidIndex >= parameters.Count || parameters[riidIndex].Type is not TypeSyntax riidType)
-            {
-                return methodDeclaration;
-            }
-
-            TypeSyntax iidType;
-            SyntaxTokenList iidModifiers;
-            if (riidType is PointerTypeSyntax { ElementType: TypeSyntax elementType })
-            {
-                iidType = elementType;
-                iidModifiers = [TokenWithSpace(SyntaxKind.InKeyword)];
-            }
-            else if (parameters[riidIndex].Modifiers.Any(SyntaxKind.InKeyword))
-            {
-                iidType = riidType;
-                iidModifiers = parameters[riidIndex].Modifiers;
-            }
-            else
-            {
-                return methodDeclaration;
-            }
-
-            AttributeSyntax marshalUsingIid = Attribute(ParseName("global::System.Runtime.InteropServices.Marshalling.MarshalUsing"))
-                .AddArgumentListArguments(AttributeArgument(TypeOfExpression(this.ComOutPtrIidMarshallerTypeSyntax)));
-            ParameterSyntax riid = parameters[riidIndex]
-                .WithType(iidType.WithTrailingTrivia(TriviaList(Space)))
-                .WithModifiers(iidModifiers)
-                .AddAttributeLists(AttributeList(marshalUsingIid));
-            parameters = parameters.Replace(parameters[riidIndex], riid);
-        }
-
         SyntaxList<AttributeListSyntax> attributeLists = default;
         foreach (AttributeListSyntax attributeList in ppv.AttributeLists)
         {

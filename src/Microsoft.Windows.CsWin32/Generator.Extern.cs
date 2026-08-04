@@ -397,7 +397,10 @@ public partial class Generator
                 exposedMethod = exposedMethod.AddModifiers(TokenWithSpace(SyntaxKind.PartialKeyword));
             }
 
-            exposedMethod = this.ApplyAutoWinRTMarshalling(methodDefinition, signature, exposedMethod, marshalManagedImplementerOutput: false);
+            exposedMethod = this.ApplyAutoWinRTMarshalling(
+                methodDefinition,
+                signature,
+                exposedMethod);
 
             if (this.GetSupportedOSPlatformAttribute(methodDefinition.GetCustomAttributes()) is AttributeSyntax supportedOSPlatformAttribute)
             {

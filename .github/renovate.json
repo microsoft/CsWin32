@@ -12,6 +12,16 @@
 		{
 			"matchFileNames": ["Directory.Packages.Analyzers.props"],
 			"enabled": false
+		},
+		{
+			"description": "Preserve the SDK major versions used for VS compatibility testing",
+			"matchManagers": ["dotnet-sdk"],
+			"matchFileNames": [
+				"integration-tests/buildtask-sdk/global.json",
+				"integration-tests/sdk/global.json"
+			],
+			"matchUpdateTypes": ["major"],
+			"enabled": false
 		}
 	]
 }

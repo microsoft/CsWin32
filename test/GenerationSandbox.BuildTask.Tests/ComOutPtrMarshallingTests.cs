@@ -10,11 +10,12 @@ using Windows.Win32.Foundation;
 using Windows.Win32.System.Com;
 using Windows.Win32.System.SystemServices;
 using Windows.Win32.UI.Shell;
+using WinRT;
 
 namespace GenerationSandbox.BuildTask.Tests;
 
 /// <summary>
-/// Runtime coverage for automatic COM and Windows Runtime output projection.
+/// Runtime coverage for automatic COM and Windows Runtime object marshalling.
 /// </summary>
 [Trait("WindowsOnly", "true")]
 public partial class ComOutPtrMarshallingTests
@@ -58,6 +59,22 @@ public partial class ComOutPtrMarshallingTests
         shellItem.BindToHandler<object>(null, BHID_StorageItem, out object storageItem);
 
         StorageFile storageFile = Assert.IsType<StorageFile>(storageItem);
+        Assert.Equal("win.ini", storageFile.Name, ignoreCase: true);
+    }
+
+    [Fact]
+    [Trait("TestCategory", "RequiresHardware")]
+    public async Task WindowsRuntimeObject_CanBePassedAsComInput()
+    {
+        Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
+        StorageFile storageFile = await StorageFile.GetFileFromPathAsync(WinIniPath);
+        IWinRTObject provider = (IWinRTObject)(object)storageFile;
+
+        unsafe
+        {
+            _ = PInvoke.CoAllowSetForegroundWindow(provider, null);
+        }
+
         Assert.Equal("win.ini", storageFile.Name, ignoreCase: true);
     }
 

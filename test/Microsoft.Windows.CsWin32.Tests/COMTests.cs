@@ -652,6 +652,11 @@ public class COMTests : GeneratorTestBase
         Assert.Contains("global::WinRT.MarshalInspectable<object>.FromAbi(inspectable)", helper, StringComparison.Ordinal);
         Assert.Contains("if (hr != E_NOINTERFACE)", helper, StringComparison.Ordinal);
         Assert.Contains("ComInterfaceMarshaller<object>.ConvertToManaged", helper, StringComparison.Ordinal);
+        Assert.Contains("ComWrappers.TryGetComInstance", helper, StringComparison.Ordinal);
+        Assert.Contains("Marshal.IsComObject", helper, StringComparison.Ordinal);
+        Assert.Contains("Marshal.GetIUnknownForObject", helper, StringComparison.Ordinal);
+        Assert.Contains("GeneratedComClassAttribute", helper, StringComparison.Ordinal);
+        Assert.Contains("global::WinRT.MarshalInspectable<object>.FromManaged(value)", helper, StringComparison.Ordinal);
         Assert.Contains(".ConvertToUnmanaged(value)", helper, StringComparison.Ordinal);
         Assert.DoesNotContain("IidMarshaller", helper, StringComparison.Ordinal);
         Assert.DoesNotContain("requestedIids", helper, StringComparison.Ordinal);

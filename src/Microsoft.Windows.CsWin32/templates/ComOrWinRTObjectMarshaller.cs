@@ -60,7 +60,7 @@ internal static unsafe class ComOrWinRTObjectMarshaller
 		return global::System.Runtime.InteropServices.Marshalling.ComInterfaceMarshaller<object>.ConvertToManaged((void*)value);
 	}
 
-	/// <summary>Converts either a COM or Windows Runtime managed object to its COM identity.</summary>
+	/// <summary>Preserves existing RCWs, uses COM marshalling for generated COM classes, and uses C#/WinRT otherwise.</summary>
 	public static nint ConvertToUnmanaged(object value)
 	{
 		if (value is null)
@@ -68,8 +68,25 @@ internal static unsafe class ComOrWinRTObjectMarshaller
 			return 0;
 		}
 
-		return (nint)global::System.Runtime.InteropServices.Marshalling.ComInterfaceMarshaller<object>
-			.ConvertToUnmanaged(value);
+		if (global::System.Runtime.InteropServices.ComWrappers.TryGetComInstance(value, out nint comInstance))
+		{
+			return comInstance;
+		}
+
+		if (global::System.Runtime.InteropServices.Marshal.IsComObject(value))
+		{
+			return global::System.Runtime.InteropServices.Marshal.GetIUnknownForObject(value);
+		}
+
+		if (value.GetType().IsDefined(
+			typeof(global::System.Runtime.InteropServices.Marshalling.GeneratedComClassAttribute),
+			inherit: false))
+		{
+			return (nint)global::System.Runtime.InteropServices.Marshalling.ComInterfaceMarshaller<object>
+				.ConvertToUnmanaged(value);
+		}
+
+		return global::WinRT.MarshalInspectable<object>.FromManaged(value);
 	}
 
 	/// <summary>Releases the ABI identity pointer produced for or received from source-generated interop.</summary>

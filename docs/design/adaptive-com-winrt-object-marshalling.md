@@ -95,6 +95,20 @@ Source-generated interop uses one object marshaller for `ManagedToUnmanagedOut` 
 
 Native-to-managed conversion queries `IInspectable`, uses C#/WinRT on success, falls back to `ComInterfaceMarshaller<object>` only for `E_NOINTERFACE`, and releases the original and temporary QI references independently.
 
+Managed-to-native output first preserves existing RCWs, then selects the CCW marshaller from the
+runtime type:
+
+- An RCW discoverable through `ComWrappers.TryGetComInstance` returns its current native `IUnknown`
+  identity.
+- A classic built-in COM RCW returns its current identity through `Marshal.GetIUnknownForObject`.
+- A type marked with `[GeneratedComClass]` uses `ComInterfaceMarshaller<object>`, preserving its
+  generated COM interface table.
+- Every other type uses `WinRT.MarshalInspectable<object>.FromManaged`, enabling the full WinRT CCW
+  interface set for ordinary managed objects.
+
+C#/WinRT diagnoses types that combine `[GeneratedComClass]` with projected WinRT interfaces, keeping
+the two CCW paths mutually exclusive.
+
 Eligible `[LibraryImport]` declarations apply `[MarshalUsing]` directly to `out object`; no duplicate raw P/Invoke is generated.
 
 ## Generated COM interfaces
@@ -110,10 +124,10 @@ void BindToHandler(
     out object ppv);
 ```
 
-For managed implementations, the output marshaller returns the object's COM identity. A generated
-managed consumer then applies the adaptive input projection, and the friendly overload casts the
-projected object to `T`. That cast performs the required interface QI, so no sibling-parameter state
-is needed.
+For managed implementations, the output marshaller returns either the generated COM identity or the
+C#/WinRT identity according to the runtime type. A generated managed consumer then applies the
+adaptive input projection, and the friendly overload casts the projected object to `T`. That cast
+performs the required interface QI, so no sibling-parameter state is needed.
 
 Managed implementations may return WinRT objects, inspectable COM objects, non-inspectable COM
 objects, or `null`. Producing the exact interface pointer named by `riid` for arbitrary native callers
@@ -165,4 +179,6 @@ CsWin32 projections are primarily internal, so preserving previous generated sou
 
 ## Validation
 
-Coverage includes generator-shape tests, source-generated and built-in runtime tests, enabled and disabled behavior, WinRT and COM outputs, managed round trips, null output, and Native AOT package publication.
+Coverage includes generator-shape tests, source-generated and built-in runtime tests, enabled and
+disabled behavior, WinRT and COM outputs, CsWinRT and COM RCW identity, WinRT CCWs, generated COM
+CCWs, managed round trips, null output, and Native AOT package publication.

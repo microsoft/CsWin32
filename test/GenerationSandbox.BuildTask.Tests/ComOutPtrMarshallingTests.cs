@@ -20,6 +20,8 @@ namespace GenerationSandbox.BuildTask.Tests;
 [Trait("WindowsOnly", "true")]
 public partial class ComOutPtrMarshallingTests
 {
+    private const int E_NOINTERFACE = unchecked((int)0x80004002);
+
     private static readonly Guid BHID_Stream = new(0x1cebb3ab, 0x7c10, 0x499a, 0xa4, 0x17, 0x92, 0xca, 0x16, 0xc4, 0xcb, 0x83);
     private static readonly Guid BHID_StorageItem = new(0x404e2109, 0x77d2, 0x4699, 0xa5, 0xa0, 0x4f, 0xdf, 0x10, 0xdb, 0x98, 0x37);
 
@@ -136,6 +138,8 @@ public partial class ComOutPtrMarshallingTests
             CLSCTX.CLSCTX_INPROC_SERVER,
             out object shellLink).ThrowOnFailure();
 
+        AssertRcwIdentityIsPreserved(shellLink);
+
         ComOutPtrMarshallingTests.VerifyManagedImplementer<IShellLinkW>(
             shellLink,
             BHID_Stream,
@@ -166,12 +170,195 @@ public partial class ComOutPtrMarshallingTests
         }
     }
 
+    [Fact]
+    [Trait("TestCategory", "RequiresHardware")]
+    public async Task CsWinRTRcw_RoundTripsWithOriginalIdentity()
+    {
+        Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
+        StorageFile storageFile = await StorageFile.GetFileFromPathAsync(WinIniPath);
+        IWinRTObject winrtObject = (IWinRTObject)(object)storageFile;
+
+        nint marshalled = ComOrWinRTObjectMarshaller.ConvertToUnmanaged(storageFile);
+        try
+        {
+            AssertSameComIdentity(winrtObject.NativeObject.ThisPtr, marshalled);
+
+            object roundTripped = ComOrWinRTObjectMarshaller.ConvertToManaged(marshalled);
+            IStorageItem storageItem = Assert.IsAssignableFrom<IStorageItem>(roundTripped);
+            Assert.Equal("win.ini", storageItem.Name, ignoreCase: true);
+        }
+        finally
+        {
+            ComOrWinRTObjectMarshaller.Free(marshalled);
+        }
+    }
+
+    [Fact]
+    public void ManagedWinRTObject_RoundTripsThroughWinRTCcw()
+    {
+        Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
+        DisposableObject managed = new();
+
+        nint marshalled = ComOrWinRTObjectMarshaller.ConvertToUnmanaged(managed);
+        try
+        {
+            AssertSupportsInterface(marshalled, typeof(WinRT.IInspectable).GUID);
+            AssertSupportsInterface(marshalled, GuidGenerator.CreateIID(typeof(IDisposable)));
+
+            object roundTripped = ComOrWinRTObjectMarshaller.ConvertToManaged(marshalled);
+            Assert.Same(managed, roundTripped);
+            IDisposable disposable = Assert.IsAssignableFrom<IDisposable>(roundTripped);
+            disposable.Dispose();
+            Assert.Equal(1, managed.DisposeCallCount);
+
+            nint remarshalled = ComOrWinRTObjectMarshaller.ConvertToUnmanaged(managed);
+            try
+            {
+                AssertSameComIdentity(marshalled, remarshalled);
+            }
+            finally
+            {
+                ComOrWinRTObjectMarshaller.Free(remarshalled);
+            }
+        }
+        finally
+        {
+            ComOrWinRTObjectMarshaller.Free(marshalled);
+        }
+    }
+
+    [Fact]
+    public void GeneratedComClass_RoundTripsThroughGeneratedComCcw()
+    {
+        Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
+        ManagedShellItem managed = new(null!);
+
+        nint marshalled = ComOrWinRTObjectMarshaller.ConvertToUnmanaged(managed);
+        try
+        {
+            AssertSupportsInterface(marshalled, typeof(IShellItem).GUID);
+            AssertDoesNotSupportInterface(marshalled, typeof(WinRT.IInspectable).GUID);
+
+            object roundTripped = ComOrWinRTObjectMarshaller.ConvertToManaged(marshalled);
+            Assert.Same(managed, roundTripped);
+            IShellItem shellItem = Assert.IsAssignableFrom<IShellItem>(roundTripped);
+            shellItem.Compare(shellItem, 0, out int order);
+            Assert.Equal(42, order);
+            Assert.Equal(1, managed.CompareCallCount);
+        }
+        finally
+        {
+            ComOrWinRTObjectMarshaller.Free(marshalled);
+        }
+    }
+
+    [Fact]
+    [Trait("TestCategory", "RequiresHardware")]
+    public void ClassicComRcw_RoundTripsWithOriginalIdentity()
+    {
+        Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
+        Type shellLinkType = Type.GetTypeFromCLSID(typeof(ShellLink).GUID, throwOnError: true)!;
+        object shellLink = Activator.CreateInstance(shellLinkType)!;
+        try
+        {
+            Assert.True(Marshal.IsComObject(shellLink));
+            nint expected = Marshal.GetIUnknownForObject(shellLink);
+            try
+            {
+                nint marshalled = ComOrWinRTObjectMarshaller.ConvertToUnmanaged(shellLink);
+                try
+                {
+                    AssertSameComIdentity(expected, marshalled);
+                    AssertSupportsInterface(marshalled, typeof(IShellLinkW).GUID);
+                }
+                finally
+                {
+                    ComOrWinRTObjectMarshaller.Free(marshalled);
+                }
+            }
+            finally
+            {
+                Marshal.Release(expected);
+            }
+        }
+        finally
+        {
+            Marshal.FinalReleaseComObject(shellLink);
+        }
+    }
+
     private static IShellItem CreateShellItem()
     {
         Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
         Assert.True(File.Exists(WinIniPath), $"Expected '{WinIniPath}' to exist on Windows.");
         PInvoke.SHCreateItemFromParsingName<IShellItem>(WinIniPath, null, out IShellItem shellItem).ThrowOnFailure();
         return shellItem;
+    }
+
+    private static void AssertSameComIdentity(nint expected, nint actual)
+    {
+        Guid iid = typeof(IUnknown).GUID;
+        nint expectedIdentity = QueryInterface(expected, iid);
+        try
+        {
+            nint actualIdentity = QueryInterface(actual, iid);
+            try
+            {
+                Assert.Equal(expectedIdentity, actualIdentity);
+            }
+            finally
+            {
+                Marshal.Release(actualIdentity);
+            }
+        }
+        finally
+        {
+            Marshal.Release(expectedIdentity);
+        }
+    }
+
+    private static void AssertRcwIdentityIsPreserved(object value)
+    {
+        Assert.True(ComWrappers.TryGetComInstance(value, out nint native));
+        try
+        {
+            nint marshalled = ComOrWinRTObjectMarshaller.ConvertToUnmanaged(value);
+            try
+            {
+                AssertSameComIdentity(native, marshalled);
+            }
+            finally
+            {
+                ComOrWinRTObjectMarshaller.Free(marshalled);
+            }
+        }
+        finally
+        {
+            Marshal.Release(native);
+        }
+    }
+
+    private static void AssertSupportsInterface(nint value, Guid iid)
+    {
+        nint queried = QueryInterface(value, iid);
+        Marshal.Release(queried);
+    }
+
+    private static void AssertDoesNotSupportInterface(nint value, Guid iid)
+    {
+        int hr = Marshal.QueryInterface(value, in iid, out nint queried);
+        if (queried != 0)
+        {
+            Marshal.Release(queried);
+        }
+
+        Assert.Equal(E_NOINTERFACE, hr);
+    }
+
+    private static nint QueryInterface(nint value, Guid iid)
+    {
+        Marshal.ThrowExceptionForHR(Marshal.QueryInterface(value, in iid, out nint queried));
+        return queried;
     }
 
     private static void VerifyManagedImplementer<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicFields)] T>(object returnedValue, Guid bindHandler, Action<T> exercise)
@@ -201,6 +388,8 @@ public partial class ComOutPtrMarshallingTests
     {
         internal int BindToHandlerCallCount { get; private set; }
 
+        internal int CompareCallCount { get; private set; }
+
         public unsafe void BindToHandler(IBindCtx pbc, Guid* bhid, Guid* riid, out object ppv)
         {
             this.BindToHandlerCallCount++;
@@ -213,6 +402,17 @@ public partial class ComOutPtrMarshallingTests
 
         public unsafe void GetAttributes(SFGAO_FLAGS sfgaoMask, SFGAO_FLAGS* psfgaoAttribs) => throw new NotImplementedException();
 
-        public void Compare(IShellItem psi, uint hint, out int piOrder) => throw new NotImplementedException();
+        public void Compare(IShellItem psi, uint hint, out int piOrder)
+        {
+            this.CompareCallCount++;
+            piOrder = 42;
+        }
+    }
+
+    private sealed class DisposableObject : IDisposable
+    {
+        internal int DisposeCallCount { get; private set; }
+
+        public void Dispose() => this.DisposeCallCount++;
     }
 }

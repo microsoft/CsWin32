@@ -48,6 +48,7 @@ IShellWindows
 IStream
 KEY_EVENT_RECORD
 LoadLibrary
+lstrlen
 LOWORD
 MainAVIHeader
 MAKELPARAM

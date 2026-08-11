@@ -435,6 +435,13 @@ public class BasicTests
     }
 
     [Fact]
+    public void PCSTR_StringOverloadNullTerminates()
+    {
+        const string value = "12345678";
+        Assert.Equal(value.Length, PInvoke.lstrlen(value));
+    }
+
+    [Fact]
     public void StructCharFieldsMarshaledAsUtf16()
     {
         Assert.Equal(128 * sizeof(char), Marshal.SizeOf<__char_128>());

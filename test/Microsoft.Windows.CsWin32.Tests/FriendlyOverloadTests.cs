@@ -70,6 +70,23 @@ public class FriendlyOverloadTests : GeneratorTestBase
         Assert.Equal("Span<char>", friendlyOverload.ParameterList.Parameters[1].Type?.ToString());
     }
 
+    [Fact]
+    public void PCSTR_StringOverloadIncludesNullTerminator()
+    {
+        const string name = "GetProcAddress";
+        this.Generate(name);
+        MethodDeclarationSyntax friendlyOverload = Assert.Single(
+            this.FindGeneratedMethod(name),
+            m => !IsOrContainsExternMethod(m) && m.ParameterList.Parameters.Any(p => p.Type is PredefinedTypeSyntax { Keyword.RawKind: (int)SyntaxKind.StringKeyword }));
+        InvocationExpressionSyntax getBytesInvocation = Assert.Single(
+            friendlyOverload.DescendantNodes().OfType<InvocationExpressionSyntax>(),
+            i => i.Expression is MemberAccessExpressionSyntax { Name.Identifier.ValueText: nameof(Encoding.GetBytes) });
+        ArgumentSyntax argument = Assert.Single(getBytesInvocation.ArgumentList.Arguments);
+        BinaryExpressionSyntax appendNullTerminator = Assert.IsType<BinaryExpressionSyntax>(argument.Expression);
+        Assert.True(appendNullTerminator.IsKind(SyntaxKind.AddExpression));
+        Assert.Equal("\0", Assert.IsType<LiteralExpressionSyntax>(appendNullTerminator.Right).Token.ValueText);
+    }
+
     [Theory]
     [InlineData("WSManGetSessionOptionAsString")] // Uses the reserved keyword 'string' as a parameter name
     [InlineData("RmRegisterResources")] // Parameter with PCWSTR* (an array of native strings)

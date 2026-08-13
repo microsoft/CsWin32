@@ -989,7 +989,7 @@ public partial class Generator
                 parameters[paramIndex] = externParam
                     .WithType(PredefinedType(TokenWithSpace(SyntaxKind.StringKeyword)));
 
-                // fixed (byte* someLocal = some is object ? System.Text.Encoding.Default.GetBytes(some) : null)
+                // fixed (byte* someLocal = some is object ? System.Text.Encoding.Default.GetBytes(some + "\0") : null)
                 fixedBlocks.Add(VariableDeclaration(
                     PointerType(PredefinedType(Token(SyntaxKind.ByteKeyword))),
                     [
@@ -1003,7 +1003,12 @@ public partial class Generator
                                             SyntaxKind.SimpleMemberAccessExpression,
                                             ParseTypeName("global::System.Text.Encoding.Default"),
                                             IdentifierName(nameof(Encoding.GetBytes))),
-                                        [Argument(origName)]),
+                                        [
+                                            Argument(BinaryExpression(
+                                                SyntaxKind.AddExpression,
+                                                origName,
+                                                LiteralExpression(SyntaxKind.StringLiteralExpression, Literal("\0"))))
+                                        ]),
                                     LiteralExpression(SyntaxKind.NullLiteralExpression))))
                     ]));
 

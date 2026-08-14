@@ -1157,7 +1157,15 @@ public partial class Generator : IGenerator, IDisposable
     internal MemberDeclarationSyntax? RequestSpecialTypeDefStruct(string specialName, out string fullyQualifiedName)
     {
         string subNamespace = "Foundation";
-        string ns = $"{this.Namespace}.{subNamespace}";
+
+        // The special typedef structs (PCWSTR, PCSTR, etc.) are Win32 types that live under
+        // Windows.Win32.Foundation. When generating the Win32 SDK itself, this.Namespace already *is*
+        // Windows.Win32. Otherwise they are provided either by a delegated Windows.Win32 generator (below)
+        // or by the referenced Windows.Win32 projection, so they must be referenced under
+        // Windows.Win32.Foundation rather than this assembly's own root namespace. Using this.Namespace here
+        // for non-Win32 metadata produced e.g. `OSClient.Foundation.PCWSTR`, which does not exist.
+        string rootNamespace = this.IsWin32Sdk ? this.Namespace : "Windows.Win32";
+        string ns = $"{rootNamespace}.{subNamespace}";
         fullyQualifiedName = $"{ns}.{specialName}";
 
         if (this.IsTypeAlreadyFullyDeclared(fullyQualifiedName))

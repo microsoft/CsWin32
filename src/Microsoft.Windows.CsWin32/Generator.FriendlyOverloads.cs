@@ -5,14 +5,20 @@ namespace Microsoft.Windows.CsWin32;
 
 public partial class Generator
 {
-    private static readonly TypeSyntax PCWSTRTypeSyntax = QualifiedName(QualifiedName(IdentifierName(GlobalWinmdRootNamespaceAlias), IdentifierName("Foundation")), IdentifierName("PCWSTR"));
-
     private enum FriendlyOverloadOf
     {
         ExternMethod,
         StructMethod,
         InterfaceMethod,
     }
+
+    /// <summary>
+    /// Gets the syntax for the <c>PCWSTR</c> type, qualified to its true location. This resolves to
+    /// <c>winmdroot.Foundation.PCWSTR</c> when generating the Win32 SDK itself, and to
+    /// <c>global::Windows.Win32.Foundation.PCWSTR</c> when projecting other metadata (whose <c>winmdroot</c>
+    /// alias points at a different assembly), matching how the parameter type itself is qualified.
+    /// </summary>
+    private TypeSyntax PCWSTRTypeSyntax => QualifiedName(QualifiedName(this.Win32NamespacePrefix, IdentifierName("Foundation")), IdentifierName("PCWSTR"));
 
     private static ParameterSyntax StripAttributes(ParameterSyntax parameter) => parameter.WithAttributeLists(default);
 
@@ -795,7 +801,7 @@ public partial class Generator
                                             SyntaxKind.SimpleMemberAccessExpression,
                                             MemberAccessExpression(
                                                 SyntaxKind.SimpleMemberAccessExpression,
-                                                ParseTypeName($"global::System.Buffers.ArrayPool<{PCWSTRTypeSyntax.ToString()}>"),
+                                                ParseTypeName($"global::System.Buffers.ArrayPool<{this.PCWSTRTypeSyntax}>"),
                                                 IdentifierName("Shared")),
                                             IdentifierName("Rent")),
                                         [Argument(GetSpanLength(origName, false))])))
@@ -871,7 +877,7 @@ public partial class Generator
                             InvocationExpression(
                                 MemberAccessExpression(
                                     SyntaxKind.SimpleMemberAccessExpression,
-                                    ParseTypeName($"global::System.Buffers.ArrayPool<{PCWSTRTypeSyntax.ToString()}> "),
+                                    ParseTypeName($"global::System.Buffers.ArrayPool<{this.PCWSTRTypeSyntax}> "),
                                     IdentifierName("Shared.Return")),
                                 [Argument(pcwstrLocal)]));
 

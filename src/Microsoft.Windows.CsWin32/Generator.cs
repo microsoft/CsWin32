@@ -135,6 +135,13 @@ public partial class Generator : IGenerator, IDisposable
         this.canUseComVariant = this.compilation?.GetTypeByMetadataName("System.Runtime.InteropServices.Marshalling.ComVariant") is not null;
         this.canUseMemberFunctionCallingConvention = this.compilation?.GetTypeByMetadataName("System.Runtime.CompilerServices.CallConvMemberFunction") is not null;
         this.canUseMarshalInitHandle = this.compilation?.GetTypeByMetadataName(typeof(Marshal).FullName)?.GetMembers("InitHandle").Length > 0;
+        this.canUseCsWinRT =
+            this.compilation?.GetTypeByMetadataName("WinRT.Projections")?.GetMembers("IsTypeWindowsRuntimeType").IsEmpty is false &&
+            this.compilation?.GetTypeByMetadataName("WinRT.GuidGenerator")?.GetMembers("CreateIID").IsEmpty is false &&
+            this.compilation?.GetTypeByMetadataName("WinRT.MarshalInspectable`1") is not null;
+        this.canUseCustomMarshaller =
+            this.compilation?.GetTypeByMetadataName("System.Runtime.InteropServices.Marshalling.CustomMarshallerAttribute") is not null &&
+            this.compilation?.GetTypeByMetadataName("System.Runtime.InteropServices.Marshalling.ComInterfaceMarshaller`1") is not null;
         if (this.FindTypeSymbolIfAlreadyAvailable("System.Runtime.Versioning.SupportedOSPlatformAttribute") is { } attribute)
         {
             this.generateSupportedOSPlatformAttributes = true;
@@ -164,6 +171,8 @@ public partial class Generator : IGenerator, IDisposable
             AddSymbolIf(compilation?.GetTypeByMetadataName("System.Drawing.Point") is not null, "canUseSystemDrawing");
             AddSymbolIf(this.IsFeatureAvailable(Feature.InterfaceStaticMembers), "canUseInterfaceStaticMembers");
             AddSymbolIf(this.canUseUnscopedRef, "canUseUnscopedRef");
+            AddSymbolIf(this.canUseCsWinRT, "canUseCsWinRT");
+            AddSymbolIf(this.useSourceGenerators, "usesComSourceGenerators");
 
             if (extraSymbols.Count > 0)
             {

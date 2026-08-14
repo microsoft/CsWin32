@@ -1017,6 +1017,10 @@ public partial class Generator
                         methodDeclaration = methodDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));
                     }
 
+                    methodDeclaration = methodDefinition.Generator.ApplyAutoWinRTMarshalling(
+                        methodDefinition.Method,
+                        signature,
+                        methodDeclaration);
                     propertyOrMethod = methodDeclaration;
                 }
 

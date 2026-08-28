@@ -4,6 +4,9 @@
     "rollForward": "patch",
     "allowPrerelease": false
   },
+  "test": {
+    "runner": "Microsoft.Testing.Platform"
+  },
   "msbuild-sdks": {
     "Microsoft.Build.NoTargets": "3.7.134",
     "Microsoft.Windows.WinmdGenerator": "0.63.31-preview"

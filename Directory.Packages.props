@@ -12,6 +12,7 @@
     <ApiDocsVersion>0.1.42-alpha</ApiDocsVersion>
     <!-- Tooling and test Roslyn version. Shipping analyzer legs override this independently. -->
     <CodeAnalysisVersion>5.9.0</CodeAnalysisVersion>
+    <MicrosoftTestingPlatformVersion>2.3.3</MicrosoftTestingPlatformVersion>
   </PropertyGroup>
   <ItemGroup>
     <!-- We have to use the MessagePack version used by win32metadata (https://github.com/microsoft/CsWin32/issues/371) -->
@@ -45,10 +46,12 @@
   </ItemGroup>
   <Import Project="Directory.Packages.Analyzers.props" Condition="'$(IsTestProject)'!='true' and '$(MSBuildProjectName)'!='CsWin32Generator'" />
   <ItemGroup Label="Library.Template">
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
+    <PackageVersion Include="Microsoft.Testing.Extensions.CodeCoverage" Version="18.10.0" />
+    <PackageVersion Include="Microsoft.Testing.Extensions.CrashDump" Version="$(MicrosoftTestingPlatformVersion)" />
+    <PackageVersion Include="Microsoft.Testing.Extensions.HangDump" Version="$(MicrosoftTestingPlatformVersion)" />
+    <PackageVersion Include="Microsoft.Testing.Extensions.TrxReport" Version="$(MicrosoftTestingPlatformVersion)" />
     <PackageVersion Include="Microsoft.VisualStudio.Internal.MicroBuild.NonShipping" Version="$(MicroBuildVersion)" />
-    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
-    <PackageVersion Include="xunit.v3" Version="3.2.2" />
+    <PackageVersion Include="xunit.v3.mtp-v2" Version="4.0.0" />
   </ItemGroup>
   <ItemGroup>
     <!-- Put repo-specific GlobalPackageReference items in this group. -->

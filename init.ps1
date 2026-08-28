@@ -47,6 +47,10 @@
     An optional access token for authenticating to Azure Artifacts authenticated feeds.
 .PARAMETER Interactive
     Runs NuGet restore in interactive mode. This can turn authentication failures into authentication challenges.
+.PARAMETER RestoreRetryCount
+    The maximum number of restore attempts when a package is not yet available from the configured feed.
+.PARAMETER RestoreRetryDelaySeconds
+    The delay between restore attempts when a package is not yet available from the configured feed.
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
 Param (
@@ -75,8 +79,47 @@ Param (
     [Parameter()]
     [string]$AccessToken,
     [Parameter()]
-    [switch]$Interactive
+    [switch]$Interactive,
+    [Parameter()]
+    [ValidateRange(1, 10)]
+    [int]$RestoreRetryCount = 1,
+    [Parameter()]
+    [ValidateRange(0, 600)]
+    [int]$RestoreRetryDelaySeconds = 60
 )
+
+function Invoke-RestoreWithRetry {
+    [CmdletBinding()]
+    Param (
+        [Parameter(Mandatory = $true)]
+        [scriptblock]$Restore,
+        [Parameter(Mandatory = $true)]
+        [string]$FailureMessage
+    )
+
+    for ($attempt = 1; $attempt -le $RestoreRetryCount; $attempt++) {
+        if ($RestoreRetryCount -eq 1) {
+            & $Restore
+            $exitCode = $LASTEXITCODE
+            $restoreOutput = $null
+        } else {
+            & $Restore 2>&1 | Tee-Object -Variable restoreOutput | Out-Host
+            $exitCode = $LASTEXITCODE
+        }
+
+        if ($exitCode -eq 0) {
+            return
+        }
+
+        $feedCacheMiss = ($restoreOutput -join "`n") -match 'No local versions of package|Downloading \S+ version \S+ failed'
+        if (!$feedCacheMiss -or $attempt -eq $RestoreRetryCount) {
+            throw $FailureMessage
+        }
+
+        Write-Warning "A dependency is not available from the package feed yet. Retrying in $RestoreRetryDelaySeconds seconds (attempt $($attempt + 1) of $RestoreRetryCount)."
+        Start-Sleep -Seconds $RestoreRetryDelaySeconds
+    }
+}
 
 $EnvVars = @{}
 $PrependPath = @()
@@ -113,17 +156,17 @@ try {
 
     if (!$NoRestore -and $PSCmdlet.ShouldProcess("NuGet packages", "Restore")) {
         Write-Host "Restoring NuGet packages" -ForegroundColor $HeaderColor
-        dotnet restore @RestoreArguments
-        if ($lastexitcode -ne 0) {
-            throw "Failure while restoring packages."
-        }
+        Invoke-RestoreWithRetry -Restore {
+            $PSNativeCommandUseErrorActionPreference = $false
+            dotnet restore @RestoreArguments
+        } -FailureMessage "Failure while restoring packages."
     }
 
     if (!$NoToolRestore -and $PSCmdlet.ShouldProcess("dotnet tool", "restore")) {
-        dotnet tool restore @RestoreArguments
-        if ($lastexitcode -ne 0) {
-            throw "Failure while restoring dotnet CLI tools."
-        }
+        Invoke-RestoreWithRetry -Restore {
+            $PSNativeCommandUseErrorActionPreference = $false
+            dotnet tool restore @RestoreArguments
+        } -FailureMessage "Failure while restoring dotnet CLI tools."
     }
 
     $InstallNuGetPkgScriptPath = "$PSScriptRoot\tools\Install-NuGetPackage.ps1"

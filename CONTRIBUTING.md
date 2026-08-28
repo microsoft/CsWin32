@@ -61,7 +61,7 @@ To pull the new version through:
    $idx.versions | Where-Object { $_ -like '<new-version>*' }
    ```
 
-After the package is on the feed, build and run the tests (`dotnet test --filter "TestCategory!=RequiresHardware"`) and fix any regressions before opening the PR.
+After the package is on the feed, build and run the tests (`dotnet test --filter-query "/[TestCategory!=RequiresHardware]"`) and fix any regressions before opening the PR.
 
 [pwsh]: https://learn.microsoft.com/powershell/scripting/install/installing-powershell
 

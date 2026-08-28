@@ -60,12 +60,12 @@ jobs:
         path: bin/
     - name: 🧪 Run tests
       run: |
-        dotnet test --no-build -c ${{ env.BuildConfiguration }} `
-          --filter "TestCategory!=HighMemory&TestCategory!=RequiresHardware" `
-          --blame-hang-timeout 600s `
-          --blame-crash `
-          --logger trx `
-          --results-directory TestResults
+        dotnet test --solution Microsoft.Windows.CsWin32.sln --no-build -c ${{ env.BuildConfiguration }} `
+          --filter-query "/[(TestCategory!=HighMemory)&(TestCategory!=RequiresHardware)]" `
+          --hangdump --hangdump-timeout 600s --hangdump-type Heap `
+          --crashdump --crashdump-type Heap `
+          --report-trx `
+          --results-directory "${{ github.workspace }}/TestResults"
       shell: pwsh
     - name: 📢 Upload test results
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -97,12 +97,12 @@ jobs:
     # them, but we exercise the real runtime code paths here rather than only on dev machines.
     - name: 🧪 Run hardware-dependent tests
       run: |
-        dotnet test --no-build -c ${{ env.BuildConfiguration }} `
-          --filter "TestCategory=RequiresHardware" `
-          --blame-hang-timeout 600s `
-          --blame-crash `
-          --logger trx `
-          --results-directory TestResults
+        dotnet test --solution Microsoft.Windows.CsWin32.sln --no-build -c ${{ env.BuildConfiguration }} `
+          --filter-query "/[TestCategory=RequiresHardware]" `
+          --hangdump --hangdump-timeout 600s --hangdump-type Heap `
+          --crashdump --crashdump-type Heap `
+          --report-trx `
+          --results-directory "${{ github.workspace }}/TestResults"
       shell: pwsh
     - name: 📢 Upload test results
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -113,12 +113,27 @@ jobs:
         retention-days: 5
 
   test-fast-linux:
-    name: 🧪 Tests (Linux)
+    name: 🧪 Tests (Linux, SDK ${{ matrix.dotnet-sdk }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dotnet-sdk: ['10.0.400', '10.0.302']
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         fetch-depth: 0
+    - name: ⚙️ Install .NET SDK ${{ matrix.dotnet-sdk }}
+      uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      with:
+        dotnet-version: ${{ matrix.dotnet-sdk }}
+    - name: ⚙️ Select .NET SDK ${{ matrix.dotnet-sdk }}
+      if: matrix.dotnet-sdk != '10.0.400'
+      run: |
+        $config = Get-Content global.json -Raw | ConvertFrom-Json
+        $config.sdk.version = '${{ matrix.dotnet-sdk }}'
+        $config | ConvertTo-Json -Depth 10 | Set-Content global.json
+      shell: pwsh
     - name: ⚙️ Install prerequisites
       run: ./init.ps1 -UpgradePrerequisites -NoNuGetCredProvider
       shell: pwsh
@@ -129,24 +144,24 @@ jobs:
         # Only run cross-platform test projects. Windows-specific projects
         # (GenerationSandbox.*, SpellChecker, WinRTInteropTest) use Windows TFMs
         # and produce app hosts that cannot execute on Linux.
-        dotnet test test/CsWin32Generator.Tests --no-build -c ${{ env.BuildConfiguration }} `
-          --filter "TestCategory!=HighMemory&TestCategory!=RequiresHardware" `
-          --blame-hang-timeout 600s `
-          --blame-crash `
-          --logger trx `
-          --results-directory TestResults
-        dotnet test test/Microsoft.Windows.CsWin32.Tests --no-build -c ${{ env.BuildConfiguration }} `
-          --filter "TestCategory!=HighMemory&TestCategory!=RequiresHardware" `
-          --blame-hang-timeout 600s `
-          --blame-crash `
-          --logger trx `
-          --results-directory TestResults
+        dotnet test --project test/CsWin32Generator.Tests/CsWin32Generator.Tests.csproj --no-build -c ${{ env.BuildConfiguration }} `
+          --filter-query "/[(TestCategory!=HighMemory)&(TestCategory!=RequiresHardware)]" `
+          --hangdump --hangdump-timeout 600s --hangdump-type Heap `
+          --crashdump --crashdump-type Heap `
+          --report-trx `
+          --results-directory "${{ github.workspace }}/TestResults"
+        dotnet test --project test/Microsoft.Windows.CsWin32.Tests/Microsoft.Windows.CsWin32.Tests.csproj --no-build -c ${{ env.BuildConfiguration }} `
+          --filter-query "/[(TestCategory!=HighMemory)&(TestCategory!=RequiresHardware)]" `
+          --hangdump --hangdump-timeout 600s --hangdump-type Heap `
+          --crashdump --crashdump-type Heap `
+          --report-trx `
+          --results-directory "${{ github.workspace }}/TestResults"
       shell: pwsh
     - name: 📢 Upload test results
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       if: always()
       with:
-        name: test-results-linux
+        name: test-results-linux-${{ matrix.dotnet-sdk }}
         path: TestResults/
         retention-days: 5
 
@@ -160,28 +175,28 @@ jobs:
       matrix:
         include:
           - name: FastMethods
-            filter: "TestCategory=HighMemory&TestShard=FastMethods"
+            filter: "/[(TestCategory=HighMemory)&(TestShard=FastMethods)]"
             threads: "2"
           - name: EverythingModern
-            filter: "TestCategory=HighMemory&TestShard=EverythingModern"
+            filter: "/[(TestCategory=HighMemory)&(TestShard=EverythingModern)]"
             threads: "2"
           - name: EverythingLegacy
-            filter: "TestCategory=HighMemory&TestShard=EverythingLegacy"
+            filter: "/[(TestCategory=HighMemory)&(TestShard=EverythingLegacy)]"
             threads: "2"
           - name: FullGen-Net8
-            filter: "TestCategory=HighMemory&TestShard=FullGen-Net8"
+            filter: "/[(TestCategory=HighMemory)&(TestShard=FullGen-Net8)]"
             threads: "1"
           - name: FullGen-Net9
-            filter: "TestCategory=HighMemory&TestShard=FullGen-Net9"
+            filter: "/[(TestCategory=HighMemory)&(TestShard=FullGen-Net9)]"
             threads: "1"
           - name: FullGen-Net9-Ptrs
-            filter: "TestCategory=HighMemory&TestShard=FullGen-Net9-Ptrs"
+            filter: "/[(TestCategory=HighMemory)&(TestShard=FullGen-Net9-Ptrs)]"
             threads: "1"
           - name: FullGen-Net10-PreserveSig
-            filter: "TestCategory=HighMemory&TestShard=FullGen-Net10-PreserveSig"
+            filter: "/[(TestCategory=HighMemory)&(TestShard=FullGen-Net10-PreserveSig)]"
             threads: "1"
           - name: Default
-            filter: "TestCategory=HighMemory&TestShard!=FastMethods&TestShard!=EverythingModern&TestShard!=EverythingLegacy&TestShard!=FullGen-Net8&TestShard!=FullGen-Net9&TestShard!=FullGen-Net9-Ptrs&TestShard!=FullGen-Net10-PreserveSig"
+            filter: "/[(TestCategory=HighMemory)&(TestShard!=FastMethods)&(TestShard!=EverythingModern)&(TestShard!=EverythingLegacy)&(TestShard!=FullGen-Net8)&(TestShard!=FullGen-Net9)&(TestShard!=FullGen-Net9-Ptrs)&(TestShard!=FullGen-Net10-PreserveSig)]"
             threads: "1"
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -197,20 +212,18 @@ jobs:
         path: bin/
     - name: 🧪 Run heavy tests
       run: |
-        dotnet test test/Microsoft.Windows.CsWin32.Tests --no-build -c ${{ env.BuildConfiguration }} `
-          --filter "${{ matrix.filter }}" `
-          --blame-hang-timeout 7200s `
-          --blame-crash `
-          --logger trx `
-          --results-directory TestResults `
-          -- RunConfiguration.TreatNoTestsAsError=false
-        dotnet test test/CsWin32Generator.Tests --no-build -c ${{ env.BuildConfiguration }} `
-          --filter "${{ matrix.filter }}" `
-          --blame-hang-timeout 7200s `
-          --blame-crash `
-          --logger trx `
-          --results-directory TestResults `
-          -- RunConfiguration.TreatNoTestsAsError=false
+        dotnet test --project test/Microsoft.Windows.CsWin32.Tests/Microsoft.Windows.CsWin32.Tests.csproj --no-build -c ${{ env.BuildConfiguration }} `
+          --filter-query "${{ matrix.filter }}" `
+          --hangdump --hangdump-timeout 7200s --hangdump-type Heap `
+          --crashdump --crashdump-type Heap `
+          --report-trx `
+          --results-directory "${{ github.workspace }}/TestResults"
+        dotnet test --project test/CsWin32Generator.Tests/CsWin32Generator.Tests.csproj --no-build -c ${{ env.BuildConfiguration }} `
+          --filter-query "${{ matrix.filter }}" `
+          --hangdump --hangdump-timeout 7200s --hangdump-type Heap `
+          --crashdump --crashdump-type Heap `
+          --report-trx `
+          --results-directory "${{ github.workspace }}/TestResults"
       shell: pwsh
       env:
         XUNIT_MAX_PARALLEL_THREADS: ${{ matrix.threads }}

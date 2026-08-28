@@ -45,7 +45,7 @@ if ($x86) {
 }
 
 $testBinLog = Join-Path $ArtifactStagingFolder (Join-Path build_logs test.binlog)
-$testDiagLog = Join-Path $ArtifactStagingFolder (Join-Path test_logs diag.log)
+$testLogs = Join-Path $ArtifactStagingFolder 'test_logs'
 $dumpStagingFolder = Join-Path $ArtifactStagingFolder 'crashDumps'
 
 function Write-MemorySnapshot([string]$Label) {
@@ -79,16 +79,18 @@ function Write-DmesgTail {
     }
 }
 
+# Avoid publishing stale local artifacts from an earlier invocation.
+if (Test-Path $testLogs) { Remove-Item $testLogs -Recurse -Force }
+if (Test-Path $dumpStagingFolder) { Remove-Item $dumpStagingFolder -Recurse -Force }
+
 # Enable .NET runtime crash dumps on managed unhandled exceptions / aborts.
-# These are emitted in addition to the dumps captured by `--blame-crash`,
-# and survive scenarios where blame's createdump invocation cannot fire
-# (for example, SIGKILL by the kernel OOM-killer never reaches managed code,
-# but a runtime abort / unhandled exception that precedes the kill is captured).
-New-Item -ItemType Directory -Force -Path $dumpStagingFolder | Out-Null
+# These complement the MTP crash dump extension and survive scenarios where
+# the extension cannot fire before process termination.
+New-Item -ItemType Directory -Force -Path $testLogs, $dumpStagingFolder, (Split-Path $testBinLog -Parent) | Out-Null
 # Always drop a readme so the artifact upload has at least one file to publish.
 @'
-This artifact collects test-host crash dumps captured by `dotnet test --blame-crash`
-and by the .NET runtime (DOTNET_DbgEnableMiniDump).
+This artifact collects test-host crash and hang dumps captured by Microsoft Testing
+Platform extensions and by the .NET runtime (DOTNET_DbgEnableMiniDump).
 
 If the artifact only contains this README, no managed crashes were captured. That is
 often the case when a test host is killed by the kernel (e.g. the Linux OOM-killer
@@ -101,34 +103,41 @@ $env:DOTNET_DbgMiniDumpType = '2' # 2 = Heap (managed heap + threads; smaller th
 $env:DOTNET_DbgMiniDumpName = (Join-Path $dumpStagingFolder 'coredump.%p.%t.dmp')
 $env:DOTNET_CreateDumpDiagnostics = '1'
 
-# On Linux/macOS, the heavy generator test projects each consume several GB of RAM,
-# and the default `dotnet test <slnFile>` schedules MSBuild's VSTest target for multiple
-# projects in parallel — causing the kernel OOM-killer to terminate test hosts on the
-# memory-constrained ADO agents (exit code 137 = SIGKILL). Force a single MSBuild node
-# so VSTest is invoked one project at a time. Use the solution-level invocation so that
-# the sln's `NonWindows` configuration correctly filters out Windows-only projects.
+# On Linux/macOS, the heavy generator test projects each consume several GB of RAM.
+# Serialize MTP test modules and restrain xUnit's intra-assembly parallelism to avoid
+# the kernel OOM-killer on memory-constrained agents.
 $extraTestArgs = @()
 if (-not $IsWindows -and -not $x86) {
-    Write-Host 'Non-Windows agent: forcing single MSBuild node (-m:1) to serialize test runs.' -ForegroundColor Cyan
-    $extraTestArgs += '-m:1'
-    # Also restrain xunit's intra-assembly parallelism: while it does not prevent
-    # cross-project OOM on its own, it reduces peak RSS during the heavy test runs.
+    Write-Host 'Non-Windows agent: serializing MTP test modules.' -ForegroundColor Cyan
+    $extraTestArgs += '-p:Platform=NonWindows', '--max-parallel-test-modules', '1'
     $env:XUNIT_MAX_PARALLEL_THREADS = '1'
     Write-MemorySnapshot 'Pre-test memory state'
 }
 
-& $dotnet test $RepoRoot `
-    --no-build `
-    -c $Configuration `
-    --filter "TestCategory!=HighMemory&TestCategory!=RequiresHardware$env:TESTFILTER" `
-    --collect "Code Coverage;Format=cobertura" `
-    --settings "$PSScriptRoot/test.runsettings" `
-    --blame-hang-timeout 1500s `
-    --blame-crash `
-    -bl:"$testBinLog" `
-    --diag "$testDiagLog;TraceLevel=info" `
-    --logger trx `
-    @extraTestArgs
+$filterQuery = "/[(TestCategory!=HighMemory)&(TestCategory!=RequiresHardware)$env:TESTFILTER]"
+$solutionPath = Join-Path $RepoRoot 'Microsoft.Windows.CsWin32.sln'
+$testArgs = @(
+    '--solution', $solutionPath,
+    '--no-build',
+    '-c', $Configuration,
+    "-bl:$testBinLog",
+    '--filter-query', $filterQuery,
+    '--coverage',
+    '--coverage-output-format', 'cobertura',
+    '--coverage-settings', "$PSScriptRoot/test.runsettings",
+    '--hangdump',
+    '--hangdump-timeout', '1500s',
+    '--hangdump-type', 'Heap',
+    '--crashdump',
+    '--crashdump-type', 'Heap',
+    '--diagnostic',
+    '--diagnostic-output-directory', $testLogs,
+    '--diagnostic-verbosity', 'Information',
+    '--report-trx',
+    '--results-directory', $testLogs
+) + $extraTestArgs
+
+& $dotnet test @testArgs
 
 $overallExitCode = $LASTEXITCODE
 if ($overallExitCode -ne 0) {
@@ -137,9 +146,10 @@ if ($overallExitCode -ne 0) {
     Write-DmesgTail
 }
 
-# Move any captured crash dumps (from --blame-crash or DOTNET_DbgEnableMiniDump) into
-# the dedicated staging folder so they're easy to find in the published artifact.
-Get-ChildItem -Path "$RepoRoot/test" -Recurse -File -ErrorAction SilentlyContinue |
+# Move any captured crash or hang dumps into the dedicated staging folder.
+@("$RepoRoot/test", $testLogs) |
+  Where-Object { Test-Path $_ } |
+  ForEach-Object { Get-ChildItem -Path $_ -Recurse -File -ErrorAction SilentlyContinue } |
     Where-Object { $_.Name -like '*.dmp' -or $_.Name -like 'core.*' -or $_.Name -like 'coredump.*' } |
     ForEach-Object {
         $dest = Join-Path $dumpStagingFolder $_.Name
@@ -152,9 +162,7 @@ Get-ChildItem -Path "$RepoRoot/test" -Recurse -File -ErrorAction SilentlyContinu
     }
 
 $unknownCounter = 0
-Get-ChildItem -Recurse -Path $RepoRoot\test\*.trx |% {
-  Copy-Item $_ -Destination $ArtifactStagingFolder/test_logs/
-
+Get-ChildItem -Recurse -Path $testLogs\*.trx | ForEach-Object {
   if ($PublishResults) {
     $x = [xml](Get-Content -LiteralPath $_)
     $runTitle = $null
@@ -169,10 +177,16 @@ Get-ChildItem -Recurse -Path $RepoRoot\test\*.trx |% {
       }
     }
     if (!$runTitle) {
-      $unknownCounter += 1;
-      $runTitle = "unknown$unknownCounter ($Agent$x86RunTitleSuffix)";
+      if ($_.BaseName -match '^(?<lib>.+)_(?<tfm>net[^_]+)_(?<arch>[^_]+)$') {
+        $runTitle = "$($matches.lib) ($($matches.tfm), $($matches.arch), $Agent)"
+      } else {
+        $unknownCounter += 1;
+        $runTitle = "unknown$unknownCounter ($Agent$x86RunTitleSuffix)";
+      }
     }
 
+    # Azure Pipelines uses "VSTest" as the TRX publication protocol identifier,
+    # including when Microsoft Testing Platform produced the TRX file.
     Write-Host "##vso[results.publish type=VSTest;runTitle=$runTitle;publishRunAttachments=true;resultFiles=$_;failTaskOnFailedTests=true;testRunSystem=VSTS - PTR;]"
   }
 }

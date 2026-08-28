@@ -31,7 +31,7 @@
       "rollForward": false
     },
     "nerdbank.dotnetrepotools": {
-      "version": "1.5.15",
+      "version": "1.5.42",
       "commands": [
         "repo"
       ],

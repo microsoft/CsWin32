@@ -133,6 +133,17 @@ public record GeneratorOptions
         /// </summary>
         /// <value>The default value is <see langword="null"/>.</value>
         public bool? UseComSourceGenerators { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value indicating whether recognized COM object outputs should automatically use a
+        /// C#/WinRT projection when the returned identity implements <c>IInspectable</c>.
+        /// </summary>
+        /// <remarks>
+        /// This option is enabled by default. Disable it to preserve COM-only output projection and avoid the
+        /// additional <c>QueryInterface(IInspectable)</c>.
+        /// </remarks>
+        /// <value>The default value is <see langword="true"/>.</value>
+        public bool AutoWinRTMarshalling { get; set; } = true;
     }
 
     /// <summary>
@@ -155,7 +166,7 @@ public record GeneratorOptions
         /// <summary>
         /// Gets or sets a value indicating whether to generate generic <c>&lt;T&gt;</c> overloads for methods
         /// with the IID_PPV_ARGS pattern (a <c>Guid*</c> parameter immediately preceding a <c>void**</c> <c>[ComOutPtr]</c> parameter),
-        /// where the GUID is derived from <c>typeof(T).GUID</c> and the output pointer is typed as <c>T</c>.
+        /// where the GUID is derived from <c>T</c> and the output pointer is typed as <c>T</c>.
         /// </summary>
         /// <value>The default value is <see langword="true"/>.</value>
         public bool ComOutPtrGenericOverloads { get; set; } = true;

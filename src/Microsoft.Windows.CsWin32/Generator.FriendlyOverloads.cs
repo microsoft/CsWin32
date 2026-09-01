@@ -161,46 +161,18 @@ public partial class Generator
         int iidPpvPpvOrigIndex = -1;
         bool iidPpvMarshalingMode = false;
         bool iidPpvUseNativeOutMarshaling = false;
+        bool iidPpvAutoWinRTMode = false;
 
-        if (this.options.FriendlyOverloads.ComOutPtrGenericOverloads)
+        if (this.TryFindComOutPtrFriendlyPair(methodDefinition, originalSignature, externMethodDeclaration, out int riidOrig, out int ppvOrig, out bool ppvExternIsObjectOut))
         {
-            var metadataParamsForScan = new List<(Parameter Param, int OrigIndex)>();
-            foreach (ParameterHandle ph in methodDefinition.GetParameters())
+            iidPpvRiidOrigIndex = riidOrig;
+            iidPpvPpvOrigIndex = ppvOrig;
+            iidPpvMarshalingMode = this.options.AllowMarshaling;
+            iidPpvUseNativeOutMarshaling = iidPpvMarshalingMode && !ppvExternIsObjectOut;
+            iidPpvAutoWinRTMode = iidPpvMarshalingMode && this.UseAutoWinRTMarshalling;
+            if (iidPpvAutoWinRTMode)
             {
-                Parameter p = this.Reader.GetParameter(ph);
-                if (p.SequenceNumber > 0 && p.SequenceNumber - 1 < originalSignature.ParameterTypes.Length)
-                {
-                    metadataParamsForScan.Add((p, p.SequenceNumber - 1));
-                }
-            }
-
-            // Only match when the Guid* + void** [ComOutPtr] pair are the final two parameters (the canonical IID_PPV_ARGS position).
-            if (metadataParamsForScan.Count >= 2)
-            {
-                int i = metadataParamsForScan.Count - 2;
-                int riidOrig = metadataParamsForScan[i].OrigIndex;
-                int ppvOrig = metadataParamsForScan[i + 1].OrigIndex;
-
-                if (ppvOrig == riidOrig + 1
-                    && originalSignature.ParameterTypes[riidOrig] is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo guidInfo }
-                    && guidInfo.IsType("Guid")
-                    && this.FindInteropDecorativeAttribute(metadataParamsForScan[i + 1].Param.GetCustomAttributes(), "ComOutPtrAttribute") is not null
-                    && originalSignature.ParameterTypes[ppvOrig] is PointerTypeHandleInfo { ElementType: PointerTypeHandleInfo { ElementType: PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.Void } } }
-                    && riidOrig < parameters.Count && ppvOrig < parameters.Count)
-                {
-                    ParameterSyntax ppvExtern = externMethodDeclaration.ParameterList.Parameters[ppvOrig];
-
-                    // Skip if ppv is typed as IntPtr (UseIntPtrForComOutPointers mode).
-                    if (ppvExtern.Type is not IdentifierNameSyntax { Identifier.ValueText: nameof(IntPtr) })
-                    {
-                        bool ppvExternIsObjectOut = ppvExtern.Modifiers.Any(SyntaxKind.OutKeyword)
-                            && ppvExtern.Type is PredefinedTypeSyntax { Keyword.RawKind: (int)SyntaxKind.ObjectKeyword };
-                        iidPpvRiidOrigIndex = riidOrig;
-                        iidPpvPpvOrigIndex = ppvOrig;
-                        iidPpvMarshalingMode = this.options.AllowMarshaling;
-                        iidPpvUseNativeOutMarshaling = iidPpvMarshalingMode && !ppvExternIsObjectOut;
-                    }
-                }
+                this.volatileCode.GenerationTransaction(this.RequestComOrWinRTObjectMarshaller);
             }
         }
 
@@ -231,22 +203,28 @@ public partial class Generator
             {
                 signatureChanged = true;
                 ParameterSyntax riidExternParam = externMethodDeclaration.ParameterList.Parameters[origParamIndex];
-                ExpressionSyntax typeofTGuid = MemberAccessExpression(
-                    SyntaxKind.SimpleMemberAccessExpression,
-                    TypeOfExpression(IdentifierName("T")),
-                    IdentifierName("GUID"));
+                ExpressionSyntax iidExpression = iidPpvAutoWinRTMode
+                    ? InvocationExpression(
+                        MemberAccessExpression(
+                            SyntaxKind.SimpleMemberAccessExpression,
+                            this.ComOrWinRTObjectMarshallerTypeSyntax,
+                            GenericName("GetIID", [IdentifierName("T")])))
+                    : MemberAccessExpression(
+                        SyntaxKind.SimpleMemberAccessExpression,
+                        TypeOfExpression(IdentifierName("T")),
+                        IdentifierName("GUID"));
 
                 if (riidExternParam.Type is PointerTypeSyntax)
                 {
                     leadingStatements.Add(LocalDeclarationStatement(
                         VariableDeclaration(
                             ParseTypeName("global::System.Guid"),
-                            [VariableDeclarator(Identifier("__riid"), EqualsValueClause(typeofTGuid))])));
+                            [VariableDeclarator(Identifier("__riid"), EqualsValueClause(iidExpression))])));
                     arguments[paramIndex] = Argument(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, IdentifierName("__riid")));
                 }
                 else
                 {
-                    arguments[paramIndex] = Argument(typeofTGuid);
+                    arguments[paramIndex] = Argument(iidExpression);
                 }
 
                 parametersToRemove.Add(paramIndex);
@@ -302,16 +280,29 @@ public partial class Generator
                     }
                     else
                     {
-                        arguments[paramIndex] = Argument(DeclarationExpression(
-                            PredefinedType(TokenWithSpace(SyntaxKind.ObjectKeyword)),
-                            SingleVariableDesignation(Identifier("__ppv"))))
-                            .WithRefKindKeyword(TokenWithSpace(SyntaxKind.OutKeyword));
+                        IdentifierNameSyntax nativeObject = IdentifierName("__ppv");
+                        leadingStatements.Add(LocalDeclarationStatement(
+                            VariableDeclaration(
+                                PredefinedType(TokenWithSpace(SyntaxKind.ObjectKeyword)),
+                                [VariableDeclarator(nativeObject.Identifier, EqualsValueClause(DefaultExpression(PredefinedType(Token(SyntaxKind.ObjectKeyword)))))])));
+                        arguments[paramIndex] = Argument(nativeObject).WithRefKindKeyword(TokenWithSpace(SyntaxKind.OutKeyword));
+
+                        ExpressionSyntax managedValue = nativeObject;
+                        if (iidPpvAutoWinRTMode && !this.useSourceGenerators)
+                        {
+                            managedValue = InvocationExpression(
+                                MemberAccessExpression(
+                                    SyntaxKind.SimpleMemberAccessExpression,
+                                    this.ComOrWinRTObjectMarshallerTypeSyntax,
+                                    IdentifierName("ConvertToManaged")),
+                                [Argument(managedValue)]);
+                        }
 
                         trailingStatements.Add(ExpressionStatement(
                             AssignmentExpression(
                                 SyntaxKind.SimpleAssignmentExpression,
                                 ppvName,
-                                CastExpression(tName, IdentifierName("__ppv")))));
+                                CastExpression(tName, managedValue))));
                     }
                 }
                 else
@@ -1534,8 +1525,15 @@ public partial class Generator
                 TypeParameterConstraintClauseSyntax constraintClause = iidPpvMarshalingMode
                     ? TypeParameterConstraintClause(IdentifierName("T"), [ClassOrStructConstraint(SyntaxKind.ClassConstraint)])
                     : TypeParameterConstraintClause(IdentifierName("T"), [TypeConstraint(IdentifierName("unmanaged"))]);
+                TypeParameterSyntax typeParameter = TypeParameter(Identifier("T"));
+                if (iidPpvAutoWinRTMode)
+                {
+                    // C#/WinRT IID generation reflects over the type's fields.
+                    typeParameter = typeParameter.AddAttributeLists(AttributeList(DynamicallyAccessedPublicFieldsAttributeSyntax));
+                }
+
                 friendlyDeclaration = friendlyDeclaration
-                    .AddTypeParameterListParameters(TypeParameter(Identifier("T")))
+                    .AddTypeParameterListParameters(typeParameter)
                     .AddConstraintClauses(constraintClause);
             }
 

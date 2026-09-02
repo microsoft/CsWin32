@@ -40,14 +40,16 @@
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.SourceGenerators.Testing.XUnit" />
     <PackageReference Include="NuGet.Protocol" />
     <!-- <PackageReference Include="Microsoft.Dia.Win32Metadata" PrivateAssets="none" /> -->
-    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" />
+    <PackageReference Include="Microsoft.Testing.Extensions.CrashDump" />
+    <PackageReference Include="Microsoft.Testing.Extensions.HangDump" />
+    <PackageReference Include="Microsoft.Testing.Extensions.TrxReport" />
     <PackageReference Include="System.Collections.Immutable" />
     <PackageReference Include="System.Reflection.Metadata" />
     <PackageReference Include="System.Text.Json" />
-    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.v3.mtp-v2" />
     <PackageReference Include="xunit.assert" ExcludeAssets="compile"/>
     <PackageReference Include="Xunit.Combinatorial" />
-    <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
 
 </Project>

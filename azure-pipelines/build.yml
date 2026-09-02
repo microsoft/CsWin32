@@ -232,7 +232,7 @@ jobs:
     - job: Linux
       pool: ${{ parameters.linuxPool }}
       variables:
-        TestFilter: "&WindowsOnly!=true"
+        TestFilter: "&(WindowsOnly!=true)"
         Platform: NonWindows
       ${{ if eq(variables['system.collectionId'], '011b8bdf-6d56-4f87-be0d-0092136884d9') }}:
         templateContext:
@@ -273,7 +273,7 @@ jobs:
     - job: macOS
       pool: ${{ parameters.macOSPool }}
       variables:
-        TestFilter: "&WindowsOnly!=true"
+        TestFilter: "&(WindowsOnly!=true)"
         Platform: NonWindows
       ${{ if eq(variables['system.collectionId'], '011b8bdf-6d56-4f87-be0d-0092136884d9') }}:
         templateContext:

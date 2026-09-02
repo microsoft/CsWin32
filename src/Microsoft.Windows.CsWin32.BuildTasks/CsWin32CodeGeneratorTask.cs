@@ -145,7 +145,9 @@ public class CsWin32CodeGeneratorTask : ToolTask
     /// <inheritdoc />
     protected override string GenerateCommandLineCommands()
     {
-        return this.GeneratorToolPath;
+        var commandLine = new CommandLineBuilder();
+        commandLine.AppendFileNameIfNotNull(this.GeneratorToolPath);
+        return commandLine.ToString();
     }
 
     /// <inheritdoc />

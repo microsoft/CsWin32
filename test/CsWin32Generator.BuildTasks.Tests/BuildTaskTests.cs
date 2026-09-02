@@ -215,6 +215,38 @@ public class BuildTaskTests
     }
 
     [Fact]
+    public void GenerateCommandLineCommands_WithSpacesInGeneratorToolPath_QuotesIt()
+    {
+        // Arrange
+        var task = CreateTaskWithMockBuildEngine();
+        SetupRequiredParameters(task);
+        task.GeneratorToolPath = @"C:\Users\User Name\.nuget\packages\microsoft.windows.cswin32\0.3.321\build\tools\CsWin32Generator.dll";
+
+        // Act
+        string commandLine = task.GetCommandLineArguments();
+        this.Logger.WriteLine($"Command line: {commandLine}");
+
+        // Assert
+        Assert.Contains(@"""C:\Users\User Name\.nuget\packages\microsoft.windows.cswin32\0.3.321\build\tools\CsWin32Generator.dll""", commandLine);
+    }
+
+    [Fact]
+    public void GenerateCommandLineCommands_WithoutSpacesInGeneratorToolPath_DoesNotQuoteIt()
+    {
+        // Arrange
+        var task = CreateTaskWithMockBuildEngine();
+        SetupRequiredParameters(task);
+
+        // Act
+        string commandLine = task.GetCommandLineArguments();
+        this.Logger.WriteLine($"Command line: {commandLine}");
+
+        // Assert
+        Assert.Contains("CsWin32Generator.dll", commandLine);
+        Assert.DoesNotContain('"', commandLine.Split(' ')[0]);
+    }
+
+    [Fact]
     public void GenerateCommandLineCommands_WithSinglePathInSemicolonDelimitedString_FormatsCorrectly()
     {
         // Arrange

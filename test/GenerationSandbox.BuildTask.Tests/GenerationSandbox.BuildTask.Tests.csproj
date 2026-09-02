@@ -8,6 +8,8 @@
   <PropertyGroup>
     <CsWin32RunAsBuildTask>true</CsWin32RunAsBuildTask>
     <DisableRuntimeMarshalling>true</DisableRuntimeMarshalling>
+    <IsAotCompatible Condition="'$(TargetFramework)' != 'net472'">true</IsAotCompatible>
+    <WarningsAsErrors>$(WarningsAsErrors);IL2091</WarningsAsErrors>
   </PropertyGroup>
 
   <!-- For browsing, add the .cs files as None items -->

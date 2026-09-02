@@ -975,6 +975,23 @@ public class COMTests : GeneratorTestBase
         }
     }
 
+    [Fact]
+    public void CocreatableClass_CreateInstancePreservesGenericTypeFieldsForAot()
+    {
+        this.GenerateMarshaledComApi("ShellLink");
+
+        ClassDeclarationSyntax shellLinkType = Assert.IsType<ClassDeclarationSyntax>(
+            Assert.Single(this.FindGeneratedType("ShellLink")));
+        MethodDeclarationSyntax createInstance = Assert.Single(
+            shellLinkType.Members.OfType<MethodDeclarationSyntax>(),
+            method => method.Identifier.ValueText == "CreateInstance");
+        TypeParameterSyntax typeParameter = Assert.Single(createInstance.TypeParameterList!.Parameters);
+
+        Assert.Contains(
+            typeParameter.AttributeLists,
+            attributeList => IsAttributePresent(attributeList, "DynamicallyAccessedMembers"));
+    }
+
     [Theory]
     [InlineData(true, "net472")]
     [InlineData(true, "net8.0")]

@@ -1567,6 +1567,12 @@ public partial class Generator
                 //    return ret;
                 // }
                 TypeParameterSyntax typeParameter = TypeParameter(Identifier("T"));
+                if (this.UseAutoWinRTMarshalling)
+                {
+                    typeParameter = typeParameter.AddAttributeLists(
+                        AttributeList(DynamicallyAccessedPublicFieldsAttributeSyntax));
+                }
+
                 GenericNameSyntax genericName = GenericName("CreateInstance", [IdentifierName("T")]);
                 MethodDeclarationSyntax createInstanceMethod = MethodDeclaration(IdentifierName("T"), genericName.Identifier)
                     .AddModifiers(TokenWithSpace(SyntaxKind.PublicKeyword), TokenWithSpace(SyntaxKind.StaticKeyword))

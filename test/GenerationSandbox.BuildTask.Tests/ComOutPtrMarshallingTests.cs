@@ -254,6 +254,7 @@ public partial class ComOutPtrMarshallingTests
 
     [Fact]
     [Trait("TestCategory", "RequiresHardware")]
+    [UnconditionalSuppressMessage("AOT", "IL2072", Justification = "The test activates a known Windows coclass by CLSID.")]
     public void ClassicComRcw_RoundTripsWithOriginalIdentity()
     {
         Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");

@@ -257,8 +257,7 @@ public partial class ComOutPtrMarshallingTests
     public void ClassicComRcw_RoundTripsWithOriginalIdentity()
     {
         Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
-        Type shellLinkType = Type.GetTypeFromCLSID(typeof(ShellLink).GUID, throwOnError: true)!;
-        object shellLink = Activator.CreateInstance(shellLinkType)!;
+        object shellLink = Activator.CreateInstance<ShellLinkComObject>();
         try
         {
             Assert.True(Marshal.IsComObject(shellLink));
@@ -381,6 +380,12 @@ public partial class ComOutPtrMarshallingTests
         {
             ((ComObject)rcw).FinalRelease();
         }
+    }
+
+    [ComImport]
+    [Guid("00021401-0000-0000-C000-000000000046")]
+    private class ShellLinkComObject
+    {
     }
 
     [GeneratedComClass]

@@ -257,11 +257,16 @@ public partial class ComOutPtrMarshallingTests
     public void ClassicComRcw_RoundTripsWithOriginalIdentity()
     {
         Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
-        PInvoke.CoCreateInstance<object>(
-            typeof(ShellLink).GUID,
-            null,
+        Guid clsid = typeof(ShellLink).GUID;
+        Guid iid = typeof(IUnknown).GUID;
+        Marshal.ThrowExceptionForHR(CoCreateInstanceForClassicRcw(
+            in clsid,
+            0,
             CLSCTX.CLSCTX_INPROC_SERVER,
-            out object shellLink).ThrowOnFailure();
+            in iid,
+            out nint unknown));
+        object shellLink = Marshal.GetObjectForIUnknown(unknown);
+        Marshal.Release(unknown);
         try
         {
             Assert.True(Marshal.IsComObject(shellLink));
@@ -289,6 +294,15 @@ public partial class ComOutPtrMarshallingTests
             Marshal.FinalReleaseComObject(shellLink);
         }
     }
+
+    [LibraryImport("ole32.dll", EntryPoint = "CoCreateInstance")]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    private static partial int CoCreateInstanceForClassicRcw(
+        in Guid rclsid,
+        nint pUnkOuter,
+        CLSCTX dwClsContext,
+        in Guid riid,
+        out nint ppv);
 
     private static IShellItem CreateShellItem()
     {

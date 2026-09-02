@@ -254,12 +254,14 @@ public partial class ComOutPtrMarshallingTests
 
     [Fact]
     [Trait("TestCategory", "RequiresHardware")]
-    [UnconditionalSuppressMessage("AOT", "IL2072", Justification = "The test activates a known Windows coclass by CLSID.")]
     public void ClassicComRcw_RoundTripsWithOriginalIdentity()
     {
         Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
-        Type shellLinkType = Type.GetTypeFromCLSID(typeof(ShellLink).GUID, throwOnError: true)!;
-        object shellLink = Activator.CreateInstance(shellLinkType)!;
+        PInvoke.CoCreateInstance<object>(
+            typeof(ShellLink).GUID,
+            null,
+            CLSCTX.CLSCTX_INPROC_SERVER,
+            out object shellLink).ThrowOnFailure();
         try
         {
             Assert.True(Marshal.IsComObject(shellLink));

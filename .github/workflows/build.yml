@@ -122,6 +122,10 @@ jobs:
     - name: ⚙️ Install prerequisites
       run: ./init.ps1 -UpgradePrerequisites -NoNuGetCredProvider
       shell: pwsh
+    - name: ⚙️ Install Mono
+      run: |
+        sudo apt-get update
+        sudo apt-get install --no-install-recommends mono-runtime
     - name: 🛠️ Build
       run: dotnet build -t:build,pack -c ${{ env.BuildConfiguration }} -warnAsError -warnNotAsError:NU1901,NU1902,NU1903,NU1904
     - name: 🧪 Run tests

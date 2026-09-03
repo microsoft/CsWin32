@@ -53,6 +53,7 @@ extends:
       - job: github
         displayName: 📢 GitHub release
         dependsOn: nuget
+        condition: succeededOrFailed()
         pool:
           name: AzurePipelines-EO
           demands:

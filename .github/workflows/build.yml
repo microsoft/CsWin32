@@ -141,7 +141,7 @@ jobs:
         )
         foreach ($testProject in $testProjects) {
           dotnet test $testProject --no-build -c ${{ env.BuildConfiguration }} `
-            --filter "TestCategory!=HighMemory&TestCategory!=RequiresHardware" `
+            --filter "TestCategory!=HighMemory&TestCategory!=RequiresHardware&WindowsOnly!=true" `
             --blame-hang-timeout 600s `
             --blame-crash `
             --logger trx `

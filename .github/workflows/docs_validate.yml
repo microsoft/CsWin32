@@ -8,6 +8,9 @@ on:
     - main
     - microbuild
 
+env:
+  RestoreRetryCount: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'renovate[bot]' && 10 || 1 }}
+
 jobs:
   build:
     name: 📚 Doc validation
@@ -22,7 +25,7 @@ jobs:
         args: --do-not-warn-for-redirect-to https://learn.microsoft.com*,https://dotnet.microsoft.com/*,https://dev.azure.com/*,https://app.codecov.io/* -p docfx -i https://aka.ms/onboardsupport,https://aka.ms/spot,https://msrc.microsoft.com/*,https://www.microsoft.com/msrc*,https://microsoft.com/msrc*,https://www.npmjs.com/package/*,https://get.dot.net/
     - name: ⚙ Install prerequisites
       run: |
-        ./init.ps1 -UpgradePrerequisites
+        ./init.ps1 -UpgradePrerequisites -RestoreRetryCount $env:RestoreRetryCount
         dotnet --info
       shell: pwsh
     - name: 📚 Verify docfx build

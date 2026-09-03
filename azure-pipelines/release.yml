@@ -79,7 +79,7 @@ extends:
         - task: GitHubRelease@1
           displayName: 📢 GitHub release (create)
           inputs:
-            gitHubConnection: AArnott
+            gitHubConnection: github.com_jevansaks
             repositoryName: $(Build.Repository.Name)
             target: $(resources.pipeline.CI.sourceCommit)
             tagSource: userSpecifiedTag

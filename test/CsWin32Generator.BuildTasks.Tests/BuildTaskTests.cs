@@ -220,14 +220,24 @@ public class BuildTaskTests
         // Arrange
         var task = CreateTaskWithMockBuildEngine();
         SetupRequiredParameters(task);
-        task.GeneratorToolPath = @"C:\Users\User Name\.nuget\packages\microsoft.windows.cswin32\0.3.321\build\tools\CsWin32Generator.dll";
+        string generatorToolPath = Path.Combine(
+            "Users",
+            "User Name",
+            ".nuget",
+            "packages",
+            "microsoft.windows.cswin32",
+            "0.3.321",
+            "build",
+            "tools",
+            "CsWin32Generator.dll");
+        task.GeneratorToolPath = generatorToolPath;
 
         // Act
         string commandLine = task.GetCommandLineArguments();
         this.Logger.WriteLine($"Command line: {commandLine}");
 
         // Assert
-        Assert.Contains(@"""C:\Users\User Name\.nuget\packages\microsoft.windows.cswin32\0.3.321\build\tools\CsWin32Generator.dll""", commandLine);
+        Assert.StartsWith($"\"{generatorToolPath}\"", commandLine);
     }
 
     [Fact]

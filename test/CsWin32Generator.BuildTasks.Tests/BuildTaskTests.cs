@@ -126,6 +126,35 @@ public class BuildTaskTests
     }
 
     [Fact]
+    public void GenerateCommandLineCommands_WithFeatures_PassesThemThrough()
+    {
+        // Arrange
+        var task = CreateTaskWithMockBuildEngine();
+        SetupRequiredParameters(task);
+        task.Features = "strict;updated-memory-safety-rules";
+
+        // Act
+        string commandLine = task.GetCommandLineArguments();
+
+        // Assert
+        Assert.Contains("--features strict;updated-memory-safety-rules", commandLine);
+    }
+
+    [Fact]
+    public void GenerateCommandLineCommands_WithoutFeatures_OmitsTheSwitch()
+    {
+        // Arrange
+        var task = CreateTaskWithMockBuildEngine();
+        SetupRequiredParameters(task);
+
+        // Act
+        string commandLine = task.GetCommandLineArguments();
+
+        // Assert
+        Assert.DoesNotContain("--features", commandLine);
+    }
+
+    [Fact]
     public void GenerateCommandLineCommands_WithEmptyOptionalParameters_DoesNotIncludeThem()
     {
         // Arrange

@@ -549,6 +549,12 @@ public partial class Generator : IGenerator, IDisposable
 
         if (metadata is object)
         {
+            if (string.Equals(metadata.Name, InteropDecorationNamespace, StringComparison.Ordinal))
+            {
+                preciseApi = ImmutableList<string>.Empty;
+                return false;
+            }
+
             this.volatileCode.GenerationTransaction(delegate
             {
                 foreach (KeyValuePair<string, MethodDefinitionHandle> method in metadata.Methods)
@@ -655,6 +661,11 @@ public partial class Generator : IGenerator, IDisposable
 
         foreach (NamespaceMetadata? nsMetadata in namespaces)
         {
+            if (string.Equals(nsMetadata.Name, InteropDecorationNamespace, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
             if (nsMetadata.Types.TryGetValue(typeName, out TypeDefinitionHandle handle))
             {
                 matchingTypeHandles.Add(handle);

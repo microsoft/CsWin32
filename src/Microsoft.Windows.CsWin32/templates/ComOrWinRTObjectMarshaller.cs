@@ -94,9 +94,23 @@ internal static unsafe class ComOrWinRTObjectMarshaller
 		global::System.Runtime.InteropServices.Marshalling.ComInterfaceMarshaller<object>.Free((void*)value);
 #else
 	/// <summary>
+	/// Preserves a built-in COM wrapper for COM interface outputs and projects WinRT outputs through C#/WinRT.
+	/// </summary>
+	internal static object ConvertToManaged<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicFields)] T>(object value)
+		where T : class
+	{
+		if (typeof(T) != typeof(object) && !global::WinRT.Projections.IsTypeWindowsRuntimeType(typeof(T)))
+		{
+			return value;
+		}
+
+		return ConvertInspectableToManaged(value);
+	}
+
+	/// <summary>
 	/// Reprojects a built-in COM wrapper through C#/WinRT when the native identity implements <c>IInspectable</c>.
 	/// </summary>
-	internal static object ConvertToManaged(object value)
+	private static object ConvertInspectableToManaged(object value)
 	{
 		if (value is null)
 		{

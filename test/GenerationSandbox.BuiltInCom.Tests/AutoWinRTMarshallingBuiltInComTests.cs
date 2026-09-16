@@ -2,8 +2,12 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System.Runtime.InteropServices;
+using Windows.Graphics.Imaging;
 using Windows.Storage;
 using Windows.Win32;
+using Windows.Win32.Graphics.Imaging;
+using Windows.Win32.System.Com;
+using Windows.Win32.System.WinRT.Graphics.Imaging;
 using Windows.Win32.UI.Shell;
 
 namespace GenerationSandbox.BuiltInCom.Tests;
@@ -38,6 +42,38 @@ public class AutoWinRTMarshallingBuiltInComTests
 
         IStorageItem projected = Assert.IsAssignableFrom<IStorageItem>(storageItem);
         Assert.Equal("win.ini", projected.Name, ignoreCase: true);
+    }
+
+    [Fact]
+    [Trait("TestCategory", "RequiresHardware")]
+    public void IInspectableDerivedFactory_ProjectsWindowsRuntimeOutput()
+    {
+        PInvoke.CoCreateInstance<IWICImagingFactory>(
+            PInvoke.CLSID_WICImagingFactory,
+            null,
+            CLSCTX.CLSCTX_INPROC_SERVER,
+            out IWICImagingFactory imagingFactory).ThrowOnFailure();
+        imagingFactory.CreateBitmap(
+            1,
+            1,
+            PInvoke.GUID_WICPixelFormat32bppBGRA,
+            WICBitmapCreateCacheOption.WICBitmapCacheOnLoad,
+            out IWICBitmap wicBitmap);
+
+        PInvoke.CoCreateInstance<ISoftwareBitmapNativeFactory>(
+            PInvoke.CLSID_SoftwareBitmapNativeFactory,
+            null,
+            CLSCTX.CLSCTX_INPROC_SERVER,
+            out ISoftwareBitmapNativeFactory softwareBitmapFactory).ThrowOnFailure();
+
+        softwareBitmapFactory.CreateFromWICBitmap(
+            wicBitmap,
+            false,
+            out object softwareBitmapObject);
+
+        using SoftwareBitmap softwareBitmap = Assert.IsType<SoftwareBitmap>(softwareBitmapObject);
+        Assert.Equal(1, softwareBitmap.PixelWidth);
+        Assert.Equal(1, softwareBitmap.PixelHeight);
     }
 
     private static IShellItem CreateShellItem()

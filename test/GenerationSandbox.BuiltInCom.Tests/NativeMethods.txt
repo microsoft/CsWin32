@@ -1,1 +1,8 @@
 IShellItem
+CLSID_SoftwareBitmapNativeFactory
+CLSID_WICImagingFactory
+CoCreateInstance
+GUID_WICPixelFormat32bppBGRA
+ISoftwareBitmapNativeFactory
+IWICBitmap
+IWICImagingFactory

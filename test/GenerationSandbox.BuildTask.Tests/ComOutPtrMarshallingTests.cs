@@ -4,11 +4,14 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
+using Windows.Graphics.Imaging;
 using Windows.Storage;
 using Windows.Win32;
 using Windows.Win32.Foundation;
+using Windows.Win32.Graphics.Imaging;
 using Windows.Win32.System.Com;
 using Windows.Win32.System.SystemServices;
+using Windows.Win32.System.WinRT.Graphics.Imaging;
 using Windows.Win32.UI.Shell;
 using WinRT;
 
@@ -62,6 +65,34 @@ public partial class ComOutPtrMarshallingTests
 
         StorageFile storageFile = Assert.IsType<StorageFile>(storageItem);
         Assert.Equal("win.ini", storageFile.Name, ignoreCase: true);
+    }
+
+    [Fact]
+    [Trait("TestCategory", "RequiresHardware")]
+    public void IInspectableDerivedFactory_ProjectsWindowsRuntimeOutput()
+    {
+        IWICImagingFactory imagingFactory = CreateWicImagingFactory();
+        imagingFactory.CreateBitmap(
+            1,
+            1,
+            PInvoke.GUID_WICPixelFormat32bppBGRA,
+            WICBitmapCreateCacheOption.WICBitmapCacheOnLoad,
+            out IWICBitmap wicBitmap);
+
+        PInvoke.CoCreateInstance<ISoftwareBitmapNativeFactory>(
+            PInvoke.CLSID_SoftwareBitmapNativeFactory,
+            null,
+            CLSCTX.CLSCTX_INPROC_SERVER,
+            out ISoftwareBitmapNativeFactory softwareBitmapFactory).ThrowOnFailure();
+
+        softwareBitmapFactory.CreateFromWICBitmap(
+            wicBitmap,
+            false,
+            out object softwareBitmapObject);
+
+        using SoftwareBitmap softwareBitmap = Assert.IsType<SoftwareBitmap>(softwareBitmapObject);
+        Assert.Equal(1, softwareBitmap.PixelWidth);
+        Assert.Equal(1, softwareBitmap.PixelHeight);
     }
 
     [Fact]
@@ -292,6 +323,17 @@ public partial class ComOutPtrMarshallingTests
         Assert.True(File.Exists(WinIniPath), $"Expected '{WinIniPath}' to exist on Windows.");
         PInvoke.SHCreateItemFromParsingName<IShellItem>(WinIniPath, null, out IShellItem shellItem).ThrowOnFailure();
         return shellItem;
+    }
+
+    private static IWICImagingFactory CreateWicImagingFactory()
+    {
+        Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
+        PInvoke.CoCreateInstance<IWICImagingFactory>(
+            PInvoke.CLSID_WICImagingFactory,
+            null,
+            CLSCTX.CLSCTX_INPROC_SERVER,
+            out IWICImagingFactory imagingFactory).ThrowOnFailure();
+        return imagingFactory;
     }
 
     private static void AssertSameComIdentity(nint expected, nint actual)

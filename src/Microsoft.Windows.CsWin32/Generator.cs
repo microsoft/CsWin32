@@ -117,6 +117,8 @@ public partial class Generator : IGenerator, IDisposable
         // compiler version, we use language version instead.
         this.canUseUnscopedRef = this.parseOptions?.LanguageVersion >= (LanguageVersion)1100; // C# 11.0
 
+        this.useUpdatedMemorySafetyRules = IsUpdatedMemorySafetyRulesEnabled(this.parseOptions);
+
         this.canUseSpan = this.compilation?.GetTypeByMetadataName(typeof(Span<>).FullName) is not null;
         this.canCallCreateSpan = this.compilation?.GetTypeByMetadataName(typeof(MemoryMarshal).FullName)?.GetMembers("CreateSpan").Any() is true;
         this.canUseUnsafeAsRef = this.compilation?.GetTypeByMetadataName(typeof(Unsafe).FullName)?.GetMembers("Add").Any() is true;
@@ -865,8 +867,16 @@ public partial class Generator : IGenerator, IDisposable
         var normalizedResults = new Dictionary<string, CompilationUnitSyntax>(StringComparer.OrdinalIgnoreCase);
         results.AsParallel().WithCancellation(cancellationToken).ForAll(kv =>
         {
-            CompilationUnitSyntax? compilationUnit = ((CompilationUnitSyntax)kv.Value
-                .AddUsings(usingDirectives.ToArray())
+            CompilationUnitSyntax unit = kv.Value.AddUsings(usingDirectives.ToArray());
+
+            // Adapt the code to the updated memory safety rules (C# 15 / .NET 11) before whitespace is applied,
+            // so that any `unsafe` blocks this introduces get indented along with everything else.
+            if (this.useUpdatedMemorySafetyRules)
+            {
+                unit = (CompilationUnitSyntax)unit.Accept(new MemorySafetyRewriter())!;
+            }
+
+            CompilationUnitSyntax? compilationUnit = ((CompilationUnitSyntax)unit
                 .Accept(new WhitespaceRewriter())!)
                 .WithLeadingTrivia(this.fileHeader);
 

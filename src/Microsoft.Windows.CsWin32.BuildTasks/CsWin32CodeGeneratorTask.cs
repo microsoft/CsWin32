@@ -110,6 +110,11 @@ public class CsWin32CodeGeneratorTask : ToolTask
     public string? LangVersion { get; set; }
 
     /// <summary>
+    /// Gets or sets the C# compiler feature flags (the MSBuild <c>$(Features)</c> property).
+    /// </summary>
+    public string? Features { get; set; }
+
+    /// <summary>
     /// Gets the generated source files.
     /// </summary>
     [Output]
@@ -199,6 +204,7 @@ public class CsWin32CodeGeneratorTask : ToolTask
         commandLine.AppendSwitchIfNotNull("--assembly-name ", this.AssemblyName);
         commandLine.AppendSwitchIfNotNull("--key-file ", this.KeyFile);
         commandLine.AppendSwitchIfNotNull("--language-version ", this.LangVersion);
+        commandLine.AppendSwitchIfNotNull("--features ", this.Features);
         commandLine.AppendSwitch("--verbose ");
 
         if (this.References?.Length > 0)

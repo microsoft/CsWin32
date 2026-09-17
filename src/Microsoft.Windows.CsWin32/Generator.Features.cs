@@ -5,6 +5,16 @@ namespace Microsoft.Windows.CsWin32;
 
 public partial class Generator
 {
+    /// <summary>
+    /// The name of the C# compiler feature flag (i.e. <c>&lt;Features&gt;</c> / <c>/features:</c>) that opts an
+    /// assembly into the updated memory safety rules introduced as a preview feature in C# 15 / .NET 11.
+    /// </summary>
+    /// <remarks>
+    /// There is no MSBuild property nor public Roslyn API for this opt-in while the feature is in preview,
+    /// so the compiler feature flag is the only signal available to us.
+    /// </remarks>
+    internal const string UpdatedMemorySafetyRulesFeature = "updated-memory-safety-rules";
+
     private readonly bool canUseUnscopedRef;
     private readonly bool canUseSpan;
     private readonly bool canCallCreateSpan;
@@ -25,6 +35,7 @@ public partial class Generator
     private readonly bool canUseMarshalInitHandle;
     private readonly bool canUseCsWinRT;
     private readonly bool canUseCustomMarshaller;
+    private readonly bool useUpdatedMemorySafetyRules;
     private readonly INamedTypeSymbol? runtimeFeatureClass;
     private readonly bool generateSupportedOSPlatformAttributes;
     private readonly bool generateSupportedOSPlatformAttributesOnInterfaces; // only supported on net6.0 (https://github.com/dotnet/runtime/pull/48838)
@@ -36,6 +47,31 @@ public partial class Generator
     internal bool CanUseIPropertyValue => this.canUseIPropertyValue;
 
     internal bool CanUseComVariant => this.canUseComVariant;
+
+    /// <summary>
+    /// Determines whether the given parse options opt into the updated memory safety rules.
+    /// </summary>
+    /// <param name="parseOptions">The parse options for the compilation, if known.</param>
+    /// <returns><see langword="true"/> if the updated memory safety rules are enabled.</returns>
+    internal static bool IsUpdatedMemorySafetyRulesEnabled(ParseOptions? parseOptions)
+    {
+        if (parseOptions?.Features is not { Count: > 0 } features)
+        {
+            return false;
+        }
+
+        foreach (KeyValuePair<string, string> feature in features)
+        {
+            if (string.Equals(feature.Key, UpdatedMemorySafetyRulesFeature, StringComparison.OrdinalIgnoreCase))
+            {
+                // Roslyn feature flags are enabled by mere presence. An explicit "false" value is honored
+                // as a courtesy so that a project can turn the flag back off in a leaf project file.
+                return !string.Equals(feature.Value, "false", StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
+        return false;
+    }
 
     private void DeclareOverloadResolutionPriorityAttributeIfNecessary()
     {

@@ -71,19 +71,8 @@ public partial class ComOutPtrMarshallingTests
     [Trait("TestCategory", "RequiresHardware")]
     public void IInspectableDerivedFactory_ProjectsWindowsRuntimeOutput()
     {
-        IWICImagingFactory imagingFactory = CreateWicImagingFactory();
-        imagingFactory.CreateBitmap(
-            1,
-            1,
-            PInvoke.GUID_WICPixelFormat32bppBGRA,
-            WICBitmapCreateCacheOption.WICBitmapCacheOnLoad,
-            out IWICBitmap wicBitmap);
-
-        PInvoke.CoCreateInstance<ISoftwareBitmapNativeFactory>(
-            PInvoke.CLSID_SoftwareBitmapNativeFactory,
-            null,
-            CLSCTX.CLSCTX_INPROC_SERVER,
-            out ISoftwareBitmapNativeFactory softwareBitmapFactory).ThrowOnFailure();
+        IWICBitmap wicBitmap = CreateWicBitmap(1, 1);
+        ISoftwareBitmapNativeFactory softwareBitmapFactory = CreateSoftwareBitmapNativeFactory();
 
         softwareBitmapFactory.CreateFromWICBitmap(
             wicBitmap,
@@ -93,6 +82,30 @@ public partial class ComOutPtrMarshallingTests
         using SoftwareBitmap softwareBitmap = Assert.IsType<SoftwareBitmap>(softwareBitmapObject);
         Assert.Equal(1, softwareBitmap.PixelWidth);
         Assert.Equal(1, softwareBitmap.PixelHeight);
+    }
+
+    /// <summary>
+    /// Verifies that a runtime-class output requests its default interface and projects the result.
+    /// </summary>
+    [Fact]
+    [Trait("TestCategory", "RequiresHardware")]
+    public void IInspectableDerivedFactory_ProjectsWindowsRuntimeClass()
+    {
+        IWICBitmap wicBitmap = CreateWicBitmap(2, 3);
+        ISoftwareBitmapNativeFactory softwareBitmapFactory = CreateSoftwareBitmapNativeFactory();
+
+        softwareBitmapFactory.CreateFromWICBitmap(
+            wicBitmap,
+            false,
+            out SoftwareBitmap softwareBitmap);
+
+        using (softwareBitmap)
+        {
+            Assert.Equal(2, softwareBitmap.PixelWidth);
+            Assert.Equal(3, softwareBitmap.PixelHeight);
+            Assert.Equal(BitmapPixelFormat.Bgra8, softwareBitmap.BitmapPixelFormat);
+            Assert.False(softwareBitmap.IsReadOnly);
+        }
     }
 
     [Fact]
@@ -334,6 +347,28 @@ public partial class ComOutPtrMarshallingTests
             CLSCTX.CLSCTX_INPROC_SERVER,
             out IWICImagingFactory imagingFactory).ThrowOnFailure();
         return imagingFactory;
+    }
+
+    private static IWICBitmap CreateWicBitmap(uint width, uint height)
+    {
+        IWICImagingFactory imagingFactory = CreateWicImagingFactory();
+        imagingFactory.CreateBitmap(
+            width,
+            height,
+            PInvoke.GUID_WICPixelFormat32bppBGRA,
+            WICBitmapCreateCacheOption.WICBitmapCacheOnLoad,
+            out IWICBitmap wicBitmap);
+        return wicBitmap;
+    }
+
+    private static ISoftwareBitmapNativeFactory CreateSoftwareBitmapNativeFactory()
+    {
+        PInvoke.CoCreateInstance<ISoftwareBitmapNativeFactory>(
+            PInvoke.CLSID_SoftwareBitmapNativeFactory,
+            null,
+            CLSCTX.CLSCTX_INPROC_SERVER,
+            out ISoftwareBitmapNativeFactory softwareBitmapFactory).ThrowOnFailure();
+        return softwareBitmapFactory;
     }
 
     private static void AssertSameComIdentity(nint expected, nint actual)

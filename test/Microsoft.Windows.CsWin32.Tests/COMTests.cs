@@ -623,27 +623,6 @@ public class COMTests : GeneratorTestBase
     }
 
     [Fact]
-    public void AutoWinRTMarshalling_BuiltInFriendlyOverloadSelectsWrapperByRequestedType()
-    {
-        this.GenerateMarshaledComApi("IShellItem", useComSourceGenerators: false);
-
-        MethodDeclarationSyntax overload = this.FindComOutPtrOverload("BindToHandler", "IShellItem");
-        Assert.Contains(
-            overload.DescendantNodes().OfType<GenericNameSyntax>(),
-            static name => name.Identifier.ValueText == "ConvertToManaged"
-                && name.TypeArgumentList.Arguments is [IdentifierNameSyntax { Identifier.ValueText: "T" }]);
-
-        ClassDeclarationSyntax helper = Assert.Single(this.FindGeneratedType("ComOrWinRTObjectMarshaller").OfType<ClassDeclarationSyntax>());
-        MethodDeclarationSyntax converter = Assert.Single(
-            helper.Members.OfType<MethodDeclarationSyntax>(),
-            static method => method.Identifier.ValueText == "ConvertToManaged");
-        Assert.Single(converter.TypeParameterList!.Parameters);
-        Assert.Contains(
-            converter.DescendantNodes().OfType<InvocationExpressionSyntax>(),
-            static invocation => invocation.Expression.ToString().EndsWith("Projections.IsTypeWindowsRuntimeType", StringComparison.Ordinal));
-    }
-
-    [Fact]
     public void AutoWinRTMarshalling_FlatPInvokeUsesCustomMarshaller()
     {
         this.GenerateMarshaledComApi("SHCreateItemFromParsingName");

@@ -19,14 +19,41 @@ internal static unsafe class ComOrWinRTObjectMarshaller
 	internal static global::System.Guid GetIID<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicFields)] T>()
 		where T : class
 	{
-		if (typeof(T) == typeof(object))
+		global::System.Type type = typeof(T);
+		if (type == typeof(object))
 		{
 			return IID_IUnknown;
 		}
 
-		return global::WinRT.Projections.IsTypeWindowsRuntimeType(typeof(T))
-			? global::WinRT.GuidGenerator.CreateIID(typeof(T))
-			: typeof(T).GUID;
+		if (!global::WinRT.Projections.IsTypeWindowsRuntimeType(type))
+		{
+			return type.GUID;
+		}
+
+		if (type.IsClass)
+		{
+			var projection = global::System.Reflection.CustomAttributeExtensions
+				.GetCustomAttribute<global::WinRT.ProjectedRuntimeClassAttribute>(type);
+			if (projection is not null)
+			{
+				return GetRuntimeClassIID(projection);
+			}
+		}
+
+		return global::WinRT.GuidGenerator.CreateIID(type);
+	}
+
+	/// <summary>Gets a runtime class's default interface IID using modern C#/WinRT projection metadata.</summary>
+	[global::System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage(
+		"Trimming",
+		"IL2072",
+		Justification = "Type-based C#/WinRT projections supply trim-safe GUID metadata. CreateIID requires public fields only for legacy projections, which this method rejects.")]
+	private static global::System.Guid GetRuntimeClassIID(global::WinRT.ProjectedRuntimeClassAttribute projection)
+	{
+		global::System.Type defaultInterface = projection.DefaultInterface
+			?? throw new global::System.NotSupportedException(
+				"Runtime-class outputs require a C#/WinRT projection that identifies its default interface by type.");
+		return global::WinRT.GuidGenerator.CreateIID(defaultInterface);
 	}
 
 #if usesComSourceGenerators
@@ -94,23 +121,9 @@ internal static unsafe class ComOrWinRTObjectMarshaller
 		global::System.Runtime.InteropServices.Marshalling.ComInterfaceMarshaller<object>.Free((void*)value);
 #else
 	/// <summary>
-	/// Preserves a built-in COM wrapper for COM interface outputs and projects WinRT outputs through C#/WinRT.
-	/// </summary>
-	internal static object ConvertToManaged<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicFields)] T>(object value)
-		where T : class
-	{
-		if (typeof(T) != typeof(object) && !global::WinRT.Projections.IsTypeWindowsRuntimeType(typeof(T)))
-		{
-			return value;
-		}
-
-		return ConvertInspectableToManaged(value);
-	}
-
-	/// <summary>
 	/// Reprojects a built-in COM wrapper through C#/WinRT when the native identity implements <c>IInspectable</c>.
 	/// </summary>
-	private static object ConvertInspectableToManaged(object value)
+	internal static object ConvertToManaged(object value)
 	{
 		if (value is null)
 		{

@@ -294,7 +294,7 @@ public partial class Generator
                                 MemberAccessExpression(
                                     SyntaxKind.SimpleMemberAccessExpression,
                                     this.ComOrWinRTObjectMarshallerTypeSyntax,
-                                    GenericName("ConvertToManaged", [tName])),
+                                    IdentifierName("ConvertToManaged")),
                                 [Argument(managedValue)]);
                         }
 

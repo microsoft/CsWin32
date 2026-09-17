@@ -82,12 +82,27 @@ Non-final pairs and the one SDK method with two pairs remain future work. Disabl
 ## IID selection
 
 - `object` uses `IID_IUnknown`.
-- C#/WinRT types use `WinRT.GuidGenerator.CreateIID(typeof(T))`.
+- C#/WinRT projected runtime classes use the default interface identified by
+  `ProjectedRuntimeClassAttribute.DefaultInterface`, passing that interface type to
+  `WinRT.GuidGenerator.CreateIID`.
+- Other C#/WinRT types use `WinRT.GuidGenerator.CreateIID(typeof(T))`.
 - Generated COM types use `typeof(T).GUID`.
 
 The generic `T` is annotated with `DynamicallyAccessedMembers(PublicFields)` for trimming and Native AOT.
 
 IID selection chooses the native interface. The returned identity chooses the managed wrapper family.
+
+For example, callers can request a runtime class directly without exposing its default interface:
+
+```csharp
+softwareBitmapFactory.CreateFromWICBitmap(
+    wicBitmap,
+    false,
+    out SoftwareBitmap softwareBitmap);
+```
+
+This requests `IID_ISoftwareBitmap`, then uses the existing C#/WinRT object projection and class cast.
+The caller disposes the returned `SoftwareBitmap` when finished.
 
 ## Adaptive output marshaller
 
@@ -152,13 +167,27 @@ Runtime coverage invokes a WinRT member after adaptation; a cast alone is not su
 
 C#/WinRT wrappers on .NET 8 and later can dynamically expose source-generated COM interfaces. An inspectable shell stream can therefore be projected as `WinRT.IInspectable`, cast to CsWin32's `IStream`, and invoked.
 
+For built-in `[ComImport]` interfaces, callers may instead need to request `out object` and explicitly
+adapt the C#/WinRT wrapper with `WinRT.CastExtensions.As<T>()`. For example, the built-in COM
+`ISoftwareBitmapNativeFactory` caller uses this adaptation when activating the factory; it can then
+request `out SoftwareBitmap` from `CreateFromWICBitmap`. Object projection is unchanged.
+
 Consumers that disable C#/WinRT dynamic interface casting cannot rely on this behavior.
 
 ## Native AOT
 
-The design uses generated COM metadata and custom marshallers. Native AOT callers rely on interface contracts rather than concrete runtime-class wrapper types.
+The design uses generated COM metadata and custom marshallers. Source-generated COM callers can
+request either WinRT interfaces or projected runtime classes, including `out SoftwareBitmap`.
+
+Runtime-class IID selection requires the modern, type-based `ProjectedRuntimeClassAttribute`.
+Legacy property-name-based projections throw `NotSupportedException` rather than using a reflection
+fallback. The default-interface helper has a narrowly scoped `IL2072` suppression: C#/WinRT documents
+that `CreateIID`'s public-fields requirement serves legacy projections, while modern projections
+supply trim-safe GUID metadata. Parameterized default interfaces still use C#/WinRT's IID calculation.
 
 The integration suite publishes a Native AOT package-consumption app.
+Runtime-class validation must also execute the published native binary and invoke the returned
+object; successful compilation or an `IsAotCompatible` declaration alone does not verify this path.
 
 ## Behavior and cost
 
@@ -180,5 +209,6 @@ CsWin32 projections are primarily internal, so preserving previous generated sou
 ## Validation
 
 Coverage includes generator-shape tests, source-generated and built-in runtime tests, enabled and
-disabled behavior, WinRT and COM outputs, CsWinRT and COM RCW identity, WinRT CCWs, generated COM
+disabled behavior, WinRT interface and runtime-class outputs, parameterized default-interface IIDs,
+legacy projection rejection, COM outputs, CsWinRT and COM RCW identity, WinRT CCWs, generated COM
 CCWs, managed round trips, null output, and Native AOT package publication.

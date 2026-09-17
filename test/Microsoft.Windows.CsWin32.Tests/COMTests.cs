@@ -96,12 +96,46 @@ public class COMTests : GeneratorTestBase
         Assert.Equal("global::Windows.Foundation.IPropertyValue", iPropertyValueParameter.Type?.ToString());
     }
 
-    [Fact]
-    public void IInpectableDerivedInterface()
+    [Theory, PairwiseData]
+    public void IInspectableDerivedInterface_UsesGeneratedIInspectableBase(bool useComSourceGenerators)
     {
-        const string ifaceName = "IUserConsentVerifierInterop";
-        this.GenerateApi(ifaceName);
-        Assert.Contains(this.FindGeneratedType(ifaceName), t => t.BaseList is null && ((InterfaceDeclarationSyntax)t).Members.Count == 1 && t.AttributeLists.Any(al => al.Attributes.Any(a => a.Name is IdentifierNameSyntax { Identifier: { ValueText: "InterfaceType" } } && a.ArgumentList?.Arguments[0].Expression is MemberAccessExpressionSyntax { Name: IdentifierNameSyntax { Identifier: { ValueText: nameof(ComInterfaceType.InterfaceIsIInspectable) } } })));
+        const string ifaceName = "ISoftwareBitmapNativeFactory";
+        if (useComSourceGenerators)
+        {
+            this.compilation = this.starterCompilations["net10.0"];
+            this.parseOptions = this.parseOptions.WithLanguageVersion(GetLanguageVersionForTfm("net10.0") ?? LanguageVersion.Latest);
+        }
+
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with
+        {
+            ComInterop = new GeneratorOptions.ComInteropOptions { UseComSourceGenerators = useComSourceGenerators },
+        });
+        Assert.True(this.generator.TryGenerate(ifaceName, CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics(
+            this.compilation,
+            logAllGeneratedCode: false,
+            acceptable: diagnostic => useComSourceGenerators && diagnostic.Id is "CS8795" or "CS1574");
+
+        InterfaceDeclarationSyntax iface = Assert.Single(this.FindGeneratedType(ifaceName).OfType<InterfaceDeclarationSyntax>());
+        BaseTypeSyntax baseType = Assert.Single(iface.BaseList!.Types);
+        Assert.EndsWith(".IInspectable", baseType.Type.ToString());
+        Assert.Contains(
+            iface.AttributeLists.SelectMany(static list => list.Attributes),
+            static attribute => attribute.Name is IdentifierNameSyntax { Identifier.ValueText: "InterfaceType" }
+                && attribute.ArgumentList?.Arguments[0].Expression is MemberAccessExpressionSyntax
+                {
+                    Name: IdentifierNameSyntax { Identifier.ValueText: nameof(ComInterfaceType.InterfaceIsIUnknown) },
+                });
+
+        InterfaceDeclarationSyntax inspectable = Assert.Single(this.FindGeneratedType("IInspectable").OfType<InterfaceDeclarationSyntax>());
+        Assert.Equal(
+            ["GetIids", "GetRuntimeClassName", "GetTrustLevel"],
+            inspectable.Members.OfType<MethodDeclarationSyntax>().Select(static method => method.Identifier.ValueText));
+        Assert.Contains(
+            inspectable.AttributeLists.SelectMany(static list => list.Attributes),
+            attribute => attribute.Name is IdentifierNameSyntax identifier
+                && identifier.Identifier.ValueText == (useComSourceGenerators ? "GeneratedComInterface" : "ComImport"));
 
         // Make sure the WinRT marshaler was not brought in
         Assert.Empty(this.FindGeneratedType(WinRTCustomMarshalerClass));

@@ -829,12 +829,9 @@ public partial class Generator
                         topMostBaseTypeSyntax = SimpleBaseType(QualifiedName(ParseName("global::Windows.Win32.System.Com"), IdentifierName("IDispatch")));
                     }
                 }
-                else if (baseTypeHandle.Reader.StringComparer.Equals(baseType.Definition.Name, "IInspectable"))
-                {
-                    foundIInspectable = true;
-                }
                 else
                 {
+                    foundIInspectable |= baseTypeHandle.Reader.StringComparer.Equals(baseType.Definition.Name, "IInspectable");
                     baseTypeHandle.Generator.RequestInteropType(baseTypeHandle.DefinitionHandle, context);
                     TypeSyntax baseTypeSyntax = new HandleTypeHandleInfo(baseTypeHandle.Generator, baseTypeHandle.Reader, baseTypeHandle.DefinitionHandle).ToTypeSyntax(this.comSignatureTypeSettings, GeneratingElement.InterfaceMember, null).Type;
                     if (interfaceAsSubtype)
@@ -859,7 +856,7 @@ public partial class Generator
         allMethods.AddRange(typeDef.GetMethods().Select(methodHandle => new QualifiedMethodDefinitionHandle(this, methodHandle)));
 
         AttributeSyntax ifaceType = InterfaceType(
-            foundIInspectable ? ComInterfaceType.InterfaceIsIInspectable :
+            foundIInspectable ? ComInterfaceType.InterfaceIsIUnknown :
             foundIDispatch ? (this.GenerateIDispatch ? ComInterfaceType.InterfaceIsIUnknown : (allMethods.Count == 0 ? ComInterfaceType.InterfaceIsIDispatch : ComInterfaceType.InterfaceIsDual)) :
             foundIUnknown ? ComInterfaceType.InterfaceIsIUnknown :
             throw new NotSupportedException("No COM interface base type found."));
@@ -954,7 +951,7 @@ public partial class Generator
                     TypeSyntaxSettings functionSignatureSettings = this.comSignatureTypeSettings;
                     ParameterListSyntax? parameterList = methodDefinition.Generator.CreateParameterList(methodDefinition.Method, signature, functionSignatureSettings, GeneratingElement.InterfaceMember);
 
-                    bool preserveSig = interfaceAsSubtype || this.UsePreserveSigForComMethod(methodDefinition.Method, signature, actualIfaceName, methodName) || emulateMemberFunctionCallConv;
+                    bool preserveSig = interfaceAsSubtype || methodDefinition.Generator.UsePreserveSigForComMethod(methodDefinition.Method, signature, actualIfaceName, methodName) || emulateMemberFunctionCallConv;
                     if (this.useSourceGenerators && preserveSig && IsHresult(signature.ReturnType))
                     {
                         parameterList = this.RenameRetValParametersForComSourceGenerator(parameterList);

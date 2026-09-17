@@ -1,5 +1,7 @@
 ﻿# Testing
 ChoosePixelFormat
+CLSID_SoftwareBitmapNativeFactory
+CLSID_WICImagingFactory
 CoAllowSetForegroundWindow
 CoCreateInstance
 CreateDispatcherQueueController
@@ -21,6 +23,7 @@ GetFileVersionInfoSizeEx
 GetModuleHandle
 GetPackagePathByFullName2
 GetThemeColor
+GUID_WICPixelFormat32bppBGRA
 HANDLE
 HMENU
 ICompositorInterop
@@ -37,8 +40,11 @@ ISequentialStream
 IShellItem
 IShellLinkW
 IShellWindows
+ISoftwareBitmapNativeFactory
 IStream
 IUnknown
+IWICBitmap
+IWICImagingFactory
 LoadIFilter
 LOCKTYPE
 MAX_PATH

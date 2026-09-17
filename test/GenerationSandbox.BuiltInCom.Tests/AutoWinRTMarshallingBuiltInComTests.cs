@@ -2,9 +2,14 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System.Runtime.InteropServices;
+using Windows.Graphics.Imaging;
 using Windows.Storage;
 using Windows.Win32;
+using Windows.Win32.Graphics.Imaging;
+using Windows.Win32.System.Com;
+using Windows.Win32.System.WinRT.Graphics.Imaging;
 using Windows.Win32.UI.Shell;
+using WinRT;
 
 namespace GenerationSandbox.BuiltInCom.Tests;
 
@@ -38,6 +43,73 @@ public class AutoWinRTMarshallingBuiltInComTests
 
         IStorageItem projected = Assert.IsAssignableFrom<IStorageItem>(storageItem);
         Assert.Equal("win.ini", projected.Name, ignoreCase: true);
+    }
+
+    [Fact]
+    [Trait("TestCategory", "RequiresHardware")]
+    public void IInspectableDerivedFactory_ProjectsWindowsRuntimeOutput()
+    {
+        IWICBitmap wicBitmap = CreateWicBitmap(1, 1);
+        ISoftwareBitmapNativeFactory softwareBitmapFactory = CreateSoftwareBitmapNativeFactory();
+
+        softwareBitmapFactory.CreateFromWICBitmap(
+            wicBitmap,
+            false,
+            out object softwareBitmapObject);
+
+        using SoftwareBitmap softwareBitmap = Assert.IsType<SoftwareBitmap>(softwareBitmapObject);
+        Assert.Equal(1, softwareBitmap.PixelWidth);
+        Assert.Equal(1, softwareBitmap.PixelHeight);
+    }
+
+    /// <summary>
+    /// Verifies that a runtime-class output requests its default interface and projects the result.
+    /// </summary>
+    [Fact]
+    [Trait("TestCategory", "RequiresHardware")]
+    public void IInspectableDerivedFactory_ProjectsWindowsRuntimeClass()
+    {
+        IWICBitmap wicBitmap = CreateWicBitmap(2, 3);
+        ISoftwareBitmapNativeFactory softwareBitmapFactory = CreateSoftwareBitmapNativeFactory();
+
+        softwareBitmapFactory.CreateFromWICBitmap(
+            wicBitmap,
+            false,
+            out SoftwareBitmap softwareBitmap);
+
+        using (softwareBitmap)
+        {
+            Assert.Equal(2, softwareBitmap.PixelWidth);
+            Assert.Equal(3, softwareBitmap.PixelHeight);
+            Assert.Equal(BitmapPixelFormat.Bgra8, softwareBitmap.BitmapPixelFormat);
+            Assert.False(softwareBitmap.IsReadOnly);
+        }
+    }
+
+    private static IWICBitmap CreateWicBitmap(uint width, uint height)
+    {
+        PInvoke.CoCreateInstance<IWICImagingFactory>(
+            PInvoke.CLSID_WICImagingFactory,
+            null,
+            CLSCTX.CLSCTX_INPROC_SERVER,
+            out IWICImagingFactory imagingFactory).ThrowOnFailure();
+        imagingFactory.CreateBitmap(
+            width,
+            height,
+            PInvoke.GUID_WICPixelFormat32bppBGRA,
+            WICBitmapCreateCacheOption.WICBitmapCacheOnLoad,
+            out IWICBitmap wicBitmap);
+        return wicBitmap;
+    }
+
+    private static ISoftwareBitmapNativeFactory CreateSoftwareBitmapNativeFactory()
+    {
+        PInvoke.CoCreateInstance<object>(
+            PInvoke.CLSID_SoftwareBitmapNativeFactory,
+            null,
+            CLSCTX.CLSCTX_INPROC_SERVER,
+            out object softwareBitmapFactory).ThrowOnFailure();
+        return softwareBitmapFactory.As<ISoftwareBitmapNativeFactory>();
     }
 
     private static IShellItem CreateShellItem()

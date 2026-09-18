@@ -970,12 +970,12 @@ public partial class Generator : IGenerator, IDisposable
             {
                 if (!this.IsTypeAlreadyFullyDeclared($"{this.Namespace}.{IVTableInterface.Identifier.ValueText}"))
                 {
-                    this.volatileCode.GenerateSpecialType("IVTable", () => this.volatileCode.AddSpecialType("IVTable", IVTableInterface));
+                    this.volatileCode.GenerateSpecialType("IVTable", () => this.volatileCode.AddSpecialType("IVTable", this.ElevateVisibility(IVTableInterface)));
                 }
 
                 if (!this.IsTypeAlreadyFullyDeclared($"{this.Namespace}.{IVTableGenericInterface.Identifier.ValueText}`2"))
                 {
-                    this.volatileCode.GenerateSpecialType("IVTable`2", () => this.volatileCode.AddSpecialType("IVTable`2", IVTableGenericInterface));
+                    this.volatileCode.GenerateSpecialType("IVTable`2", () => this.volatileCode.AddSpecialType("IVTable`2", this.ElevateVisibility(IVTableGenericInterface)));
                 }
 
                 if (!this.TryGenerate("IUnknown", default))

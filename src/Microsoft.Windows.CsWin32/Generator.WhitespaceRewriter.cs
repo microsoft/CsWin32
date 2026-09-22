@@ -97,7 +97,7 @@ public partial class Generator
         public override SyntaxNode? VisitBlock(BlockSyntax node)
         {
             SyntaxTriviaList leadingTrivia;
-            if (node.Parent is FixedStatementSyntax or AccessorDeclarationSyntax or TryStatementSyntax or FinallyClauseSyntax)
+            if (node.Parent is FixedStatementSyntax or AccessorDeclarationSyntax or TryStatementSyntax or FinallyClauseSyntax or UnsafeStatementSyntax)
             {
                 leadingTrivia = TriviaList(this.IndentTrivia);
             }
@@ -203,6 +203,8 @@ public partial class Generator
                 return base.VisitAssignmentExpression(node);
             }
         }
+
+        public override SyntaxNode? VisitUnsafeStatement(UnsafeStatementSyntax node) => base.VisitUnsafeStatement(this.WithIndentingTrivia(node));
 
         public override SyntaxNode? VisitTryStatement(TryStatementSyntax node) => base.VisitTryStatement(this.WithIndentingTrivia(node));
 

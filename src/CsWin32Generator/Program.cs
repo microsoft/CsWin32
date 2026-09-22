@@ -24,6 +24,7 @@ public partial class Program
     private string? assemblyName;
     private FileInfo? assemblyOriginatorKeyFile;
     private LanguageVersion languageVersion = LanguageVersion.CSharp13;
+    private string[] features = [];
 
     /// <summary>
     /// Initializes a new instance of the <see cref="Program"/> class.
@@ -124,6 +125,12 @@ public partial class Program
             Description = "C# language version (e.g., 10, 11, 12, 13, Latest, Preview).",
         };
 
+        var featuresOption = new Option<string[]>("--features")
+        {
+            Description = "C# compiler feature flags (the MSBuild $(Features) property), separated by semicolons or spaces.",
+            AllowMultipleArgumentsPerToken = true,
+        };
+
         var verboseOption = new Option<bool>("--verbose");
 
         var rootCommand = new RootCommand("CsWin32 Code Generator - Generates P/Invoke methods and supporting types from Windows metadata.")
@@ -140,6 +147,7 @@ public partial class Program
             assemblyNameOption,
             keyFileOption,
             languageVersionOption,
+            featuresOption,
             verboseOption,
         };
 
@@ -157,6 +165,9 @@ public partial class Program
         this.assemblyOriginatorKeyFile = parseResult.GetValue(keyFileOption);
         this.verbose = parseResult.GetValue(verboseOption);
         string? languageVersionString = parseResult.GetValue(languageVersionOption);
+        this.features = (parseResult.GetValue(featuresOption) ?? [])
+            .SelectMany(f => f.Split([';', ' '], StringSplitOptions.RemoveEmptyEntries))
+            .ToArray();
 
         // Check for errors before continuing.
         if (parseResult.Errors.Count > 0)
@@ -453,7 +464,21 @@ public partial class Program
     /// <returns>C# parse options instance or null if creation fails.</returns>
     private CSharpParseOptions? CreateParseOptions(string? targetFramework)
     {
-        return new CSharpParseOptions(languageVersion: LanguageVersion.CSharp13);
+        CSharpParseOptions parseOptions = new(languageVersion: LanguageVersion.CSharp13);
+
+        if (this.features.Length > 0)
+        {
+            // A feature flag may be given as "name" or "name=value", matching csc's /features: syntax.
+            parseOptions = parseOptions.WithFeatures(this.features.Select(f =>
+            {
+                int equals = f.IndexOf('=');
+                return equals < 0
+                    ? new KeyValuePair<string, string>(f, "true")
+                    : new KeyValuePair<string, string>(f.Substring(0, equals), f.Substring(equals + 1));
+            }));
+        }
+
+        return parseOptions;
     }
 
     /// <summary>

@@ -18,6 +18,22 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
     }
 
     [Fact]
+    public async Task IVTableRespectsPublicVisibilityFromNativeMethodsJson()
+    {
+        this.compilation = this.starterCompilations["net10.0"];
+        this.parseOptions = this.parseOptions.WithLanguageVersion(LanguageVersion.CSharp14);
+        this.tfm = "net10.0";
+        this.nativeMethodsJson = "NativeMethods.Public.json";
+        this.nativeMethods.Add("ITypeInfo");
+
+        await this.InvokeGeneratorAndCompileFromFact();
+
+        InterfaceDeclarationSyntax[] ivtableInterfaces = this.FindGeneratedType("IVTable").OfType<InterfaceDeclarationSyntax>().ToArray();
+        Assert.Equal(2, ivtableInterfaces.Length);
+        Assert.All(ivtableInterfaces, declaration => Assert.Contains(declaration.Modifiers, modifier => modifier.IsKind(SyntaxKind.PublicKeyword)));
+    }
+
+    [Fact]
     public async Task FlattenedAnonymousAccessorsCompileWithComSourceGenerators()
     {
         // Regression: the CLI/source-generator path defaults UseComSourceGenerators=true, which can type an

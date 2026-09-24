@@ -1219,6 +1219,57 @@ public class COMTests : GeneratorTestBase
                     && System.Text.RegularExpressions.Regex.IsMatch(text, $@"#pragma warning disable[^\r\n]*\b{warningId}\b"));
     }
 
+    [Theory, PairwiseData]
+    public void IVTableRespectsConfiguredVisibility(bool publicVisibility)
+    {
+        this.compilation = this.starterCompilations["net10.0"];
+        this.parseOptions = this.parseOptions.WithLanguageVersion(GetLanguageVersionForTfm("net10.0") ?? LanguageVersion.Latest);
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = false, Public = publicVisibility });
+
+        Assert.True(this.generator.TryGenerate("ITypeInfo", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+
+        BaseTypeDeclarationSyntax[] ivtableInterfaces = this.FindGeneratedType("IVTable").ToArray();
+        Assert.Equal(2, ivtableInterfaces.Length);
+        SyntaxKind expectedVisibility = publicVisibility ? SyntaxKind.PublicKeyword : SyntaxKind.InternalKeyword;
+        Assert.All(ivtableInterfaces, declaration => Assert.Contains(declaration.Modifiers, modifier => modifier.IsKind(expectedVisibility)));
+        this.AssertNoDiagnostics();
+    }
+
+    [Theory, PairwiseData]
+    public void IVTableHonorsExistingTypeVisibility(bool existingTypeIsVisible)
+    {
+        this.compilation = this.starterCompilations["net10.0"];
+        this.parseOptions = this.parseOptions.WithLanguageVersion(GetLanguageVersionForTfm("net10.0") ?? LanguageVersion.Latest);
+        string visibility = existingTypeIsVisible ? "public" : "internal";
+        CSharpCompilation referencedProject = this.AddCode(
+            $$"""
+                namespace Windows.Win32
+                {
+                    {{visibility}} unsafe interface IVTable
+                    {
+                    }
+
+                    {{visibility}} unsafe interface IVTable<TComInterface, TVTable> : IVTable
+                        where TComInterface : unmanaged, IVTable<TComInterface, TVTable>
+                        where TVTable : unmanaged
+                    {
+                        static abstract void PopulateVTable(TVTable* vtable);
+                    }
+                }
+                """,
+            compilation: this.compilation.WithAssemblyName("IVTableReference"));
+        this.AssertNoDiagnostics(referencedProject, acceptable: diagnostic => diagnostic.Id == "CS1591");
+
+        this.compilation = this.compilation.AddReferences(referencedProject.ToMetadataReference());
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = false, Public = true });
+        Assert.True(this.generator.TryGenerate("ITypeInfo", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+
+        Assert.Equal(existingTypeIsVisible ? 0 : 2, this.FindGeneratedType("IVTable").Count());
+        this.AssertNoDiagnostics();
+    }
+
     /// <summary>
     /// Regression for the dotnet/winforms#14639 scenario behind <see href="https://github.com/microsoft/CsWin32/issues/1703">issue 1703</see>:
     /// a consumer adds a friendly-helper <c>partial</c> to a generated CCW-bearing COM struct (extremely common) and the

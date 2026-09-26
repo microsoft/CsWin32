@@ -6,10 +6,10 @@ partial struct PWSTR
 {
 	public static implicit operator PCWSTR(PWSTR value) => new PCWSTR(value.Value);
 
-	/// <inheritdoc cref="PCWSTR.Length"/>
+	/// <inheritdoc cref="P:Windows.Win32.Foundation.PCWSTR.Length"/>
 	internal int Length => new PCWSTR(this.Value).Length;
 
-	/// <inheritdoc cref="PCWSTR.ToString()"/>
+	/// <inheritdoc cref="M:Windows.Win32.Foundation.PCWSTR.ToString"/>
 	public override string ToString() => new PCWSTR(this.Value).ToString();
 
 #if canUseSpan

@@ -22,6 +22,25 @@ public partial class Generator
 
     private static ParameterSyntax StripAttributes(ParameterSyntax parameter) => parameter.WithAttributeLists(default);
 
+    private static SyntaxTriviaList CopyDocumentationForFriendlyOverload(MethodDeclarationSyntax method, IEnumerable<ParameterSyntax> parameters)
+    {
+        HashSet<string> parameterNames = new(parameters.Select(parameter => parameter.Identifier.ValueText), StringComparer.Ordinal);
+        SyntaxTriviaList leadingTrivia = method.GetLeadingTrivia();
+        foreach (SyntaxTrivia trivia in leadingTrivia)
+        {
+            if (trivia.GetStructure() is DocumentationCommentTriviaSyntax documentation)
+            {
+                SyntaxList<XmlNodeSyntax> content = SyntaxFactory.List(documentation.Content.Where(node =>
+                    node is not XmlElementSyntax { StartTag.Name.LocalName.ValueText: "param" } paramDoc ||
+                    paramDoc.StartTag.Attributes.OfType<XmlNameAttributeSyntax>()
+                        .Any(attribute => attribute.Name.LocalName.ValueText == "name" && parameterNames.Contains(attribute.Identifier.Identifier.ValueText))));
+                leadingTrivia = leadingTrivia.Replace(trivia, Trivia(documentation.WithContent(content)));
+            }
+        }
+
+        return leadingTrivia;
+    }
+
     private static ExpressionSyntax GetSpanLength(ExpressionSyntax span, bool isRefType) => isRefType ?
         ParenthesizedExpression(BinaryExpression(
                 SyntaxKind.CoalesceExpression,
@@ -34,6 +53,41 @@ public partial class Generator
                 span,
                 LiteralExpression(SyntaxKind.NullLiteralExpression))) :
         MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, span, IdentifierName(nameof(Span<>.IsEmpty)));
+
+    private bool HasAmbiguousCrefParameterTypes(ParameterListSyntax parameterList)
+    {
+        if (this.compilation is null)
+        {
+            return false;
+        }
+
+        foreach (ParameterSyntax parameter in parameterList.Parameters)
+        {
+            foreach (QualifiedNameSyntax typeName in parameter.Type!.DescendantNodesAndSelf().OfType<QualifiedNameSyntax>())
+            {
+                string metadataName = typeName.ToString();
+                if (metadataName.StartsWith(GlobalWinmdRootNamespaceAlias + ".", StringComparison.Ordinal))
+                {
+                    metadataName = this.MetadataIndex.CommonNamespace + metadataName.Substring(GlobalWinmdRootNamespaceAlias.Length);
+                }
+                else if (metadataName.StartsWith(GlobalNamespacePrefix, StringComparison.Ordinal))
+                {
+                    metadataName = metadataName.Substring(GlobalNamespacePrefix.Length);
+                }
+                else
+                {
+                    continue;
+                }
+
+                if (this.compilation.GetTypesByMetadataName(metadataName).Length > 1)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
 
     private ExpressionSyntax GetIntPtrFromTypeDef(ExpressionSyntax typedefValue, TypeHandleInfo typeDefTypeInfo)
     {
@@ -1405,17 +1459,27 @@ public partial class Generator
                 parameters.RemoveAt(indexToRemove);
             }
 
-            TypeSyntax docRefExternName = overloadOf == FriendlyOverloadOf.InterfaceMethod
-                ? QualifiedName(declaringTypeName, IdentifierName(externMethodDeclaration.Identifier))
-                : IdentifierName(externMethodDeclaration.Identifier);
-            SyntaxTrivia leadingTrivia = Trivia(
-                DocumentationCommentTrivia(
-                    SyntaxKind.SingleLineDocumentationCommentTrivia,
-                    [
-                        XmlText($"/// "),
-                        XmlEmptyElement("inheritdoc", [XmlCrefAttribute(NameMemberCref(docRefExternName, ToCref(externMethodDeclaration.ParameterList)))]),
-                        XmlText(XmlTextNewLine("\n", continueXmlDocumentationComment: false))
-                    ]));
+            SyntaxTriviaList leadingTrivia;
+            if (this.HasAmbiguousCrefParameterTypes(externMethodDeclaration.ParameterList))
+            {
+                // A hidden type with the same name in another reference can break cref binding, even when the method signature compiles.
+                leadingTrivia = CopyDocumentationForFriendlyOverload(externMethodDeclaration, parameters);
+            }
+            else
+            {
+                TypeSyntax docRefExternName = overloadOf == FriendlyOverloadOf.InterfaceMethod
+                    ? QualifiedName(declaringTypeName, IdentifierName(externMethodDeclaration.Identifier))
+                    : IdentifierName(externMethodDeclaration.Identifier);
+                leadingTrivia = TriviaList(Trivia(
+                    DocumentationCommentTrivia(
+                        SyntaxKind.SingleLineDocumentationCommentTrivia,
+                        [
+                            XmlText($"/// "),
+                            XmlEmptyElement("inheritdoc", [XmlCrefAttribute(NameMemberCref(docRefExternName, ToCref(externMethodDeclaration.ParameterList)))]),
+                            XmlText(XmlTextNewLine("\n", continueXmlDocumentationComment: false))
+                        ])));
+            }
+
             ExpressionSyntax externInvocation = InvocationExpression(
                 overloadOf switch
                 {

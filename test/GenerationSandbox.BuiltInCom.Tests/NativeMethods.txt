@@ -1,4 +1,5 @@
 IShellItem
+IClassFactory
 CLSID_SoftwareBitmapNativeFactory
 CLSID_WICImagingFactory
 CoCreateInstance

@@ -120,6 +120,36 @@ internal static unsafe class ComOrWinRTObjectMarshaller
 	public static void Free(nint value) =>
 		global::System.Runtime.InteropServices.Marshalling.ComInterfaceMarshaller<object>.Free((void*)value);
 #else
+	/// <summary>Projects a native COM identity as a Windows Runtime object when it implements <c>IInspectable</c>.</summary>
+	internal static object ConvertToManaged(nint value)
+	{
+		if (value == 0)
+		{
+			return null;
+		}
+
+		global::System.Guid iid = IID_IInspectable;
+		int hr = global::System.Runtime.InteropServices.Marshal.QueryInterface(value, in iid, out nint inspectable);
+		if (hr >= 0)
+		{
+			try
+			{
+				return global::WinRT.MarshalInspectable<object>.FromAbi(inspectable);
+			}
+			finally
+			{
+				global::System.Runtime.InteropServices.Marshal.Release(inspectable);
+			}
+		}
+
+		if (hr != E_NOINTERFACE)
+		{
+			global::System.Runtime.InteropServices.Marshal.ThrowExceptionForHR(hr);
+		}
+
+		return global::System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(value);
+	}
+
 	/// <summary>
 	/// Reprojects a built-in COM wrapper through C#/WinRT when the native identity implements <c>IInspectable</c>.
 	/// </summary>
@@ -157,6 +187,31 @@ internal static unsafe class ComOrWinRTObjectMarshaller
 		finally
 		{
 			global::System.Runtime.InteropServices.Marshal.Release(identity);
+		}
+	}
+
+	/// <summary>Preserves existing COM wrappers and otherwise creates a built-in COM callable wrapper.</summary>
+	internal static nint ConvertToUnmanaged(object value)
+	{
+		if (value is null)
+		{
+			return 0;
+		}
+
+		if (global::System.Runtime.InteropServices.ComWrappers.TryGetComInstance(value, out nint comInstance))
+		{
+			return comInstance;
+		}
+
+		return global::System.Runtime.InteropServices.Marshal.GetIUnknownForObject(value);
+	}
+
+	/// <summary>Releases an ABI identity pointer produced for or received from built-in COM interop.</summary>
+	internal static void Free(nint value)
+	{
+		if (value != 0)
+		{
+			global::System.Runtime.InteropServices.Marshal.Release(value);
 		}
 	}
 #endif

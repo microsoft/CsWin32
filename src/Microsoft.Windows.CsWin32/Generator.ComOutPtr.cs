@@ -11,6 +11,9 @@ public partial class Generator
     /// <summary>The generated adaptive custom marshaller and built-in COM projection helper.</summary>
     private const string ComOrWinRTObjectMarshallerClassName = "ComOrWinRTObjectMarshaller";
 
+    /// <summary>The generated helper for producing exact-interface COM output pointers.</summary>
+    private const string ComOutPtrClassName = "ComOutPtr";
+
     /// <summary>Preserves the fields C#/WinRT reflects over when it generates an interface identifier.</summary>
     private static readonly AttributeSyntax DynamicallyAccessedPublicFieldsAttributeSyntax = Attribute(IdentifierName("DynamicallyAccessedMembers"))
         .AddArgumentListArguments(AttributeArgument(MemberAccessExpression(
@@ -29,7 +32,93 @@ public partial class Generator
 
     /// <summary>Gets the fully qualified name of the generated adaptive marshaller.</summary>
     private NameSyntax ComOrWinRTObjectMarshallerTypeSyntax =>
-        ParseName($"global::{this.MainGenerator.Namespace}.{ComOrWinRTObjectMarshallerClassName}");
+        ParseName($"global::{this.SharedComHelperNamespace}.{ComOrWinRTObjectMarshallerClassName}");
+
+    /// <summary>Gets the namespace that owns helpers shared by all metadata projections.</summary>
+    private string SharedComHelperNamespace =>
+        !this.IsWin32Sdk && this.SuperGenerator is null ? "Windows.Win32" : this.MainGenerator.Namespace;
+
+    /// <summary>Emits the COM output pointer helper exactly once in the Windows.Win32 namespace.</summary>
+    internal void RequestComOutPtr()
+    {
+        if (!this.IsWin32Sdk)
+        {
+            if (this.SuperGenerator is null)
+            {
+                return;
+            }
+
+            this.MainGenerator.volatileCode.GenerationTransaction(() => this.MainGenerator.RequestComOutPtr());
+            return;
+        }
+
+        this.volatileCode.GenerationTransaction(() =>
+        {
+            if (this.UseAutoWinRTMarshalling)
+            {
+                this.RequestComOrWinRTObjectMarshaller();
+            }
+
+            this.volatileCode.GenerateSpecialType(ComOutPtrClassName, delegate
+            {
+                if (!TryFetchTemplate(ComOutPtrClassName, this, out MemberDeclarationSyntax? declaration))
+                {
+                    throw new GenerationFailedException($"Failed to retrieve template: {ComOutPtrClassName}");
+                }
+
+                this.volatileCode.AddSpecialType(
+                    ComOutPtrClassName,
+                    declaration
+                        .WithoutLeadingTrivia()
+                        .AddAttributeLists(AttributeList(GeneratedCodeAttribute))
+                        .WithLeadingTrivia(declaration.GetLeadingTrivia()));
+            });
+        });
+    }
+
+    /// <summary>Projects the implementation-facing half of an IID/PPV pair as <c>out void*</c>.</summary>
+    private MethodDeclarationSyntax ApplyComOutPtrAbi(
+        MethodDefinition methodDefinition,
+        MethodSignature<TypeHandleInfo> signature,
+        MethodDeclarationSyntax methodDeclaration)
+    {
+        if (!this.options.AllowMarshaling
+            || this.options.ComInterop.UseIntPtrForComOutPointers
+            || !this.TryFindComOutPtrPair(methodDefinition, signature, out _, out int ppvIndex))
+        {
+            return methodDeclaration;
+        }
+
+        ParameterSyntax ppv = methodDeclaration.ParameterList.Parameters[ppvIndex];
+        SyntaxList<AttributeListSyntax> attributeLists = [];
+        foreach (AttributeListSyntax attributeList in ppv.AttributeLists)
+        {
+            SeparatedSyntaxList<AttributeSyntax> attributes = [];
+            foreach (AttributeSyntax attribute in attributeList.Attributes)
+            {
+                string name = attribute.Name.GetLastToken().ValueText;
+                if (name is not ("MarshalAs" or "MarshalUsing"))
+                {
+                    attributes = attributes.Add(attribute);
+                }
+            }
+
+            if (attributes.Count > 0)
+            {
+                attributeLists = attributeLists.Add(attributeList.WithAttributes(attributes));
+            }
+        }
+
+        ppv = ppv
+            .WithAttributeLists(attributeLists)
+            .WithType(PointerType(PredefinedType(Token(SyntaxKind.VoidKeyword))).WithTrailingTrivia(Space))
+            .WithModifiers([TokenWithSpace(SyntaxKind.OutKeyword)]);
+
+        this.RequestComOutPtr();
+        return methodDeclaration.WithParameterList(
+            methodDeclaration.ParameterList.WithParameters(
+                methodDeclaration.ParameterList.Parameters.Replace(methodDeclaration.ParameterList.Parameters[ppvIndex], ppv)));
+    }
 
     /// <summary>
     /// Locates the canonical <c>IID_PPV_ARGS</c> pair on a method: a <c>Guid*</c> parameter immediately followed by
@@ -184,6 +273,11 @@ public partial class Generator
     {
         if (!this.IsWin32Sdk)
         {
+            if (this.SuperGenerator is null)
+            {
+                return;
+            }
+
             this.MainGenerator.volatileCode.GenerationTransaction(() => this.MainGenerator.RequestComOrWinRTObjectMarshaller());
             return;
         }

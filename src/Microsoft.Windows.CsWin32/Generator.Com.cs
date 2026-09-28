@@ -960,7 +960,9 @@ public partial class Generator
                     if (!preserveSig)
                     {
                         ParameterSyntax? lastParameter = parameterList.Parameters.Count > 0 ? parameterList.Parameters[parameterList.Parameters.Count - 1] : null;
-                        if (lastParameter?.HasAnnotation(IsRetValAnnotation) is true)
+                        bool comOutPtrRetVal = methodDefinition.Generator.TryFindComOutPtrPair(methodDefinition.Method, signature, out _, out int ppvIndex)
+                            && ppvIndex == parameterList.Parameters.Count - 1;
+                        if (lastParameter?.HasAnnotation(IsRetValAnnotation) is true && !comOutPtrRetVal)
                         {
                             // Move the retval parameter to the return value position.
                             parameterList = parameterList.WithParameters(parameterList.Parameters.RemoveAt(parameterList.Parameters.Count - 1));
@@ -984,6 +986,10 @@ public partial class Generator
                     methodDeclaration = MethodDeclaration(returnType.WithTrailingTrivia(TriviaList(Space)), SafeIdentifier(methodName))
                         .WithParameterList(FixTrivia(parameterList))
                         .WithSemicolonToken(SemicolonWithLineFeed);
+                    methodDeclaration = methodDefinition.Generator.ApplyComOutPtrAbi(
+                        methodDefinition.Method,
+                        signature,
+                        methodDeclaration);
                     if (returnsAttribute is object)
                     {
                         methodDeclaration = methodDeclaration.AddAttributeLists(

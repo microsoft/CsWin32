@@ -184,10 +184,17 @@ public class ComRuntimeTests(ITestOutputHelper outputHelper)
         unsafe
         {
             var iid_IDispatch = new Guid("00020400-0000-0000-C000-000000000046");
-            shellView.GetItemObject((uint)_SVGIO.SVGIO_BACKGROUND, &iid_IDispatch, out var folderViewAsObject);
-            var folderView = (IShellFolderViewDual)folderViewAsObject;
+            shellView.GetItemObject((uint)_SVGIO.SVGIO_BACKGROUND, &iid_IDispatch, out void* folderViewPointer);
+            try
+            {
+                var folderView = (IShellFolderViewDual)Marshal.GetObjectForIUnknown((nint)folderViewPointer);
 
-            _ = folderView.Application; // Throws InvalidOleVariantTypeException "Specified OLE variant is invalid"
+                _ = folderView.Application; // Throws InvalidOleVariantTypeException "Specified OLE variant is invalid"
+            }
+            finally
+            {
+                Marshal.Release((nint)folderViewPointer);
+            }
         }
     }
 

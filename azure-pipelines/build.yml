@@ -71,6 +71,10 @@ parameters:
   type: boolean
   default: false
 
+- name: EnableSigning
+  type: boolean
+  default: true
+
 # Whether this particular run is an OptProf profiling run.
 # This is used to skip unit tests and other non-essential work to improve reliability of the OptProf pipeline.
 - name: IsOptProf
@@ -130,7 +134,7 @@ jobs:
     templateContext:
       mb:
         signing:
-          enabled: true
+          enabled: ${{ parameters.EnableSigning }}
           zipSources: false
           ${{ if parameters.RealSign }}:
             signType: real
@@ -325,7 +329,7 @@ jobs:
       ONEES_ENFORCED_CODEQL_ENABLED: false # CodeQL runs on build jobs, we don't need it here
     ${{ if eq(variables['system.collectionId'], '011b8bdf-6d56-4f87-be0d-0092136884d9') }}:
       templateContext:
-        ${{ if not(parameters.RealSign) }}:
+        ${{ if and(not(parameters.RealSign), parameters.EnableSigning) }}:
           mb:
             signing: # if the build is test-signed, install the signing plugin so that CSVTestSignPolicy.xml is available
               enabled: true

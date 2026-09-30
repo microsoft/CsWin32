@@ -95,6 +95,7 @@ extends:
           Is1ESPT: true
           RealSign: false
           ${{ if parameters.PublishToVSFeed }}:
+            EnableSigning: false
             AdditionalBuildArguments: -p:SignAssembly=false -p:DelaySign=false
           # ShouldSkipOptimize: ${{ parameters.ShouldSkipOptimize }}
           EnableAPIScan: ${{ parameters.EnableAPIScan }}

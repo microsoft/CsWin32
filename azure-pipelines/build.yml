@@ -94,6 +94,10 @@ parameters:
   type: boolean
   default: false
 
+- name: AdditionalBuildArguments
+  type: string
+  default: ''
+
 # This parameter exists to provide a workaround to get a build out even when no OptProf profiling outputs can be found.
 # Entrypoint yaml files like official.yml should expose this as a queue-time setting when EnableOptProf is true in this file.
 # The OptProf.yml entrypoint sets this parameter to true so that collecting profile data isn't blocked by a prior lack of profile data.
@@ -214,6 +218,7 @@ jobs:
       Is1ESPT: ${{ parameters.Is1ESPT }}
       RunTests: ${{ parameters.RunTests }}
       IsOptProf: ${{ parameters.IsOptProf }}
+      AdditionalBuildArguments: ${{ parameters.AdditionalBuildArguments }}
 
   - ${{ if and(parameters.EnableDotNetFormatCheck, not(parameters.EnableLinuxBuild)) }}:
     - script: dotnet format --verify-no-changes
@@ -263,6 +268,7 @@ jobs:
           Is1ESPT: ${{ parameters.Is1ESPT }}
           RunTests: ${{ parameters.RunTests }}
           BuildRequiresAccessToken: ${{ parameters.RealSign }} # Real signing on non-Windows machines requires passing through access token to build steps that sign
+          AdditionalBuildArguments: ${{ parameters.AdditionalBuildArguments }}
       - ${{ if parameters.EnableDotNetFormatCheck }}:
         - script: dotnet format --verify-no-changes
           displayName: 💅 Verify formatted code
@@ -304,6 +310,7 @@ jobs:
           Is1ESPT: ${{ parameters.Is1ESPT }}
           RunTests: ${{ parameters.RunTests }}
           BuildRequiresAccessToken: ${{ parameters.RealSign }} # Real signing on non-Windows machines requires passing through access token to build steps that sign
+          AdditionalBuildArguments: ${{ parameters.AdditionalBuildArguments }}
 
   - job: WrapUp
     dependsOn:

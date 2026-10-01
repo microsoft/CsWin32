@@ -594,6 +594,11 @@ public partial class SourceGenerator : ISourceGenerator
         }
     }
 
+    /// <summary>
+    /// Gets the value of the <c>CsWin32PlatformTarget</c> MSBuild property, which overrides the CPU architecture used to select arch-specific APIs.
+    /// </summary>
+    /// <param name="context">The generator execution context.</param>
+    /// <returns>The property value, or <see langword="null"/> if it is not set.</returns>
     private static string? GetPlatformTargetProperty(GeneratorExecutionContext context)
     {
         return context.AnalyzerConfigOptions.GlobalOptions.TryGetValue("build_property.CsWin32PlatformTarget", out string? platformTarget) && !string.IsNullOrWhiteSpace(platformTarget)

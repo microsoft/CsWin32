@@ -53,9 +53,14 @@
       <CsWin32MetadataPaths>@(ProjectionMetadataWinmd)</CsWin32MetadataPaths>
       <CsWin32ContinueOnError>false</CsWin32ContinueOnError>
       <CsWin32ContinueOnError Condition="'$(DesignTimeBuild)'=='true'">ErrorAndContinue</CsWin32ContinueOnError>
-      <CsWin32GeneratorPlatform>$(CsWin32PlatformTarget)</CsWin32GeneratorPlatform>
+      <CsWin32GeneratorPlatform>$(CsWin32PlatformTarget.Trim())</CsWin32GeneratorPlatform>
       <CsWin32GeneratorPlatform Condition="'$(CsWin32GeneratorPlatform)'==''">$(PlatformTarget)</CsWin32GeneratorPlatform>
     </PropertyGroup>
+
+    <Error
+      Code="PInvoke014"
+      Text="The CsWin32PlatformTarget property value &quot;$(CsWin32PlatformTarget)&quot; is not recognized. Supported values are: AnyCPU, x86, x64, arm64."
+      Condition="'$(CsWin32PlatformTarget.Trim())'!='' and !$([System.Text.RegularExpressions.Regex]::IsMatch('$(CsWin32PlatformTarget.Trim())', '^(?i)(AnyCPU|x86|x64|arm64)$'))" />
 
     <CsWin32CodeGeneratorTask
       AssemblyName="$(AssemblyName)"

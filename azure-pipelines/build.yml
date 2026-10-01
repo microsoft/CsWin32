@@ -71,10 +71,6 @@ parameters:
   type: boolean
   default: false
 
-- name: EnableSigning
-  type: boolean
-  default: true
-
 # Whether this particular run is an OptProf profiling run.
 # This is used to skip unit tests and other non-essential work to improve reliability of the OptProf pipeline.
 - name: IsOptProf
@@ -97,10 +93,6 @@ parameters:
 - name: EnableAPIScan
   type: boolean
   default: false
-
-- name: AdditionalBuildArguments
-  type: string
-  default: ''
 
 # This parameter exists to provide a workaround to get a build out even when no OptProf profiling outputs can be found.
 # Entrypoint yaml files like official.yml should expose this as a queue-time setting when EnableOptProf is true in this file.
@@ -134,7 +126,7 @@ jobs:
     templateContext:
       mb:
         signing:
-          enabled: ${{ parameters.EnableSigning }}
+          enabled: true
           zipSources: false
           ${{ if parameters.RealSign }}:
             signType: real
@@ -222,7 +214,6 @@ jobs:
       Is1ESPT: ${{ parameters.Is1ESPT }}
       RunTests: ${{ parameters.RunTests }}
       IsOptProf: ${{ parameters.IsOptProf }}
-      AdditionalBuildArguments: ${{ parameters.AdditionalBuildArguments }}
 
   - ${{ if and(parameters.EnableDotNetFormatCheck, not(parameters.EnableLinuxBuild)) }}:
     - script: dotnet format --verify-no-changes
@@ -272,7 +263,6 @@ jobs:
           Is1ESPT: ${{ parameters.Is1ESPT }}
           RunTests: ${{ parameters.RunTests }}
           BuildRequiresAccessToken: ${{ parameters.RealSign }} # Real signing on non-Windows machines requires passing through access token to build steps that sign
-          AdditionalBuildArguments: ${{ parameters.AdditionalBuildArguments }}
       - ${{ if parameters.EnableDotNetFormatCheck }}:
         - script: dotnet format --verify-no-changes
           displayName: 💅 Verify formatted code
@@ -314,7 +304,6 @@ jobs:
           Is1ESPT: ${{ parameters.Is1ESPT }}
           RunTests: ${{ parameters.RunTests }}
           BuildRequiresAccessToken: ${{ parameters.RealSign }} # Real signing on non-Windows machines requires passing through access token to build steps that sign
-          AdditionalBuildArguments: ${{ parameters.AdditionalBuildArguments }}
 
   - job: WrapUp
     dependsOn:
@@ -329,7 +318,7 @@ jobs:
       ONEES_ENFORCED_CODEQL_ENABLED: false # CodeQL runs on build jobs, we don't need it here
     ${{ if eq(variables['system.collectionId'], '011b8bdf-6d56-4f87-be0d-0092136884d9') }}:
       templateContext:
-        ${{ if and(not(parameters.RealSign), parameters.EnableSigning) }}:
+        ${{ if not(parameters.RealSign) }}:
           mb:
             signing: # if the build is test-signed, install the signing plugin so that CSVTestSignPolicy.xml is available
               enabled: true

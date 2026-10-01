@@ -42,10 +42,6 @@ parameters:
   displayName: Publish code coverage
   type: boolean
   default: true
-- name: PublishToVSFeed
-  displayName: Publish package to the VS feed (available through OSClient)
-  type: boolean
-  default: false
 
 resources:
   repositories:
@@ -56,9 +52,6 @@ resources:
 
 variables:
 - template: GlobalVariables.yml
-- ${{ if parameters.PublishToVSFeed }}:
-  - name: MicroBuild_NuPkgSigningEnabled
-    value: false # Test-signed packages cannot be restored by all consumers of the VS feed.
 
 extends:
   template: azure-pipelines/MicroBuild.1ES.Unofficial.yml@MicroBuildTemplate
@@ -86,17 +79,11 @@ extends:
     - stage: Build
       variables:
       - template: /azure-pipelines/BuildStageVariables.yml@self
-      - ${{ if parameters.PublishToVSFeed }}:
-        - name: SkipCodesignVerify
-          value: true
       jobs:
       - template: /azure-pipelines/build.yml@self
         parameters:
           Is1ESPT: true
           RealSign: false
-          ${{ if parameters.PublishToVSFeed }}:
-            EnableSigning: false
-            AdditionalBuildArguments: -p:SignAssembly=false -p:DelaySign=false
           # ShouldSkipOptimize: ${{ parameters.ShouldSkipOptimize }}
           EnableAPIScan: ${{ parameters.EnableAPIScan }}
           windowsPool: VSEngSS-MicroBuild2022-1ES
@@ -112,27 +99,3 @@ extends:
           EnableMacOSBuild: ${{ parameters.EnableMacOSBuild }}
           RunTests: ${{ parameters.RunTests }}
           PublishCodeCoverage: ${{ parameters.PublishCodeCoverage }}
-          SkipCodesignVerify: ${{ parameters.PublishToVSFeed }}
-
-    - ${{ if parameters.PublishToVSFeed }}:
-      - stage: PublishPackage
-        displayName: Publish package
-        dependsOn: Build
-        jobs:
-        - job: push
-          displayName: DevDiv VS feed
-          pool: VSEngSS-MicroBuild2022-1ES
-          variables:
-            ONEES_ENFORCED_CODEQL_ENABLED: false # CodeQL runs in the build stage.
-          steps:
-          - checkout: none
-          - download: current
-            artifact: VSInsertion-Windows
-            displayName: 🔻 Download VSInsertion-Windows artifact
-          - task: 1ES.PublishNuget@1
-            displayName: 📦 Push package to VS feed
-            inputs:
-              packagesToPush: '$(Pipeline.Workspace)/VSInsertion-Windows/*.nupkg'
-              packageParentPath: $(Pipeline.Workspace)/VSInsertion-Windows
-              allowPackageConflicts: true
-              publishVstsFeed: VS

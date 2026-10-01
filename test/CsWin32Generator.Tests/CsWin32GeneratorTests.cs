@@ -150,6 +150,16 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
     }
 
     [Fact]
+    public async Task ArchSpecificApiOnAnyCpuSuggestsCsWin32PlatformTarget()
+    {
+        this.nativeMethods.Add("MEMORY_BASIC_INFORMATION");
+        this.platform = "AnyCPU";
+        this.expectedExitCode = 1;
+        await this.InvokeGeneratorAndCompile(nameof(this.ArchSpecificApiOnAnyCpuSuggestsCsWin32PlatformTarget), TestOptions.GeneratesNothing);
+        Assert.Contains("<CsWin32PlatformTarget>", this.Logger.Output);
+    }
+
+    [Fact]
     public async Task AllFriendlyOverloadsHaveTheSameAttributes()
     {
         this.nativeMethods.Add("SHGetFileInfo");

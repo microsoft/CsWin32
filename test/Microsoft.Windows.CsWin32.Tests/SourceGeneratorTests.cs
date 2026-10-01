@@ -97,4 +97,48 @@ public class SourceGeneratorTests(ITestOutputHelper logger)
             },
         }.RunAsync(TestContext.Current.CancellationToken);
     }
+
+    [Fact]
+    public async Task ArchSpecificApi_AnyCpu_ProducesError()
+    {
+        await new VerifyCS.Test(logger)
+        {
+            NativeMethodsTxt = "MEMORY_BASIC_INFORMATION",
+            ExpectedDiagnostics =
+            {
+                new DiagnosticResult(SourceGenerator.CpuArchitectureIncompatibility.Id, DiagnosticSeverity.Error).WithSpan("NativeMethods.txt", 1, 1, 1, 25),
+            },
+        }.RunAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Theory]
+    [InlineData("x64")]
+    [InlineData("X86")]
+    [InlineData("arm64")]
+    public async Task ArchSpecificApi_AnyCpu_WithCsWin32PlatformTarget(string platformTarget)
+    {
+        await new VerifyCS.Test(logger)
+        {
+            NativeMethodsTxt = "MEMORY_BASIC_INFORMATION",
+            GeneratorConfiguration = GeneratorConfiguration.Default with { PlatformTarget = platformTarget },
+            TestState =
+            {
+                Sources = { "unsafe class Test { int Size = sizeof(Windows.Win32.System.Memory.MEMORY_BASIC_INFORMATION); }" },
+            },
+        }.RunAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task InvalidCsWin32PlatformTarget()
+    {
+        await new VerifyCS.Test(logger)
+        {
+            NativeMethodsTxt = "CreateFile",
+            GeneratorConfiguration = GeneratorConfiguration.Default with { PlatformTarget = "x65" },
+            ExpectedDiagnostics =
+            {
+                new DiagnosticResult(SourceGenerator.InvalidPlatformTarget.Id, DiagnosticSeverity.Error),
+            },
+        }.RunAsync(TestContext.Current.CancellationToken);
+    }
 }

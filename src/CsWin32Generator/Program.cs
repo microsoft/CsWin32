@@ -207,6 +207,13 @@ public partial class Program
     }
 
     /// <summary>
+    /// Checks whether an exception was thrown, directly or indirectly, because of a target platform incompatibility.
+    /// </summary>
+    /// <param name="ex">The exception to check.</param>
+    /// <returns><see langword="true"/> if <paramref name="ex"/> or one of its inner exceptions is a <see cref="PlatformIncompatibleException"/>.</returns>
+    private static bool IsPlatformIncompatibleException(Exception? ex) => ex is PlatformIncompatibleException || (ex is not null && IsPlatformIncompatibleException(ex.InnerException));
+
+    /// <summary>
     /// Generates code using the CsWin32 generator.
     /// </summary>
     /// <param name="nativeMethodsTxtFiles">Path to the NativeMethods.txt file.</param>
@@ -559,9 +566,9 @@ public partial class Program
                             break;
                     }
                 }
-                catch (PlatformIncompatibleException)
+                catch (Exception ex) when (IsPlatformIncompatibleException(ex))
                 {
-                    this.ReportError($"API '{name}' is not available for the target platform", nativeMethodsTxt.FullName, lineNumber);
+                    this.ReportError($"API '{name}' is not available for the target platform: {this.ErrorChainToString(ex)} Set the PlatformTarget property to a specific architecture, or add <CsWin32PlatformTarget>x64</CsWin32PlatformTarget> (or another architecture) to your project file to generate APIs for that architecture while still compiling as AnyCPU.", nativeMethodsTxt.FullName, lineNumber);
                     errorCount++;
                 }
                 catch (Exception ex)

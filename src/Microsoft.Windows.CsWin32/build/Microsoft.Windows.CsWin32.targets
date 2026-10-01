@@ -53,6 +53,8 @@
       <CsWin32MetadataPaths>@(ProjectionMetadataWinmd)</CsWin32MetadataPaths>
       <CsWin32ContinueOnError>false</CsWin32ContinueOnError>
       <CsWin32ContinueOnError Condition="'$(DesignTimeBuild)'=='true'">ErrorAndContinue</CsWin32ContinueOnError>
+      <CsWin32GeneratorPlatform>$(CsWin32PlatformTarget)</CsWin32GeneratorPlatform>
+      <CsWin32GeneratorPlatform Condition="'$(CsWin32GeneratorPlatform)'==''">$(PlatformTarget)</CsWin32GeneratorPlatform>
     </PropertyGroup>
 
     <CsWin32CodeGeneratorTask
@@ -66,7 +68,7 @@
       OutputPath="$(CsWin32GeneratorGeneratedFilesPath)"
       GeneratorToolPath="$(CsWin32GeneratorToolPath)CsWin32Generator.dll"
       TargetFramework="$(TargetFramework)"
-      Platform="$(PlatformTarget)"
+      Platform="$(CsWin32GeneratorPlatform)"
       LangVersion="$(LangVersion)"
       References="@(ReferencePath)"
       ContinueOnError="$(CsWin32ContinueOnError)"

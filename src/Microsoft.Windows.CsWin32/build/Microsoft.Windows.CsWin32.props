@@ -31,5 +31,7 @@
     <CompilerVisibleProperty Include="CsWin32InputDocPaths" />
     <CompilerVisibleProperty Include="CsWin32AppLocalAllowedLibraries" />
     <CompilerVisibleProperty Include="CsWin32RunAsBuildTask" />
+    <!-- Optionally overrides the CPU architecture used to select arch-specific APIs (e.g. x64), even when the project compiles as AnyCPU. -->
+    <CompilerVisibleProperty Include="CsWin32PlatformTarget" />
   </ItemGroup>
 </Project>

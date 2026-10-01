@@ -9,6 +9,11 @@ internal record GeneratorConfiguration
 
     internal ImmutableArray<string> InputDocPaths { get; init; } = CollectAssemblyMetadata("ProjectionDocs");
 
+    /// <summary>
+    /// Gets the value of the <c>CsWin32PlatformTarget</c> MSBuild property to expose to the generator, if any.
+    /// </summary>
+    internal string? PlatformTarget { get; init; }
+
     internal string ToGlobalConfigString()
     {
         StringBuilder globalConfigBuilder = new();
@@ -16,6 +21,10 @@ internal record GeneratorConfiguration
         globalConfigBuilder.AppendLine();
         AddPathsProperty("CsWin32InputMetadataPaths", this.InputMetadataPaths);
         AddPathsProperty("CsWin32InputDocPaths", this.InputDocPaths);
+        if (this.PlatformTarget is not null)
+        {
+            globalConfigBuilder.AppendLine($"build_property.CsWin32PlatformTarget = {this.PlatformTarget}");
+        }
 
         return globalConfigBuilder.ToString();
 

@@ -91,9 +91,9 @@ public partial class SourceGenerator : ISourceGenerator
     public static readonly DiagnosticDescriptor CpuArchitectureIncompatibility = new DiagnosticDescriptor(
         "PInvoke005",
         "TargetSpecificCpuArchitecture",
-        "This API is only available when targeting a specific CPU architecture. AnyCPU cannot generate this API.",
+        "This API is only available when targeting a specific CPU architecture. AnyCPU cannot generate this API. Set the PlatformTarget property to a specific architecture, or add <CsWin32PlatformTarget>x64</CsWin32PlatformTarget> (or another architecture) to your project file to generate APIs for that architecture while still compiling as AnyCPU.",
         "Functionality",
-        DiagnosticSeverity.Warning,
+        DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor DocParsingError = new DiagnosticDescriptor(
@@ -168,6 +168,14 @@ public partial class SourceGenerator : ISourceGenerator
         "Configuration",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor InvalidPlatformTarget = new(
+        "PInvoke014",
+        "Invalid CsWin32PlatformTarget",
+        "The CsWin32PlatformTarget property value \"{0}\" is not recognized. Supported values are: AnyCPU, x86, x64, arm64.",
+        "Configuration",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
 #pragma warning restore CS1591 // Missing XML comment for publicly visible type or member
 
     private const string InputProjectionErrorId = "PInvoke010";
@@ -237,6 +245,19 @@ public partial class SourceGenerator : ISourceGenerator
         }
 
         var parseOptions = (CSharpParseOptions)context.ParseOptions;
+
+        if (GetPlatformTargetProperty(context) is string platformTarget)
+        {
+            if (!TryParsePlatform(platformTarget, out Platform platform))
+            {
+                context.ReportDiagnostic(Diagnostic.Create(InvalidPlatformTarget, location: null, platformTarget));
+                return;
+            }
+
+            // The compilation platform is what drives which architecture-specific APIs are generated.
+            // Override it so that AnyCPU projects can opt into the definitions for a particular architecture.
+            compilation = compilation.WithOptions(compilation.Options.WithPlatform(platform));
+        }
 
         if (!compilation.Options.AllowUnsafe)
         {
@@ -543,6 +564,41 @@ public partial class SourceGenerator : ISourceGenerator
         }
 
         return docs;
+    }
+
+    /// <summary>
+    /// Parses a platform name (e.g. x86, x64, arm64, AnyCPU) as used by MSBuild's PlatformTarget property.
+    /// </summary>
+    /// <param name="value">The platform name. Comparison is case-insensitive.</param>
+    /// <param name="platform">Receives the parsed platform.</param>
+    /// <returns><see langword="true"/> if <paramref name="value"/> was recognized; otherwise <see langword="false"/>.</returns>
+    private static bool TryParsePlatform(string value, out Platform platform)
+    {
+        switch (value.Trim().ToUpperInvariant())
+        {
+            case "ANYCPU":
+                platform = Platform.AnyCpu;
+                return true;
+            case "X86":
+                platform = Platform.X86;
+                return true;
+            case "X64":
+                platform = Platform.X64;
+                return true;
+            case "ARM64":
+                platform = Platform.Arm64;
+                return true;
+            default:
+                platform = default;
+                return false;
+        }
+    }
+
+    private static string? GetPlatformTargetProperty(GeneratorExecutionContext context)
+    {
+        return context.AnalyzerConfigOptions.GlobalOptions.TryGetValue("build_property.CsWin32PlatformTarget", out string? platformTarget) && !string.IsNullOrWhiteSpace(platformTarget)
+            ? platformTarget
+            : null;
     }
 
     private static bool GetRunAsBuildTaskProperty(GeneratorExecutionContext context)

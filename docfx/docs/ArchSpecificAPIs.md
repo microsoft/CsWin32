@@ -6,11 +6,11 @@ Such APIs can be generated in a C# project that targets AnyCPU.
 But some Win32 APIs vary by CPU architecture, and a few APIs are available exclusively to a subset of architectures.
 For CsWin32 to generate these arch-specific APIs, your project must target a specific CPU architecture.
 
-If your NativeMethods.txt file contains an arch-specific API, an AnyCPU compilation of your project will produce this warning:
+If your NativeMethods.txt file contains an arch-specific API, an AnyCPU compilation of your project will produce this error:
 
-> warning PInvoke005: This API is only available when targeting a specific CPU architecture. AnyCPU cannot generate this API.
+> error PInvoke005: This API is only available when targeting a specific CPU architecture. AnyCPU cannot generate this API. ...
 
-Note that Visual Studio may only show this warning when you actually *build* the project.
+Note that Visual Studio may only show this error when you actually *build* the project.
 
 When your NativeMethods.txt file contains an API wildcard (e.g. `Kernel32.*`), only APIs compatible with your selected architecture will be generated.
 In particular, if your project targets AnyCPU, only APIs that are compatible across all architectures will be generated.
@@ -36,6 +36,23 @@ This will effectively produce an x64-specific assembly.
 It will not be an AnyCPU assembly anymore and will not load in any process other than an x64 process.
 This is true even if the project and/or solution platform in Visual Studio show "Any CPU" as the selection.
 Which leads us to our more complete example of how to make this work for more architectures.
+
+### Generating APIs for one architecture while still targeting AnyCPU
+
+If your assembly must remain AnyCPU, but you know that the definitions for a particular architecture are suitable for your use
+(for example, because the x86 and x64 definitions of the structs you use are equivalent for your purposes),
+you can tell CsWin32 which architecture's definitions to generate by adding this property to your .csproj project file:
+
+```xml
+<CsWin32PlatformTarget>x64</CsWin32PlatformTarget>
+```
+
+Supported values are `x86`, `x64`, `arm64` and `AnyCPU`.
+This only affects which APIs CsWin32 generates. Your assembly is still compiled for whatever `PlatformTarget` your project specifies.
+
+> [!WARNING]
+> You are responsible for ensuring that the generated APIs behave correctly on every architecture your AnyCPU assembly may run on.
+> Using an API whose memory layout differs across architectures in a process of a different architecture can lead to data corruption or crashes.
 
 ### Targeting multiple specific architectures
 

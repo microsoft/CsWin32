@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using Windows.Graphics.Imaging;
 using Windows.Storage;
 using Windows.Win32;
+using Windows.Win32.Foundation;
 using Windows.Win32.Graphics.Imaging;
 using Windows.Win32.System.Com;
 using Windows.Win32.System.WinRT.Graphics.Imaging;
@@ -19,6 +20,8 @@ namespace GenerationSandbox.BuiltInCom.Tests;
 [Trait("WindowsOnly", "true")]
 public class AutoWinRTMarshallingBuiltInComTests
 {
+    private const int E_NOINTERFACE = unchecked((int)0x80004002);
+
     private static readonly Guid BHID_StorageItem = new(0x404e2109, 0x77d2, 0x4699, 0xa5, 0xa0, 0x4f, 0xdf, 0x10, 0xdb, 0x98, 0x37);
     private static readonly Guid IID_IShellItem = new(0x43826d1e, 0xe718, 0x42ee, 0xbc, 0x55, 0xa1, 0xe2, 0x61, 0xc3, 0x7b, 0xfe);
 
@@ -86,6 +89,31 @@ public class AutoWinRTMarshallingBuiltInComTests
         }
     }
 
+    [Fact]
+    public void IClassFactory_ManagedImplementerReturnsRequestedInterface()
+    {
+        Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
+        ManagedClassFactory factory = new();
+
+        factory.CreateInstance<IClassFactory>(null, out IClassFactory result);
+        result.LockServer(true);
+
+        Assert.Equal(1, factory.CreateInstanceCallCount);
+        Assert.Equal(1, factory.LockServerCallCount);
+    }
+
+    [Fact]
+    public void IClassFactory_ManagedImplementerRejectsUnsupportedInterface()
+    {
+        Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
+        ManagedClassFactory factory = new();
+
+        InvalidCastException exception = Assert.Throws<InvalidCastException>(() => factory.CreateInstance<IShellItem>(null, out _));
+
+        Assert.Equal(E_NOINTERFACE, exception.HResult);
+        Assert.Equal(1, factory.CreateInstanceCallCount);
+    }
+
     private static IWICBitmap CreateWicBitmap(uint width, uint height)
     {
         PInvoke.CoCreateInstance<IWICImagingFactory>(
@@ -126,4 +154,20 @@ public class AutoWinRTMarshallingBuiltInComTests
         nint bindContext,
         in Guid riid,
         [MarshalAs(UnmanagedType.Interface)] out IShellItem shellItem);
+
+    [ComVisible(true)]
+    private sealed class ManagedClassFactory : IClassFactory
+    {
+        internal int CreateInstanceCallCount { get; private set; }
+
+        internal int LockServerCallCount { get; private set; }
+
+        public unsafe void CreateInstance(object pUnkOuter, Guid* riid, out void* ppvObject)
+        {
+            this.CreateInstanceCallCount++;
+            ppvObject = ComOutPtr.FromManaged(this, in *riid);
+        }
+
+        public void LockServer(BOOL fLock) => this.LockServerCallCount++;
+    }
 }

@@ -597,13 +597,19 @@ public class COMTests : GeneratorTestBase
     }
 
     [Fact]
-    public void AutoWinRTMarshalling_GeneratesOneInternalHelper()
+    public void AutoWinRTMarshalling_GeneratesInternalHelpers()
     {
         this.GenerateMarshaledComApi("IShellItem");
 
-        var helper = Assert.IsType<ClassDeclarationSyntax>(Assert.Single(this.FindGeneratedType("ComOrWinRTObjectMarshaller")));
+        var marshaller = Assert.IsType<ClassDeclarationSyntax>(Assert.Single(this.FindGeneratedType("ComOrWinRTObjectMarshaller")));
+        Assert.Contains(marshaller.Modifiers, m => m.IsKind(SyntaxKind.InternalKeyword));
+        Assert.Contains(marshaller.AttributeLists, al => IsAttributePresent(al, "global::System.CodeDom.Compiler.GeneratedCode"));
+
+        var helper = Assert.IsType<ClassDeclarationSyntax>(Assert.Single(this.FindGeneratedType("ComOutPtr")));
         Assert.Contains(helper.Modifiers, m => m.IsKind(SyntaxKind.InternalKeyword));
         Assert.Contains(helper.AttributeLists, al => IsAttributePresent(al, "global::System.CodeDom.Compiler.GeneratedCode"));
+        Assert.NotEmpty(helper.GetLeadingTrivia().SelectMany(trivia => trivia.GetStructure()?.DescendantNodes().OfType<XmlElementSyntax>() ?? []));
+        Assert.Contains(helper.Members.OfType<MethodDeclarationSyntax>(), m => m.Identifier.ValueText == "FromManaged");
 
         Assert.Empty(this.FindGeneratedType("ComOutPtrMarshalling"));
         Assert.Empty(this.FindGeneratedType("ComOutPtrHelpers"));
@@ -643,7 +649,7 @@ public class COMTests : GeneratorTestBase
     }
 
     [Fact]
-    public void AutoWinRTMarshalling_GeneratedComUsesAdaptiveOutputMarshaller()
+    public void AutoWinRTMarshalling_GeneratedComUsesNativeOutputPointer()
     {
         this.GenerateMarshaledComApi("IShellItem");
 
@@ -655,9 +661,9 @@ public class COMTests : GeneratorTestBase
         Assert.Empty(FindAttribute(riid.AttributeLists, "global::System.Runtime.InteropServices.Marshalling.MarshalUsing"));
 
         ParameterSyntax ppv = method.ParameterList.Parameters.Last();
-        Assert.Equal("object", ppv.Type!.ToString());
+        Assert.Equal("void*", ppv.Type!.ToString());
         Assert.True(ppv.Modifiers.Any(SyntaxKind.OutKeyword));
-        AssertMarshallerType(ppv, "ComOrWinRTObjectMarshaller");
+        Assert.Empty(FindAttribute(ppv.AttributeLists, "global::System.Runtime.InteropServices.Marshalling.MarshalUsing"));
         Assert.Empty(FindAttribute(ppv.AttributeLists, "MarshalAs"));
     }
 
@@ -672,11 +678,12 @@ public class COMTests : GeneratorTestBase
             });
 
         Assert.Empty(this.FindGeneratedType("ComOrWinRTObjectMarshaller"));
+        Assert.Single(this.FindGeneratedType("ComOutPtr"));
         var iface = Assert.IsType<InterfaceDeclarationSyntax>(Assert.Single(this.FindGeneratedType("IShellItem")));
         MethodDeclarationSyntax method = Assert.Single(iface.Members.OfType<MethodDeclarationSyntax>(), m => m.Identifier.ValueText == "BindToHandler");
         Assert.Equal("global::System.Guid*", method.ParameterList.Parameters[^2].Type!.ToString());
-        AttributeSyntax marshalAs = Assert.Single(FindAttribute(method.ParameterList.Parameters.Last().AttributeLists, "MarshalAs"));
-        Assert.Equal("Interface", Assert.Single(marshalAs.ArgumentList!.Arguments).Expression.GetLastToken().ValueText);
+        Assert.Equal("void*", method.ParameterList.Parameters.Last().Type!.ToString());
+        Assert.Empty(FindAttribute(method.ParameterList.Parameters.Last().AttributeLists, "MarshalAs"));
 
         MethodDeclarationSyntax overload = this.FindComOutPtrOverload("BindToHandler", "IShellItem");
         Assert.DoesNotContain(overload.TypeParameterList!.Parameters.Single().AttributeLists, al => IsAttributePresent(al, "DynamicallyAccessedMembers"));
@@ -688,6 +695,7 @@ public class COMTests : GeneratorTestBase
         this.GenerateMarshaledComApi("IShellItem", withCsWinRT: false);
 
         Assert.Empty(this.FindGeneratedType("ComOrWinRTObjectMarshaller"));
+        Assert.Single(this.FindGeneratedType("ComOutPtr"));
         Assert.DoesNotContain(
             this.compilation.SyntaxTrees.SelectMany(tree => tree.GetRoot().DescendantNodes().OfType<AttributeSyntax>()),
             attribute => IsMarshallerAttribute(attribute, "ComOrWinRTObjectMarshaller"));
@@ -704,11 +712,46 @@ public class COMTests : GeneratorTestBase
             });
 
         Assert.Single(this.FindGeneratedType("ComOrWinRTObjectMarshaller"));
+        Assert.Single(this.FindGeneratedType("ComOutPtr"));
         Assert.DoesNotContain(this.FindGeneratedMethod("BindToHandler"), m => m.TypeParameterList?.Parameters.Count == 1);
 
         var iface = Assert.IsType<InterfaceDeclarationSyntax>(Assert.Single(this.FindGeneratedType("IShellItem")));
         MethodDeclarationSyntax method = Assert.Single(iface.Members.OfType<MethodDeclarationSyntax>(), m => m.Identifier.ValueText == "BindToHandler");
-        AssertMarshallerType(method.ParameterList.Parameters.Last(), "ComOrWinRTObjectMarshaller");
+        Assert.Equal("void*", method.ParameterList.Parameters.Last().Type!.ToString());
+        Assert.Empty(method.ParameterList.Parameters.Last().AttributeLists);
+    }
+
+    [Theory, PairwiseData]
+    public void IClassFactory_UsesNativeComOutPtrAbi(bool useComSourceGenerators, bool autoWinRTMarshalling)
+    {
+        if (useComSourceGenerators)
+        {
+            this.compilation = this.starterCompilations["net10.0"];
+            this.parseOptions = this.parseOptions.WithLanguageVersion(GetLanguageVersionForTfm("net10.0") ?? LanguageVersion.Latest);
+        }
+
+        this.generator = this.CreateGenerator(new GeneratorOptions
+        {
+            AllowMarshaling = true,
+            ComInterop = new GeneratorOptions.ComInteropOptions
+            {
+                UseComSourceGenerators = useComSourceGenerators,
+                AutoWinRTMarshalling = autoWinRTMarshalling,
+            },
+        });
+        this.GenerateApi("IClassFactory");
+
+        var iface = Assert.IsType<InterfaceDeclarationSyntax>(Assert.Single(this.FindGeneratedType("IClassFactory")));
+        MethodDeclarationSyntax method = Assert.Single(iface.Members.OfType<MethodDeclarationSyntax>(), m => m.Identifier.ValueText == "CreateInstance");
+        ParameterSyntax ppv = method.ParameterList.Parameters.Last();
+        Assert.Equal("void*", ppv.Type!.ToString());
+        Assert.True(ppv.Modifiers.Any(SyntaxKind.OutKeyword));
+        Assert.Empty(ppv.AttributeLists);
+
+        MethodDeclarationSyntax overload = this.FindComOutPtrOverload("CreateInstance", "IClassFactory");
+        InvocationExpressionSyntax invocation = Assert.Single(overload.DescendantNodes().OfType<InvocationExpressionSyntax>(), i => i.Expression.ToString().EndsWith(".CreateInstance", StringComparison.Ordinal));
+        Assert.True(invocation.ArgumentList.Arguments.Last().RefKindKeyword.IsKind(SyntaxKind.OutKeyword));
+        Assert.Single(this.FindGeneratedType("ComOutPtr"));
     }
 
     [Theory, PairwiseData]

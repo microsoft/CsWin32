@@ -216,6 +216,57 @@ public partial class ComOutPtrMarshallingTests
 
     [Fact]
     [Trait("TestCategory", "RequiresHardware")]
+    public void IClassFactory_ManagedImplementerReturnsRequestedInterface()
+    {
+        Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
+        ManagedShellItem created = new(null!);
+        ManagedClassFactory managed = new(created);
+        StrategyBasedComWrappers comWrappers = new();
+        nint ccw = comWrappers.GetOrCreateComInterfaceForObject(managed, CreateComInterfaceFlags.None);
+        object rcw = comWrappers.GetOrCreateObjectForComInstance(ccw, CreateObjectFlags.UniqueInstance);
+        Marshal.Release(ccw);
+        try
+        {
+            IClassFactory proxy = (IClassFactory)rcw;
+            proxy.CreateInstance<IShellItem>(null, out IShellItem result);
+            result.Compare(result, 0, out int order);
+
+            Assert.Equal(42, order);
+            Assert.Equal(1, created.CompareCallCount);
+            Assert.Equal(1, managed.CreateInstanceCallCount);
+        }
+        finally
+        {
+            ((ComObject)rcw).FinalRelease();
+        }
+    }
+
+    [Fact]
+    [Trait("TestCategory", "RequiresHardware")]
+    public void IClassFactory_ManagedImplementerRejectsUnsupportedInterface()
+    {
+        Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
+        ManagedClassFactory managed = new(new ManagedShellItem(null!));
+        StrategyBasedComWrappers comWrappers = new();
+        nint ccw = comWrappers.GetOrCreateComInterfaceForObject(managed, CreateComInterfaceFlags.None);
+        object rcw = comWrappers.GetOrCreateObjectForComInstance(ccw, CreateObjectFlags.UniqueInstance);
+        Marshal.Release(ccw);
+        try
+        {
+            IClassFactory proxy = (IClassFactory)rcw;
+            InvalidCastException exception = Assert.Throws<InvalidCastException>(() => proxy.CreateInstance<IStream>(null, out _));
+
+            Assert.Equal(E_NOINTERFACE, exception.HResult);
+            Assert.Equal(1, managed.CreateInstanceCallCount);
+        }
+        finally
+        {
+            ((ComObject)rcw).FinalRelease();
+        }
+    }
+
+    [Fact]
+    [Trait("TestCategory", "RequiresHardware")]
     public async Task CsWinRTRcw_RoundTripsWithOriginalIdentity()
     {
         Assert.SkipUnless(RuntimeInformation.IsOSPlatform(OSPlatform.Windows), "Test calls Windows-specific APIs");
@@ -472,10 +523,10 @@ public partial class ComOutPtrMarshallingTests
 
         internal int CompareCallCount { get; private set; }
 
-        public unsafe void BindToHandler(IBindCtx pbc, Guid* bhid, Guid* riid, out object ppv)
+        public unsafe void BindToHandler(IBindCtx pbc, Guid* bhid, Guid* riid, out void* ppv)
         {
             this.BindToHandlerCallCount++;
-            ppv = returnedValue;
+            ppv = ComOutPtr.FromManaged(returnedValue, in *riid);
         }
 
         public void GetParent(out IShellItem ppsi) => throw new NotImplementedException();
@@ -488,6 +539,22 @@ public partial class ComOutPtrMarshallingTests
         {
             this.CompareCallCount++;
             piOrder = 42;
+        }
+    }
+
+    [GeneratedComClass]
+    private partial class ManagedClassFactory(object createdObject) : IClassFactory
+    {
+        internal int CreateInstanceCallCount { get; private set; }
+
+        public unsafe void CreateInstance(object pUnkOuter, Guid* riid, out void* ppvObject)
+        {
+            this.CreateInstanceCallCount++;
+            ppvObject = ComOutPtr.FromManaged(createdObject, in *riid);
+        }
+
+        public void LockServer(BOOL fLock)
+        {
         }
     }
 

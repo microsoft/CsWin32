@@ -95,3 +95,4 @@ INetFwAuthorizedApplication
 SetupDiGetClassDevs
 SetupDiEnumDeviceInfo
 SetupDiGetDeviceInstanceId
+IClassFactory

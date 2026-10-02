@@ -252,9 +252,20 @@ public partial class Generator
                                 PointerType(PredefinedType(Token(SyntaxKind.VoidKeyword))),
                                 [VariableDeclarator(nativeLocal.Identifier, EqualsValueClause(LiteralExpression(SyntaxKind.NullLiteralExpression)))])));
 
-                        arguments[paramIndex] = Argument(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, nativeLocal));
+                        arguments[paramIndex] = ppvExternParam.Modifiers.Any(SyntaxKind.OutKeyword)
+                            ? Argument(nativeLocal).WithRefKindKeyword(TokenWithSpace(SyntaxKind.OutKeyword))
+                            : Argument(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, nativeLocal));
 
-                        ExpressionSyntax toManagedExpression = this.useSourceGenerators ?
+                        ExpressionSyntax toManagedExpression = iidPpvAutoWinRTMode
+                            ? CastExpression(
+                                tName,
+                                InvocationExpression(
+                                    MemberAccessExpression(
+                                        SyntaxKind.SimpleMemberAccessExpression,
+                                        this.ComOrWinRTObjectMarshallerTypeSyntax,
+                                        IdentifierName("ConvertToManaged")),
+                                    [Argument(CastExpression(ParseTypeName("nint"), nativeLocal))]))
+                            : this.useSourceGenerators ?
                             InvocationExpression(
                                 MemberAccessExpression(
                                     SyntaxKind.SimpleMemberAccessExpression,

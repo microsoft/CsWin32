@@ -173,6 +173,7 @@ public partial class Generator : IGenerator, IDisposable
             AddSymbolIf(this.canUseUnscopedRef, "canUseUnscopedRef");
             AddSymbolIf(this.canUseCsWinRT, "canUseCsWinRT");
             AddSymbolIf(this.useSourceGenerators, "usesComSourceGenerators");
+            AddSymbolIf(this.UseAutoWinRTMarshalling, "usesAutoWinRTMarshalling");
 
             if (extraSymbols.Count > 0)
             {

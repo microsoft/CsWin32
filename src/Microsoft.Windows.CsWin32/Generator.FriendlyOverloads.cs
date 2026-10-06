@@ -156,6 +156,25 @@ public partial class Generator
         SyntaxToken friendlyMethodName = externMethodDeclaration.Identifier;
         bool emulateMemberFunctionCallConv = friendlyMethodName.ValueText.EndsWith(EmulateMemberFunctionCallConvSuffix);
 
+        var interiorPointerBufferCounts = new HashSet<short>();
+        foreach (ParameterHandle parameterHandle in methodDefinition.GetParameters())
+        {
+            CustomAttributeHandleCollection attributes = this.Reader.GetParameter(parameterHandle).GetCustomAttributes();
+            if (this.FindInteropDecorativeAttribute(attributes, ContainsInteriorPointersAttribute) is not null)
+            {
+                short? countIndex = this.FindNativeArrayInfoAttribute(attributes)?.CountParamIndex;
+                if (countIndex is null && this.FindInteropDecorativeAttribute(attributes, MemorySizeAttribute) is CustomAttribute sizeAttribute)
+                {
+                    countIndex = DecodeMemorySizeAttribute(sizeAttribute).BytesParamIndex;
+                }
+
+                if (countIndex is short index)
+                {
+                    interiorPointerBufferCounts.Add(index);
+                }
+            }
+        }
+
         // Pre-scan for IID_PPV_ARGS pattern: a Guid* [In] parameter immediately followed by a void** [ComOutPtr] parameter.
         int iidPpvRiidOrigIndex = -1;
         int iidPpvPpvOrigIndex = -1;
@@ -343,6 +362,7 @@ public partial class Generator
             CustomAttributeHandleCollection paramAttributes = param.GetCustomAttributes();
             bool isReserved = this.FindInteropDecorativeAttribute(paramAttributes, "ReservedAttribute") is not null;
             bool isRetained = this.FindInteropDecorativeAttribute(paramAttributes, "RetainedAttribute") is not null;
+            bool containsInteriorPointers = this.FindInteropDecorativeAttribute(paramAttributes, ContainsInteriorPointersAttribute) is not null;
             isOptional |= isReserved; // Per metadata decision made at https://github.com/microsoft/win32metadata/issues/1421#issuecomment-1372608090
             bool isIn = (param.Attributes & ParameterAttributes.In) == ParameterAttributes.In;
             bool isConst = this.FindInteropDecorativeAttribute(paramAttributes, "ConstAttribute") is not null;
@@ -368,7 +388,12 @@ public partial class Generator
                 memorySize = DecodeMemorySizeAttribute(memorySizeAttribute);
             }
 
-            if (isRetained)
+            if (containsInteriorPointers)
+            {
+                // The generated pin cannot cover consumption of pointers into this buffer after the call returns.
+                mustRemainAsPointer = true;
+            }
+            else if (isRetained)
             {
                 // Retained means that the callee will keep the pointer beyond this call. To communicate that safety problem to the caller,
                 // the best we can do is project as a pointer so they know they need to think about it. See https://github.com/microsoft/CsWin32/issues/1066
@@ -435,6 +460,12 @@ public partial class Generator
                 isArray = true;
                 countParamIndex = memorySize.Value.BytesParamIndex;
                 isCountOfBytes = true;
+            }
+
+            if (countParamIndex is short countIndex && interiorPointerBufferCounts.Contains(countIndex))
+            {
+                // A shared capacity must stay explicit, including when another buffer precedes the annotated one.
+                mustRemainAsPointer = true;
             }
 
             bool projectAsSpanBytes = false;

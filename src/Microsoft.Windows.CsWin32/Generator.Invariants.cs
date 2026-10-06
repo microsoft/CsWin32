@@ -9,6 +9,12 @@ public partial class Generator
     internal const string NativeArrayInfoAttribute = "NativeArrayInfoAttribute";
     internal const string NativeBitfieldAttribute = "NativeBitfieldAttribute";
     internal const string MemorySizeAttribute = "MemorySizeAttribute";
+
+    /// <summary>
+    /// Identifies buffers whose contents include absolute pointers borrowing storage within the buffer.
+    /// </summary>
+    internal const string ContainsInteriorPointersAttribute = "ContainsInteriorPointersAttribute";
+
     internal const string RAIIFreeAttribute = "RAIIFreeAttribute";
     internal const string DoNotReleaseAttribute = "DoNotReleaseAttribute";
     internal const string AssociatedEnumAttribute = "AssociatedEnumAttribute";

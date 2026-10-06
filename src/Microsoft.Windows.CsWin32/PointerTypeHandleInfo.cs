@@ -29,9 +29,11 @@ internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleIn
         bool mustUsePointers = xOptional && forElement == Generator.GeneratingElement.InterfaceMember && nativeArrayInfo is null;
         mustUsePointers |= this.ElementType is HandleTypeHandleInfo handleElementType && handleElementType.Generator.IsStructWithFlexibleArray(handleElementType) is true;
         mustUsePointers |= inputs.IsReturnValue;
+        mustUsePointers |= customAttributes is { } attributes
+            && attributes.Generator.FindInteropDecorativeAttribute(attributes.Collection, Generator.ContainsInteriorPointersAttribute) is not null;
         if (mustUsePointers)
         {
-            // Disable marshaling because pointers to optional parameters cannot be passed by reference when used as parameters of a COM interface method.
+            // These pointers require caller-controlled storage rather than a temporary managed reference or marshaled allocation.
             return new TypeSyntaxAndMarshaling(PointerType(this.ElementType.ToTypeSyntax(
                 inputs with
                 {

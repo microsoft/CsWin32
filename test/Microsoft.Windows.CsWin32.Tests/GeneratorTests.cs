@@ -406,6 +406,13 @@ public class GeneratorTests : GeneratorTestBase
     }
 
     [Fact]
+    public void MetadataDecorationApisAreNotSuggested()
+    {
+        this.generator = this.CreateGenerator();
+        Assert.DoesNotContain("AgileAttribute", this.generator.GetSuggestions("Agile"));
+    }
+
+    [Fact]
     public void AmbiguousApiName()
     {
         this.generator = this.CreateGenerator();

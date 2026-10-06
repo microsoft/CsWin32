@@ -765,6 +765,11 @@ public partial class Generator : IGenerator, IDisposable
         List<string> suggestions = new();
         foreach (NamespaceMetadata nsMetadata in this.MetadataIndex.MetadataByNamespace.Values)
         {
+            if (string.Equals(nsMetadata.Name, InteropDecorationNamespace, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
             foreach (string candidate in nsMetadata.Fields.Keys.Concat(nsMetadata.Types.Keys).Concat(nsMetadata.Methods.Keys))
             {
                 if (candidate.Contains(name))

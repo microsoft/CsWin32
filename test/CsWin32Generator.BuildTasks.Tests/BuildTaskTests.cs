@@ -162,9 +162,9 @@ public class BuildTaskTests
         Assert.Single(mockExecutor.Invocations);
         foreach (IInvocation invocation in mockExecutor.Invocations)
         {
-            string toolPath = (string)invocation.Arguments[0];
-            string rspCommands = (string)invocation.Arguments[1];
-            string commandLine = (string)invocation.Arguments[2];
+            string toolPath = Assert.IsType<string>(invocation.Arguments[0]);
+            string rspCommands = Assert.IsType<string>(invocation.Arguments[1]);
+            string commandLine = Assert.IsType<string>(invocation.Arguments[2]);
             this.Logger.WriteLine($"Invocation: {invocation}");
             this.Logger.WriteLine($"toolPath: {toolPath}");
             this.Logger.WriteLine($"commandLine: {commandLine}");

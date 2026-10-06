@@ -40,7 +40,7 @@
     <PackageVersion Include="System.Reflection.Metadata" Version="10.0.10" />
     <PackageVersion Include="System.Runtime.CompilerServices.Unsafe" Version="6.1.2" />
     <PackageVersion Include="System.Text.Json" Version="10.0.10" />
-    <PackageVersion Include="Xunit.Combinatorial" Version="2.1.41" />
+    <PackageVersion Include="Xunit.Combinatorial" Version="2.1.43" />
     <PackageVersion Include="Xunit.Assert" Version="2.9.3" />
   </ItemGroup>
   <Import Project="Directory.Packages.Analyzers.props" Condition="'$(IsTestProject)'!='true' and '$(MSBuildProjectName)'!='CsWin32Generator'" />
@@ -48,7 +48,7 @@
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
     <PackageVersion Include="Microsoft.VisualStudio.Internal.MicroBuild.NonShipping" Version="$(MicroBuildVersion)" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.0" />
-    <PackageVersion Include="xunit.v3.mtp-off" Version="4.0.0" />
+    <PackageVersion Include="xunit.v3.mtp-off" Version="4.0.1" />
   </ItemGroup>
   <ItemGroup>
     <!-- Put repo-specific GlobalPackageReference items in this group. -->

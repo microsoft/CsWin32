@@ -50,6 +50,9 @@ To consume a newer [win32metadata](https://github.com/microsoft/win32metadata) r
 
 CsWin32 restores these packages from the `msft_consumption` feed (`azure-public/vside`), which pulls them from nuget.org via an upstream source. A new package version is **not** available on the feed until it has been *pulled through* at least once, and only a feed **Collaborator/Contributor** can trigger that. Regular contributors typically only have **Reader** access, so a plain `dotnet restore` of the new version fails with `NU1102` until the package is on the feed.
 
+Azure Artifacts can take [3-6 hours to discover a newly published nuget.org package](https://learn.microsoft.com/azure/devops/artifacts/concepts/upstream-sources#upstream-sources-health-status).
+If the pull-through pipeline also fails with `NU1102` despite the package being available on nuget.org, wait for upstream discovery and queue it again before rerunning the PR checks.
+
 To pull the new version through:
 
 1. Push your branch (with the bumped `MetadataVersion`) to GitHub.

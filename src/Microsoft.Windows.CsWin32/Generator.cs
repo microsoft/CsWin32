@@ -550,6 +550,12 @@ public partial class Generator : IGenerator, IDisposable
 
         if (metadata is object)
         {
+            if (string.Equals(metadata.Name, InteropDecorationNamespace, StringComparison.Ordinal))
+            {
+                preciseApi = ImmutableList<string>.Empty;
+                return false;
+            }
+
             this.volatileCode.GenerationTransaction(delegate
             {
                 foreach (KeyValuePair<string, MethodDefinitionHandle> method in metadata.Methods)
@@ -656,6 +662,11 @@ public partial class Generator : IGenerator, IDisposable
 
         foreach (NamespaceMetadata? nsMetadata in namespaces)
         {
+            if (string.Equals(nsMetadata.Name, InteropDecorationNamespace, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
             if (nsMetadata.Types.TryGetValue(typeName, out TypeDefinitionHandle handle))
             {
                 matchingTypeHandles.Add(handle);
@@ -755,6 +766,11 @@ public partial class Generator : IGenerator, IDisposable
         List<string> suggestions = new();
         foreach (NamespaceMetadata nsMetadata in this.MetadataIndex.MetadataByNamespace.Values)
         {
+            if (string.Equals(nsMetadata.Name, InteropDecorationNamespace, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
             foreach (string candidate in nsMetadata.Fields.Keys.Concat(nsMetadata.Types.Keys).Concat(nsMetadata.Methods.Keys))
             {
                 if (candidate.Contains(name))

@@ -392,6 +392,26 @@ public class GeneratorTests : GeneratorTestBase
         this.AssertNoDiagnostics();
     }
 
+    [Theory]
+    [InlineData("Architecture")]
+    [InlineData("AgileAttribute")]
+    [InlineData("Windows.Win32.Foundation.Metadata.Architecture")]
+    [InlineData("Windows.Win32.Foundation.Metadata.AgileAttribute")]
+    [InlineData("Windows.Win32.Foundation.Metadata")]
+    public void MetadataDecorationApisAreNotGenerated(string api)
+    {
+        this.generator = this.CreateGenerator();
+        Assert.False(this.generator.TryGenerate(api, out IReadOnlyCollection<string> preciseApi, CancellationToken.None));
+        Assert.Empty(preciseApi);
+    }
+
+    [Fact]
+    public void MetadataDecorationApisAreNotSuggested()
+    {
+        this.generator = this.CreateGenerator();
+        Assert.DoesNotContain("AgileAttribute", this.generator.GetSuggestions("Agile"));
+    }
+
     [Fact]
     public void AmbiguousApiName()
     {

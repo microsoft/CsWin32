@@ -108,6 +108,10 @@ Configuration is in the `.github/renovate.json` file.
 
 When changing the renovate.json file, follow [these validation steps](https://docs.renovatebot.com/config-validation/).
 
+Renovate PR validation retries package and tool restores up to 10 times, with 60 seconds between attempts, only when Azure Artifacts reports `No local versions of package` for an upstream package that has not been saved to the feed. Generic tool-download failures, authentication errors without that cache-miss message, and other restore errors fail immediately. When retries are enabled, tool restore uses detailed output so the underlying feed error is available for classification. This retry window does not replace the authenticated pull-through pipeline or the upstream discovery wait described above.
+
+Run `./test/Restore.Tests.ps1` with PowerShell to exercise the retry behavior without restoring packages or installing test dependencies. These regression checks also run in the Windows and Linux build jobs.
+
 If Renovate is not creating pull requests when you expect it to, check that the [Renovate GitHub App](https://github.com/apps/renovate) is configured for your account or repo.
 
 ## Merging latest from Library.Template

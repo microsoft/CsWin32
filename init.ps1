@@ -48,7 +48,7 @@
 .PARAMETER Interactive
     Runs NuGet restore in interactive mode. This can turn authentication failures into authentication challenges.
 .PARAMETER RestoreRetryCount
-    The maximum number of restore attempts when a package is not yet available from the configured feed.
+    The maximum number of restore attempts when Azure Artifacts explicitly reports an unsaved upstream package.
 .PARAMETER RestoreRetryDelaySeconds
     The delay between restore attempts when a package is not yet available from the configured feed.
 #>
@@ -111,7 +111,7 @@ function Invoke-RestoreWithRetry {
             return
         }
 
-        $feedCacheMiss = ($restoreOutput -join "`n") -match 'No local versions of package|Downloading \S+ version \S+ failed'
+        $feedCacheMiss = ($restoreOutput -join "`n") -match 'No local versions of package'
         if (!$feedCacheMiss -or $attempt -eq $RestoreRetryCount) {
             throw $FailureMessage
         }
@@ -163,9 +163,15 @@ try {
     }
 
     if (!$NoToolRestore -and $PSCmdlet.ShouldProcess("dotnet tool", "restore")) {
+        $ToolRestoreArguments = @($RestoreArguments)
+        if ($RestoreRetryCount -gt 1) {
+            # Default tool verbosity hides the underlying feed error behind a generic download failure.
+            $ToolRestoreArguments += '--verbosity', 'detailed'
+        }
+
         Invoke-RestoreWithRetry -Restore {
             $PSNativeCommandUseErrorActionPreference = $false
-            dotnet tool restore @RestoreArguments
+            dotnet tool restore @ToolRestoreArguments
         } -FailureMessage "Failure while restoring dotnet CLI tools."
     }
 

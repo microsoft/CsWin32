@@ -31,6 +31,9 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         fetch-depth: 0
+    - name: Verify restore retry behavior
+      run: ./test/Restore.Tests.ps1
+      shell: pwsh
     - name: ⚙️ Install prerequisites
       run: ./init.ps1 -UpgradePrerequisites -NoNuGetCredProvider -RestoreRetryCount $env:RestoreRetryCount
       shell: pwsh
@@ -120,6 +123,9 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         fetch-depth: 0
+    - name: Verify restore retry behavior
+      run: ./test/Restore.Tests.ps1
+      shell: pwsh
     - name: ⚙️ Install prerequisites
       run: ./init.ps1 -UpgradePrerequisites -NoNuGetCredProvider -RestoreRetryCount $env:RestoreRetryCount
       shell: pwsh

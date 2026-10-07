@@ -75,6 +75,7 @@
       TargetFramework="$(TargetFramework)"
       Platform="$(CsWin32GeneratorPlatform)"
       LangVersion="$(LangVersion)"
+      Features="$(Features)"
       References="@(ReferencePath)"
       ContinueOnError="$(CsWin32ContinueOnError)"
       Condition="@(CsWin32NativeMethodsTxt->Count()) > 0">

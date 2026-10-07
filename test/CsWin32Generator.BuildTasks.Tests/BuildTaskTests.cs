@@ -126,6 +126,52 @@ public class BuildTaskTests
     }
 
     [Fact]
+    public void GenerateCommandLineCommands_WithFeatures_PassesThemThrough()
+    {
+        // Arrange
+        var task = CreateTaskWithMockBuildEngine();
+        SetupRequiredParameters(task);
+        task.Features = "updated-memory-safety-rules";
+
+        // Act
+        string commandLine = task.GetCommandLineArguments();
+
+        // Assert
+        // CommandLineBuilder decides for itself whether a value needs quoting, so accept either form.
+        Assert.Matches("--features \"?updated-memory-safety-rules\"?", commandLine);
+    }
+
+    [Fact]
+    public void GenerateCommandLineCommands_WithSemicolonSeparatedFeatures_ForwardsTheWholeList()
+    {
+        // Arrange
+        var task = CreateTaskWithMockBuildEngine();
+        SetupRequiredParameters(task);
+        task.Features = "strict;updated-memory-safety-rules";
+
+        // Act
+        string commandLine = task.GetCommandLineArguments();
+
+        // Assert
+        // The whole list is forwarded as a single argument, which the generator splits on semicolons itself.
+        Assert.Matches("--features \"?strict;updated-memory-safety-rules\"?", commandLine);
+    }
+
+    [Fact]
+    public void GenerateCommandLineCommands_WithoutFeatures_OmitsTheSwitch()
+    {
+        // Arrange
+        var task = CreateTaskWithMockBuildEngine();
+        SetupRequiredParameters(task);
+
+        // Act
+        string commandLine = task.GetCommandLineArguments();
+
+        // Assert
+        Assert.DoesNotContain("--features", commandLine);
+    }
+
+    [Fact]
     public void GenerateCommandLineCommands_WithEmptyOptionalParameters_DoesNotIncludeThem()
     {
         // Arrange

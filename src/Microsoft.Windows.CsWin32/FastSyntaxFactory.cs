@@ -116,6 +116,8 @@ internal static class FastSyntaxFactory
 
     internal static WhileStatementSyntax WhileStatement(ExpressionSyntax expression, StatementSyntax statement) => SyntaxFactory.WhileStatement(Token(TriviaList(), SyntaxKind.WhileKeyword, TriviaList(Space)), Token(SyntaxKind.OpenParenToken), expression, Token(TriviaList(), SyntaxKind.CloseParenToken, TriviaList(LineFeed)), statement);
 
+    internal static UnsafeStatementSyntax UnsafeStatement(BlockSyntax block) => SyntaxFactory.UnsafeStatement(Token(TriviaList(), SyntaxKind.UnsafeKeyword, TriviaList(LineFeed)), block);
+
     internal static TryStatementSyntax TryStatement(BlockSyntax block, SyntaxList<CatchClauseSyntax> catches, FinallyClauseSyntax? @finally) => SyntaxFactory.TryStatement(Token(TriviaList(), SyntaxKind.TryKeyword, TriviaList(LineFeed)), block, catches, @finally!);
 
     internal static CatchClauseSyntax CatchClause(CatchDeclarationSyntax? catchDeclaration, CatchFilterClauseSyntax? filter, BlockSyntax block) => SyntaxFactory.CatchClause(TokenWithSpace(SyntaxKind.CatchKeyword), catchDeclaration, filter, block);

@@ -220,6 +220,50 @@ static nuint SHGetFileInfo(string pszPath, FILE_FLAGS_AND_ATTRIBUTES dwFileAttri
 static nuint SHGetFileInfo(string pszPath, FILE_FLAGS_AND_ATTRIBUTES dwFileAttributes, ref SHFILEINFOW psfi, SHGFI_FLAGS uFlags)
 ```
 
+### Updated memory safety rules (preview)
+
+C# 15 / .NET 11 introduce an [updated memory safety model](https://learn.microsoft.com/dotnet/csharp/language-reference/unsafe-code#the-updated-memory-safety-model-preview)
+in which `unsafe` on a member is a contract that propagates an audit obligation to its callers, rather than just a
+marker that pointer syntax appears nearby. The model is a preview feature, and a project opts into its rules with a
+compiler feature flag:
+
+```xml
+<PropertyGroup>
+  <LangVersion>preview</LangVersion>
+  <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  <Features>$(Features);updated-memory-safety-rules</Features>
+</PropertyGroup>
+```
+
+CsWin32 detects that flag and adapts what it generates so that the projection compiles without new errors or warnings:
+
+- No type or delegate declaration carries `unsafe`, which the updated rules reject.
+- Every generated P/Invoke declares its safety, as the updated rules require of an `extern` member. A P/Invoke whose
+  signature hands out a pointer is `unsafe`, so calling it needs an `unsafe` context; one that doesn't is `safe`, so it
+  stays callable from safe code. That matches what the compiler already infers for a pointer-bearing signature under
+  `LangVersion=preview` without the flag, so your call sites don't change when you flip the flag.
+- Every field of a generated union declares its safety, as the updated rules require of an explicitly laid out type.
+- Members that access unmanaged memory scope that access in an inner `unsafe` block, since the modifier on a signature
+  no longer establishes a context for the body.
+- Overrides and interface implementations of safe members — `ToString`, `Equals`, `SafeHandle.ReleaseHandle` — stay
+  safe, because the updated rules forbid an unsafe member from overriding a safe one.
+
+Some consequences for your own code, all of which also apply without the flag once `LangVersion` is `preview`:
+
+- Calling a generated API whose signature contains a pointer requires an `unsafe` context. The friendly overloads that
+  take `Span<T>`, `string`, or `out` parameters remain callable from safe code, so preferring them avoids the ceremony.
+- If you implement the `ComHelpers.PopulateIUnknownImpl` partial method, mark your implementation `unsafe` to match the
+  generated declaration.
+
+> [!NOTE]
+> As of the .NET 11 RC 1 SDK, the runtime's own COM interop source generator emits `unsafe` on the interfaces it
+> generates, which the updated rules reject. A project that enables both `updated-memory-safety-rules` and CsWin32's
+> COM source generator support (`comInterop.useComSourceGenerators`) therefore sees CS9377 and CS9366 errors from
+> `Microsoft.Interop.ComInterfaceGenerator`, and on the interface declarations that CsWin32 emits as the other half of
+> those partial types. This reproduces with a hand-written `[GeneratedComInterface]` and no CsWin32 involved, so it has
+> to be fixed in the SDK. Until then, set `comInterop.useComSourceGenerators` to `false` (or `allowMarshaling` to
+> `false`) in `NativeMethods.json` when you opt into the updated rules.
+
 ### Newer metadata
 
 To update the metadata used as the source for code generation, you may install a newer `Microsoft.Windows.SDK.Win32Metadata` package:

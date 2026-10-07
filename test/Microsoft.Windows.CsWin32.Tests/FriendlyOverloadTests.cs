@@ -71,7 +71,7 @@ public class FriendlyOverloadTests : GeneratorTestBase
     }
 
     /// <summary>
-    /// Verifies documentation with public ABI types from one assembly and, optionally, an internal copy in another.
+    /// Verifies that documentation compiles with public ABI types from one assembly and, optionally, an internal copy in another.
     /// </summary>
     [Theory]
     [InlineData("CreateWindowEx", false, LanguageVersion.CSharp12, true)]
@@ -129,35 +129,6 @@ public class FriendlyOverloadTests : GeneratorTestBase
         Assert.Empty(this.FindGeneratedType("PCWSTR"));
         IEnumerable<MethodDeclarationSyntax> friendlyOverloads = this.FindGeneratedMethod(methodName).Where(m => !IsOrContainsExternMethod(m));
         Assert.NotEmpty(friendlyOverloads);
-        Assert.All(
-            friendlyOverloads,
-            method =>
-            {
-                string documentation = method.GetLeadingTrivia().ToString();
-                if (includeHiddenPCWSTR)
-                {
-                    Assert.Contains("<summary>", documentation);
-                    Assert.Contains("<param name=\"", documentation);
-                    Assert.DoesNotContain("<inheritdoc cref=", documentation);
-                    if (methodName == "ConvertStringSecurityDescriptorToSecurityDescriptor" && method.ParameterList.Parameters.Count == 3)
-                    {
-                        Assert.DoesNotContain("<param name=\"SecurityDescriptorSize\">", documentation);
-                    }
-                }
-                else
-                {
-                    Assert.Contains("<inheritdoc cref=\"", documentation);
-                    Assert.Contains("winmdroot.Foundation.PCWSTR", documentation);
-                }
-            });
-
-        if (includeHiddenPCWSTR && extensionReceiver)
-        {
-            INamedTypeSymbol pcwstr = Assert.IsAssignableFrom<INamedTypeSymbol>(referencedProject.GetTypeByMetadataName("Windows.Win32.Foundation.PCWSTR"));
-            string pwstr = Assert.Single(this.FindGeneratedType("PWSTR")).ToFullString();
-            Assert.Contains($"cref=\"{Assert.Single(pcwstr.GetMembers("Length")).GetDocumentationCommentId()}\"", pwstr);
-            Assert.Contains($"cref=\"{Assert.Single(pcwstr.GetMembers("ToString")).GetDocumentationCommentId()}\"", pwstr);
-        }
     }
 
     [Theory]

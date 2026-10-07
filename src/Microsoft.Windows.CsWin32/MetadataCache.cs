@@ -40,4 +40,20 @@ internal class MetadataCache
             return metadataFile;
         }
     }
+
+    /// <summary>
+    /// Removes a file from the cache and releases its resources once all readers have been returned.
+    /// </summary>
+    /// <param name="path">The path to the metadata file to remove.</param>
+    internal void RemoveMetadataFile(string path)
+    {
+        lock (this.metadataFiles)
+        {
+            if (this.metadataFiles.TryGetValue(path, out MetadataFile? metadataFile))
+            {
+                this.metadataFiles.Remove(path);
+                metadataFile.Dispose();
+            }
+        }
+    }
 }

@@ -375,6 +375,9 @@ public class InteriorPointerTests : GeneratorTestBase
         {
             this.generator?.Dispose();
             this.generator = null;
+
+            // Generator disposal returns its reader to the cache; eviction closes the mapped file.
+            MetadataCache.Default.RemoveMetadataFile(metadataPath);
             File.Delete(metadataPath);
         }
     }

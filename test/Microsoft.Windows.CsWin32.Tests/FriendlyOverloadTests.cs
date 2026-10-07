@@ -70,6 +70,67 @@ public class FriendlyOverloadTests : GeneratorTestBase
         Assert.Equal("Span<char>", friendlyOverload.ParameterList.Parameters[1].Type?.ToString());
     }
 
+    /// <summary>
+    /// Verifies that documentation compiles with public ABI types from one assembly and, optionally, an internal copy in another.
+    /// </summary>
+    [Theory]
+    [InlineData("CreateWindowEx", false, LanguageVersion.CSharp12, true)]
+    [InlineData("CreateWindowEx", false, LanguageVersion.CSharp12, false)]
+    [InlineData("CreateWindowEx", false, LanguageVersion.CSharp14, false)]
+    [InlineData("CreateWindowEx", false, LanguageVersion.CSharp14, true)]
+    [InlineData("CreateWindowEx", true, LanguageVersion.CSharp14, false)]
+    [InlineData("CreateWindowEx", true, LanguageVersion.CSharp14, true)]
+    [InlineData("ConvertStringSecurityDescriptorToSecurityDescriptor", false, LanguageVersion.CSharp12, false)]
+    [InlineData("ConvertStringSecurityDescriptorToSecurityDescriptor", false, LanguageVersion.CSharp12, true)]
+    public void FriendlyOverloadDocumentationWithReferencedPCWSTR(string methodName, bool extensionReceiver, LanguageVersion languageVersion, bool includeHiddenPCWSTR)
+    {
+        this.parseOptions = this.parseOptions.WithLanguageVersion(languageVersion);
+        CSharpCompilationOptions options = this.starterCompilations["net8.0"].Options;
+        this.compilation = this.starterCompilations["net8.0"].WithOptions(options
+            .WithPlatform(Platform.X64)
+            .WithSpecificDiagnosticOptions(options.SpecificDiagnosticOptions
+                .SetItem("CS1574", ReportDiagnostic.Error)
+                .SetItem("CS1580", ReportDiagnostic.Error)));
+        CSharpCompilation referencedProject = this.compilation.WithAssemblyName("ReferencedInterop");
+        using (var referencedGenerator = this.CreateGenerator(new GeneratorOptions { Public = true }, referencedProject))
+        {
+            Assert.True(referencedGenerator.TryGenerate("FindWindow", TestContext.Current.CancellationToken));
+            referencedProject = this.AddGeneratedCode(referencedProject, referencedGenerator);
+        }
+
+        this.AssertNoDiagnostics(referencedProject, logAllGeneratedCode: false);
+        using var assemblyStream = new MemoryStream();
+        Assert.True(referencedProject.Emit(assemblyStream, cancellationToken: TestContext.Current.CancellationToken).Success);
+        this.compilation = this.compilation.AddReferences(MetadataReference.CreateFromImage(assemblyStream.ToArray()));
+        if (includeHiddenPCWSTR)
+        {
+            // A dependency unrelated to CsWin32 can embed an internal ABI type with the same name.
+            CSharpCompilation hiddenProject = this.starterCompilations["net8.0"]
+                .WithAssemblyName("HiddenInterop")
+                .AddSyntaxTrees(CSharpSyntaxTree.ParseText(
+                    "namespace Windows.Win32.Foundation { internal struct PCWSTR { } }",
+                    this.parseOptions,
+                    cancellationToken: TestContext.Current.CancellationToken));
+            using var hiddenStream = new MemoryStream();
+            Assert.True(hiddenProject.Emit(hiddenStream, cancellationToken: TestContext.Current.CancellationToken).Success);
+            this.compilation = this.compilation.AddReferences(MetadataReference.CreateFromImage(hiddenStream.ToArray()));
+            Assert.Equal(2, this.compilation.GetTypesByMetadataName("Windows.Win32.Foundation.PCWSTR").Length);
+        }
+
+        this.generator = this.CreateGenerator(
+            new GeneratorOptions
+            {
+                EmitSingleFile = false,
+                ClassName = extensionReceiver ? "PInvokeExtensions" : "PInvoke",
+                ExtensionReceiver = extensionReceiver ? "PInvoke" : null,
+            },
+            includeDocs: true);
+        this.GenerateApi(methodName);
+        Assert.Empty(this.FindGeneratedType("PCWSTR"));
+        IEnumerable<MethodDeclarationSyntax> friendlyOverloads = this.FindGeneratedMethod(methodName).Where(m => !IsOrContainsExternMethod(m));
+        Assert.NotEmpty(friendlyOverloads);
+    }
+
     [Theory]
     [InlineData("WSManGetSessionOptionAsString")] // Uses the reserved keyword 'string' as a parameter name
     [InlineData("RmRegisterResources")] // Parameter with PCWSTR* (an array of native strings)

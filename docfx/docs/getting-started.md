@@ -230,6 +230,20 @@ The buffer's capacity parameter remains explicit even when it is optional, and o
 buffers sharing that capacity also keep their pointer types. Unrelated parameters
 can still receive friendly projections, including omission of optional outputs.
 
+For example, the Unicode `GetPrinterW` API is generated as `GetPrinter` with the
+default settings. Its output buffer remains a `byte*`, while the handle and scalar
+output still have friendly projections (namespaces, attributes, and the method body
+are omitted here):
+
+```c#
+static unsafe BOOL GetPrinter(
+    SafeHandle hPrinter, uint Level,
+    byte* pPrinter, uint cbBuf, out uint pcbNeeded);
+```
+
+With `Level = 2`, the buffer contains a `PRINTER_INFO_2W` whose `pPrinterName` and
+other pointer fields refer to data in that same buffer.
+
 The caller must keep the buffer alive and at the same address throughout both the
 native call and consumption of the returned pointers. Use unmanaged storage, stack
 storage, or an outer `fixed` scope that covers the call and all decoding or copying.

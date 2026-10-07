@@ -14,9 +14,9 @@ Some native APIs write records whose pointer fields refer to other data inside t
 caller's output buffer. When metadata marks a buffer parameter with
 `ContainsInteriorPointersAttribute`, CsWin32 keeps that parameter as a native pointer
 instead of generating a span, managed array, or `in`/`ref`/`out` buffer projection.
-The buffer's explicit capacity parameter also remains available, and other buffers
-sharing that capacity also keep their pointer types. Unrelated parameters can still
-receive friendly projections.
+The buffer's capacity parameter remains explicit even when it is optional, and other
+buffers sharing that capacity also keep their pointer types. Unrelated parameters
+can still receive friendly projections, including omission of optional outputs.
 
 The caller must keep the buffer alive and at the same address throughout both the
 native call and consumption of the returned pointers. Use unmanaged storage, stack

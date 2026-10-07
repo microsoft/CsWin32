@@ -500,7 +500,8 @@ public partial class Generator
             SyntaxToken externParamModifier = externParam.Modifiers.FirstOrDefault(m => m.Kind() is SyntaxKind.RefKeyword or SyntaxKind.OutKeyword);
             if (isOptional && !isReserved && isOut && !isArray
                 && externParamModifier == default
-                && !mustRemainAsPointer)
+                && !mustRemainAsPointer
+                && !interiorPointerBufferCounts.Any(countIndex => countIndex == origParamIndex))
             {
                 // Keep track of how many out/ref optional parameters we included -- if there are any we will generate another overload with them omitted.
                 numOptionalParams++;

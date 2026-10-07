@@ -80,6 +80,11 @@ public class InteriorPointerTests : GeneratorTestBase
                     uint capacity, [Out] uint* written);
 
                 [DllImport("kernel32.dll", ExactSpelling = true)]
+                public static extern void OptionalCapacityBuffer(
+                    [ContainsInteriorPointers] [Out, MemorySize(BytesParamIndex = 1)] byte* buffer,
+                    [In, Out, Optional] uint* capacity, [Out, Optional] uint* written);
+
+                [DllImport("kernel32.dll", ExactSpelling = true)]
                 public static extern void ConstRecordBuffer(
                     [ContainsInteriorPointers] [In, Const, MemorySize(BytesParamIndex = 1)] RECORD* buffer,
                     uint capacity, [Out] uint* written);
@@ -135,7 +140,7 @@ public class InteriorPointerTests : GeneratorTestBase
     /// <param name="includePointerOverloads">Whether additional pointer overloads are requested.</param>
     [Theory, CombinatorialData]
     public void AnnotatedBuffersRemainPointers(
-        [CombinatorialValues("ByteBuffer", "MemorySizedByteBuffer", "VoidBuffer", "RecordBuffer", "CountedRecordBuffer", "ConstantRecordBuffer", "OptionalRecordBuffer", "ConstRecordBuffer", "SingleRecord", "ScalarBuffer", "CallbackBuffer")] string api,
+        [CombinatorialValues("ByteBuffer", "MemorySizedByteBuffer", "VoidBuffer", "RecordBuffer", "CountedRecordBuffer", "ConstantRecordBuffer", "OptionalRecordBuffer", "OptionalCapacityBuffer", "ConstRecordBuffer", "SingleRecord", "ScalarBuffer", "CallbackBuffer")] string api,
         bool allowMarshaling,
         bool includePointerOverloads)
     {
@@ -162,7 +167,7 @@ public class InteriorPointerTests : GeneratorTestBase
     /// <param name="allowMarshaling">Whether to enable marshaling.</param>
     [Theory, CombinatorialData]
     public void UnannotatedBuffersStillUseSpans(
-        [CombinatorialValues("ByteBuffer", "MemorySizedByteBuffer", "VoidBuffer", "RecordBuffer", "CountedRecordBuffer", "ConstantRecordBuffer", "OptionalRecordBuffer", "ConstRecordBuffer")] string api,
+        [CombinatorialValues("ByteBuffer", "MemorySizedByteBuffer", "VoidBuffer", "RecordBuffer", "CountedRecordBuffer", "ConstantRecordBuffer", "OptionalRecordBuffer", "OptionalCapacityBuffer", "ConstRecordBuffer")] string api,
         bool allowMarshaling)
     {
         this.GenerateFromMetadata(api, containsInteriorPointers: false, allowMarshaling, includePointerOverloads: false);
@@ -208,6 +213,25 @@ public class InteriorPointerTests : GeneratorTestBase
             Assert.Contains(method.ParameterList.Parameters, parameter => parameter.Identifier.ValueText == "capacity");
             Assert.All(method.ParameterList.Parameters.Where(parameter => parameter.Identifier.ValueText is "buffer" or "ordinaryBuffer"), parameter => Assert.IsType<PointerTypeSyntax>(parameter.Type));
         });
+    }
+
+    /// <summary>
+    /// Verifies that optional capacities remain explicit while unrelated optional outputs can still be omitted.
+    /// </summary>
+    /// <param name="allowMarshaling">Whether to enable marshaling.</param>
+    [Theory, CombinatorialData]
+    public void OptionalCapacitiesRemainExplicit(bool allowMarshaling)
+    {
+        const string Api = "OptionalCapacityBuffer";
+        this.GenerateFromMetadata(Api, containsInteriorPointers: true, allowMarshaling, includePointerOverloads: false);
+
+        MethodDeclarationSyntax[] methods = this.FindGeneratedMethod(Api).ToArray();
+        Assert.All(methods, method =>
+            Assert.Contains(method.ParameterList.Parameters, parameter => parameter.Identifier.ValueText == "capacity"));
+        Assert.Contains(methods, method =>
+            method.ParameterList.Parameters.Any(parameter => parameter.Identifier.ValueText == "capacity" && parameter.Modifiers.Any(SyntaxKind.RefKeyword)));
+        Assert.Contains(methods, method =>
+            !method.ParameterList.Parameters.Any(parameter => parameter.Identifier.ValueText == "written"));
     }
 
     private void GenerateFromMetadata(string api, bool containsInteriorPointers, bool allowMarshaling, bool includePointerOverloads)

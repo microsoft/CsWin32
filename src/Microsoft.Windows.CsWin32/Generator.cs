@@ -1450,7 +1450,7 @@ public partial class Generator : IGenerator, IDisposable
     /// Wraps a list of members in an <c>extension (Receiver) { ... }</c> block when <see cref="GeneratorOptions.ExtensionReceiver"/> is configured; otherwise returns the input unchanged. Under the Roslyn 4 leg the wrap is a no-op (the feature is gated to Roslyn 5 + C# 14).
     /// </summary>
     /// <param name="members">The members that would otherwise be added directly to the host static class.</param>
-    /// <returns>A new member list (length 1) containing an extension block, or the original list when no extension receiver is configured, the input is empty, or the analyzer is the Roslyn 4 leg.</returns>
+    /// <returns>An extension block and, when needed, a nested partial class for source-generated imports; otherwise the original list when no extension receiver is configured, the input is empty, or the analyzer is the Roslyn 4 leg.</returns>
     private SyntaxList<MemberDeclarationSyntax> WrapAsExtensionMembers(SyntaxList<MemberDeclarationSyntax> members)
     {
 #if ROSLYN5
@@ -1467,10 +1467,51 @@ public partial class Generator : IGenerator, IDisposable
             return members;
         }
 
+        string importsClassName = this.options.ClassName + "Imports";
+        SyntaxList<MemberDeclarationSyntax> imports = default;
+        SyntaxList<MemberDeclarationSyntax> extensionMembers = default;
+        foreach (MemberDeclarationSyntax member in members)
+        {
+            if (member is MethodDeclarationSyntax method && method.Modifiers.Any(SyntaxKind.PartialKeyword))
+            {
+                // LibraryImport cannot generate implementations inside an extension block.
+                // Keep the import in a partial type and expose a forwarding extension member instead.
+                imports = imports.Add(method);
+                InvocationExpressionSyntax invocation = InvocationExpression(
+                    MemberAccessExpression(
+                        SyntaxKind.SimpleMemberAccessExpression,
+                        ParseName($"global::{this.Namespace}.{this.options.ClassName}.{importsClassName}"),
+                        IdentifierName(method.Identifier)),
+                    [.. method.ParameterList.Parameters.Select(parameter => Argument(IdentifierName(parameter.Identifier))
+                        .WithRefKindKeyword(parameter.Modifiers.FirstOrDefault(modifier => modifier.IsKind(SyntaxKind.RefKeyword) || modifier.IsKind(SyntaxKind.OutKeyword) || modifier.IsKind(SyntaxKind.InKeyword))))]);
+                SyntaxList<AttributeListSyntax> attributes = [.. method.AttributeLists
+                    .Select(list => list.WithAttributes([.. list.Attributes.Where(attribute => attribute.Name.ToString() is not ("LibraryImport" or "DefaultDllImportSearchPaths"))]))
+                    .Where(list => list.Attributes.Count > 0)];
+                extensionMembers = extensionMembers.Add(method
+                    .WithAttributeLists(attributes)
+                    .WithModifiers(SyntaxFactory.TokenList(method.Modifiers.Where(modifier => !modifier.IsKind(SyntaxKind.PartialKeyword))))
+                    .WithBody(null)
+                    .WithExpressionBody(ArrowExpressionClause(invocation))
+                    .WithSemicolonToken(SemicolonWithLineFeed)
+                    .WithLeadingTrivia(method.GetLeadingTrivia()));
+            }
+            else
+            {
+                extensionMembers = extensionMembers.Add(member);
+            }
+        }
+
         // Use a global-qualified name so the receiver is unambiguous regardless of `using`s in the consuming file.
         TypeSyntax receiverType = ParseName($"global::{this.Namespace}.{this.options.ExtensionReceiver}");
-        ExtensionBlockDeclarationSyntax extensionBlock = ExtensionBlock(receiverType, members);
-        return SyntaxFactory.SingletonList<MemberDeclarationSyntax>(extensionBlock);
+        ExtensionBlockDeclarationSyntax extensionBlock = ExtensionBlock(receiverType, extensionMembers);
+        SyntaxList<MemberDeclarationSyntax> result = SyntaxFactory.SingletonList<MemberDeclarationSyntax>(extensionBlock);
+        if (imports.Count > 0)
+        {
+            result = result.Add(ClassDeclaration(Identifier(importsClassName), imports)
+                .AddModifiers(TokenWithSpace(SyntaxKind.PrivateKeyword), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)));
+        }
+
+        return result;
 #else
         return members;
 #endif

@@ -105,35 +105,18 @@ public partial class Generator
         }
 
         bool improvePointersToSpansAndRefs = this.canUseSpan;
-        HashSet<string> signatures = new(StringComparer.Ordinal);
-        for (int pass = 0; pass < 2; pass++)
+        FriendlyMethodBookkeeping bookkeeping = new();
+        foreach (MethodDeclarationSyntax method in this.DeclareFriendlyOverload(methodDefinition, externMethodDeclaration, declaringTypeName, overloadOf, helperMethodsAdded, avoidWinmdRootAlias, improvePointersToSpansAndRefs, omitOptionalParams: false, bookkeeping))
         {
-            bool legacyHandleInputs = pass == 1;
-            FriendlyMethodBookkeeping bookkeeping = new();
-            foreach (MethodDeclarationSyntax method in this.DeclareFriendlyOverload(methodDefinition, externMethodDeclaration, declaringTypeName, overloadOf, helperMethodsAdded, avoidWinmdRootAlias, improvePointersToSpansAndRefs, omitOptionalParams: false, bookkeeping, legacyHandleInputs))
-            {
-                if (signatures.Add(method.Identifier.ValueText + method.TypeParameterList + method.ParameterList))
-                {
-                    yield return method;
-                }
-            }
+            yield return method;
+        }
 
-            if (this.Options.FriendlyOverloads.IncludePointerOverloads && improvePointersToSpansAndRefs && bookkeeping.NumSpanByteParameters > 0)
+        if (this.Options.FriendlyOverloads.IncludePointerOverloads && improvePointersToSpansAndRefs && bookkeeping.NumSpanByteParameters > 0)
+        {
+            // Also offer pointer-based overloads for byte buffers.
+            foreach (MethodDeclarationSyntax method in this.DeclareFriendlyOverload(methodDefinition, externMethodDeclaration, declaringTypeName, overloadOf, helperMethodsAdded, avoidWinmdRootAlias, improvePointersToSpansAndRefs: false, omitOptionalParams: false))
             {
-                // Also offer pointer-based overloads for byte buffers.
-                foreach (MethodDeclarationSyntax method in this.DeclareFriendlyOverload(methodDefinition, externMethodDeclaration, declaringTypeName, overloadOf, helperMethodsAdded, avoidWinmdRootAlias, improvePointersToSpansAndRefs: false, omitOptionalParams: false, legacyHandleInputs: legacyHandleInputs))
-                {
-                    if (signatures.Add(method.Identifier.ValueText + method.TypeParameterList + method.ParameterList))
-                    {
-                        yield return method;
-                    }
-                }
-            }
-
-            // Preserve signatures mixing existing SafeHandle inputs with native values for newly recognized inputs.
-            if (!bookkeeping.HasNewHandleInputs)
-            {
-                break;
+                yield return method;
             }
         }
     }
@@ -147,8 +130,7 @@ public partial class Generator
         bool avoidWinmdRootAlias,
         bool improvePointersToSpansAndRefs,
         bool omitOptionalParams,
-        FriendlyMethodBookkeeping? bookkeeping = null,
-        bool legacyHandleInputs = false)
+        FriendlyMethodBookkeeping? bookkeeping = null)
     {
 #pragma warning disable SA1114 // Parameter list should follow declaration
         bool isReleaseMethod = this.MetadataIndex.ReleaseMethods.Contains(externMethodDeclaration.Identifier.ValueText);
@@ -674,14 +656,11 @@ public partial class Generator
             }
             else if (this.options.UseSafeHandles && isIn && !isOut && !isReleaseMethod && parameterTypeInfo is HandleTypeHandleInfo parameterHandleTypeInfo
                 && (parameterHandleTypeInfo.Generator.TryGetHandleReleaseMethod(parameterHandleTypeInfo.Handle, paramAttributes, out _)
-                    || (!legacyHandleInputs && parameterHandleTypeInfo.Generator.IsHandle(parameterHandleTypeInfo.Handle, out _)))
+                    || (parameterHandleTypeInfo.Generator.GetQualifiedTypeDefinition(parameterHandleTypeInfo.Handle) is QualifiedTypeDefinition inputHandleDefinition
+                        && inputHandleDefinition.Reader.StringComparer.Equals(inputHandleDefinition.Definition.Namespace, "Windows.Win32.Foundation")
+                        && inputHandleDefinition.Reader.StringComparer.Equals(inputHandleDefinition.Definition.Name, "HANDLE")))
                 && !(this.TryGetTypeDefFieldType(parameterHandleTypeInfo, out TypeHandleInfo? fieldType) && !this.IsSafeHandleCompatibleTypeDefFieldType(fieldType)))
             {
-                if (bookkeeping is not null && !parameterHandleTypeInfo.Generator.TryGetHandleReleaseMethod(parameterHandleTypeInfo.Handle, paramAttributes, out _))
-                {
-                    bookkeeping.HasNewHandleInputs = true;
-                }
-
                 IdentifierNameSyntax typeDefHandleName = IdentifierName(externParam.Identifier.ValueText + "Local");
                 signatureChanged = true;
 
@@ -1628,10 +1607,10 @@ public partial class Generator
             }
 
             // If we're using C# 13 or later, consider adding the overload resolution attribute if it would likely resolve ambiguities.
-            if (this.LanguageVersion >= (LanguageVersion)1300 && (legacyHandleInputs || parameters.Count == externMethodDeclaration.ParameterList.Parameters.Count))
+            if (this.LanguageVersion >= (LanguageVersion)1300 && parameters.Count == externMethodDeclaration.ParameterList.Parameters.Count)
             {
                 this.volatileCode.GenerationTransaction(() => this.DeclareOverloadResolutionPriorityAttributeIfNecessary());
-                friendlyDeclaration = friendlyDeclaration.AddAttributeLists(AttributeList(OverloadResolutionPriorityAttribute(legacyHandleInputs ? 2 : 1)));
+                friendlyDeclaration = friendlyDeclaration.AddAttributeLists(AttributeList(OverloadResolutionPriorityAttribute(1)));
             }
 
             friendlyDeclaration = friendlyDeclaration
@@ -1660,7 +1639,7 @@ public partial class Generator
         if (numOptionalParams > 0 && !omitOptionalParams && improvePointersToSpansAndRefs)
         {
             // Generate overloads for optional parameters.
-            foreach (MethodDeclarationSyntax method in this.DeclareFriendlyOverload(methodDefinition, externMethodDeclaration, declaringTypeName, overloadOf, helperMethodsAdded, avoidWinmdRootAlias, improvePointersToSpansAndRefs, omitOptionalParams: true, legacyHandleInputs: legacyHandleInputs))
+            foreach (MethodDeclarationSyntax method in this.DeclareFriendlyOverload(methodDefinition, externMethodDeclaration, declaringTypeName, overloadOf, helperMethodsAdded, avoidWinmdRootAlias, improvePointersToSpansAndRefs, omitOptionalParams: true))
             {
                 yield return method;
             }
@@ -1832,7 +1811,5 @@ public partial class Generator
     private class FriendlyMethodBookkeeping
     {
         public int NumSpanByteParameters { get; set; } = 0;
-
-        public bool HasNewHandleInputs { get; set; }
     }
 }

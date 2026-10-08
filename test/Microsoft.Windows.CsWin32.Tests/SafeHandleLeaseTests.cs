@@ -36,10 +36,17 @@ public class SafeHandleLeaseTests : GeneratorTestBase
                 public FreeWithAttribute(string method) { }
             }
         }
+        namespace Windows.Win32.Foundation
+        {
+            [NativeTypedef, InvalidHandleValue(0)]
+            public unsafe struct HANDLE { public void* Value; }
+        }
         namespace Windows.Win32.Other
         {
             [NativeTypedef, InvalidHandleValue(0)]
             public unsafe struct DUPLICATE_RESOURCE { public void* Value; }
+            [NativeTypedef, InvalidHandleValue(0)]
+            public unsafe struct HANDLE { public void* Value; }
         }
         namespace Windows.Win32.Test
         {
@@ -73,6 +80,10 @@ public class SafeHandleLeaseTests : GeneratorTestBase
                 public static extern void FreeShared(void* resource);
                 [DllImport("fixture.dll", ExactSpelling = true)]
                 public static extern void ConsumeResource([In] RESOURCE_A resource);
+                [DllImport("fixture.dll", ExactSpelling = true)]
+                public static extern void ConsumeHandle([In] Windows.Win32.Foundation.HANDLE resource);
+                [DllImport("fixture.dll", ExactSpelling = true)]
+                public static extern void ConsumeOtherHandle([In] Windows.Win32.Other.HANDLE resource);
                 [DllImport("fixture.dll", ExactSpelling = true)]
                 public static extern void ConsumePointer([In] void* resource);
                 [DllImport("fixture.dll", ExactSpelling = true)]
@@ -138,7 +149,6 @@ public class SafeHandleLeaseTests : GeneratorTestBase
                     RESOURCE_B valueB = leaseB.Value;
                     void* valuePointer = leasePointer.Value;
                     FreeSharedSafeHandle compatibleWithExistingOwner = a;
-                    PInvoke.ConsumeResource(a);
                     PInvoke.ConsumeResource(leaseA.Value);
                     PInvoke.ConsumePointer(leasePointer.Value);
                     PInvoke.AcquirePointer(out FreeSharedSafeHandle ownedPointer);
@@ -147,7 +157,7 @@ public class SafeHandleLeaseTests : GeneratorTestBase
             }
             """);
         this.AssertNoDiagnostics(logAllGeneratedCode: false);
-        Assert.Contains(this.FindGeneratedMethod("ConsumeResource"), method => method.ParameterList.Parameters[0].Type?.ToString() == "SafeHandle");
+        Assert.DoesNotContain(this.FindGeneratedMethod("ConsumeResource"), method => method.ParameterList.Parameters[0].Type?.ToString() == "SafeHandle");
         Assert.DoesNotContain(this.FindGeneratedMethod("ConsumePointer"), method => method.ParameterList.Parameters.Any(parameter => parameter.Type?.ToString() == "SafeHandle"));
         foreach (string name in new[] { "FreeSharedSafeHandle", "FreeSharedRESOURCE_ASafeHandle", "FreeSharedRESOURCE_BSafeHandle" })
         {
@@ -159,6 +169,39 @@ public class SafeHandleLeaseTests : GeneratorTestBase
             Assert.True(SymbolEqualityComparer.Default.Equals(ownerValue.Type, leaseValue.Type));
             Assert.Empty(owner.GetMembers("Value"));
             Assert.Empty(lease.GetMembers("DangerousValue"));
+        }
+    }
+
+    /// <summary>
+    /// Verifies that only the Win32 HANDLE gains SafeHandle inputs without type-level ownership annotations.
+    /// </summary>
+    /// <param name="allowMarshaling">Whether runtime marshaling is enabled.</param>
+    /// <param name="useSafeHandles">Whether SafeHandle projection is enabled.</param>
+    [Theory, CombinatorialData]
+    public void HandleInputsWithoutTypeLevelOwnership(bool allowMarshaling, bool useSafeHandles)
+    {
+        this.GenerateFixture("RAIIFree", allowMarshaling, ["ConsumeHandle", "ConsumeOtherHandle", "ConsumeResource", "ConsumePointer"], useSafeHandles: useSafeHandles);
+        this.compilation = this.AddCode($$"""
+            using System.Runtime.InteropServices;
+            using Windows.Win32;
+            using Windows.Win32.Foundation;
+            using Windows.Win32.Test;
+            static unsafe class Usage
+            {
+                static void Use(SafeHandle owner, HANDLE handle, Windows.Win32.Other.HANDLE other, RESOURCE_A resource, void* pointer)
+                {
+                    PInvoke.ConsumeHandle({{(useSafeHandles ? "owner" : "handle")}});
+                    PInvoke.ConsumeOtherHandle(other);
+                    PInvoke.ConsumeResource(resource);
+                    PInvoke.ConsumePointer(pointer);
+                }
+            }
+            """);
+        this.AssertNoDiagnostics(logAllGeneratedCode: false);
+        Assert.Equal(useSafeHandles, this.FindGeneratedMethod("ConsumeHandle").Any(method => method.ParameterList.Parameters[0].Type?.ToString() == "SafeHandle"));
+        foreach (string name in new[] { "ConsumeOtherHandle", "ConsumeResource", "ConsumePointer" })
+        {
+            Assert.DoesNotContain(this.FindGeneratedMethod(name), method => method.ParameterList.Parameters[0].Type?.ToString() == "SafeHandle");
         }
     }
 

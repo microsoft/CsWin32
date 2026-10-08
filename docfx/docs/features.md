@@ -42,9 +42,14 @@ Lease helpers require C# 9 or later.
 An owner already held in a visible `using` scope can supply `owner.DangerousValue` directly.
 This assumes ordinary exclusive ownership: another alias must not explicitly
 dispose it during the call. A SafeHandle parameter alone is not such a lifetime
-guarantee. Existing friendly input overloads accept base `SafeHandle` for recognized
-native handles and already keep a reference alive throughout their calls.
-Existing overloads mixing SafeHandles with native inputs remain available.
+guarantee. Friendly input overloads accept base `SafeHandle` for types with existing
+cleanup annotations and keep a reference alive throughout their calls. They also
+accept `SafeHandle` for `Windows.Win32.Foundation.HANDLE` even without a type-level
+cleanup annotation, preserving this behavior as ownership annotations move to outputs.
+This heuristic does not apply to other types such as `HWND`, `PWSTR`, or arbitrary
+pointers. Such resources can be passed using their owner's `DangerousValue` or a
+lease's `Value`. Set `useSafeHandles` to `false` in `NativeMethods.json` to disable
+SafeHandle projection.
 
 The lifetime analyzer reports errors for leases that are not `using` locals, copies,
 field storage, parameter passing, returns, and explicit disposal (`PInvoke015`).

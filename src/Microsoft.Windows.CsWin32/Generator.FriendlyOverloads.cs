@@ -92,13 +92,26 @@ public partial class Generator
     private ExpressionSyntax GetIntPtrFromTypeDef(ExpressionSyntax typedefValue, TypeHandleInfo typeDefTypeInfo)
     {
         ExpressionSyntax intPtrValue = typedefValue;
+        if (typeDefTypeInfo is PointerTypeHandleInfo)
+        {
+            return CastExpression(IntPtrTypeSyntax, typedefValue);
+        }
+
+        if (this.TryGetTypeDefFieldType(typeDefTypeInfo, out TypeHandleInfo? backingType) && backingType is PointerTypeHandleInfo)
+        {
+            return CastExpression(IntPtrTypeSyntax, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, typedefValue, IdentifierName("Value")));
+        }
+
         if (this.TryGetTypeDefFieldType(typeDefTypeInfo, out TypeHandleInfo? returnTypeField) && returnTypeField is PrimitiveTypeHandleInfo primitiveReturnField)
         {
             switch (primitiveReturnField.PrimitiveTypeCode)
             {
                 case PrimitiveTypeCode.UInt32:
-                    // (IntPtr)result.Value;
-                    intPtrValue = CastExpression(IntPtrTypeSyntax, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, typedefValue, IdentifierName("Value")));
+                    intPtrValue = UncheckedExpression(CastExpression(
+                        IntPtrTypeSyntax,
+                        CastExpression(IdentifierName("nint"), CastExpression(
+                            IdentifierName("nuint"),
+                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, typedefValue, IdentifierName("Value"))))));
                     break;
                 case PrimitiveTypeCode.UIntPtr:
                     // unchecked((IntPtr)(long)(ulong)result.Value)
@@ -154,7 +167,7 @@ public partial class Generator
 
         if (this.Options.FriendlyOverloads.IncludePointerOverloads && improvePointersToSpansAndRefs && bookkeeping.NumSpanByteParameters > 0)
         {
-            // If we could use Span and _did_ use span Span and the pointer overloads were requested, then Generate overloads that use pointer types instead of Span<byte>/ReadOnlySpan<byte>.
+            // Also offer pointer-based overloads for byte buffers.
             foreach (MethodDeclarationSyntax method in this.DeclareFriendlyOverload(methodDefinition, externMethodDeclaration, declaringTypeName, overloadOf, helperMethodsAdded, avoidWinmdRootAlias, improvePointersToSpansAndRefs: false, omitOptionalParams: false))
             {
                 yield return method;
@@ -610,8 +623,8 @@ public partial class Generator
                 bool hasOut = externParam.Modifiers.Any(SyntaxKind.OutKeyword);
                 arguments[paramIndex] = arguments[paramIndex].WithRefKindKeyword(TokenWithSpace(hasOut ? SyntaxKind.OutKeyword : SyntaxKind.RefKeyword));
             }
-            else if (isOut && !isIn && !isReleaseMethod && parameterTypeInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo pointedElementInfo } &&
-                pointedElementInfo.Generator.TryGetHandleReleaseMethod(pointedElementInfo.Handle, paramAttributes, out string? outReleaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, outReleaseMethod) &&
+            else if (isOut && !isIn && !isReleaseMethod && parameterTypeInfo is PointerTypeHandleInfo { ElementType: TypeHandleInfo pointedElementInfo } &&
+                this.TryGetResourceReleaseMethod(pointedElementInfo, paramAttributes, out string? outReleaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, outReleaseMethod) &&
                 (memorySize is null) && !isArray)
             {
                 signatureChanged = true;
@@ -619,7 +632,7 @@ public partial class Generator
                 IdentifierNameSyntax localName = IdentifierName(externParam.Identifier.ValueText + "Local");
 
                 // NOTE: We don't handle scenarios where the parameter is [MemorySize] annotated (e.g. EnumProcessModules) or [NativeArrayInfo] (e.g. ITypeInfo.GetNames)
-                if (this.RequestSafeHandle(outReleaseMethod) is TypeSyntax safeHandleType)
+                if (this.RequestSafeHandle(outReleaseMethod, pointedElementInfo) is TypeSyntax safeHandleType)
                 {
                     // out SafeHandle
                     parameters[paramIndex] = externParam
@@ -695,7 +708,11 @@ public partial class Generator
                     arguments[paramIndex] = Argument(localName);
                 }
             }
-            else if (this.options.UseSafeHandles && isIn && !isOut && !isReleaseMethod && parameterTypeInfo is HandleTypeHandleInfo parameterHandleTypeInfo && this.TryGetHandleReleaseMethod(parameterHandleTypeInfo.Handle, paramAttributes, out string? releaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, releaseMethod)
+            else if (this.options.UseSafeHandles && isIn && !isOut && !isReleaseMethod && parameterTypeInfo is HandleTypeHandleInfo parameterHandleTypeInfo
+                && (parameterHandleTypeInfo.Generator.TryGetHandleReleaseMethod(parameterHandleTypeInfo.Handle, paramAttributes, out _)
+                    || (parameterHandleTypeInfo.Generator.GetQualifiedTypeDefinition(parameterHandleTypeInfo.Handle) is QualifiedTypeDefinition inputHandleDefinition
+                        && inputHandleDefinition.Reader.StringComparer.Equals(inputHandleDefinition.Definition.Namespace, "Windows.Win32.Foundation")
+                        && inputHandleDefinition.Reader.StringComparer.Equals(inputHandleDefinition.Definition.Name, "HANDLE")))
                 && !(this.TryGetTypeDefFieldType(parameterHandleTypeInfo, out TypeHandleInfo? fieldType) && !this.IsSafeHandleCompatibleTypeDefFieldType(fieldType)))
             {
                 IdentifierNameSyntax typeDefHandleName = IdentifierName(externParam.Identifier.ValueText + "Local");
@@ -1439,9 +1456,8 @@ public partial class Generator
             signatureChanged = true;
         }
 
-        TypeSyntax? returnSafeHandleType = originalSignature.ReturnType is HandleTypeHandleInfo returnTypeHandleInfo
-            && returnTypeHandleInfo.Generator.TryGetHandleReleaseMethod(returnTypeHandleInfo.Handle, returnTypeAttributes, out string? returnReleaseMethod)
-            ? this.RequestSafeHandle(returnReleaseMethod) : null;
+        TypeSyntax? returnSafeHandleType = this.TryGetResourceReleaseMethod(originalSignature.ReturnType, returnTypeAttributes, out string? returnReleaseMethod)
+            ? this.RequestSafeHandle(returnReleaseMethod, originalSignature.ReturnType) : null;
 
         IdentifierNameSyntax resultLocal = IdentifierName("__result");
 

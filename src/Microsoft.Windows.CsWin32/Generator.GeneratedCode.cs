@@ -48,7 +48,7 @@ public partial class Generator
 
         private readonly Dictionary<(string Namespace, string Name), MemberDeclarationSyntax> inlineArrays = new();
 
-        private readonly Dictionary<string, TypeSyntax?> releaseMethodsWithSafeHandleTypesGenerating = new();
+        private readonly Dictionary<string, (TypeSyntax? Type, bool CanConstruct)> releaseMethodsWithSafeHandleTypesGenerating = new();
 
         private readonly List<MethodDeclarationSyntax> inlineArrayIndexerExtensionsMembers = new();
 
@@ -380,17 +380,26 @@ public partial class Generator
             return marshallerType.QualifiedName;
         }
 
-        internal bool TryGetSafeHandleForReleaseMethod(string releaseMethod, out TypeSyntax? safeHandleType)
+        internal bool TryGetSafeHandleForReleaseMethod(string releaseMethod, out TypeSyntax? safeHandleType, out bool canConstruct)
         {
-            return this.releaseMethodsWithSafeHandleTypesGenerating.TryGetValue(releaseMethod, out safeHandleType)
-                || this.parent?.releaseMethodsWithSafeHandleTypesGenerating.TryGetValue(releaseMethod, out safeHandleType) is true;
+            if (this.releaseMethodsWithSafeHandleTypesGenerating.TryGetValue(releaseMethod, out var info)
+                || this.parent?.releaseMethodsWithSafeHandleTypesGenerating.TryGetValue(releaseMethod, out info) is true)
+            {
+                safeHandleType = info.Type;
+                canConstruct = info.CanConstruct;
+                return true;
+            }
+
+            safeHandleType = null;
+            canConstruct = false;
+            return false;
         }
 
-        internal void AddSafeHandleNameForReleaseMethod(string releaseMethod, TypeSyntax? safeHandleType)
+        internal void AddSafeHandleNameForReleaseMethod(string releaseMethod, TypeSyntax? safeHandleType, bool canConstruct)
         {
             this.ThrowIfNotGenerating();
 
-            this.releaseMethodsWithSafeHandleTypesGenerating.Add(releaseMethod, safeHandleType);
+            this.releaseMethodsWithSafeHandleTypesGenerating.Add(releaseMethod, (safeHandleType, canConstruct));
         }
 
         private static void Commit<TKey, TValue>(Dictionary<TKey, TValue> source, Dictionary<TKey, TValue>? target)

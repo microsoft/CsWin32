@@ -19,10 +19,12 @@ public class HandleTests : GeneratorTestBase
     }
 
     [Fact]
-    public void NamespaceHandleGetsNoSafeHandle()
+    public void NamespaceHandleRequiresCallerDefinedCleanup()
     {
         this.GenerateApi("CreatePrivateNamespace");
-        Assert.Empty(this.FindGeneratedType("ClosePrivateNamespaceSafeHandle"));
+        ClassDeclarationSyntax helper = Assert.IsType<ClassDeclarationSyntax>(Assert.Single(this.FindGeneratedType("ClosePrivateNamespaceSafeHandle")));
+        Assert.Contains(helper.Modifiers, modifier => modifier.IsKind(SyntaxKind.AbstractKeyword));
+        Assert.DoesNotContain(this.FindGeneratedMethod("CreatePrivateNamespace"), method => method.ReturnType.ToString().EndsWith("SafeHandle", StringComparison.Ordinal));
     }
 
     [Fact]

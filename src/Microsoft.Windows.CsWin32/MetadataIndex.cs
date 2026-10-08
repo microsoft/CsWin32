@@ -114,6 +114,23 @@ internal class MetadataIndex
                         if (MetadataUtilities.IsCompatibleWithPlatform(mr, this, platform, methodDef.GetCustomAttributes()))
                         {
                             nsMetadata.Methods.Add(methodName, methodDefHandle);
+                            foreach (ParameterHandle parameterHandle in methodDef.GetParameters())
+                            {
+                                Parameter parameter = mr.GetParameter(parameterHandle);
+                                foreach (CustomAttributeHandle attributeHandle in parameter.GetCustomAttributes())
+                                {
+                                    CustomAttribute cleanup = mr.GetCustomAttribute(attributeHandle);
+                                    if (MetadataUtilities.IsAttribute(mr, cleanup, Generator.InteropDecorationNamespace, Generator.RAIIFreeAttribute)
+                                        || MetadataUtilities.IsAttribute(mr, cleanup, Generator.InteropDecorationNamespace, Generator.FreeWithAttribute))
+                                    {
+                                        CustomAttributeValue<CodeAnalysis.CSharp.Syntax.TypeSyntax> arguments = cleanup.DecodeValue(CustomAttributeTypeProvider.Instance);
+                                        if (arguments.FixedArguments[0].Value is string cleanupMethod)
+                                        {
+                                            this.releaseMethods.Add(cleanupMethod);
+                                        }
+                                    }
+                                }
+                            }
                         }
                         else
                         {

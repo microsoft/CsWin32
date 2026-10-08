@@ -270,7 +270,7 @@ public partial class CsWin32GeneratorTests : CsWin32GeneratorTestsBase
         ["PSCreateMemoryPropertyStore", "PSCreateMemoryPropertyStore", "out T ppv"],
         ["DeviceIoControl", "DeviceIoControl", "SafeHandle hDevice, uint dwIoControlCode, [Optional] ReadOnlySpan<byte> lpInBuffer, [Optional] Span<byte> lpOutBuffer, out uint lpBytesReturned, [Optional] global::System.Threading.NativeOverlapped* lpOverlapped"],
         ["DeviceIoControl", "DeviceIoControl", "SafeHandle hDevice, uint dwIoControlCode, [Optional] ReadOnlySpan<byte> lpInBuffer, [Optional] Span<byte> lpOutBuffer, out uint lpBytesReturned, [Optional] global::System.Threading.NativeOverlapped* lpOverlapped", true, "NativeMethods.IncludePointerOverloads.json"],
-        ["NtQueryObject", "NtQueryObject", "[Optional] global::Windows.Win32.Foundation.HANDLE Handle, winmdroot.Foundation.OBJECT_INFORMATION_CLASS ObjectInformationClass, [Optional] Span<byte> ObjectInformation, out uint ReturnLength"],
+        ["NtQueryObject", "NtQueryObject", "[Optional] SafeHandle Handle, winmdroot.Foundation.OBJECT_INFORMATION_CLASS ObjectInformationClass, [Optional] Span<byte> ObjectInformation, out uint ReturnLength"],
         ["ITypeInfo", "GetFuncDesc", "uint index, out winmdroot.System.Com.FUNCDESC_unmanaged* ppFuncDesc"],
         ["ITsSbResourcePluginStore", "EnumerateTargets", "winmdroot.Foundation.BSTR FarmName, winmdroot.Foundation.BSTR EnvName, winmdroot.System.RemoteDesktop.TS_SB_SORT_BY sortByFieldId, winmdroot.Foundation.BSTR sortyByPropName, ref uint pdwCount, out winmdroot.System.RemoteDesktop.ITsSbTarget_unmanaged** pVal"],
         ["MFEnumDeviceSources", "MFEnumDeviceSources", "winmdroot.Media.MediaFoundation.IMFAttributes pAttributes, out winmdroot.Media.MediaFoundation.IMFActivate_unmanaged** pppSourceActivate, out uint pcSourceActivate"],
@@ -777,17 +777,19 @@ using global::System.Runtime.Versioning;
         this.compilation = this.starterCompilations[initHandleApiAvailable ? "net8.0" : "net472"];
         this.GenerateApi(api);
 
-        MethodDeclarationSyntax friendlyOverload = Assert.Single(
-            this.FindGeneratedMethod(api),
-            m => !m.AttributeLists.Any(al => al.Attributes.Any(a => a.Name.ToString() == "DllImport")));
-
-        if (initHandleApiAvailable)
+        var friendlyOverloads = this.FindGeneratedMethod(api)
+            .Where(m => !m.AttributeLists.Any(al => al.Attributes.Any(a => a.Name.ToString() == "DllImport"))).ToArray();
+        Assert.NotEmpty(friendlyOverloads);
+        foreach (MethodDeclarationSyntax friendlyOverload in friendlyOverloads)
         {
-            Assert.Contains(friendlyOverload.DescendantNodes(), n => n is IdentifierNameSyntax { Identifier.Text: "InitHandle" });
-        }
-        else
-        {
-            Assert.DoesNotContain(friendlyOverload.DescendantNodes(), n => n is IdentifierNameSyntax { Identifier.Text: "InitHandle" });
+            if (initHandleApiAvailable)
+            {
+                Assert.Contains(friendlyOverload.DescendantNodes(), n => n is IdentifierNameSyntax { Identifier.Text: "InitHandle" });
+            }
+            else
+            {
+                Assert.DoesNotContain(friendlyOverload.DescendantNodes(), n => n is IdentifierNameSyntax { Identifier.Text: "InitHandle" });
+            }
         }
     }
 }

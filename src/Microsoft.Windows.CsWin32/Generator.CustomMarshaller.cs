@@ -23,7 +23,7 @@ public partial class Generator
         }
 
         // Custom marshallers should go in a InteropServices sub-namespace.
-        shortNamespace += ".InteropServices";
+        shortNamespace = shortNamespace.Length > 0 ? $"{shortNamespace}.InteropServices" : "InteropServices";
 
         string customTypeMarshallerName = $"{enumTypeName}To{unmanagedType}Marshaller";
 
@@ -115,7 +115,7 @@ public partial class Generator
         }
 
         // Custom marshallers should go in a InteropServices sub-namespace.
-        shortNamespace += ".InteropServices";
+        shortNamespace = shortNamespace.Length > 0 ? $"{shortNamespace}.InteropServices" : "InteropServices";
 
         string customTypeMarshallerName = $"{typeDefName}Marshaller";
 

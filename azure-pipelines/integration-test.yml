@@ -52,6 +52,10 @@ jobs:
     displayName: 🧪 dotnet build sdk-roslyn5 (extensionReceiver)
     workingDirectory: $(Pipeline.Workspace)\integration-tests\sdk-roslyn5
     condition: eq(variables.currentSdk, 'true')
+  - pwsh: dotnet build -t:Rebuild -p:CsWin32RunAsBuildTask=true
+    displayName: 🧪 dotnet build sdk-roslyn5 (extensionReceiver, build task)
+    workingDirectory: $(Pipeline.Workspace)\integration-tests\sdk-roslyn5
+    condition: eq(variables.currentSdk, 'true')
   - task: MSBuild@1
     displayName: 🧪 MSBuild buildtask-sdk-style
     inputs:

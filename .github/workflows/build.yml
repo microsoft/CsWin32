@@ -317,6 +317,9 @@ jobs:
     - name: 🧪 dotnet build sdk-roslyn5 (extensionReceiver)
       run: dotnet build
       working-directory: ${{ runner.temp }}/integration-tests/sdk-roslyn5
+    - name: 🧪 dotnet build sdk-roslyn5 (extensionReceiver, build task)
+      run: dotnet build -t:Rebuild -p:CsWin32RunAsBuildTask=true
+      working-directory: ${{ runner.temp }}/integration-tests/sdk-roslyn5
     - name: 🧪 VS 2022 MSBuild buildtask-sdk-style
       run: |
         $msbuild = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -version '[17.0,18.0)' -latest -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1

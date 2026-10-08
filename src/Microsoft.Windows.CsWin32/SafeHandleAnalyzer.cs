@@ -29,7 +29,7 @@ public sealed class SafeHandleAnalyzer : DiagnosticAnalyzer
     public static readonly DiagnosticDescriptor ValueNeedsScope = new(
         "PInvoke016",
         "Keep the native resource alive",
-        "Read Value inside the owner's using scope, or acquire a lease in a using local",
+        "Read {0} inside the owner's using scope, or acquire a lease in a using local",
         "Lifetime",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
@@ -40,7 +40,7 @@ public sealed class SafeHandleAnalyzer : DiagnosticAnalyzer
     public static readonly DiagnosticDescriptor ValueMustNotEscape = new(
         "PInvoke017",
         "Do not save or return raw resources",
-        "Use Value directly in a call or copy its contents; do not save or return the raw resource",
+        "Use {0} directly in a call or copy its contents; do not save or return the raw resource",
         "Lifetime",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
@@ -51,7 +51,7 @@ public sealed class SafeHandleAnalyzer : DiagnosticAnalyzer
     public static readonly DiagnosticDescriptor ValueMustNotRelease = new(
         "PInvoke018",
         "Do not release an owned resource",
-        "Do not pass Value to '{0}'; dispose the SafeHandle instead",
+        "Do not pass {0} to '{1}'; dispose the SafeHandle instead",
         "Lifetime",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
@@ -260,7 +260,7 @@ public sealed class SafeHandleAnalyzer : DiagnosticAnalyzer
         bool releasing = IsReleaseImplementation(property.Instance, context.ContainingSymbol);
         if (!releasing && (property.SemanticModel is not { } semanticModel || !HasScope(property.Instance, property.Syntax, semanticModel, context.CancellationToken)))
         {
-            context.ReportDiagnostic(Diagnostic.Create(ValueNeedsScope, property.Syntax.GetLocation()));
+            context.ReportDiagnostic(Diagnostic.Create(ValueNeedsScope, property.Syntax.GetLocation(), property.Property.Name));
         }
 
         IOperation use = property;
@@ -286,13 +286,13 @@ public sealed class SafeHandleAnalyzer : DiagnosticAnalyzer
         {
             if (argument.Parameter?.RefKind is RefKind.Ref or RefKind.Out)
             {
-                context.ReportDiagnostic(Diagnostic.Create(ValueMustNotEscape, use.Syntax.GetLocation()));
+                context.ReportDiagnostic(Diagnostic.Create(ValueMustNotEscape, use.Syntax.GetLocation(), property.Property.Name));
             }
 
             string? releaseMethod = ownership.ConstructorArguments[0].Value as string;
             if (!releasing && (call.TargetMethod.Name == releaseMethod || call.TargetMethod.GetDllImportData()?.EntryPointName == releaseMethod))
             {
-                context.ReportDiagnostic(Diagnostic.Create(ValueMustNotRelease, use.Syntax.GetLocation(), releaseMethod));
+                context.ReportDiagnostic(Diagnostic.Create(ValueMustNotRelease, use.Syntax.GetLocation(), property.Property.Name, releaseMethod));
             }
 
             return;
@@ -306,6 +306,6 @@ public sealed class SafeHandleAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        context.ReportDiagnostic(Diagnostic.Create(ValueMustNotEscape, use.Syntax.GetLocation()));
+        context.ReportDiagnostic(Diagnostic.Create(ValueMustNotEscape, use.Syntax.GetLocation(), property.Property.Name));
     }
 }

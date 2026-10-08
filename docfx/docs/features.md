@@ -15,9 +15,10 @@ tell CsWin32 which cleanup function owns that particular result. Friendly overlo
 can return a SafeHandle for pointer-shaped allocations as well as native handles.
 Unannotated pointers and the raw native signatures are unchanged.
 
-CsWin32-generated SafeHandles expose a `Value` property with the original native type.
+CsWin32-generated SafeHandles expose a `DangerousValue` property with the original native type.
 For example, `SHGetKnownFolderPath` supplies a `CoTaskMemFreePWSTRSafeHandle` whose
-`Value` is `PWSTR`, although `CoTaskMemFree` accepts `void*`. BCL wrappers such as
+`DangerousValue` is `PWSTR`, although `CoTaskMemFree` accepts `void*`. Reading this
+property does not acquire a reference to keep the resource alive. BCL wrappers such as
 `SafeFileHandle` retain their existing APIs.
 
 For an owner received from another component or as a parameter, acquire a scoped reference:
@@ -38,7 +39,7 @@ lease ends. The lease's `Value` has the same native type as its owner. The lease
 uses the `Dispose()` pattern; it does not require `IDisposable`.
 Lease helpers require C# 9 or later.
 
-An owner already held in a visible `using` scope can supply `owner.Value` directly.
+An owner already held in a visible `using` scope can supply `owner.DangerousValue` directly.
 This assumes ordinary exclusive ownership: another alias must not explicitly
 dispose it during the call. A SafeHandle parameter alone is not such a lifetime
 guarantee. Existing friendly input overloads accept base `SafeHandle` for recognized
@@ -47,11 +48,12 @@ Existing overloads mixing SafeHandles with native inputs remain available.
 
 The lifetime analyzer reports errors for leases that are not `using` locals, copies,
 field storage, parameter passing, returns, and explicit disposal (`PInvoke015`).
-It also reports errors for `Value` without a visible scope (`PInvoke016`), saving or
-returning a raw resource (`PInvoke017`), and releasing an owned resource directly
-(`PInvoke018`). Use `Value` directly in calls, or copy its contents into managed
-data such as a string. String interpolation such as `$"Path: {path.Value}"` is
-allowed inside the owner's or lease's scope. Interpolation into `FormattableString`
+It also reports errors for `DangerousValue` or a lease's `Value` without a visible
+scope (`PInvoke016`), saving or returning a raw resource (`PInvoke017`), and releasing
+an owned resource directly (`PInvoke018`). Use these accessors directly in calls,
+or copy their contents into managed data such as a string. String interpolation
+such as `$"Path: {path.DangerousValue}"` is allowed inside the owner's or lease's
+scope. Interpolation into `FormattableString`
 or `IFormattable` retains the raw arguments for later formatting and is not a string
 copy. C# ref structs remain copyable: keep these diagnostics
 enabled to enforce the supported no-copy convention.
@@ -63,5 +65,5 @@ APIs need their own explicit lifetime arrangement.
 For cleanup requiring additional arguments, request a helper such as
 `DeleteTimerQueueTimerSafeHandle` in `NativeMethods.txt`. It is abstract: derive
 from it, keep the necessary cleanup context, and override `ReleaseHandle`.
-Its typed `Value` is available inside that override. CsWin32 will not construct
+Its typed `DangerousValue` is available inside that override. CsWin32 will not construct
 this helper automatically or guess the additional cleanup arguments.

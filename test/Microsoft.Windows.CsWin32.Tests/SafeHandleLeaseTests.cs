@@ -149,6 +149,17 @@ public class SafeHandleLeaseTests : GeneratorTestBase
         this.AssertNoDiagnostics(logAllGeneratedCode: false);
         Assert.Contains(this.FindGeneratedMethod("ConsumeResource"), method => method.ParameterList.Parameters[0].Type?.ToString() == "SafeHandle");
         Assert.DoesNotContain(this.FindGeneratedMethod("ConsumePointer"), method => method.ParameterList.Parameters.Any(parameter => parameter.Type?.ToString() == "SafeHandle"));
+        foreach (string name in new[] { "FreeSharedSafeHandle", "FreeSharedRESOURCE_ASafeHandle", "FreeSharedRESOURCE_BSafeHandle" })
+        {
+            INamedTypeSymbol? owner = this.compilation.GetTypeByMetadataName("Windows.Win32." + name);
+            Assert.NotNull(owner);
+            IPropertySymbol ownerValue = Assert.IsAssignableFrom<IPropertySymbol>(Assert.Single(owner.GetMembers("DangerousValue")));
+            INamedTypeSymbol lease = Assert.Single(owner.GetTypeMembers("LeaseScope"));
+            IPropertySymbol leaseValue = Assert.IsAssignableFrom<IPropertySymbol>(Assert.Single(lease.GetMembers("Value")));
+            Assert.True(SymbolEqualityComparer.Default.Equals(ownerValue.Type, leaseValue.Type));
+            Assert.Empty(owner.GetMembers("Value"));
+            Assert.Empty(lease.GetMembers("DangerousValue"));
+        }
     }
 
     /// <summary>
@@ -176,7 +187,7 @@ public class SafeHandleLeaseTests : GeneratorTestBase
                     PInvoke.SHGetKnownFolderPath(folder, 0, null, out CoTaskMemFreePWSTRSafeHandle path);
                     using (path)
                     {
-                        PInvoke.PathFileExists(path.Value);
+                        PInvoke.PathFileExists(path.DangerousValue);
                     }
                 }
             }
@@ -192,18 +203,18 @@ public class SafeHandleLeaseTests : GeneratorTestBase
     /// <param name="body">The caller's formatting code.</param>
     /// <param name="expectedDiagnostic">The expected diagnostic, or null for a supported pattern.</param>
     [Theory]
-    [InlineData("net472", "using (path) { WriteLine($\"Path: {path.Value}\"); }", null)]
-    [InlineData("net8.0", "using (path) { WriteLine($\"Path: {path.Value}\"); }", null)]
+    [InlineData("net472", "using (path) { WriteLine($\"Path: {path.DangerousValue}\"); }", null)]
+    [InlineData("net8.0", "using (path) { WriteLine($\"Path: {path.DangerousValue}\"); }", null)]
     [InlineData("net472", "using var lease = path.Lease(); WriteLine($\"Path: {lease.Value,20}\");", null)]
     [InlineData("net8.0", "using var lease = path.Lease(); WriteLine($\"Path: {lease.Value,20}\");", null)]
-    [InlineData("net472", "string text; using (path) { text = $\"Path: {path.Value}\"; } WriteLine(text);", null)]
-    [InlineData("net8.0", "string text; using (path) { text = $\"Path: {path.Value}\"; } WriteLine(text);", null)]
-    [InlineData("net472", "WriteLine($\"Path: {path.Value}\");", "PInvoke016")]
-    [InlineData("net8.0", "WriteLine($\"Path: {path.Value}\");", "PInvoke016")]
-    [InlineData("net472", "System.FormattableString text; using (path) { text = $\"Path: {path.Value}\"; } WriteLine(text.ToString());", "PInvoke017")]
-    [InlineData("net8.0", "System.FormattableString text; using (path) { text = $\"Path: {path.Value}\"; } WriteLine(text.ToString());", "PInvoke017")]
-    [InlineData("net472", "System.IFormattable text; using (path) { text = $\"Path: {path.Value}\"; } WriteLine(text.ToString(null, null));", "PInvoke017")]
-    [InlineData("net8.0", "System.IFormattable text; using (path) { text = $\"Path: {path.Value}\"; } WriteLine(text.ToString(null, null));", "PInvoke017")]
+    [InlineData("net472", "string text; using (path) { text = $\"Path: {path.DangerousValue}\"; } WriteLine(text);", null)]
+    [InlineData("net8.0", "string text; using (path) { text = $\"Path: {path.DangerousValue}\"; } WriteLine(text);", null)]
+    [InlineData("net472", "WriteLine($\"Path: {path.DangerousValue}\");", "PInvoke016")]
+    [InlineData("net8.0", "WriteLine($\"Path: {path.DangerousValue}\");", "PInvoke016")]
+    [InlineData("net472", "System.FormattableString text; using (path) { text = $\"Path: {path.DangerousValue}\"; } WriteLine(text.ToString());", "PInvoke017")]
+    [InlineData("net8.0", "System.FormattableString text; using (path) { text = $\"Path: {path.DangerousValue}\"; } WriteLine(text.ToString());", "PInvoke017")]
+    [InlineData("net472", "System.IFormattable text; using (path) { text = $\"Path: {path.DangerousValue}\"; } WriteLine(text.ToString(null, null));", "PInvoke017")]
+    [InlineData("net8.0", "System.IFormattable text; using (path) { text = $\"Path: {path.DangerousValue}\"; } WriteLine(text.ToString(null, null));", "PInvoke017")]
     public async Task KnownFolderPathFormattingDiagnostics(string framework, string body, string? expectedDiagnostic)
     {
         this.compilation = this.starterCompilations[framework];
@@ -292,7 +303,7 @@ public class SafeHandleLeaseTests : GeneratorTestBase
             {
                 private readonly int context;
                 internal Owner(System.IntPtr value, int context) : base(value) { this.context = context; }
-                protected override bool ReleaseHandle() => PInvoke.FreeContext(this.Value, this.context);
+                protected override bool ReleaseHandle() => PInvoke.FreeContext(this.DangerousValue, this.context);
             }
             """);
         this.AssertNoDiagnostics(logAllGeneratedCode: false);
@@ -311,7 +322,7 @@ public class SafeHandleLeaseTests : GeneratorTestBase
         var type = this.compilation.GetTypeByMetadataName("Windows.Win32.DeleteTimerQueueTimerSafeHandle");
         Assert.NotNull(type);
         Assert.True(type.IsAbstract);
-        Assert.Equal("HANDLE", Assert.IsAssignableFrom<IPropertySymbol>(Assert.Single(type.GetMembers("Value"))).Type.Name);
+        Assert.Equal("HANDLE", Assert.IsAssignableFrom<IPropertySymbol>(Assert.Single(type.GetMembers("DangerousValue"))).Type.Name);
     }
 
     /// <summary>
@@ -341,8 +352,8 @@ public class SafeHandleLeaseTests : GeneratorTestBase
                 {
                     using var a = PInvoke.CreateDuplicate_SafeHandle();
                     using var b = PInvoke.CreateOtherDuplicate_SafeHandle();
-                    Windows.Win32.Test.DUPLICATE_RESOURCE valueA = a.Value;
-                    Windows.Win32.Other.DUPLICATE_RESOURCE valueB = b.Value;
+                    Windows.Win32.Test.DUPLICATE_RESOURCE valueA = a.DangerousValue;
+                    Windows.Win32.Other.DUPLICATE_RESOURCE valueB = b.DangerousValue;
                 }
             }
             """);
@@ -376,7 +387,7 @@ public class SafeHandleLeaseTests : GeneratorTestBase
                 static void Use()
                 {
                     using var owner = PInvoke.CreateResource_SafeHandle();
-                    Windows.Win32.Test.RESOURCE_A value = owner.Value;
+                    Windows.Win32.Test.RESOURCE_A value = owner.DangerousValue;
                 }
             }
             """);
@@ -429,21 +440,23 @@ public class SafeHandleLeaseTests : GeneratorTestBase
     [Theory]
     [InlineData("using var lease = owner.Lease(); PInvoke.ConsumeResource(lease.Value);", null)]
     [InlineData("using (var lease = owner.Lease()) { PInvoke.ConsumeResource(lease.Value); }", null)]
-    [InlineData("using (owner) { PInvoke.ConsumeResource(owner.Value); }", null)]
-    [InlineData("using var local = owner; PInvoke.ConsumeResource(local.Value);", null)]
+    [InlineData("using (owner) { PInvoke.ConsumeResource(owner.DangerousValue); }", null)]
+    [InlineData("using var local = owner; PInvoke.ConsumeResource(local.DangerousValue);", null)]
     [InlineData("using var lease = owner.Lease(); string text = lease.Value.ToString();", null)]
     [InlineData("using var lease = owner.Lease(); bool empty = lease.Value.IsNull;", null)]
-    [InlineData("_ = nameof(owner.Value);", null)]
+    [InlineData("_ = nameof(owner.DangerousValue);", null)]
     [InlineData("using var lease = owner.Lease(); _ = nameof(lease.Value.Value);", null)]
-    [InlineData("PInvoke.ConsumeResource(owner.Value);", "PInvoke016")]
+    [InlineData("PInvoke.ConsumeResource(owner.DangerousValue);", "PInvoke016")]
     [InlineData("var lease = owner.Lease(); PInvoke.ConsumeResource(lease.Value);", "PInvoke015")]
     [InlineData("PInvoke.ConsumeResource(owner.Lease().Value);", "PInvoke015")]
     [InlineData("using var lease = owner.Lease(); var copy = lease;", "PInvoke015")]
     [InlineData("using var lease = owner.Lease(); lease.Dispose();", "PInvoke015")]
     [InlineData("using var lease = owner.Lease(); PassLease(lease);", "PInvoke015")]
     [InlineData("using var lease = owner.Lease(); var saved = lease.Value;", "PInvoke017")]
-    [InlineData("using (owner) { System.Action action = () => PInvoke.ConsumeResource(owner.Value); }", "PInvoke016")]
+    [InlineData("using (owner) { var saved = owner.DangerousValue; }", "PInvoke017")]
+    [InlineData("using (owner) { System.Action action = () => PInvoke.ConsumeResource(owner.DangerousValue); }", "PInvoke016")]
     [InlineData("using var lease = owner.Lease(); PInvoke.FreeShared(lease.Value.Value);", "PInvoke018")]
+    [InlineData("using (owner) { PInvoke.FreeShared(owner.DangerousValue.Value); }", "PInvoke018")]
     public async Task LifetimeUsageDiagnostics(string body, string? expectedDiagnostic)
     {
         this.GenerateFixture("RAIIFree", true, "CreateResource", "ConsumeResource");
@@ -467,6 +480,44 @@ public class SafeHandleLeaseTests : GeneratorTestBase
             Assert.Contains(diagnostics, diagnostic => diagnostic.Id == expectedDiagnostic);
             Assert.All(diagnostics, diagnostic => Assert.Equal(DiagnosticSeverity.Error, diagnostic.Severity));
         }
+    }
+
+    /// <summary>
+    /// Verifies that lifetime errors identify the owner's or lease's actual accessor.
+    /// </summary>
+    [Fact]
+    public async Task LifetimeDiagnosticsIdentifyAccessor()
+    {
+        this.GenerateFixture("RAIIFree", true, "CreateResource", "ConsumeResource");
+        this.compilation = this.AddCode("""
+            using Windows.Win32;
+            static unsafe class Usage
+            {
+                static void Use(FreeSharedRESOURCE_ASafeHandle owner)
+                {
+                    PInvoke.ConsumeResource(owner.DangerousValue);
+                    using (owner)
+                    {
+                        var savedOwner = owner.DangerousValue;
+                        PInvoke.FreeShared(owner.DangerousValue.Value);
+                        using var lease = owner.Lease();
+                        var savedLease = lease.Value;
+                        PInvoke.FreeShared(lease.Value.Value);
+                    }
+                }
+            }
+            """);
+        this.AssertNoDiagnostics(logAllGeneratedCode: false);
+        var diagnostics = await this.AnalyzeAsync();
+        Assert.Equal(
+            [
+                "Read DangerousValue inside the owner's using scope, or acquire a lease in a using local",
+                "Use DangerousValue directly in a call or copy its contents; do not save or return the raw resource",
+                "Do not pass DangerousValue to 'FreeShared'; dispose the SafeHandle instead",
+                "Use Value directly in a call or copy its contents; do not save or return the raw resource",
+                "Do not pass Value to 'FreeShared'; dispose the SafeHandle instead",
+            ],
+            diagnostics.OrderBy(diagnostic => diagnostic.Location.SourceSpan.Start).Select(diagnostic => diagnostic.GetMessage()).ToArray());
     }
 
     /// <summary>
@@ -542,7 +593,7 @@ public class SafeHandleLeaseTests : GeneratorTestBase
                     if (!rejected || TestBackend.Frees != 1) throw new Exception("Acquired a closed resource.");
 
                     int result = PInvoke.AcquirePointer(out FreeSharedSafeHandle allocation);
-                    if (result != -1 || (nint)allocation.Value != 1) throw new Exception("Lost failure output.");
+                    if (result != -1 || (nint)allocation.DangerousValue != 1) throw new Exception("Lost failure output.");
                     allocation.Dispose();
                     if (TestBackend.Frees != 2) throw new Exception("Did not release failure output.");
 

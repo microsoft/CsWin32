@@ -128,16 +128,19 @@ public partial class Generator
                 AttributeArgument(LiteralExpression(SyntaxKind.StringLiteralExpression, Literal(releaseMethod))),
                 AttributeArgument(LiteralExpression(lease ? SyntaxKind.TrueLiteralExpression : SyntaxKind.FalseLiteralExpression))));
 
-        PropertyDeclarationSyntax value = PropertyDeclaration(valueType.WithTrailingTrivia(Space), "Value")
+        PropertyDeclarationSyntax value = PropertyDeclaration(valueType.WithTrailingTrivia(Space), "DangerousValue")
             .AddModifiers(TokenWithSpace(this.Visibility))
             .AddAttributeLists(AttributeList(ValueAttribute()))
             .WithExpressionBody(ArrowExpressionClause(nativeValue))
             .WithSemicolonToken(SemicolonWithLineFeed)
             .WithLeadingTrivia(ParseLeadingTrivia("""
                 /// <summary>
-                /// Gets the native resource. Use it only within an owner's using scope or obtain a lease.
+                /// Gets the native resource without acquiring a reference to keep it alive.
                 /// </summary>
-                /// <remarks>Do not save or return this value, or use it to release the resource.</remarks>
+                /// <remarks>
+                /// Use this property only within the owner's using scope, or acquire a lease and use its Value instead.
+                /// Do not save or return the native value, or use it to release the resource.
+                /// </remarks>
 
                 """));
         if (hidesBase)

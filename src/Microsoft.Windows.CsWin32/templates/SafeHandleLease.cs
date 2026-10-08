@@ -42,7 +42,7 @@ public ref struct LeaseScope
     /// </summary>
     /// <exception cref="global::System.ObjectDisposedException">The lease is not active.</exception>
     public readonly __NativeType Value => this.owner is { } owner
-        ? owner.Value
+        ? owner.DangerousValue
         : throw new global::System.ObjectDisposedException(nameof(LeaseScope));
 
     /// <summary>

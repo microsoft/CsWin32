@@ -45,12 +45,15 @@ guarantee. Existing friendly input overloads accept base `SafeHandle` for recogn
 native handles and already keep a reference alive throughout their calls.
 Existing overloads mixing SafeHandles with native inputs remain available.
 
-The lifetime analyzer warns about leases that are not `using` locals, copies,
+The lifetime analyzer reports errors for leases that are not `using` locals, copies,
 field storage, parameter passing, returns, and explicit disposal (`PInvoke015`).
-It also warns about `Value` without a visible scope (`PInvoke016`), saving or
+It also reports errors for `Value` without a visible scope (`PInvoke016`), saving or
 returning a raw resource (`PInvoke017`), and releasing an owned resource directly
 (`PInvoke018`). Use `Value` directly in calls, or copy its contents into managed
-data such as a string. C# ref structs remain copyable: keep these diagnostics
+data such as a string. String interpolation such as `$"Path: {path.Value}"` is
+allowed inside the owner's or lease's scope. Interpolation into `FormattableString`
+or `IFormattable` retains the raw arguments for later formatting and is not a string
+copy. C# ref structs remain copyable: keep these diagnostics
 enabled to enforce the supported no-copy convention.
 
 Neither a lease nor this analyzer proves that an arbitrary native call does not

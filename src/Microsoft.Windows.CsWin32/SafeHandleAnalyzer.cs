@@ -20,7 +20,7 @@ public sealed class SafeHandleAnalyzer : DiagnosticAnalyzer
         "Keep leases in using locals",
         "Create each lease with 'using var lease = owner.Lease()'; do not copy, store, pass, return, or explicitly dispose it",
         "Lifetime",
-        DiagnosticSeverity.Warning,
+        DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
     /// <summary>
@@ -31,7 +31,7 @@ public sealed class SafeHandleAnalyzer : DiagnosticAnalyzer
         "Keep the native resource alive",
         "Read Value inside the owner's using scope, or acquire a lease in a using local",
         "Lifetime",
-        DiagnosticSeverity.Warning,
+        DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
     /// <summary>
@@ -42,7 +42,7 @@ public sealed class SafeHandleAnalyzer : DiagnosticAnalyzer
         "Do not save or return raw resources",
         "Use Value directly in a call or copy its contents; do not save or return the raw resource",
         "Lifetime",
-        DiagnosticSeverity.Warning,
+        DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
     /// <summary>
@@ -53,7 +53,7 @@ public sealed class SafeHandleAnalyzer : DiagnosticAnalyzer
         "Do not release an owned resource",
         "Do not pass Value to '{0}'; dispose the SafeHandle instead",
         "Lifetime",
-        DiagnosticSeverity.Warning,
+        DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
     /// <inheritdoc/>
@@ -230,6 +230,25 @@ public sealed class SafeHandleAnalyzer : DiagnosticAnalyzer
         instance is IInstanceReferenceOperation { ReferenceKind: InstanceReferenceKind.ContainingTypeInstance }
         && containingSymbol is IMethodSymbol { Name: "ReleaseHandle", IsOverride: true, Parameters.Length: 0 };
 
+    private static bool IsImmediateStringInterpolation(IOperation use)
+    {
+        if (use.Parent is not IInterpolationOperation { Parent: IInterpolatedStringOperation interpolation }
+            || interpolation.Type?.SpecialType != SpecialType.System_String)
+        {
+            return false;
+        }
+
+        IOperation result = interpolation;
+        while (result.Parent is IParenthesizedOperation parenthesized)
+        {
+            result = parenthesized;
+        }
+
+        // FormattableString and IFormattable keep the arguments for later formatting, not a string copy.
+        return result.Parent is not IConversionOperation conversion
+            || conversion.Type?.ToDisplayString() is not ("System.FormattableString" or "System.IFormattable");
+    }
+
     private static void AnalyzeValue(OperationAnalysisContext context)
     {
         var property = (IPropertyReferenceOperation)context.Operation;
@@ -280,6 +299,7 @@ public sealed class SafeHandleAnalyzer : DiagnosticAnalyzer
         }
 
         if ((use.Parent is IInvocationOperation { Type.SpecialType: SpecialType.System_String } invocation && invocation.Instance == use)
+            || IsImmediateStringInterpolation(use)
             || use.Parent is IBinaryOperation { Type.SpecialType: SpecialType.System_Boolean }
             || use.Parent is IIsPatternOperation)
         {

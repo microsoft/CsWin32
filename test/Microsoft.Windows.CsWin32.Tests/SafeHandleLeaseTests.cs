@@ -186,6 +186,70 @@ public class SafeHandleLeaseTests : GeneratorTestBase
     }
 
     /// <summary>
+    /// Verifies that interpolating an owned path into a string copies its contents within the lifetime scope.
+    /// </summary>
+    /// <param name="framework">The caller's target framework.</param>
+    /// <param name="body">The caller's formatting code.</param>
+    /// <param name="expectedDiagnostic">The expected diagnostic, or null for a supported pattern.</param>
+    [Theory]
+    [InlineData("net472", "using (path) { WriteLine($\"Path: {path.Value}\"); }", null)]
+    [InlineData("net8.0", "using (path) { WriteLine($\"Path: {path.Value}\"); }", null)]
+    [InlineData("net472", "using var lease = path.Lease(); WriteLine($\"Path: {lease.Value,20}\");", null)]
+    [InlineData("net8.0", "using var lease = path.Lease(); WriteLine($\"Path: {lease.Value,20}\");", null)]
+    [InlineData("net472", "string text; using (path) { text = $\"Path: {path.Value}\"; } WriteLine(text);", null)]
+    [InlineData("net8.0", "string text; using (path) { text = $\"Path: {path.Value}\"; } WriteLine(text);", null)]
+    [InlineData("net472", "WriteLine($\"Path: {path.Value}\");", "PInvoke016")]
+    [InlineData("net8.0", "WriteLine($\"Path: {path.Value}\");", "PInvoke016")]
+    [InlineData("net472", "System.FormattableString text; using (path) { text = $\"Path: {path.Value}\"; } WriteLine(text.ToString());", "PInvoke017")]
+    [InlineData("net8.0", "System.FormattableString text; using (path) { text = $\"Path: {path.Value}\"; } WriteLine(text.ToString());", "PInvoke017")]
+    [InlineData("net472", "System.IFormattable text; using (path) { text = $\"Path: {path.Value}\"; } WriteLine(text.ToString(null, null));", "PInvoke017")]
+    [InlineData("net8.0", "System.IFormattable text; using (path) { text = $\"Path: {path.Value}\"; } WriteLine(text.ToString(null, null));", "PInvoke017")]
+    public async Task KnownFolderPathFormattingDiagnostics(string framework, string body, string? expectedDiagnostic)
+    {
+        this.compilation = this.starterCompilations[framework];
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate("SHGetKnownFolderPath", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.compilation = this.AddCode($$"""
+            using Windows.Win32;
+            static class Usage
+            {
+                static void Use()
+                {
+                    PInvoke.SHGetKnownFolderPath(default, 0, null, out var path);
+                    {{body}}
+                }
+                static void WriteLine(string text) { }
+            }
+            """);
+        this.AssertNoDiagnostics(logAllGeneratedCode: false);
+        ImmutableArray<Diagnostic> diagnostics = await this.AnalyzeAsync();
+        if (expectedDiagnostic is null)
+        {
+            Assert.Empty(diagnostics);
+        }
+        else
+        {
+            Diagnostic diagnostic = Assert.Single(diagnostics);
+            Assert.Equal(expectedDiagnostic, diagnostic.Id);
+            Assert.Equal(DiagnosticSeverity.Error, diagnostic.Severity);
+        }
+    }
+
+    /// <summary>
+    /// Verifies that the lifetime contract is enforced with errors by default.
+    /// </summary>
+    [Fact]
+    public void LifetimeDiagnosticsAreErrorsByDefault()
+    {
+        Assert.All(new SafeHandleAnalyzer().SupportedDiagnostics, descriptor =>
+        {
+            Assert.True(descriptor.IsEnabledByDefault);
+            Assert.Equal(DiagnosticSeverity.Error, descriptor.DefaultSeverity);
+        });
+    }
+
+    /// <summary>
     /// Verifies that incompatible opaque handle cleanup retains the raw API rather than an unsafe owner.
     /// </summary>
     /// <param name="attribute">The cleanup attribute.</param>
@@ -401,6 +465,7 @@ public class SafeHandleLeaseTests : GeneratorTestBase
         else
         {
             Assert.Contains(diagnostics, diagnostic => diagnostic.Id == expectedDiagnostic);
+            Assert.All(diagnostics, diagnostic => Assert.Equal(DiagnosticSeverity.Error, diagnostic.Severity));
         }
     }
 

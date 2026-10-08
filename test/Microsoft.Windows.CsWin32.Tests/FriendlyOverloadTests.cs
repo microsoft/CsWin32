@@ -66,8 +66,9 @@ public class FriendlyOverloadTests : GeneratorTestBase
     {
         const string name = "GetWindowText";
         this.Generate(name);
-        MethodDeclarationSyntax friendlyOverload = Assert.Single(this.FindGeneratedMethod(name), m => m.ParameterList.Parameters.Count == 2);
+        MethodDeclarationSyntax friendlyOverload = Assert.Single(this.FindGeneratedMethod(name), m => m.ParameterList.Parameters.Count == 2 && m.ParameterList.Parameters[0].Type is QualifiedNameSyntax { Right.Identifier.ValueText: "HWND" });
         Assert.Equal("Span<char>", friendlyOverload.ParameterList.Parameters[1].Type?.ToString());
+        Assert.Contains(this.FindGeneratedMethod(name), m => m.ParameterList.Parameters.Count == 2 && m.ParameterList.Parameters[0].Type?.ToString() == "SafeHandle");
     }
 
     [Theory]

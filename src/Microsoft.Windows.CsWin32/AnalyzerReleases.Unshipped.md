@@ -19,3 +19,7 @@ PInvoke011 | Configuration | Error | SourceGenerator
 PInvoke012 | Configuration | Error | SourceGenerator
 PInvoke013 | Configuration | Error | SourceGenerator
 PInvoke014 | Configuration | Error | SourceGenerator
+PInvoke015 | Lifetime | Warning | SafeHandleAnalyzer
+PInvoke016 | Lifetime | Warning | SafeHandleAnalyzer
+PInvoke017 | Lifetime | Warning | SafeHandleAnalyzer
+PInvoke018 | Lifetime | Warning | SafeHandleAnalyzer

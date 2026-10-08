@@ -719,17 +719,19 @@ using global::System.Runtime.Versioning;
         this.compilation = this.starterCompilations[initHandleApiAvailable ? "net8.0" : "net472"];
         this.GenerateApi(api);
 
-        MethodDeclarationSyntax friendlyOverload = Assert.Single(
-            this.FindGeneratedMethod(api),
-            m => !m.AttributeLists.Any(al => al.Attributes.Any(a => a.Name.ToString() == "DllImport")));
-
-        if (initHandleApiAvailable)
+        var friendlyOverloads = this.FindGeneratedMethod(api)
+            .Where(m => !m.AttributeLists.Any(al => al.Attributes.Any(a => a.Name.ToString() == "DllImport"))).ToArray();
+        Assert.NotEmpty(friendlyOverloads);
+        foreach (MethodDeclarationSyntax friendlyOverload in friendlyOverloads)
         {
-            Assert.Contains(friendlyOverload.DescendantNodes(), n => n is IdentifierNameSyntax { Identifier.Text: "InitHandle" });
-        }
-        else
-        {
-            Assert.DoesNotContain(friendlyOverload.DescendantNodes(), n => n is IdentifierNameSyntax { Identifier.Text: "InitHandle" });
+            if (initHandleApiAvailable)
+            {
+                Assert.Contains(friendlyOverload.DescendantNodes(), n => n is IdentifierNameSyntax { Identifier.Text: "InitHandle" });
+            }
+            else
+            {
+                Assert.DoesNotContain(friendlyOverload.DescendantNodes(), n => n is IdentifierNameSyntax { Identifier.Text: "InitHandle" });
+            }
         }
     }
 }

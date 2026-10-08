@@ -16,6 +16,12 @@ public partial class Generator
     internal const string ContainsInteriorPointersAttribute = "ContainsInteriorPointersAttribute";
 
     internal const string RAIIFreeAttribute = "RAIIFreeAttribute";
+
+    /// <summary>
+    /// Identifies contextual cleanup information equivalent to <see cref="RAIIFreeAttribute"/>.
+    /// </summary>
+    internal const string FreeWithAttribute = "FreeWithAttribute";
+
     internal const string DoNotReleaseAttribute = "DoNotReleaseAttribute";
     internal const string AssociatedEnumAttribute = "AssociatedEnumAttribute";
     internal const string AssociatedConstantAttribute = "AssociatedConstantAttribute";

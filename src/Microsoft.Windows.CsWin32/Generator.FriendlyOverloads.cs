@@ -38,13 +38,26 @@ public partial class Generator
     private ExpressionSyntax GetIntPtrFromTypeDef(ExpressionSyntax typedefValue, TypeHandleInfo typeDefTypeInfo)
     {
         ExpressionSyntax intPtrValue = typedefValue;
+        if (typeDefTypeInfo is PointerTypeHandleInfo)
+        {
+            return CastExpression(IntPtrTypeSyntax, typedefValue);
+        }
+
+        if (this.TryGetTypeDefFieldType(typeDefTypeInfo, out TypeHandleInfo? backingType) && backingType is PointerTypeHandleInfo)
+        {
+            return CastExpression(IntPtrTypeSyntax, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, typedefValue, IdentifierName("Value")));
+        }
+
         if (this.TryGetTypeDefFieldType(typeDefTypeInfo, out TypeHandleInfo? returnTypeField) && returnTypeField is PrimitiveTypeHandleInfo primitiveReturnField)
         {
             switch (primitiveReturnField.PrimitiveTypeCode)
             {
                 case PrimitiveTypeCode.UInt32:
-                    // (IntPtr)result.Value;
-                    intPtrValue = CastExpression(IntPtrTypeSyntax, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, typedefValue, IdentifierName("Value")));
+                    intPtrValue = UncheckedExpression(CastExpression(
+                        IntPtrTypeSyntax,
+                        CastExpression(IdentifierName("nint"), CastExpression(
+                            IdentifierName("nuint"),
+                            MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, typedefValue, IdentifierName("Value"))))));
                     break;
                 case PrimitiveTypeCode.UIntPtr:
                     // unchecked((IntPtr)(long)(ulong)result.Value)
@@ -92,18 +105,35 @@ public partial class Generator
         }
 
         bool improvePointersToSpansAndRefs = this.canUseSpan;
-        FriendlyMethodBookkeeping bookkeeping = new();
-        foreach (MethodDeclarationSyntax method in this.DeclareFriendlyOverload(methodDefinition, externMethodDeclaration, declaringTypeName, overloadOf, helperMethodsAdded, avoidWinmdRootAlias, improvePointersToSpansAndRefs, omitOptionalParams: false, bookkeeping))
+        HashSet<string> signatures = new(StringComparer.Ordinal);
+        for (int pass = 0; pass < 2; pass++)
         {
-            yield return method;
-        }
-
-        if (this.Options.FriendlyOverloads.IncludePointerOverloads && improvePointersToSpansAndRefs && bookkeeping.NumSpanByteParameters > 0)
-        {
-            // If we could use Span and _did_ use span Span and the pointer overloads were requested, then Generate overloads that use pointer types instead of Span<byte>/ReadOnlySpan<byte>.
-            foreach (MethodDeclarationSyntax method in this.DeclareFriendlyOverload(methodDefinition, externMethodDeclaration, declaringTypeName, overloadOf, helperMethodsAdded, avoidWinmdRootAlias, improvePointersToSpansAndRefs: false, omitOptionalParams: false))
+            bool legacyHandleInputs = pass == 1;
+            FriendlyMethodBookkeeping bookkeeping = new();
+            foreach (MethodDeclarationSyntax method in this.DeclareFriendlyOverload(methodDefinition, externMethodDeclaration, declaringTypeName, overloadOf, helperMethodsAdded, avoidWinmdRootAlias, improvePointersToSpansAndRefs, omitOptionalParams: false, bookkeeping, legacyHandleInputs))
             {
-                yield return method;
+                if (signatures.Add(method.Identifier.ValueText + method.TypeParameterList + method.ParameterList))
+                {
+                    yield return method;
+                }
+            }
+
+            if (this.Options.FriendlyOverloads.IncludePointerOverloads && improvePointersToSpansAndRefs && bookkeeping.NumSpanByteParameters > 0)
+            {
+                // Also offer pointer-based overloads for byte buffers.
+                foreach (MethodDeclarationSyntax method in this.DeclareFriendlyOverload(methodDefinition, externMethodDeclaration, declaringTypeName, overloadOf, helperMethodsAdded, avoidWinmdRootAlias, improvePointersToSpansAndRefs: false, omitOptionalParams: false, legacyHandleInputs: legacyHandleInputs))
+                {
+                    if (signatures.Add(method.Identifier.ValueText + method.TypeParameterList + method.ParameterList))
+                    {
+                        yield return method;
+                    }
+                }
+            }
+
+            // Preserve signatures mixing existing SafeHandle inputs with native values for newly recognized inputs.
+            if (!bookkeeping.HasNewHandleInputs)
+            {
+                break;
             }
         }
     }
@@ -117,7 +147,8 @@ public partial class Generator
         bool avoidWinmdRootAlias,
         bool improvePointersToSpansAndRefs,
         bool omitOptionalParams,
-        FriendlyMethodBookkeeping? bookkeeping = null)
+        FriendlyMethodBookkeeping? bookkeeping = null,
+        bool legacyHandleInputs = false)
     {
 #pragma warning disable SA1114 // Parameter list should follow declaration
         bool isReleaseMethod = this.MetadataIndex.ReleaseMethods.Contains(externMethodDeclaration.Identifier.ValueText);
@@ -556,8 +587,8 @@ public partial class Generator
                 bool hasOut = externParam.Modifiers.Any(SyntaxKind.OutKeyword);
                 arguments[paramIndex] = arguments[paramIndex].WithRefKindKeyword(TokenWithSpace(hasOut ? SyntaxKind.OutKeyword : SyntaxKind.RefKeyword));
             }
-            else if (isOut && !isIn && !isReleaseMethod && parameterTypeInfo is PointerTypeHandleInfo { ElementType: HandleTypeHandleInfo pointedElementInfo } &&
-                pointedElementInfo.Generator.TryGetHandleReleaseMethod(pointedElementInfo.Handle, paramAttributes, out string? outReleaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, outReleaseMethod) &&
+            else if (isOut && !isIn && !isReleaseMethod && parameterTypeInfo is PointerTypeHandleInfo { ElementType: TypeHandleInfo pointedElementInfo } &&
+                this.TryGetResourceReleaseMethod(pointedElementInfo, paramAttributes, out string? outReleaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, outReleaseMethod) &&
                 (memorySize is null) && !isArray)
             {
                 signatureChanged = true;
@@ -565,7 +596,7 @@ public partial class Generator
                 IdentifierNameSyntax localName = IdentifierName(externParam.Identifier.ValueText + "Local");
 
                 // NOTE: We don't handle scenarios where the parameter is [MemorySize] annotated (e.g. EnumProcessModules) or [NativeArrayInfo] (e.g. ITypeInfo.GetNames)
-                if (this.RequestSafeHandle(outReleaseMethod) is TypeSyntax safeHandleType)
+                if (this.RequestSafeHandle(outReleaseMethod, pointedElementInfo) is TypeSyntax safeHandleType)
                 {
                     // out SafeHandle
                     parameters[paramIndex] = externParam
@@ -641,9 +672,16 @@ public partial class Generator
                     arguments[paramIndex] = Argument(localName);
                 }
             }
-            else if (this.options.UseSafeHandles && isIn && !isOut && !isReleaseMethod && parameterTypeInfo is HandleTypeHandleInfo parameterHandleTypeInfo && this.TryGetHandleReleaseMethod(parameterHandleTypeInfo.Handle, paramAttributes, out string? releaseMethod) && !this.Reader.StringComparer.Equals(methodDefinition.Name, releaseMethod)
+            else if (this.options.UseSafeHandles && isIn && !isOut && !isReleaseMethod && parameterTypeInfo is HandleTypeHandleInfo parameterHandleTypeInfo
+                && (parameterHandleTypeInfo.Generator.TryGetHandleReleaseMethod(parameterHandleTypeInfo.Handle, paramAttributes, out _)
+                    || (!legacyHandleInputs && parameterHandleTypeInfo.Generator.IsHandle(parameterHandleTypeInfo.Handle, out _)))
                 && !(this.TryGetTypeDefFieldType(parameterHandleTypeInfo, out TypeHandleInfo? fieldType) && !this.IsSafeHandleCompatibleTypeDefFieldType(fieldType)))
             {
+                if (bookkeeping is not null && !parameterHandleTypeInfo.Generator.TryGetHandleReleaseMethod(parameterHandleTypeInfo.Handle, paramAttributes, out _))
+                {
+                    bookkeeping.HasNewHandleInputs = true;
+                }
+
                 IdentifierNameSyntax typeDefHandleName = IdentifierName(externParam.Identifier.ValueText + "Local");
                 signatureChanged = true;
 
@@ -1385,9 +1423,8 @@ public partial class Generator
             signatureChanged = true;
         }
 
-        TypeSyntax? returnSafeHandleType = originalSignature.ReturnType is HandleTypeHandleInfo returnTypeHandleInfo
-            && returnTypeHandleInfo.Generator.TryGetHandleReleaseMethod(returnTypeHandleInfo.Handle, returnTypeAttributes, out string? returnReleaseMethod)
-            ? this.RequestSafeHandle(returnReleaseMethod) : null;
+        TypeSyntax? returnSafeHandleType = this.TryGetResourceReleaseMethod(originalSignature.ReturnType, returnTypeAttributes, out string? returnReleaseMethod)
+            ? this.RequestSafeHandle(returnReleaseMethod, originalSignature.ReturnType) : null;
 
         IdentifierNameSyntax resultLocal = IdentifierName("__result");
 
@@ -1591,10 +1628,10 @@ public partial class Generator
             }
 
             // If we're using C# 13 or later, consider adding the overload resolution attribute if it would likely resolve ambiguities.
-            if (this.LanguageVersion >= (LanguageVersion)1300 && parameters.Count == externMethodDeclaration.ParameterList.Parameters.Count)
+            if (this.LanguageVersion >= (LanguageVersion)1300 && (legacyHandleInputs || parameters.Count == externMethodDeclaration.ParameterList.Parameters.Count))
             {
                 this.volatileCode.GenerationTransaction(() => this.DeclareOverloadResolutionPriorityAttributeIfNecessary());
-                friendlyDeclaration = friendlyDeclaration.AddAttributeLists(AttributeList(OverloadResolutionPriorityAttribute(1)));
+                friendlyDeclaration = friendlyDeclaration.AddAttributeLists(AttributeList(OverloadResolutionPriorityAttribute(legacyHandleInputs ? 2 : 1)));
             }
 
             friendlyDeclaration = friendlyDeclaration
@@ -1623,7 +1660,7 @@ public partial class Generator
         if (numOptionalParams > 0 && !omitOptionalParams && improvePointersToSpansAndRefs)
         {
             // Generate overloads for optional parameters.
-            foreach (MethodDeclarationSyntax method in this.DeclareFriendlyOverload(methodDefinition, externMethodDeclaration, declaringTypeName, overloadOf, helperMethodsAdded, avoidWinmdRootAlias, improvePointersToSpansAndRefs, omitOptionalParams: true))
+            foreach (MethodDeclarationSyntax method in this.DeclareFriendlyOverload(methodDefinition, externMethodDeclaration, declaringTypeName, overloadOf, helperMethodsAdded, avoidWinmdRootAlias, improvePointersToSpansAndRefs, omitOptionalParams: true, legacyHandleInputs: legacyHandleInputs))
             {
                 yield return method;
             }
@@ -1795,5 +1832,7 @@ public partial class Generator
     private class FriendlyMethodBookkeeping
     {
         public int NumSpanByteParameters { get; set; } = 0;
+
+        public bool HasNewHandleInputs { get; set; }
     }
 }

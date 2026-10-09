@@ -17,7 +17,7 @@ stages:
     - ${{ if parameters.ArchiveSymbols }}:
       - job: symbol_archive
         displayName: Archive symbols
-        pool: VSEngSS-MicroBuild2022-1ES
+        pool: VSEng-MicroBuildVSStable
         variables:
           ONEES_ENFORCED_CODEQL_ENABLED: false # CodeQL runs on build stages, we don't need it here
         steps:

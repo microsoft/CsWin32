@@ -2058,7 +2058,20 @@ public partial class Generator : IGenerator, IDisposable
     }
 
     private ParameterListSyntax CreateParameterList(MethodDefinition methodDefinition, MethodSignature<TypeHandleInfo> signature, TypeSyntaxSettings typeSettings, GeneratingElement forElement)
-        => FixTrivia(ParameterList([.. methodDefinition.GetParameters().Select(this.Reader.GetParameter).Where(p => !p.Name.IsNil).Select(p => this.CreateParameter(signature, signature.ParameterTypes[p.SequenceNumber - 1], p, typeSettings, forElement))]));
+    {
+        foreach (ParameterHandle parameterHandle in methodDefinition.GetParameters())
+        {
+            Parameter parameter = this.Reader.GetParameter(parameterHandle);
+            if (this.TryGetContextualReleaseMethod(parameter.GetCustomAttributes(), out string? releaseMethod))
+            {
+                MethodDefinitionHandle releaseMethodHandle = this.GetMethodByName(releaseMethod)
+                    ?? throw new GenerationFailedException("Unable to find release method named: " + releaseMethod);
+                this.RequestExternMethod(releaseMethodHandle);
+            }
+        }
+
+        return FixTrivia(ParameterList([.. methodDefinition.GetParameters().Select(this.Reader.GetParameter).Where(p => !p.Name.IsNil).Select(p => this.CreateParameter(signature, signature.ParameterTypes[p.SequenceNumber - 1], p, typeSettings, forElement))]));
+    }
 
     private ParameterSyntax CreateParameter(MethodSignature<TypeHandleInfo> signature, TypeHandleInfo parameterInfo, Parameter parameter, TypeSyntaxSettings typeSettings, GeneratingElement forElement)
     {

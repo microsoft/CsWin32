@@ -260,6 +260,18 @@ public class SafeHandleLeaseTests : GeneratorTestBase
     }
 
     /// <summary>
+    /// Verifies that COM output annotations expose their native cleanup without SafeHandle projection.
+    /// </summary>
+    /// <param name="allowMarshaling">Whether runtime marshaling is enabled.</param>
+    [Theory, CombinatorialData]
+    public void ComCleanupDependenciesDoNotRequireSafeHandleProjection(bool allowMarshaling)
+    {
+        this.generator = this.CreateGenerator(DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling, UseSafeHandles = false });
+        this.GenerateApi("IBackgroundCopyJob");
+        Assert.True(this.IsMethodGenerated("CoTaskMemFree"));
+    }
+
+    /// <summary>
     /// Verifies that the real incompatible recording-DC annotations leave the raw methods available.
     /// </summary>
     /// <param name="api">The recording DC factory.</param>

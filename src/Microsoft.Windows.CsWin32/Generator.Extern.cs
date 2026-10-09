@@ -198,17 +198,6 @@ public partial class Generator
                 return;
             }
 
-            foreach (ParameterHandle parameterHandle in methodDefinition.GetParameters())
-            {
-                Parameter parameter = this.Reader.GetParameter(parameterHandle);
-                if (this.TryGetContextualReleaseMethod(parameter.GetCustomAttributes(), out string? releaseMethod))
-                {
-                    MethodDefinitionHandle releaseMethodHandle = this.GetMethodByName(releaseMethod)
-                        ?? throw new GenerationFailedException("Unable to find release method named: " + releaseMethod);
-                    this.RequestExternMethod(releaseMethodHandle);
-                }
-            }
-
             string? moduleName = this.GetNormalizedModuleName(import);
 
             string? entrypoint = null;

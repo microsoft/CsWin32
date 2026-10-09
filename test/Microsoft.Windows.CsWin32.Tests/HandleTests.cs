@@ -19,12 +19,12 @@ public class HandleTests : GeneratorTestBase
     }
 
     [Fact]
-    public void NamespaceHandleRequiresCallerDefinedCleanup()
+    public void ProcessHeapGetsNoCleanupSafeHandle()
     {
-        this.GenerateApi("CreatePrivateNamespace");
-        ClassDeclarationSyntax helper = Assert.IsType<ClassDeclarationSyntax>(Assert.Single(this.FindGeneratedType("ClosePrivateNamespaceSafeHandle")));
-        Assert.Contains(helper.Modifiers, modifier => modifier.IsKind(SyntaxKind.AbstractKeyword));
-        Assert.DoesNotContain(this.FindGeneratedMethod("CreatePrivateNamespace"), method => method.ReturnType.ToString().EndsWith("SafeHandle", StringComparison.Ordinal));
+        this.GenerateApi("GetProcessHeap");
+        Assert.Empty(this.FindGeneratedType("HeapDestroySafeHandle"));
+        Assert.All(this.FindGeneratedMethod("GetProcessHeap"), method =>
+            Assert.Equal("HANDLE", Assert.IsType<QualifiedNameSyntax>(method.ReturnType).Right.Identifier.ValueText));
     }
 
     [Fact]

@@ -14,11 +14,8 @@ public partial class Generator
     /// <returns>Whether cleanup information is available.</returns>
     internal bool TryGetResourceReleaseMethod(TypeHandleInfo valueType, CustomAttributeHandleCollection? attributes, [NotNullWhen(true)] out string? releaseMethod)
     {
-        if ((this.FindAttribute(attributes, InteropDecorationNamespace, RAIIFreeAttribute)
-            ?? this.FindAttribute(attributes, InteropDecorationNamespace, FreeWithAttribute)) is CustomAttribute cleanup
-            && cleanup.DecodeValue(CustomAttributeTypeProvider.Instance).FixedArguments[0].Value is string name)
+        if (this.TryGetContextualReleaseMethod(attributes, out releaseMethod))
         {
-            releaseMethod = name;
             return true;
         }
 
@@ -48,6 +45,20 @@ public partial class Generator
         PointerTypeSyntax { ElementType: PredefinedTypeSyntax predefined } => predefined.Keyword.IsKind(SyntaxKind.VoidKeyword) && method == "FreeSid",
         _ => false,
     };
+
+    private bool TryGetContextualReleaseMethod(CustomAttributeHandleCollection? attributes, [NotNullWhen(true)] out string? releaseMethod)
+    {
+        if ((this.FindAttribute(attributes, InteropDecorationNamespace, RAIIFreeAttribute)
+            ?? this.FindAttribute(attributes, InteropDecorationNamespace, FreeWithAttribute)) is CustomAttribute cleanup
+            && cleanup.DecodeValue(CustomAttributeTypeProvider.Instance).FixedArguments[0].Value is string name)
+        {
+            releaseMethod = name;
+            return true;
+        }
+
+        releaseMethod = null;
+        return false;
+    }
 
     private string GetSafeHandleValueName(TypeHandleInfo nativeType, TypeSyntax syntax)
     {

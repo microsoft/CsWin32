@@ -11,111 +11,6 @@ namespace Microsoft.Windows.CsWin32.Tests;
 /// </summary>
 public class SafeHandleLeaseTests : GeneratorTestBase
 {
-    private const string MetadataSource = """
-        using System;
-        using System.Runtime.InteropServices;
-        using Windows.Win32.Foundation.Metadata;
-
-        namespace Windows.Win32.Foundation.Metadata
-        {
-            [AttributeUsage(AttributeTargets.Struct)]
-            public sealed class NativeTypedefAttribute : Attribute { }
-            [AttributeUsage(AttributeTargets.Struct, AllowMultiple = true)]
-            public sealed class InvalidHandleValueAttribute : Attribute
-            {
-                public InvalidHandleValueAttribute(long value) { }
-            }
-            [AttributeUsage(AttributeTargets.Struct | AttributeTargets.ReturnValue | AttributeTargets.Parameter)]
-            public sealed class RAIIFreeAttribute : Attribute
-            {
-                public RAIIFreeAttribute(string method) { }
-            }
-            [AttributeUsage(AttributeTargets.ReturnValue | AttributeTargets.Parameter)]
-            public sealed class FreeWithAttribute : Attribute
-            {
-                public FreeWithAttribute(string method) { }
-            }
-        }
-        namespace Windows.Win32.Foundation
-        {
-            [NativeTypedef, InvalidHandleValue(0)]
-            public unsafe struct HANDLE { public void* Value; }
-        }
-        namespace Windows.Win32.Other
-        {
-            [NativeTypedef, InvalidHandleValue(0)]
-            public unsafe struct DUPLICATE_RESOURCE { public void* Value; }
-            [NativeTypedef, InvalidHandleValue(0)]
-            public unsafe struct HANDLE { public void* Value; }
-        }
-        namespace Windows.Win32.Test
-        {
-            [NativeTypedef, InvalidHandleValue(0)]
-            public unsafe struct RESOURCE_A { public void* Value; }
-            [NativeTypedef, InvalidHandleValue(0)]
-            public unsafe struct RESOURCE_B { public void* Value; }
-            [NativeTypedef, InvalidHandleValue(0)]
-            public struct UNSIGNED_RESOURCE { public UIntPtr Value; }
-            [NativeTypedef, InvalidHandleValue(0)]
-            public struct UNSIGNED32_RESOURCE { public uint Value; }
-            [NativeTypedef, InvalidHandleValue(0)]
-            public unsafe struct DUPLICATE_RESOURCE { public void* Value; }
-
-            public static unsafe class Apis
-            {
-                [DllImport("fixture.dll", ExactSpelling = true)]
-                [return: __Cleanup(nameof(FreeShared))]
-                public static extern RESOURCE_A CreateResource();
-                [DllImport("fixture.dll", ExactSpelling = true)]
-                [return: __Cleanup(nameof(FreeShared))]
-                public static extern RESOURCE_B CreateOtherResource();
-                [DllImport("fixture.dll", ExactSpelling = true)]
-                [return: __Cleanup(nameof(FreeShared))]
-                public static extern void* CreatePointer();
-                [DllImport("fixture.dll", ExactSpelling = true)]
-                public static extern int AcquirePointer([Out, __Cleanup(nameof(FreeShared))] void** resource);
-                [DllImport("fixture.dll", ExactSpelling = true)]
-                public static extern int AcquireResource([Out, __Cleanup(nameof(FreeShared))] RESOURCE_A* resource);
-                [DllImport("fixture.dll", ExactSpelling = true)]
-                public static extern void FreeShared(void* resource);
-                [DllImport("fixture.dll", ExactSpelling = true)]
-                public static extern void ConsumeResource([In] RESOURCE_A resource);
-                [DllImport("fixture.dll", ExactSpelling = true)]
-                public static extern void ConsumeHandle([In] Windows.Win32.Foundation.HANDLE resource);
-                [DllImport("fixture.dll", ExactSpelling = true)]
-                public static extern void ConsumeOtherHandle([In] Windows.Win32.Other.HANDLE resource);
-                [DllImport("fixture.dll", ExactSpelling = true)]
-                public static extern void ConsumePointer([In] void* resource);
-                [DllImport("fixture.dll", ExactSpelling = true)]
-                [return: __Cleanup(nameof(FreeOtherResource))]
-                public static extern RESOURCE_A IncorrectCleanup();
-                [DllImport("fixture.dll", ExactSpelling = true)]
-                public static extern void FreeOtherResource(RESOURCE_B resource);
-                [DllImport("fixture.dll", ExactSpelling = true)]
-                [return: __Cleanup(nameof(FreeContext))]
-                public static extern RESOURCE_A CreateWithContext();
-                [DllImport("fixture.dll", ExactSpelling = true)]
-                public static extern bool FreeContext(RESOURCE_A resource, int context);
-                [DllImport("fixture.dll", ExactSpelling = true)]
-                [return: __Cleanup(nameof(FreeUnsigned))]
-                public static extern UNSIGNED_RESOURCE CreateUnsigned();
-                [DllImport("fixture.dll", ExactSpelling = true)]
-                public static extern void FreeUnsigned(UNSIGNED_RESOURCE resource);
-                [DllImport("fixture.dll", ExactSpelling = true)]
-                [return: __Cleanup(nameof(FreeUnsigned32))]
-                public static extern UNSIGNED32_RESOURCE CreateUnsigned32();
-                [DllImport("fixture.dll", ExactSpelling = true)]
-                public static extern void FreeUnsigned32(UNSIGNED32_RESOURCE resource);
-                [DllImport("fixture.dll", ExactSpelling = true)]
-                [return: __Cleanup(nameof(FreeShared))]
-                public static extern DUPLICATE_RESOURCE CreateDuplicate();
-                [DllImport("fixture.dll", ExactSpelling = true)]
-                [return: __Cleanup(nameof(FreeShared))]
-                public static extern Windows.Win32.Other.DUPLICATE_RESOURCE CreateOtherDuplicate();
-            }
-        }
-        """;
-
     /// <summary>
     /// Initializes a new instance of the <see cref="SafeHandleLeaseTests"/> class.
     /// </summary>
@@ -203,6 +98,24 @@ public class SafeHandleLeaseTests : GeneratorTestBase
         {
             Assert.DoesNotContain(this.FindGeneratedMethod(name), method => method.ParameterList.Parameters[0].Type?.ToString() == "SafeHandle");
         }
+    }
+
+    /// <summary>
+    /// Verifies that framework value types do not require native metadata definitions for input inference.
+    /// </summary>
+    [Fact]
+    public void FrameworkTypesRemainNativeInputs()
+    {
+        this.GenerateFixture("RAIIFree", true, "ConsumeGuid");
+        this.compilation = this.AddCode("""
+            using Windows.Win32;
+            static class Usage
+            {
+                static void Use(System.Guid value) => PInvoke.ConsumeGuid(value);
+            }
+            """);
+        this.AssertNoDiagnostics(logAllGeneratedCode: false);
+        Assert.DoesNotContain(this.FindGeneratedMethod("ConsumeGuid"), method => method.ParameterList.Parameters[0].Type?.ToString() == "SafeHandle");
     }
 
     /// <summary>
@@ -316,6 +229,34 @@ public class SafeHandleLeaseTests : GeneratorTestBase
         Assert.All(this.FindGeneratedMethod("IncorrectCleanup"), method =>
             Assert.Equal("RESOURCE_A", Assert.IsType<QualifiedNameSyntax>(method.ReturnType).Right.Identifier.ValueText));
         Assert.Empty(this.FindGeneratedMethod("IncorrectCleanup_SafeHandle"));
+        Assert.Single(this.FindGeneratedMethod("FreeOtherResource"));
+    }
+
+    /// <summary>
+    /// Verifies that annotated cleanup functions remain callable when ownership projection is unavailable.
+    /// </summary>
+    /// <param name="attribute">The contextual cleanup attribute.</param>
+    /// <param name="allowMarshaling">Whether runtime marshaling is enabled.</param>
+    /// <param name="useSafeHandles">Whether SafeHandle projection is enabled.</param>
+    [Theory, CombinatorialData]
+    public void CleanupDependenciesDoNotRequireSafeHandleProjection(
+        [CombinatorialValues("RAIIFree", "FreeWith")] string attribute, bool allowMarshaling, bool useSafeHandles)
+    {
+        this.GenerateFixture(attribute, allowMarshaling, ["CreateWithContext", "IncorrectCleanup", "AcquirePointer"], useSafeHandles);
+        this.compilation = this.AddCode("""
+            using Windows.Win32;
+            using Windows.Win32.Test;
+            static unsafe class Usage
+            {
+                static void Release(RESOURCE_A resource, RESOURCE_B other, void* pointer, int context)
+                {
+                    PInvoke.FreeContext(resource, context);
+                    PInvoke.FreeOtherResource(other);
+                    PInvoke.FreeShared(pointer);
+                }
+            }
+            """);
+        this.AssertNoDiagnostics(logAllGeneratedCode: false);
     }
 
     /// <summary>
@@ -686,34 +627,17 @@ public class SafeHandleLeaseTests : GeneratorTestBase
             this.compilation = this.starterCompilations["net8.0"];
         }
 
-        CSharpCompilation metadata = CSharpCompilation.Create(
-            "Windows.Win32",
-            [CSharpSyntaxTree.ParseText(MetadataSource.Replace("__Cleanup", attribute, StringComparison.Ordinal), this.parseOptions)],
-            this.starterCompilations["net8.0"].References,
-            this.starterCompilations["net8.0"].Options);
-        string metadataPath = Path.Combine(Path.GetTempPath(), $"CsWin32-Ownership-{Guid.NewGuid():N}.winmd");
-        try
+        string metadataPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "ExternalMetadata", "SafeHandleOwnership.winmd");
+        this.generator = new Generator(metadataPath, null, [], DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling, UseSafeHandles = useSafeHandles }, this.compilation, this.parseOptions);
+        foreach (string api in apis)
         {
-            using (FileStream stream = File.Create(metadataPath))
-            {
-                var result = metadata.Emit(stream);
-                Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics));
-            }
-
-            this.generator = new Generator(metadataPath, null, [], DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling, UseSafeHandles = useSafeHandles }, this.compilation, this.parseOptions);
-            foreach (string api in apis)
-            {
-                Assert.True(this.generator.TryGenerate(api, CancellationToken.None));
-            }
-
-            this.CollectGeneratedCode(this.generator);
-            this.AssertNoDiagnostics(logAllGeneratedCode: false);
+            string apiNamespace = api.StartsWith("Create", StringComparison.Ordinal) || api.StartsWith("Acquire", StringComparison.Ordinal) || api == "IncorrectCleanup"
+                ? $"Windows.Win32.Test.{attribute}"
+                : "Windows.Win32.Test";
+            Assert.True(this.generator.TryGenerate($"{apiNamespace}.{api}", CancellationToken.None));
         }
-        finally
-        {
-            this.generator?.Dispose();
-            this.generator = null;
-            File.Delete(metadataPath);
-        }
+
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics(logAllGeneratedCode: false);
     }
 }

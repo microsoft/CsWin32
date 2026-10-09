@@ -656,7 +656,8 @@ public partial class Generator
             }
             else if (this.options.UseSafeHandles && isIn && !isOut && !isReleaseMethod && parameterTypeInfo is HandleTypeHandleInfo parameterHandleTypeInfo
                 && (parameterHandleTypeInfo.Generator.TryGetHandleReleaseMethod(parameterHandleTypeInfo.Handle, paramAttributes, out _)
-                    || (parameterHandleTypeInfo.Generator.GetQualifiedTypeDefinition(parameterHandleTypeInfo.Handle) is QualifiedTypeDefinition inputHandleDefinition
+                    || (parameterHandleTypeInfo.Generator.TryGetTypeDefHandle(parameterHandleTypeInfo.Handle, out QualifiedTypeDefinitionHandle inputHandle)
+                        && inputHandle.Resolve() is QualifiedTypeDefinition inputHandleDefinition
                         && inputHandleDefinition.Reader.StringComparer.Equals(inputHandleDefinition.Definition.Namespace, "Windows.Win32.Foundation")
                         && inputHandleDefinition.Reader.StringComparer.Equals(inputHandleDefinition.Definition.Name, "HANDLE")))
                 && !(this.TryGetTypeDefFieldType(parameterHandleTypeInfo, out TypeHandleInfo? fieldType) && !this.IsSafeHandleCompatibleTypeDefFieldType(fieldType)))

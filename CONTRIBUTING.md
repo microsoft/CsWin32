@@ -29,7 +29,9 @@ The excluded tests exercise large metadata sets or Windows runtime services. The
 
 Microsoft's Azure Pipelines retain the 1ESPT/MicroBuild toolset, signing, SBOM generation, artifact collection, and release/insertion pipelines. `EnableMicroBuild` defaults to true when `TF_BUILD=true`, and those builds restore from `azure-pipelines/nuget.config`, preserving the `msft_consumption` feed. Local and GitHub Actions builds do not load the MicroBuild packages or SBOM configuration.
 
-`init.ps1` remains an optional environment installer and the official pipelines' bootstrap. Use [PowerShell][pwsh] to run it. For a local build that intentionally uses MicroBuild, run `init.ps1 -Signing` or pass `-p:EnableMicroBuild=true` when restoring and building; authenticated feed access and the signing plugins may be required. CLI tools for documentation, coverage, release versioning, and source archival can be restored separately with `dotnet tool restore`. These tools are not needed for an ordinary solution build.
+Azure Pipelines install the SDKs and runtimes declared in the repository's `global.json` files using `UseDotNet@2`, authenticate with `NuGetAuthenticate@1`, and run `dotnet restore` and `dotnet tool restore` directly. Windows jobs also configure ProcDump for test crash dumps. The symbol/coverage job skips project restore while still restoring its CLI tools. Signing, SBOM, and other MicroBuild plugins remain managed by 1ESPT and the existing MicroBuild tasks.
+
+For an unsigned local build that intentionally uses the MicroBuild configuration, pass `-p:EnableMicroBuild=true` when restoring and building. Reproducing an official signed build also requires Microsoft's signing infrastructure; use the official pipelines for that. CLI tools for documentation, coverage, release versioning, and source archival can be restored separately with `dotnet tool restore`. These tools are not needed for an ordinary solution build.
 
 ## Parsing the metadata
 
@@ -57,8 +59,6 @@ To pull the new version through:
    ```
 
 After the package is on the feed, build and run the tests (`dotnet test --filter "TestCategory!=RequiresHardware"`) and fix any regressions before opening the PR.
-
-[pwsh]: https://learn.microsoft.com/powershell/scripting/install/installing-powershell
 
 ## Releases
 
@@ -88,9 +88,5 @@ Configuration is in the `.github/renovate.json` file.
 [Learn more about configuring Renovate](https://docs.renovatebot.com/configuration-options/).
 
 When changing the renovate.json file, follow [these validation steps](https://docs.renovatebot.com/config-validation/).
-
-The optional `init.ps1 -RestoreRetryCount 10` retries restores with 60 seconds between attempts only when Azure Artifacts reports `No local versions of package` for an upstream package that has not been saved to the feed. Generic download and authentication failures fail immediately. GitHub Actions use nuget.org directly and do not need this feed-specific retry mechanism.
-
-Run `./test/Restore.Tests.ps1` with PowerShell to exercise the retry behavior without restoring packages or installing test dependencies. These regression checks also run in the Windows and Linux build jobs.
 
 If Renovate is not creating pull requests when you expect it to, check that the [Renovate GitHub App](https://github.com/apps/renovate) is configured for your account or repo.

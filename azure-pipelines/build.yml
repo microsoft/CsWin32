@@ -337,7 +337,7 @@ jobs:
       clean: true
     - template: install-dependencies.yml
       parameters:
-        initArgs: -NoRestore
+        restoreProjects: false
     - template: publish-symbols.yml
       parameters:
         EnableLinuxBuild: ${{ parameters.EnableLinuxBuild }}

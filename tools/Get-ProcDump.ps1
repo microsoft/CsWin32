@@ -13,6 +13,7 @@ if (-not (Test-Path $procDumpToolPath)) {
     if (-not (Test-Path $baseDir)) { New-Item -Type Directory -Path $baseDir | Out-Null }
     $baseDir = (Resolve-Path $baseDir).Path # Normalize it
     & (& $PSScriptRoot\Get-NuGetTool.ps1) install procdump -version $version -PackageSaveMode nuspec -OutputDirectory $baseDir -ConfigFile $ConfigFile | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Failed to install ProcDump.' }
 }
 
 (Resolve-Path $procDumpToolPath).Path

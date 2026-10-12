@@ -30,9 +30,6 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         fetch-depth: 0
-    - name: Verify restore retry behavior
-      run: ./test/Restore.Tests.ps1
-      shell: pwsh
     - name: ⚙️ Install .NET
       uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
       with:
@@ -140,9 +137,6 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         fetch-depth: 0
-    - name: Verify restore retry behavior
-      run: ./test/Restore.Tests.ps1
-      shell: pwsh
     - name: ⚙️ Install .NET
       uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
       with:

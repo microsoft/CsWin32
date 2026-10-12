@@ -54,8 +54,12 @@ extends:
         - checkout: self
           clean: true
           fetchDepth: 0
-        - powershell: tools/Install-DotNetSdk.ps1
-          displayName: ⚙ Install .NET SDK
+        - task: UseDotNet@2
+          displayName: ⚙ Install .NET SDKs and runtimes
+          inputs:
+            packageType: sdk
+            useGlobalJson: true
+            workingDirectory: $(Build.SourcesDirectory)
         - task: NuGetAuthenticate@1
           displayName: 🔏 Authenticate NuGet feeds
           inputs:

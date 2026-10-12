@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 namespace Microsoft.Windows.CsWin32;
@@ -143,27 +143,45 @@ public partial class Generator
 
             // Decode the field type up front to learn whether this constant is typed as a typedef struct
             // (e.g. HRESULT, NTSTATUS, HWND). Two pieces of information come out of this:
-            //   * fieldType — a TypeDefinitionHandle in THIS metadata, set only when the struct is defined
+            //   * fieldType - a TypeDefinitionHandle in THIS metadata, set only when the struct is defined
             //     in this same winmd. It drives constant "nesting" (injecting the field directly into the
             //     struct declaration when that struct is generated locally).
-            //   * extensionStructName — the fully-qualified metadata name of the typedef struct, captured
+            //   * extensionStructName - the fully-qualified metadata name of the typedef struct, captured
             //     even for cross-winmd references (e.g. a Windows.Wdk constant typed as the SDK's NTSTATUS).
             //     It drives the extensionReceiver feature's `extension(<struct>)` attachment.
             TypeHandleInfo fieldTypeInfo = fieldDef.DecodeSignature<TypeHandleInfo, SignatureHandleProvider.IGenericContext?>(this.SignatureHandleProvider, null) with { IsConstantField = true };
             TypeDefinitionHandle? fieldType = null;
             string? extensionStructName = null;
-            if (fieldTypeInfo is HandleTypeHandleInfo handleInfo && this.IsTypeDefStruct(handleInfo) && handleInfo.Handle.Kind == HandleKind.TypeReference)
+            if (fieldTypeInfo is HandleTypeHandleInfo handleInfo && this.IsTypeDefStruct(handleInfo))
             {
-                TypeReference tr = this.Reader.GetTypeReference((TypeReferenceHandle)handleInfo.Handle);
-                string fieldTypeName = this.Reader.GetString(tr.Name);
-                if (!TypeDefsThatDoNotNestTheirConstants.Contains(fieldTypeName))
+                string? fieldTypeName = null;
+                string? fieldTypeNamespace = null;
+                if (handleInfo.Handle.Kind == HandleKind.TypeReference)
                 {
-                    string fieldTypeNamespace = this.Reader.GetString(tr.Namespace);
-                    extensionStructName = fieldTypeNamespace.Length == 0 ? fieldTypeName : $"{fieldTypeNamespace}.{fieldTypeName}";
+                    TypeReference tr = this.Reader.GetTypeReference((TypeReferenceHandle)handleInfo.Handle);
+                    fieldTypeName = this.Reader.GetString(tr.Name);
+                    fieldTypeNamespace = this.Reader.GetString(tr.Namespace);
                     if (this.TryGetTypeDefHandle(tr, out TypeDefinitionHandle candidate))
                     {
                         fieldType = candidate;
                     }
+                }
+                else if (handleInfo.Handle.Kind == HandleKind.TypeDefinition)
+                {
+                    TypeDefinitionHandle tdh = (TypeDefinitionHandle)handleInfo.Handle;
+                    TypeDefinition td = this.Reader.GetTypeDefinition(tdh);
+                    fieldTypeName = this.Reader.GetString(td.Name);
+                    fieldTypeNamespace = this.Reader.GetString(td.Namespace);
+                    fieldType = tdh;
+                }
+
+                if (fieldTypeName is not null && !TypeDefsThatDoNotNestTheirConstants.Contains(fieldTypeName))
+                {
+                    extensionStructName = string.IsNullOrEmpty(fieldTypeNamespace) ? fieldTypeName : $"{fieldTypeNamespace}.{fieldTypeName}";
+                }
+                else
+                {
+                    fieldType = null;
                 }
             }
 

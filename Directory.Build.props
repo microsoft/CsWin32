@@ -6,9 +6,6 @@
     <BaseIntermediateOutputPath>$(RepoRootPath)obj\$([MSBuild]::MakeRelative($(RepoRootPath), $(MSBuildProjectDirectory)))\</BaseIntermediateOutputPath>
     <BaseOutputPath Condition=" '$(BaseOutputPath)' == '' ">$(RepoRootPath)bin\$(MSBuildProjectName)\</BaseOutputPath>
     <PackageOutputPath>$(RepoRootPath)bin\Packages\$(Configuration)\NuGet\</PackageOutputPath>
-    <VSIXOutputPath>$(RepoRootPath)bin\Packages\$(Configuration)\Vsix\$(Platform)\</VSIXOutputPath>
-    <VSIXOutputPath Condition="'$(Platform)'=='' or '$(Platform)'=='AnyCPU'">$(RepoRootPath)bin\Packages\$(Configuration)\Vsix\</VSIXOutputPath>
-    <SBOMFileDestPath>$(VSIXOutputPath)</SBOMFileDestPath>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AnalysisLevel>latest</AnalysisLevel>
@@ -27,7 +24,7 @@
     <!-- Opt in till https://github.com/NuGet/Home/issues/9803 makes this the default. -->
     <RestoreUseStaticGraphEvaluation>true</RestoreUseStaticGraphEvaluation>
 
-    <!-- This entire repo has just one version.json file, so compute the version once and share with all projects in a large build. -->
+    <!-- Share the repository's base version calculation across projects. -->
     <GitVersionBaseDirectory>$(MSBuildThisFileDirectory)</GitVersionBaseDirectory>
 
     <!-- Local builds should embed PDBs so we never lose them when a subsequent build occurs. -->
@@ -44,6 +41,11 @@
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
 
     <CsWin32GeneratorTargetFramework>net8.0</CsWin32GeneratorTargetFramework>
+
+    <!-- Azure Pipelines and explicitly signed local builds retain the official build toolset. -->
+    <EnableMicroBuild Condition="'$(EnableMicroBuild)' == '' and ('$(TF_BUILD)' == 'true' or '$(SignType)' != '')">true</EnableMicroBuild>
+    <EnableMicroBuild Condition="'$(EnableMicroBuild)' == ''">false</EnableMicroBuild>
+    <RestoreConfigFile Condition="'$(EnableMicroBuild)' == 'true'">$(RepoRootPath)azure-pipelines\nuget.config</RestoreConfigFile>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -70,5 +72,5 @@
     </PropertyGroup>
   </Target>
 
-  <Import Project="azure-pipelines\NuGetSbom.props" />
+  <Import Project="azure-pipelines\NuGetSbom.props" Condition="'$(EnableMicroBuild)' == 'true'" />
 </Project>

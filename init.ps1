@@ -123,6 +123,14 @@ function Invoke-RestoreWithRetry {
 
 $EnvVars = @{}
 $PrependPath = @()
+$useMicroBuild = $env:TF_BUILD -eq 'true' -or $env:EnableMicroBuild -eq 'true' -or $env:SignType -or $Signing -or $Localization -or $Setup -or $OptProf -or $SBOM
+if ($useMicroBuild) {
+    $EnvVars['EnableMicroBuild'] = 'true'
+}
+$nugetConfigFile = Join-Path $PSScriptRoot 'nuget.config'
+if ($useMicroBuild) {
+    $nugetConfigFile = Join-Path $PSScriptRoot 'azure-pipelines/nuget.config'
+}
 
 if (!$NoPrerequisites) {
     if (!$NoNuGetCredProvider) {
@@ -137,7 +145,7 @@ if (!$NoPrerequisites) {
     # The procdump tool and env var is required for dotnet test to collect hang/crash dumps of tests.
     # But it only works on Windows.
     if ($env:OS -eq 'Windows_NT') {
-        $EnvVars['PROCDUMP_PATH'] = & "$PSScriptRoot\tools\Get-ProcDump.ps1"
+        $EnvVars['PROCDUMP_PATH'] = & "$PSScriptRoot\tools\Get-ProcDump.ps1" -ConfigFile $nugetConfigFile
     }
 }
 
@@ -150,6 +158,9 @@ try {
     $HeaderColor = 'Green'
 
     $RestoreArguments = @()
+    if ($useMicroBuild) {
+        $RestoreArguments += '--configfile', $nugetConfigFile
+    }
     if ($Interactive) {
         $RestoreArguments += '--interactive'
     }
@@ -158,7 +169,7 @@ try {
         Write-Host "Restoring NuGet packages" -ForegroundColor $HeaderColor
         Invoke-RestoreWithRetry -Restore {
             $PSNativeCommandUseErrorActionPreference = $false
-            dotnet restore @RestoreArguments
+            dotnet restore @RestoreArguments "-p:EnableMicroBuild=$useMicroBuild"
         } -FailureMessage "Failure while restoring packages."
     }
 
@@ -178,37 +189,41 @@ try {
     $InstallNuGetPkgScriptPath = "$PSScriptRoot\tools\Install-NuGetPackage.ps1"
     $nugetVerbosity = 'quiet'
     if ($Verbose) { $nugetVerbosity = 'normal' }
-    $MicroBuildPackageSource = 'https://pkgs.dev.azure.com/devdiv/_packaging/MicroBuildToolset%40Local/nuget/v3/index.json'
+    $MicroBuildInstallArguments = @{
+        Source = 'https://pkgs.dev.azure.com/devdiv/_packaging/MicroBuildToolset%40Local/nuget/v3/index.json'
+        ConfigFile = $nugetConfigFile
+        Verbosity = $nugetVerbosity
+    }
     if ($Signing) {
         Write-Host "Installing MicroBuild signing plugin" -ForegroundColor $HeaderColor
-        & $InstallNuGetPkgScriptPath MicroBuild.Plugins.Signing -source $MicroBuildPackageSource -Verbosity $nugetVerbosity
+        & $InstallNuGetPkgScriptPath MicroBuild.Plugins.Signing @MicroBuildInstallArguments
         $EnvVars['SignType'] = "Test"
     }
 
     if ($Setup) {
         Write-Host "Installing MicroBuild SwixBuild plugin..." -ForegroundColor $HeaderColor
-        & $InstallNuGetPkgScriptPath Microsoft.VisualStudioEng.MicroBuild.Plugins.SwixBuild -source $MicroBuildPackageSource -Verbosity $nugetVerbosity
+        & $InstallNuGetPkgScriptPath Microsoft.VisualStudioEng.MicroBuild.Plugins.SwixBuild @MicroBuildInstallArguments
     }
 
     if ($OptProf) {
         Write-Host "Installing MicroBuild OptProf plugin" -ForegroundColor $HeaderColor
-        & $InstallNuGetPkgScriptPath MicroBuild.Plugins.OptProf -source $MicroBuildPackageSource -Verbosity $nugetVerbosity
+        & $InstallNuGetPkgScriptPath MicroBuild.Plugins.OptProf @MicroBuildInstallArguments
         $EnvVars['OptProfEnabled'] = '1'
     }
 
     if ($Localization) {
         Write-Host "Installing MicroBuild localization plugin" -ForegroundColor $HeaderColor
-        & $InstallNuGetPkgScriptPath MicroBuild.Plugins.Localization -source $MicroBuildPackageSource -Verbosity $nugetVerbosity
+        & $InstallNuGetPkgScriptPath MicroBuild.Plugins.Localization @MicroBuildInstallArguments
         $EnvVars['LocType'] = "Pseudo"
         $EnvVars['LocLanguages'] = "JPN"
     }
 
     if ($SBOM) {
         Write-Host "Installing MicroBuild SBOM plugin" -ForegroundColor $HeaderColor
-        & $InstallNuGetPkgScriptPath MicroBuild.Plugins.Sbom -source $MicroBuildPackageSource -Verbosity $nugetVerbosity
+        & $InstallNuGetPkgScriptPath MicroBuild.Plugins.Sbom @MicroBuildInstallArguments
         # The feed with the latest versions of the tool is at 'https://1essharedassets.pkgs.visualstudio.com/1esPkgs/_packaging/SBOMTool/nuget/v3/index.json',
         # but we'll use the feed that the SBOM task itself uses to install the tool for consistency.
-        $PkgMicrosoft_ManifestTool_CrossPlatform = & $InstallNuGetPkgScriptPath Microsoft.ManifestTool.CrossPlatform -source $MicroBuildPackageSource -Verbosity $nugetVerbosity
+        $PkgMicrosoft_ManifestTool_CrossPlatform = & $InstallNuGetPkgScriptPath Microsoft.ManifestTool.CrossPlatform @MicroBuildInstallArguments
         $EnvVars['GenerateSBOM'] = "true"
         $EnvVars['PkgMicrosoft_ManifestTool_CrossPlatform'] = $PkgMicrosoft_ManifestTool_CrossPlatform
     }

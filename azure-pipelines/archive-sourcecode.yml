@@ -60,7 +60,7 @@ extends:
           displayName: 🔏 Authenticate NuGet feeds
           inputs:
             forceReinstallCredentialProvider: true
-        - script: dotnet tool restore
+        - script: dotnet tool restore --configfile azure-pipelines/nuget.config
           displayName: ⚙️ Restore CLI tools
         - powershell: tools/variables/_define.ps1
           failOnStderr: true

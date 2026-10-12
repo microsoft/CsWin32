@@ -8,7 +8,7 @@
 Param()
 
 $ErrorActionPreference = 'Stop'
-$initPath = Join-Path $PSScriptRoot '..\init.ps1'
+$initPath = (Resolve-Path (Join-Path $PSScriptRoot '..\init.ps1')).Path
 $tokens = $null
 $parseErrors = $null
 $initAst = [System.Management.Automation.Language.Parser]::ParseFile($initPath, [ref]$tokens, [ref]$parseErrors)
@@ -146,5 +146,57 @@ Test-ToolRestoreArguments
 Test-ToolRestoreArguments -RestoreRetryCount 1
 Test-ToolRestoreArguments -RestoreRetryCount 3
 Test-ToolRestoreArguments -RestoreRetryCount 3 -Interactive
+
+# Exercise both restore commands with the real bootstrap while avoiding installs and network access.
+function Test-RestoreConfiguration {
+    Param([switch]$AzurePipelines, [switch]$LocalMicroBuild)
+
+    $state = [pscustomobject]@{ Calls = [Collections.Generic.List[object]]::new() }
+    $originalDotnet = Get-Item Function:global:dotnet -ErrorAction SilentlyContinue
+    $originalEnvironment = @{}
+    foreach ($name in @('TF_BUILD', 'EnableMicroBuild', 'SignType', 'GITHUB_ACTIONS', 'CmdEnvScriptPath')) {
+        $originalEnvironment[$name] = [Environment]::GetEnvironmentVariable($name)
+        [Environment]::SetEnvironmentVariable($name, $null)
+    }
+
+    try {
+        if ($AzurePipelines) { $env:TF_BUILD = 'true' }
+        if ($LocalMicroBuild) { $env:EnableMicroBuild = 'true' }
+        Set-Item Function:global:dotnet -Value {
+            $state.Calls.Add(@($args))
+            $global:LASTEXITCODE = 0
+        }.GetNewClosure()
+        & $initPath -NoPrerequisites
+
+        $expectedRestore = @('restore')
+        $expectedTools = @('tool', 'restore')
+        if ($AzurePipelines -or $LocalMicroBuild) {
+            $configArguments = @('--configfile', (Join-Path (Split-Path $initPath) 'azure-pipelines/nuget.config'))
+            $expectedRestore += $configArguments
+            $expectedTools += $configArguments
+        }
+        $expectedRestore += "-p:EnableMicroBuild=$($AzurePipelines -or $LocalMicroBuild)"
+
+        if ($state.Calls.Count -ne 2 -or ($state.Calls[0] -join '|') -ne ($expectedRestore -join '|') -or ($state.Calls[1] -join '|') -ne ($expectedTools -join '|')) {
+            throw "Unexpected restore configuration (AzurePipelines=$AzurePipelines, LocalMicroBuild=$LocalMicroBuild)."
+        }
+    }
+    finally {
+        if ($null -eq $originalDotnet) {
+            Remove-Item Function:global:dotnet
+        } else {
+            Set-Item Function:global:dotnet -Value $originalDotnet.ScriptBlock
+        }
+        foreach ($name in $originalEnvironment.Keys) {
+            [Environment]::SetEnvironmentVariable($name, $originalEnvironment[$name])
+        }
+    }
+
+    Write-Host "PASS: Restore configuration (AzurePipelines=$AzurePipelines, LocalMicroBuild=$LocalMicroBuild)"
+}
+
+Test-RestoreConfiguration
+Test-RestoreConfiguration -AzurePipelines
+Test-RestoreConfiguration -LocalMicroBuild
 Write-Host 'All restore retry regression checks passed.'
 exit 0

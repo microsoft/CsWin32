@@ -7,37 +7,29 @@ FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
 contact [opencode@microsoft.com](mailto:opencode@microsoft.com)
 with any additional questions or comments.
 
-## Best practices
+## Building and testing
 
-* Use Windows PowerShell or [PowerShell Core][pwsh] (including on Linux/OSX) to run .ps1 scripts.
-  Some scripts set environment variables to help you, but they are only retained if you use PowerShell as your shell.
+Install the [.NET SDK](https://get.dot.net/) specified in `global.json` (or a newer patch in the same SDK feature band). On Windows, open `Microsoft.Windows.CsWin32.slnx` in a Visual Studio version that supports that SDK and C# 14, then build the solution. No initialization script, CLI tool restore, or custom shell environment is required.
 
-## Prerequisites
+From the repository root, the equivalent commands are:
 
-All dependencies can be installed by running the `init.ps1` script at the root of the repository
-using Windows PowerShell or [PowerShell Core][pwsh] (on any OS).
-Some dependencies installed by `init.ps1` may only be discoverable from the same command line environment the init script was run from due to environment variables, so be sure to launch Visual Studio or build the repo from that same environment.
-Alternatively, run `init.ps1 -InstallLocality Machine` (which may require elevation) in order to install dependencies at machine-wide locations so Visual Studio and builds work everywhere.
+```console
+dotnet build
+dotnet test --filter "TestCategory!=HighMemory&TestCategory!=RequiresHardware"
+dotnet pack -c Release
+```
 
-The only prerequisite for building, testing, and deploying from this repository
-is the [.NET SDK](https://get.dot.net/).
-You should install the version specified in `global.json` or a later version within
-the same major.minor.Bxx "hundreds" band.
-For example if 2.2.300 is specified, you may install 2.2.300, 2.2.301, or 2.2.310
-while the 2.2.400 version would not be considered compatible by .NET SDK.
-See [.NET Core Versioning](https://learn.microsoft.com/dotnet/core/versions/) for more information.
+Package restore runs automatically. Dependencies come from nuget.org, except for the source-generator testing previews available only on Microsoft's public `msft_consumption` feed; `nuget.config` maps those packages explicitly. `dotnet pack` builds the solution before packaging, including the non-packable generator and MSBuild task whose outputs are shipped in the package. Packages are written to `bin/Packages/<Configuration>/NuGet`.
 
-## Package restore
+Tests target .NET 8, 9, 10, and .NET Framework 4.7.2. Install the corresponding runtimes to run the full matrix; the .NET 10 SDK alone is sufficient to compile it. Windows-specific tests need Windows; .NET Framework tests need .NET Framework on Windows or Mono on Linux/macOS. To build on Linux/macOS, use `dotnet build -p:Platform=NonWindows` and the same platform property when testing or packing.
 
-The easiest way to restore packages may be to run `init.ps1` which automatically authenticates
-to the feeds that packages for this repo come from, if any.
-`dotnet restore` or `nuget restore` also work but may require extra steps to authenticate to any applicable feeds.
+The excluded tests exercise large metadata sets or Windows runtime services. They remain covered by the separate CI jobs and can also be run locally by changing the filter.
 
-## Building
+## Official builds
 
-This repository can be built on Windows, Linux, and OSX.
+Microsoft's Azure Pipelines retain the 1ESPT/MicroBuild toolset, signing, SBOM generation, artifact collection, and release/insertion pipelines. `EnableMicroBuild` defaults to true when `TF_BUILD=true`, and those builds restore from `azure-pipelines/nuget.config`, preserving the `msft_consumption` feed. Local and GitHub Actions builds do not load the MicroBuild packages or SBOM configuration.
 
-Building, testing, and packing this repository can be done by using the standard dotnet CLI commands (e.g. `dotnet build`, `dotnet test`, `dotnet pack`, etc.).
+`init.ps1` remains an optional environment installer and the official pipelines' bootstrap. Use [PowerShell][pwsh] to run it. For a local build that intentionally uses MicroBuild, run `init.ps1 -Signing` or pass `-p:EnableMicroBuild=true` when restoring and building; authenticated feed access and the signing plugins may be required. CLI tools for documentation, coverage, release versioning, and source archival can be restored separately with `dotnet tool restore`. These tools are not needed for an ordinary solution build.
 
 ## Parsing the metadata
 
@@ -48,7 +40,7 @@ When we identify a gem that we should support but do not yet support, file [an i
 
 To consume a newer [win32metadata](https://github.com/microsoft/win32metadata) release, update the `MetadataVersion` (and, when a new WDK metadata package ships, `WDKMetadataVersion`) property in `Directory.Packages.props`.
 
-CsWin32 restores these packages from the `msft_consumption` feed (`azure-public/vside`), which pulls them from nuget.org via an upstream source. A new package version is **not** available on the feed until it has been *pulled through* at least once, and only a feed **Collaborator/Contributor** can trigger that. Regular contributors typically only have **Reader** access, so a plain `dotnet restore` of the new version fails with `NU1102` until the package is on the feed.
+Local and GitHub Actions builds restore these packages directly from nuget.org. Official builds use the `msft_consumption` feed (`azure-public/vside`), which pulls them from nuget.org via an upstream source. A new package version is **not** available on that feed until it has been *pulled through* at least once, and only a feed **Collaborator/Contributor** can trigger that.
 
 Azure Artifacts can take [3-6 hours to discover a newly published nuget.org package](https://learn.microsoft.com/azure/devops/artifacts/concepts/upstream-sources#upstream-sources-health-status).
 If the pull-through pipeline also fails with `NU1102` despite the package being available on nuget.org, wait for upstream discovery and queue it again before rerunning the PR checks.
@@ -57,7 +49,7 @@ To pull the new version through:
 
 1. Push your branch (with the bumped `MetadataVersion`) to GitHub.
 2. Queue the **CsWin32 unofficial** Azure Pipeline (`devdiv/DevDiv`, definition `25100`, YAML `azure-pipelines/unofficial.yml`) against your branch. Its build agent runs as a feed Collaborator, so its restore pulls the new package onto the feed automatically.
-3. Wait until the pipeline reaches its `dotnet build` step, then confirm the version is on the feed (it is then restorable by everyone, including the GitHub Actions PR build):
+3. Wait until the pipeline reaches its `dotnet build` step, then confirm the version is on the feed (it is then available to official builds):
 
    ```pwsh
    $idx = Invoke-RestMethod "https://pkgs.dev.azure.com/azure-public/vside/_packaging/msft_consumption/nuget/v3/flat2/microsoft.windows.sdk.win32metadata/index.json"
@@ -74,17 +66,6 @@ Use `nbgv tag` to create a tag for a particular commit that you mean to release.
 [Learn more about `nbgv` and its `tag` and `prepare-release` commands](https://dotnet.github.io/Nerdbank.GitVersioning/docs/nbgv-cli.html).
 
 Push the tag.
-
-### GitHub Actions
-
-When your repo is hosted by GitHub and you are using GitHub Actions, you should create a GitHub Release using the standard GitHub UI.
-Having previously used `nbgv tag` and pushing the tag will help you identify the precise commit and name to use for this release.
-
-After publishing the release, the `.github/workflows/release.yml` workflow will be automatically triggered, which will:
-
-1. Find the most recent `.github/workflows/build.yml` GitHub workflow run of the tagged release.
-1. Upload the `deployables` artifact from that workflow run to your GitHub Release.
-1. If you have `NUGET_API_KEY` defined as a secret variable for your repo or org, any nuget packages in the `deployables` artifact will be pushed to nuget.org.
 
 ### Azure Pipelines
 
@@ -108,22 +89,8 @@ Configuration is in the `.github/renovate.json` file.
 
 When changing the renovate.json file, follow [these validation steps](https://docs.renovatebot.com/config-validation/).
 
-Renovate PR validation retries package and tool restores up to 10 times, with 60 seconds between attempts, only when Azure Artifacts reports `No local versions of package` for an upstream package that has not been saved to the feed. Generic tool-download failures, authentication errors without that cache-miss message, and other restore errors fail immediately. When retries are enabled, tool restore uses detailed output so the underlying feed error is available for classification. This retry window does not replace the authenticated pull-through pipeline or the upstream discovery wait described above.
+The optional `init.ps1 -RestoreRetryCount 10` retries restores with 60 seconds between attempts only when Azure Artifacts reports `No local versions of package` for an upstream package that has not been saved to the feed. Generic download and authentication failures fail immediately. GitHub Actions use nuget.org directly and do not need this feed-specific retry mechanism.
 
 Run `./test/Restore.Tests.ps1` with PowerShell to exercise the retry behavior without restoring packages or installing test dependencies. These regression checks also run in the Windows and Linux build jobs.
 
 If Renovate is not creating pull requests when you expect it to, check that the [Renovate GitHub App](https://github.com/apps/renovate) is configured for your account or repo.
-
-## Merging latest from Library.Template
-
-### Maintaining your repo based on this template
-
-The best way to keep your repo in sync with Library.Template's evolving features and best practices is to periodically merge the template into your repo:
-
-```ps1
-git fetch
-git checkout origin/main
-./tools/MergeFrom-Template.ps1
-# resolve any conflicts, then commit the merge commit.
-git push origin -u HEAD
-```

@@ -29,6 +29,11 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
 
     internal byte? RawTypeKind { get; }
 
+    /// <summary>
+    /// Gets a value indicating whether this type references a logical enum rather than a native enum signature.
+    /// </summary>
+    internal bool IsAssociatedEnumProjection { get; init; }
+
     public override string ToString() => this.ToTypeSyntaxForDisplay().ToString();
 
     internal static NameSyntax GetNestingQualifiedName(Generator? generator, MetadataReader reader, TypeDefinition td, bool hasUnmanagedSuffix, bool isInterfaceNestedInStruct)
@@ -83,6 +88,21 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
                 || definition.Generator != enumType.Generator || definition.DefinitionHandle != enumType.Handle))
         {
             throw new GenerationFailedException($"AssociatedEnum \"{enumType}\" cannot be projected over native type \"{this}\".");
+        }
+
+        if (!this.IsAssociatedEnumProjection && inputs.Generator is not null
+            && this.generator.TryGetTypeDefHandle(this.Handle, out QualifiedTypeDefinitionHandle nativeDefinition))
+        {
+            TypeDefinition nativeType = nativeDefinition.Resolve().Definition;
+            nativeDefinition.Generator.GetBaseTypeInfo(nativeType, out StringHandle baseName, out StringHandle baseNamespace);
+            if (nativeDefinition.Reader.StringComparer.Equals(baseName, nameof(Enum)) && nativeDefinition.Reader.StringComparer.Equals(baseNamespace, nameof(System)))
+            {
+                HandleTypeHandleInfo nativeEnum = new(nativeDefinition.Generator, nativeDefinition.Reader, nativeDefinition.DefinitionHandle);
+                if (Generator.GetEnumUnderlyingType(nativeEnum) != Generator.GetDeclaredEnumUnderlyingType(nativeEnum))
+                {
+                    throw new GenerationFailedException($"Native enum {nativeDefinition.Reader.GetString(nativeType.Name)} retains its metadata storage, which conflicts with its AssociatedEnum use sites.");
+                }
+            }
         }
 
         NameSyntax? nameSyntax;

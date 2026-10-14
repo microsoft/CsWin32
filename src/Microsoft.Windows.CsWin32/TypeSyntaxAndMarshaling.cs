@@ -47,15 +47,15 @@ internal struct TypeSyntaxAndMarshaling
 
     internal MethodDeclarationSyntax AddReturnMarshalAs(MethodDeclarationSyntax methodDeclaration)
     {
-        return this.GetMarshalingAttribute() is AttributeSyntax attribute
-            ? methodDeclaration.AddAttributeLists(AttributeList(attribute).WithTarget(AttributeTargetSpecifier(Token(SyntaxKind.ReturnKeyword))))
+        return this.MarshalAsAttribute is object
+            ? methodDeclaration.AddAttributeLists(AttributeList(MarshalAs(this.MarshalAsAttribute, this.NativeArrayInfo)).WithTarget(AttributeTargetSpecifier(Token(SyntaxKind.ReturnKeyword))))
             : methodDeclaration;
     }
 
     internal DelegateDeclarationSyntax AddReturnMarshalAs(DelegateDeclarationSyntax methodDeclaration)
     {
-        return this.GetMarshalingAttribute() is AttributeSyntax attribute
-            ? methodDeclaration.AddAttributeLists(AttributeList(attribute).WithTarget(AttributeTargetSpecifier(Token(SyntaxKind.ReturnKeyword))))
+        return this.MarshalAsAttribute is object
+            ? methodDeclaration.AddAttributeLists(AttributeList(MarshalAs(this.MarshalAsAttribute, this.NativeArrayInfo)).WithTarget(AttributeTargetSpecifier(Token(SyntaxKind.ReturnKeyword))))
             : methodDeclaration;
     }
 
@@ -67,18 +67,9 @@ internal struct TypeSyntaxAndMarshaling
 
     internal void ThrowIfMarshallingRequired()
     {
-        if (this.MarshalAsAttribute is object || this.MarshalUsingType is not null)
+        if (this.MarshalAsAttribute is object)
         {
             throw new NotSupportedException("This type requires marshaling, but marshaling is not supported in this context.");
         }
     }
-
-    /// <summary>
-    /// Gets the runtime or source-generated marshaling attribute for this value.
-    /// </summary>
-    /// <returns>The marshaling attribute, or null for a native representation.</returns>
-    internal AttributeSyntax? GetMarshalingAttribute() => this.MarshalUsingType is string marshaler
-        ? Attribute(ParseName("global::System.Runtime.InteropServices.Marshalling.MarshalUsing"))
-            .AddArgumentListArguments(AttributeArgument(TypeOfExpression(ParseName(marshaler))))
-        : MarshalAs(this.MarshalAsAttribute, this.NativeArrayInfo);
 }

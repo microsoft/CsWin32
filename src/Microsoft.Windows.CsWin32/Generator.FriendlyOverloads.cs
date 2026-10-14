@@ -78,8 +78,8 @@ public partial class Generator
 
     private IEnumerable<MethodDeclarationSyntax> DeclareFriendlyOverloads(MethodDefinition methodDefinition, MethodDeclarationSyntax externMethodDeclaration, NameSyntax declaringTypeName, FriendlyOverloadOf overloadOf, HashSet<string> helperMethodsAdded, bool avoidWinmdRootAlias)
     {
-        if (overloadOf == FriendlyOverloadOf.StructMethod
-            && this.DeclareAssociatedEnumOverload(methodDefinition, externMethodDeclaration, avoidWinmdRootAlias) is MethodDeclarationSyntax enumOverload)
+        if (overloadOf is FriendlyOverloadOf.ExternMethod or FriendlyOverloadOf.StructMethod
+            && this.DeclareStoragePreservingEnumOverload(methodDefinition, externMethodDeclaration, avoidWinmdRootAlias) is MethodDeclarationSyntax enumOverload)
         {
             yield return enumOverload;
             externMethodDeclaration = enumOverload;

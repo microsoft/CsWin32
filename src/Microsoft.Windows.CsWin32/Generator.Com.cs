@@ -946,7 +946,7 @@ public partial class Generator
 
                     TypeSyntaxAndMarshaling returnTypeDetails = signature.ReturnType.ToTypeSyntax(returnTypeSettings, GeneratingElement.InterfaceMember, returnTypeAttributes?.QualifyWith(methodDefinition.Generator));
                     TypeSyntax returnType = returnTypeDetails.Type;
-                    AttributeSyntax? returnsAttribute = returnTypeDetails.GetMarshalingAttribute();
+                    AttributeSyntax? returnsAttribute = MarshalAs(returnTypeDetails.MarshalAsAttribute, returnTypeDetails.NativeArrayInfo);
 
                     TypeSyntaxSettings functionSignatureSettings = this.comSignatureTypeSettings;
                     ParameterListSyntax? parameterList = methodDefinition.Generator.CreateParameterList(methodDefinition.Method, signature, functionSignatureSettings, GeneratingElement.InterfaceMember);
@@ -967,8 +967,7 @@ public partial class Generator
                             // Move the retval parameter to the return value position.
                             parameterList = parameterList.WithParameters(parameterList.Parameters.RemoveAt(parameterList.Parameters.Count - 1));
                             returnType = lastParameter.Modifiers.Any(SyntaxKind.OutKeyword) ? lastParameter.Type! : ((PointerTypeSyntax)lastParameter.Type!).ElementType;
-                            returnsAttribute = lastParameter.DescendantNodes().OfType<AttributeSyntax>().FirstOrDefault(att =>
-                                att.Name.ToString() is "MarshalAs" or "global::System.Runtime.InteropServices.Marshalling.MarshalUsing");
+                            returnsAttribute = lastParameter.DescendantNodes().OfType<AttributeSyntax>().FirstOrDefault(att => att.Name.ToString() == "MarshalAs");
                         }
                         else
                         {

@@ -35,8 +35,7 @@ internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleIn
         {
             enumAttributes.Generator.ValidateAssociatedEnumElementType(
                 this.ElementType,
-                enumAttributes.Collection,
-                inputs.AllowMarshaling && !inputs.IsField && !mustUsePointers && !useComSourceGenerators);
+                enumAttributes.Collection);
         }
 
         if (mustUsePointers)

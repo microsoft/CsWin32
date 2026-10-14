@@ -19,7 +19,7 @@ internal record ArrayTypeHandleInfo(TypeHandleInfo ElementType, ArrayShape Shape
 
         if (customAttributes is { } attributes)
         {
-            attributes.Generator.ValidateAssociatedEnumElementType(this.ElementType, attributes.Collection, inputs.AllowMarshaling && !inputs.IsField && !useSourceGenerators);
+            attributes.Generator.ValidateAssociatedEnumElementType(this.ElementType, attributes.Collection);
         }
 
         TypeSyntaxAndMarshaling element = this.ElementType.ToTypeSyntax(inputs, forElement, customAttributes);

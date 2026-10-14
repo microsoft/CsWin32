@@ -13,11 +13,6 @@ public partial class Generator
             UnmanagedType.U4 => PredefinedType(Token(SyntaxKind.UIntKeyword)),
             UnmanagedType.I4 => PredefinedType(Token(SyntaxKind.IntKeyword)),
             UnmanagedType.U1 => PredefinedType(Token(SyntaxKind.ByteKeyword)),
-            UnmanagedType.I1 => PredefinedType(Token(SyntaxKind.SByteKeyword)),
-            UnmanagedType.U2 => PredefinedType(Token(SyntaxKind.UShortKeyword)),
-            UnmanagedType.I2 => PredefinedType(Token(SyntaxKind.ShortKeyword)),
-            UnmanagedType.U8 => PredefinedType(Token(SyntaxKind.ULongKeyword)),
-            UnmanagedType.I8 => PredefinedType(Token(SyntaxKind.LongKeyword)),
             _ => throw new InvalidOperationException($"Unsupported unmanaged type: {unmanagedType}"),
         };
 
@@ -31,9 +26,8 @@ public partial class Generator
         shortNamespace += ".InteropServices";
 
         string customTypeMarshallerName = $"{enumTypeName}To{unmanagedType}Marshaller";
-        string cacheKey = $"{qualifiedEnumTypeName}:{unmanagedType}";
 
-        return this.volatileCode.GenerateCustomTypeMarshaller(cacheKey, delegate
+        return this.volatileCode.GenerateCustomTypeMarshaller(customTypeMarshallerName, delegate
         {
             // Create type syntax for the enum type
             TypeSyntax enumTypeSyntax = IdentifierName(enumTypeName);
@@ -106,7 +100,7 @@ public partial class Generator
 
             CustomMarshallerTypeRecord typeRecord = new(marshallerClass, qualifiedName);
 
-            this.volatileCode.AddCustomTypeMarshaller(cacheKey, typeRecord);
+            this.volatileCode.AddCustomTypeMarshaller(customTypeMarshallerName, typeRecord);
 
             return typeRecord;
         });

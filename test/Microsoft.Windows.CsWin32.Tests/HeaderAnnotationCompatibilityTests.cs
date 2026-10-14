@@ -37,38 +37,7 @@ public class HeaderAnnotationCompatibilityTests : GeneratorTestBase
                 MODE Mode { get; set; }
             }
             /// <summary>Extends the generated struct with a caller contract.</summary>
-            public partial struct RECORD : IModeProperty { /*IMPLEMENTATION*/ }
-        }
-        """;
-
-    private const string RefFieldCaller = """
-        namespace Windows.Win32.Test
-        {
-            static class RefFieldCaller
-            {
-                static void Use(RECORD record)
-                {
-                    ref MODE field = ref record.Mode;
-                    field = MODE.Second;
-                }
-            }
-        }
-        """;
-
-    private const string FieldContractLayoutCaller = """
-        namespace Windows.Win32.Test
-        {
-            /// <summary>Checks the physical representation of each candidate.</summary>
-            public static class ContractLayout
-            {
-                /// <summary>Returns the native size and stored bits.</summary>
-                public static unsafe ulong Run()
-                {
-                    RECORD record = default;
-                    record.Mode = MODE.High | MODE.Second;
-                    return ((ulong)sizeof(RECORD) << 32) | *(uint*)&record;
-                }
-            }
+            public partial struct RECORD : IModeProperty { }
         }
         """;
 
@@ -112,14 +81,43 @@ public class HeaderAnnotationCompatibilityTests : GeneratorTestBase
         string newPath = AssociatedEnumTests.EmitMetadata(AssociatedEnumTests.GetMetadataSource(false), references, this.parseOptions);
         try
         {
-            string callback = allowMarshaling
-                ? "static void Register() => PInvoke.UseCallback(Callback); static MODE Callback(MODE mode, MODE* data) => mode;"
-                : "static void Register() => PInvoke.UseCallback(&Callback); [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvStdcall) })] static MODE Callback(MODE mode, MODE* data) => mode;";
-            string callers = AssociatedEnumTests.Caller + Environment.NewLine + "namespace CallbackFixture { using System.Runtime.InteropServices; using Windows.Win32; using Windows.Win32.Test; static unsafe class CallbackCaller { " + callback + " } }";
+            string callers = GetCanonicalCaller(allowMarshaling);
             MatrixResult result = this.RunMatrix("canonical", oldPath, newPath, CanonicalRequests, callers, allowMarshaling);
             Assert.All(result.Runs, run => Assert.Empty(run.CallerDiagnostics));
             Assert.Equal(result.Runs[0].PublicSymbols, result.Runs[1].PublicSymbols);
             Assert.Equal(result.Runs[0].PublicSymbols, result.Runs[2].PublicSymbols);
+        }
+        finally
+        {
+            File.Delete(oldPath);
+            File.Delete(newPath);
+        }
+    }
+
+    /// <summary>
+    /// Proves direct native enum storage against OLD synthetic fields and signatures, even when logical storage differs.
+    /// </summary>
+    /// <param name="storage">The native integral storage.</param>
+    /// <param name="allowMarshaling">The pinned marshaling option.</param>
+    /// <param name="enumFirst">Whether to request the enum before its annotated consumers.</param>
+    [Theory, CombinatorialData]
+    public void NativeStorageThreeWayMatrix(
+        [CombinatorialValues("sbyte", "byte", "short", "ushort", "int", "uint", "long", "ulong")] string storage,
+        bool allowMarshaling,
+        bool enumFirst)
+    {
+        RequireBaseline();
+        CSharpCompilation references = this.starterCompilations["net8.0-x64"];
+        string oldPath = AssociatedEnumTests.EmitMetadata(AssociatedEnumTests.GetNativeStorageMetadata(storage, legacy: true), references, this.parseOptions);
+        string newPath = AssociatedEnumTests.EmitMetadata(AssociatedEnumTests.GetNativeStorageMetadata(storage, legacy: false), references, this.parseOptions);
+        try
+        {
+            string[] requests = enumFirst ? ["MODE", .. CanonicalRequests] : CanonicalRequests;
+            MatrixResult result = this.RunMatrix($"native-storage-{storage}-{(enumFirst ? "enum-first" : "consumer-first")}", oldPath, newPath, requests, GetCanonicalCaller(allowMarshaling), allowMarshaling);
+            Assert.All(result.Runs, run => Assert.Empty(run.CallerDiagnostics));
+            Assert.Equal(result.Runs[0].PublicSymbols, result.Runs[1].PublicSymbols);
+            Assert.Equal(result.Runs[0].PublicSymbols, result.Runs[2].PublicSymbols);
+            Assert.Contains(result.Runs[2].PublicSymbols, symbol => symbol.StartsWith("NamedType ", StringComparison.Ordinal) && symbol.Contains($"enum={storage}; flags=True", StringComparison.Ordinal));
         }
         finally
         {
@@ -134,7 +132,7 @@ public class HeaderAnnotationCompatibilityTests : GeneratorTestBase
     /// <param name="allowMarshaling">The pinned marshaling option.</param>
     /// <param name="requireProperty">Whether the unchanged partial struct implements a property contract.</param>
     [Theory, CombinatorialData]
-    public void ExistingAnnotatedFieldMatrix(bool allowMarshaling, bool requireProperty)
+    public void ExistingAnnotatedFieldRegression(bool allowMarshaling, bool requireProperty)
     {
         RequireBaseline();
         string source = AssociatedEnumTests.MetadataSource.Replace(
@@ -146,7 +144,7 @@ public class HeaderAnnotationCompatibilityTests : GeneratorTestBase
 
         try
         {
-            MatrixResult result = this.RunMatrix(requireProperty ? "annotated-property-contract" : "annotated-field", path, path, ["RECORD"], caller, allowMarshaling);
+            MatrixResult result = this.RunMatrix(requireProperty ? "existing-annotation-property-contract" : "existing-annotation-field", path, null, ["RECORD"], caller, allowMarshaling, compatibilityScope: "independent-existing-annotation-regression");
             Assert.Empty(result.Runs[0].CallerDiagnostics);
             foreach (RunResult run in result.Runs.Skip(1))
             {
@@ -164,118 +162,10 @@ public class HeaderAnnotationCompatibilityTests : GeneratorTestBase
                     Assert.Empty(run.CallerDiagnostics);
                 }
             }
-
-            if (requireProperty)
-            {
-                string adjusted = caller.Replace("/*IMPLEMENTATION*/", "MODE IModeProperty.Mode { get => this.Mode; set => this.Mode = value; }", StringComparison.Ordinal);
-                Assert.Empty(this.Generate("new-proposed-adjusted", path, ["RECORD"], adjusted, result.Options, baseline: false).CallerDiagnostics);
-            }
         }
         finally
         {
             File.Delete(path);
-        }
-    }
-
-    /// <summary>
-    /// Compares the existing value-property and ref-property patterns without changing the shipping projection.
-    /// </summary>
-    /// <param name="allowMarshaling">The pinned marshaling option.</param>
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void ExactStorageFieldContractAlternatives(bool allowMarshaling)
-    {
-        RequireBaseline();
-        string source = AssociatedEnumTests.MetadataSource.Replace(
-            "[AssociatedEnum(\"Windows.Win32.Test.MODE\")] public MODE_STORAGE* Modes;",
-            string.Empty,
-            StringComparison.Ordinal);
-        string native = AssociatedEnumTests.EmitMetadata(source, this.starterCompilations["net8.0-x64"], this.parseOptions);
-        string syntheticSource = source.Replace(
-            "using MODE_STORAGE = System.UInt32;",
-            "using MODE_STORAGE = Windows.Win32.Test.MODE;",
-            StringComparison.Ordinal).Replace(
-            "[AssociatedEnum(\"MODE\")] public MODE_STORAGE Mode;",
-            "public MODE_STORAGE Mode;",
-            StringComparison.Ordinal);
-        string synthetic = AssociatedEnumTests.EmitMetadata(syntheticSource, this.starterCompilations["net8.0-x64"], this.parseOptions);
-        try
-        {
-            GeneratorOptions options = DefaultTestGeneratorOptions with { Public = true, AllowMarshaling = allowMarshaling };
-            string propertyCaller = OrdinaryFieldCaller + Environment.NewLine + PropertyInterfaceCaller;
-            RunResult property = this.Generate("legacy-value-property", native, ["RECORD"], propertyCaller, options, baseline: true);
-            RunResult field = this.Generate("exact-enum-field", native, ["RECORD"], RefFieldCaller, options, baseline: false);
-            Assert.Empty(property.CallerDiagnostics);
-            Assert.Empty(field.CallerDiagnostics);
-            Assert.Empty(this.Generate("old-synthetic-field", synthetic, ["RECORD"], RefFieldCaller, options, baseline: true).CallerDiagnostics);
-
-            SyntaxNode root = CSharpSyntaxTree.ParseText(field.GeneratedCode, this.parseOptions, cancellationToken: TestContext.Current.CancellationToken).GetRoot(TestContext.Current.CancellationToken);
-            StructDeclarationSyntax record = Assert.Single(root.DescendantNodes().OfType<StructDeclarationSyntax>(), declaration => declaration.Identifier.ValueText == "RECORD");
-            FieldDeclarationSyntax mode = Assert.Single(record.Members.OfType<FieldDeclarationSyntax>(), declaration => declaration.Declaration.Variables.Any(variable => variable.Identifier.ValueText == "Mode"));
-            FieldDeclarationSyntax backing = mode.WithModifiers(SyntaxFactory.TokenList(SyntaxFactory.Token(SyntaxKind.PrivateKeyword).WithTrailingTrivia(SyntaxFactory.Space)))
-                .WithDeclaration(mode.Declaration.WithVariables(SyntaxFactory.SingletonSeparatedList(SyntaxFactory.VariableDeclarator("_Mode"))));
-            PropertyDeclarationSyntax refProperty = Assert.IsType<PropertyDeclarationSyntax>(SyntaxFactory.ParseMemberDeclaration($"""
-                        /// <summary>Returns the addressable enum storage.</summary>
-                        [global::System.Diagnostics.CodeAnalysis.UnscopedRef]
-                        public ref {mode.Declaration.Type} Mode => ref this._Mode;
-                        """));
-            string refCode = root.ReplaceNode(record, record.WithMembers(record.Members.Replace(mode, backing).Add(refProperty))).ToFullString();
-            List<FieldContractAlternative> alternatives = new();
-            foreach ((string name, string code) in new[] { (property.Name, property.GeneratedCode), (field.Name, field.GeneratedCode), ("ref-property", refCode) })
-            {
-                string[] propertyErrors = this.CompileFieldContract(code, propertyCaller).GetDiagnostics(TestContext.Current.CancellationToken)
-                    .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error).Select(diagnostic => diagnostic.ToString()).ToArray();
-                string[] refErrors = this.CompileFieldContract(code, RefFieldCaller).GetDiagnostics(TestContext.Current.CancellationToken)
-                    .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error).Select(diagnostic => diagnostic.ToString()).ToArray();
-                CSharpCompilation layout = this.CompileFieldContract(code, FieldContractLayoutCaller);
-                this.AssertNoDiagnostics(layout, logAllGeneratedCode: false);
-                using MemoryStream stream = new();
-                var emitted = layout.Emit(stream, cancellationToken: TestContext.Current.CancellationToken);
-                Assert.True(emitted.Success, string.Join(Environment.NewLine, emitted.Diagnostics));
-                ulong sizeAndBits = Assert.IsType<ulong>(Assembly.Load(stream.ToArray()).GetType("Windows.Win32.Test.ContractLayout")!.GetMethod("Run")!.Invoke(null, null));
-                Assert.Equal((4UL << 32) | 0x80000002UL, sizeAndBits);
-                alternatives.Add(new(name, code, propertyErrors, refErrors, sizeAndBits));
-            }
-
-            Assert.Empty(alternatives[0].PropertyCallerDiagnostics);
-            Assert.Contains("CS0206", Assert.Single(alternatives[0].RefCallerDiagnostics), StringComparison.Ordinal);
-            Assert.Contains("CS0535", Assert.Single(alternatives[1].PropertyCallerDiagnostics), StringComparison.Ordinal);
-            Assert.Empty(alternatives[1].RefCallerDiagnostics);
-            Assert.Contains("CS8152", Assert.Single(alternatives[2].PropertyCallerDiagnostics), StringComparison.Ordinal);
-            Assert.Empty(alternatives[2].RefCallerDiagnostics);
-
-            PropertyDeclarationSyntax duplicate = Assert.IsType<PropertyDeclarationSyntax>(SyntaxFactory.ParseMemberDeclaration($"public {mode.Declaration.Type} Mode {{ get => default; set {{ }} }}"));
-            string duplicateCode = root.ReplaceNode(record, record.AddMembers(duplicate)).ToFullString();
-            string[] duplicateErrors = this.CompileFieldContract(duplicateCode, string.Empty).GetDiagnostics(TestContext.Current.CancellationToken)
-                .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error).Select(diagnostic => diagnostic.ToString()).ToArray();
-            Assert.Contains(duplicateErrors, diagnostic => diagnostic.Contains("CS0102", StringComparison.Ordinal));
-            if (Environment.GetEnvironmentVariable("CSWIN32_COMPAT_OUTPUT") is string output)
-            {
-                string report = JsonSerializer.Serialize(
-                    new
-                    {
-                        BaselineCommit = Environment.GetEnvironmentVariable("CSWIN32_COMPAT_BASELINE_COMMIT"),
-                        BaselineAssemblySHA256 = HashFile(Environment.GetEnvironmentVariable("CSWIN32_COMPAT_BASELINE_DLL")!),
-                        ProposedCommit = Environment.GetEnvironmentVariable("CSWIN32_COMPAT_PROPOSED_COMMIT"),
-                        ProposedAssemblySHA256 = HashFile(typeof(Generator).Assembly.Location),
-                        RoslynVersion = typeof(CSharpCompilation).Assembly.GetName().Version!.ToString(),
-                        Compilation = "net8.0-windows; x64; unsafe; C# 12",
-                        Options = options,
-                        MetadataSHA256 = HashFile(native),
-                        PropertyCaller = propertyCaller,
-                        RefCaller = RefFieldCaller,
-                        Alternatives = alternatives,
-                        DuplicateMemberDiagnostics = duplicateErrors,
-                    },
-                    new JsonSerializerOptions { WriteIndented = true });
-                File.WriteAllText(Path.Combine(output, $"field-contract-alternatives-{(allowMarshaling ? "marshaling" : "no-marshaling")}.json"), report);
-            }
-        }
-        finally
-        {
-            File.Delete(native);
-            File.Delete(synthetic);
         }
     }
 
@@ -425,6 +315,14 @@ public class HeaderAnnotationCompatibilityTests : GeneratorTestBase
 
     private static string HashFile(string path) => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)));
 
+    private static string GetCanonicalCaller(bool allowMarshaling)
+    {
+        string callback = allowMarshaling
+            ? "static void Register() => PInvoke.UseCallback(Callback); static MODE Callback(MODE mode, MODE* data) => mode;"
+            : "static void Register() => PInvoke.UseCallback(&Callback); [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvStdcall) })] static MODE Callback(MODE mode, MODE* data) => mode;";
+        return AssociatedEnumTests.Caller + Environment.NewLine + "namespace CallbackFixture { using System.Runtime.InteropServices; using Windows.Win32; using Windows.Win32.Test; static unsafe class CallbackCaller { " + callback + " } }";
+    }
+
     private static string[] MetadataConstructorLimitations(string path)
     {
         using FileStream stream = File.OpenRead(path);
@@ -497,7 +395,7 @@ public class HeaderAnnotationCompatibilityTests : GeneratorTestBase
         return symbols.OrderBy(symbol => symbol, StringComparer.Ordinal).ToArray();
     }
 
-    private MatrixResult RunMatrix(string name, string oldMetadata, string? newMetadata, string[] requests, string callers, bool allowMarshaling)
+    private MatrixResult RunMatrix(string name, string oldMetadata, string? newMetadata, string[] requests, string callers, bool allowMarshaling, string compatibilityScope = "synthetic-enum-migration")
     {
         callers = TestUtils.NormalizeToExpectedLineEndings(callers);
         GeneratorOptions options = DefaultTestGeneratorOptions with { Public = true, AllowMarshaling = allowMarshaling, UseSafeHandles = true };
@@ -512,6 +410,7 @@ public class HeaderAnnotationCompatibilityTests : GeneratorTestBase
             AddedPublicSymbols = run.PublicSymbols.Except(oldBaseline.PublicSymbols, StringComparer.Ordinal).ToArray(),
         }).ToArray();
         MatrixResult result = new(
+            compatibilityScope,
             Environment.GetEnvironmentVariable("CSWIN32_COMPAT_BASELINE_COMMIT")!,
             HashFile(Environment.GetEnvironmentVariable("CSWIN32_COMPAT_BASELINE_DLL")!),
             Environment.GetEnvironmentVariable("CSWIN32_COMPAT_PROPOSED_COMMIT") ?? "uncommitted",
@@ -546,12 +445,6 @@ public class HeaderAnnotationCompatibilityTests : GeneratorTestBase
         Assert.Empty(result.NewMetadataPhysicalLimitations);
         return result;
     }
-
-    private CSharpCompilation CompileFieldContract(string code, string caller) => this.starterCompilations["net8.0-x64"]
-        .WithAssemblyName("FieldContract" + Guid.NewGuid().ToString("N"))
-        .AddSyntaxTrees(
-            CSharpSyntaxTree.ParseText(TestUtils.NormalizeToExpectedLineEndings(code), this.parseOptions, "Projection.cs"),
-            CSharpSyntaxTree.ParseText(TestUtils.NormalizeToExpectedLineEndings(caller), this.parseOptions, "UnchangedCaller.cs"));
 
     private RunResult Generate(string name, string metadata, string[] requests, string callers, GeneratorOptions options, bool baseline)
     {
@@ -595,9 +488,8 @@ public class HeaderAnnotationCompatibilityTests : GeneratorTestBase
 
     private sealed record RunResult(string Name, string GeneratedCode, string[] PublicSymbols, string[] CallerDiagnostics, string Grade, string[] RemovedPublicSymbols, string[] AddedPublicSymbols);
 
-    private sealed record FieldContractAlternative(string Name, string GeneratedCode, string[] PropertyCallerDiagnostics, string[] RefCallerDiagnostics, ulong SizeAndBits);
-
     private sealed record MatrixResult(
+        string CompatibilityScope,
         string BaselineCommit,
         string BaselineAssemblySHA256,
         string ProposedCommit,

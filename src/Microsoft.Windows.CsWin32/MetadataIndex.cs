@@ -51,6 +51,9 @@ internal class MetadataIndex
     /// </summary>
     private readonly ConcurrentDictionary<string, string?> enumValueLookupCache = new(StringComparer.Ordinal);
 
+    private readonly Lazy<IReadOnlyDictionary<string, ImmutableArray<CustomAttributeHandle>>> associatedEnumAttributes;
+    private readonly Lazy<HashSet<EntityHandle>> nativeSignatureTypes;
+
     /// <summary>
     /// A lazily computed reference to System.Enum, as defined by this metadata.
     /// Should be retrieved by <see cref="FindEnumTypeReference(MetadataReader)"/>.
@@ -66,6 +69,44 @@ internal class MetadataIndex
     {
         this.metadataFile = metadataFile;
         this.platform = platform;
+        this.associatedEnumAttributes = new(() =>
+        {
+            using MetadataFile.Rental rental = metadataFile.GetMetadataReader();
+            MetadataReader reader = rental.Value;
+            Dictionary<string, List<CustomAttributeHandle>> attributes = new(StringComparer.Ordinal);
+            Dictionary<EntityHandle, bool> constructors = new();
+            foreach (CustomAttributeHandle handle in reader.CustomAttributes)
+            {
+                CustomAttribute attribute = reader.GetCustomAttribute(handle);
+                if (attribute.Parent.Kind is not (HandleKind.FieldDefinition or HandleKind.Parameter))
+                {
+                    continue;
+                }
+
+                if (!constructors.TryGetValue(attribute.Constructor, out bool associatedEnum))
+                {
+                    associatedEnum = MetadataUtilities.IsAttribute(reader, attribute, Generator.InteropDecorationNamespace, Generator.AssociatedEnumAttribute);
+                    constructors.Add(attribute.Constructor, associatedEnum);
+                }
+
+                if (!associatedEnum
+                    || attribute.DecodeValue(CustomAttributeTypeProvider.Instance).FixedArguments is not [{ Value: string name }])
+                {
+                    continue;
+                }
+
+                string leafName = name.Substring(name.LastIndexOf('.') + 1);
+                if (!attributes.TryGetValue(leafName, out List<CustomAttributeHandle>? matches))
+                {
+                    attributes.Add(leafName, matches = new());
+                }
+
+                matches.Add(handle);
+            }
+
+            return attributes.ToDictionary(pair => pair.Key, pair => pair.Value.ToImmutableArray(), StringComparer.Ordinal);
+        });
+        this.nativeSignatureTypes = new(this.CollectNativeSignatureTypes);
 
         using MetadataFile.Rental mrRental = metadataFile.GetMetadataReader();
         MetadataReader mr = mrRental.Value;
@@ -252,6 +293,20 @@ internal class MetadataIndex
     internal string CommonNamespaceDot { get; }
 
     private string DebuggerDisplay => $"{this.metadataFile.Path} ({this.platform})";
+
+    /// <summary>
+    /// Gets enum associations indexed by the target's unqualified name without retaining a metadata reader.
+    /// </summary>
+    /// <param name="name">The unqualified enum name.</param>
+    /// <returns>The matching annotation handles.</returns>
+    internal ImmutableArray<CustomAttributeHandle> GetAssociatedEnumAttributes(string name) =>
+        this.associatedEnumAttributes.Value.TryGetValue(name, out ImmutableArray<CustomAttributeHandle> attributes) ? attributes : [];
+
+    /// <summary>
+    /// Gets the types explicitly referenced by compatible native fields, methods, and callbacks.
+    /// </summary>
+    /// <returns>Reader-independent type definition and reference handles.</returns>
+    internal IReadOnlyCollection<EntityHandle> GetNativeSignatureTypes() => this.nativeSignatureTypes.Value;
 
     /// <summary>
     /// Attempts to translate a <see cref="TypeReferenceHandle"/> to a <see cref="TypeDefinitionHandle"/>.
@@ -443,5 +498,114 @@ internal class MetadataIndex
 
         // Return null if the value was determined to be missing.
         return this.enumTypeReference.HasValue && !this.enumTypeReference.Value.IsNil ? this.enumTypeReference.Value : null;
+    }
+
+    private HashSet<EntityHandle> CollectNativeSignatureTypes()
+    {
+        using MetadataFile.Rental rental = this.metadataFile.GetMetadataReader();
+        MetadataReader reader = rental.Value;
+        NativeSignatureTypeProvider provider = new();
+        foreach (TypeDefinitionHandle handle in reader.TypeDefinitions)
+        {
+            TypeDefinition type = reader.GetTypeDefinition(handle);
+            if (!MetadataUtilities.IsCompatibleWithPlatform(reader, this, this.platform, type.GetCustomAttributes()))
+            {
+                continue;
+            }
+
+            string? baseName = null;
+            if (type.BaseType.Kind == HandleKind.TypeReference)
+            {
+                TypeReference baseType = reader.GetTypeReference((TypeReferenceHandle)type.BaseType);
+                if (reader.StringComparer.Equals(baseType.Namespace, nameof(System)))
+                {
+                    baseName = reader.GetString(baseType.Name);
+                }
+            }
+
+            bool nativeMethods = (type.Attributes & TypeAttributes.Interface) != 0 || baseName == nameof(MulticastDelegate);
+            if (baseName == nameof(ValueType))
+            {
+                foreach (FieldDefinitionHandle fieldHandle in type.GetFields())
+                {
+                    FieldDefinition field = reader.GetFieldDefinition(fieldHandle);
+                    if ((field.Attributes & FieldAttributes.Static) == 0 && MetadataUtilities.IsCompatibleWithPlatform(reader, this, this.platform, field.GetCustomAttributes()))
+                    {
+                        field.DecodeSignature(provider, null);
+                    }
+                }
+            }
+
+            foreach (MethodDefinitionHandle methodHandle in type.GetMethods())
+            {
+                MethodDefinition method = reader.GetMethodDefinition(methodHandle);
+                if ((nativeMethods || (method.Attributes & MethodAttributes.PinvokeImpl) != 0)
+                    && MetadataUtilities.IsCompatibleWithPlatform(reader, this, this.platform, method.GetCustomAttributes()))
+                {
+                    method.DecodeSignature(provider, null);
+                }
+            }
+        }
+
+        return provider.Types;
+    }
+
+    private sealed class NativeSignatureTypeProvider : ISignatureTypeProvider<object?, object?>
+    {
+        /// <summary>
+        /// Gets the type handles referenced in the decoded signatures.
+        /// </summary>
+        internal HashSet<EntityHandle> Types { get; } = new();
+
+        /// <inheritdoc/>
+        public object? GetTypeFromDefinition(MetadataReader reader, TypeDefinitionHandle handle, byte rawTypeKind)
+        {
+            this.Types.Add(handle);
+            return null;
+        }
+
+        /// <inheritdoc/>
+        public object? GetTypeFromReference(MetadataReader reader, TypeReferenceHandle handle, byte rawTypeKind)
+        {
+            this.Types.Add(handle);
+            return null;
+        }
+
+        /// <inheritdoc/>
+        public object? GetTypeFromSpecification(MetadataReader reader, object? genericContext, TypeSpecificationHandle handle, byte rawTypeKind) =>
+            reader.GetTypeSpecification(handle).DecodeSignature(this, genericContext);
+
+        /// <inheritdoc/>
+        public object? GetArrayType(object? elementType, ArrayShape shape) => null;
+
+        /// <inheritdoc/>
+        public object? GetSZArrayType(object? elementType) => null;
+
+        /// <inheritdoc/>
+        public object? GetPointerType(object? elementType) => null;
+
+        /// <inheritdoc/>
+        public object? GetPrimitiveType(PrimitiveTypeCode typeCode) => null;
+
+        /// <inheritdoc/>
+        public object? GetByReferenceType(object? elementType) => null;
+
+        /// <inheritdoc/>
+        public object? GetFunctionPointerType(MethodSignature<object?> signature) => null;
+
+        /// <inheritdoc/>
+        public object? GetGenericInstantiation(object? genericType, ImmutableArray<object?> typeArguments) => null;
+
+        /// <inheritdoc/>
+        public object? GetGenericMethodParameter(object? genericContext, int index) => null;
+
+        /// <inheritdoc/>
+        public object? GetGenericTypeParameter(object? genericContext, int index) => null;
+
+        /// <inheritdoc/>
+        public object? GetModifiedType(object? modifier, object? unmodifiedType, bool isRequired) => null;
+
+        /// <inheritdoc/>
+        public object? GetPinnedType(object? elementType) => null;
     }
 }

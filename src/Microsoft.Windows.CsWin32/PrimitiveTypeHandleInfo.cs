@@ -11,33 +11,14 @@ internal record PrimitiveTypeHandleInfo(PrimitiveTypeCode PrimitiveTypeCode) : T
     {
         if (customAttributes?.Generator.FindAssociatedEnum(customAttributes.Value.Collection) is HandleTypeHandleInfo enumType)
         {
-            TypeSyntax enumTypeName = enumType.ToTypeSyntax(inputs, forElement, null).Type;
-            if (this.PrimitiveTypeCode == Generator.GetEnumUnderlyingType(enumType))
+            if (customAttributes.Value.Generator.RequiresAssociatedEnumConversion(enumType, this.PrimitiveTypeCode)
+                && forElement is Generator.GeneratingElement.ExternMethod or Generator.GeneratingElement.InterfaceAsStructMember)
             {
-                return new TypeSyntaxAndMarshaling(enumTypeName);
-            }
-
-            UnmanagedType unmanagedType = GetUnmanagedType(this.PrimitiveTypeCode);
-            if (inputs.IsField || (!inputs.AllowMarshaling && forElement is Generator.GeneratingElement.ExternMethod
-                or Generator.GeneratingElement.InterfaceAsStructMember or Generator.GeneratingElement.InterfaceMember))
-            {
-                // Fields and scalar extern wrappers convert values without changing their native storage.
                 return new TypeSyntaxAndMarshaling(ToTypeSyntax(this.PrimitiveTypeCode, inputs.PreferNativeInt));
             }
 
-            if (!inputs.AllowMarshaling)
-            {
-                throw new GenerationFailedException($"AssociatedEnum \"{enumType}\" requires conversion from native {this}. Marshaling is not supported in this context.");
-            }
-
-            if (inputs.Generator?.UseSourceGenerators == true)
-            {
-                string marshalerTypeName = customAttributes.Value.Generator.RequestAssociatedEnumMarshaller(enumType, unmanagedType);
-                return new TypeSyntaxAndMarshaling(enumTypeName) { MarshalUsingType = marshalerTypeName };
-            }
-
-            MarshalAsAttribute marshalAs = new(unmanagedType);
-            return new TypeSyntaxAndMarshaling(enumTypeName, marshalAs, nativeArrayInfo: null);
+            customAttributes.Value.Generator.ValidateAssociatedEnumStorage(enumType, this.PrimitiveTypeCode);
+            return new TypeSyntaxAndMarshaling(Generator.GetAssociatedEnumTypeSyntax(enumType, inputs, forElement));
         }
         else
         {
@@ -77,22 +58,6 @@ internal record PrimitiveTypeHandleInfo(PrimitiveTypeCode PrimitiveTypeCode) : T
             PrimitiveTypeCode.IntPtr => preferNativeInt ? IdentifierName("nint") : IdentifierName(nameof(IntPtr)),
             PrimitiveTypeCode.UIntPtr => preferNativeInt ? IdentifierName("nuint") : IdentifierName(nameof(UIntPtr)),
             PrimitiveTypeCode.Void => PredefinedType(Token(SyntaxKind.VoidKeyword)),
-            _ => throw new NotSupportedException("Unsupported type code: " + typeCode),
-        };
-    }
-
-    private static UnmanagedType GetUnmanagedType(PrimitiveTypeCode typeCode)
-    {
-        return typeCode switch
-        {
-            PrimitiveTypeCode.SByte => UnmanagedType.I1,
-            PrimitiveTypeCode.Byte => UnmanagedType.U1,
-            PrimitiveTypeCode.Int16 => UnmanagedType.I2,
-            PrimitiveTypeCode.UInt16 => UnmanagedType.U2,
-            PrimitiveTypeCode.Int32 => UnmanagedType.I4,
-            PrimitiveTypeCode.UInt32 => UnmanagedType.U4,
-            PrimitiveTypeCode.Int64 => UnmanagedType.I8,
-            PrimitiveTypeCode.UInt64 => UnmanagedType.U8,
             _ => throw new NotSupportedException("Unsupported type code: " + typeCode),
         };
     }

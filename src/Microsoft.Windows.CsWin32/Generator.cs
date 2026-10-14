@@ -1959,7 +1959,7 @@ public partial class Generator : IGenerator, IDisposable
             else if (this.Reader.StringComparer.Equals(baseTypeName, nameof(Enum)) && this.Reader.StringComparer.Equals(baseTypeNamespace, nameof(System)))
             {
                 // Consider reusing .NET types like FILE_SHARE_FLAGS -> System.IO.FileShare
-                typeDeclaration = this.DeclareEnum(typeDef);
+                typeDeclaration = this.DeclareEnum(typeDefHandle, typeDef);
             }
             else if (this.Reader.StringComparer.Equals(baseTypeName, nameof(MulticastDelegate)) && this.Reader.StringComparer.Equals(baseTypeNamespace, nameof(System)))
             {

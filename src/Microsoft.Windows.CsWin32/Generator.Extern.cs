@@ -220,33 +220,6 @@ public partial class Generator
             CustomAttributeHandleCollection? returnTypeAttributes = this.GetReturnTypeCustomAttributes(methodDefinition);
             TypeSyntaxAndMarshaling returnType = signature.ReturnType.ToTypeSyntax(typeSettings with { IsReturnValue = true }, GeneratingElement.ExternMethod, returnTypeAttributes?.QualifyWith(this), ParameterAttributes.Out);
 
-            // Scalar conversions are needed only when the enum cannot directly represent native storage.
-            TypeSyntax? returnTypeEnumName = null;
-            TypeSyntax?[]? parameterEnumType = null;
-            if (!typeSettings.AllowMarshaling && signature.ReturnType is PrimitiveTypeHandleInfo returnPrimitive
-                && this.FindAssociatedEnum(returnTypeAttributes) is HandleTypeHandleInfo returnEnum
-                && returnPrimitive.PrimitiveTypeCode != GetEnumUnderlyingType(returnEnum))
-            {
-                returnTypeEnumName = returnEnum.ToTypeSyntax(typeSettings, GeneratingElement.ExternMethod, null).Type;
-            }
-
-            foreach (ParameterHandle parameterHandle in methodDefinition.GetParameters())
-            {
-                Parameter parameter = this.Reader.GetParameter(parameterHandle);
-                if (parameter.SequenceNumber == 0)
-                {
-                    continue;
-                }
-
-                if (!typeSettings.AllowMarshaling && signature.ParameterTypes[parameter.SequenceNumber - 1] is PrimitiveTypeHandleInfo primitive
-                    && this.FindAssociatedEnum(parameter.GetCustomAttributes()) is HandleTypeHandleInfo parameterEnum
-                    && primitive.PrimitiveTypeCode != GetEnumUnderlyingType(parameterEnum))
-                {
-                    parameterEnumType ??= new TypeSyntax?[signature.ParameterTypes.Length];
-                    parameterEnumType[parameter.SequenceNumber - 1] = parameterEnum.ToTypeSyntax(typeSettings, GeneratingElement.ExternMethod, null).Type;
-                }
-            }
-
             bool setLastError = (import.Attributes & MethodImportAttributes.SetLastError) == MethodImportAttributes.SetLastError;
             bool setLastErrorViaMarshaling = setLastError && (this.Options.AllowMarshaling || !this.canUseSetLastPInvokeError);
             bool setLastErrorManually = setLastError && !setLastErrorViaMarshaling;
@@ -300,7 +273,7 @@ public partial class Generator
             }
 
             MethodDeclarationSyntax exposedMethod;
-            if (returnTypeEnumName is null && parameterEnumType is null && !setLastErrorManually)
+            if (!setLastErrorManually)
             {
                 // No need for wrapping the extern method, so just expose it directly.
                 exposedMethod = externDeclaration.WithModifiers(externDeclaration.Modifiers.Insert(0, TokenWithSpace(this.Visibility)));
@@ -313,28 +286,12 @@ public partial class Generator
                     p.Modifiers.Any(SyntaxKind.RefKeyword) ? TokenWithSpace(SyntaxKind.RefKeyword) :
                     default;
                 ArgumentListSyntax argumentList = ArgumentList([.. exposedParameterList.Parameters.Select(p => Argument(IdentifierName(p.Identifier.ValueText)).WithRefKindKeyword(RefInOutKeyword(p)))]);
-                if (parameterEnumType is not null)
-                {
-                    for (int i = 0; i < parameterEnumType.Length; i++)
-                    {
-                        if (parameterEnumType[i] is TypeSyntax parameterType)
-                        {
-                            exposedParameterList = exposedParameterList.ReplaceNode(exposedParameterList.Parameters[i], exposedParameterList.Parameters[i].WithType(parameterType.WithTrailingTrivia(Space)));
-                            argumentList = argumentList.ReplaceNode(argumentList.Arguments[i], argumentList.Arguments[i].WithExpression(UncheckedExpression(CastExpression(externDeclaration.ParameterList.Parameters[i].Type!.WithTrailingTrivia(default(SyntaxTriviaList)), argumentList.Arguments[i].Expression))));
-                        }
-                    }
-                }
 
                 // We need to specify Entrypoint because our local function will have a different name.
                 // It must have a unique name because some functions will have the same signature as our exposed method except for the return type.
                 entrypoint ??= methodName;
                 IdentifierNameSyntax localExternFunctionName = IdentifierName("LocalExternFunction");
                 ExpressionSyntax invocation = InvocationExpression(localExternFunctionName, argumentList);
-
-                if (returnTypeEnumName is not null)
-                {
-                    invocation = UncheckedExpression(CastExpression(returnTypeEnumName, invocation));
-                }
 
                 BlockSyntax body = Block();
 
@@ -353,7 +310,7 @@ public partial class Generator
                     // var __retVal = LocalExternFunction(...);
                     body = body.AddStatements(
                         LocalDeclarationStatement(
-                            VariableDeclaration(returnTypeEnumName ?? returnType.Type, [VariableDeclarator(retValLocalName.Identifier, EqualsValueClause(invocation))])));
+                            VariableDeclaration(returnType.Type, [VariableDeclarator(retValLocalName.Identifier, EqualsValueClause(invocation))])));
                 }
                 else
                 {
@@ -382,7 +339,7 @@ public partial class Generator
                     .WithSemicolonToken(SemicolonWithLineFeed);
                 body = body.AddStatements(externFunction);
 
-                exposedMethod = MethodDeclaration(returnTypeEnumName ?? returnType.Type, externDeclaration.Identifier)
+                exposedMethod = MethodDeclaration(returnType.Type, externDeclaration.Identifier)
                     .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword))
                     .WithParameterList(exposedParameterList)
                     .WithBody(body);

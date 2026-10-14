@@ -11,29 +11,25 @@ A namespace-qualified name can identify an enum in a referenced metadata assembl
 Loading an unrelated metadata file does not make its enum eligible.
 Missing, ambiguous, non-enum, or platform-incompatible targets produce generation errors.
 
-When the native primitive and enum underlying type have exactly the same width **and signedness**, CsWin32 projects the enum directly.
-This includes scalar fields, pointer elements and depth, fixed/flexible buffers, and callback signatures.
-Exact-storage fields remain real fields, so callers can continue taking `ref` references.
-Enum members, underlying types, and `[Flags]` semantics come from the enum definition.
+For a logical enum, **the native use site's primitive type determines the generated enum's underlying width and signedness**, not the logical enum's metadata `value__` type.
+CsWin32 then references that enum directly in public signatures and fields.
+This recovers the OLD synthetic-enum projection while the winmd keeps faithful native primitive/pointer signatures.
+It includes scalars, pointer elements and depth, fixed/flexible buffers, callback signatures, and source-generated signatures.
+Fields remain real, ref-returnable fields; they do not become conversion properties just because the logical metadata enum declared different storage.
+Member names and `[Flags]` semantics still come from the enum definition.
 
-Earlier CsWin32 projections of already-annotated primitive fields used enum properties even for identical storage.
-Those members now become fields: normal reads and assignments remain source compatible, but property-specific contracts are not equivalent.
+Storage discovery considers compatible association sites in the actual loaded reference closure, including when the enum is requested before its consumers.
+Conflicting native widths or signedness for one logical enum fail explicitly instead of depending on generation order.
+Member values must fit the native width without truncation; representable signed/unsigned bit patterns, including high-bit flags, are preserved.
+An already available C# enum must also have compatible storage.
+Nonintegral storage, unsupported native shapes, and combined `AssociatedEnum`/`NativeBitfield` backing fields produce generation errors, not silent native-only fallbacks.
 
-Unequal scalar storage requires conversion rather than reinterpretation.
-Structs retain a native backing field and expose a converting enum property.
-Runtime or source-generated scalar marshaling preserves the native integral type.
-Without marshaling, extern methods and unmanaged COM structs retain native signatures and expose converting enum overloads.
-A return-only conversion uses an `_Enum` suffix when parameter types cannot distinguish the overload.
-Conversions are unchecked, including in a checked caller, so a narrower native value retains its native truncation behavior.
-
-Unmanaged pointer/array elements must have identical storage; changing their width or signedness is rejected.
-Indirect unequal-storage conversions with source-generated marshaling are also rejected rather than dropping an element marshaler.
-Unequal unmanaged callback conversions and combined `AssociatedEnum`/`NativeBitfield` backing fields are unsupported and produce generation errors.
-These restrictions do not affect unannotated metadata.
-
-An unavoidable source boundary is an unequal-storage field: its enum view is a property, not a ref-returnable field.
-A caller that previously passed such a fabricated enum field by reference must copy the property to a local, pass that local, and assign it back if modified.
-Retaining the old field layout would instead misrepresent the native ABI.
+A distinct pre-existing case is an enum used **directly in native metadata signatures**, not just named by annotations.
+Those signatures already constrain its native ABI, so annotations elsewhere cannot retype it.
+An existing scalar field with conflicting storage retains the established native-backing-field/value-property pattern.
+Extern methods and unmanaged COM structs retain raw scalar entry points and add explicit converting enum overloads; a return-only view uses an `_Enum` suffix.
+Indirect or unsupported contexts with that genuine storage conflict fail explicitly.
+These bounded compatibility paths do not change the direct-field/signature contract for migrated logical enums, add a legacy-property option, or infer caller interfaces.
 
 ## Contextual ownership
 
@@ -68,7 +64,9 @@ The matrix uses runtime marshaling, not COM source generators.
 The harness compares public symbols as well as compiling unchanged callers.
 Reports grade results as `identical-generation`, `source-compatible-difference`, or `residual-source-break`, and retain symbol additions/removals and exact caller diagnostics.
 Mutation controls remove associations or change pointer depth and require the unchanged canonical caller to fail.
-An existing-annotation fixture exercises both a source-compatible field/property difference and a failing unchanged property-contract caller, so all three grades have concrete coverage.
+The native-storage matrix deliberately gives the NEW logical enum a different metadata underlying type, across all eight integral native types and both enum-first/consumer-first request orders.
+Public symbols and the same unchanged callers must still match the OLD synthetic-enum projection.
+Independent existing-annotation regression reports are labeled separately from `synthetic-enum-migration` acceptance.
 
 ### Recorded checkpoint evidence
 
@@ -77,53 +75,31 @@ An existing-annotation fixture exercises both a source-compatible field/property
 | Canonical OLD / baseline | 19 / 18 | Unchanged callers compile |
 | Canonical OLD / proposed | 19 / 18 | Identical generation and public symbols |
 | Canonical NEW / proposed | 19 / 18 | Identical generation and public symbols |
+| Native-storage OLD / baseline and proposed, eight integral types | 19 / 18 | Identical generation; unchanged callers compile |
+| Native-storage NEW / proposed, eight integral types, both request orders | 19 / 18 | Source-compatible text differences; identical public symbols and unchanged callers |
 | WinHttp OLD / baseline | 187 / 186 | Unchanged callers compile |
 | WinHttp OLD / proposed | 187 / 186 | Identical generation and public symbols |
 | WinHttp NEW / proposed | Pending | Full NEW image has not been supplied |
 
-`ExistingAnnotatedFieldMatrix` records the intentional member-kind change from
+### Independent existing-annotation regression
+
+`ExistingAnnotatedFieldRegression` separately records the member-kind change from
 `public MODE Windows.Win32.Test.RECORD.Mode { get; set; }` to a `public MODE` field.
 The same ordinary reads and assignments compile with both generators.
-An unchanged caller extension `public partial struct RECORD : IModeProperty`, where `IModeProperty` requires a `MODE Mode { get; set; }` property, instead fails with `CS0535`.
-The verified smallest adjustment is an explicit forwarding implementation:
-`MODE IModeProperty.Mode { get => this.Mode; set => this.Mode = value; }`.
+An unchanged caller extension `public partial struct RECORD : IModeProperty`, where `IModeProperty` requires a `MODE Mode { get; set; }` property, instead fails with `CS0535` at `UnchangedCaller.cs(21,36)`.
 Reflection-based callers looking up a property likewise need to account for the field representation; reflection behavior is not covered by the compile matrix.
-This is an observed canonical source break, distinct from the pending WinHttp findings.
+This is a separately demonstrated existing-consumer regression, **not the OLD synthetic-enum field contract**, a pilot policy decision, or a prerequisite for WinHttp acceptance.
+No caller shim, interface inference, or new generation option is required by the migration contract.
+The two-generator evidence is retained in `existing-annotation-*.json` with `CompatibilityScope=independent-existing-annotation-regression`; it is not mislabeled as a migrated NEW leg.
 
-### Bounded field/property compatibility pass
-
-`ExactStorageFieldContractAlternatives` compares the actual baseline value-property projection, the current enum field, and the existing `[UnscopedRef]` ref-property pattern used by anonymous-field accessors.
-It uses unchanged property-interface and ref-field callers in both marshaling modes.
-All three candidates execute with the same four-byte native layout and stored bits `0x80000002`: keeping a value property is **not** inherently ABI-unsafe for exact storage.
-
-| Candidate for `RECORD.Mode` | Unchanged `IModeProperty` caller | Unchanged `ref MODE field = ref record.Mode` |
-|--|--|--|
-| Value `MODE Mode { get; set; }` over native backing storage | Compiles | `CS0206` at `UnchangedCaller.cs(7,34)` |
-| Public `MODE Mode` field | `CS0535` at `UnchangedCaller.cs(21,36)` | Compiles |
-| `[UnscopedRef] public ref MODE Mode => ref ...` | `CS8152` at `UnchangedCaller.cs(21,36)` (return-by-reference mismatch) | Compiles |
-
-The original synthetic-enum field also compiles the same ref caller with the pinned baseline generator.
-Emitting both a public field and a value property named `Mode` on the same struct fails with `CS0102`; changing the property's backing storage or adding `[UnscopedRef]` does not remove that language-level conflict.
-
-The native primitive plus `AssociatedEnum("MODE")` describes native storage and logical type, not whether a previous consumer generated a property or a synthetic-enum field.
-Existing annotated fields and newly migrated synthetic fields can therefore have the same input facts.
-There is no existing provenance discriminator with which to retain a value property only where it historically existed.
-The constructor tooling correction below is a physical metadata fix, not such a discriminator.
-
-The unresolved tradeoff is **public member-kind/source-contract compatibility**, not a preference for identical output or a claim that a value property breaks native layout.
-Preserving the ordinary property would break unchanged synthetic-field ref callers instead.
-A ref-returning property preserves those callers but cannot implicitly implement the original value-returning get/set interface.
-The explicit interface shim shown above safely permits both the public field and that particular interface contract.
-Generating such shims for arbitrary caller-defined interfaces would require a new caller-contract inference feature, not an existing metadata projection pattern; none is added here.
-The shipping projection is unchanged by this bounded pass, and the field/interface break remains an explicit review item rather than universal source-compatibility acceptance.
-Detailed candidate code, compiler diagnostics, layout results, and pinned compilation context are retained in `field-contract-alternatives-*.json`.
+### Snapshot provenance and physical limitations
 
 Canonical metadata is emitted deterministically from the checked-in `AssociatedEnumTests` declarations:
 
 | Snapshot | SHA256 |
 |--|--|
-| Canonical OLD | `BC8F4A7A0E56B19143EA06D205C10C132E47CB3F5F60AA194A0D7A17D8F41B11` |
-| Canonical NEW | `579388A069AAE858D676E619527D5983280916F30CD3316AD85377F075FBD227` |
+| Canonical OLD | `155C94BA94A497FE616BD9096799F3F86AB99B26EA82D3D91CB6608FC45522A0` |
+| Canonical NEW | `6255F8A82C1FFED6DD6BF62BAB3162B7481EC2C49E5C4915899A6BC6A03A20F9` |
 | WinHttp OLD full image | `1361407C2888102CB5161D83503235C09C36F917837C7107CA0A80E5CF4FAC43` |
 
 The WinHttp image is from producer commit `b5b7b26ed09d648766f07449af48c64ef0e99d13`, native/header mirror `77817f12308e29ec8bf77dc6fe56786e65ff9e08`, SDK `10.0.26100.7705`, and matched ClangSharp `21.1.8.4`.
@@ -142,6 +118,7 @@ Matrix reports retain `OldMetadataPhysicalLimitations`/`NewMetadataPhysicalLimit
 The requested WinHttp corpus is checked into `HeaderAnnotationCompatibilityTests.WinHttpThreeWayMatrix`.
 It covers request/access/authentication/scheme/URL flags, ref fields, raw and friendly entry points, callbacks, read buffers, interior-pointer header buffers, raw creation, and cleanup.
 Canonical ownership tests separately execute contextual invalid values, output ownership, disposal while borrowed, and lease release, and run the lifetime analyzer.
+The existing-native-enum compatibility checks also execute a converting unmanaged vtable call, including checked callers and native truncation, and compile both raw and enum scalar callers.
 
 The NEW WinHttp leg is **not accepted at this checkpoint**.
 The producer identified a possible rename of the four `WINHTTP_INTERNET_SCHEME` members:
@@ -150,9 +127,9 @@ This is a predicted source break, not an observed result without the NEW image.
 The harness records exact diagnostics at the unchanged `EnumFields` call sites and checks that changing only those member names restores compilation.
 Other NEW diagnostics fail the acceptance check rather than being waived.
 
-All eight legal enum storage types are additionally checked on x86, x64, and ARM64.
-Source-generated scalar-conversion tests inspect generated conversion types and return attributes; they do not run the platform LibraryImport generator or native marshaling.
-This checkpoint therefore does not establish runtime acceptance of source-generated conversion marshalers.
+All eight legal enum storage types are additionally checked on x86, x64, and ARM64 with deliberately different logical metadata storage.
+Source-generated scalar/indirect tests verify direct enum signatures without conversion-marshaler attributes; they do not run the platform LibraryImport generator or native marshaling.
+This checkpoint therefore does not establish runtime acceptance of LibraryImport generation.
 
 ### Reproducing the matrix
 

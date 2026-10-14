@@ -152,8 +152,10 @@ namespace Microsoft.Windows.Sdk
         this.GenerateApi("SHDESCRIPTIONID");
 
         var type = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("SHDESCRIPTIONID"));
-        PropertyDeclarationSyntax property = Assert.Single(type.Members.OfType<PropertyDeclarationSyntax>(), m => m.Identifier.ValueText == "dwDescriptionId");
-        Assert.Equal("SHDID_ID", Assert.IsType<IdentifierNameSyntax>(property.Type).Identifier.ValueText);
+        FieldDeclarationSyntax field = Assert.Single(type.Members.OfType<FieldDeclarationSyntax>(), m => m.Declaration.Variables.Any(variable => variable.Identifier.ValueText == "dwDescriptionId"));
+        Assert.Contains("SHDID_ID", field.Declaration.Type.ToString(), StringComparison.Ordinal);
+        this.compilation = this.AddCode("using Windows.Win32.UI.Shell; static class AssociatedFieldCaller { static void Use(SHDESCRIPTIONID record) { ref SHDID_ID id = ref record.dwDescriptionId; } }");
+        this.AssertNoDiagnostics();
     }
 
     [Fact]

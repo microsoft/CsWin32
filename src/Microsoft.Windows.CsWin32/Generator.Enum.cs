@@ -8,12 +8,14 @@ public partial class Generator
     /// <inheritdoc/>
     public bool TryGetEnumName(string enumValueName, [NotNullWhen(true)] out string? declaringEnum) => this.MetadataIndex.TryGetEnumName(this.Reader, enumValueName, out declaringEnum);
 
-    private EnumDeclarationSyntax DeclareEnum(TypeDefinition typeDef)
+    private EnumDeclarationSyntax DeclareEnum(TypeDefinitionHandle typeHandle, TypeDefinition typeDef)
     {
         bool flagsEnum = this.FindAttribute(typeDef.GetCustomAttributes(), nameof(System), nameof(FlagsAttribute)) is not null;
+        PrimitiveTypeCode storage = this.GetProjectedEnumUnderlyingType(typeHandle);
+        bool changedStorage = storage != GetDeclaredEnumUnderlyingType(new(this, this.Reader, typeHandle));
 
         var enumValues = new List<SyntaxNodeOrToken>();
-        TypeSyntax? enumBaseType = null;
+        TypeSyntax enumBaseType = PrimitiveTypeHandleInfo.ToTypeSyntax(storage, this.enumTypeSettings.PreferNativeInt);
         foreach (FieldDefinitionHandle fieldDefHandle in typeDef.GetFields())
         {
             AddEnumValue(fieldDefHandle);
@@ -30,11 +32,6 @@ public partial class Generator
                     AddEnumValue(fieldHandle);
                 }
             }
-        }
-
-        if (enumBaseType is null)
-        {
-            throw new NotSupportedException("Unknown enum type.");
         }
 
         string? name = this.Reader.GetString(typeDef.Name);
@@ -64,12 +61,30 @@ public partial class Generator
             ConstantHandle valueHandle = fieldDef.GetDefaultValue();
             if (valueHandle.IsNil)
             {
-                enumBaseType = fieldDef.DecodeSignature(this.SignatureHandleProvider, null).ToTypeSyntax(this.enumTypeSettings, GeneratingElement.EnumValue, null).Type;
                 return;
             }
 
             bool enumBaseTypeIsSigned = enumBaseType is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.LongKeyword or (int)SyntaxKind.IntKeyword or (int)SyntaxKind.ShortKeyword or (int)SyntaxKind.SByteKeyword } };
             ExpressionSyntax enumValue = flagsEnum ? ToHexExpressionSyntax(this.Reader, valueHandle, enumBaseTypeIsSigned) : ToExpressionSyntax(this.Reader, valueHandle);
+            if (changedStorage)
+            {
+                Constant constant = this.Reader.GetConstant(valueHandle);
+                decimal value = Convert.ToDecimal(this.Reader.GetBlobReader(constant.Value).ReadConstant(constant.TypeCode), CultureInfo.InvariantCulture);
+                (decimal minimum, decimal maximum) = storage switch
+                {
+                    PrimitiveTypeCode.SByte or PrimitiveTypeCode.Byte => (sbyte.MinValue, byte.MaxValue),
+                    PrimitiveTypeCode.Int16 or PrimitiveTypeCode.UInt16 => (short.MinValue, ushort.MaxValue),
+                    PrimitiveTypeCode.Int32 or PrimitiveTypeCode.UInt32 => (int.MinValue, uint.MaxValue),
+                    _ => (long.MinValue, (decimal)ulong.MaxValue),
+                };
+                if (value < minimum || value > maximum)
+                {
+                    throw new GenerationFailedException($"AssociatedEnum member {enumValueName}={value} does not fit native {storage} storage without truncation.");
+                }
+
+                enumValue = UncheckedExpression(CastExpression(enumBaseType, enumValue));
+            }
+
             EnumMemberDeclarationSyntax enumMember = EnumMemberDeclaration(SafeIdentifier(enumValueName), EqualsValueClause(enumValue));
             enumValues.Add(enumMember);
             enumValues.Add(TokenWithLineFeed(SyntaxKind.CommaToken));

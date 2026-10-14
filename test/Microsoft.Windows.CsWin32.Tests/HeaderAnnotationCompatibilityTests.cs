@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+using System.Reflection.PortableExecutable;
 using System.Runtime.Loader;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -12,6 +13,65 @@ namespace Microsoft.Windows.CsWin32.Tests;
 /// </summary>
 public class HeaderAnnotationCompatibilityTests : GeneratorTestBase
 {
+    private const string OrdinaryFieldCaller = """
+        namespace Windows.Win32.Test
+        {
+            static class FieldCaller
+            {
+                static MODE Use(RECORD record)
+                {
+                    record.Mode = MODE.First | MODE.Second;
+                    return record.Mode;
+                }
+            }
+        }
+        """;
+
+    private const string PropertyInterfaceCaller = """
+        namespace Windows.Win32.Test
+        {
+            /// <summary>Represents a caller-defined property contract.</summary>
+            public interface IModeProperty
+            {
+                /// <summary>Gets or sets the mode.</summary>
+                MODE Mode { get; set; }
+            }
+            /// <summary>Extends the generated struct with a caller contract.</summary>
+            public partial struct RECORD : IModeProperty { /*IMPLEMENTATION*/ }
+        }
+        """;
+
+    private const string RefFieldCaller = """
+        namespace Windows.Win32.Test
+        {
+            static class RefFieldCaller
+            {
+                static void Use(RECORD record)
+                {
+                    ref MODE field = ref record.Mode;
+                    field = MODE.Second;
+                }
+            }
+        }
+        """;
+
+    private const string FieldContractLayoutCaller = """
+        namespace Windows.Win32.Test
+        {
+            /// <summary>Checks the physical representation of each candidate.</summary>
+            public static class ContractLayout
+            {
+                /// <summary>Returns the native size and stored bits.</summary>
+                public static unsafe ulong Run()
+                {
+                    RECORD record = default;
+                    record.Mode = MODE.High | MODE.Second;
+                    return ((ulong)sizeof(RECORD) << 32) | *(uint*)&record;
+                }
+            }
+        }
+        """;
+
     private static readonly string[] CanonicalRequests = ["RECORD", "RoundTrip", "PointerReturn", "Buffer", "Output", "DoublePointer", "UseCallback", "Unannotated"];
     private static readonly string[] WinHttpRequests =
     [
@@ -82,35 +142,7 @@ public class HeaderAnnotationCompatibilityTests : GeneratorTestBase
             string.Empty,
             StringComparison.Ordinal);
         string path = AssociatedEnumTests.EmitMetadata(source, this.starterCompilations["net8.0-x64"], this.parseOptions);
-        string caller = """
-            namespace Windows.Win32.Test
-            {
-                static class FieldCaller
-                {
-                    static MODE Use(RECORD record)
-                    {
-                        record.Mode = MODE.First | MODE.Second;
-                        return record.Mode;
-                    }
-                }
-            }
-            """;
-        if (requireProperty)
-        {
-            caller += Environment.NewLine + """
-                namespace Windows.Win32.Test
-                {
-                    /// <summary>Represents a caller-defined property contract.</summary>
-                    public interface IModeProperty
-                    {
-                        /// <summary>Gets or sets the mode.</summary>
-                        MODE Mode { get; set; }
-                    }
-                    /// <summary>Extends the generated struct with a caller contract.</summary>
-                    public partial struct RECORD : IModeProperty { /*IMPLEMENTATION*/ }
-                }
-                """;
-        }
+        string caller = OrdinaryFieldCaller + (requireProperty ? Environment.NewLine + PropertyInterfaceCaller : string.Empty);
 
         try
         {
@@ -142,6 +174,139 @@ public class HeaderAnnotationCompatibilityTests : GeneratorTestBase
         finally
         {
             File.Delete(path);
+        }
+    }
+
+    /// <summary>
+    /// Compares the existing value-property and ref-property patterns without changing the shipping projection.
+    /// </summary>
+    /// <param name="allowMarshaling">The pinned marshaling option.</param>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ExactStorageFieldContractAlternatives(bool allowMarshaling)
+    {
+        RequireBaseline();
+        string source = AssociatedEnumTests.MetadataSource.Replace(
+            "[AssociatedEnum(\"Windows.Win32.Test.MODE\")] public MODE_STORAGE* Modes;",
+            string.Empty,
+            StringComparison.Ordinal);
+        string native = AssociatedEnumTests.EmitMetadata(source, this.starterCompilations["net8.0-x64"], this.parseOptions);
+        string syntheticSource = source.Replace(
+            "using MODE_STORAGE = System.UInt32;",
+            "using MODE_STORAGE = Windows.Win32.Test.MODE;",
+            StringComparison.Ordinal).Replace(
+            "[AssociatedEnum(\"MODE\")] public MODE_STORAGE Mode;",
+            "public MODE_STORAGE Mode;",
+            StringComparison.Ordinal);
+        string synthetic = AssociatedEnumTests.EmitMetadata(syntheticSource, this.starterCompilations["net8.0-x64"], this.parseOptions);
+        try
+        {
+            GeneratorOptions options = DefaultTestGeneratorOptions with { Public = true, AllowMarshaling = allowMarshaling };
+            string propertyCaller = OrdinaryFieldCaller + Environment.NewLine + PropertyInterfaceCaller;
+            RunResult property = this.Generate("legacy-value-property", native, ["RECORD"], propertyCaller, options, baseline: true);
+            RunResult field = this.Generate("exact-enum-field", native, ["RECORD"], RefFieldCaller, options, baseline: false);
+            Assert.Empty(property.CallerDiagnostics);
+            Assert.Empty(field.CallerDiagnostics);
+            Assert.Empty(this.Generate("old-synthetic-field", synthetic, ["RECORD"], RefFieldCaller, options, baseline: true).CallerDiagnostics);
+
+            SyntaxNode root = CSharpSyntaxTree.ParseText(field.GeneratedCode, this.parseOptions, cancellationToken: TestContext.Current.CancellationToken).GetRoot(TestContext.Current.CancellationToken);
+            StructDeclarationSyntax record = Assert.Single(root.DescendantNodes().OfType<StructDeclarationSyntax>(), declaration => declaration.Identifier.ValueText == "RECORD");
+            FieldDeclarationSyntax mode = Assert.Single(record.Members.OfType<FieldDeclarationSyntax>(), declaration => declaration.Declaration.Variables.Any(variable => variable.Identifier.ValueText == "Mode"));
+            FieldDeclarationSyntax backing = mode.WithModifiers(SyntaxFactory.TokenList(SyntaxFactory.Token(SyntaxKind.PrivateKeyword).WithTrailingTrivia(SyntaxFactory.Space)))
+                .WithDeclaration(mode.Declaration.WithVariables(SyntaxFactory.SingletonSeparatedList(SyntaxFactory.VariableDeclarator("_Mode"))));
+            PropertyDeclarationSyntax refProperty = Assert.IsType<PropertyDeclarationSyntax>(SyntaxFactory.ParseMemberDeclaration($"""
+                        /// <summary>Returns the addressable enum storage.</summary>
+                        [global::System.Diagnostics.CodeAnalysis.UnscopedRef]
+                        public ref {mode.Declaration.Type} Mode => ref this._Mode;
+                        """));
+            string refCode = root.ReplaceNode(record, record.WithMembers(record.Members.Replace(mode, backing).Add(refProperty))).ToFullString();
+            List<FieldContractAlternative> alternatives = new();
+            foreach ((string name, string code) in new[] { (property.Name, property.GeneratedCode), (field.Name, field.GeneratedCode), ("ref-property", refCode) })
+            {
+                string[] propertyErrors = this.CompileFieldContract(code, propertyCaller).GetDiagnostics(TestContext.Current.CancellationToken)
+                    .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error).Select(diagnostic => diagnostic.ToString()).ToArray();
+                string[] refErrors = this.CompileFieldContract(code, RefFieldCaller).GetDiagnostics(TestContext.Current.CancellationToken)
+                    .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error).Select(diagnostic => diagnostic.ToString()).ToArray();
+                CSharpCompilation layout = this.CompileFieldContract(code, FieldContractLayoutCaller);
+                this.AssertNoDiagnostics(layout, logAllGeneratedCode: false);
+                using MemoryStream stream = new();
+                var emitted = layout.Emit(stream, cancellationToken: TestContext.Current.CancellationToken);
+                Assert.True(emitted.Success, string.Join(Environment.NewLine, emitted.Diagnostics));
+                ulong sizeAndBits = Assert.IsType<ulong>(Assembly.Load(stream.ToArray()).GetType("Windows.Win32.Test.ContractLayout")!.GetMethod("Run")!.Invoke(null, null));
+                Assert.Equal((4UL << 32) | 0x80000002UL, sizeAndBits);
+                alternatives.Add(new(name, code, propertyErrors, refErrors, sizeAndBits));
+            }
+
+            Assert.Empty(alternatives[0].PropertyCallerDiagnostics);
+            Assert.Contains("CS0206", Assert.Single(alternatives[0].RefCallerDiagnostics), StringComparison.Ordinal);
+            Assert.Contains("CS0535", Assert.Single(alternatives[1].PropertyCallerDiagnostics), StringComparison.Ordinal);
+            Assert.Empty(alternatives[1].RefCallerDiagnostics);
+            Assert.Contains("CS8152", Assert.Single(alternatives[2].PropertyCallerDiagnostics), StringComparison.Ordinal);
+            Assert.Empty(alternatives[2].RefCallerDiagnostics);
+
+            PropertyDeclarationSyntax duplicate = Assert.IsType<PropertyDeclarationSyntax>(SyntaxFactory.ParseMemberDeclaration($"public {mode.Declaration.Type} Mode {{ get => default; set {{ }} }}"));
+            string duplicateCode = root.ReplaceNode(record, record.AddMembers(duplicate)).ToFullString();
+            string[] duplicateErrors = this.CompileFieldContract(duplicateCode, string.Empty).GetDiagnostics(TestContext.Current.CancellationToken)
+                .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error).Select(diagnostic => diagnostic.ToString()).ToArray();
+            Assert.Contains(duplicateErrors, diagnostic => diagnostic.Contains("CS0102", StringComparison.Ordinal));
+            if (Environment.GetEnvironmentVariable("CSWIN32_COMPAT_OUTPUT") is string output)
+            {
+                string report = JsonSerializer.Serialize(
+                    new
+                    {
+                        BaselineCommit = Environment.GetEnvironmentVariable("CSWIN32_COMPAT_BASELINE_COMMIT"),
+                        BaselineAssemblySHA256 = HashFile(Environment.GetEnvironmentVariable("CSWIN32_COMPAT_BASELINE_DLL")!),
+                        ProposedCommit = Environment.GetEnvironmentVariable("CSWIN32_COMPAT_PROPOSED_COMMIT"),
+                        ProposedAssemblySHA256 = HashFile(typeof(Generator).Assembly.Location),
+                        RoslynVersion = typeof(CSharpCompilation).Assembly.GetName().Version!.ToString(),
+                        Compilation = "net8.0-windows; x64; unsafe; C# 12",
+                        Options = options,
+                        MetadataSHA256 = HashFile(native),
+                        PropertyCaller = propertyCaller,
+                        RefCaller = RefFieldCaller,
+                        Alternatives = alternatives,
+                        DuplicateMemberDiagnostics = duplicateErrors,
+                    },
+                    new JsonSerializerOptions { WriteIndented = true });
+                File.WriteAllText(Path.Combine(output, $"field-contract-alternatives-{(allowMarshaling ? "marshaling" : "no-marshaling")}.json"), report);
+            }
+        }
+        finally
+        {
+            File.Delete(native);
+            File.Delete(synthetic);
+        }
+    }
+
+    /// <summary>
+    /// Separates the frozen OLD constructor defect from a corrected, unmigrated tooling control.
+    /// </summary>
+    [Fact]
+    public void FrozenOldConstructorLimitationsHaveCorrectedToolingControl()
+    {
+        string? oldPath = Environment.GetEnvironmentVariable("CSWIN32_COMPAT_OLD_METADATA");
+        string? controlPath = Environment.GetEnvironmentVariable("CSWIN32_COMPAT_TOOLING_CONTROL_METADATA");
+        Assert.SkipWhen(string.IsNullOrEmpty(oldPath) || string.IsNullOrEmpty(controlPath), "Supply the frozen OLD snapshot and a separately pinned unmigrated tooling control.");
+        Assert.Equal(Environment.GetEnvironmentVariable("CSWIN32_COMPAT_OLD_SHA256"), HashFile(oldPath!));
+        Assert.Equal(Environment.GetEnvironmentVariable("CSWIN32_COMPAT_TOOLING_CONTROL_SHA256"), HashFile(controlPath!));
+        string[] oldLimitations = MetadataConstructorLimitations(oldPath!);
+        string[] controlLimitations = MetadataConstructorLimitations(controlPath!);
+        Assert.Contains(oldLimitations, limitation => limitation.Contains("AssociatedEnumAttribute", StringComparison.Ordinal) && limitation.Contains("instance MemberRef present=True", StringComparison.Ordinal));
+        Assert.Empty(controlLimitations);
+        if (Environment.GetEnvironmentVariable("CSWIN32_COMPAT_OUTPUT") is string output)
+        {
+            string report = JsonSerializer.Serialize(
+                new
+                {
+                    ControlKind = "unmigrated SDK; physical constructor check only; not WinHttp NEW acceptance",
+                    OldMetadataSHA256 = HashFile(oldPath!),
+                    ControlMetadataSHA256 = HashFile(controlPath!),
+                    OldMetadataPhysicalLimitations = oldLimitations,
+                    ControlMetadataPhysicalLimitations = controlLimitations,
+                },
+                new JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(Path.Combine(output, "unmigrated-tooling-control.json"), report);
         }
     }
 
@@ -260,6 +425,46 @@ public class HeaderAnnotationCompatibilityTests : GeneratorTestBase
 
     private static string HashFile(string path) => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)));
 
+    private static string[] MetadataConstructorLimitations(string path)
+    {
+        using FileStream stream = File.OpenRead(path);
+        using PEReader pe = new(stream);
+        MetadataReader reader = pe.GetMetadataReader();
+        HashSet<string> instanceReferences = new(StringComparer.Ordinal);
+        foreach (MemberReferenceHandle handle in reader.MemberReferences)
+        {
+            MemberReference reference = reader.GetMemberReference(handle);
+            if (reference.Parent.Kind == HandleKind.TypeReference && reader.StringComparer.Equals(reference.Name, ".ctor")
+                && reader.GetBlobReader(reference.Signature).ReadSignatureHeader().IsInstance)
+            {
+                TypeReference type = reader.GetTypeReference((TypeReferenceHandle)reference.Parent);
+                instanceReferences.Add($"{reader.GetString(type.Namespace)}.{reader.GetString(type.Name)}");
+            }
+        }
+
+        List<string> limitations = new();
+        foreach (TypeDefinitionHandle handle in reader.TypeDefinitions)
+        {
+            TypeDefinition type = reader.GetTypeDefinition(handle);
+            if (!reader.StringComparer.Equals(type.Namespace, "Windows.Win32.Foundation.Metadata"))
+            {
+                continue;
+            }
+
+            foreach (MethodDefinitionHandle methodHandle in type.GetMethods())
+            {
+                MethodDefinition method = reader.GetMethodDefinition(methodHandle);
+                if (reader.StringComparer.Equals(method.Name, ".ctor") && !reader.GetBlobReader(method.Signature).ReadSignatureHeader().IsInstance)
+                {
+                    string name = $"{reader.GetString(type.Namespace)}.{reader.GetString(type.Name)}";
+                    limitations.Add($"{name}..ctor MethodDef lacks HASTHIS; signature={Convert.ToHexString(reader.GetBlobBytes(method.Signature))}; instance MemberRef present={instanceReferences.Contains(name)}.");
+                }
+            }
+        }
+
+        return limitations.ToArray();
+    }
+
     private static string[] PublicSymbols(CSharpCompilation compilation)
     {
         List<string> symbols = new();
@@ -318,7 +523,9 @@ public class HeaderAnnotationCompatibilityTests : GeneratorTestBase
             HashFile(oldMetadata),
             string.IsNullOrEmpty(newMetadata) ? null : HashFile(newMetadata!),
             callers,
-            runs);
+            runs,
+            MetadataConstructorLimitations(oldMetadata),
+            string.IsNullOrEmpty(newMetadata) ? [] : MetadataConstructorLimitations(newMetadata!));
         string? output = Environment.GetEnvironmentVariable("CSWIN32_COMPAT_OUTPUT");
         if (!string.IsNullOrEmpty(output))
         {
@@ -336,8 +543,15 @@ public class HeaderAnnotationCompatibilityTests : GeneratorTestBase
             this.logger.WriteLine($"{name}/{allowMarshaling}/{run.Name}: {run.Grade}; {run.PublicSymbols.Length} public symbols; {run.CallerDiagnostics.Length} caller diagnostics.");
         }
 
+        Assert.Empty(result.NewMetadataPhysicalLimitations);
         return result;
     }
+
+    private CSharpCompilation CompileFieldContract(string code, string caller) => this.starterCompilations["net8.0-x64"]
+        .WithAssemblyName("FieldContract" + Guid.NewGuid().ToString("N"))
+        .AddSyntaxTrees(
+            CSharpSyntaxTree.ParseText(TestUtils.NormalizeToExpectedLineEndings(code), this.parseOptions, "Projection.cs"),
+            CSharpSyntaxTree.ParseText(TestUtils.NormalizeToExpectedLineEndings(caller), this.parseOptions, "UnchangedCaller.cs"));
 
     private RunResult Generate(string name, string metadata, string[] requests, string callers, GeneratorOptions options, bool baseline)
     {
@@ -381,6 +595,8 @@ public class HeaderAnnotationCompatibilityTests : GeneratorTestBase
 
     private sealed record RunResult(string Name, string GeneratedCode, string[] PublicSymbols, string[] CallerDiagnostics, string Grade, string[] RemovedPublicSymbols, string[] AddedPublicSymbols);
 
+    private sealed record FieldContractAlternative(string Name, string GeneratedCode, string[] PropertyCallerDiagnostics, string[] RefCallerDiagnostics, ulong SizeAndBits);
+
     private sealed record MatrixResult(
         string BaselineCommit,
         string BaselineAssemblySHA256,
@@ -393,7 +609,9 @@ public class HeaderAnnotationCompatibilityTests : GeneratorTestBase
         string OldMetadataSHA256,
         string? NewMetadataSHA256,
         string UnchangedCaller,
-        RunResult[] Runs);
+        RunResult[] Runs,
+        string[] OldMetadataPhysicalLimitations,
+        string[] NewMetadataPhysicalLimitations);
 
     private sealed class BaselineGenerator : IDisposable
     {

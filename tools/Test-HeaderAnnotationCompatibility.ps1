@@ -5,6 +5,8 @@ Builds a pinned CsWin32 baseline and runs the canonical and optional full-image 
 All git mutations and generated artifacts stay under this worktree. The caller source, requested
 APIs, generation options and compilation context are shared between the three matrix legs.
 No package feeds or dependency versions are changed.
+An optional unmigrated tooling control audits physical constructor signatures separately,
+without replacing OLD or standing in for NEW consumer acceptance.
 #>
 [CmdletBinding()]
 param(
@@ -15,7 +17,10 @@ param(
     [string]$OldSHA256,
     [string]$NewMetadata,
     [ValidatePattern('^[0-9A-Fa-f]{64}$')]
-    [string]$NewSHA256
+    [string]$NewSHA256,
+    [string]$ToolingControlMetadata,
+    [ValidatePattern('^[0-9A-Fa-f]{64}$')]
+    [string]$ToolingControlSHA256
 )
 
 $ErrorActionPreference = 'Stop'
@@ -42,6 +47,16 @@ if ($OldMetadata -or $NewMetadata -or $OldSHA256 -or $NewSHA256) {
     }
 }
 
+if ($ToolingControlMetadata -or $ToolingControlSHA256) {
+    if (!$OldMetadata -or !$ToolingControlMetadata -or !$ToolingControlSHA256) {
+        throw 'A tooling control requires the frozen OLD image and both control metadata and hash.'
+    }
+    $ToolingControlMetadata = (Resolve-Path $ToolingControlMetadata).Path
+    if ((Get-FileHash $ToolingControlMetadata -Algorithm SHA256).Hash -ne $ToolingControlSHA256) {
+        throw 'The unmigrated tooling control does not match its pinned SHA256.'
+    }
+}
+
 if (!(Test-Path $baselineProject)) {
     $archive = Join-Path $output "$BaselineCommit.zip"
     & git -C $repo archive --format=zip "--output=$archive" $BaselineCommit
@@ -52,7 +67,8 @@ if (!(Test-Path $baselineProject)) {
 
 $priorEnvironment = @{}
 $variables = @('NBGV_GitEngine', 'CSWIN32_COMPAT_BASELINE_DLL', 'CSWIN32_COMPAT_BASELINE_COMMIT',
-    'CSWIN32_COMPAT_OLD_METADATA', 'CSWIN32_COMPAT_NEW_METADATA', 'CSWIN32_COMPAT_OLD_SHA256', 'CSWIN32_COMPAT_NEW_SHA256', 'CSWIN32_COMPAT_OUTPUT', 'CSWIN32_COMPAT_PROPOSED_COMMIT')
+    'CSWIN32_COMPAT_OLD_METADATA', 'CSWIN32_COMPAT_NEW_METADATA', 'CSWIN32_COMPAT_OLD_SHA256', 'CSWIN32_COMPAT_NEW_SHA256',
+    'CSWIN32_COMPAT_TOOLING_CONTROL_METADATA', 'CSWIN32_COMPAT_TOOLING_CONTROL_SHA256', 'CSWIN32_COMPAT_OUTPUT', 'CSWIN32_COMPAT_PROPOSED_COMMIT')
 foreach ($variable in $variables) {
     $priorEnvironment[$variable] = [Environment]::GetEnvironmentVariable($variable, 'Process')
 }
@@ -82,6 +98,8 @@ try {
     $env:CSWIN32_COMPAT_NEW_METADATA = $NewMetadata
     $env:CSWIN32_COMPAT_OLD_SHA256 = $OldSHA256.ToUpperInvariant()
     $env:CSWIN32_COMPAT_NEW_SHA256 = $NewSHA256.ToUpperInvariant()
+    $env:CSWIN32_COMPAT_TOOLING_CONTROL_METADATA = $ToolingControlMetadata
+    $env:CSWIN32_COMPAT_TOOLING_CONTROL_SHA256 = $ToolingControlSHA256.ToUpperInvariant()
     & dotnet test (Join-Path $repo 'test\Microsoft.Windows.CsWin32.Tests\Microsoft.Windows.CsWin32.Tests.csproj') --no-restore `
         --filter 'FullyQualifiedName~HeaderAnnotationCompatibilityTests' --logger 'trx;LogFileName=compatibility.trx' --results-directory $output --verbosity quiet
     if ($LASTEXITCODE) { throw "Compatibility checks failed. See $output." }

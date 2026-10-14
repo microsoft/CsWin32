@@ -90,6 +90,34 @@ The verified smallest adjustment is an explicit forwarding implementation:
 Reflection-based callers looking up a property likewise need to account for the field representation; reflection behavior is not covered by the compile matrix.
 This is an observed canonical source break, distinct from the pending WinHttp findings.
 
+### Bounded field/property compatibility pass
+
+`ExactStorageFieldContractAlternatives` compares the actual baseline value-property projection, the current enum field, and the existing `[UnscopedRef]` ref-property pattern used by anonymous-field accessors.
+It uses unchanged property-interface and ref-field callers in both marshaling modes.
+All three candidates execute with the same four-byte native layout and stored bits `0x80000002`: keeping a value property is **not** inherently ABI-unsafe for exact storage.
+
+| Candidate for `RECORD.Mode` | Unchanged `IModeProperty` caller | Unchanged `ref MODE field = ref record.Mode` |
+|--|--|--|
+| Value `MODE Mode { get; set; }` over native backing storage | Compiles | `CS0206` at `UnchangedCaller.cs(7,34)` |
+| Public `MODE Mode` field | `CS0535` at `UnchangedCaller.cs(21,36)` | Compiles |
+| `[UnscopedRef] public ref MODE Mode => ref ...` | `CS8152` at `UnchangedCaller.cs(21,36)` (return-by-reference mismatch) | Compiles |
+
+The original synthetic-enum field also compiles the same ref caller with the pinned baseline generator.
+Emitting both a public field and a value property named `Mode` on the same struct fails with `CS0102`; changing the property's backing storage or adding `[UnscopedRef]` does not remove that language-level conflict.
+
+The native primitive plus `AssociatedEnum("MODE")` describes native storage and logical type, not whether a previous consumer generated a property or a synthetic-enum field.
+Existing annotated fields and newly migrated synthetic fields can therefore have the same input facts.
+There is no existing provenance discriminator with which to retain a value property only where it historically existed.
+The constructor tooling correction below is a physical metadata fix, not such a discriminator.
+
+The unresolved tradeoff is **public member-kind/source-contract compatibility**, not a preference for identical output or a claim that a value property breaks native layout.
+Preserving the ordinary property would break unchanged synthetic-field ref callers instead.
+A ref-returning property preserves those callers but cannot implicitly implement the original value-returning get/set interface.
+The explicit interface shim shown above safely permits both the public field and that particular interface contract.
+Generating such shims for arbitrary caller-defined interfaces would require a new caller-contract inference feature, not an existing metadata projection pattern; none is added here.
+The shipping projection is unchanged by this bounded pass, and the field/interface break remains an explicit review item rather than universal source-compatibility acceptance.
+Detailed candidate code, compiler diagnostics, layout results, and pinned compilation context are retained in `field-contract-alternatives-*.json`.
+
 Canonical metadata is emitted deterministically from the checked-in `AssociatedEnumTests` declarations:
 
 | Snapshot | SHA256 |
@@ -99,6 +127,18 @@ Canonical metadata is emitted deterministically from the checked-in `AssociatedE
 | WinHttp OLD full image | `1361407C2888102CB5161D83503235C09C36F917837C7107CA0A80E5CF4FAC43` |
 
 The WinHttp image is from producer commit `b5b7b26ed09d648766f07449af48c64ef0e99d13`, native/header mirror `77817f12308e29ec8bf77dc6fe56786e65ff9e08`, SDK `10.0.26100.7705`, and matched ClangSharp `21.1.8.4`.
+This frozen OLD image has a confirmed pre-existing physical defect: 39 local metadata-attribute constructor MethodDefs lack `HASTHIS`, while instance MemberRefs are present.
+For example, the `AssociatedEnumAttribute` and `RAIIFreeAttribute` constructor signatures are `0001010E`, and `InvalidHandleValueAttribute` is `0001010A`, without the instance bit.
+The OLD generated-C# and unchanged-caller results remain valid **consumer projection checks**, but do not establish physically valid constructor binding for the OLD SDK image.
+CsWin32's name/payload interpretation and compilation of generated source are not a full metadata binding validator.
+This known tooling-baseline defect is not attributed to the header migration, and the frozen OLD snapshot is not replaced.
+
+The separate producer tooling fixes are `e065daa65c51769815e4a37c229ec9191a0578f4` (SAL/MIDL `RetVal` deduplication) and `461d84f61c6c9611985a1152addf4b4636c5afc4` (local instance-constructor `HASTHIS`).
+The complete **unmigrated tooling control** has SHA256 `15FF0B4EA2DA0BBFC7B45DAEC315DF0958F46435E98DF8D0AE4F49963CF2599A`.
+Our limited constructor-header audit finds no missing instance bits in that control.
+It is not migrated WinHttp NEW, is not substituted into any NEW acceptance leg, and is not a claim of complete physical metadata validation.
+Matrix reports retain `OldMetadataPhysicalLimitations`/`NewMetadataPhysicalLimitations`; `unmigrated-tooling-control.json` separately records the frozen/control hashes and audit findings.
+
 The requested WinHttp corpus is checked into `HeaderAnnotationCompatibilityTests.WinHttpThreeWayMatrix`.
 It covers request/access/authentication/scheme/URL flags, ref fields, raw and friendly entry points, callbacks, read buffers, interior-pointer header buffers, raw creation, and cleanup.
 Canonical ownership tests separately execute contextual invalid values, output ownership, disposal while borrowed, and lease release, and run the lifetime analyzer.
@@ -135,6 +175,8 @@ Supply immutable SDK images and their SHA256s for the pilot:
 ```
 
 OLD-only input checks and reports the baseline/proposed OLD pair, then explicitly skips NEW acceptance.
+Optionally add `-ToolingControlMetadata 'C:\snapshots\unmigrated-control\Windows.Win32.winmd' -ToolingControlSHA256 '<CONTROL SHA256>'` to audit the corrected-tooling control separately.
+The control does not populate `NewMetadata` or change the frozen OLD matrix.
 Reports and generated sources are written to `obj\HeaderAnnotationCompatibility`.
 JSON records the exact baseline/proposed commits, built generator assembly hashes, metadata hashes, options, requested APIs, unchanged callers, public symbols, and diagnostics.
 A dirty proposed checkout is explicitly marked `+working-tree`.

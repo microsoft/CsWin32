@@ -101,7 +101,7 @@ try {
     $env:CSWIN32_COMPAT_TOOLING_CONTROL_METADATA = $ToolingControlMetadata
     $env:CSWIN32_COMPAT_TOOLING_CONTROL_SHA256 = $ToolingControlSHA256.ToUpperInvariant()
     & dotnet test (Join-Path $repo 'test\Microsoft.Windows.CsWin32.Tests\Microsoft.Windows.CsWin32.Tests.csproj') --no-restore `
-        --filter 'FullyQualifiedName~HeaderAnnotationCompatibilityTests' --logger 'trx;LogFileName=compatibility.trx' --results-directory $output --verbosity quiet
+        --filter 'FullyQualifiedName~HeaderAnnotationCompatibilityTests|FullyQualifiedName~AssociatedEnumTests.CallerMutationControls' --logger 'trx;LogFileName=compatibility.trx' --results-directory $output --verbosity quiet
     if ($LASTEXITCODE) { throw "Compatibility checks failed. See $output." }
     Write-Output "Compatibility reports and generated sources: $output"
 }

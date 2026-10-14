@@ -293,15 +293,56 @@ public class HeaderAnnotationCompatibilityTests : GeneratorTestBase
         Assert.Empty(result.Runs[1].CallerDiagnostics);
         Assert.Equal(result.Runs[0].PublicSymbols, result.Runs[1].PublicSymbols);
         Assert.SkipWhen(string.IsNullOrEmpty(newPath), "NEW WinHttp metadata is pending; the OLD baseline/proposed pair was checked and reported.");
-        Assert.Equal(4, result.Runs[2].CallerDiagnostics.Length);
-        Assert.All(result.Runs[2].CallerDiagnostics, diagnostic =>
+        RunResult migrated = result.Runs[2];
+        (string Suffix, int Value)[] schemes = [("FTP", 3), ("HTTP", 1), ("HTTPS", 2), ("SOCKS", 4)];
+        const string schemeSymbol = "Field global::Windows.Win32.Networking.WinHttp.WINHTTP_INTERNET_SCHEME.";
+        Assert.Equal("residual-source-break", migrated.Grade);
+        Assert.Equal(
+            schemes.Select(scheme => $"{schemeSymbol}WINHTTP_INTERNET_SCHEME_{scheme.Suffix} = {scheme.Value}").ToArray(),
+            migrated.RemovedPublicSymbols);
+        Assert.Equal(
+            schemes.Select(scheme => $"{schemeSymbol}INTERNET_SCHEME_{scheme.Suffix} = {scheme.Value}").ToArray(),
+            migrated.AddedPublicSymbols);
+        string renamedCode = schemes.Aggregate(result.Runs[0].GeneratedCode, (code, scheme) => code.Replace($"WINHTTP_INTERNET_SCHEME_{scheme.Suffix}", $"INTERNET_SCHEME_{scheme.Suffix}", StringComparison.Ordinal));
+        Assert.Equal(renamedCode, migrated.GeneratedCode);
+        Assert.Equal(4, migrated.CallerDiagnostics.Length);
+        Assert.All(migrated.CallerDiagnostics, diagnostic =>
         {
             Assert.Contains("CS0117", diagnostic, StringComparison.Ordinal);
             Assert.Contains("WINHTTP_INTERNET_SCHEME_", diagnostic, StringComparison.Ordinal);
         });
-        string adjustedCaller = callers.Replace("WINHTTP_INTERNET_SCHEME.WINHTTP_INTERNET_SCHEME_", "WINHTTP_INTERNET_SCHEME.INTERNET_SCHEME_", StringComparison.Ordinal);
-        RunResult adjusted = this.Generate("new-proposed-adjusted", newPath!, WinHttpRequests, adjustedCaller, result.Options, baseline: false);
+        string adjustedCaller = result.UnchangedCaller.Replace("WINHTTP_INTERNET_SCHEME.WINHTTP_INTERNET_SCHEME_", "WINHTTP_INTERNET_SCHEME.INTERNET_SCHEME_", StringComparison.Ordinal);
+        RunResult adjusted = this.Generate("new-proposed-scheme-members-adjusted", newPath!, WinHttpRequests, adjustedCaller, result.Options, baseline: false);
+        if (Environment.GetEnvironmentVariable("CSWIN32_COMPAT_OUTPUT") is string output)
+        {
+            string report = JsonSerializer.Serialize(
+                new
+                {
+                    AdjustmentKind = "explicit caller member-name edits; not unchanged-caller acceptance",
+                    result.BaselineCommit,
+                    result.ProposedCommit,
+                    result.ProposedAssemblySHA256,
+                    result.NewMetadataSHA256,
+                    result.Compilation,
+                    result.Options,
+                    result.Requests,
+                    UnchangedCallerGrade = migrated.Grade,
+                    UnchangedCallerDiagnostics = migrated.CallerDiagnostics,
+                    MemberReplacements = schemes.Select(scheme => new
+                    {
+                        Old = $"WINHTTP_INTERNET_SCHEME.WINHTTP_INTERNET_SCHEME_{scheme.Suffix}",
+                        New = $"WINHTTP_INTERNET_SCHEME.INTERNET_SCHEME_{scheme.Suffix}",
+                        scheme.Value,
+                    }).ToArray(),
+                    AdjustedCaller = adjustedCaller,
+                    AdjustedCallerDiagnostics = adjusted.CallerDiagnostics,
+                },
+                new JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(Path.Combine(output, $"winhttp-{(allowMarshaling ? "marshaling" : "no-marshaling")}-scheme-member-adjustment.json"), report);
+        }
+
         Assert.Empty(adjusted.CallerDiagnostics);
+        Assert.Equal(migrated.PublicSymbols, adjusted.PublicSymbols);
     }
 
     private static string Grade(RunResult baseline, RunResult proposed) => proposed.CallerDiagnostics.Length > 0 ? "residual-source-break"

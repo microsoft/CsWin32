@@ -220,11 +220,16 @@ public partial class Generator
             CustomAttributeHandleCollection? returnTypeAttributes = this.GetReturnTypeCustomAttributes(methodDefinition);
             TypeSyntaxAndMarshaling returnType = signature.ReturnType.ToTypeSyntax(typeSettings with { IsReturnValue = true }, GeneratingElement.ExternMethod, returnTypeAttributes?.QualifyWith(this), ParameterAttributes.Out);
 
-            bool customMarshaling = this.options.AllowMarshaling && this.useSourceGenerators;
-
-            // Search for any enum substitutions.
-            TypeSyntax? returnTypeEnumName = customMarshaling ? null : this.FindAssociatedEnum(returnTypeAttributes);
+            // Scalar conversions are needed only when the enum cannot directly represent native storage.
+            TypeSyntax? returnTypeEnumName = null;
             TypeSyntax?[]? parameterEnumType = null;
+            if (!typeSettings.AllowMarshaling && signature.ReturnType is PrimitiveTypeHandleInfo returnPrimitive
+                && this.FindAssociatedEnum(returnTypeAttributes) is HandleTypeHandleInfo returnEnum
+                && returnPrimitive.PrimitiveTypeCode != GetEnumUnderlyingType(returnEnum))
+            {
+                returnTypeEnumName = returnEnum.ToTypeSyntax(typeSettings, GeneratingElement.ExternMethod, null).Type;
+            }
+
             foreach (ParameterHandle parameterHandle in methodDefinition.GetParameters())
             {
                 Parameter parameter = this.Reader.GetParameter(parameterHandle);
@@ -233,10 +238,12 @@ public partial class Generator
                     continue;
                 }
 
-                if (this.FindAssociatedEnum(parameter.GetCustomAttributes()) is IdentifierNameSyntax parameterEnumName && !customMarshaling)
+                if (!typeSettings.AllowMarshaling && signature.ParameterTypes[parameter.SequenceNumber - 1] is PrimitiveTypeHandleInfo primitive
+                    && this.FindAssociatedEnum(parameter.GetCustomAttributes()) is HandleTypeHandleInfo parameterEnum
+                    && primitive.PrimitiveTypeCode != GetEnumUnderlyingType(parameterEnum))
                 {
                     parameterEnumType ??= new TypeSyntax?[signature.ParameterTypes.Length];
-                    parameterEnumType[parameter.SequenceNumber - 1] = parameterEnumName;
+                    parameterEnumType[parameter.SequenceNumber - 1] = parameterEnum.ToTypeSyntax(typeSettings, GeneratingElement.ExternMethod, null).Type;
                 }
             }
 
@@ -300,8 +307,6 @@ public partial class Generator
             }
             else
             {
-                string ns = this.GetMethodNamespace(methodDefinition);
-                NameSyntax nsSyntax = ParseName(ReplaceCommonNamespaceWithAlias(this, ns));
                 ParameterListSyntax exposedParameterList = this.CreateParameterList(methodDefinition, signature, typeSettings, GeneratingElement.ExternMethod);
                 static SyntaxToken RefInOutKeyword(ParameterSyntax p) =>
                     p.Modifiers.Any(SyntaxKind.OutKeyword) ? TokenWithSpace(SyntaxKind.OutKeyword) :
@@ -314,10 +319,8 @@ public partial class Generator
                     {
                         if (parameterEnumType[i] is TypeSyntax parameterType)
                         {
-                            NameSyntax qualifiedParameterType = QualifiedName(nsSyntax, (SimpleNameSyntax)parameterType);
-                            exposedParameterList = exposedParameterList.ReplaceNode(exposedParameterList.Parameters[i], exposedParameterList.Parameters[i].WithType(qualifiedParameterType.WithTrailingTrivia(Space)));
-                            this.RequestInteropType(ns, parameterEnumType[i]!.ToString(), this.DefaultContext);
-                            argumentList = argumentList.ReplaceNode(argumentList.Arguments[i], argumentList.Arguments[i].WithExpression(CastExpression(externDeclaration.ParameterList.Parameters[i].Type!.WithTrailingTrivia(default(SyntaxTriviaList)), argumentList.Arguments[i].Expression)));
+                            exposedParameterList = exposedParameterList.ReplaceNode(exposedParameterList.Parameters[i], exposedParameterList.Parameters[i].WithType(parameterType.WithTrailingTrivia(Space)));
+                            argumentList = argumentList.ReplaceNode(argumentList.Arguments[i], argumentList.Arguments[i].WithExpression(UncheckedExpression(CastExpression(externDeclaration.ParameterList.Parameters[i].Type!.WithTrailingTrivia(default(SyntaxTriviaList)), argumentList.Arguments[i].Expression))));
                         }
                     }
                 }
@@ -330,9 +333,7 @@ public partial class Generator
 
                 if (returnTypeEnumName is not null)
                 {
-                    this.RequestInteropType(ns, returnTypeEnumName.ToString(), this.DefaultContext);
-                    returnTypeEnumName = QualifiedName(nsSyntax, (SimpleNameSyntax)returnTypeEnumName);
-                    invocation = CastExpression(returnTypeEnumName, invocation);
+                    invocation = UncheckedExpression(CastExpression(returnTypeEnumName, invocation));
                 }
 
                 BlockSyntax body = Block();

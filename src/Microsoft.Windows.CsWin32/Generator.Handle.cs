@@ -11,8 +11,9 @@ public partial class Generator
     /// <param name="releaseMethod">The cleanup function.</param>
     /// <param name="valueType">The original native value type, or null to use the cleanup parameter type.</param>
     /// <param name="allowAbstract">Whether caller-defined cleanup helpers may be returned.</param>
+    /// <param name="valueAttributes">Contextual annotations on the producing return value or output parameter.</param>
     /// <returns>The owner type, or null when automatic ownership cannot be generated.</returns>
-    internal TypeSyntax? RequestSafeHandle(string releaseMethod, TypeHandleInfo? valueType = null, bool allowAbstract = false)
+    internal TypeSyntax? RequestSafeHandle(string releaseMethod, TypeHandleInfo? valueType = null, bool allowAbstract = false, CustomAttributeHandleCollection? valueAttributes = null)
     {
         if (!this.options.UseSafeHandles)
         {
@@ -21,7 +22,11 @@ public partial class Generator
 
         try
         {
+            HashSet<IntPtr> contextualInvalidValues = this.GetInvalidHandleValues(valueAttributes);
+            bool bclInvalidValuesCompatible = contextualInvalidValues.Count == 0
+                || contextualInvalidValues.SetEquals([IntPtr.Zero, new IntPtr(-1)]);
             if (BclInteropSafeHandles.TryGetValue(releaseMethod, out TypeSyntax? knownOwner)
+                && bclInvalidValuesCompatible
                 && (valueType is null || (valueType is HandleTypeHandleInfo knownHandle
                     && knownHandle.Generator.GetQualifiedTypeDefinition(knownHandle.Handle) is QualifiedTypeDefinition definition
                     && definition.Reader.GetString(definition.Definition.Namespace) == (releaseMethod == "CloseHandle" ? "Windows.Win32.Foundation" : "Windows.Win32.System.Registry")
@@ -79,12 +84,24 @@ public partial class Generator
                 return null;
             }
 
-            if (canonicalValueType && BclInteropSafeHandles.TryGetValue(releaseMethod, out TypeSyntax? bclType))
+            if (canonicalValueType && bclInvalidValuesCompatible && BclInteropSafeHandles.TryGetValue(releaseMethod, out TypeSyntax? bclType))
             {
                 return bclType;
             }
 
-            string cacheKey = releaseMethod + ":" + nativeValueType;
+            HashSet<IntPtr> defaultInvalidValues = valueType is HandleTypeHandleInfo nativeHandle
+                ? nativeHandle.Generator.GetInvalidHandleValues(nativeHandle.Handle)
+                : new() { IntPtr.Zero };
+            if (defaultInvalidValues.Count == 0 && releaseMethodParameterTypeHandleInfo is PointerTypeHandleInfo)
+            {
+                defaultInvalidValues.Add(IntPtr.Zero);
+            }
+
+            HashSet<IntPtr> invalidHandleValues = contextualInvalidValues.Count > 0 ? contextualInvalidValues : defaultInvalidValues;
+            bool contextualInvalidProfile = !invalidHandleValues.SetEquals(defaultInvalidValues);
+            string invalidProfile = string.Join("_", invalidHandleValues.OrderBy(value => value.ToInt64())
+                .Select(value => unchecked((ulong)value.ToInt64()).ToString("X", CultureInfo.InvariantCulture)));
+            string cacheKey = releaseMethod + ":" + nativeValueType + ":" + invalidProfile;
             if (this.volatileCode.TryGetSafeHandleForReleaseMethod(cacheKey, out TypeSyntax? safeHandleType, out bool cachedCanConstruct))
             {
                 return allowAbstract || cachedCanConstruct ? safeHandleType : null;
@@ -100,6 +117,11 @@ public partial class Generator
             string safeHandleClassName = canonicalValueType
                 ? $"{releaseMethod}SafeHandle"
                 : $"{releaseMethod}{this.GetSafeHandleValueName(valueType, nativeValueType)}SafeHandle";
+            if (contextualInvalidProfile)
+            {
+                safeHandleClassName = safeHandleClassName.Substring(0, safeHandleClassName.Length - "SafeHandle".Length) + $"Invalid{invalidProfile}SafeHandle";
+            }
+
             IdentifierNameSyntax safeHandleTypeIdentifier = IdentifierName(safeHandleClassName);
             safeHandleType = QualifiedName(ParseName($"global::{this.Namespace}"), safeHandleTypeIdentifier);
             CustomAttributeHandleCollection? atts = this.GetReturnTypeCustomAttributes(releaseMethodDef);
@@ -129,16 +151,6 @@ public partial class Generator
             {
                 this.RequestExternMethod(releaseMethodHandle.Value);
             });
-
-            // Collect all the known invalid values for this handle.
-            // If no invalid values are given (e.g. BSTR), we'll just assume 0 is invalid.
-            HashSet<IntPtr> invalidHandleValues = valueType is HandleTypeHandleInfo nativeHandle
-                ? nativeHandle.Generator.GetInvalidHandleValues(nativeHandle.Handle)
-                : new() { IntPtr.Zero };
-            if (invalidHandleValues.Count == 0 && releaseMethodParameterTypeHandleInfo is PointerTypeHandleInfo)
-            {
-                invalidHandleValues.Add(IntPtr.Zero);
-            }
 
             IntPtr preferredInvalidValue = GetPreferredInvalidHandleValue(invalidHandleValues, new IntPtr(-1));
 
@@ -456,11 +468,21 @@ public partial class Generator
     private HashSet<IntPtr> GetInvalidHandleValues(EntityHandle handle)
     {
         QualifiedTypeDefinition td = this.GetQualifiedTypeDefinition(handle);
+        return td.Generator.GetInvalidHandleValues(td.Definition.GetCustomAttributes());
+    }
+
+    private HashSet<IntPtr> GetInvalidHandleValues(CustomAttributeHandleCollection? attributes)
+    {
         HashSet<IntPtr> invalidHandleValues = new();
-        foreach (CustomAttributeHandle ah in td.Definition.GetCustomAttributes())
+        if (attributes is not { } collection)
         {
-            CustomAttribute a = td.Reader.GetCustomAttribute(ah);
-            if (MetadataUtilities.IsAttribute(td.Reader, a, InteropDecorationNamespace, InvalidHandleValueAttribute))
+            return invalidHandleValues;
+        }
+
+        foreach (CustomAttributeHandle ah in collection)
+        {
+            CustomAttribute a = this.Reader.GetCustomAttribute(ah);
+            if (MetadataUtilities.IsAttribute(this.Reader, a, InteropDecorationNamespace, InvalidHandleValueAttribute))
             {
                 CustomAttributeValue<TypeSyntax> attributeData = a.DecodeValue(CustomAttributeTypeProvider.Instance);
                 long invalidValue = (long)(attributeData.FixedArguments[0].Value ?? throw new GenerationFailedException("Missing invalid value attribute."));

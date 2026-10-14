@@ -78,6 +78,13 @@ public partial class Generator
 
     private IEnumerable<MethodDeclarationSyntax> DeclareFriendlyOverloads(MethodDefinition methodDefinition, MethodDeclarationSyntax externMethodDeclaration, NameSyntax declaringTypeName, FriendlyOverloadOf overloadOf, HashSet<string> helperMethodsAdded, bool avoidWinmdRootAlias)
     {
+        if (overloadOf == FriendlyOverloadOf.StructMethod
+            && this.DeclareAssociatedEnumOverload(methodDefinition, externMethodDeclaration, avoidWinmdRootAlias) is MethodDeclarationSyntax enumOverload)
+        {
+            yield return enumOverload;
+            externMethodDeclaration = enumOverload;
+        }
+
         if (!this.options.FriendlyOverloads.Enabled)
         {
             yield break;
@@ -578,7 +585,7 @@ public partial class Generator
                 IdentifierNameSyntax localName = IdentifierName(externParam.Identifier.ValueText + "Local");
 
                 // NOTE: We don't handle scenarios where the parameter is [MemorySize] annotated (e.g. EnumProcessModules) or [NativeArrayInfo] (e.g. ITypeInfo.GetNames)
-                if (this.RequestSafeHandle(outReleaseMethod, pointedElementInfo) is TypeSyntax safeHandleType)
+                if (this.RequestSafeHandle(outReleaseMethod, pointedElementInfo, valueAttributes: paramAttributes) is TypeSyntax safeHandleType)
                 {
                     // out SafeHandle
                     parameters[paramIndex] = externParam
@@ -1404,7 +1411,7 @@ public partial class Generator
         }
 
         TypeSyntax? returnSafeHandleType = this.TryGetResourceReleaseMethod(originalSignature.ReturnType, returnTypeAttributes, out string? returnReleaseMethod)
-            ? this.RequestSafeHandle(returnReleaseMethod, originalSignature.ReturnType) : null;
+            ? this.RequestSafeHandle(returnReleaseMethod, originalSignature.ReturnType, valueAttributes: returnTypeAttributes) : null;
 
         IdentifierNameSyntax resultLocal = IdentifierName("__result");
 

@@ -8,6 +8,9 @@ But the general transformation from metadata to C# code may be applied to other 
 Constructing metadata is outside the scope of this document.
 However you may find [the win32metadata architecture](https://github.com/microsoft/win32metadata/blob/main/docs/architecture.md) document instructive.
 
+Metadata can keep native primitive and pointer signatures while supplying logical enum and ownership information through annotations.
+See [metadata annotations and compatibility](metadata-annotations.md) for projection rules, unsupported shapes, and the pinned consumer compatibility harness.
+
 ## Hooking metadata into CsWin32
 
 Metadata is fed into CsWin32 through MSBuild items.

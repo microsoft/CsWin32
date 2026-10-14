@@ -31,6 +31,14 @@ internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleIn
         mustUsePointers |= inputs.IsReturnValue;
         mustUsePointers |= customAttributes is { } attributes
             && attributes.Generator.FindInteropDecorativeAttribute(attributes.Collection, Generator.ContainsInteriorPointersAttribute) is not null;
+        if (customAttributes is { } enumAttributes)
+        {
+            enumAttributes.Generator.ValidateAssociatedEnumElementType(
+                this.ElementType,
+                enumAttributes.Collection,
+                inputs.AllowMarshaling && !inputs.IsField && !mustUsePointers && !useComSourceGenerators);
+        }
+
         if (mustUsePointers)
         {
             // These pointers require caller-controlled storage rather than a temporary managed reference or marshaled allocation.
@@ -48,7 +56,9 @@ internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleIn
         TypeSyntaxAndMarshaling elementTypeDetails = this.ElementType.ToTypeSyntax(inputs with { PreferInOutRef = false }, forElement, customAttributes, parameterAttributes);
         if (elementTypeDetails.MarshalAsAttribute is object ||
             elementTypeDetails.MarshalUsingType is string ||
-            (inputs.Generator?.IsManagedType(this.ElementType) is true) || (inputs.PreferInOutRef && !xOptional && this.ElementType is PrimitiveTypeHandleInfo { PrimitiveTypeCode: not PrimitiveTypeCode.Void }))
+            (inputs.Generator?.IsManagedType(this.ElementType) is true) || (inputs.PreferInOutRef && !xOptional
+                && this.ElementType is PrimitiveTypeHandleInfo { PrimitiveTypeCode: not PrimitiveTypeCode.Void }
+                && customAttributes?.Generator.FindAssociatedEnum(customAttributes.Value.Collection) is null))
         {
             bool xIn = (parameterAttributes & ParameterAttributes.In) == ParameterAttributes.In;
             bool xOut = (parameterAttributes & ParameterAttributes.Out) == ParameterAttributes.Out;

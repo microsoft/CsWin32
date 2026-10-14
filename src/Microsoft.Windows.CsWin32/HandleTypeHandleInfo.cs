@@ -78,6 +78,13 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
 
     internal override TypeSyntaxAndMarshaling ToTypeSyntax(TypeSyntaxSettings inputs, Generator.GeneratingElement forElement, QualifiedCustomAttributeHandleCollection? customAttributes, ParameterAttributes parameterAttributes = default)
     {
+        if (customAttributes?.Generator.FindAssociatedEnum(customAttributes.Value.Collection) is HandleTypeHandleInfo enumType
+            && (!this.generator.TryGetTypeDefHandle(this.Handle, out QualifiedTypeDefinitionHandle definition)
+                || definition.Generator != enumType.Generator || definition.DefinitionHandle != enumType.Handle))
+        {
+            throw new GenerationFailedException($"AssociatedEnum \"{enumType}\" cannot be projected over native type \"{this}\".");
+        }
+
         NameSyntax? nameSyntax;
         bool isInterface;
         bool isNonCOMConformingInterface;

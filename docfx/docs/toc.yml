@@ -5,3 +5,4 @@ items:
 - href: composition.md
 - href: ArchSpecificAPIs.md
 - href: 3rdPartyMetadata.md
+- href: metadata-annotations.md

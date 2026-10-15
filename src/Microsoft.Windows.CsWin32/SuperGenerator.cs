@@ -19,6 +19,11 @@ public class SuperGenerator : IGenerator, IDisposable
     public ImmutableDictionary<string, Generator> Generators { get; }
 
     /// <summary>
+    /// Gets diagnostics produced by the constituent generators while projecting metadata.
+    /// </summary>
+    public IEnumerable<Diagnostic> Diagnostics => this.Generators.Values.SelectMany(generator => generator.Diagnostics);
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="SuperGenerator"/> class.
     /// </summary>
     /// <param name="generators">The <see cref="Generator"/> objects to enable collaborative generation across. These should <em>not</em> have been added to a <see cref="SuperGenerator"/> previously.</param>

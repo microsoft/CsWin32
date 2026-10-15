@@ -78,6 +78,8 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
 
     internal override TypeSyntaxAndMarshaling ToTypeSyntax(TypeSyntaxSettings inputs, Generator.GeneratingElement forElement, QualifiedCustomAttributeHandleCollection? customAttributes, ParameterAttributes parameterAttributes = default)
     {
+        _ = customAttributes?.Generator.FindAssociatedEnum(customAttributes.Value.Collection);
+
         NameSyntax? nameSyntax;
         bool isInterface;
         bool isNonCOMConformingInterface;

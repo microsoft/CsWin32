@@ -178,6 +178,17 @@ public partial class SourceGenerator : ISourceGenerator
         isEnabledByDefault: true);
 #pragma warning restore CS1591 // Missing XML comment for publicly visible type or member
 
+    /// <summary>
+    /// Warns that an enum association cannot preserve the native representation.
+    /// </summary>
+    public static readonly DiagnosticDescriptor IncompatibleAssociatedEnum = new(
+        "PInvoke015",
+        "Incompatible AssociatedEnum annotation",
+        "AssociatedEnum \"{0}\" on \"{1}\" is ignored because {2}. The native type is preserved.",
+        "Functionality",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
     private const string InputProjectionErrorId = "PInvoke010";
     private const string InputProjectionErrorTitle = "Input projection error";
 
@@ -436,6 +447,11 @@ public partial class SourceGenerator : ISourceGenerator
         foreach (KeyValuePair<string, CompilationUnitSyntax> unit in superGenerator.GetCompilationUnits(context.CancellationToken))
         {
             context.AddSource(unit.Key, unit.Value.GetText(Encoding.UTF8));
+        }
+
+        foreach (Diagnostic diagnostic in superGenerator.Diagnostics)
+        {
+            context.ReportDiagnostic(diagnostic);
         }
 
         string ConcatSuggestions(IReadOnlyCollection<string> suggestions)

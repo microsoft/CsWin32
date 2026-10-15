@@ -13,6 +13,9 @@
     <RootNamespace />
     <PlatformTarget>x64</PlatformTarget>
     <DisablePolyfill>true</DisablePolyfill>
+    <!-- SDK annotation mismatches are asserted by the core and CLI AssociatedEnum tests. -->
+    <NoWarn>$(NoWarn);PInvoke015</NoWarn>
+    <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);PInvoke015</MSBuildWarningsAsMessages>
   </PropertyGroup>
 
   <ItemGroup>

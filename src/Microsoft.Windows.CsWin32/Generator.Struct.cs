@@ -116,11 +116,21 @@ public partial class Generator
                 if (fixedBufferAttribute.HasValue)
                 {
                     CustomAttributeValue<TypeSyntax> attributeArgs = fixedBufferAttribute.Value.DecodeValue(CustomAttributeTypeProvider.Instance);
-                    var fieldType = (TypeSyntax)attributeArgs.FixedArguments[0].Value!;
+                    TypeSyntax fieldType = PrimitiveTypeHandleInfo.ToTypeSyntax(GetFixedBufferElementType(fixedBufferAttribute.Value), typeSettings.PreferNativeInt);
                     ExpressionSyntax size = LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal((int)attributeArgs.FixedArguments[1].Value!));
-                    field = FieldDeclaration(
-                        [TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword), Token(SyntaxKind.FixedKeyword)],
-                        VariableDeclaration(fieldType, [fieldDeclarator.WithArgumentList(BracketedArgumentList(Argument(size)))]));
+                    if (this.FindAssociatedEnum(fieldDef.GetCustomAttributes()) is HandleTypeHandleInfo enumType)
+                    {
+                        TypeSyntax elementType = enumType.ToTypeSyntax(typeSettings, GeneratingElement.StructMember, null).Type;
+                        var fieldInfo = this.ReinterpretFieldType(fieldDef, ArrayType(elementType, [ArrayRankSpecifier([size])]), fieldDef.GetCustomAttributes(), context);
+                        additionalMembers = additionalMembers.AddRange(fieldInfo.AdditionalMembers);
+                        field = FieldDeclaration([TokenWithSpace(this.Visibility)], VariableDeclaration(fieldInfo.FieldType, [fieldDeclarator]));
+                    }
+                    else
+                    {
+                        field = FieldDeclaration(
+                            [TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.UnsafeKeyword), Token(SyntaxKind.FixedKeyword)],
+                            VariableDeclaration(fieldType, [fieldDeclarator.WithArgumentList(BracketedArgumentList(Argument(size)))]));
+                    }
                 }
                 else if (fieldDefHandle == flexibleArrayFieldHandle)
                 {
@@ -186,28 +196,30 @@ public partial class Generator
                         }
                     }
 
-                    TypeSyntaxAndMarshaling fieldTypeSyntax = fieldTypeInfo.ToTypeSyntax(thisFieldTypeSettings, GeneratingElement.StructMember, fieldAttributes.QualifyWith(this));
+                    HandleTypeHandleInfo? propertyEnum = fieldTypeInfo is PrimitiveTypeHandleInfo ? this.FindAssociatedEnum(fieldAttributes) : null;
+                    TypeSyntaxAndMarshaling fieldTypeSyntax = fieldTypeInfo.ToTypeSyntax(thisFieldTypeSettings, GeneratingElement.StructMember, propertyEnum is null ? fieldAttributes.QualifyWith(this) : null);
                     (TypeSyntax FieldType, SyntaxList<MemberDeclarationSyntax> AdditionalMembers, AttributeSyntax? MarshalAsAttribute) fieldInfo = this.ReinterpretFieldType(fieldDef, fieldTypeSyntax.Type, fieldAttributes, context);
                     additionalMembers = additionalMembers.AddRange(fieldInfo.AdditionalMembers);
 
                     PropertyDeclarationSyntax? property = null;
-                    if (this.FindAssociatedEnum(fieldAttributes) is { } propertyType)
+                    if (propertyEnum is not null)
                     {
                         // Keep the field with its original type, but then add a property that returns the enum type.
+                        TypeSyntax propertyType = propertyEnum.ToTypeSyntax(thisFieldTypeSettings, GeneratingElement.StructMember, null).Type;
                         fieldDeclarator = VariableDeclarator(SafeIdentifier($"_{fieldName}"));
                         field = FieldDeclaration([TokenWithSpace(SyntaxKind.PrivateKeyword)], VariableDeclaration(fieldInfo.FieldType, [fieldDeclarator]));
 
-                        // internal EnumType FieldName {
-                        //    get => (EnumType)this._fieldName;
-                        //    set => this._fieldName = (UnderlyingType)value;
-                        // }
-                        this.RequestInteropType(this.GetNamespaceForPossiblyNestedType(typeDef), propertyType.Identifier.ValueText, context);
                         ExpressionSyntax fieldAccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ThisExpression(), IdentifierName(fieldDeclarator.Identifier));
                         property = PropertyDeclaration(propertyType.WithTrailingTrivia(Space), Identifier(fieldName).WithTrailingTrivia(LineFeed))
                             .AddModifiers(TokenWithSpace(this.Visibility))
                             .WithAccessorList(AccessorList(
                                 AccessorDeclaration(SyntaxKind.GetAccessorDeclaration).WithExpressionBody(ArrowExpressionClause(CastExpression(propertyType, fieldAccess))).WithSemicolonToken(Semicolon),
                                 AccessorDeclaration(SyntaxKind.SetAccessorDeclaration).WithExpressionBody(ArrowExpressionClause(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, fieldAccess, CastExpression(fieldInfo.FieldType, IdentifierName("value"))))).WithSemicolonToken(Semicolon)));
+                        if (this.HasObsoleteAttribute(fieldAttributes))
+                        {
+                            property = property.AddAttributeLists(AttributeList(ObsoleteAttributeSyntax));
+                        }
+
                         additionalMembers = additionalMembers.Add(property);
                     }
                     else
@@ -223,7 +235,6 @@ public partial class Generator
                     if (this.HasObsoleteAttribute(fieldDef.GetCustomAttributes()))
                     {
                         field = field.AddAttributeLists(AttributeList(ObsoleteAttributeSyntax));
-                        property = property?.AddAttributeLists(AttributeList(ObsoleteAttributeSyntax));
                     }
 
                     if (RequiresUnsafe(fieldInfo.FieldType))
@@ -814,7 +825,7 @@ public partial class Generator
             }
 
             // Skip fields whose generated representation is not a plain, ref-returnable field of the decoded type.
-            if (this.FindAssociatedEnum(fieldAttributes) is not null)
+            if (fieldDef.DecodeSignature(this.SignatureHandleProvider, null) is PrimitiveTypeHandleInfo && this.FindAssociatedEnum(fieldAttributes) is not null)
             {
                 // Surfaced as a by-value property rather than a field.
                 continue;

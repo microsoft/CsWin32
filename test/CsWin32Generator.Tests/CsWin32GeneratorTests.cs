@@ -720,12 +720,12 @@ using global::System.Runtime.Versioning;
     }
 
     /// <summary>
-    /// Verifies associated enum marshaller namespaces through build-task generation and compilation.
+    /// Verifies native fallback for inconsistent root and nested enum annotations through the build task.
     /// </summary>
     /// <param name="nestedNamespace">Whether the enum is in a child of the common namespace.</param>
     /// <param name="tfm">The target framework of the generated projection.</param>
     [Theory, CombinatorialData]
-    public async Task AssociatedEnumMarshallerNamespace(
+    public async Task IncompatibleAssociatedEnumUsesNativeStorage(
         bool nestedNamespace,
         [CombinatorialValues("net8.0", "net9.0", "net10.0")] string tfm)
     {
@@ -735,18 +735,49 @@ using global::System.Runtime.Versioning;
         this.win32winmdPaths = [FlatNamespaceMetadataPath];
         string typeName = nestedNamespace ? "NESTED_ENUM" : "TEST_ENUM";
         string typeNamespace = nestedNamespace ? "FlatNamespace.Nested" : "FlatNamespace";
-        string marshallerName = $"{typeNamespace}.InteropServices.{typeName}ToU4Marshaller";
         string apiName = nestedNamespace ? "UseNestedEnum" : "UseRootEnum";
         this.nativeMethods.Add(apiName);
 
-        await this.InvokeGeneratorAndCompile($"{nameof(this.AssociatedEnumMarshallerNamespace)}_{nestedNamespace}_{tfm}");
+        await this.InvokeGeneratorAndCompile($"{nameof(this.IncompatibleAssociatedEnumUsesNativeStorage)}_{nestedNamespace}_{tfm}");
 
         MethodDeclarationSyntax method = Assert.Single(this.FindGeneratedMethod(apiName), m => FindAttribute(m.AttributeLists, "LibraryImport").Any());
         ParameterSyntax parameter = Assert.Single(method.ParameterList.Parameters);
-        AttributeSyntax attribute = Assert.Single(FindAttribute(parameter.AttributeLists, "global::System.Runtime.InteropServices.Marshalling.MarshalUsing"));
-        TypeOfExpressionSyntax marshallerType = Assert.IsType<TypeOfExpressionSyntax>(Assert.Single(attribute.ArgumentList!.Arguments).Expression);
-        Assert.Equal($"global::{marshallerName}", marshallerType.Type.ToString());
-        Assert.NotNull(this.compilation.GetTypeByMetadataName(marshallerName));
+        Assert.Equal(SyntaxKind.UIntKeyword, Assert.IsType<PredefinedTypeSyntax>(parameter.Type).Keyword.Kind());
+        Assert.Empty(FindAttribute(parameter.AttributeLists, "global::System.Runtime.InteropServices.Marshalling.MarshalUsing"));
+        Assert.Null(this.compilation.GetTypeByMetadataName($"{typeNamespace}.{typeName}"));
+        Assert.Contains("CsWin32 : warning PInvoke015:", this.Logger.Output);
+    }
+
+    /// <summary>
+    /// Compiles direct enum parameters and buffers through the platform LibraryImport generator.
+    /// </summary>
+    /// <param name="storage">The matching native and enum storage type.</param>
+    /// <param name="tfm">The target framework.</param>
+    [Theory, CombinatorialData]
+    public async Task AssociatedEnumLibraryImport(
+        [CombinatorialValues("sbyte", "byte", "short", "ushort", "int", "uint", "long", "ulong")] string storage,
+        [CombinatorialValues("net8.0", "net10.0")] string tfm)
+    {
+        this.compilation = this.starterCompilations[tfm];
+        this.parseOptions = this.parseOptions.WithLanguageVersion(GetLanguageVersionForTfm(tfm)!.Value);
+        this.tfm = tfm;
+        string path = Microsoft.Windows.CsWin32.Tests.AssociatedEnumTests.EmitMetadata(
+            Microsoft.Windows.CsWin32.Tests.AssociatedEnumTests.GetMetadataSource(storage), this.compilation, this.parseOptions);
+        try
+        {
+            this.win32winmdPaths = [path];
+            this.nativeMethods.AddRange(["RoundTrip", "Buffer", "Output", "DoublePointer", "PointerReturn"]);
+            await this.InvokeGeneratorAndCompile($"{nameof(this.AssociatedEnumLibraryImport)}_{storage}_{tfm}");
+            INamedTypeSymbol mode = this.compilation.GetTypeByMetadataName("Windows.Win32.Test.MODE")!;
+            Assert.Equal(storage, mode.EnumUnderlyingType!.ToDisplayString());
+            Assert.DoesNotContain("PInvoke015", this.Logger.Output);
+            MethodDeclarationSyntax method = Assert.Single(this.FindGeneratedMethod("RoundTrip"), m => FindAttribute(m.AttributeLists, "LibraryImport").Any());
+            Assert.Empty(FindAttribute(Assert.Single(method.ParameterList.Parameters).AttributeLists, "global::System.Runtime.InteropServices.Marshalling.MarshalUsing"));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
     }
 
     [Fact]

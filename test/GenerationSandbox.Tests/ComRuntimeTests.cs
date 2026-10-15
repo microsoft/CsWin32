@@ -150,7 +150,7 @@ public class ComRuntimeTests(ITestOutputHelper outputHelper)
                     dwAuthnLevel: RPC_C_AUTHN_LEVEL.RPC_C_AUTHN_LEVEL_CALL,
                     dwImpLevel: RPC_C_IMP_LEVEL.RPC_C_IMP_LEVEL_IMPERSONATE,
                     pAuthInfo: null,
-                    dwCapabilities: EOLE_AUTHENTICATION_CAPABILITIES.EOAC_NONE);
+                    dwCapabilities: (uint)EOLE_AUTHENTICATION_CAPABILITIES.EOAC_NONE);
         }
 
         var className = new SysFreeStringSafeHandle(Marshal.StringToBSTR("MSFT_MpScan"), true);
@@ -266,7 +266,7 @@ public class ComRuntimeTests(ITestOutputHelper outputHelper)
             Assert.Equal(0UL, newPosition);
 
             Windows.Win32.System.Com.STATSTG stat;
-            stream.Stat(&stat, STATFLAG.STATFLAG_NONAME);
+            stream.Stat(&stat, (uint)STATFLAG.STATFLAG_NONAME);
             Assert.True(stat.cbSize > 0, "Expected Stat to report a non-empty file size.");
 
             stream.Read(buffer, out uint bytesReadAfterSeek);

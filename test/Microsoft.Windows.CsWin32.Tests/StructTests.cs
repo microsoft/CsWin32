@@ -147,13 +147,14 @@ namespace Microsoft.Windows.Sdk
     }
 
     [Fact]
-    public void FieldWithAssociatedEnum()
+    public void FieldWithIncompatibleAssociatedEnum()
     {
         this.GenerateApi("SHDESCRIPTIONID");
 
         var type = (StructDeclarationSyntax)Assert.Single(this.FindGeneratedType("SHDESCRIPTIONID"));
-        PropertyDeclarationSyntax property = Assert.Single(type.Members.OfType<PropertyDeclarationSyntax>(), m => m.Identifier.ValueText == "dwDescriptionId");
-        Assert.Equal("SHDID_ID", Assert.IsType<IdentifierNameSyntax>(property.Type).Identifier.ValueText);
+        FieldDeclarationSyntax field = Assert.Single(type.Members.OfType<FieldDeclarationSyntax>(), m => m.Declaration.Variables.Any(v => v.Identifier.ValueText == "dwDescriptionId"));
+        Assert.Equal(SyntaxKind.UIntKeyword, Assert.IsType<PredefinedTypeSyntax>(field.Declaration.Type).Keyword.Kind());
+        Assert.Contains(((SuperGenerator)this.generator!).Diagnostics, diagnostic => diagnostic.Id == "PInvoke015" && diagnostic.GetMessage().Contains("SHDID_ID", StringComparison.Ordinal));
     }
 
     [Fact]

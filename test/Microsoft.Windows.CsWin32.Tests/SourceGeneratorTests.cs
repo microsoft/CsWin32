@@ -78,6 +78,31 @@ public class SourceGeneratorTests(ITestOutputHelper logger)
             ReferenceAssemblies = ReferenceAssemblies.Net.Net80.WithNuGetConfigFilePath(MyReferenceAssemblies.NuGetConfigPath),
             LanguageVersion = LanguageVersion.CSharp12,
             NativeMethodsTxt = "gdi32.*",
+            ExpectedDiagnostics =
+            {
+                new DiagnosticResult(SourceGenerator.IncompatibleAssociatedEnum)
+                    .WithArguments("BACKGROUND_MODE", "Windows.Win32.Graphics.Gdi.Apis.GetBkMode::return", "native storage is Int32, but the enum's underlying type is UInt32"),
+                new DiagnosticResult(SourceGenerator.IncompatibleAssociatedEnum)
+                    .WithArguments("BACKGROUND_MODE", "Windows.Win32.Graphics.Gdi.Apis.SetBkMode::mode", "native storage is Int32, but the enum's underlying type is UInt32"),
+                new DiagnosticResult(SourceGenerator.IncompatibleAssociatedEnum)
+                    .WithArguments("FONT_CHARSET", "Windows.Win32.Graphics.Gdi.Apis.CreateFontW::iCharSet", "native storage is UInt32, but the enum's underlying type is Byte"),
+                new DiagnosticResult(SourceGenerator.IncompatibleAssociatedEnum)
+                    .WithArguments("FONT_CLIP_PRECISION", "Windows.Win32.Graphics.Gdi.Apis.CreateFontW::iClipPrecision", "native storage is UInt32, but the enum's underlying type is Byte"),
+                new DiagnosticResult(SourceGenerator.IncompatibleAssociatedEnum)
+                    .WithArguments("FONT_OUTPUT_PRECISION", "Windows.Win32.Graphics.Gdi.Apis.CreateFontW::iOutPrecision", "native storage is UInt32, but the enum's underlying type is Byte"),
+                new DiagnosticResult(SourceGenerator.IncompatibleAssociatedEnum)
+                    .WithArguments("FONT_QUALITY", "Windows.Win32.Graphics.Gdi.Apis.CreateFontW::iQuality", "native storage is UInt32, but the enum's underlying type is Byte"),
+                new DiagnosticResult(SourceGenerator.IncompatibleAssociatedEnum)
+                    .WithArguments("GET_DEVICE_CAPS_INDEX", "Windows.Win32.Graphics.Gdi.Apis.GetDeviceCaps::index", "native storage is Int32, but the enum's underlying type is UInt32"),
+                new DiagnosticResult(SourceGenerator.IncompatibleAssociatedEnum)
+                    .WithArguments("OBJ_TYPE", "Windows.Win32.Graphics.Gdi.Apis.GetCurrentObject::type", "native storage is UInt32, but the enum's underlying type is Int32"),
+                new DiagnosticResult(SourceGenerator.IncompatibleAssociatedEnum)
+                    .WithArguments("PEN_STYLE", "Windows.Win32.Graphics.Gdi.Apis.ExtCreatePen::iPenStyle", "native storage is UInt32, but the enum's underlying type is Int32"),
+                new DiagnosticResult(SourceGenerator.IncompatibleAssociatedEnum)
+                    .WithArguments("PEN_STYLE", "Windows.Win32.Graphics.Gdi.LOGPEN.lopnStyle", "native storage is UInt32, but the enum's underlying type is Int32"),
+                new DiagnosticResult(SourceGenerator.IncompatibleAssociatedEnum)
+                    .WithArguments("PFD_LAYER_TYPE", "Windows.Win32.Graphics.OpenGL.PIXELFORMATDESCRIPTOR.iLayerType", "native storage is Byte, but the enum's underlying type is SByte"),
+            },
         }.RunAsync(TestContext.Current.CancellationToken);
     }
 

@@ -15,6 +15,7 @@ DefWindowProc
 DestroyWindow
 DISPLAYCONFIG_VIDEO_SIGNAL_INFO
 EnumWindows
+EOLE_AUTHENTICATION_CAPABILITIES
 FILE_ACCESS_RIGHTS
 FLICK_DATA
 GetForegroundWindow
@@ -81,6 +82,7 @@ ShellWindowFindWindowOptions
 ShellWindows
 ShellWindowTypeConstants
 SHFILEOPSTRUCTW
+STATFLAG
 SIZE
 SYSTEM_INFO
 TrySubmitThreadpoolCallback

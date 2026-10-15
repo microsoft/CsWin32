@@ -9,18 +9,20 @@ public class ExternMethodTests : GeneratorTestBase
     }
 
     [Fact]
-    public void AssociatedEnumOnParameter()
+    public void AssociatedEnumOnParameterWithIncompatibleSignedness()
     {
         MethodDeclarationSyntax method = Assert.Single(this.GenerateMethod("SHObjectProperties"), IsOrContainsExternMethod);
         ParameterSyntax enumParam = method.ParameterList.Parameters[1];
-        Assert.Equal("SHOP_TYPE", Assert.IsType<QualifiedNameSyntax>(enumParam.Type).Right.Identifier.ValueText);
+        Assert.Equal(SyntaxKind.UIntKeyword, Assert.IsType<PredefinedTypeSyntax>(enumParam.Type).Keyword.Kind());
+        Assert.Contains(((SuperGenerator)this.generator!).Diagnostics, diagnostic => diagnostic.Id == "PInvoke015" && diagnostic.GetMessage().Contains("SHOP_TYPE", StringComparison.Ordinal));
     }
 
     [Fact]
-    public void AssociatedEnumOnReturnValue()
+    public void AssociatedEnumOnReturnValueWithIncompatibleSignedness()
     {
         MethodDeclarationSyntax method = Assert.Single(this.GenerateMethod("PathCleanupSpec"), IsOrContainsExternMethod);
-        Assert.Equal("PCS_RET", Assert.IsType<QualifiedNameSyntax>(method.ReturnType).Right.Identifier.ValueText);
+        Assert.Equal(SyntaxKind.IntKeyword, Assert.IsType<PredefinedTypeSyntax>(method.ReturnType).Keyword.Kind());
+        Assert.Contains(((SuperGenerator)this.generator!).Diagnostics, diagnostic => diagnostic.Id == "PInvoke015" && diagnostic.GetMessage().Contains("PCS_RET", StringComparison.Ordinal));
     }
 
     [Fact]

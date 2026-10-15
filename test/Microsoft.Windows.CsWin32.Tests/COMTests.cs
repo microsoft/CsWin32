@@ -317,14 +317,15 @@ public class COMTests : GeneratorTestBase
     }
 
     [Fact]
-    public void AssociatedEnumOnMethodParameters()
+    public void AssociatedEnumOnMethodParametersWithIncompatibleSignedness()
     {
         this.GenerateApi("IShellFolderView");
 
         InterfaceDeclarationSyntax ifaceSyntax = Assert.Single(this.FindGeneratedType("IShellFolderView").OfType<InterfaceDeclarationSyntax>());
         MethodDeclarationSyntax methodSyntax = Assert.Single(ifaceSyntax.Members.OfType<MethodDeclarationSyntax>(), m => m.Identifier.ValueText == "Select");
         ParameterSyntax parameter = Assert.Single(methodSyntax.ParameterList.Parameters);
-        Assert.Equal("SFVS_SELECT", Assert.IsType<QualifiedNameSyntax>(parameter.Type).Right.Identifier.ValueText);
+        Assert.Equal(SyntaxKind.UIntKeyword, Assert.IsType<PredefinedTypeSyntax>(parameter.Type).Keyword.Kind());
+        Assert.Contains(((SuperGenerator)this.generator!).Diagnostics, diagnostic => diagnostic.Id == "PInvoke015" && diagnostic.GetMessage().Contains("SFVS_SELECT", StringComparison.Ordinal));
     }
 
     [Fact]

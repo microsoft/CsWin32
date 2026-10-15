@@ -649,11 +649,11 @@ public class BasicTests
     }
 
     [Fact]
-    public void FieldWithAssociatedEnum()
+    public void FieldWithIncompatibleAssociatedEnumRetainsNativeStorage()
     {
         SHDESCRIPTIONID s = default;
-        s.dwDescriptionId = SHDID_ID.SHDID_FS_FILE;
-        Assert.Equal(SHDID_ID.SHDID_FS_FILE, s.dwDescriptionId);
+        s.dwDescriptionId = 1;
+        Assert.Equal(1U, s.dwDescriptionId);
     }
 
     // Test for https://github.com/microsoft/CsWin32/issues/1421

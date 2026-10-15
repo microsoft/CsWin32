@@ -118,7 +118,7 @@ internal static unsafe class GeneratedForm
             throw new NotImplementedException();
         }
 
-        public void Commit([MarshalAs(UnmanagedType.U4)] STGC grfCommitFlags)
+        public void Commit(uint grfCommitFlags)
         {
             throw new NotImplementedException();
         }
@@ -128,7 +128,7 @@ internal static unsafe class GeneratedForm
             throw new NotImplementedException();
         }
 
-        public void LockRegion(ulong libOffset, ulong cb, [MarshalAs(UnmanagedType.U4)] LOCKTYPE dwLockType)
+        public void LockRegion(ulong libOffset, ulong cb, uint dwLockType)
         {
             throw new NotImplementedException();
         }
@@ -138,7 +138,7 @@ internal static unsafe class GeneratedForm
             throw new NotImplementedException();
         }
 
-        public void Stat(Windows.Win32.System.Com.STATSTG* pstatstg, [MarshalAs(UnmanagedType.U4)] STATFLAG grfStatFlag)
+        public void Stat(Windows.Win32.System.Com.STATSTG* pstatstg, uint grfStatFlag)
         {
             throw new NotImplementedException();
         }

@@ -629,6 +629,11 @@ public partial class Program
                 fileCount++;
             }
 
+            foreach (Diagnostic diagnostic in superGenerator.Diagnostics)
+            {
+                this.ReportWarning(diagnostic.GetMessage(), code: diagnostic.Id);
+            }
+
             var generatedFilesTxt = Path.Combine(outputPath.FullName, "CsWin32GeneratedFiles.txt");
 
             File.WriteAllLines(generatedFilesTxt, outputFiles);
@@ -661,19 +666,19 @@ public partial class Program
         }
     }
 
-    private void ReportWarning(string message, string? file = null, int? line = null)
+    private void ReportWarning(string message, string? file = null, int? line = null, string? code = null)
     {
         if (file is not null && line is not null)
         {
-            this.output.WriteLine($"{file}({line}): CsWin32 warning : {message}");
+            this.output.WriteLine($"{file}({line}): CsWin32 warning {code}: {message}");
         }
         else if (file is not null)
         {
-            this.output.WriteLine($"{file}: CsWin32 warning : {message}");
+            this.output.WriteLine($"{file}: CsWin32 warning {code}: {message}");
         }
         else
         {
-            this.output.WriteLine($"CsWin32 : warning : {message}");
+            this.output.WriteLine($"CsWin32 : warning {code}: {message}");
         }
     }
 

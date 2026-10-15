@@ -8,6 +8,9 @@ But the general transformation from metadata to C# code may be applied to other 
 Constructing metadata is outside the scope of this document.
 However you may find [the win32metadata architecture](https://github.com/microsoft/win32metadata/blob/main/docs/architecture.md) document instructive.
 
+Use [associated enum annotations](associated-enums.md) to expose enum parameters and fields
+while retaining native integer and pointer signatures in metadata.
+
 ## Hooking metadata into CsWin32
 
 Metadata is fed into CsWin32 through MSBuild items.

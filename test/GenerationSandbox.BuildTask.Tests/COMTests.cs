@@ -248,7 +248,7 @@ public partial class COMTests(ITestOutputHelper outputHelper)
                     dwAuthnLevel: RPC_C_AUTHN_LEVEL.RPC_C_AUTHN_LEVEL_CALL,
                     dwImpLevel: RPC_C_IMP_LEVEL.RPC_C_IMP_LEVEL_IMPERSONATE,
                     pAuthInfo: null,
-                    dwCapabilities: EOLE_AUTHENTICATION_CAPABILITIES.EOAC_NONE);
+                    dwCapabilities: (uint)EOLE_AUTHENTICATION_CAPABILITIES.EOAC_NONE);
         }
 
         var className = new SysFreeStringSafeHandle(Marshal.StringToBSTR("MSFT_MpScan"), true);
@@ -354,7 +354,7 @@ public partial class COMTests(ITestOutputHelper outputHelper)
             Assert.Equal(0UL, newPosition);
 
             STATSTG stat;
-            stream.Stat(&stat, STATFLAG.STATFLAG_NONAME);
+            stream.Stat(&stat, (uint)STATFLAG.STATFLAG_NONAME);
             Assert.True(stat.cbSize > 0, "Expected Stat to report a non-empty file size.");
 
             // Read again after Seek to confirm the seek took effect on the same vtable slot.

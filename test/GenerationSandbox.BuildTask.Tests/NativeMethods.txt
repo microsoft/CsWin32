@@ -17,6 +17,7 @@ DebugPropertyInfo
 DefWindowProc
 DestroyWindow
 DeviceIoControl
+EOLE_AUTHENTICATION_CAPABILITIES
 FILE_FLAGS_AND_ATTRIBUTES
 GetFileVersionInfoEx
 GetFileVersionInfoSizeEx

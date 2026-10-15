@@ -48,7 +48,9 @@ internal record PointerTypeHandleInfo(TypeHandleInfo ElementType) : TypeHandleIn
         TypeSyntaxAndMarshaling elementTypeDetails = this.ElementType.ToTypeSyntax(inputs with { PreferInOutRef = false }, forElement, customAttributes, parameterAttributes);
         if (elementTypeDetails.MarshalAsAttribute is object ||
             elementTypeDetails.MarshalUsingType is string ||
-            (inputs.Generator?.IsManagedType(this.ElementType) is true) || (inputs.PreferInOutRef && !xOptional && this.ElementType is PrimitiveTypeHandleInfo { PrimitiveTypeCode: not PrimitiveTypeCode.Void }))
+            (inputs.Generator?.IsManagedType(this.ElementType) is true) || (inputs.PreferInOutRef && !xOptional
+                && this.ElementType is PrimitiveTypeHandleInfo { PrimitiveTypeCode: not PrimitiveTypeCode.Void }
+                && customAttributes?.Generator.FindAssociatedEnum(customAttributes.Value.Collection) is null))
         {
             bool xIn = (parameterAttributes & ParameterAttributes.In) == ParameterAttributes.In;
             bool xOut = (parameterAttributes & ParameterAttributes.Out) == ParameterAttributes.Out;

@@ -707,6 +707,23 @@ public partial class Generator : IGenerator, IDisposable
             return true;
         }
 
+        const string SafeHandleSuffix = "SafeHandle";
+        if (this.options.UseSafeHandles && typeName.EndsWith(SafeHandleSuffix, StringComparison.Ordinal)
+            && (typeNamespace is null || typeNamespace == this.Namespace))
+        {
+            string releaseMethod = typeName.Substring(0, typeName.Length - SafeHandleSuffix.Length);
+            if (this.GetMethodByName(releaseMethod).HasValue && !BclInteropSafeHandles.ContainsKey(releaseMethod))
+            {
+                TypeSyntax? helperType = null;
+                this.volatileCode.GenerationTransaction(() => helperType = this.RequestSafeHandle(releaseMethod, allowAbstract: true));
+                if (helperType is not null)
+                {
+                    preciseApi = ImmutableList.Create($"{this.Namespace}.{typeName}");
+                    return true;
+                }
+            }
+        }
+
         if (foundApiWithMismatchedPlatform)
         {
             throw new PlatformIncompatibleException($"The requested API ({possiblyQualifiedName}) was found but is not available given the target platform ({this.compilation?.Options.Platform}).");
@@ -2082,7 +2099,20 @@ public partial class Generator : IGenerator, IDisposable
     }
 
     private ParameterListSyntax CreateParameterList(MethodDefinition methodDefinition, MethodSignature<TypeHandleInfo> signature, TypeSyntaxSettings typeSettings, GeneratingElement forElement)
-        => FixTrivia(ParameterList([.. methodDefinition.GetParameters().Select(this.Reader.GetParameter).Where(p => !p.Name.IsNil).Select(p => this.CreateParameter(signature, signature.ParameterTypes[p.SequenceNumber - 1], p, typeSettings, forElement))]));
+    {
+        foreach (ParameterHandle parameterHandle in methodDefinition.GetParameters())
+        {
+            Parameter parameter = this.Reader.GetParameter(parameterHandle);
+            if (this.TryGetContextualReleaseMethod(parameter.GetCustomAttributes(), out string? releaseMethod))
+            {
+                MethodDefinitionHandle releaseMethodHandle = this.GetMethodByName(releaseMethod)
+                    ?? throw new GenerationFailedException("Unable to find release method named: " + releaseMethod);
+                this.RequestExternMethod(releaseMethodHandle);
+            }
+        }
+
+        return FixTrivia(ParameterList([.. methodDefinition.GetParameters().Select(this.Reader.GetParameter).Where(p => !p.Name.IsNil).Select(p => this.CreateParameter(signature, signature.ParameterTypes[p.SequenceNumber - 1], p, typeSettings, forElement))]));
+    }
 
     private ParameterSyntax CreateParameter(MethodSignature<TypeHandleInfo> signature, TypeHandleInfo parameterInfo, Parameter parameter, TypeSyntaxSettings typeSettings, GeneratingElement forElement)
     {

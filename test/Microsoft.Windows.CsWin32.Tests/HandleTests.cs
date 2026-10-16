@@ -19,10 +19,12 @@ public class HandleTests : GeneratorTestBase
     }
 
     [Fact]
-    public void NamespaceHandleGetsNoSafeHandle()
+    public void ProcessHeapGetsNoCleanupSafeHandle()
     {
-        this.GenerateApi("CreatePrivateNamespace");
-        Assert.Empty(this.FindGeneratedType("ClosePrivateNamespaceSafeHandle"));
+        this.GenerateApi("GetProcessHeap");
+        Assert.Empty(this.FindGeneratedType("HeapDestroySafeHandle"));
+        Assert.All(this.FindGeneratedMethod("GetProcessHeap"), method =>
+            Assert.Equal("HANDLE", Assert.IsType<QualifiedNameSyntax>(method.ReturnType).Right.Identifier.ValueText));
     }
 
     [Fact]

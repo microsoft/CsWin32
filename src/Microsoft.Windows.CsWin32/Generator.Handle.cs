@@ -5,7 +5,14 @@ namespace Microsoft.Windows.CsWin32;
 
 public partial class Generator
 {
-    internal TypeSyntax? RequestSafeHandle(string releaseMethod)
+    /// <summary>
+    /// Generates an owner for a native value and its cleanup function.
+    /// </summary>
+    /// <param name="releaseMethod">The cleanup function.</param>
+    /// <param name="valueType">The original native value type, or null to use the cleanup parameter type.</param>
+    /// <param name="allowAbstract">Whether caller-defined cleanup helpers may be returned.</param>
+    /// <returns>The owner type, or null when automatic ownership cannot be generated.</returns>
+    internal TypeSyntax? RequestSafeHandle(string releaseMethod, TypeHandleInfo? valueType = null, bool allowAbstract = false)
     {
         if (!this.options.UseSafeHandles)
         {
@@ -14,17 +21,14 @@ public partial class Generator
 
         try
         {
-            if (this.volatileCode.TryGetSafeHandleForReleaseMethod(releaseMethod, out TypeSyntax? safeHandleType))
+            if (BclInteropSafeHandles.TryGetValue(releaseMethod, out TypeSyntax? knownOwner)
+                && (valueType is null || (valueType is HandleTypeHandleInfo knownHandle
+                    && knownHandle.Generator.GetQualifiedTypeDefinition(knownHandle.Handle) is QualifiedTypeDefinition definition
+                    && definition.Reader.GetString(definition.Definition.Namespace) == (releaseMethod == "CloseHandle" ? "Windows.Win32.Foundation" : "Windows.Win32.System.Registry")
+                    && definition.Reader.GetString(definition.Definition.Name) == (releaseMethod == "CloseHandle" ? "HANDLE" : "HKEY"))))
             {
-                return safeHandleType;
+                return knownOwner;
             }
-
-            if (BclInteropSafeHandles.TryGetValue(releaseMethod, out TypeSyntax? bclType))
-            {
-                return bclType;
-            }
-
-            string safeHandleClassName = $"{releaseMethod}SafeHandle";
 
             MethodDefinitionHandle? releaseMethodHandle = this.GetMethodByName(releaseMethod);
             if (!releaseMethodHandle.HasValue)
@@ -35,15 +39,10 @@ public partial class Generator
             MethodDefinition releaseMethodDef = this.Reader.GetMethodDefinition(releaseMethodHandle.Value);
             string releaseMethodModule = this.GetNormalizedModuleName(releaseMethodDef.GetImport());
 
-            IdentifierNameSyntax? safeHandleTypeIdentifier = IdentifierName(safeHandleClassName);
-            safeHandleType = QualifiedName(ParseName($"global::{this.Namespace}"), safeHandleTypeIdentifier);
-
             MethodSignature<TypeHandleInfo> releaseMethodSignature = releaseMethodDef.DecodeSignature(this.SignatureHandleProvider, null);
-            TypeHandleInfo releaseMethodParameterTypeHandleInfo = releaseMethodSignature.ParameterTypes[0];
-            TypeSyntaxAndMarshaling releaseMethodParameterType = releaseMethodParameterTypeHandleInfo.ToTypeSyntax(this.externSignatureTypeSettings, GeneratingElement.HelperClassMember, default);
-
             var nonReservedParameterCount = 0;
             var handleParameterName = string.Empty;
+            int handleParameterIndex = -1;
             foreach (ParameterHandle paramHandle in releaseMethodDef.GetParameters())
             {
                 Parameter param = this.Reader.GetParameter(paramHandle);
@@ -57,43 +56,73 @@ public partial class Generator
                 if (this.FindInteropDecorativeAttribute(paramAttributes, "ReservedAttribute") is null)
                 {
                     nonReservedParameterCount++;
-                    handleParameterName = this.Reader.GetString(param.Name);
+                    if (handleParameterIndex < 0)
+                    {
+                        handleParameterIndex = param.SequenceNumber - 1;
+                        handleParameterName = this.Reader.GetString(param.Name);
+                    }
                 }
             }
 
-            // If the release method takes more than one non-reserved parameter, we can't generate a SafeHandle for it.
-            if (nonReservedParameterCount != 1)
+            if (handleParameterIndex < 0)
             {
-                safeHandleType = null;
+                return null;
             }
 
-            // If the handle type is *always* 64-bits, even in 32-bit processes, SafeHandle cannot represent it, since it's based on IntPtr.
-            // We could theoretically do this for x64-specific compilations though if required.
-            if (!this.TryGetTypeDefFieldType(releaseMethodParameterTypeHandleInfo, out TypeHandleInfo? typeDefStructFieldType))
+            TypeHandleInfo releaseMethodParameterTypeHandleInfo = releaseMethodSignature.ParameterTypes[handleParameterIndex];
+            valueType ??= releaseMethodParameterTypeHandleInfo;
+            TypeSyntax nativeValueType = valueType.ToTypeSyntax(this.externSignatureTypeSettings, GeneratingElement.HelperClassMember, default).Type;
+            TypeSyntaxAndMarshaling releaseMethodParameterType = releaseMethodParameterTypeHandleInfo.ToTypeSyntax(this.externSignatureTypeSettings, GeneratingElement.HelperClassMember, default);
+            bool canonicalValueType = nativeValueType.IsEquivalentTo(releaseMethodParameterType.Type);
+            if (!this.IsCleanupParameterCompatible(valueType, releaseMethodParameterTypeHandleInfo, releaseMethod))
             {
-                safeHandleType = null;
+                return null;
             }
 
-            if (!this.IsSafeHandleCompatibleTypeDefFieldType(typeDefStructFieldType))
+            if (canonicalValueType && BclInteropSafeHandles.TryGetValue(releaseMethod, out TypeSyntax? bclType))
             {
-                safeHandleType = null;
+                return bclType;
             }
 
+            string cacheKey = releaseMethod + ":" + nativeValueType;
+            if (this.volatileCode.TryGetSafeHandleForReleaseMethod(cacheKey, out TypeSyntax? safeHandleType, out bool cachedCanConstruct))
+            {
+                return allowAbstract || cachedCanConstruct ? safeHandleType : null;
+            }
+
+            TypeHandleInfo? typeDefStructFieldType = this.GetSafeHandleBackingType(releaseMethodParameterTypeHandleInfo);
+            if (!this.IsSafeHandleCompatibleTypeDefFieldType(typeDefStructFieldType)
+                || !this.IsSafeHandleCompatibleTypeDefFieldType(this.GetSafeHandleBackingType(valueType)))
+            {
+                return null;
+            }
+
+            string safeHandleClassName = canonicalValueType
+                ? $"{releaseMethod}SafeHandle"
+                : $"{releaseMethod}{this.GetSafeHandleValueName(valueType, nativeValueType)}SafeHandle";
+            IdentifierNameSyntax safeHandleTypeIdentifier = IdentifierName(safeHandleClassName);
+            safeHandleType = QualifiedName(ParseName($"global::{this.Namespace}"), safeHandleTypeIdentifier);
+            CustomAttributeHandleCollection? atts = this.GetReturnTypeCustomAttributes(releaseMethodDef);
+            TypeSyntaxAndMarshaling releaseMethodReturnType = releaseMethodSignature.ReturnType.ToTypeSyntax(this.externSignatureTypeSettings, GeneratingElement.HelperClassMember, atts?.QualifyWith(this));
+            bool canConstruct = nonReservedParameterCount == 1 && IsSupportedCleanupReturn(releaseMethodReturnType.Type, releaseMethod);
             this.volatileCode.GenerationTransaction(delegate
             {
-                this.volatileCode.AddSafeHandleNameForReleaseMethod(releaseMethod, safeHandleType);
+                this.volatileCode.AddSafeHandleNameForReleaseMethod(cacheKey, safeHandleType, canConstruct);
             });
-
-            if (safeHandleType is null)
-            {
-                return safeHandleType;
-            }
 
             // Bail out early if someone already made the SafeHandle type
             string safeHandleFullyQualifiedName = $"{this.Namespace}.{safeHandleClassName}";
             if (this.IsTypeAlreadyFullyDeclared(safeHandleFullyQualifiedName))
             {
-                return safeHandleType;
+                return allowAbstract || canConstruct ? safeHandleType : null;
+            }
+
+            TypeSyntax baseType = SafeHandleTypeSyntax;
+            if (!canonicalValueType && !BclInteropSafeHandles.ContainsKey(releaseMethod)
+                && !this.IsTypeAlreadyFullyDeclared($"{this.Namespace}.{releaseMethod}SafeHandle")
+                && this.RequestSafeHandle(releaseMethod, allowAbstract: true) is TypeSyntax canonicalOwner)
+            {
+                baseType = canonicalOwner;
             }
 
             this.volatileCode.GenerationTransaction(delegate
@@ -103,11 +132,15 @@ public partial class Generator
 
             // Collect all the known invalid values for this handle.
             // If no invalid values are given (e.g. BSTR), we'll just assume 0 is invalid.
-            HashSet<IntPtr> invalidHandleValues = this.GetInvalidHandleValues(((HandleTypeHandleInfo)releaseMethodParameterTypeHandleInfo).Handle);
-            IntPtr preferredInvalidValue = GetPreferredInvalidHandleValue(invalidHandleValues, new IntPtr(-1));
+            HashSet<IntPtr> invalidHandleValues = valueType is HandleTypeHandleInfo nativeHandle
+                ? nativeHandle.Generator.GetInvalidHandleValues(nativeHandle.Handle)
+                : new() { IntPtr.Zero };
+            if (invalidHandleValues.Count == 0 && releaseMethodParameterTypeHandleInfo is PointerTypeHandleInfo)
+            {
+                invalidHandleValues.Add(IntPtr.Zero);
+            }
 
-            CustomAttributeHandleCollection? atts = this.GetReturnTypeCustomAttributes(releaseMethodDef);
-            TypeSyntaxAndMarshaling releaseMethodReturnType = releaseMethodSignature.ReturnType.ToTypeSyntax(this.externSignatureTypeSettings, GeneratingElement.HelperClassMember, atts?.QualifyWith(this));
+            IntPtr preferredInvalidValue = GetPreferredInvalidHandleValue(invalidHandleValues, new IntPtr(-1));
 
             this.TryGetRenamedMethod(releaseMethod, out string? renamedReleaseMethod);
 
@@ -156,141 +189,145 @@ public partial class Generator
                 .WithExpressionBody(ArrowExpressionClause(overallTest))
                 .WithSemicolonToken(SemicolonWithLineFeed));
 
-            // If there are more than 1 parameter other parameters are reserved.
-            // Otherwise we would have quit earlier
+            this.AddTypedSafeHandleMembers(members, safeHandleTypeIdentifier, valueType, releaseMethod, !baseType.IsEquivalentTo(SafeHandleTypeSyntax));
+
+            // Automatic cleanup supplies defaults only for additional reserved parameters.
             var releaseMethodHasReservedParameters = releaseMethodSignature.RequiredParameterCount > 1;
 
             // (struct)this.handle or (struct)checked((fieldType)(nint))this.handle, as appropriate.
             // If we have other reserved parameters make this a named argument to be extra sure
             // we are passing value for correct parameter
-            bool implicitConversion = typeDefStructFieldType is PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.IntPtr } or PointerTypeHandleInfo;
+            ExpressionSyntax releaseNativeValue = this.GetNativeValueFromHandle(thisHandle, typeDefStructFieldType!);
             ArgumentSyntax releaseHandleArgument = Argument(
                 releaseMethodHasReservedParameters ? NameColon(IdentifierName(handleParameterName)) : null,
                 default,
                 CastExpression(
                     releaseMethodParameterType.Type,
-                    implicitConversion ? thisHandle : CheckedExpression(CastExpression(typeDefStructFieldType!.ToTypeSyntax(this.fieldTypeSettings, GeneratingElement.HelperClassMember, null).Type, CastExpression(IdentifierName("nint"), thisHandle)))));
+                    releaseNativeValue));
 
-            // protected override [unsafe] bool ReleaseHandle() => ReleaseMethod((struct)this.handle);
-            // Special case release functions based on their return type as follows: (https://github.com/microsoft/win32metadata/issues/25)
-            //  * bool => true is success
-            //  * int => zero is success
-            //  * uint => zero is success
-            //  * byte => non-zero is success
-            ExpressionSyntax releaseInvocation = InvocationExpression(
-                MemberAccessExpression(
-                    SyntaxKind.SimpleMemberAccessExpression,
-                    IdentifierName(this.options.ClassName),
-                    IdentifierName(renamedReleaseMethod ?? releaseMethod)),
-                [releaseHandleArgument]);
-            BlockSyntax? releaseBlock = null;
-
-            // Reserved parameters can be pointers.
-            // Thus we need unsafe modifier even though we don't pass values for reserved parameters explicitly.
-            // As an example of that see WlanCloseHandle function.
-            var releaseMethodIsUnsafe = releaseMethodHasReservedParameters;
-            if (!(releaseMethodReturnType.Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.BoolKeyword } } ||
-                releaseMethodReturnType.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "BOOL" } } }))
+            if (canConstruct && baseType.IsEquivalentTo(SafeHandleTypeSyntax))
             {
-                switch (releaseMethodReturnType.Type)
+                // protected override [unsafe] bool ReleaseHandle() => ReleaseMethod((struct)this.handle);
+                // Special case release functions based on their return type as follows: (https://github.com/microsoft/win32metadata/issues/25)
+                //  * bool => true is success
+                //  * int => zero is success
+                //  * uint => zero is success
+                //  * byte => non-zero is success
+                ExpressionSyntax releaseInvocation = InvocationExpression(
+                    MemberAccessExpression(
+                        SyntaxKind.SimpleMemberAccessExpression,
+                        IdentifierName(this.options.ClassName),
+                        IdentifierName(renamedReleaseMethod ?? releaseMethod)),
+                    [releaseHandleArgument]);
+                BlockSyntax? releaseBlock = null;
+
+                // Reserved parameters can be pointers.
+                // Thus we need unsafe modifier even though we don't pass values for reserved parameters explicitly.
+                // As an example of that see WlanCloseHandle function.
+                var releaseMethodIsUnsafe = releaseMethodHasReservedParameters;
+                if (!(releaseMethodReturnType.Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.BoolKeyword } } ||
+                    releaseMethodReturnType.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "BOOL" } } }))
                 {
-                    case PredefinedTypeSyntax predefined:
-                        SyntaxKind returnType = predefined.Keyword.Kind();
-                        if (returnType == SyntaxKind.IntKeyword)
-                        {
-                            releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)));
-                        }
-                        else if (returnType == SyntaxKind.UIntKeyword)
-                        {
-                            releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)));
-                        }
-                        else if (returnType == SyntaxKind.ByteKeyword)
-                        {
-                            releaseInvocation = BinaryExpression(SyntaxKind.NotEqualsExpression, releaseInvocation, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)));
-                        }
-                        else if (returnType == SyntaxKind.VoidKeyword)
-                        {
-                            releaseBlock = Block(
-                                ExpressionStatement(releaseInvocation),
-                                ReturnStatement(LiteralExpression(SyntaxKind.TrueLiteralExpression)));
-                        }
-                        else
-                        {
-                            throw new NotSupportedException($"Return type {returnType} on release method {releaseMethod} not supported.");
-                        }
+                    switch (releaseMethodReturnType.Type)
+                    {
+                        case PredefinedTypeSyntax predefined:
+                            SyntaxKind returnType = predefined.Keyword.Kind();
+                            if (returnType == SyntaxKind.IntKeyword)
+                            {
+                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)));
+                            }
+                            else if (returnType == SyntaxKind.UIntKeyword)
+                            {
+                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)));
+                            }
+                            else if (returnType == SyntaxKind.ByteKeyword)
+                            {
+                                releaseInvocation = BinaryExpression(SyntaxKind.NotEqualsExpression, releaseInvocation, LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0)));
+                            }
+                            else if (returnType == SyntaxKind.VoidKeyword)
+                            {
+                                releaseBlock = Block(
+                                    ExpressionStatement(releaseInvocation),
+                                    ReturnStatement(LiteralExpression(SyntaxKind.TrueLiteralExpression)));
+                            }
+                            else
+                            {
+                                throw new NotSupportedException($"Return type {returnType} on release method {releaseMethod} not supported.");
+                            }
 
-                        break;
-                    case QualifiedNameSyntax { Right: IdentifierNameSyntax identifierName }:
-                        switch (identifierName.Identifier.ValueText)
-                        {
-                            case "NTSTATUS":
-                                this.TryGenerateConstantOrThrow("STATUS_SUCCESS");
-                                ExpressionSyntax statusSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseName("global::Windows.Win32.Foundation.NTSTATUS"), IdentifierName("STATUS_SUCCESS"));
-                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, statusSuccess);
-                                break;
-                            case "HRESULT":
-                                this.TryGenerateConstantOrThrow("S_OK");
-                                ExpressionSyntax ok = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseName("global::Windows.Win32.Foundation.HRESULT"), IdentifierName("S_OK"));
-                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, ok);
-                                break;
-                            case "WIN32_ERROR":
-                                ExpressionSyntax noerror = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseName("global::Windows.Win32.Foundation.WIN32_ERROR"), IdentifierName("NO_ERROR"));
-                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, noerror);
-                                break;
-                            case "CONFIGRET":
-                                noerror = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseName("global::Windows.Win32.Devices.DeviceAndDriverInstallation.CONFIGRET"), IdentifierName("CR_SUCCESS"));
-                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, noerror);
-                                break;
-                            case "LRESULT" when releaseMethod == "ICClose":
-                                this.TryGenerateConstantOrThrow("ICERR_OK");
-                                noerror = CastExpression(ParseName("global::Windows.Win32.Foundation.LRESULT"), MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, this.methodsAndConstantsClassName, IdentifierName("ICERR_OK")));
-                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, noerror);
-                                break;
-                            case "HGLOBAL":
-                            case "HLOCAL":
-                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, DefaultExpression(releaseMethodReturnType.Type));
-                                break;
-                            default:
-                                throw new NotSupportedException($"Return type {identifierName.Identifier.ValueText} on release method {releaseMethod} not supported.");
-                        }
+                            break;
+                        case QualifiedNameSyntax { Right: IdentifierNameSyntax identifierName }:
+                            switch (identifierName.Identifier.ValueText)
+                            {
+                                case "NTSTATUS":
+                                    this.TryGenerateConstantOrThrow("STATUS_SUCCESS");
+                                    ExpressionSyntax statusSuccess = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseName("global::Windows.Win32.Foundation.NTSTATUS"), IdentifierName("STATUS_SUCCESS"));
+                                    releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, statusSuccess);
+                                    break;
+                                case "HRESULT":
+                                    this.TryGenerateConstantOrThrow("S_OK");
+                                    ExpressionSyntax ok = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseName("global::Windows.Win32.Foundation.HRESULT"), IdentifierName("S_OK"));
+                                    releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, ok);
+                                    break;
+                                case "WIN32_ERROR":
+                                    ExpressionSyntax noerror = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseName("global::Windows.Win32.Foundation.WIN32_ERROR"), IdentifierName("NO_ERROR"));
+                                    releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, noerror);
+                                    break;
+                                case "CONFIGRET":
+                                    noerror = MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, ParseName("global::Windows.Win32.Devices.DeviceAndDriverInstallation.CONFIGRET"), IdentifierName("CR_SUCCESS"));
+                                    releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, noerror);
+                                    break;
+                                case "LRESULT" when releaseMethod == "ICClose":
+                                    this.TryGenerateConstantOrThrow("ICERR_OK");
+                                    noerror = CastExpression(ParseName("global::Windows.Win32.Foundation.LRESULT"), MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, this.methodsAndConstantsClassName, IdentifierName("ICERR_OK")));
+                                    releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, noerror);
+                                    break;
+                                case "HGLOBAL":
+                                case "HLOCAL":
+                                    releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, DefaultExpression(releaseMethodReturnType.Type));
+                                    break;
+                                default:
+                                    throw new NotSupportedException($"Return type {identifierName.Identifier.ValueText} on release method {releaseMethod} not supported.");
+                            }
 
-                        break;
-                    case PointerTypeSyntax { ElementType: PredefinedTypeSyntax elementType }:
-                        releaseMethodIsUnsafe = true;
-                        switch (elementType.Keyword.Kind())
-                        {
-                            case SyntaxKind.VoidKeyword when releaseMethod == "FreeSid":
-                                releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, LiteralExpression(SyntaxKind.NullLiteralExpression));
-                                break;
-                            default:
-                                throw new NotSupportedException($"Return type {elementType}* on release method {releaseMethod} not supported.");
-                        }
+                            break;
+                        case PointerTypeSyntax { ElementType: PredefinedTypeSyntax elementType }:
+                            releaseMethodIsUnsafe = true;
+                            switch (elementType.Keyword.Kind())
+                            {
+                                case SyntaxKind.VoidKeyword when releaseMethod == "FreeSid":
+                                    releaseInvocation = BinaryExpression(SyntaxKind.EqualsExpression, releaseInvocation, LiteralExpression(SyntaxKind.NullLiteralExpression));
+                                    break;
+                                default:
+                                    throw new NotSupportedException($"Return type {elementType}* on release method {releaseMethod} not supported.");
+                            }
 
-                        break;
+                            break;
+                    }
                 }
+
+                MethodDeclarationSyntax releaseHandleDeclaration = MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Identifier("ReleaseHandle"))
+                    .AddModifiers(TokenWithSpace(SyntaxKind.ProtectedKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword));
+
+                if (releaseMethodIsUnsafe)
+                {
+                    releaseHandleDeclaration = releaseHandleDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));
+                }
+
+                releaseHandleDeclaration = releaseBlock is null
+                    ? releaseHandleDeclaration
+                         .WithExpressionBody(ArrowExpressionClause(releaseInvocation))
+                         .WithSemicolonToken(SemicolonWithLineFeed)
+                    : releaseHandleDeclaration
+                        .WithBody(releaseBlock);
+                members.Add(releaseHandleDeclaration);
             }
-
-            MethodDeclarationSyntax releaseHandleDeclaration = MethodDeclaration(PredefinedType(TokenWithSpace(SyntaxKind.BoolKeyword)), Identifier("ReleaseHandle"))
-                .AddModifiers(TokenWithSpace(SyntaxKind.ProtectedKeyword), TokenWithSpace(SyntaxKind.OverrideKeyword));
-
-            if (releaseMethodIsUnsafe)
-            {
-                releaseHandleDeclaration = releaseHandleDeclaration.AddModifiers(TokenWithSpace(SyntaxKind.UnsafeKeyword));
-            }
-
-            releaseHandleDeclaration = releaseBlock is null
-                ? releaseHandleDeclaration
-                     .WithExpressionBody(ArrowExpressionClause(releaseInvocation))
-                     .WithSemicolonToken(SemicolonWithLineFeed)
-                : releaseHandleDeclaration
-                    .WithBody(releaseBlock);
-            members.Add(releaseHandleDeclaration);
 
             IEnumerable<TypeSyntax> xmlDocParameterTypes = releaseMethodSignature.ParameterTypes.Select(p => p.ToTypeSyntax(this.externSignatureTypeSettings, GeneratingElement.HelperClassMember, default).Type);
 
             ClassDeclarationSyntax safeHandleDeclaration = ClassDeclaration(Identifier(safeHandleClassName), [.. members])
-                .AddModifiers(visibilityModifier, TokenWithSpace(SyntaxKind.PartialKeyword))
-                .WithBaseList(BaseList(SimpleBaseType(SafeHandleTypeSyntax)))
+                .AddModifiers(visibilityModifier, TokenWithSpace(SyntaxKind.UnsafeKeyword), TokenWithSpace(SyntaxKind.PartialKeyword))
+                .WithBaseList(BaseList(SimpleBaseType(baseType)))
                 .AddAttributeLists(AttributeList(GeneratedCodeAttribute))
                 .WithLeadingTrivia(ParseLeadingTrivia($@"
 /// <summary>
@@ -298,12 +335,17 @@ public partial class Generator
 /// </summary>
 "));
 
+            if (!canConstruct)
+            {
+                safeHandleDeclaration = safeHandleDeclaration.WithModifiers(safeHandleDeclaration.Modifiers.Insert(1, TokenWithSpace(SyntaxKind.AbstractKeyword)));
+            }
+
             this.volatileCode.GenerationTransaction(delegate
             {
                 this.volatileCode.AddSafeHandleType(safeHandleDeclaration);
             });
 
-            return safeHandleType;
+            return allowAbstract || canConstruct ? safeHandleType : null;
         }
         catch (Exception ex)
         {
@@ -338,7 +380,8 @@ public partial class Generator
     internal bool TryGetHandleReleaseMethod(TypeDefinitionHandle handleStructDefHandle, CustomAttributeHandleCollection? handleReferenceAttributes, [NotNullWhen(true)] out string? releaseMethod)
     {
         // Prefer direct attributes on the type reference over the default release method for the struct type.
-        if (this.FindAttribute(handleReferenceAttributes, InteropDecorationNamespace, RAIIFreeAttribute) is CustomAttribute raii)
+        if ((this.FindAttribute(handleReferenceAttributes, InteropDecorationNamespace, RAIIFreeAttribute)
+            ?? this.FindAttribute(handleReferenceAttributes, InteropDecorationNamespace, FreeWithAttribute)) is CustomAttribute raii)
         {
             CustomAttributeValue<TypeSyntax> args = raii.DecodeValue(CustomAttributeTypeProvider.Instance);
             if (args.FixedArguments[0].Value is string localRelease)

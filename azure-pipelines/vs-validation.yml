@@ -29,7 +29,7 @@ extends:
     settings:
       networkIsolationPolicy: Permissive,CFSClean
     sdl:
-      sourceAnalysisPool: VSEngSS-MicroBuild2022-1ES
+      sourceAnalysisPool: VSEng-MicroBuildVSStable
       credscan:
         enabled: false
 
@@ -46,7 +46,7 @@ extends:
           Is1ESPT: true
           RealSign: false
           # ShouldSkipOptimize: ${{ parameters.ShouldSkipOptimize }}
-          windowsPool: VSEngSS-MicroBuild2022-1ES
+          windowsPool: VSEng-MicroBuildVSStable
           linuxPool:
             name: AzurePipelines-EO
             demands:
@@ -70,7 +70,7 @@ extends:
       jobs:
       - job: insertion
         displayName: VS insertion
-        pool: VSEngSS-MicroBuild2022-1ES
+        pool: VSEng-MicroBuildVSStable
         steps:
         - checkout: self
           clean: true

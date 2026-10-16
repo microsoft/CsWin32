@@ -43,7 +43,7 @@ stages:
     parameters:
       Is1ESPT: false
       RealSign: false
-      windowsPool: VSEngSS-MicroBuild2022-1ES
+      windowsPool: VSEng-MicroBuildVSStable
       EnableMacOSBuild: false
       ShouldSkipOptimize: ${{ parameters.ShouldSkipOptimize }}
       IsOptProf: true
@@ -52,7 +52,7 @@ stages:
 - stage: QueueVSBuild
   jobs:
   - job: QueueOptProf
-    pool: VSEngSS-MicroBuild2022-1ES
+    pool: VSEng-MicroBuildVSStable
     variables:
       InsertPayloadName: LibraryName
       InsertTopicBranch: team/VS-IDE/LibraryName-OptProf-run-$(Build.BuildId)

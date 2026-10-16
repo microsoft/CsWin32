@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 public class MultiMetadataTests : GeneratorTestBase
@@ -82,5 +82,68 @@ public class MultiMetadataTests : GeneratorTestBase
         {
             Assert.DoesNotContain("winmdroot.Foundation.PCWSTR", tree.ToString());
         }
+    }
+
+    [Fact]
+    public void TypeDefConstant_NestsConstantIntoStruct()
+    {
+        string metadataPath = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location!)!, "ExternalMetadata", "TypeDefConstant.winmd");
+
+        this.generator = new Generator(metadataPath, null, [], DefaultTestGeneratorOptions, this.compilation, this.parseOptions);
+        Assert.True(this.generator.TryGenerate("CUSTOM_HANDLE_VALUE", TestContext.Current.CancellationToken));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        // The constant should be nested inside CUSTOM_HANDLE struct, not dumped as a top-level field on the host class.
+        StructDeclarationSyntax customHandle = Assert.Single(this.FindGeneratedType("CUSTOM_HANDLE").OfType<StructDeclarationSyntax>());
+        Assert.Contains(customHandle.Members.OfType<FieldDeclarationSyntax>(), f => f.Declaration.Variables.Any(v => v.Identifier.ValueText == "CUSTOM_HANDLE_VALUE"));
+
+        // No top-level constant on the host class should be generated.
+        Assert.Empty(this.FindGeneratedType(DefaultTestGeneratorOptions.ClassName));
+    }
+
+    [Fact]
+    public void TypeDefConstant_WithExtensionReceiver_AttachesToStructExtensionBlock()
+    {
+        string metadataPath = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location!)!, "ExternalMetadata", "TypeDefConstant.winmd");
+
+        this.parseOptions = this.parseOptions.WithLanguageVersion(LanguageVersion.CSharp14);
+
+        // Provide the receiver and the struct externally so extensionReceiver attaches forwarders to the struct.
+        this.compilation = this.AddCode(
+            @"namespace TypeDefConstant { internal static class PInvoke { } }
+namespace TypeDefConstant.Foundation
+{
+    internal readonly struct CUSTOM_HANDLE
+    {
+        internal readonly int Value;
+        internal CUSTOM_HANDLE(int value) => this.Value = value;
+        public static explicit operator CUSTOM_HANDLE(int value) => new CUSTOM_HANDLE(value);
+    }
+}",
+            fileName: "Refs.cs");
+
+        GeneratorOptions options = new()
+        {
+            EmitSingleFile = true,
+            ClassName = "PInvokeExtensions",
+            ExtensionReceiver = "PInvoke",
+        };
+        this.generator = new Generator(metadataPath, null, [], options, this.compilation, this.parseOptions);
+
+        Assert.True(this.generator.TryGenerate("CUSTOM_HANDLE_VALUE", TestContext.Current.CancellationToken));
+        this.CollectGeneratedCode(this.generator);
+        this.AssertNoDiagnostics();
+
+        ClassDeclarationSyntax hostClass = Assert.Single(
+            this.FindGeneratedType("PInvokeExtensions").OfType<ClassDeclarationSyntax>(),
+            c => c.Members.Count > 0);
+
+        // Under extensionReceiver when the struct is external, CUSTOM_HANDLE_VALUE attaches to extension(CUSTOM_HANDLE),
+        // not to extension(PInvoke).
+        ExtensionBlockDeclarationSyntax structExtension = Assert.Single(
+            hostClass.Members.OfType<ExtensionBlockDeclarationSyntax>(),
+            b => b.ParameterList!.Parameters.Single().Type!.ToString().Trim() == "global::TypeDefConstant.Foundation.CUSTOM_HANDLE");
+        Assert.Contains(structExtension.Members.OfType<PropertyDeclarationSyntax>(), p => p.Identifier.ValueText == "CUSTOM_HANDLE_VALUE");
     }
 }

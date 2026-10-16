@@ -38,7 +38,7 @@ extends:
     settings:
       networkIsolationPolicy: Permissive,CFSClean
     sdl:
-      sourceAnalysisPool: VSEngSS-MicroBuild2022-1ES
+      sourceAnalysisPool: VSEng-MicroBuildVSStable
 
     stages:
     - stage: archive

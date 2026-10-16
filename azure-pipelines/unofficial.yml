@@ -59,7 +59,7 @@ extends:
     settings:
       networkIsolationPolicy: Permissive,CFSClean
     sdl:
-      sourceAnalysisPool: VSEngSS-MicroBuild2022-1ES
+      sourceAnalysisPool: VSEng-MicroBuildVSStable
       credscan:
         enabled: false
       suppression:
@@ -86,7 +86,7 @@ extends:
           RealSign: false
           # ShouldSkipOptimize: ${{ parameters.ShouldSkipOptimize }}
           EnableAPIScan: ${{ parameters.EnableAPIScan }}
-          windowsPool: VSEngSS-MicroBuild2022-1ES
+          windowsPool: VSEng-MicroBuildVSStable
           linuxPool:
             name: AzurePipelines-EO
             demands:

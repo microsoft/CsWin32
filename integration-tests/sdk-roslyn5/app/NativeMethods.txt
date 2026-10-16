@@ -1,1 +1,4 @@
 GetForegroundWindow
+GetCurrentThreadId
+GetWindowThreadProcessId
+SetLastError

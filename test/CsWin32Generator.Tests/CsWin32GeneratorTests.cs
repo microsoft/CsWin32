@@ -691,6 +691,64 @@ using global::System.Runtime.Versioning;
         Assert.Contains(this.FindGeneratedType("RtlUnsubscribeWnfStateChangeNotificationSafeHandle"), static type => type is ClassDeclarationSyntax);
     }
 
+    /// <summary>
+    /// Verifies native typedef marshaller namespaces through build-task generation and compilation.
+    /// </summary>
+    /// <param name="nestedNamespace">Whether the typedef is in a child of the common namespace.</param>
+    /// <param name="tfm">The target framework of the generated projection.</param>
+    [Theory, CombinatorialData]
+    public async Task NativeTypedefMarshallerNamespace(
+        bool nestedNamespace,
+        [CombinatorialValues("net8.0", "net9.0", "net10.0")] string tfm)
+    {
+        this.compilation = this.starterCompilations[tfm];
+        this.parseOptions = this.parseOptions.WithLanguageVersion(GetLanguageVersionForTfm(tfm)!.Value);
+        this.tfm = tfm;
+        this.win32winmdPaths = [FlatNamespaceMetadataPath];
+        string typeName = nestedNamespace ? "NESTED_HANDLE" : "TEST_HANDLE";
+        string typeNamespace = nestedNamespace ? "FlatNamespace.Nested" : "FlatNamespace";
+        string marshallerName = $"{typeNamespace}.InteropServices.{typeName}Marshaller";
+        this.nativeMethods.Add(nestedNamespace ? "UseNestedHandle" : "UseRootHandle");
+
+        await this.InvokeGeneratorAndCompile($"{nameof(this.NativeTypedefMarshallerNamespace)}_{nestedNamespace}_{tfm}");
+
+        StructDeclarationSyntax typedef = Assert.Single(this.FindGeneratedType(typeName).OfType<StructDeclarationSyntax>());
+        AttributeSyntax attribute = Assert.Single(FindAttribute(typedef.AttributeLists, "NativeMarshalling"));
+        TypeOfExpressionSyntax marshallerType = Assert.IsType<TypeOfExpressionSyntax>(Assert.Single(attribute.ArgumentList!.Arguments).Expression);
+        Assert.Equal($"global::{marshallerName}", marshallerType.Type.ToString());
+        Assert.NotNull(this.compilation.GetTypeByMetadataName(marshallerName));
+    }
+
+    /// <summary>
+    /// Verifies associated enum marshaller namespaces through build-task generation and compilation.
+    /// </summary>
+    /// <param name="nestedNamespace">Whether the enum is in a child of the common namespace.</param>
+    /// <param name="tfm">The target framework of the generated projection.</param>
+    [Theory, CombinatorialData]
+    public async Task AssociatedEnumMarshallerNamespace(
+        bool nestedNamespace,
+        [CombinatorialValues("net8.0", "net9.0", "net10.0")] string tfm)
+    {
+        this.compilation = this.starterCompilations[tfm];
+        this.parseOptions = this.parseOptions.WithLanguageVersion(GetLanguageVersionForTfm(tfm)!.Value);
+        this.tfm = tfm;
+        this.win32winmdPaths = [FlatNamespaceMetadataPath];
+        string typeName = nestedNamespace ? "NESTED_ENUM" : "TEST_ENUM";
+        string typeNamespace = nestedNamespace ? "FlatNamespace.Nested" : "FlatNamespace";
+        string marshallerName = $"{typeNamespace}.InteropServices.{typeName}ToU4Marshaller";
+        string apiName = nestedNamespace ? "UseNestedEnum" : "UseRootEnum";
+        this.nativeMethods.Add(apiName);
+
+        await this.InvokeGeneratorAndCompile($"{nameof(this.AssociatedEnumMarshallerNamespace)}_{nestedNamespace}_{tfm}");
+
+        MethodDeclarationSyntax method = Assert.Single(this.FindGeneratedMethod(apiName), m => FindAttribute(m.AttributeLists, "LibraryImport").Any());
+        ParameterSyntax parameter = Assert.Single(method.ParameterList.Parameters);
+        AttributeSyntax attribute = Assert.Single(FindAttribute(parameter.AttributeLists, "global::System.Runtime.InteropServices.Marshalling.MarshalUsing"));
+        TypeOfExpressionSyntax marshallerType = Assert.IsType<TypeOfExpressionSyntax>(Assert.Single(attribute.ArgumentList!.Arguments).Expression);
+        Assert.Equal($"global::{marshallerName}", marshallerType.Type.ToString());
+        Assert.NotNull(this.compilation.GetTypeByMetadataName(marshallerName));
+    }
+
     [Fact]
     public async Task TestComVariantReturnValue()
     {

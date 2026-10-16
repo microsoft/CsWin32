@@ -23,6 +23,12 @@ C# 14 or later in every project that consumes the generated extension members. T
 default when targeting .NET 10 or later; otherwise set `<LangVersion>14</LangVersion>` (or
 `Preview` / `Latest` / `LatestMajor`) in the project file.
 
+Composition also supports `<CsWin32RunAsBuildTask>true</CsWin32RunAsBuildTask>`.
+When source-generated marshalling is enabled, CsWin32 places `LibraryImport` declarations
+in a private nested partial class and emits forwarding methods in the extension block,
+because `LibraryImport` cannot generate implementations inside extension blocks.
+Callers still use `PInvoke.X()`; source-generated marshalling remains enabled.
+
 ## Two roles
 
 Every assembly that runs CsWin32 plays exactly one role:
@@ -30,7 +36,7 @@ Every assembly that runs CsWin32 plays exactly one role:
 | Role | `NativeMethods.json` shape | What the generator emits |
 |---|---|---|
 | **Owner** | `extensionReceiver` *not* set | A plain `partial class <className>` with members declared directly on it. |
-| **Extender** | `extensionReceiver: "<OwnerClassName>"` set | A `partial class <className>` whose members live inside an `extension(<OwnerClassName>) { … }` block. |
+| **Extender** | `extensionReceiver: "<OwnerClassName>"` set | A `partial class <className>` whose exposed members live inside an `extension(<OwnerClassName>) { … }` block. |
 
 In a layered stack, the lowest assembly is the owner; every higher assembly is an extender. Each
 extender must use a `className` that differs from the owner's and from every other extender's.

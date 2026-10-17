@@ -10,7 +10,6 @@ on:
     paths-ignore:
     - doc/
     - '*.md'
-    - .vscode/
     - azure-pipelines/release.yml
   workflow_dispatch:
 

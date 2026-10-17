@@ -2,13 +2,6 @@
   "version": 1,
   "isRoot": true,
   "tools": {
-    "powershell": {
-      "version": "7.6.6",
-      "commands": [
-        "pwsh"
-      ],
-      "rollForward": false
-    },
     "dotnet-coverage": {
       "version": "18.12.0",
       "commands": [
@@ -27,13 +20,6 @@
       "version": "2.81.0",
       "commands": [
         "docfx"
-      ],
-      "rollForward": false
-    },
-    "nerdbank.dotnetrepotools": {
-      "version": "1.5.42",
-      "commands": [
-        "repo"
       ],
       "rollForward": false
     }

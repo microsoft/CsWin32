@@ -1,12 +1,19 @@
 parameters:
-- name: initArgs
-  type: string
-  default: ''
+- name: restoreProjects
+  type: boolean
+  default: true
 - name: needsAzurePublicFeeds
   type: boolean
   default: true # If nuget.config pulls from the azure-public account, we need to authenticate when building on the devdiv account.
 
 steps:
+- task: UseDotNet@2
+  displayName: ⚙ Install .NET SDKs and runtimes
+  inputs:
+    packageType: sdk
+    useGlobalJson: true
+    workingDirectory: $(Build.SourcesDirectory)
+
 - ${{ if and(parameters.needsAzurePublicFeeds, eq(variables['system.collectionId'], '011b8bdf-6d56-4f87-be0d-0092136884d9')) }}:
   - template: WIFtoPATauth.yml
     parameters:
@@ -20,15 +27,26 @@ steps:
       nuGetServiceConnections: azure-public/msft_consumption
 
 - powershell: |
-    $AccessToken = '$(System.AccessToken)' # Avoid specifying the access token directly on the init.ps1 command line to avoid it showing up in errors
-    .\init.ps1 -AccessToken $AccessToken ${{ parameters['initArgs'] }} -UpgradePrerequisites -NoNuGetCredProvider
-    dotnet --info
+    $procDumpPath = & ./tools/Get-ProcDump.ps1 -ConfigFile ./azure-pipelines/nuget.config
+    Write-Host "##vso[task.setvariable variable=PROCDUMP_PATH]$procDumpPath"
+  displayName: ⚙ Configure crash-dump collection
+  condition: and(succeeded(), eq(variables['Agent.OS'], 'Windows_NT'))
 
-    # Print mono version if it is present.
-    if (Get-Command mono -ErrorAction SilentlyContinue) {
-      mono --version
-    }
-  displayName: ⚙ Install prerequisites
+- ${{ if parameters.restoreProjects }}:
+  - script: dotnet restore --configfile azure-pipelines/nuget.config
+    displayName: 📦 Restore project packages
+    env:
+      NUGET_PLUGIN_HANDSHAKE_TIMEOUT_IN_SECONDS: 20
+      NUGET_PLUGIN_REQUEST_TIMEOUT_IN_SECONDS: 20
+
+- script: dotnet tool restore --configfile azure-pipelines/nuget.config
+  displayName: ⚙ Restore CLI tools
+  env:
+    NUGET_PLUGIN_HANDSHAKE_TIMEOUT_IN_SECONDS: 20
+    NUGET_PLUGIN_REQUEST_TIMEOUT_IN_SECONDS: 20
+
+- script: dotnet --info
+  displayName: ⚙ Show .NET environment
 
 - powershell: tools/variables/_define.ps1
   failOnStderr: true

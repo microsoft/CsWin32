@@ -1,8 +1,5 @@
 parameters:
 - name: RunTests
-- name: IsOptProf
-  type: boolean
-  default: false
 - name: Is1ESPT
   type: boolean
 - name: BuildRequiresAccessToken
@@ -17,14 +14,9 @@ steps:
     env:
       SYSTEM_ACCESSTOKEN: $(System.AccessToken)
 
-- ${{ if not(parameters.IsOptProf) }}:
-  - powershell: tools/dotnet-test-cloud.ps1 -Configuration $(BuildConfiguration) -Agent $(Agent.JobName) -PublishResults
-    displayName: 🧪 dotnet test
-    condition: and(succeeded(), ${{ parameters.RunTests }})
-
-- ${{ if parameters.IsOptProf }}:
-  - script: dotnet pack src\VSInsertionMetadata -c $(BuildConfiguration) -warnaserror /bl:"$(Build.ArtifactStagingDirectory)/build_logs/VSInsertion-Pack.binlog"
-    displayName: 🔧 dotnet pack VSInsertionMetadata
+- powershell: tools/dotnet-test-cloud.ps1 -Configuration $(BuildConfiguration) -Agent $(Agent.JobName) -PublishResults
+  displayName: 🧪 dotnet test
+  condition: and(succeeded(), ${{ parameters.RunTests }})
 
 - powershell: tools/variables/_define.ps1
   failOnStderr: true

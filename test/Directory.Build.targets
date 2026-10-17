@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project>
+  <!-- Project references also establish the generation-tool build order outside the solution. -->
+  <ItemGroup Condition="'$(CsWin32RunAsBuildTask)' == 'true'">
+    <ProjectReference Include="$(RepoRootPath)src\Microsoft.Windows.CsWin32.BuildTasks\Microsoft.Windows.CsWin32.BuildTasks.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="$(RepoRootPath)src\CsWin32Generator\CsWin32Generator.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
   <ItemGroup>
     <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" Condition="Exists('xunit.runner.json')" />
   </ItemGroup>

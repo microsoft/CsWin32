@@ -32,7 +32,7 @@ if (-not (Test-Path $pdb2pdbpath)) {
     Write-Verbose "& (& $PSScriptRoot/Get-NuGetTool.ps1) install Microsoft.DiaSymReader.Pdb2Pdb -version $version -PackageSaveMode nuspec -OutputDirectory $baseDir -Source https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-tools/nuget/v3/index.json | Out-Null"
     # This package originally comes from the https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-tools/nuget/v3/index.json feed.
     # Add this feed as an upstream to whatever feed is in nuget.config if this step fails.
-    & (& $PSScriptRoot/Get-NuGetTool.ps1) install Microsoft.DiaSymReader.Pdb2Pdb -version $version -PackageSaveMode nuspec -OutputDirectory $baseDir | Out-Null
+    & (& $PSScriptRoot/Get-NuGetTool.ps1) install Microsoft.DiaSymReader.Pdb2Pdb -version $version -PackageSaveMode nuspec -OutputDirectory $baseDir -ConfigFile "$PSScriptRoot/../azure-pipelines/nuget.config" | Out-Null
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Failed to install Microsoft.DiaSymReader.Pdb2Pdb. Consider adding https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-tools/nuget/v3/index.json as an upstream to your nuget.config feed."
         return

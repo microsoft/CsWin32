@@ -201,5 +201,6 @@ dotnet_diagnostic.MsgPack002.severity = error
 # CA2016: Forward the CancellationToken parameter
 dotnet_diagnostic.CA2016.severity = warning
 
-[*.sln]
-indent_style = tab
+[*.slnx]
+indent_style = space
+indent_size = 2

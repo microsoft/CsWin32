@@ -31,7 +31,7 @@ Microsoft's Azure Pipelines retain the 1ESPT/MicroBuild toolset, signing, SBOM g
 
 Azure Pipelines install the SDKs and runtimes declared in the repository's `global.json` files using `UseDotNet@2`, authenticate with `NuGetAuthenticate@1`, and run `dotnet restore` and `dotnet tool restore` directly. Windows jobs also configure ProcDump for test crash dumps. The symbol/coverage job skips project restore while still restoring its CLI tools. Signing, SBOM, and other MicroBuild plugins remain managed by 1ESPT and the existing MicroBuild tasks.
 
-For an unsigned local build that intentionally uses the MicroBuild configuration, pass `-p:EnableMicroBuild=true` when restoring and building. Reproducing an official signed build also requires Microsoft's signing infrastructure; use the official pipelines for that. CLI tools for documentation, coverage, release versioning, and source archival can be restored separately with `dotnet tool restore`. These tools are not needed for an ordinary solution build.
+For an unsigned local build that intentionally uses the MicroBuild configuration, pass `-p:EnableMicroBuild=true` when restoring and building. Reproducing an official signed build also requires Microsoft's signing infrastructure; use the official pipelines for that. CLI tools for documentation, coverage, and release versioning can be restored separately with `dotnet tool restore`. These tools are not needed for an ordinary solution build.
 
 ## Parsing the metadata
 

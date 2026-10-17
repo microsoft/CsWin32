@@ -5,7 +5,7 @@ Param (
 )
 
 if ($IsMacOS -or $IsLinux) {
-    # We only package up for insertions on Windows agents since they are where optprof can happen.
+    # Visual Studio insertion packages are produced on Windows agents.
     Write-Verbose "Skipping VSInsertion artifact since we're not on Windows."
     return @{}
 }
@@ -31,11 +31,6 @@ $result = @{
 
 if (Test-Path $VsixPackages) {
     $result["$PackagesRoot"] += Get-ChildItem $VsixPackages -Recurse
-}
-
-if ($env:IsOptProf) {
-    $VSRepoPackages = "$PackagesRoot/VSRepo"
-    $result["$VSRepoPackages"] = (Get-ChildItem "$VSRepoPackages\*.VSInsertionMetadata.*.nupkg");
 }
 
 $result

@@ -2,7 +2,7 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 //
 // Contextual ownership without type-level RAIIFree, including exact native types,
-// incompatible cleanup, and cleanup requiring caller-supplied context.
+// incompatible cleanup, cleanup requiring caller-supplied context, and cleanup returning BOOLEAN.
 // Assemble with: ilasm /dll /output=SafeHandleOwnership.winmd SafeHandleOwnership.il
 
 .assembly extern netstandard { .publickeytoken = (CC 7B 13 FF CD 2D DD 51) .ver 2:1:0:0 }
@@ -27,6 +27,13 @@
   .custom instance void [Windows.Win32.winmd]Windows.Win32.Foundation.Metadata.NativeTypedefAttribute::.ctor() = (01 00 00 00)
   .custom instance void [Windows.Win32.winmd]Windows.Win32.Foundation.Metadata.InvalidHandleValueAttribute::.ctor(int64) = (01 00 00 00 00 00 00 00 00 00 00 00)
   .field public void* Value
+}
+
+.class public sequential ansi sealed beforefieldinit Windows.Win32.Foundation.BOOLEAN
+       extends [netstandard]System.ValueType
+{
+  .custom instance void [Windows.Win32.winmd]Windows.Win32.Foundation.Metadata.NativeTypedefAttribute::.ctor() = (01 00 00 00)
+  .field public uint8 Value
 }
 
 .class public sequential ansi sealed beforefieldinit Windows.Win32.Test.RESOURCE_A
@@ -90,6 +97,8 @@
           void FreeUnsigned(valuetype Windows.Win32.Test.UNSIGNED_RESOURCE resource) cil managed { }
   .method public hidebysig static pinvokeimpl("fixture.dll" nomangle winapi)
           void FreeUnsigned32(valuetype Windows.Win32.Test.UNSIGNED32_RESOURCE resource) cil managed { }
+  .method public hidebysig static pinvokeimpl("fixture.dll" nomangle winapi)
+          valuetype Windows.Win32.Foundation.BOOLEAN FreeBoolean(valuetype Windows.Win32.Test.RESOURCE_A resource) cil managed { }
   .method public hidebysig static pinvokeimpl("fixture.dll" nomangle winapi)
           void ConsumeResource([in] valuetype Windows.Win32.Test.RESOURCE_A resource) cil managed { }
   .method public hidebysig static pinvokeimpl("fixture.dll" nomangle winapi)
@@ -171,6 +180,18 @@
     .param [0]
     .custom instance void [Windows.Win32.winmd]Windows.Win32.Foundation.Metadata.RAIIFreeAttribute::.ctor(string) = (01 00 0A 46 72 65 65 53 68 61 72 65 64 00 00)
   }
+  .method public hidebysig static pinvokeimpl("fixture.dll" nomangle winapi)
+          valuetype Windows.Win32.Test.RESOURCE_A CreateBooleanResource() cil managed
+  {
+    .param [0]
+    .custom instance void [Windows.Win32.winmd]Windows.Win32.Foundation.Metadata.RAIIFreeAttribute::.ctor(string) = (01 00 0B 46 72 65 65 42 6F 6F 6C 65 61 6E 00 00)
+  }
+  .method public hidebysig static pinvokeimpl("fixture.dll" nomangle winapi)
+          valuetype Windows.Win32.Foundation.BOOLEAN AcquireBooleanResource([out] valuetype Windows.Win32.Test.RESOURCE_A* resource) cil managed
+  {
+    .param [1]
+    .custom instance void [Windows.Win32.winmd]Windows.Win32.Foundation.Metadata.RAIIFreeAttribute::.ctor(string) = (01 00 0B 46 72 65 65 42 6F 6F 6C 65 61 6E 00 00)
+  }
 }
 
 .class public abstract auto autochar sealed beforefieldinit Windows.Win32.Test.FreeWith.Apis
@@ -241,5 +262,17 @@
   {
     .param [0]
     .custom instance void [Windows.Win32.winmd]Windows.Win32.Foundation.Metadata.FreeWithAttribute::.ctor(string) = (01 00 0A 46 72 65 65 53 68 61 72 65 64 00 00)
+  }
+  .method public hidebysig static pinvokeimpl("fixture.dll" nomangle winapi)
+          valuetype Windows.Win32.Test.RESOURCE_A CreateBooleanResource() cil managed
+  {
+    .param [0]
+    .custom instance void [Windows.Win32.winmd]Windows.Win32.Foundation.Metadata.FreeWithAttribute::.ctor(string) = (01 00 0B 46 72 65 65 42 6F 6F 6C 65 61 6E 00 00)
+  }
+  .method public hidebysig static pinvokeimpl("fixture.dll" nomangle winapi)
+          valuetype Windows.Win32.Foundation.BOOLEAN AcquireBooleanResource([out] valuetype Windows.Win32.Test.RESOURCE_A* resource) cil managed
+  {
+    .param [1]
+    .custom instance void [Windows.Win32.winmd]Windows.Win32.Foundation.Metadata.FreeWithAttribute::.ctor(string) = (01 00 0B 46 72 65 65 42 6F 6F 6C 65 61 6E 00 00)
   }
 }

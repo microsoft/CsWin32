@@ -233,6 +233,44 @@ public class SafeHandleLeaseTests : GeneratorTestBase
     }
 
     /// <summary>
+    /// Verifies that a cleanup function returning <c>BOOLEAN</c> produces a constructible owner for returned and output resources.
+    /// </summary>
+    /// <param name="attribute">The contextual cleanup attribute.</param>
+    /// <param name="allowMarshaling">Whether runtime marshaling is enabled.</param>
+    [Theory, CombinatorialData]
+    public void BooleanCleanupProducesOwner(
+        [CombinatorialValues("RAIIFree", "FreeWith")] string attribute, bool allowMarshaling)
+    {
+        this.GenerateFixture(attribute, allowMarshaling, "CreateBooleanResource", "AcquireBooleanResource");
+        this.compilation = this.AddCode("""
+            using Windows.Win32;
+            using Windows.Win32.Foundation;
+            using Windows.Win32.Test;
+            static class Usage
+            {
+                static void Use()
+                {
+                    using FreeBooleanSafeHandle created = PInvoke.CreateBooleanResource_SafeHandle();
+                    BOOLEAN acquiredResult = PInvoke.AcquireBooleanResource(out FreeBooleanSafeHandle acquired);
+                    using (acquired)
+                    {
+                        using var lease = acquired.Lease();
+                        RESOURCE_A value = lease.Value;
+                    }
+                }
+            }
+            """);
+        this.AssertNoDiagnostics(logAllGeneratedCode: false);
+        INamedTypeSymbol? owner = this.compilation.GetTypeByMetadataName("Windows.Win32.FreeBooleanSafeHandle");
+        Assert.NotNull(owner);
+        Assert.False(owner.IsAbstract);
+        TypeDeclarationSyntax ownerDeclaration = Assert.IsAssignableFrom<TypeDeclarationSyntax>(Assert.Single(this.FindGeneratedType("FreeBooleanSafeHandle")));
+        MethodDeclarationSyntax releaseHandle = Assert.Single(ownerDeclaration.Members.OfType<MethodDeclarationSyntax>(), method => method.Identifier.ValueText == "ReleaseHandle");
+        InvocationExpressionSyntax release = Assert.IsType<InvocationExpressionSyntax>(releaseHandle.ExpressionBody?.Expression);
+        Assert.Equal("FreeBoolean", Assert.IsType<MemberAccessExpressionSyntax>(release.Expression).Name.Identifier.ValueText);
+    }
+
+    /// <summary>
     /// Verifies that annotated cleanup functions remain callable when ownership projection is unavailable.
     /// </summary>
     /// <param name="attribute">The contextual cleanup attribute.</param>

@@ -40,7 +40,7 @@ public partial class Generator
     private static bool IsSupportedCleanupReturn(TypeSyntax type, string method) => type switch
     {
         PredefinedTypeSyntax predefined => predefined.Keyword.Kind() is SyntaxKind.BoolKeyword or SyntaxKind.IntKeyword or SyntaxKind.UIntKeyword or SyntaxKind.ByteKeyword or SyntaxKind.VoidKeyword,
-        QualifiedNameSyntax { Right: IdentifierNameSyntax name } => name.Identifier.ValueText is "BOOL" or "NTSTATUS" or "HRESULT" or "WIN32_ERROR" or "CONFIGRET" or "HGLOBAL" or "HLOCAL"
+        QualifiedNameSyntax { Right: IdentifierNameSyntax name } => name.Identifier.ValueText is "BOOL" or "BOOLEAN" or "NTSTATUS" or "HRESULT" or "WIN32_ERROR" or "CONFIGRET" or "HGLOBAL" or "HLOCAL"
             || (name.Identifier.ValueText == "LRESULT" && method == "ICClose"),
         PointerTypeSyntax { ElementType: PredefinedTypeSyntax predefined } => predefined.Keyword.IsKind(SyntaxKind.VoidKeyword) && method == "FreeSid",
         _ => false,

@@ -209,7 +209,7 @@ public partial class Generator
             {
                 // protected override [unsafe] bool ReleaseHandle() => ReleaseMethod((struct)this.handle);
                 // Special case release functions based on their return type as follows: (https://github.com/microsoft/win32metadata/issues/25)
-                //  * bool => true is success
+                //  * bool, BOOL, BOOLEAN => true (non-zero) is success
                 //  * int => zero is success
                 //  * uint => zero is success
                 //  * byte => non-zero is success
@@ -226,7 +226,7 @@ public partial class Generator
                 // As an example of that see WlanCloseHandle function.
                 var releaseMethodIsUnsafe = releaseMethodHasReservedParameters;
                 if (!(releaseMethodReturnType.Type is PredefinedTypeSyntax { Keyword: { RawKind: (int)SyntaxKind.BoolKeyword } } ||
-                    releaseMethodReturnType.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "BOOL" } } }))
+                    releaseMethodReturnType.Type is QualifiedNameSyntax { Right: { Identifier: { ValueText: "BOOL" or "BOOLEAN" } } }))
                 {
                     switch (releaseMethodReturnType.Type)
                     {

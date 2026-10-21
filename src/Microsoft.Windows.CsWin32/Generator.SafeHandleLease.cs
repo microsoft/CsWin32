@@ -81,7 +81,8 @@ public partial class Generator
         TypeSyntax fieldType = backingType.ToTypeSyntax(this.fieldTypeSettings, GeneratingElement.HelperClassMember, null).Type;
         return backingType switch
         {
-            PointerTypeHandleInfo => CastExpression(fieldType, handle),
+            // Handles with the high bit set (e.g. sign-extended GDI handles) must not throw under CheckForOverflowUnderflow.
+            PointerTypeHandleInfo => UncheckedExpression(CastExpression(fieldType, handle)),
             PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.IntPtr } => handle,
             PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.UIntPtr } => UncheckedExpression(CastExpression(fieldType, CastExpression(IdentifierName("nint"), handle))),
             PrimitiveTypeHandleInfo { PrimitiveTypeCode: PrimitiveTypeCode.UInt32 } => CheckedExpression(CastExpression(fieldType, UncheckedExpression(CastExpression(IdentifierName("nuint"), CastExpression(IdentifierName("nint"), handle))))),

@@ -92,14 +92,17 @@ public partial class Generator
     private ExpressionSyntax GetIntPtrFromTypeDef(ExpressionSyntax typedefValue, TypeHandleInfo typeDefTypeInfo)
     {
         ExpressionSyntax intPtrValue = typedefValue;
+
+        // Pointer-to-nint conversions must be unchecked: handles such as INVALID_HANDLE_VALUE, pseudo-handles,
+        // and sign-extended GDI/USER handles have the high bit set and would throw under CheckForOverflowUnderflow.
         if (typeDefTypeInfo is PointerTypeHandleInfo)
         {
-            return CastExpression(IntPtrTypeSyntax, typedefValue);
+            return UncheckedExpression(CastExpression(IntPtrTypeSyntax, typedefValue));
         }
 
         if (this.TryGetTypeDefFieldType(typeDefTypeInfo, out TypeHandleInfo? backingType) && backingType is PointerTypeHandleInfo)
         {
-            return CastExpression(IntPtrTypeSyntax, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, typedefValue, IdentifierName("Value")));
+            return UncheckedExpression(CastExpression(IntPtrTypeSyntax, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, typedefValue, IdentifierName("Value"))));
         }
 
         if (this.TryGetTypeDefFieldType(typeDefTypeInfo, out TypeHandleInfo? returnTypeField) && returnTypeField is PrimitiveTypeHandleInfo primitiveReturnField)

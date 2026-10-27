@@ -12,7 +12,7 @@ Exclude `HRESULT.ThrowOnFailure()` from analysis. Although it returns an `HRESUL
 2. Test success: `if (obj.DoWork().Succeeded) { ... }`
 3. Test failure: `if (obj.DoWork().Failed) return;`
 4. Compare with an HRESULT: `if (hr == HRESULT.S_FALSE) { ... }`
-5. Switch on outcomes: `switch (hr.Value) { case var value when value == HRESULT.S_OK.Value: ... }`
+5. Switch on outcomes: `switch (hr) { case var value when value == HRESULT.S_OK: ... }`
 6. Explicitly discard the result: `_ = obj.DoWork();`
 7. Pass the result to another method: `Log(obj.DoWork());`
 8. Store the result in a field or collection: `this.lastResult = obj.DoWork();`
@@ -42,13 +42,13 @@ if (hr.Failed)
 Any switch that consumes the `HRESULT` counts as intentional use. For example:
 
 ```csharp
-switch (hr.Value)
+switch (hr)
 {
-    case var value when value == HRESULT.S_OK.Value:
+    case var value when value == HRESULT.S_OK:
         UseResult();
         break;
 
-    case var value when value == HRESULT.S_FALSE.Value:
+    case var value when value == HRESULT.S_FALSE:
         HandleNoResult();
         break;
 

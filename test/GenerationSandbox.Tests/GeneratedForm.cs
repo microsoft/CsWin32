@@ -22,6 +22,7 @@ internal static unsafe class GeneratedForm
     {
         var span = new DebugPropertyInfo[2];
         HRESULT result = info.Next(span, out uint initialized);
+        _ = result;
         info.Clone(out IEnumDebugPropertyInfo ppepi);
     }
 
@@ -55,6 +56,7 @@ internal static unsafe class GeneratedForm
     {
         IDirectorySearch ds = null!;
         HRESULT hr = ds.GetNextRow(default(ADS_SEARCH_HANDLE));
+        _ = hr;
     }
 
     private static unsafe void OverlappedAPIs()

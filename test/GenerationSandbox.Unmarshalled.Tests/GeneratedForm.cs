@@ -25,7 +25,9 @@ internal static unsafe class GeneratedForm
 
         // NativeMethods.json opts into PreserveSig for these particular methods.
         HRESULT hr = o.GetSubscriberProperty(null, out v);
+        _ = hr;
         hr = o.get_MachineName(out SysFreeStringSafeHandle sh);
+        _ = hr;
         o.MachineName = bstr;
     }
 

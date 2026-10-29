@@ -23,3 +23,4 @@ PInvoke015 | Lifetime | Error | SafeHandleAnalyzer
 PInvoke016 | Lifetime | Error | SafeHandleAnalyzer
 PInvoke017 | Lifetime | Error | SafeHandleAnalyzer
 PInvoke018 | Lifetime | Error | SafeHandleAnalyzer
+PInvoke019 | Reliability | Warning | HResultAnalyzer

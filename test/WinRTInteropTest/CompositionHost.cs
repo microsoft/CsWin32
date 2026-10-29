@@ -95,6 +95,6 @@ internal class CompositionHost
             threadType = DISPATCHERQUEUE_THREAD_TYPE.DQTYPE_THREAD_CURRENT,
         };
 
-        CreateDispatcherQueueController(options, out this.dispatcherQueueController);
+        _ = CreateDispatcherQueueController(options, out this.dispatcherQueueController);
     }
 }

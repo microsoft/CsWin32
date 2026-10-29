@@ -185,6 +185,54 @@ not guess the additional cleanup arguments. A compatible abstract helper, such a
 in a derived `ReleaseHandle`. Its typed `DangerousValue` is available inside that
 override. You can also request the helper directly in `NativeMethods.txt`.
 
+### Checking HRESULT results
+
+The HRESULT analyzer reports a warning (`PInvoke019`) when your code ignores an `HRESULT`
+that a call returns. It checks every call that returns the CsWin32 `HRESULT` struct,
+including your own wrapper methods. `HRESULT.ThrowOnFailure()` is not checked.
+
+These uses count as handling the result:
+
+```cs
+PInvoke.CoCreateGuid(out Guid id).ThrowOnFailure();
+if (PInvoke.CoCreateGuid(out id).Failed) { return; }
+_ = PInvoke.CoCreateGuid(out id); // Explicitly discard the result.
+```
+
+Comparing the result, switching on it, passing it to another method, storing it in a
+field or collection, and returning it also count as handling.
+
+The analyzer follows the result through local variables. Every path must use the value
+before the code overwrites it or the method returns. Paths that throw are not checked.
+
+```cs
+HRESULT hr = PInvoke.CoCreateGuid(out Guid id); // PInvoke019
+if (condition)
+{
+    hr.ThrowOnFailure();
+}
+```
+
+Reading `HRESULT.Value` or converting the result to `uint` does not handle the result by
+itself. The requirement moves to the expression that receives the integer:
+
+1. If you compare the integer, pass it to a method, return it, or store it in a field or
+   collection, the result is considered handled.
+2. If you assign the integer to a local variable, the requirement moves to that local.
+   The same rules as for an `HRESULT` local then apply to it.
+
+```cs
+if (PInvoke.CoCreateGuid(out Guid id).Value < 0) { return; } // Handled.
+
+int code = PInvoke.CoCreateGuid(out id).Value; // PInvoke019: 'code' is never used.
+
+uint status = PInvoke.CoCreateGuid(out id); // Handled, because 'status' is logged.
+Log(status);
+```
+
+To accept an ignored result, discard it with `_ =`. You can also change the severity in
+`.editorconfig` with `dotnet_diagnostic.PInvoke019.severity`.
+
 ### Support for trimming, AOT, and/or disabling the runtime marshaler
 
 **NEW!** CsWin32 now has improved support for NativeAOT by generating code from an MSBuild task rather than a source generator so that it can leverage other source generators that support `[LibraryImport]` and others.

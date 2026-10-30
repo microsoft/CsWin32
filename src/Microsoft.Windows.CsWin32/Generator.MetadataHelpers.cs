@@ -120,19 +120,7 @@ public partial class Generator
         }
 
         InterfaceImplementation baseIFace = this.Reader.GetInterfaceImplementation(firstBaseInterface);
-        TypeDefinitionHandle baseIFaceTypeDefHandle;
-        if (baseIFace.Interface.Kind == HandleKind.TypeDefinition)
-        {
-            baseIFaceTypeDefHandle = (TypeDefinitionHandle)baseIFace.Interface;
-        }
-        else if (baseIFace.Interface.Kind == HandleKind.TypeReference)
-        {
-            if (!this.TryGetTypeDefHandle((TypeReferenceHandle)baseIFace.Interface, out baseIFaceTypeDefHandle))
-            {
-                return false;
-            }
-        }
-        else
+        if (!this.TryGetTypeDefHandle(baseIFace.Interface, out QualifiedTypeDefinitionHandle baseIFaceTypeDefHandle))
         {
             return false;
         }
@@ -144,26 +132,16 @@ public partial class Generator
             return true;
         }
 
-        return this.IsNonCOMInterface(this.Reader.GetTypeDefinition(baseIFaceTypeDefHandle));
+        return baseIFaceTypeDefHandle.Generator.IsNonCOMInterface(baseIFaceTypeDefHandle.Reader.GetTypeDefinition(baseIFaceTypeDefHandle.DefinitionHandle));
     }
 
-    internal bool IsNonCOMInterface(TypeReferenceHandle interfaceTypeRefHandle) => this.TryGetTypeDefHandle(interfaceTypeRefHandle, out TypeDefinitionHandle tdh) && this.IsNonCOMInterface(this.Reader.GetTypeDefinition(tdh));
+    internal bool IsNonCOMInterface(TypeReferenceHandle interfaceTypeRefHandle) =>
+        this.TryGetTypeDefHandle(interfaceTypeRefHandle, out QualifiedTypeDefinitionHandle tdh)
+        && tdh.Generator.IsNonCOMInterface(tdh.Reader.GetTypeDefinition(tdh.DefinitionHandle));
 
-    internal bool IsInterface(HandleTypeHandleInfo typeInfo)
-    {
-        TypeDefinitionHandle tdh = default;
-        if (typeInfo.Handle.Kind == HandleKind.TypeReference)
-        {
-            var trh = (TypeReferenceHandle)typeInfo.Handle;
-            typeInfo.Generator.TryGetTypeDefHandle(trh, out tdh);
-        }
-        else if (typeInfo.Handle.Kind == HandleKind.TypeDefinition)
-        {
-            tdh = (TypeDefinitionHandle)typeInfo.Handle;
-        }
-
-        return !tdh.IsNil && (typeInfo.Reader.GetTypeDefinition(tdh).Attributes & TypeAttributes.Interface) == TypeAttributes.Interface;
-    }
+    internal bool IsInterface(HandleTypeHandleInfo typeInfo) =>
+        typeInfo.Generator.TryGetTypeDefHandle(typeInfo.Handle, out QualifiedTypeDefinitionHandle tdh)
+        && (tdh.Reader.GetTypeDefinition(tdh.DefinitionHandle).Attributes & TypeAttributes.Interface) == TypeAttributes.Interface;
 
     internal bool IsInterface(TypeHandleInfo handleInfo)
     {
@@ -181,9 +159,9 @@ public partial class Generator
 
     internal bool IsInterface(TypeReferenceHandle typeRefHandle)
     {
-        if (this.TryGetTypeDefHandle(typeRefHandle, out TypeDefinitionHandle typeDefHandle))
+        if (this.TryGetTypeDefHandle(typeRefHandle, out QualifiedTypeDefinitionHandle typeDefHandle))
         {
-            TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefHandle);
+            TypeDefinition typeDef = typeDefHandle.Reader.GetTypeDefinition(typeDefHandle.DefinitionHandle);
             return (typeDef.Attributes & TypeAttributes.Interface) == TypeAttributes.Interface;
         }
 

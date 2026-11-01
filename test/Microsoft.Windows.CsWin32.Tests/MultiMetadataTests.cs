@@ -252,7 +252,15 @@ namespace TypeDefConstant.Foundation
         driver = driver.RunGeneratorsAndUpdateCompilation(this.compilation, out Compilation updatedCompilation, out ImmutableArray<Diagnostic> diagnostics);
         this.LogDiagnostics(diagnostics);
         Assert.Empty(diagnostics);
-        Assert.NotEmpty(driver.GetRunResult().GeneratedTrees);
+        ImmutableArray<SyntaxTree> generatedTrees = driver.GetRunResult().GeneratedTrees;
+        Assert.NotEmpty(generatedTrees);
+        Assert.True(updatedCompilation.Emit(Stream.Null).Success);
         this.compilation = (CSharpCompilation)updatedCompilation;
+        foreach (SyntaxTree tree in generatedTrees)
+        {
+            // The SDK generator mixes LF and CRLF on Linux; CsWin32's line-ending checks apply to our output.
+            SyntaxTree normalizedTree = CSharpSyntaxTree.ParseText(TestUtils.NormalizeToExpectedLineEndings(tree.ToString()), this.parseOptions, tree.FilePath);
+            this.compilation = this.compilation.ReplaceSyntaxTree(tree, normalizedTree);
+        }
     }
 }

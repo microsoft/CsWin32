@@ -7,6 +7,19 @@
 .assembly OcclusionBaseline { .ver 1:0:0:0 }
 .module OcclusionBaseline.winmd
 
+.class public sequential ansi sealed Occlusion.Binding.BASELINE_ARRAYS
+       extends [netstandard]System.ValueType
+{
+  .field public char[4] Name
+  .field public valuetype Occlusion.Binding.ELEMENT[2] Elements
+}
+
+.class public sequential ansi sealed Occlusion.Binding.ELEMENT
+       extends [netstandard]System.ValueType
+{
+  .field public int32 Value
+}
+
 .class public sequential ansi sealed Occlusion.Binding.BINDING
        extends [netstandard]System.ValueType
 {

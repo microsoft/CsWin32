@@ -788,12 +788,17 @@ public partial class Generator
 
     private ClassDeclarationSyntax DeclareInlineArrayIndexerExtensionsClass()
     {
+        IEnumerable<Generator> earlierGenerators = this.SuperGenerator?.Generators.Values.Where(g =>
+            g.Namespace == this.Namespace && StringComparer.Ordinal.Compare(g.InputAssemblyName, this.InputAssemblyName) < 0) ?? [];
+        MethodDeclarationSyntax[] earlierMethods = earlierGenerators.SelectMany(g => g.committedCode.InlineArrayIndexerExtensions).ToArray();
         var filteredExtensionMethods =
             this.committedCode.InlineArrayIndexerExtensions.Where(e =>
-                this.FindExtensionMethodIfAlreadyAvailable($"{this.Namespace}.{InlineArrayIndexerExtensionsClassName}", e.Identifier.ValueText) is null);
+                this.FindExtensionMethodIfAlreadyAvailable($"{this.Namespace}.{InlineArrayIndexerExtensionsClassName}", e.Identifier.ValueText) is null &&
+                !earlierMethods.Any(m => m.Identifier.ValueText == e.Identifier.ValueText &&
+                    m.ParameterList.Parameters[0].Type!.ToString() == e.ParameterList.Parameters[0].Type!.ToString()));
 
-        return ClassDeclaration(InlineArrayIndexerExtensionsClassName.Identifier, [.. filteredExtensionMethods])
-            .WithModifiers([TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)])
-            .AddAttributeLists(AttributeList(GeneratedCodeAttribute));
+        ClassDeclarationSyntax declaration = ClassDeclaration(InlineArrayIndexerExtensionsClassName.Identifier, [.. filteredExtensionMethods])
+            .WithModifiers([TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword)]);
+        return earlierMethods.Length == 0 ? declaration.AddAttributeLists(AttributeList(GeneratedCodeAttribute)) : declaration;
     }
 }

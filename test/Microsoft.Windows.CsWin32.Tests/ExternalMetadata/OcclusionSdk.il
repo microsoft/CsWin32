@@ -8,6 +8,19 @@
 .assembly OcclusionSdk { .ver 1:0:0:0 }
 .module OcclusionSdk.winmd
 
+.class public sequential ansi sealed Occlusion.Graphics.SDK_ARRAYS
+       extends [netstandard]System.ValueType
+{
+  .field public char[8] Name
+  .field public valuetype Occlusion.Graphics.ELEMENT[3] Elements
+}
+
+.class public sequential ansi sealed Occlusion.Graphics.ELEMENT
+       extends [netstandard]System.ValueType
+{
+  .field public int64 Value
+}
+
 .class public sequential ansi sealed Occlusion.Graphics.OUTER
        extends [netstandard]System.ValueType
 {

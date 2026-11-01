@@ -43,28 +43,35 @@ public class MultiMetadataTests : GeneratorTestBase
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void CrossWinMD_InterfaceFields(bool allowMarshaling)
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void CrossWinMD_InterfaceFields(bool allowMarshaling, bool useComSourceGenerators)
     {
+        this.compilation = this.starterCompilations["net8.0"];
         string metadataDirectory = Path.Combine(Path.GetDirectoryName(MetadataPath)!, "ExternalMetadata");
         this.generator = this.CreateSuperGenerator(
             [MetadataPath, Path.Combine(metadataDirectory, "ExternalComConsumer.winmd"), Path.Combine(metadataDirectory, "ExternalComSdk.winmd")],
-            DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling });
+            DefaultTestGeneratorOptions with
+            {
+                AllowMarshaling = allowMarshaling,
+                ComInterop = new() { UseComSourceGenerators = useComSourceGenerators },
+            });
 
-        this.GenerateApi("BINDING");
+        Assert.True(this.generator.TryGenerate("BINDING", TestContext.Current.CancellationToken));
+        this.CollectGeneratedCode(this.generator);
 
         StructDeclarationSyntax binding = Assert.Single(this.FindGeneratedType("BINDING").OfType<StructDeclarationSyntax>());
         foreach (string fieldName in new[] { "ExternalCom", "LocalCom" })
         {
             FieldDeclarationSyntax field = this.FindFieldDeclaration(binding, fieldName)!.Value.Field;
-            Assert.Equal(!allowMarshaling, field.Declaration.Type is PointerTypeSyntax);
+            Assert.Equal(!allowMarshaling || useComSourceGenerators, field.Declaration.Type is PointerTypeSyntax);
         }
 
         foreach (string fieldName in new[] { "ExternalComArray", "LocalComArray" })
         {
             TypeSyntax fieldType = this.FindFieldDeclaration(binding, fieldName)!.Value.Field.Declaration.Type;
-            if (allowMarshaling)
+            if (allowMarshaling && !useComSourceGenerators)
             {
                 Assert.IsType<ArrayTypeSyntax>(fieldType);
             }
@@ -74,29 +81,41 @@ public class MultiMetadataTests : GeneratorTestBase
             }
         }
 
-        string comType = allowMarshaling ? "IExternalCom" : "IExternalCom*";
+        string comType = useComSourceGenerators ? "IExternalCom_unmanaged*" : allowMarshaling ? "IExternalCom" : "IExternalCom*";
         this.compilation = this.AddCode(
             $$"""
             internal static unsafe class Consumer
             {
-                internal static ExternalCom.BINDING Bind(ExternalCom.{{comType}} resource) =>
+                internal static ExternalCom.BINDING Bind(ExternalCom.Sdk.{{comType}} resource) =>
                     new ExternalCom.BINDING { ExternalCom = resource };
             }
             """);
+        if (useComSourceGenerators)
+        {
+            this.RunComSourceGenerators();
+        }
+
         this.AssertNoDiagnostics();
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void CrossWinMD_InterfaceWithNonComAncestry(bool allowMarshaling)
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void CrossWinMD_InterfaceWithNonComAncestry(bool allowMarshaling, bool useComSourceGenerators)
     {
+        this.compilation = this.starterCompilations["net8.0"];
         string metadataDirectory = Path.Combine(Path.GetDirectoryName(MetadataPath)!, "ExternalMetadata");
         this.generator = this.CreateSuperGenerator(
             [MetadataPath, Path.Combine(metadataDirectory, "ExternalComConsumer.winmd"), Path.Combine(metadataDirectory, "ExternalComSdk.winmd")],
-            DefaultTestGeneratorOptions with { AllowMarshaling = allowMarshaling });
+            DefaultTestGeneratorOptions with
+            {
+                AllowMarshaling = allowMarshaling,
+                ComInterop = new() { UseComSourceGenerators = useComSourceGenerators },
+            });
 
-        this.GenerateApi("NATIVE_BINDING");
+        Assert.True(this.generator.TryGenerate("NATIVE_BINDING", TestContext.Current.CancellationToken));
+        this.CollectGeneratedCode(this.generator);
 
         StructDeclarationSyntax binding = Assert.Single(this.FindGeneratedType("NATIVE_BINDING").OfType<StructDeclarationSyntax>());
         foreach (string fieldName in new[] { "ExternalNative", "LocalNative" })
@@ -108,7 +127,7 @@ public class MultiMetadataTests : GeneratorTestBase
             """
             internal static unsafe class Consumer
             {
-                internal static ExternalCom.NATIVE_BINDING Bind(ExternalCom.IExternalNative* native) =>
+                internal static ExternalCom.NATIVE_BINDING Bind(ExternalCom.Sdk.IExternalNative* native) =>
                     new ExternalCom.NATIVE_BINDING { ExternalNative = native };
             }
             """);
@@ -218,5 +237,22 @@ namespace TypeDefConstant.Foundation
             hostClass.Members.OfType<ExtensionBlockDeclarationSyntax>(),
             b => b.ParameterList!.Parameters.Single().Type!.ToString().Trim() == "global::TypeDefConstant.Foundation.CUSTOM_HANDLE");
         Assert.Contains(structExtension.Members.OfType<PropertyDeclarationSyntax>(), p => p.Identifier.ValueText == "CUSTOM_HANDLE_VALUE");
+    }
+
+    private void RunComSourceGenerators()
+    {
+        string generatorPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!, "ComSourceGenerators", "Microsoft.Interop.ComInterfaceGenerator.dll");
+        Assembly generatorAssembly = Assembly.LoadFrom(generatorPath);
+        ISourceGenerator[] generators = generatorAssembly.GetTypes()
+            .Where(type => type.GetCustomAttribute<GeneratorAttribute>() is not null)
+            .Select(type => ((IIncrementalGenerator)Activator.CreateInstance(type)!).AsSourceGenerator())
+            .ToArray();
+        Assert.NotEmpty(generators);
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(generators, parseOptions: this.parseOptions);
+        driver = driver.RunGeneratorsAndUpdateCompilation(this.compilation, out Compilation updatedCompilation, out ImmutableArray<Diagnostic> diagnostics);
+        this.LogDiagnostics(diagnostics);
+        Assert.Empty(diagnostics);
+        Assert.NotEmpty(driver.GetRunResult().GeneratedTrees);
+        this.compilation = (CSharpCompilation)updatedCompilation;
     }
 }

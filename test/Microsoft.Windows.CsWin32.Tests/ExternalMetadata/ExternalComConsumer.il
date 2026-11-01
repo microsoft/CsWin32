@@ -11,22 +11,23 @@
 .class public sequential ansi sealed beforefieldinit ExternalCom.BINDING
        extends [netstandard]System.ValueType
 {
-  .field public class [ExternalComSdk]ExternalCom.IExternalCom ExternalCom
+  .field public class [ExternalComSdk]ExternalCom.Sdk.IExternalCom ExternalCom
   .field public class ExternalCom.ILocalCom LocalCom
-  .field public class [ExternalComSdk]ExternalCom.IExternalCom* ExternalComArray
+  .field public class [ExternalComSdk]ExternalCom.Sdk.IExternalCom* ExternalComArray
   .field public class ExternalCom.ILocalCom* LocalComArray
 }
 
 .class public sequential ansi sealed beforefieldinit ExternalCom.NATIVE_BINDING
        extends [netstandard]System.ValueType
 {
-  .field public class [ExternalComSdk]ExternalCom.IExternalNative ExternalNative
+  .field public class [ExternalComSdk]ExternalCom.Sdk.IExternalNative ExternalNative
   .field public class ExternalCom.ILocalNative LocalNative
 }
 
 .class interface public abstract auto ansi ExternalCom.IBaseCom
        implements [Windows.Win32.winmd]Windows.Win32.System.Com.IUnknown
 {
+  .custom instance void [Windows.Win32.winmd]Windows.Win32.Foundation.Metadata.GuidAttribute::.ctor(uint32, uint16, uint16, uint8, uint8, uint8, uint8, uint8, uint8, uint8, uint8) = (01 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 01 00 00)
   .method public hidebysig newslot abstract virtual instance void BaseMethod() cil managed preservesig { }
 }
 
@@ -36,11 +37,12 @@
 }
 
 .class interface public abstract auto ansi ExternalCom.ILocalCom
-       implements [ExternalComSdk]ExternalCom.IExternalCom
+       implements [ExternalComSdk]ExternalCom.Sdk.IExternalCom
 {
+  .custom instance void [Windows.Win32.winmd]Windows.Win32.Foundation.Metadata.GuidAttribute::.ctor(uint32, uint16, uint16, uint8, uint8, uint8, uint8, uint8, uint8, uint8, uint8) = (01 00 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00 03 00 00)
 }
 
 .class interface public abstract auto ansi ExternalCom.ILocalNative
-       implements [ExternalComSdk]ExternalCom.IExternalNative
+       implements [ExternalComSdk]ExternalCom.Sdk.IExternalNative
 {
 }

@@ -34,6 +34,13 @@
     <ProjectReference Include="..\..\src\Microsoft.Windows.CsWin32\Microsoft.Windows.CsWin32.csproj" />
   </ItemGroup>
 
+  <Target Name="CopyComSourceGenerators" AfterTargets="ResolveReferences">
+    <ItemGroup>
+      <_ComSourceGenerator Include="@(Analyzer)" Condition="'%(Filename)' == 'Microsoft.Interop.ComInterfaceGenerator' or '%(Filename)' == 'Microsoft.Interop.SourceGeneration'" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_ComSourceGenerator)" DestinationFolder="$(OutDir)ComSourceGenerators" />
+  </Target>
+
   <ItemGroup>
     <PackageReference Include="MessagePack" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" />

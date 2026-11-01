@@ -267,8 +267,12 @@ jobs:
       shell: pwsh
     - name: 🔧 Configure nupkg source
       run: |
-        $nupkg = (Get-ChildItem -Path bin/Packages/Release/NuGet -Filter *.nupkg)[0].Name
-        if ($nupkg -match 'Microsoft\.Windows\.CsWin32\.(.+)\.nupkg') {
+        $packages = @(Get-ChildItem -Path bin/Packages/Release/NuGet -Filter Microsoft.Windows.CsWin32.*.nupkg)
+        if ($packages.Count -ne 1) {
+          throw "Expected exactly one Microsoft.Windows.CsWin32 package, found $($packages.Count)."
+        }
+        $nupkg = $packages[0].Name
+        if ($nupkg -match '^Microsoft\.Windows\.CsWin32\.(.+)\.nupkg$') {
           $version = $Matches[1]
           Write-Host "Will consume Microsoft.Windows.CsWin32 $version"
           Add-Content -Path $env:GITHUB_ENV -Value "NuGetPackageVersion=$version"
@@ -329,6 +333,13 @@ jobs:
     - name: 🧪 dotnet publish buildtask-sdk-style
       run: dotnet publish -c Release -r win-x64
       working-directory: ${{ runner.temp }}/integration-tests/buildtask-sdk
+    - name: 📦 Upload consumer-tested NuGet package
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: nuget-packages
+        path: bin/Packages/Release/NuGet/Microsoft.Windows.CsWin32.*.nupkg
+        if-no-files-found: error
+        retention-days: 14
 
   validate:
     name: ✅ Validate

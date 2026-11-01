@@ -42,6 +42,11 @@
   </Target>
 
   <ItemGroup>
+    <PackageDownload Include="Microsoft.Windows.SDK.Win32Metadata" Version="[70.0.11-preview]" />
+    <None Include="$(NuGetPackageRoot)microsoft.windows.sdk.win32metadata\70.0.11-preview\Windows.Win32.winmd" Link="Windows.SdkBaseline.winmd" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="MessagePack" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.SourceGenerators.Testing.XUnit" />

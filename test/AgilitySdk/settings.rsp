@@ -1,0 +1,8 @@
+--with-librarypath
+D3D12CreateDevice=d3d12.dll
+D3D12GetDebugInterface=d3d12.dll
+D3D12EnableExperimentalFeatures=d3d12.dll
+D3D12SerializeRootSignature=d3d12.dll
+D3D12CreateRootSignatureDeserializer=d3d12.dll
+D3D12SerializeVersionedRootSignature=d3d12.dll
+D3D12CreateVersionedRootSignatureDeserializer=d3d12.dll

@@ -133,6 +133,16 @@ public partial class Generator
             return;
         }
 
+        if (this.SuperGenerator is { } super)
+        {
+            QualifiedMethodDefinitionHandle winner = super.ResolveExternMethod(this, methodDefinitionHandle);
+            if (winner.Generator != this)
+            {
+                winner.Generator.volatileCode.GenerationTransaction(() => winner.Generator.RequestExternMethod(winner.MethodHandle));
+                return;
+            }
+        }
+
         MethodDefinition methodDefinition = this.Reader.GetMethodDefinition(methodDefinitionHandle);
         if (!this.IsCompatibleWithPlatform(methodDefinition.GetCustomAttributes()))
         {

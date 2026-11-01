@@ -95,6 +95,7 @@ public partial class Generator : IGenerator, IDisposable
         MetadataFile metadataFile = MetadataCache.Default.GetMetadataFile(metadataLibraryPath);
         this.SignatureHandleProvider = new(this);
         this.MetadataIndex = metadataFile.GetMetadataIndex(compilation?.Options.Platform ?? Platform.AnyCpu);
+        this.ProjectionNamespace = this.MetadataIndex.CommonNamespace;
         this.metadataReader = metadataFile.GetMetadataReader();
 
         this.ApiDocs = docs;
@@ -321,6 +322,11 @@ public partial class Generator : IGenerator, IDisposable
 
     internal MetadataIndex MetadataIndex { get; }
 
+    /// <summary>
+    /// Gets or sets the namespace shared by projections rooted in an earlier input.
+    /// </summary>
+    internal string ProjectionNamespace { get; set; }
+
     internal SignatureHandleProvider SignatureHandleProvider { get; }
 
     internal MetadataReader Reader => this.metadataReader.Value;
@@ -336,7 +342,7 @@ public partial class Generator : IGenerator, IDisposable
 
     private bool WideCharOnly => this.options.WideCharOnly;
 
-    private string Namespace => this.MetadataIndex.CommonNamespace;
+    private string Namespace => this.ProjectionNamespace;
 
     private SyntaxKind Visibility => this.options.Public ? SyntaxKind.PublicKeyword : SyntaxKind.InternalKeyword;
 
@@ -353,7 +359,9 @@ public partial class Generator : IGenerator, IDisposable
             {
                 ClassDeclarationSyntax partialClass = DeclarePInvokeClass(entry.Key, this.WrapAsExtensionMembers([.. entry]))
                     .WithLeadingTrivia(ParseLeadingTrivia(string.Format(CultureInfo.InvariantCulture, PartialPInvokeContentComment, entry.Key)));
-                if (i == 0)
+                if (i == 0 && (this.SuperGenerator is null || !this.SuperGenerator.Generators.Values.Any(g =>
+                    g.Namespace == this.Namespace && g.options.ClassName == this.options.ClassName && g.committedCode.MembersByModule.Any() &&
+                    StringComparer.Ordinal.Compare(g.InputAssemblyName, this.InputAssemblyName) < 0)))
                 {
                     partialClass = partialClass
                         .WithoutLeadingTrivia()
@@ -534,7 +542,7 @@ public partial class Generator : IGenerator, IDisposable
         if (!this.MetadataIndex.MetadataByNamespace.TryGetValue(@namespace, out metadata))
         {
             // Fallback to case insensitive search if it looks promising to do so.
-            if (@namespace.StartsWith(this.MetadataIndex.CommonNamespace, StringComparison.OrdinalIgnoreCase))
+            if (@namespace.StartsWith(this.Namespace, StringComparison.OrdinalIgnoreCase))
             {
                 foreach (KeyValuePair<string, NamespaceMetadata> item in this.MetadataIndex.MetadataByNamespace)
                 {
@@ -673,7 +681,14 @@ public partial class Generator : IGenerator, IDisposable
             }
             else if (nsMetadata.TypesForOtherPlatform.Contains(typeName))
             {
-                foundApiWithMismatchedPlatform = true;
+                if (this.TryGetTypeDefHandle(nsMetadata.Name, typeName, out handle) && this.ResolveTypeDefinition(handle).Generator != this)
+                {
+                    matchingTypeHandles.Add(handle);
+                }
+                else
+                {
+                    foundApiWithMismatchedPlatform = true;
+                }
             }
         }
 
@@ -894,7 +909,7 @@ public partial class Generator : IGenerator, IDisposable
             usingDirectives.Add(UsingDirective(ParseName(GlobalNamespacePrefix + "System.Runtime.Versioning")));
         }
 
-        usingDirectives.Add(UsingDirective(NameEquals(GlobalWinmdRootNamespaceAlias), ParseName(GlobalNamespacePrefix + this.MetadataIndex.CommonNamespace)));
+        usingDirectives.Add(UsingDirective(NameEquals(GlobalWinmdRootNamespaceAlias), ParseName(GlobalNamespacePrefix + this.Namespace)));
 
         var normalizedResults = new Dictionary<string, CompilationUnitSyntax>(StringComparer.OrdinalIgnoreCase);
         results.AsParallel().WithCancellation(cancellationToken).ForAll(kv =>
@@ -1029,12 +1044,12 @@ public partial class Generator : IGenerator, IDisposable
 
     internal bool TryStripCommonNamespace(string fullNamespace, [NotNullWhen(true)] out string? strippedNamespace)
     {
-        if (fullNamespace.StartsWith(this.MetadataIndex.CommonNamespaceDot, StringComparison.Ordinal))
+        if (fullNamespace.StartsWith(this.Namespace + ".", StringComparison.Ordinal))
         {
-            strippedNamespace = fullNamespace.Substring(this.MetadataIndex.CommonNamespaceDot.Length);
+            strippedNamespace = fullNamespace.Substring(this.Namespace.Length + 1);
             return true;
         }
-        else if (fullNamespace == this.MetadataIndex.CommonNamespace)
+        else if (fullNamespace == this.Namespace)
         {
             strippedNamespace = string.Empty;
             return true;
@@ -1066,6 +1081,13 @@ public partial class Generator : IGenerator, IDisposable
 
     internal void RequestInteropType(TypeDefinitionHandle typeDefHandle, Context context)
     {
+        QualifiedTypeDefinitionHandle resolvedType = this.ResolveTypeDefinition(typeDefHandle);
+        if (resolvedType.Generator != this)
+        {
+            resolvedType.Generator.RequestInteropType(resolvedType.DefinitionHandle, context);
+            return;
+        }
+
         this.volatileCode.GenerationTransaction(delegate
         {
             TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefHandle);

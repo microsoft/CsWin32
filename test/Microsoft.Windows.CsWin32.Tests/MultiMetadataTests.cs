@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
+using System.Reflection.PortableExecutable;
+
 public class MultiMetadataTests : GeneratorTestBase
 {
     public MultiMetadataTests(ITestOutputHelper logger)
@@ -134,6 +136,126 @@ public class MultiMetadataTests : GeneratorTestBase
         this.AssertNoDiagnostics();
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void LaterMetadataReplacesTypesAndApiMembers(bool allowMarshaling, bool useComSourceGenerators)
+    {
+        this.compilation = this.starterCompilations["net8.0"];
+        string directory = Path.Combine(Path.GetDirectoryName(MetadataPath)!, "ExternalMetadata");
+        SuperGenerator super = this.CreateSuperGenerator(
+            [MetadataPath, Path.Combine(directory, "OcclusionBaseline.winmd"), Path.Combine(directory, "OcclusionSdk.winmd")],
+            DefaultTestGeneratorOptions with
+            {
+                AllowMarshaling = allowMarshaling,
+                ComInterop = new() { UseComSourceGenerators = useComSourceGenerators },
+            });
+        this.generator = super;
+        using Stream baselineStream = File.OpenRead(Path.Combine(directory, "OcclusionBaseline.winmd"));
+        using PEReader baselinePe = new(baselineStream);
+        MetadataReader reader = baselinePe.GetMetadataReader();
+        TypeDefinition bindingDefinition = reader.GetTypeDefinition(reader.TypeDefinitions.Single(h => reader.StringComparer.Equals(reader.GetTypeDefinition(h).Name, "BINDING")));
+        BlobReader fieldSignature = reader.GetBlobReader(reader.GetFieldDefinition(bindingDefinition.GetFields().First()).Signature);
+        Assert.Equal(SignatureKind.Field, fieldSignature.ReadSignatureHeader().Kind);
+        Assert.Equal(0x12, fieldSignature.ReadByte());
+        Assert.Equal(HandleKind.TypeDefinition, fieldSignature.ReadTypeHandle().Kind);
+        Assert.True(super.Generators["OcclusionBaseline"].TryGenerateType("IResource", out _));
+        foreach (string api in new[] { "BINDING", "SDK_BINDING", "IResource", "IResource", "IDerived", "OPTIONS", "OldValue", "NewValue", "CreateResource", "UnrelatedApi", "ReplacedConstant", "UnrelatedConstant" })
+        {
+            Assert.True(super.TryGenerate(api, TestContext.Current.CancellationToken));
+        }
+
+        this.CollectGeneratedCode(super);
+        EnumDeclarationSyntax options = Assert.Single(this.FindGeneratedType("OPTIONS").OfType<EnumDeclarationSyntax>());
+        Assert.Equal(new[] { "OldValue", "NewValue" }, options.Members.Select(m => m.Identifier.ValueText));
+        Assert.Single(this.FindGeneratedType("IResource"));
+        string comType = useComSourceGenerators ? "IResource_unmanaged*" : allowMarshaling ? "IResource" : "IResource*";
+        string apiComType = allowMarshaling ? "IResource" : "IResource*";
+        string memberAccess = allowMarshaling && !useComSourceGenerators ? "." : "->";
+        this.compilation = this.AddCode(
+            $$"""
+            internal static unsafe class Consumer
+            {
+                internal static Occlusion.Binding.BINDING Bind(Occlusion.Graphics.{{comType}} resource) =>
+                    new Occlusion.Binding.BINDING
+                    {
+                        Buffer = resource,
+                        Options = Occlusion.Graphics.OPTIONS.NewValue,
+                        Nested = new Occlusion.Graphics.OUTER.INNER { Value = long.MaxValue },
+                    };
+                internal static int Create(Occlusion.Graphics.{{apiComType}} resource) =>
+                    Occlusion.PInvoke.CreateResource(resource);
+                internal static Occlusion.Graphics.SDK_BINDING BindReference(Occlusion.Graphics.{{comType}} resource) =>
+                    new Occlusion.Graphics.SDK_BINDING { Buffer = resource, Options = Occlusion.Graphics.OPTIONS.NewValue };
+                internal static void Invoke(Occlusion.Graphics.{{comType}} resource) => resource{{memberAccess}}NewMethod();
+                internal const int Replacement = Occlusion.PInvoke.ReplacedConstant;
+                internal const int Unrelated = Occlusion.PInvoke.UnrelatedConstant;
+                internal static void Other() => Occlusion.PInvoke.UnrelatedApi();
+            }
+            """);
+        Assert.Equal(2, this.compilation.GetTypeByMetadataName("Consumer")!.GetMembers("Replacement").OfType<IFieldSymbol>().Single().ConstantValue);
+        Assert.Equal(1, this.compilation.GetTypeByMetadataName("Consumer")!.GetMembers("Unrelated").OfType<IFieldSymbol>().Single().ConstantValue);
+        Assert.Contains(super.GetCompilationUnits(TestContext.Current.CancellationToken), unit => unit.Key.StartsWith("OcclusionSdk.", StringComparison.Ordinal) && unit.Value.ToString().Contains("NewMethod", StringComparison.Ordinal));
+        Assert.DoesNotContain(super.GetCompilationUnits(TestContext.Current.CancellationToken), unit => unit.Key.StartsWith("OcclusionBaseline.", StringComparison.Ordinal) && unit.Value.DescendantNodes().OfType<BaseTypeDeclarationSyntax>().Any(t => t.Identifier.ValueText == "IResource"));
+        if (useComSourceGenerators)
+        {
+            this.RunComSourceGenerators();
+        }
+
+        this.AssertNoDiagnostics();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BaselineTypesRemainWhenSupplementAbsentOrEarlier(bool includeEarlierSupplement)
+    {
+        string directory = Path.Combine(Path.GetDirectoryName(MetadataPath)!, "ExternalMetadata");
+        this.generator = this.CreateSuperGenerator(
+            includeEarlierSupplement
+                ? [MetadataPath, Path.Combine(directory, "OcclusionSdk.winmd"), Path.Combine(directory, "OcclusionBaseline.winmd")]
+                : [MetadataPath, Path.Combine(directory, "OcclusionBaseline.winmd")],
+            DefaultTestGeneratorOptions);
+        this.GenerateApi("BINDING");
+        EnumDeclarationSyntax options = Assert.Single(this.FindGeneratedType("OPTIONS").OfType<EnumDeclarationSyntax>());
+        Assert.Equal("OldValue", Assert.Single(options.Members).Identifier.ValueText);
+    }
+
+    [Theory]
+    [InlineData(Platform.X86, "int")]
+    [InlineData(Platform.X64, "long")]
+    [InlineData(Platform.Arm64, "int")]
+    [InlineData(Platform.AnyCpu, "int")]
+    public void ReplacementRespectsTargetArchitecture(Platform platform, string fieldType)
+    {
+        this.compilation = this.compilation.WithOptions(this.compilation.Options.WithPlatform(platform));
+        string directory = Path.Combine(Path.GetDirectoryName(MetadataPath)!, "ExternalMetadata");
+        this.generator = this.CreateSuperGenerator(
+            [MetadataPath, Path.Combine(directory, "OcclusionBaseline.winmd"), Path.Combine(directory, "OcclusionSdk.winmd")],
+            DefaultTestGeneratorOptions);
+        this.GenerateApi("BINDING");
+        Assert.True(this.generator.TryGenerateType("ARCH_TYPE", out _));
+        StructDeclarationSyntax declaration = Assert.Single(this.FindGeneratedType("ARCH_TYPE").OfType<StructDeclarationSyntax>());
+        Assert.Equal(fieldType, this.FindFieldDeclaration(declaration, "Value")!.Value.Field.Declaration.Type.ToString());
+    }
+
+    [Fact]
+    public void AllGenerationUsesReplacementDefinitions()
+    {
+        string directory = Path.Combine(Path.GetDirectoryName(MetadataPath)!, "ExternalMetadata");
+        SuperGenerator super = this.CreateSuperGenerator(
+            [MetadataPath, Path.Combine(directory, "OcclusionBaseline.winmd"), Path.Combine(directory, "OcclusionSdk.winmd")],
+            DefaultTestGeneratorOptions with { AllowMarshaling = false });
+        this.generator = super;
+        super.Generators["OcclusionBaseline"].GenerateAll(TestContext.Current.CancellationToken);
+        super.Generators["OcclusionSdk"].GenerateAll(TestContext.Current.CancellationToken);
+        this.CollectGeneratedCode(super);
+        Assert.Single(this.FindGeneratedType("IResource"));
+        Assert.Equal(2, Assert.Single(this.FindGeneratedType("OPTIONS").OfType<EnumDeclarationSyntax>()).Members.Count);
+        this.AssertNoDiagnostics();
+    }
+
     /// <summary>
     /// Reproduces the OSClient CsWin32 build configuration: a non-Windows.Win32 metadata assembly generated by
     /// a single <see cref="Generator"/> (no <see cref="SuperGenerator"/> / Windows.Win32 generator to delegate
@@ -241,9 +363,9 @@ namespace TypeDefConstant.Foundation
 
     private void RunComSourceGenerators()
     {
-        string generatorPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!, "ComSourceGenerators", "Microsoft.Interop.ComInterfaceGenerator.dll");
-        Assembly generatorAssembly = Assembly.LoadFrom(generatorPath);
-        ISourceGenerator[] generators = generatorAssembly.GetTypes()
+        string directory = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!, "ComSourceGenerators");
+        ISourceGenerator[] generators = new[] { "Microsoft.Interop.ComInterfaceGenerator.dll", "Microsoft.Interop.LibraryImportGenerator.dll" }
+            .SelectMany(name => Assembly.LoadFrom(Path.Combine(directory, name)).GetTypes())
             .Where(type => type.GetCustomAttribute<GeneratorAttribute>() is not null)
             .Select(type => ((IIncrementalGenerator)Activator.CreateInstance(type)!).AsSourceGenerator())
             .ToArray();
@@ -254,7 +376,8 @@ namespace TypeDefConstant.Foundation
         Assert.Empty(diagnostics);
         ImmutableArray<SyntaxTree> generatedTrees = driver.GetRunResult().GeneratedTrees;
         Assert.NotEmpty(generatedTrees);
-        Assert.True(updatedCompilation.Emit(Stream.Null).Success);
+        Microsoft.CodeAnalysis.Emit.EmitResult emit = updatedCompilation.Emit(Stream.Null);
+        Assert.True(emit.Success, string.Join(Environment.NewLine, emit.Diagnostics));
         this.compilation = (CSharpCompilation)updatedCompilation;
         foreach (SyntaxTree tree in generatedTrees)
         {

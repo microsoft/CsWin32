@@ -137,6 +137,16 @@ public partial class Generator
 
     internal void RequestConstant(FieldDefinitionHandle fieldDefHandle)
     {
+        if (this.SuperGenerator is { } super)
+        {
+            var winner = super.ResolveConstant(this, fieldDefHandle);
+            if (winner.Generator != this)
+            {
+                winner.Generator.volatileCode.GenerationTransaction(() => winner.Generator.RequestConstant(winner.Handle));
+                return;
+            }
+        }
+
         this.volatileCode.GenerateConstant(fieldDefHandle, delegate
         {
             FieldDefinition fieldDef = this.Reader.GetFieldDefinition(fieldDefHandle);

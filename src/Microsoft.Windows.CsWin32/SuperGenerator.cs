@@ -8,6 +8,9 @@ namespace Microsoft.Windows.CsWin32;
 /// </summary>
 public class SuperGenerator : IGenerator, IDisposable
 {
+    private readonly Dictionary<(string Namespace, string Name), QualifiedMethodDefinitionHandle> winningMethods = new();
+    private readonly Dictionary<(string Namespace, string Name), (Generator Generator, FieldDefinitionHandle Handle)> winningConstants = new();
+
     private SuperGenerator(ImmutableDictionary<string, Generator> generators)
     {
         this.Generators = generators;
@@ -21,14 +24,15 @@ public class SuperGenerator : IGenerator, IDisposable
     /// <summary>
     /// Initializes a new instance of the <see cref="SuperGenerator"/> class.
     /// </summary>
-    /// <param name="generators">The <see cref="Generator"/> objects to enable collaborative generation across. These should <em>not</em> have been added to a <see cref="SuperGenerator"/> previously.</param>
+    /// <param name="generators">The <see cref="Generator"/> objects in precedence order: later inputs replace earlier types with the same namespace and name. These should <em>not</em> have been added to a <see cref="SuperGenerator"/> previously.</param>
     /// <returns>The new instance of <see cref="SuperGenerator"/>.</returns>
     public static SuperGenerator Combine(params Generator[] generators) => Combine((IEnumerable<Generator>)generators);
 
     /// <inheritdoc cref="Combine(Generator[])"/>
     public static SuperGenerator Combine(IEnumerable<Generator> generators)
     {
-        SuperGenerator super = new(generators.ToImmutableDictionary(g => g.InputAssemblyName));
+        Generator[] orderedGenerators = generators.ToArray();
+        SuperGenerator super = new(orderedGenerators.ToImmutableDictionary(g => g.InputAssemblyName));
         foreach (Generator generator in super.Generators.Values)
         {
             if (generator.SuperGenerator is object)
@@ -37,6 +41,50 @@ public class SuperGenerator : IGenerator, IDisposable
             }
 
             generator.SuperGenerator = super;
+        }
+
+        Dictionary<(string Namespace, string Name), QualifiedTypeDefinitionHandle> winningTypes = new();
+        foreach (Generator generator in orderedGenerators)
+        {
+            foreach (Generator earlier in orderedGenerators.TakeWhile(g => g != generator))
+            {
+                if (generator.ProjectionNamespace.StartsWith(earlier.ProjectionNamespace + ".", StringComparison.Ordinal))
+                {
+                    generator.ProjectionNamespace = earlier.ProjectionNamespace;
+                }
+            }
+
+            foreach (NamespaceMetadata ns in generator.MetadataIndex.MetadataByNamespace.Values)
+            {
+                foreach (var type in ns.Types)
+                {
+                    winningTypes[(ns.Name, type.Key)] = new(generator, type.Value);
+                }
+
+                foreach (var method in ns.Methods)
+                {
+                    super.winningMethods[(ns.Name, method.Key)] = new(generator, method.Value);
+                }
+
+                foreach (var field in ns.Fields)
+                {
+                    super.winningConstants[(ns.Name, field.Key)] = (generator, field.Value);
+                }
+            }
+        }
+
+        foreach (Generator generator in orderedGenerators)
+        {
+            foreach (TypeDefinitionHandle handle in generator.Reader.TypeDefinitions)
+            {
+                TypeDefinition type = generator.Reader.GetTypeDefinition(handle);
+                if (type.GetDeclaringType().IsNil &&
+                    winningTypes.TryGetValue((generator.Reader.GetString(type.Namespace), generator.Reader.GetString(type.Name)), out QualifiedTypeDefinitionHandle winner) &&
+                    winner.Generator != generator)
+                {
+                    generator.RegisterTypeReplacement(handle, winner);
+                }
+            }
         }
 
         return super;
@@ -285,6 +333,44 @@ public class SuperGenerator : IGenerator, IDisposable
         return this.Generators.TryGetValue(winmdName, out targetGenerator);
     }
 
+    /// <summary>
+    /// Gets the winning API method from the combined inputs.
+    /// </summary>
+    /// <param name="generator">The requesting metadata owner.</param>
+    /// <param name="handle">The requested method.</param>
+    /// <returns>The winning method and its metadata owner.</returns>
+    internal QualifiedMethodDefinitionHandle ResolveExternMethod(Generator generator, MethodDefinitionHandle handle)
+    {
+        MethodDefinition method = generator.Reader.GetMethodDefinition(handle);
+        TypeDefinition type = generator.Reader.GetTypeDefinition(method.GetDeclaringType());
+        return this.winningMethods.TryGetValue((generator.Reader.GetString(type.Namespace), generator.Reader.GetString(method.Name)), out QualifiedMethodDefinitionHandle winner)
+            ? winner : new(generator, handle);
+    }
+
+    /// <summary>
+    /// Gets the winning API constant from the combined inputs.
+    /// </summary>
+    /// <param name="generator">The requesting metadata owner.</param>
+    /// <param name="handle">The requested constant.</param>
+    /// <returns>The winning constant and its metadata owner.</returns>
+    internal (Generator Generator, FieldDefinitionHandle Handle) ResolveConstant(Generator generator, FieldDefinitionHandle handle)
+    {
+        FieldDefinition field = generator.Reader.GetFieldDefinition(handle);
+        TypeDefinition type = generator.Reader.GetTypeDefinition(field.GetDeclaringType());
+        return this.winningConstants.TryGetValue((generator.Reader.GetString(type.Namespace), generator.Reader.GetString(field.Name)), out var winner)
+            ? winner : (generator, handle);
+    }
+
+    /// <summary>
+    /// Gets the generator responsible for shared projection helpers in a namespace.
+    /// </summary>
+    /// <param name="generator">The generator requesting a shared helper.</param>
+    /// <returns>A generator using the same projection namespace.</returns>
+    internal Generator GetNamespaceOwner(Generator generator) =>
+        this.Generators.Values.Where(g => g.ProjectionNamespace == generator.ProjectionNamespace)
+            .OrderByDescending(g => g.MetadataIndex.CommonNamespace == g.ProjectionNamespace)
+            .ThenBy(g => g.InputAssemblyName, StringComparer.Ordinal).First();
+
     internal Generator GetGeneratorFromReader(MetadataReader reader)
     {
         return this.Generators.FirstOrDefault(kv => kv.Value.Reader == reader).Value ?? throw new InvalidOperationException("No generator found for the specified reader.");
@@ -294,7 +380,7 @@ public class SuperGenerator : IGenerator, IDisposable
     {
         if (typeRefHandle.Generator.TryGetTypeDefHandle(typeRefHandle.ReferenceHandle, out TypeDefinitionHandle localHandle))
         {
-            typeDefHandle = new QualifiedTypeDefinitionHandle(typeRefHandle.Generator, localHandle);
+            typeDefHandle = typeRefHandle.Generator.ResolveTypeDefinition(localHandle);
             return true;
         }
 
@@ -305,7 +391,7 @@ public class SuperGenerator : IGenerator, IDisposable
             string? @name = typeRef.Generator.Reader.GetString(typeRef.Reference.Name);
             if (targetGenerator.TryGetTypeDefHandle(@namespace, name, out TypeDefinitionHandle targetTypeDefHandle))
             {
-                typeDefHandle = new QualifiedTypeDefinitionHandle(targetGenerator, targetTypeDefHandle);
+                typeDefHandle = targetGenerator.ResolveTypeDefinition(targetTypeDefHandle);
                 return true;
             }
         }

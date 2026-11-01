@@ -1463,6 +1463,13 @@ public partial class Generator
 
     private bool TryDeclareCOMGuidInterfaceIfNecessary()
     {
+        if (this.SuperGenerator?.GetNamespaceOwner(this) is { } owner && owner != this)
+        {
+            bool declared = false;
+            owner.volatileCode.GenerationTransaction(() => declared = owner.TryDeclareCOMGuidInterfaceIfNecessary());
+            return declared;
+        }
+
         if (this.comIIDInterfacePredefined)
         {
             return true;

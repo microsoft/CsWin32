@@ -36,7 +36,7 @@
 
   <Target Name="CopyComSourceGenerators" AfterTargets="ResolveReferences">
     <ItemGroup>
-      <_ComSourceGenerator Include="@(Analyzer)" Condition="'%(Filename)' == 'Microsoft.Interop.ComInterfaceGenerator' or '%(Filename)' == 'Microsoft.Interop.SourceGeneration'" />
+      <_ComSourceGenerator Include="@(Analyzer)" Condition="'%(Filename)' == 'Microsoft.Interop.ComInterfaceGenerator' or '%(Filename)' == 'Microsoft.Interop.LibraryImportGenerator' or '%(Filename)' == 'Microsoft.Interop.SourceGeneration'" />
     </ItemGroup>
     <Copy SourceFiles="@(_ComSourceGenerator)" DestinationFolder="$(OutDir)ComSourceGenerators" />
   </Target>

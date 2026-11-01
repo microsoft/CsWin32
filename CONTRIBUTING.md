@@ -77,8 +77,6 @@ Push the tag.
 
 ### GitHub Actions
 
-Pull request builds pack `Microsoft.Windows.CsWin32` using the repository's Nerdbank.GitVersioning version, including the commit-specific prerelease suffix. After the consumer integration tests pass, the **Build & Test** workflow uploads the actual `.nupkg` as the `nuget-packages` artifact, retained for 14 days. Download and extract this artifact, add the extracted directory as a local NuGet source, and reference the package's exact version with an ordinary `PackageReference`. These builds do not publish packages to a feed.
-
 When your repo is hosted by GitHub and you are using GitHub Actions, you should create a GitHub Release using the standard GitHub UI.
 Having previously used `nbgv tag` and pushing the tag will help you identify the precise commit and name to use for this release.
 

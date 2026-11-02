@@ -384,7 +384,10 @@ public partial class Generator : IGenerator, IDisposable
                 .AddModifiers(TokenWithSpace(this.Visibility), TokenWithSpace(SyntaxKind.StaticKeyword), TokenWithSpace(SyntaxKind.PartialKeyword))
                 .WithAdditionalAnnotations(new SyntaxAnnotation(SimpleFileNameAnnotation, $"{this.options.ClassName}.{fileNameKey}"));
 
-            result = result.Concat(this.committedCode.GeneratedTypes);
+            GeneratedCode[] earlierGenerators = this.SuperGenerator?.Generators.Values.Where(g =>
+                g.Namespace == this.Namespace && StringComparer.Ordinal.Compare(g.InputAssemblyName, this.InputAssemblyName) < 0)
+                .Select(g => g.committedCode).ToArray() ?? [];
+            result = result.Concat(this.committedCode.GetGeneratedTypes(earlierGenerators));
 
             ClassDeclarationSyntax inlineArrayIndexerExtensionsClass = this.DeclareInlineArrayIndexerExtensionsClass();
             if (inlineArrayIndexerExtensionsClass.Members.Count > 0)

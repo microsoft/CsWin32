@@ -35,6 +35,7 @@ public class AgilitySdkTests : GeneratorTestBase
             "CreateDXGIFactory2", "IDXGIFactory4", "IDXGIAdapter", "D3D12CreateDevice",
             "ID3D12Device", "ID3D12Resource", "ID3D12Resource", "D3D12_FEATURE",
             "DML_BUFFER_BINDING", "DMLCreateDevice", "D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING",
+            "D3D11_SAMPLER_DESC", "D3D12_SAMPLER_DESC",
         ];
         if (reverseRequests)
         {
@@ -48,6 +49,7 @@ public class AgilitySdkTests : GeneratorTestBase
 
         this.CollectGeneratedCode(this.generator);
         Assert.Single(this.FindGeneratedType("ID3D12Resource"));
+        Assert.Single(this.FindGeneratedType("__float_4"));
         EnumDeclarationSyntax feature = Assert.Single(this.FindGeneratedType("D3D12_FEATURE").OfType<EnumDeclarationSyntax>());
         using Stream sdkStream = File.OpenRead(AgilityPath);
         using PEReader sdkPe = new(sdkStream);
@@ -79,6 +81,10 @@ public class AgilitySdkTests : GeneratorTestBase
                 internal static Windows.Win32.AI.MachineLearning.DirectML.DML_BUFFER_BINDING Bind(
                     Windows.Win32.Graphics.Direct3D12.{{resourceType}} resource) =>
                     new Windows.Win32.AI.MachineLearning.DirectML.DML_BUFFER_BINDING { Buffer = resource };
+                internal static float Border(in Windows.Win32.Graphics.Direct3D11.D3D11_SAMPLER_DESC sampler) =>
+                    Windows.Win32.InlineArrayIndexerExtensions.ReadOnlyItemRef(in sampler.BorderColor, 0);
+                internal static float Border(in Windows.Win32.Graphics.Direct3D12.D3D12_SAMPLER_DESC sampler) =>
+                    Windows.Win32.InlineArrayIndexerExtensions.ReadOnlyItemRef(in sampler.BorderColor, 0);
             }
             """);
         Assert.Equal(65, this.compilation.GetTypeByMetadataName("Consumer")!.GetMembers("NewFeature").OfType<IFieldSymbol>().Single().ConstantValue);

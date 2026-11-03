@@ -363,9 +363,14 @@ public partial class Generator
 
         if (handleStructDefHandle.Kind == HandleKind.TypeReference)
         {
-            if (this.TryGetTypeDefHandle((TypeReferenceHandle)handleStructDefHandle, out TypeDefinitionHandle typeDefHandle))
+            if (this.TryGetContextualReleaseMethod(handleReferenceAttributes, out releaseMethod))
             {
-                return this.TryGetHandleReleaseMethod(typeDefHandle, handleReferenceAttributes, out releaseMethod);
+                return true;
+            }
+
+            if (this.TryGetTypeDefHandle((TypeReferenceHandle)handleStructDefHandle, out QualifiedTypeDefinitionHandle typeDefHandle))
+            {
+                return typeDefHandle.Generator.TryGetHandleReleaseMethod(typeDefHandle.DefinitionHandle, null, out releaseMethod);
             }
         }
         else if (handleStructDefHandle.Kind == HandleKind.TypeDefinition)

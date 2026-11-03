@@ -44,6 +44,8 @@ public class AgilitySdkTests : GeneratorTestBase
             "ID3D12Device", "ID3D12Resource", "ID3D12Resource", "D3D12_FEATURE",
             "DML_BUFFER_BINDING", "DMLCreateDevice", "D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING",
             "D3D11_SAMPLER_DESC", "D3D12_SAMPLER_DESC",
+            "D3D12_DRED_ALLOCATION_NODE1", "ID3D12DeviceRemovedExtendedData1",
+            "ID3D12Device14", "ID3D12VirtualizationGuestDevice",
         ];
         if (reverseRequests)
         {
@@ -118,6 +120,99 @@ public class AgilitySdkTests : GeneratorTestBase
             this.RunSdkGenerators();
         }
 
+        this.AssertNoDiagnostics();
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void RecursiveDredStructuresRetainManagedFields(bool useAgility, bool reverseRequests)
+    {
+        this.compilation = this.starterCompilations["net8.0"];
+        string providerPath = useAgility ? AgilityPath : BaselineD3DPath;
+        this.generator = this.CreateSuperGenerator(
+            reverseRequests ? [providerPath, BaselinePath] : [BaselinePath, providerPath],
+            DefaultTestGeneratorOptions with { AllowMarshaling = true, ComInterop = new() { UseComSourceGenerators = false } });
+        string[] requests =
+        [
+            "D3D12_DRED_ALLOCATION_NODE1", "D3D12_DRED_PAGE_FAULT_OUTPUT1", "D3D12_DRED_PAGE_FAULT_OUTPUT2",
+            "D3D12_DEVICE_REMOVED_EXTENDED_DATA2", "D3D12_DEVICE_REMOVED_EXTENDED_DATA3",
+            "D3D12_VERSIONED_DEVICE_REMOVED_EXTENDED_DATA", "ID3D12DeviceRemovedExtendedData1", "ID3D12DeviceRemovedExtendedData2",
+        ];
+        if (reverseRequests)
+        {
+            Array.Reverse(requests);
+        }
+
+        foreach (string request in requests)
+        {
+            Assert.True(this.generator.TryGenerate(request, TestContext.Current.CancellationToken), request);
+        }
+
+        this.CollectGeneratedCode(this.generator);
+        this.compilation = this.AddCode(
+            """
+            internal static unsafe class DredConsumer
+            {
+                internal static Windows.Win32.Graphics.Direct3D12.D3D12_DRED_ALLOCATION_NODE1 Node(
+                    Windows.Win32.System.Com.IUnknown obj) => new() { pObject = obj };
+                internal static Windows.Win32.Graphics.Direct3D12.D3D12_DRED_ALLOCATION_NODE1_unmanaged Node(
+                    Windows.Win32.System.Com.IUnknown* obj) => new() { pObject = obj };
+            }
+            """);
+        this.AssertNoDiagnostics();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SharedHandleOverloadsRetainSafeFileHandle(bool reverseRequests)
+    {
+        this.compilation = this.starterCompilations["net8.0"];
+        this.generator = this.CreateSuperGenerator(
+            reverseRequests ? [BaselineD3DPath, BaselinePath] : [BaselinePath, BaselineD3DPath],
+            DefaultTestGeneratorOptions with { AllowMarshaling = true, ComInterop = new() { UseComSourceGenerators = false } });
+        string[] requests = ["ID3D12Device", "ID3D12Device14", "ID3D12VirtualizationGuestDevice"];
+        if (reverseRequests)
+        {
+            Array.Reverse(requests);
+        }
+
+        foreach (string request in requests)
+        {
+            Assert.True(this.generator.TryGenerate(request, TestContext.Current.CancellationToken), request);
+        }
+
+        this.CollectGeneratedCode(this.generator);
+        this.compilation = this.AddCode(
+            """
+            using Microsoft.Win32.SafeHandles;
+            using Windows.Win32;
+            using Windows.Win32.Graphics.Direct3D12;
+
+            internal static class SharedHandleConsumer
+            {
+                internal static void Open(ID3D12Device device)
+                {
+                    device.OpenSharedHandleByName("shared-resource", 0, out SafeFileHandle handle);
+                    handle.Dispose();
+                }
+                internal static void Create(ID3D12Device14 device, ID3D12DeviceChild resource)
+                {
+                    device.CreateSharedHandle(resource, null, 0, "shared-resource", out SafeFileHandle handle);
+                    handle.Dispose();
+                    device.OpenSharedHandleByName("shared-resource", 0, out handle);
+                    handle.Dispose();
+                }
+                internal static void Share(ID3D12VirtualizationGuestDevice device, ID3D12DeviceChild resource)
+                {
+                    device.ShareWithHost(resource, out SafeFileHandle handle);
+                    handle.Dispose();
+                }
+            }
+            """);
         this.AssertNoDiagnostics();
     }
 

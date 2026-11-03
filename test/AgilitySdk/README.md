@@ -58,6 +58,12 @@ The output is
 These are generated public-header test fixtures, not official SDK packages.
 CI consumes the checked-in files without running the scraper.
 
+The public 1.619.3 fixture records shared-handle output parameters as both
+`In` and `Out`, unlike the Windows baseline's `Out` annotations. It is not used
+to assert ownership-transferring SafeHandle overloads: those require an
+output-only parameter. The shared-handle caller regression uses the correctly
+annotated split baseline; Agility package integration uses IDL-prepared metadata.
+
 Checked-in SHA256 values:
 
 | File | SHA256 |

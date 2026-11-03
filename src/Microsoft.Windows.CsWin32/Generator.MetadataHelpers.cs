@@ -502,7 +502,13 @@ public partial class Generator
                                     }
                                     else
                                     {
-                                        return qtdh.Generator.IsManagedType(qtdh.DefinitionHandle);
+                                        bool result = qtdh.Generator.IsManagedType(qtdh.DefinitionHandle);
+                                        if (result)
+                                        {
+                                            this.managedTypesCheck.Add(typeDefinitionHandle, true);
+                                        }
+
+                                        return result;
                                     }
                                 }
                             }

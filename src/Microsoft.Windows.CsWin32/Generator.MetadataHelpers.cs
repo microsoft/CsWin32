@@ -5,56 +5,6 @@ namespace Microsoft.Windows.CsWin32;
 
 public partial class Generator
 {
-    private readonly Dictionary<TypeDefinitionHandle, QualifiedTypeDefinitionHandle> typeReplacements = new();
-
-    /// <summary>
-    /// Registers the definition that supersedes a type from this input.
-    /// </summary>
-    /// <param name="handle">The superseded local definition.</param>
-    /// <param name="replacement">The winning definition.</param>
-    internal void RegisterTypeReplacement(TypeDefinitionHandle handle, QualifiedTypeDefinitionHandle replacement) => this.typeReplacements.Add(handle, replacement);
-
-    /// <summary>
-    /// Resolves a local definition to its replacement, if one was registered.
-    /// </summary>
-    /// <param name="handle">The local definition.</param>
-    /// <returns>The definition and its owning generator.</returns>
-    internal QualifiedTypeDefinitionHandle ResolveTypeDefinition(TypeDefinitionHandle handle)
-    {
-        if (this.typeReplacements.TryGetValue(handle, out QualifiedTypeDefinitionHandle replacement))
-        {
-            return replacement;
-        }
-
-        if (this.typeReplacements.Count == 0)
-        {
-            return new(this, handle);
-        }
-
-        TypeDefinition type = this.Reader.GetTypeDefinition(handle);
-        TypeDefinitionHandle declaringType = type.GetDeclaringType();
-        if (!declaringType.IsNil)
-        {
-            QualifiedTypeDefinitionHandle parent = this.ResolveTypeDefinition(declaringType);
-            if (parent.Generator != this)
-            {
-                foreach (TypeDefinitionHandle nested in parent.Reader.GetTypeDefinition(parent.DefinitionHandle).GetNestedTypes())
-                {
-                    if (parent.Reader.StringComparer.Equals(parent.Reader.GetTypeDefinition(nested).Name, this.Reader.GetString(type.Name)))
-                    {
-                        replacement = new(parent.Generator, nested);
-                        this.typeReplacements.Add(handle, replacement);
-                        return replacement;
-                    }
-                }
-
-                throw new GenerationFailedException($"The replacement for {this.Reader.GetString(type.Name)} does not contain the requested nested type.");
-            }
-        }
-
-        return new(this, handle);
-    }
-
     internal NativeArrayInfo? FindNativeArrayInfoAttribute(CustomAttributeHandleCollection customAttributeHandles)
     {
         return this.FindInteropDecorativeAttribute(customAttributeHandles, NativeArrayInfoAttribute) is CustomAttribute att
@@ -153,7 +103,7 @@ public partial class Generator
             case HandleKind.TypeReference:
                 return this.TryGetTypeDefHandle((TypeReferenceHandle)entityHandle, out typeDefHandle);
             case HandleKind.TypeDefinition:
-                typeDefHandle = this.ResolveTypeDefinition((TypeDefinitionHandle)entityHandle);
+                typeDefHandle = new QualifiedTypeDefinitionHandle(this, (TypeDefinitionHandle)entityHandle);
                 return true;
             default:
                 typeDefHandle = default;
@@ -416,12 +366,6 @@ public partial class Generator
 
     private bool IsManagedType(TypeDefinitionHandle typeDefinitionHandle)
     {
-        QualifiedTypeDefinitionHandle definition = this.ResolveTypeDefinition(typeDefinitionHandle);
-        if (definition.Generator != this)
-        {
-            return definition.Generator.IsManagedType(definition.DefinitionHandle);
-        }
-
         if (this.managedTypesCheck.TryGetValue(typeDefinitionHandle, out bool result))
         {
             return result;
@@ -516,7 +460,7 @@ public partial class Generator
                                 }
                                 else if (elementType is HandleTypeHandleInfo { Handle: { Kind: HandleKind.TypeDefinition } fieldTypeDefHandle })
                                 {
-                                    if (TestFieldAndHandleCycle(this.ResolveTypeDefinition((TypeDefinitionHandle)fieldTypeDefHandle)) is true)
+                                    if (TestFieldAndHandleCycle(new(this, (TypeDefinitionHandle)fieldTypeDefHandle)) is true)
                                     {
                                         return true;
                                     }

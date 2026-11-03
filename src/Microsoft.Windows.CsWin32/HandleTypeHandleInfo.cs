@@ -78,18 +78,6 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
 
     internal override TypeSyntaxAndMarshaling ToTypeSyntax(TypeSyntaxSettings inputs, Generator.GeneratingElement forElement, QualifiedCustomAttributeHandleCollection? customAttributes, ParameterAttributes parameterAttributes = default)
     {
-        if (this.Handle.Kind == HandleKind.TypeDefinition)
-        {
-            QualifiedTypeDefinitionHandle definition = this.generator.ResolveTypeDefinition((TypeDefinitionHandle)this.Handle);
-            if (definition.Generator != this.generator)
-            {
-                return new HandleTypeHandleInfo(definition.Generator, definition.Reader, definition.DefinitionHandle, this.RawTypeKind)
-                {
-                    IsConstantField = this.IsConstantField,
-                }.ToTypeSyntax(inputs, forElement, customAttributes, parameterAttributes);
-            }
-        }
-
         NameSyntax? nameSyntax;
         bool isInterface;
         bool isNonCOMConformingInterface;
@@ -257,9 +245,7 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
         switch (this.Handle.Kind)
         {
             case HandleKind.TypeDefinition:
-                QualifiedTypeDefinitionHandle definition = generator.ResolveTypeDefinition((TypeDefinitionHandle)this.Handle);
-                typeDefHandle = definition.DefinitionHandle;
-                generator = definition.Generator;
+                typeDefHandle = (TypeDefinitionHandle)this.Handle;
                 break;
             case HandleKind.TypeReference:
                 if (generator.TryGetTypeDefHandle((TypeReferenceHandle)this.Handle, out QualifiedTypeDefinitionHandle qualifiedTypeDefHandle))
@@ -383,9 +369,7 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
 
                 break;
             case HandleKind.TypeDefinition:
-                QualifiedTypeDefinitionHandle definition = generator.ResolveTypeDefinition((TypeDefinitionHandle)this.Handle);
-                tdh = definition.DefinitionHandle;
-                generator = definition.Generator;
+                tdh = (TypeDefinitionHandle)this.Handle;
                 break;
         }
 

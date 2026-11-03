@@ -2,21 +2,24 @@
   <PropertyGroup>
     <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
     <OutputWinmd>$(MSBuildProjectDirectory)\..\Microsoft.Windows.CsWin32.Tests\ExternalMetadata\Microsoft.Direct3D.D3D12.winmd</OutputWinmd>
-    <WinmdVersion>1.619.3.0</WinmdVersion>
+    <WinmdVersion>1.0.0.0</WinmdVersion>
     <UseWinSDKAssets>true</UseWinSDKAssets>
     <ShowEmitWinmdOutputDetails>true</ShowEmitWinmdOutputDetails>
     <TargetPlatformVersion>10.0.26100.0</TargetPlatformVersion>
     <TaskBinDir Condition="'$(CorrectedEmitterToolsDir)' != ''">$(CorrectedEmitterToolsDir)</TaskBinDir>
     <ToolsBinDir Condition="'$(CorrectedEmitterToolsDir)' != ''">$(CorrectedEmitterToolsDir)</ToolsBinDir>
+    <Win32WinmdBinDir>$(SplitWindowsMetadataDir)</Win32WinmdBinDir>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Remove="Microsoft.VisualStudio.Internal.MicroBuild.NonShipping" />
     <PackageReference Update="Microsoft.Windows.SDK.CPP" Version="10.0.26100.7705" />
     <PackageReference Update="Microsoft.Windows.SDK.Win32Metadata" Version="71.0.25-preview" />
     <PackageReference Include="Microsoft.Direct3D.D3D12" Version="1.619.3" GeneratePathProperty="true" />
+    <ManualCs Include="$(Win32MetadataSourceRoot)\generation\WinSDK\manual\Direct3D12.cs" />
   </ItemGroup>
   <Target Name="ConfigurePublicSdk" BeforeTargets="Build">
     <Error Condition="'$(CorrectedEmitterToolsDir)' == ''" Text="Supply CorrectedEmitterToolsDir built from the public win32metadata commit documented in README.md." />
+    <Error Condition="'$(SplitWindowsMetadataDir)' == '' or '$(Win32MetadataSourceRoot)' == ''" Text="Supply the split Windows metadata directory and public win32metadata checkout documented in README.md." />
     <PropertyGroup>
       <AdditionalIncludes>$(PkgMicrosoft_Direct3D_D3D12)\build\native\include;$(PkgMicrosoft_Windows_SDK_CPP)\c\Include\$(TargetPlatformVersion)\um;$(PkgMicrosoft_Windows_SDK_CPP)\c\Include\$(TargetPlatformVersion)\shared;$(AdditionalIncludes)</AdditionalIncludes>
     </PropertyGroup>

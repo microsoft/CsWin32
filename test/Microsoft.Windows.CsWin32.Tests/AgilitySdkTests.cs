@@ -5,7 +5,8 @@ using System.Reflection.PortableExecutable;
 
 public class AgilitySdkTests : GeneratorTestBase
 {
-    private static readonly string BaselinePath = Path.Combine(Path.GetDirectoryName(MetadataPath)!, "Windows.SdkBaseline.winmd");
+    private static readonly string BaselinePath = Path.Combine(Path.GetDirectoryName(MetadataPath)!, "ExternalMetadata", "Windows.SdkBaseline.winmd");
+    private static readonly string BaselineD3DPath = Path.Combine(Path.GetDirectoryName(MetadataPath)!, "ExternalMetadata", "Microsoft.Direct3D.D3D12.Baseline.winmd");
     private static readonly string AgilityPath = Path.Combine(Path.GetDirectoryName(MetadataPath)!, "ExternalMetadata", "Microsoft.Direct3D.D3D12.winmd");
 
     public AgilitySdkTests(ITestOutputHelper logger)
@@ -14,17 +15,24 @@ public class AgilitySdkTests : GeneratorTestBase
     }
 
     [Theory]
-    [InlineData(false, false, false)]
-    [InlineData(false, false, true)]
-    [InlineData(true, false, false)]
-    [InlineData(true, false, true)]
-    [InlineData(true, true, false)]
-    [InlineData(true, true, true)]
-    public void PublicAgilityReplacesWindowsTypes(bool allowMarshaling, bool useComSourceGenerators, bool reverseRequests)
+    [InlineData(false, false, false, true)]
+    [InlineData(false, false, true, true)]
+    [InlineData(true, false, false, true)]
+    [InlineData(true, false, true, true)]
+    [InlineData(true, true, false, true)]
+    [InlineData(true, true, true, true)]
+    [InlineData(false, false, false, false)]
+    [InlineData(false, false, true, false)]
+    [InlineData(true, false, false, false)]
+    [InlineData(true, false, true, false)]
+    [InlineData(true, true, false, false)]
+    [InlineData(true, true, true, false)]
+    public void PublicSdkProjectsAcrossAssemblies(bool allowMarshaling, bool useComSourceGenerators, bool reverseRequests, bool useAgility)
     {
         this.compilation = this.starterCompilations["net8.0"];
+        string providerPath = useAgility ? AgilityPath : BaselineD3DPath;
         this.generator = this.CreateSuperGenerator(
-            [BaselinePath, AgilityPath],
+            reverseRequests ? [providerPath, BaselinePath] : [BaselinePath, providerPath],
             DefaultTestGeneratorOptions with
             {
                 AllowMarshaling = allowMarshaling,
@@ -44,21 +52,23 @@ public class AgilitySdkTests : GeneratorTestBase
 
         foreach (string request in requests)
         {
-            Assert.True(this.generator.TryGenerate(request, TestContext.Current.CancellationToken));
+            Assert.True(this.generator.TryGenerate(request, TestContext.Current.CancellationToken), request);
         }
 
+        string[] snapshot = this.generator.GetCompilationUnits(CancellationToken.None).OrderBy(unit => unit.Key).Select(unit => unit.Value.ToFullString()).ToArray();
+        Assert.Equal(snapshot, this.generator.GetCompilationUnits(CancellationToken.None).OrderBy(unit => unit.Key).Select(unit => unit.Value.ToFullString()));
         this.CollectGeneratedCode(this.generator);
         Assert.Single(this.FindGeneratedType("ID3D12Resource"));
         Assert.Single(this.FindGeneratedType("__float_4"));
         EnumDeclarationSyntax feature = Assert.Single(this.FindGeneratedType("D3D12_FEATURE").OfType<EnumDeclarationSyntax>());
-        using Stream sdkStream = File.OpenRead(AgilityPath);
+        using Stream sdkStream = File.OpenRead(providerPath);
         using PEReader sdkPe = new(sdkStream);
         MetadataReader reader = sdkPe.GetMetadataReader();
         TypeDefinition enumDefinition = reader.GetTypeDefinition(reader.TypeDefinitions.Single(h => reader.StringComparer.Equals(reader.GetTypeDefinition(h).Name, "D3D12_FEATURE")));
         string[] expectedMembers = enumDefinition.GetFields().Select(h => reader.GetFieldDefinition(h))
             .Where(f => !f.GetDefaultValue().IsNil).Select(f => reader.GetString(f.Name)).ToArray();
         Assert.Equal(expectedMembers, feature.Members.Select(m => m.Identifier.ValueText));
-        Assert.Contains("D3D12_FEATURE_D3D12_OPTIONS22", expectedMembers);
+        Assert.Equal(useAgility, expectedMembers.Contains("D3D12_FEATURE_D3D12_OPTIONS22"));
         Assert.Contains("D3D12_FEATURE_D3D12_OPTIONS", expectedMembers);
         foreach (string name in new[] { "ID3D12Resource", "D3D12_FEATURE" })
         {
@@ -71,13 +81,14 @@ public class AgilitySdkTests : GeneratorTestBase
         }
 
         string resourceType = useComSourceGenerators ? "ID3D12Resource_unmanaged*" : allowMarshaling ? "ID3D12Resource" : "ID3D12Resource*";
+        string featureName = useAgility ? "D3D12_FEATURE_D3D12_OPTIONS22" : "D3D12_FEATURE_D3D12_OPTIONS";
         this.compilation = this.AddCode(
             $$"""
             internal static unsafe class Consumer
             {
                 internal const string Factory = nameof(Windows.Win32.PInvoke.D3D12CreateDevice);
                 internal const Windows.Win32.Graphics.Direct3D12.D3D12_FEATURE NewFeature =
-                    Windows.Win32.Graphics.Direct3D12.D3D12_FEATURE.D3D12_FEATURE_D3D12_OPTIONS22;
+                    Windows.Win32.Graphics.Direct3D12.D3D12_FEATURE.{{featureName}};
                 internal static Windows.Win32.AI.MachineLearning.DirectML.DML_BUFFER_BINDING Bind(
                     Windows.Win32.Graphics.Direct3D12.{{resourceType}} resource) =>
                     new Windows.Win32.AI.MachineLearning.DirectML.DML_BUFFER_BINDING { Buffer = resource };
@@ -87,7 +98,7 @@ public class AgilitySdkTests : GeneratorTestBase
                     Windows.Win32.InlineArrayIndexerExtensions.ReadOnlyItemRef(in sampler.BorderColor, 0);
             }
             """);
-        Assert.Equal(65, this.compilation.GetTypeByMetadataName("Consumer")!.GetMembers("NewFeature").OfType<IFieldSymbol>().Single().ConstantValue);
+        Assert.Equal(useAgility ? 65 : 0, this.compilation.GetTypeByMetadataName("Consumer")!.GetMembers("NewFeature").OfType<IFieldSymbol>().Single().ConstantValue);
         INamedTypeSymbol projectedEnum = this.compilation.GetTypeByMetadataName("Windows.Win32.Graphics.Direct3D12.D3D12_FEATURE")!;
         foreach (FieldDefinitionHandle handle in enumDefinition.GetFields())
         {
@@ -110,23 +121,68 @@ public class AgilitySdkTests : GeneratorTestBase
         this.AssertNoDiagnostics();
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void WindowsBaselineRemainsWithoutLaterSupplement(bool earlierSupplement)
+    [Fact]
+    public void FailedCrossAssemblyGenerationCanRetry()
     {
-        this.generator = this.CreateSuperGenerator(
-            earlierSupplement ? [AgilityPath, BaselinePath] : [BaselinePath],
-            DefaultTestGeneratorOptions with { AllowMarshaling = false });
-        Assert.True(this.generator.TryGenerate("DML_BUFFER_BINDING", TestContext.Current.CancellationToken));
-        Assert.True(this.generator.TryGenerate("D3D12_FEATURE", TestContext.Current.CancellationToken));
+        GeneratorOptions options = DefaultTestGeneratorOptions with { AllowMarshaling = false };
+        using Generator provider = new(AgilityPath, null, [], options, this.compilation, this.parseOptions);
+        Assert.ThrowsAny<GenerationFailedException>(() => provider.TryGenerate("ID3D12Resource", CancellationToken.None));
+        Assert.Empty(provider.GetCompilationUnits(CancellationToken.None));
+        using Generator windows = new(BaselinePath, null, [], options, this.compilation, this.parseOptions);
+        this.generator = SuperGenerator.Combine(provider, windows);
+        Assert.True(this.generator.TryGenerate("ID3D12Resource", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
-        EnumDeclarationSyntax feature = Assert.Single(this.FindGeneratedType("D3D12_FEATURE").OfType<EnumDeclarationSyntax>());
-        Assert.DoesNotContain(feature.Members, m => m.Identifier.ValueText == "D3D12_FEATURE_D3D12_OPTIONS22");
-        Assert.Contains(this.generator.GetCompilationUnits(TestContext.Current.CancellationToken), unit =>
-            unit.Key.StartsWith("Windows.Win32.", StringComparison.Ordinal) &&
-            unit.Value.DescendantNodes().OfType<BaseTypeDeclarationSyntax>().Any(t => t.Identifier.ValueText == "ID3D12Resource"));
         this.AssertNoDiagnostics();
+    }
+
+    [Fact]
+    public void SplitMetadataHasExplicitDisjointOwnership()
+    {
+        using PEReader windows = new(File.OpenRead(BaselinePath));
+        MetadataReader windowsReader = windows.GetMetadataReader();
+        Assert.Equal(new Version(1, 0, 0, 0), windowsReader.GetAssemblyDefinition().Version);
+        Assert.True(windowsReader.GetAssemblyDefinition().PublicKey.IsNil);
+        Assert.DoesNotContain(windowsReader.TypeDefinitions, handle =>
+            windowsReader.GetString(windowsReader.GetTypeDefinition(handle).Namespace) == "Windows.Win32.Graphics.Direct3D12");
+        TypeDefinition binding = windowsReader.GetTypeDefinition(windowsReader.TypeDefinitions.Single(handle =>
+            windowsReader.StringComparer.Equals(windowsReader.GetTypeDefinition(handle).Name, "DML_BUFFER_BINDING")));
+        FieldDefinition buffer = windowsReader.GetFieldDefinition(binding.GetFields().Single(handle =>
+            windowsReader.StringComparer.Equals(windowsReader.GetFieldDefinition(handle).Name, "Buffer")));
+        BlobReader signature = windowsReader.GetBlobReader(buffer.Signature);
+        Assert.Equal(SignatureKind.Field, signature.ReadSignatureHeader().Kind);
+        Assert.Equal(SignatureTypeCode.TypeHandle, signature.ReadSignatureTypeCode());
+        EntityHandle resourceHandle = signature.ReadTypeHandle();
+        Assert.Equal(HandleKind.TypeReference, resourceHandle.Kind);
+        TypeReference resource = windowsReader.GetTypeReference((TypeReferenceHandle)resourceHandle);
+        Assert.Equal("ID3D12Resource", windowsReader.GetString(resource.Name));
+        Assert.Equal(HandleKind.AssemblyReference, resource.ResolutionScope.Kind);
+        AssemblyReference scope = windowsReader.GetAssemblyReference((AssemblyReferenceHandle)resource.ResolutionScope);
+        Assert.Equal("Microsoft.Direct3D.D3D12.winmd", windowsReader.GetString(scope.Name));
+        Assert.Equal(new Version(1, 0, 0, 0), scope.Version);
+
+        static string TypeName(MetadataReader reader, TypeDefinitionHandle handle)
+        {
+            TypeDefinition type = reader.GetTypeDefinition(handle);
+            return type.GetDeclaringType().IsNil
+                ? $"{reader.GetString(type.Namespace)}.{reader.GetString(type.Name)}"
+                : $"{TypeName(reader, type.GetDeclaringType())}+{reader.GetString(type.Name)}";
+        }
+
+        HashSet<string> windowsTypes = windowsReader.TypeDefinitions
+            .Where(handle => windowsReader.GetString(windowsReader.GetTypeDefinition(handle).Name) is not "Apis" and not "<Module>")
+            .Select(handle => TypeName(windowsReader, handle)).ToHashSet();
+        foreach (string providerPath in new[] { BaselineD3DPath, AgilityPath })
+        {
+            using PEReader provider = new(File.OpenRead(providerPath));
+            MetadataReader reader = provider.GetMetadataReader();
+            Assert.Equal("Microsoft.Direct3D.D3D12.winmd", reader.GetString(reader.GetAssemblyDefinition().Name));
+            Assert.Equal(new Version(1, 0, 0, 0), reader.GetAssemblyDefinition().Version);
+            Assert.True(reader.GetAssemblyDefinition().PublicKey.IsNil);
+            Assert.DoesNotContain(reader.TypeDefinitions.Select(handle => TypeName(reader, handle)), windowsTypes.Contains);
+            TypeDefinition resourceType = reader.GetTypeDefinition(reader.TypeDefinitions.Single(handle =>
+                reader.StringComparer.Equals(reader.GetTypeDefinition(handle).Name, "ID3D12Resource")));
+            Assert.Equal(7, resourceType.GetMethods().Count);
+        }
     }
 
     [Theory]

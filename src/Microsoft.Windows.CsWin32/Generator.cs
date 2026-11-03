@@ -323,7 +323,7 @@ public partial class Generator : IGenerator, IDisposable
     internal MetadataIndex MetadataIndex { get; }
 
     /// <summary>
-    /// Gets or sets the namespace shared by projections rooted in an earlier input.
+    /// Gets or sets the namespace shared by projections with a common root.
     /// </summary>
     internal string ProjectionNamespace { get; set; }
 
@@ -684,14 +684,7 @@ public partial class Generator : IGenerator, IDisposable
             }
             else if (nsMetadata.TypesForOtherPlatform.Contains(typeName))
             {
-                if (this.TryGetTypeDefHandle(nsMetadata.Name, typeName, out handle) && this.ResolveTypeDefinition(handle).Generator != this)
-                {
-                    matchingTypeHandles.Add(handle);
-                }
-                else
-                {
-                    foundApiWithMismatchedPlatform = true;
-                }
+                foundApiWithMismatchedPlatform = true;
             }
         }
 
@@ -1084,13 +1077,6 @@ public partial class Generator : IGenerator, IDisposable
 
     internal void RequestInteropType(TypeDefinitionHandle typeDefHandle, Context context)
     {
-        QualifiedTypeDefinitionHandle resolvedType = this.ResolveTypeDefinition(typeDefHandle);
-        if (resolvedType.Generator != this)
-        {
-            resolvedType.Generator.RequestInteropType(resolvedType.DefinitionHandle, context);
-            return;
-        }
-
         this.volatileCode.GenerationTransaction(delegate
         {
             TypeDefinition typeDef = this.Reader.GetTypeDefinition(typeDefHandle);

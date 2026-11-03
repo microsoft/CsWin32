@@ -33,6 +33,13 @@ public partial class Generator
             MethodDefinitionHandle? releaseMethodHandle = this.GetMethodByName(releaseMethod);
             if (!releaseMethodHandle.HasValue)
             {
+                if (valueType is HandleTypeHandleInfo handle
+                    && handle.Generator.GetQualifiedTypeDefinition(handle.Handle) is QualifiedTypeDefinition owner
+                    && owner.Generator != this)
+                {
+                    return owner.Generator.RequestSafeHandle(releaseMethod, valueType, allowAbstract);
+                }
+
                 throw new GenerationFailedException("Unable to find release method named: " + releaseMethod);
             }
 

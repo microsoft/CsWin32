@@ -3,34 +3,27 @@
 
 using System.Reflection.PortableExecutable;
 
-public class AgilitySdkTests : GeneratorTestBase
+public class SplitMetadataTests : GeneratorTestBase
 {
     private static readonly string BaselinePath = Path.Combine(Path.GetDirectoryName(MetadataPath)!, "ExternalMetadata", "Windows.SdkBaseline.winmd");
     private static readonly string BaselineD3DPath = Path.Combine(Path.GetDirectoryName(MetadataPath)!, "ExternalMetadata", "Microsoft.Direct3D.D3D12.Baseline.winmd");
-    private static readonly string AgilityPath = Path.Combine(Path.GetDirectoryName(MetadataPath)!, "ExternalMetadata", "Microsoft.Direct3D.D3D12.winmd");
 
-    public AgilitySdkTests(ITestOutputHelper logger)
+    public SplitMetadataTests(ITestOutputHelper logger)
         : base(logger)
     {
     }
 
     [Theory]
-    [InlineData(false, false, false, true)]
-    [InlineData(false, false, true, true)]
-    [InlineData(true, false, false, true)]
-    [InlineData(true, false, true, true)]
-    [InlineData(true, true, false, true)]
-    [InlineData(true, true, true, true)]
-    [InlineData(false, false, false, false)]
-    [InlineData(false, false, true, false)]
-    [InlineData(true, false, false, false)]
-    [InlineData(true, false, true, false)]
-    [InlineData(true, true, false, false)]
-    [InlineData(true, true, true, false)]
-    public void PublicSdkProjectsAcrossAssemblies(bool allowMarshaling, bool useComSourceGenerators, bool reverseRequests, bool useAgility)
+    [InlineData(false, false, false)]
+    [InlineData(false, false, true)]
+    [InlineData(true, false, false)]
+    [InlineData(true, false, true)]
+    [InlineData(true, true, false)]
+    [InlineData(true, true, true)]
+    public void PublicSdkProjectsAcrossAssemblies(bool allowMarshaling, bool useComSourceGenerators, bool reverseRequests)
     {
         this.compilation = this.starterCompilations["net8.0"];
-        string providerPath = useAgility ? AgilityPath : BaselineD3DPath;
+        string providerPath = BaselineD3DPath;
         this.generator = this.CreateSuperGenerator(
             reverseRequests ? [providerPath, BaselinePath] : [BaselinePath, providerPath],
             DefaultTestGeneratorOptions with
@@ -70,7 +63,6 @@ public class AgilitySdkTests : GeneratorTestBase
         string[] expectedMembers = enumDefinition.GetFields().Select(h => reader.GetFieldDefinition(h))
             .Where(f => !f.GetDefaultValue().IsNil).Select(f => reader.GetString(f.Name)).ToArray();
         Assert.Equal(expectedMembers, feature.Members.Select(m => m.Identifier.ValueText));
-        Assert.Equal(useAgility, expectedMembers.Contains("D3D12_FEATURE_D3D12_OPTIONS22"));
         Assert.Contains("D3D12_FEATURE_D3D12_OPTIONS", expectedMembers);
         foreach (string name in new[] { "ID3D12Resource", "D3D12_FEATURE" })
         {
@@ -83,14 +75,13 @@ public class AgilitySdkTests : GeneratorTestBase
         }
 
         string resourceType = useComSourceGenerators ? "ID3D12Resource_unmanaged*" : allowMarshaling ? "ID3D12Resource" : "ID3D12Resource*";
-        string featureName = useAgility ? "D3D12_FEATURE_D3D12_OPTIONS22" : "D3D12_FEATURE_D3D12_OPTIONS";
         this.compilation = this.AddCode(
             $$"""
             internal static unsafe class Consumer
             {
                 internal const string Factory = nameof(Windows.Win32.PInvoke.D3D12CreateDevice);
                 internal const Windows.Win32.Graphics.Direct3D12.D3D12_FEATURE NewFeature =
-                    Windows.Win32.Graphics.Direct3D12.D3D12_FEATURE.{{featureName}};
+                    Windows.Win32.Graphics.Direct3D12.D3D12_FEATURE.D3D12_FEATURE_D3D12_OPTIONS;
                 internal static Windows.Win32.AI.MachineLearning.DirectML.DML_BUFFER_BINDING Bind(
                     Windows.Win32.Graphics.Direct3D12.{{resourceType}} resource) =>
                     new Windows.Win32.AI.MachineLearning.DirectML.DML_BUFFER_BINDING { Buffer = resource };
@@ -100,7 +91,7 @@ public class AgilitySdkTests : GeneratorTestBase
                     Windows.Win32.InlineArrayIndexerExtensions.ReadOnlyItemRef(in sampler.BorderColor, 0);
             }
             """);
-        Assert.Equal(useAgility ? 65 : 0, this.compilation.GetTypeByMetadataName("Consumer")!.GetMembers("NewFeature").OfType<IFieldSymbol>().Single().ConstantValue);
+        Assert.Equal(0, this.compilation.GetTypeByMetadataName("Consumer")!.GetMembers("NewFeature").OfType<IFieldSymbol>().Single().ConstantValue);
         INamedTypeSymbol projectedEnum = this.compilation.GetTypeByMetadataName("Windows.Win32.Graphics.Direct3D12.D3D12_FEATURE")!;
         foreach (FieldDefinitionHandle handle in enumDefinition.GetFields())
         {
@@ -124,14 +115,12 @@ public class AgilitySdkTests : GeneratorTestBase
     }
 
     [Theory]
-    [InlineData(false, false)]
-    [InlineData(false, true)]
-    [InlineData(true, false)]
-    [InlineData(true, true)]
-    public void RecursiveDredStructuresRetainManagedFields(bool useAgility, bool reverseRequests)
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RecursiveDredStructuresRetainManagedFields(bool reverseRequests)
     {
         this.compilation = this.starterCompilations["net8.0"];
-        string providerPath = useAgility ? AgilityPath : BaselineD3DPath;
+        string providerPath = BaselineD3DPath;
         this.generator = this.CreateSuperGenerator(
             reverseRequests ? [providerPath, BaselinePath] : [BaselinePath, providerPath],
             DefaultTestGeneratorOptions with { AllowMarshaling = true, ComInterop = new() { UseComSourceGenerators = false } });
@@ -220,7 +209,7 @@ public class AgilitySdkTests : GeneratorTestBase
     public void FailedCrossAssemblyGenerationCanRetry()
     {
         GeneratorOptions options = DefaultTestGeneratorOptions with { AllowMarshaling = false };
-        using Generator provider = new(AgilityPath, null, [], options, this.compilation, this.parseOptions);
+        using Generator provider = new(BaselineD3DPath, null, [], options, this.compilation, this.parseOptions);
         Assert.ThrowsAny<GenerationFailedException>(() => provider.TryGenerate("ID3D12Resource", CancellationToken.None));
         Assert.Empty(provider.GetCompilationUnits(CancellationToken.None));
         using Generator windows = new(BaselinePath, null, [], options, this.compilation, this.parseOptions);
@@ -266,9 +255,8 @@ public class AgilitySdkTests : GeneratorTestBase
         HashSet<string> windowsTypes = windowsReader.TypeDefinitions
             .Where(handle => windowsReader.GetString(windowsReader.GetTypeDefinition(handle).Name) is not "Apis" and not "<Module>")
             .Select(handle => TypeName(windowsReader, handle)).ToHashSet();
-        foreach (string providerPath in new[] { BaselineD3DPath, AgilityPath })
+        using (PEReader provider = new(File.OpenRead(BaselineD3DPath)))
         {
-            using PEReader provider = new(File.OpenRead(providerPath));
             MetadataReader reader = provider.GetMetadataReader();
             Assert.Equal("Microsoft.Direct3D.D3D12.winmd", reader.GetString(reader.GetAssemblyDefinition().Name));
             Assert.Equal(new Version(1, 0, 0, 0), reader.GetAssemblyDefinition().Version);
@@ -285,10 +273,10 @@ public class AgilitySdkTests : GeneratorTestBase
     [InlineData(Platform.X86)]
     [InlineData(Platform.X64)]
     [InlineData(Platform.Arm64)]
-    public void PublicAgilitySupportsTargetArchitecture(Platform platform)
+    public void SplitMetadataSupportsTargetArchitecture(Platform platform)
     {
         this.compilation = this.starterCompilations["net8.0"].WithOptions(this.compilation.Options.WithPlatform(platform));
-        this.generator = this.CreateSuperGenerator([BaselinePath, AgilityPath], DefaultTestGeneratorOptions with { AllowMarshaling = false });
+        this.generator = this.CreateSuperGenerator([BaselinePath, BaselineD3DPath], DefaultTestGeneratorOptions with { AllowMarshaling = false });
         this.GenerateApi("DML_BUFFER_BINDING");
         Assert.Single(this.FindGeneratedType("ID3D12Resource"));
     }

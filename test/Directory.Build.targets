@@ -4,5 +4,11 @@
     <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" Condition="Exists('xunit.runner.json')" />
   </ItemGroup>
 
+  <Target Name="CopyProjectionMetadataToTestOutput" AfterTargets="PrepareForBuild">
+    <ItemGroup>
+      <None Include="@(ProjectionMetadataWinmd)" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
+
   <Import Project="$([MSBuild]::GetPathOfFileAbove($(MSBuildThisFile), $(MSBuildThisFileDirectory)..))" />
 </Project>

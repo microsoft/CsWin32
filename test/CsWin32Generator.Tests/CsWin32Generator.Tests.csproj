@@ -10,9 +10,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="@(ProjectionMetadataWinmd)">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
     <None Include="..\Microsoft.Windows.CsWin32.Tests\ExternalMetadata\*.winmd">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>ExternalMetadata\%(FileName)%(Extension)</Link>

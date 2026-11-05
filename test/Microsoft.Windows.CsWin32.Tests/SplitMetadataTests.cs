@@ -5,8 +5,7 @@ using System.Reflection.PortableExecutable;
 
 public class SplitMetadataTests : GeneratorTestBase
 {
-    private static readonly string BaselinePath = Path.Combine(Path.GetDirectoryName(MetadataPath)!, "ExternalMetadata", "Windows.SdkBaseline.winmd");
-    private static readonly string BaselineD3DPath = Path.Combine(Path.GetDirectoryName(MetadataPath)!, "ExternalMetadata", "Microsoft.Direct3D.D3D12.Baseline.winmd");
+    private static readonly string BaselineD3DPath = Path.Combine(Path.GetDirectoryName(MetadataPath)!, "Microsoft.Direct3D.D3D12.winmd");
 
     public SplitMetadataTests(ITestOutputHelper logger)
         : base(logger)
@@ -25,7 +24,7 @@ public class SplitMetadataTests : GeneratorTestBase
         this.compilation = this.starterCompilations["net8.0"];
         string providerPath = BaselineD3DPath;
         this.generator = this.CreateSuperGenerator(
-            reverseRequests ? [providerPath, BaselinePath] : [BaselinePath, providerPath],
+            reverseRequests ? [providerPath, MetadataPath] : [MetadataPath, providerPath],
             DefaultTestGeneratorOptions with
             {
                 AllowMarshaling = allowMarshaling,
@@ -122,7 +121,7 @@ public class SplitMetadataTests : GeneratorTestBase
         this.compilation = this.starterCompilations["net8.0"];
         string providerPath = BaselineD3DPath;
         this.generator = this.CreateSuperGenerator(
-            reverseRequests ? [providerPath, BaselinePath] : [BaselinePath, providerPath],
+            reverseRequests ? [providerPath, MetadataPath] : [MetadataPath, providerPath],
             DefaultTestGeneratorOptions with { AllowMarshaling = true, ComInterop = new() { UseComSourceGenerators = false } });
         string[] requests =
         [
@@ -161,7 +160,7 @@ public class SplitMetadataTests : GeneratorTestBase
     {
         this.compilation = this.starterCompilations["net8.0"];
         this.generator = this.CreateSuperGenerator(
-            reverseRequests ? [BaselineD3DPath, BaselinePath] : [BaselinePath, BaselineD3DPath],
+            reverseRequests ? [BaselineD3DPath, MetadataPath] : [MetadataPath, BaselineD3DPath],
             DefaultTestGeneratorOptions with { AllowMarshaling = true, ComInterop = new() { UseComSourceGenerators = false } });
         string[] requests = ["ID3D12Device", "ID3D12Device14", "ID3D12VirtualizationGuestDevice"];
         if (reverseRequests)
@@ -212,7 +211,7 @@ public class SplitMetadataTests : GeneratorTestBase
         using Generator provider = new(BaselineD3DPath, null, [], options, this.compilation, this.parseOptions);
         Assert.ThrowsAny<GenerationFailedException>(() => provider.TryGenerate("ID3D12Resource", CancellationToken.None));
         Assert.Empty(provider.GetCompilationUnits(CancellationToken.None));
-        using Generator windows = new(BaselinePath, null, [], options, this.compilation, this.parseOptions);
+        using Generator windows = new(MetadataPath, null, [], options, this.compilation, this.parseOptions);
         this.generator = SuperGenerator.Combine(provider, windows);
         Assert.True(this.generator.TryGenerate("ID3D12Resource", CancellationToken.None));
         this.CollectGeneratedCode(this.generator);
@@ -222,7 +221,7 @@ public class SplitMetadataTests : GeneratorTestBase
     [Fact]
     public void SplitMetadataHasExplicitDisjointOwnership()
     {
-        using PEReader windows = new(File.OpenRead(BaselinePath));
+        using PEReader windows = new(File.OpenRead(MetadataPath));
         MetadataReader windowsReader = windows.GetMetadataReader();
         Assert.Equal(new Version(1, 0, 0, 0), windowsReader.GetAssemblyDefinition().Version);
         Assert.True(windowsReader.GetAssemblyDefinition().PublicKey.IsNil);
@@ -276,7 +275,7 @@ public class SplitMetadataTests : GeneratorTestBase
     public void SplitMetadataSupportsTargetArchitecture(Platform platform)
     {
         this.compilation = this.starterCompilations["net8.0"].WithOptions(this.compilation.Options.WithPlatform(platform));
-        this.generator = this.CreateSuperGenerator([BaselinePath, BaselineD3DPath], DefaultTestGeneratorOptions with { AllowMarshaling = false });
+        this.generator = this.CreateSuperGenerator([MetadataPath, BaselineD3DPath], DefaultTestGeneratorOptions with { AllowMarshaling = false });
         this.GenerateApi("DML_BUFFER_BINDING");
         Assert.Single(this.FindGeneratedType("ID3D12Resource"));
     }

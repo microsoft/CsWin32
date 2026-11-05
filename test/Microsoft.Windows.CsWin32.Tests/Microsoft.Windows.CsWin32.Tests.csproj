@@ -6,12 +6,16 @@
     <RootNamespace />
   </PropertyGroup>
 
-  <ItemGroup>
-    <_AssemblyMetadata1 Include="@(ProjectionMetadataWinmd)">
-      <Value>%(Identity)</Value>
-    </_AssemblyMetadata1>
-    <AssemblyMetadata Include="@(_AssemblyMetadata1->'ProjectionMetadataWinmd')" />
+  <Target Name="RecordProjectionMetadata" AfterTargets="PrepareForBuild">
+    <ItemGroup>
+      <_AssemblyMetadata1 Include="@(ProjectionMetadataWinmd)">
+        <Value>%(Identity)</Value>
+      </_AssemblyMetadata1>
+      <AssemblyMetadata Include="@(_AssemblyMetadata1->'ProjectionMetadataWinmd')" />
+    </ItemGroup>
+  </Target>
 
+  <ItemGroup>
     <_AssemblyMetadata2 Include="@(ProjectionDocs)">
       <Value>%(Identity)</Value>
     </_AssemblyMetadata2>
@@ -19,9 +23,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="@(ProjectionMetadataWinmd)">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
     <None Include="@(ProjectionDocs)">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

@@ -40,7 +40,7 @@ public partial class ComOutPtrMarshallingTests
 
         Assert.NotNull(stream);
         byte[] buffer = new byte[16];
-        stream.Read(buffer, out uint bytesRead);
+        _ = stream.Read(buffer, out uint bytesRead);
         Assert.True(bytesRead > 0);
     }
 
@@ -166,7 +166,7 @@ public partial class ComOutPtrMarshallingTests
             returnedStream =>
             {
                 byte[] buffer = new byte[8];
-                returnedStream.Read(buffer, out uint bytesRead);
+                _ = returnedStream.Read(buffer, out uint bytesRead);
                 Assert.True(bytesRead > 0);
             });
     }

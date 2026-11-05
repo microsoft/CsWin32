@@ -68,7 +68,7 @@ public partial class Generator
                 string metadataName = typeName.ToString();
                 if (metadataName.StartsWith(GlobalWinmdRootNamespaceAlias + ".", StringComparison.Ordinal))
                 {
-                    metadataName = this.MetadataIndex.CommonNamespace + metadataName.Substring(GlobalWinmdRootNamespaceAlias.Length);
+                    metadataName = this.Namespace + metadataName.Substring(GlobalWinmdRootNamespaceAlias.Length);
                 }
                 else if (metadataName.StartsWith(GlobalNamespacePrefix, StringComparison.Ordinal))
                 {

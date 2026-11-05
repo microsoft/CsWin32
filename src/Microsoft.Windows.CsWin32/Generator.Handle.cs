@@ -33,6 +33,13 @@ public partial class Generator
             MethodDefinitionHandle? releaseMethodHandle = this.GetMethodByName(releaseMethod);
             if (!releaseMethodHandle.HasValue)
             {
+                if (valueType is HandleTypeHandleInfo handle
+                    && handle.Generator.GetQualifiedTypeDefinition(handle.Handle) is QualifiedTypeDefinition owner
+                    && owner.Generator != this)
+                {
+                    return owner.Generator.RequestSafeHandle(releaseMethod, valueType, allowAbstract);
+                }
+
                 throw new GenerationFailedException("Unable to find release method named: " + releaseMethod);
             }
 
@@ -363,9 +370,14 @@ public partial class Generator
 
         if (handleStructDefHandle.Kind == HandleKind.TypeReference)
         {
-            if (this.TryGetTypeDefHandle((TypeReferenceHandle)handleStructDefHandle, out TypeDefinitionHandle typeDefHandle))
+            if (this.TryGetContextualReleaseMethod(handleReferenceAttributes, out releaseMethod))
             {
-                return this.TryGetHandleReleaseMethod(typeDefHandle, handleReferenceAttributes, out releaseMethod);
+                return true;
+            }
+
+            if (this.TryGetTypeDefHandle((TypeReferenceHandle)handleStructDefHandle, out QualifiedTypeDefinitionHandle typeDefHandle))
+            {
+                return typeDefHandle.Generator.TryGetHandleReleaseMethod(typeDefHandle.DefinitionHandle, null, out releaseMethod);
             }
         }
         else if (handleStructDefHandle.Kind == HandleKind.TypeDefinition)

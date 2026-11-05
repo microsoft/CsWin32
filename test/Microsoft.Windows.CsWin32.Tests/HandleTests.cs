@@ -72,6 +72,17 @@ public class HandleTests : GeneratorTestBase
         this.GenerateApi("OROpenHive");
     }
 
+    [Fact]
+    public void ExternalWideHandleRetainsRawInput()
+    {
+        this.generator = this.CreateSuperGenerator(DefaultMetadataPaths, DefaultTestGeneratorOptions);
+        this.GenerateApi("EtwWrite");
+
+        Assert.Empty(this.FindGeneratedType("EventUnregisterSafeHandle"));
+        Assert.All(this.FindGeneratedMethod("EtwWrite"), method =>
+            Assert.EndsWith(".REGHANDLE", method.ParameterList.Parameters[0].Type!.ToString()));
+    }
+
     /// <summary>
     /// Verifies that MSIHANDLE is wrapped with a SafeHandle even though it is a 32-bit handle.
     /// This is safe because we never pass SafeHandle directly to extern methods, so we can fix the length of the parameter or return value.

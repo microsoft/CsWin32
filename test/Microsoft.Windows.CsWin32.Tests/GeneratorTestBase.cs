@@ -10,7 +10,9 @@ public abstract class GeneratorTestBase : IDisposable, IAsyncLifetime
     protected static readonly string FileSeparator = new string('=', 140);
     protected static readonly string MetadataPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "Windows.Win32.winmd");
     protected static readonly string WdkMetadataPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "Windows.Wdk.winmd");
-    protected static readonly string[] DefaultMetadataPaths = new[] { MetadataPath, WdkMetadataPath };
+    protected static readonly string[] DefaultMetadataPaths = GeneratorConfiguration.Default.InputMetadataPaths
+        .Select(path => Path.Combine(Path.GetDirectoryName(MetadataPath)!, Path.GetFileName(path))).ToArray();
+
     ////protected static readonly string DiaMetadataPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "Microsoft.Dia.winmd");
     protected static readonly string ServiceFabricMetadataPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "ExternalMetadata", "ServiceFabric.winmd");
     protected static readonly string CustomIInspectableMetadataPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location!)!, "ExternalMetadata", "CustomIInspectable.winmd");

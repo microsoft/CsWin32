@@ -535,7 +535,7 @@ public partial class Generator
 
             if (ccwThisParameter is not null && !ccwMethodsToSkip.Contains(methodDefHandle))
             {
-                if (this.TryGetPropertyAccessorInfo(methodDefinition, originalIfaceName, context, out propertyName, out accessorKind, out propertyType, out propertyMarshalAsAttribute) &&
+                if (methodDefinition.Generator.TryGetPropertyAccessorInfo(methodDefinition, originalIfaceName, context, out propertyName, out accessorKind, out propertyType, out propertyMarshalAsAttribute) &&
                     ifaceDeclaredProperties!.Contains(propertyName.Identifier.ValueText))
                 {
                     switch (accessorKind)
@@ -1463,6 +1463,13 @@ public partial class Generator
 
     private bool TryDeclareCOMGuidInterfaceIfNecessary()
     {
+        if (this.SuperGenerator?.GetNamespaceOwner(this) is { } owner && owner != this)
+        {
+            bool declared = false;
+            owner.volatileCode.GenerationTransaction(() => declared = owner.TryDeclareCOMGuidInterfaceIfNecessary());
+            return declared;
+        }
+
         if (this.comIIDInterfacePredefined)
         {
             return true;

@@ -70,12 +70,6 @@ public partial class Generator
 
         internal bool NeedsWinRTCustomMarshaler { get; private set; }
 
-        internal IEnumerable<MemberDeclarationSyntax> GeneratedTypes => this.GetTypesWithInjectedFields()
-            .Concat(this.specialTypes.Values.Where(st => !st.TopLevel).Select(st => st.Type))
-            .Concat(this.safeHandleTypes)
-            .Concat(this.inlineArrays.Values)
-            .Concat(this.customTypeMarshallers.Values.Select(x => x.ClassDeclaration));
-
         internal IEnumerable<MemberDeclarationSyntax> GeneratedTopLevelTypes => this.specialTypes.Values.Where(st => st.TopLevel).Select(st => st.Type);
 
         internal IReadOnlyCollection<ClassDeclarationSyntax> ComInterfaceExtensions => this.comInterfaceFriendlyExtensionsMembers;
@@ -105,6 +99,17 @@ public partial class Generator
         }
 
         internal IEnumerable<MethodDeclarationSyntax> Macros => this.macros.Values;
+
+        /// <summary>
+        /// Gets generated types, omitting inline arrays already emitted by another generator in the same projection namespace.
+        /// </summary>
+        /// <param name="earlierGenerators">Committed code with earlier declaration ownership.</param>
+        /// <returns>The types to emit for this generator.</returns>
+        internal IEnumerable<MemberDeclarationSyntax> GetGeneratedTypes(IReadOnlyCollection<GeneratedCode> earlierGenerators) => this.GetTypesWithInjectedFields()
+            .Concat(this.specialTypes.Values.Where(st => !st.TopLevel).Select(st => st.Type))
+            .Concat(this.safeHandleTypes)
+            .Concat(this.inlineArrays.Where(array => !earlierGenerators.Any(g => g.IsInlineArrayStructGenerated(array.Key.Namespace, array.Key.Name))).Select(array => array.Value))
+            .Concat(this.customTypeMarshallers.Values.Select(x => x.ClassDeclaration));
 
         internal void AddSafeHandleType(ClassDeclarationSyntax safeHandleDeclaration)
         {

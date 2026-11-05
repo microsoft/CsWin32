@@ -91,7 +91,7 @@ internal record HandleTypeHandleInfo : TypeHandleInfo
                 TypeDefinition td = this.reader.GetTypeDefinition((TypeDefinitionHandle)this.Handle);
                 bool hasUnmanagedSuffix = inputs.Generator?.HasUnmanagedSuffix(this.reader, td.Name, inputs.AllowMarshaling, isManagedType) ?? false;
                 string simpleNameSuffix = hasUnmanagedSuffix ? Generator.UnmanagedInteropSuffix : string.Empty;
-                nameSyntax = inputs.QualifyNames ? GetNestingQualifiedName(inputs.Generator, this.reader, td, hasUnmanagedSuffix, isInterfaceNestedInStruct: false) : IdentifierName(this.reader.GetString(td.Name) + simpleNameSuffix);
+                nameSyntax = inputs.QualifyNames ? GetNestingQualifiedName(inputs.AvoidWinmdRootAlias ? null : inputs.Generator, this.reader, td, hasUnmanagedSuffix, isInterfaceNestedInStruct: false) : IdentifierName(this.reader.GetString(td.Name) + simpleNameSuffix);
                 isInterface = (td.Attributes & TypeAttributes.Interface) == TypeAttributes.Interface;
                 isNonCOMConformingInterface = isInterface && this.generator.IsNonCOMInterface(td) is true;
                 qtdh = new QualifiedTypeDefinitionHandle(this.generator, (TypeDefinitionHandle)this.Handle);

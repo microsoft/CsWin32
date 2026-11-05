@@ -39,6 +39,14 @@ public class SuperGenerator : IGenerator, IDisposable
             generator.SuperGenerator = super;
         }
 
+        foreach (Generator generator in super.Generators.Values)
+        {
+            generator.ProjectionNamespace = super.Generators.Values.Select(g => g.MetadataIndex.CommonNamespace)
+                .Where(ns => generator.MetadataIndex.CommonNamespace == ns ||
+                    generator.MetadataIndex.CommonNamespace.StartsWith(ns + ".", StringComparison.Ordinal))
+                .OrderBy(ns => ns.Length).First();
+        }
+
         return super;
     }
 
@@ -284,6 +292,16 @@ public class SuperGenerator : IGenerator, IDisposable
 
         return this.Generators.TryGetValue(winmdName, out targetGenerator);
     }
+
+    /// <summary>
+    /// Gets the generator responsible for shared projection helpers in a namespace.
+    /// </summary>
+    /// <param name="generator">The generator requesting a shared helper.</param>
+    /// <returns>A generator using the same projection namespace.</returns>
+    internal Generator GetNamespaceOwner(Generator generator) =>
+        this.Generators.Values.Where(g => g.ProjectionNamespace == generator.ProjectionNamespace)
+            .OrderByDescending(g => g.MetadataIndex.CommonNamespace == g.ProjectionNamespace)
+            .ThenBy(g => g.InputAssemblyName, StringComparer.Ordinal).First();
 
     internal Generator GetGeneratorFromReader(MetadataReader reader)
     {

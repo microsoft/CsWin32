@@ -12,24 +12,24 @@ public partial class Generator
             switch (handle.Handle.Kind)
             {
                 case HandleKind.TypeReference:
-                    if (this.TryGetTypeDefHandle((TypeReferenceHandle)handle.Handle, out TypeDefinitionHandle tdh))
+                    if (handle.Generator.TryGetTypeDefHandle((TypeReferenceHandle)handle.Handle, out QualifiedTypeDefinitionHandle tdh))
                     {
-                        return Resolve(tdh, out fieldType);
+                        return Resolve(tdh.Generator, tdh.DefinitionHandle, out fieldType);
                     }
 
                     break;
                 case HandleKind.TypeDefinition:
-                    return Resolve((TypeDefinitionHandle)handle.Handle, out fieldType);
+                    return Resolve(handle.Generator, (TypeDefinitionHandle)handle.Handle, out fieldType);
             }
         }
 
-        bool Resolve(TypeDefinitionHandle tdh, [NotNullWhen(true)] out TypeHandleInfo? fieldType)
+        static bool Resolve(Generator generator, TypeDefinitionHandle tdh, [NotNullWhen(true)] out TypeHandleInfo? fieldType)
         {
-            TypeDefinition td = this.Reader.GetTypeDefinition(tdh);
+            TypeDefinition td = generator.Reader.GetTypeDefinition(tdh);
             foreach (FieldDefinitionHandle fdh in td.GetFields())
             {
-                FieldDefinition fd = this.Reader.GetFieldDefinition(fdh);
-                fieldType = fd.DecodeSignature(this.SignatureHandleProvider, null);
+                FieldDefinition fd = generator.Reader.GetFieldDefinition(fdh);
+                fieldType = fd.DecodeSignature(generator.SignatureHandleProvider, null);
                 return true;
             }
 

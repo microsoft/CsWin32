@@ -153,7 +153,7 @@ public class SafeHandleLeaseTests : GeneratorTestBase
     }
 
     /// <summary>
-    /// Verifies that interpolating an owned path into a string copies its contents within the lifetime scope.
+    /// Verifies that string formatting and span-based copies consume an owned path within the lifetime scope.
     /// </summary>
     /// <param name="framework">The caller's target framework.</param>
     /// <param name="body">The caller's formatting code.</param>
@@ -165,6 +165,22 @@ public class SafeHandleLeaseTests : GeneratorTestBase
     [InlineData("net8.0", "using var lease = path.Lease(); WriteLine($\"Path: {lease.Value,20}\");", null)]
     [InlineData("net472", "string text; using (path) { text = $\"Path: {path.DangerousValue}\"; } WriteLine(text);", null)]
     [InlineData("net8.0", "string text; using (path) { text = $\"Path: {path.DangerousValue}\"; } WriteLine(text);", null)]
+    [InlineData("net472", "using var pPath = path; string filePath = System.IO.Path.Combine(pPath.DangerousValue.AsSpan().ToString(), \".earlystart\");", null)]
+    [InlineData("net8.0", "using var pPath = path; string filePath = System.IO.Path.Combine(pPath.DangerousValue.AsSpan().ToString(), \".earlystart\");", null)]
+    [InlineData("net472", "using var lease = path.Lease(); string text = lease.Value.AsSpan().ToString();", null)]
+    [InlineData("net8.0", "using var lease = path.Lease(); string text = lease.Value.AsSpan().ToString();", null)]
+    [InlineData("net472", "using (path) { string text = ((Windows.Win32.Foundation.PCWSTR)path.DangerousValue).AsSpan().ToString(); }", null)]
+    [InlineData("net8.0", "using (path) { string text = ((Windows.Win32.Foundation.PCWSTR)path.DangerousValue).AsSpan().ToString(); }", null)]
+    [InlineData("net472", "string text; using (path) { text = ((path.DangerousValue).AsSpan()).Slice(1).ToString(); } WriteLine(text);", null)]
+    [InlineData("net8.0", "string text; using (path) { text = ((path.DangerousValue).AsSpan()).Slice(1).ToString(); } WriteLine(text);", null)]
+    [InlineData("net472", "WriteLine(path.DangerousValue.AsSpan().ToString());", "PInvoke016")]
+    [InlineData("net8.0", "WriteLine(path.DangerousValue.AsSpan().ToString());", "PInvoke016")]
+    [InlineData("net472", "using (path) { var saved = path.DangerousValue.AsSpan(); }", "PInvoke017")]
+    [InlineData("net8.0", "using (path) { var saved = path.DangerousValue.AsSpan(); }", "PInvoke017")]
+    [InlineData("net472", "using (path) { var saved = ((Windows.Win32.Foundation.PCWSTR)path.DangerousValue).AsSpan(); }", "PInvoke017")]
+    [InlineData("net8.0", "using (path) { var saved = ((Windows.Win32.Foundation.PCWSTR)path.DangerousValue).AsSpan(); }", "PInvoke017")]
+    [InlineData("net472", "using var lease = path.Lease(); var saved = lease.Value.AsSpan().Slice(1);", "PInvoke017")]
+    [InlineData("net8.0", "using var lease = path.Lease(); var saved = lease.Value.AsSpan().Slice(1);", "PInvoke017")]
     [InlineData("net472", "WriteLine($\"Path: {path.DangerousValue}\");", "PInvoke016")]
     [InlineData("net8.0", "WriteLine($\"Path: {path.DangerousValue}\");", "PInvoke016")]
     [InlineData("net472", "System.FormattableString text; using (path) { text = $\"Path: {path.DangerousValue}\"; } WriteLine(text.ToString());", "PInvoke017")]
@@ -201,6 +217,38 @@ public class SafeHandleLeaseTests : GeneratorTestBase
             Assert.Equal(expectedDiagnostic, diagnostic.Id);
             Assert.Equal(DiagnosticSeverity.Error, diagnostic.Severity);
         }
+    }
+
+    /// <summary>
+    /// Verifies that returning a span over an owned path is still a resource escape.
+    /// </summary>
+    /// <param name="framework">The caller's target framework.</param>
+    /// <param name="useLease">Whether the caller acquires a lease.</param>
+    [Theory, CombinatorialData]
+    public async Task KnownFolderPathSpanReturnDiagnostics(
+        [CombinatorialValues("net472", "net8.0")] string framework, bool useLease)
+    {
+        this.compilation = this.starterCompilations[framework];
+        this.generator = this.CreateGenerator();
+        Assert.True(this.generator.TryGenerate("SHGetKnownFolderPath", CancellationToken.None));
+        this.CollectGeneratedCode(this.generator);
+        this.compilation = this.AddCode($$"""
+            using Windows.Win32;
+            static class Usage
+            {
+                static System.Span<char> Get()
+                {
+                    PInvoke.SHGetKnownFolderPath(default, 0, null, out var path);
+                    using var local = path;
+                    {{(useLease ? "using var lease = local.Lease();" : string.Empty)}}
+                    return {{(useLease ? "lease.Value" : "local.DangerousValue")}}.AsSpan().Slice(1);
+                }
+            }
+            """);
+        this.AssertNoDiagnostics(logAllGeneratedCode: false);
+        Diagnostic diagnostic = Assert.Single(await this.AnalyzeAsync());
+        Assert.Equal("PInvoke017", diagnostic.Id);
+        Assert.Equal(DiagnosticSeverity.Error, diagnostic.Severity);
     }
 
     /// <summary>

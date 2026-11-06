@@ -9,7 +9,6 @@ trigger:
     exclude:
     - doc/
     - '*.md'
-    - .vscode/
     - .github/
     - azure-pipelines/release.yml
 

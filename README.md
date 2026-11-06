@@ -23,3 +23,7 @@ C#/Win32 provides **P/Invoke** and **COM Interop** projection support for C#. It
 ## Demo
 
 ![Animation demonstrating p/invoke code generation](docfx/images/demo.gif)
+
+## Building from source
+
+Install the .NET SDK specified in `global.json`, then open `Microsoft.Windows.CsWin32.slnx` in a compatible Visual Studio or run `dotnet build` from the repository root. No initialization script is required. See [CONTRIBUTING.md](CONTRIBUTING.md) for testing, packaging, and official build instructions.

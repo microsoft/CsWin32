@@ -168,11 +168,7 @@ field storage, parameter passing, returns, and explicit disposal (`PInvoke015`).
 It also reports errors for `DangerousValue` or a lease's `Value` without a visible
 scope (`PInvoke016`), saving or returning a raw resource (`PInvoke017`), and releasing
 an owned resource directly (`PInvoke018`). Use these accessors directly in calls,
-or copy their contents into managed data such as a string. For example,
-`path.DangerousValue.AsSpan().ToString()` copies the path into a managed string
-inside the owner's `using` scope; `lease.Value.AsSpan().ToString()` does the same
-inside a lease's scope. Saving or returning the intermediate span still reports
-`PInvoke017` because it references the native memory. String interpolation
+or copy their contents into managed data such as a string. String interpolation
 such as `$"Path: {path.DangerousValue}"` is allowed inside the owner's or lease's
 scope. Interpolation into `FormattableString` or `IFormattable` retains the raw
 arguments for later formatting and is not a string copy. C# ref structs remain

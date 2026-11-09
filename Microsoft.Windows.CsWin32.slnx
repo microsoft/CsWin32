@@ -30,9 +30,18 @@
     <File Path="test/GenerationSandbox.props" />
     <Project Path="test/CsWin32Generator.BuildTasks.Tests/CsWin32Generator.BuildTasks.Tests.csproj" />
     <Project Path="test/CsWin32Generator.Tests/CsWin32Generator.Tests.csproj" />
-    <Project Path="test/GenerationSandbox.AutoWinRTDisabled.Tests/GenerationSandbox.AutoWinRTDisabled.Tests.csproj" />
-    <Project Path="test/GenerationSandbox.BuildTask.Tests/GenerationSandbox.BuildTask.Tests.csproj" />
-    <Project Path="test/GenerationSandbox.BuiltInCom.Tests/GenerationSandbox.BuiltInCom.Tests.csproj" />
+    <Project Path="test/GenerationSandbox.AutoWinRTDisabled.Tests/GenerationSandbox.AutoWinRTDisabled.Tests.csproj">
+      <BuildDependency Project="src/CsWin32Generator/CsWin32Generator.csproj" />
+      <BuildDependency Project="src/Microsoft.Windows.CsWin32.BuildTasks/Microsoft.Windows.CsWin32.BuildTasks.csproj" />
+    </Project>
+    <Project Path="test/GenerationSandbox.BuildTask.Tests/GenerationSandbox.BuildTask.Tests.csproj">
+      <BuildDependency Project="src/CsWin32Generator/CsWin32Generator.csproj" />
+      <BuildDependency Project="src/Microsoft.Windows.CsWin32.BuildTasks/Microsoft.Windows.CsWin32.BuildTasks.csproj" />
+    </Project>
+    <Project Path="test/GenerationSandbox.BuiltInCom.Tests/GenerationSandbox.BuiltInCom.Tests.csproj">
+      <BuildDependency Project="src/CsWin32Generator/CsWin32Generator.csproj" />
+      <BuildDependency Project="src/Microsoft.Windows.CsWin32.BuildTasks/Microsoft.Windows.CsWin32.BuildTasks.csproj" />
+    </Project>
     <Project Path="test/GenerationSandbox.Tests/GenerationSandbox.Tests.csproj" />
     <Project Path="test/GenerationSandbox.Unmarshalled.Tests/GenerationSandbox.Unmarshalled.Tests.csproj" />
     <Project Path="test/Microsoft.Windows.CsWin32.Tests/Microsoft.Windows.CsWin32.Tests.csproj" />

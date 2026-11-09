@@ -656,15 +656,18 @@ public partial class Generator
 
                     if (this.canUseMarshalInitHandle)
                     {
-                        // Some = new SafeHandle(default, ownsHandle: true);
-                        leadingStatements.Add(
-                            ExpressionStatement(
-                                AssignmentExpression(
-                                    SyntaxKind.SimpleAssignmentExpression,
-                                    origName,
-                                    ObjectCreationExpression(safeHandleType, [Argument(LiteralExpression(SyntaxKind.DefaultLiteralExpression)), ownsHandleArgument]))));
+                        IdentifierNameSyntax safeHandleLocalName = IdentifierName(externParam.Identifier.ValueText + "SafeHandle");
 
-                        // global::System.Runtime.InteropServices.Marshal.InitHandle(Some, SomeLocal);
+                        // SafeHandle SomeSafeHandle = new SafeHandle(default, ownsHandle: true);
+                        leadingStatements.Add(
+                            LocalDeclarationStatement(
+                                VariableDeclaration(
+                                    safeHandleType,
+                                    [VariableDeclarator(
+                                        safeHandleLocalName.Identifier,
+                                        EqualsValueClause(ObjectCreationExpression(safeHandleType, [Argument(LiteralExpression(SyntaxKind.DefaultLiteralExpression)), ownsHandleArgument])))])));
+
+                        // global::System.Runtime.InteropServices.Marshal.InitHandle(SomeSafeHandle, SomeLocal);
                         trailingStatements.Add(
                             ExpressionStatement(
                                 InvocationExpression(
@@ -673,9 +676,14 @@ public partial class Generator
                                         ParseName($"global::{typeof(Marshal).FullName}"),
                                         IdentifierName("InitHandle")),
                                     [
-                                        Argument(origName),
+                                        Argument(safeHandleLocalName),
                                         Argument(this.GetIntPtrFromTypeDef(localName, pointedElementInfo)),
                                     ])));
+
+                        trailingStatements.Add(ExpressionStatement(AssignmentExpression(
+                            SyntaxKind.SimpleAssignmentExpression,
+                            origName,
+                            safeHandleLocalName)));
                     }
                     else
                     {

@@ -268,7 +268,10 @@ public sealed class SafeHandleAnalyzer : DiagnosticAnalyzer
         {
             if (use.Parent is IConversionOperation or IParenthesizedOperation
                 || (use.Parent is IFieldReferenceOperation field && field.Instance == use)
-                || (use.Parent is IPropertyReferenceOperation member && member.Instance == use))
+                || (use.Parent is IPropertyReferenceOperation member && member.Instance == use)
+                || (use.Parent is IInvocationOperation spanInvocation && spanInvocation.Instance == use
+                    && spanInvocation.Type is INamedTypeSymbol { Name: "Span" or "ReadOnlySpan", Arity: 1 } span
+                    && span.ContainingNamespace.ToDisplayString() == "System"))
             {
                 use = use.Parent;
                 if (use.Type?.SpecialType is SpecialType.System_Boolean or SpecialType.System_String)

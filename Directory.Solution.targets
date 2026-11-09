@@ -1,0 +1,4 @@
+<Project>
+  <!-- The package includes the non-packable generator and MSBuild task projects. -->
+  <Target Name="BuildSolutionBeforePack" BeforeTargets="Pack" DependsOnTargets="Build" Condition="'$(NoBuild)' != 'true'" />
+</Project>

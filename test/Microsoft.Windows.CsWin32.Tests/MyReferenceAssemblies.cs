@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 #pragma warning disable SA1202 // Elements should be ordered by access - because field initializer depend on each other
@@ -27,13 +27,16 @@ internal static class MyReferenceAssemblies
 
     private static string FindNuGetConfigPath()
     {
+        bool useMicroBuild = string.Equals(Environment.GetEnvironmentVariable("TF_BUILD"), "true", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(Environment.GetEnvironmentVariable("EnableMicroBuild"), "true", StringComparison.OrdinalIgnoreCase)
+            || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SignType"));
         string? path = AppContext.BaseDirectory;
         while (path is not null)
         {
             string candidate = Path.Combine(path, "nuget.config");
             if (File.Exists(candidate))
             {
-                return candidate;
+                return useMicroBuild ? Path.Combine(path, "azure-pipelines", "nuget.config") : candidate;
             }
 
             path = Path.GetDirectoryName(path);

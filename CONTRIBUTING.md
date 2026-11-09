@@ -12,33 +12,21 @@ with any additional questions or comments.
 * Use Windows PowerShell or [PowerShell Core][pwsh] (including on Linux/OSX) to run .ps1 scripts.
   Some scripts set environment variables to help you, but they are only retained if you use PowerShell as your shell.
 
-## Prerequisites
+## Building and testing
 
-All dependencies can be installed by running the `init.ps1` script at the root of the repository
-using Windows PowerShell or [PowerShell Core][pwsh] (on any OS).
-Some dependencies installed by `init.ps1` may only be discoverable from the same command line environment the init script was run from due to environment variables, so be sure to launch Visual Studio or build the repo from that same environment.
-Alternatively, run `init.ps1 -InstallLocality Machine` (which may require elevation) in order to install dependencies at machine-wide locations so Visual Studio and builds work everywhere.
+Install the [.NET SDK](https://get.dot.net/) version specified in `global.json`. From the repository root, the standard .NET CLI commands are:
 
-The only prerequisite for building, testing, and deploying from this repository
-is the [.NET SDK](https://get.dot.net/).
-You should install the version specified in `global.json` or a later version within
-the same major.minor.Bxx "hundreds" band.
-For example if 2.2.300 is specified, you may install 2.2.300, 2.2.301, or 2.2.310
-while the 2.2.400 version would not be considered compatible by .NET SDK.
-See [.NET Core Versioning](https://learn.microsoft.com/dotnet/core/versions/) for more information.
+```console
+dotnet build
+dotnet test --filter "TestCategory!=HighMemory&TestCategory!=RequiresHardware"
+dotnet pack -c Release
+```
 
-## Package restore
+Open `Microsoft.Windows.CsWin32.slnx` in Visual Studio to build the repository as a solution.
 
-The easiest way to restore packages may be to run `init.ps1` which automatically authenticates
-to the feeds that packages for this repo come from, if any.
-`dotnet restore` or `nuget restore` also work but may require extra steps to authenticate to any applicable feeds.
-
-## Building
+Package restore runs automatically. The test projects may need their target runtimes installed to run. Use `init.ps1` from PowerShell if you want the repository helper to install SDKs, runtimes, or the NuGet credential provider. It may set environment variables, so build from the same PowerShell session; use `-InstallLocality Machine` for machine-wide installs. The helper is optional when those prerequisites are already available.
 
 This repository can be built on Windows, Linux, and OSX.
-
-Building, testing, and packing this repository can be done by using the standard dotnet CLI commands (e.g. `dotnet build`, `dotnet test`, `dotnet pack`, etc.).
-
 ## Parsing the metadata
 
 The win32metadata has [these little "gems"](https://github.com/microsoft/win32metadata/blob/main/docs/projections.md) that CsWin32 should consider consuming to improve the quality of the generated APIs.

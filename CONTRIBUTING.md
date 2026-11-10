@@ -1,34 +1,19 @@
-# Contributing
+# Contribution to CsWin32
 
-This project has adopted the [Microsoft Open Source Code of
-Conduct](https://opensource.microsoft.com/codeofconduct/).
-For more information see the [Code of Conduct
-FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
-contact [opencode@microsoft.com](mailto:opencode@microsoft.com)
-with any additional questions or comments.
+You can contribute to CsWin32 with issues and PRs. Simply filing issues for problems you encounter is a great way to contribute. Contributing implementations is greatly appreciated.
 
-## Best practices
+## Prerequisites
 
-* Use Windows PowerShell or [PowerShell Core][pwsh] (including on Linux/OSX) to run .ps1 scripts.
-  Some scripts set environment variables to help you, but they are only retained if you use PowerShell as your shell.
+- Visual Studio 2022 or 2026
+- [.NET SDK](https://get.dot.net/) version specified in `global.json`
+- Windows, Linux, or OSX.
 
-## Building and testing
+## Building and Testing
 
-Install the [.NET SDK](https://get.dot.net/) version specified in `global.json`. From the repository root, the standard .NET CLI commands are:
-
-```console
-dotnet build
-dotnet test --filter "TestCategory!=HighMemory&TestCategory!=RequiresHardware"
-dotnet pack -c Release
-```
-
-The filtered test command is significantly faster and catches most issues. The full test suite also runs for PRs; run all tests locally when changing code generation or signatures.
-
-Open `Microsoft.Windows.CsWin32.slnx` in Visual Studio to build the repository as a solution.
+Open `Microsoft.Windows.CsWin32.slnx` in Visual Studio to build the repository as a solution, or run `dotnet build` and `dotnet test` (the full test suite)
 
 Package restore runs automatically. The test projects may need their target runtimes installed to run. Use `init.ps1` from PowerShell if you want the repository helper to install SDKs, runtimes, or the NuGet credential provider. It may set environment variables, so build from the same PowerShell session; use `-InstallLocality Machine` for machine-wide installs. The helper is optional when those prerequisites are already available.
 
-This repository can be built on Windows, Linux, and OSX.
 ## Parsing the metadata
 
 The win32metadata has [these little "gems"](https://github.com/microsoft/win32metadata/blob/main/docs/projections.md) that CsWin32 should consider consuming to improve the quality of the generated APIs.

@@ -142,7 +142,7 @@ public class ComRuntimeTests(ITestOutputHelper outputHelper)
 
         unsafe
         {
-            PInvoke.CoSetProxyBlanket(
+            _ = PInvoke.CoSetProxyBlanket(
                     services,
                     10, // RPC_C_AUTHN_WINNT is 10
                     0,  // RPC_C_AUTHZ_NONE is 0
@@ -210,7 +210,7 @@ public class ComRuntimeTests(ITestOutputHelper outputHelper)
         var aaObjects = new object[authorizedApplications.Count];
 
         var applicationsEnum = (IEnumVARIANT)authorizedApplications._NewEnum;
-        applicationsEnum.Next((uint)authorizedApplications.Count, aaObjects, out uint fetched);
+        _ = applicationsEnum.Next((uint)authorizedApplications.Count, aaObjects, out uint fetched);
 
         foreach (var aaObject in aaObjects)
         {
@@ -256,7 +256,7 @@ public class ComRuntimeTests(ITestOutputHelper outputHelper)
             // ISequentialStream, forcing an upcast that triggered QI for IID_ISequentialStream on the
             // Shell-returned IStream (which fails).
             byte[] buffer = new byte[16];
-            stream.Read(buffer, out uint bytesRead);
+            _ = stream.Read(buffer, out uint bytesRead);
 
             Assert.True(bytesRead > 0, "Expected to read at least one byte from win.ini.");
 
@@ -269,7 +269,7 @@ public class ComRuntimeTests(ITestOutputHelper outputHelper)
             stream.Stat(&stat, STATFLAG.STATFLAG_NONAME);
             Assert.True(stat.cbSize > 0, "Expected Stat to report a non-empty file size.");
 
-            stream.Read(buffer, out uint bytesReadAfterSeek);
+            _ = stream.Read(buffer, out uint bytesReadAfterSeek);
             Assert.Equal(bytesRead, bytesReadAfterSeek);
         }
     }
@@ -297,7 +297,7 @@ public class ComRuntimeTests(ITestOutputHelper outputHelper)
             shellItem.BindToHandler<IStream>(null, bhidStream, out IStream stream);
 
             byte[] buffer = new byte[16];
-            stream.Read(buffer, out uint bytesRead);
+            _ = stream.Read(buffer, out uint bytesRead);
             Assert.True(bytesRead > 0, "Expected to read at least one byte from win.ini via generic overload.");
         }
     }

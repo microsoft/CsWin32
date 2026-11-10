@@ -22,6 +22,8 @@ dotnet test --filter "TestCategory!=HighMemory&TestCategory!=RequiresHardware"
 dotnet pack -c Release
 ```
 
+The filtered test command is significantly faster and catches most issues. The full test suite also runs for PRs; run all tests locally when changing code generation or signatures.
+
 Open `Microsoft.Windows.CsWin32.slnx` in Visual Studio to build the repository as a solution.
 
 Package restore runs automatically. The test projects may need their target runtimes installed to run. Use `init.ps1` from PowerShell if you want the repository helper to install SDKs, runtimes, or the NuGet credential provider. It may set environment variables, so build from the same PowerShell session; use `-InstallLocality Machine` for machine-wide installs. The helper is optional when those prerequisites are already available.

@@ -22,6 +22,7 @@
     <Project Path="src/CsWin32Generator/CsWin32Generator.csproj" />
     <Project Path="src/Microsoft.Windows.CsWin32.BuildTasks/Microsoft.Windows.CsWin32.BuildTasks.csproj" />
     <Project Path="src/Microsoft.Windows.CsWin32/Microsoft.Windows.CsWin32.csproj" />
+    <Project Path="src/Microsoft.Windows.CsWin32.Roslyn4/Microsoft.Windows.CsWin32.Roslyn4.csproj" />
   </Folder>
   <Folder Name="/test/">
     <File Path="test/.editorconfig" />
@@ -50,5 +51,4 @@
       <Build Solution="*|NonWindows" Project="false" />
     </Project>
   </Folder>
-  <Project Path="src/Microsoft.Windows.CsWin32.Roslyn4/Microsoft.Windows.CsWin32.Roslyn4.csproj" />
 </Solution>

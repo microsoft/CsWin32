@@ -4,6 +4,7 @@
     <CsWin32RunAsBuildTask Condition="'$(CsWin32RunAsBuildTask)'==''">false</CsWin32RunAsBuildTask>
     <GeneratorBuildTasksPath Condition="'$(GeneratorBuildTasksPath)'==''">$(MSBuildThisFileDirectory)</GeneratorBuildTasksPath>
     <GeneratorBuildTasksTaskFactory Condition="'$(GeneratorBuildTasksTaskFactory)'==''">AssemblyTaskFactory</GeneratorBuildTasksTaskFactory>
+    <_CsWin32AppName Condition="$(ProjectName.EndsWith('.cs'))">$([System.IO.Path]::GetFileNameWithoutExtension('$(ProjectName)'))</_CsWin32AppName>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,6 +22,12 @@
       <Generator Condition="'$(CsWin32RunAsBuildTask)'=='true'">MSBuild:Compile</Generator>
     </AdditionalFiles>
     <AdditionalFiles Include="$(ProjectName).NativeMethods.txt" Condition="Exists('$(ProjectName).NativeMethods.txt')">
+      <Generator Condition="'$(CsWin32RunAsBuildTask)'=='true'">MSBuild:Compile</Generator>
+    </AdditionalFiles>
+    <AdditionalFiles Include="$(_CsWin32AppName).NativeMethods.json" Condition="'$(_CsWin32AppName)'!='' and Exists('$(_CsWin32AppName).NativeMethods.json')">
+      <Generator Condition="'$(CsWin32RunAsBuildTask)'=='true'">MSBuild:Compile</Generator>
+    </AdditionalFiles>
+    <AdditionalFiles Include="$(_CsWin32AppName).NativeMethods.txt" Condition="'$(_CsWin32AppName)'!='' and Exists('$(_CsWin32AppName).NativeMethods.txt')">
       <Generator Condition="'$(CsWin32RunAsBuildTask)'=='true'">MSBuild:Compile</Generator>
     </AdditionalFiles>
   </ItemGroup>

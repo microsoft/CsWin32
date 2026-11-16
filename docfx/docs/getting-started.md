@@ -83,6 +83,10 @@ CsWin32 will read them all to generate APIs, provided these files are included a
 A `NativeMethods.txt` file directly in the project directory is added automatically to `AdditionalFiles`.
 Files in other directories must be added to the project file manually.
 
+CsWin32 also automatically discovers `$(ProjectName).NativeMethods.txt` and `$(ProjectName).NativeMethods.json`.
+For file-based apps, the `.cs` extension is omitted: `app.cs` can use `app.NativeMethods.txt` and `app.NativeMethods.json` alongside it.
+The shared `NativeMethods.txt` and `NativeMethods.json` filenames remain supported.
+
 Whether API requests are all in a single NativeMethods.txt file or split across many makes no difference to the generated result.
 We recommend using just one NativeMethods.txt file and keeping it sorted for easy bookkeeping.
 Multiple files perhaps makes the most sense in a Shared Project scenario where several API requests will be common across many projects, so sharing a NativeMethods.txt file with those same projects that contain all the necessary APIs for the set of shared source files make maintenance easier.

@@ -53,7 +53,7 @@ public partial class COMTests(ITestOutputHelper outputHelper)
                 {
                     Compositor compositor = new();
 
-                    PInvoke.D3D11CreateDevice(
+                    _ = PInvoke.D3D11CreateDevice(
                         null,
                         D3D_DRIVER_TYPE.D3D_DRIVER_TYPE_HARDWARE,
                         HINSTANCE.Null,
@@ -240,7 +240,7 @@ public partial class COMTests(ITestOutputHelper outputHelper)
 
         unsafe
         {
-            PInvoke.CoSetProxyBlanket(
+            _ = PInvoke.CoSetProxyBlanket(
                     services,
                     10, // RPC_C_AUTHN_WINNT is 10
                     0,  // RPC_C_AUTHZ_NONE is 0
@@ -272,7 +272,7 @@ public partial class COMTests(ITestOutputHelper outputHelper)
         var aaObjects = new ComVariant[authorizedApplications.get_Count()];
 
         var applicationsEnum = (IEnumVARIANT)authorizedApplications.get__NewEnum();
-        applicationsEnum.Next((uint)authorizedApplications.get_Count(), aaObjects, out uint fetched);
+        _ = applicationsEnum.Next((uint)authorizedApplications.get_Count(), aaObjects, out uint fetched);
 
         foreach (var aaObject in aaObjects)
         {
@@ -344,7 +344,7 @@ public partial class COMTests(ITestOutputHelper outputHelper)
             // ISequentialStream, forcing an upcast that triggered QI for IID_ISequentialStream on the
             // Shell-returned IStream (which fails).
             byte[] buffer = new byte[16];
-            stream.Read(buffer, out uint bytesRead);
+            _ = stream.Read(buffer, out uint bytesRead);
 
             Assert.True(bytesRead > 0, "Expected to read at least one byte from win.ini.");
 
@@ -358,7 +358,7 @@ public partial class COMTests(ITestOutputHelper outputHelper)
             Assert.True(stat.cbSize > 0, "Expected Stat to report a non-empty file size.");
 
             // Read again after Seek to confirm the seek took effect on the same vtable slot.
-            stream.Read(buffer, out uint bytesReadAfterSeek);
+            _ = stream.Read(buffer, out uint bytesReadAfterSeek);
             Assert.Equal(bytesRead, bytesReadAfterSeek);
         }
     }

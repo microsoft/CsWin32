@@ -4,7 +4,7 @@ You can contribute to CsWin32 with issues and PRs. Simply filing issues for prob
 
 ## Prerequisites
 
-- Visual Studio 2022 or 2026
+- Visual Studio 2026
 - [.NET SDK](https://get.dot.net/) version specified in `global.json`
 - Windows, Linux, or OSX.
 

@@ -44,7 +44,7 @@
     <PackageVersion Include="Xunit.Assert" Version="2.9.3" />
   </ItemGroup>
   <Import Project="Directory.Packages.Analyzers.props" Condition="'$(IsTestProject)'!='true' and '$(MSBuildProjectName)'!='CsWin32Generator'" />
-  <ItemGroup Label="Library.Template">
+  <ItemGroup>
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
     <PackageVersion Include="Microsoft.VisualStudio.Internal.MicroBuild.NonShipping" Version="$(MicroBuildVersion)" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.0" />
@@ -53,10 +53,10 @@
   <ItemGroup>
     <!-- Put repo-specific GlobalPackageReference items in this group. -->
   </ItemGroup>
-  <ItemGroup Label="Library.Template">
+  <ItemGroup>
     <GlobalPackageReference Include="CSharpIsNullAnalyzer" Version="0.2.19" />
     <GlobalPackageReference Include="DotNetAnalyzers.DocumentationAnalyzers" Version="1.0.0-beta.59" />
-    <GlobalPackageReference Include="Microsoft.VisualStudio.Internal.MicroBuild.VisualStudio" Version="$(MicroBuildVersion)" />
+    <GlobalPackageReference Include="Microsoft.VisualStudio.Internal.MicroBuild.VisualStudio" Version="$(MicroBuildVersion)" Condition="'$(EnableMicroBuild)' == 'true'" />
     <!-- The condition works around https://github.com/dotnet/sdk/issues/44951 -->
     <GlobalPackageReference Include="Nerdbank.GitVersioning" Version="3.10.94" Condition="!('$(TF_BUILD)'=='true' and '$(dotnetformat)'=='true')" />
     <GlobalPackageReference Include="PolySharp" Version="1.16.0" Condition="'$(DisablePolyfill)'!='true'" />

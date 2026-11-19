@@ -8,13 +8,10 @@ on:
     - main
     - microbuild
 
-env:
-  RestoreRetryCount: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'renovate[bot]' && 10 || 1 }}
-
 jobs:
   build:
     name: 📚 Doc validation
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
@@ -23,11 +20,15 @@ jobs:
       uses: becheran/mlc@b0d0d353e04fcbcfd1d86716103d78a61e5b25dd # v1.2.2
       with:
         args: --do-not-warn-for-redirect-to https://learn.microsoft.com*,https://dotnet.microsoft.com/*,https://dev.azure.com/*,https://app.codecov.io/* -p docfx -i https://aka.ms/onboardsupport,https://aka.ms/spot,https://msrc.microsoft.com/*,https://www.microsoft.com/msrc*,https://microsoft.com/msrc*,https://www.npmjs.com/package/*,https://get.dot.net/
-    - name: ⚙ Install prerequisites
-      run: |
-        ./init.ps1 -UpgradePrerequisites -RestoreRetryCount $env:RestoreRetryCount
-        dotnet --info
-      shell: pwsh
+    - name: ⚙ Install .NET
+      uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      with:
+        global-json-file: global.json
+        dotnet-version: |
+          8.0.x
+          9.0.x
+    - name: Restore CLI tools
+      run: dotnet tool restore
     - name: 📚 Verify docfx build
       run: dotnet docfx docfx/docfx.json --warningsAsErrors --disableGitFeatures
       if: runner.os == 'Linux'

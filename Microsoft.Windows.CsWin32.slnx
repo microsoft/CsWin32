@@ -1,0 +1,46 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="NonWindows" />
+  </Configurations>
+  <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Build.targets" />
+    <File Path="Directory.Packages.Analyzers.props" />
+    <File Path="Directory.Packages.props" />
+    <File Path="Directory.Solution.targets" />
+    <File Path="global.json" />
+    <File Path="nuget.config" />
+    <File Path="README.md" />
+    <File Path="stylecop.json" />
+    <File Path="version.json" />
+  </Folder>
+  <Folder Name="/src/">
+    <File Path="src/.editorconfig" />
+    <File Path="src/Directory.Build.props" />
+    <File Path="src/Directory.Build.targets" />
+    <Project Path="src/CsWin32Generator/CsWin32Generator.csproj" />
+    <Project Path="src/Microsoft.Windows.CsWin32.BuildTasks/Microsoft.Windows.CsWin32.BuildTasks.csproj" />
+    <Project Path="src/Microsoft.Windows.CsWin32/Microsoft.Windows.CsWin32.csproj" />
+  </Folder>
+  <Folder Name="/test/">
+    <File Path="test/.editorconfig" />
+    <File Path="test/Directory.Build.props" />
+    <File Path="test/Directory.Build.targets" />
+    <File Path="test/GenerationSandbox.props" />
+    <Project Path="test/CsWin32Generator.BuildTasks.Tests/CsWin32Generator.BuildTasks.Tests.csproj" />
+    <Project Path="test/CsWin32Generator.Tests/CsWin32Generator.Tests.csproj" />
+    <Project Path="test/GenerationSandbox.AutoWinRTDisabled.Tests/GenerationSandbox.AutoWinRTDisabled.Tests.csproj" />
+    <Project Path="test/GenerationSandbox.BuildTask.Tests/GenerationSandbox.BuildTask.Tests.csproj" />
+    <Project Path="test/GenerationSandbox.BuiltInCom.Tests/GenerationSandbox.BuiltInCom.Tests.csproj" />
+    <Project Path="test/GenerationSandbox.Tests/GenerationSandbox.Tests.csproj" />
+    <Project Path="test/GenerationSandbox.Unmarshalled.Tests/GenerationSandbox.Unmarshalled.Tests.csproj" />
+    <Project Path="test/Microsoft.Windows.CsWin32.Tests/Microsoft.Windows.CsWin32.Tests.csproj" />
+    <Project Path="test/SpellChecker/SpellChecker.csproj" />
+    <Project Path="test/WinRTInteropTest/WinRTInteropTest.csproj">
+      <Build Solution="*|NonWindows" Project="false" />
+    </Project>
+  </Folder>
+  <Project Path="src/Microsoft.Windows.CsWin32.Roslyn4/Microsoft.Windows.CsWin32.Roslyn4.csproj" />
+</Solution>

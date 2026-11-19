@@ -1,6 +1,8 @@
 <Project>
   <PropertyGroup>
     <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);PackBuildOutputs</TargetsForTfmSpecificContentInPackage>
+    <!-- Packing existing outputs must not rebuild the Roslyn sibling while resolving references. -->
+    <BuildProjectReferences Condition="'$(NoBuild)' == 'true'">false</BuildProjectReferences>
   </PropertyGroup>
   <ItemGroup>
     <SignFilesDependsOn Include="Sign3rdPartyDependencies" />

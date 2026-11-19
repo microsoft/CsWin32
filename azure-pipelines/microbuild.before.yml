@@ -1,18 +1,9 @@
 parameters:
-- name: EnableLocalization
-  type: boolean
-  default: false
-- name: IsOptProf
-  type: boolean
-  default: false
-- name: ShouldSkipOptimize
-  type: boolean
-  default: false
 - name: RealSign
   type: boolean
 
 steps:
-- ${{ if and(not(parameters.IsOptProf), ne(variables['Build.Reason'], 'PullRequest')) }}:
+- ${{ if ne(variables['Build.Reason'], 'PullRequest') }}:
   # notice@0 requires CG detection to run first, and non-default branches don't inject it automatically.
   # default branch injection (main) is happening too late for notice@0 to run successfully. Adding this as a workaround.
   - task: ComponentGovernanceComponentDetection@0
@@ -25,26 +16,3 @@ steps:
       outputformat: text
     retryCountOnTaskFailure: 3 # fails when the cloud service is overloaded
     continueOnError: ${{ not(parameters.RealSign) }} # Tolerate failures when we're not building something that may ship.
-
-- ${{ if parameters.IsOptProf }}:
-  # We have to install these plugins ourselves for Optprof runs because those pipelines haven't migrated to 1ES PT yet.
-  - task: MicroBuildOptProfPlugin@6
-    inputs:
-      ProfilingInputsDropName: $(ProfilingInputsDropName)
-      OptimizationInputsLookupMethod: DropPrefix
-      DropNamePrefix: OptimizationInputs/$(System.TeamProject)/$(Build.Repository.Name)
-      ShouldSkipOptimize: ${{ parameters.ShouldSkipOptimize }}
-      AccessToken: $(System.AccessToken)
-    displayName: 🔧 Install OptProf Plugin
-
-  - task: MicroBuildSigningPlugin@4
-    inputs:
-      signType: Test
-      zipSources: false
-    displayName: 🔧 Install MicroBuild Signing Plugin
-
-  - ${{ if parameters.EnableLocalization }}:
-    - task: MicroBuildLocalizationPlugin@4
-      inputs:
-        languages: $(LocLanguages)
-      displayName: 🔧 Install MicroBuild Localization Plugin

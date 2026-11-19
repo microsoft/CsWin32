@@ -1,5 +1,8 @@
 <Project>
   <PropertyGroup>
+    <VSIXOutputPath>$(RepoRootPath)bin\Packages\$(Configuration)\Vsix\$(Platform)\</VSIXOutputPath>
+    <VSIXOutputPath Condition="'$(Platform)'=='' or '$(Platform)'=='AnyCPU'">$(RepoRootPath)bin\Packages\$(Configuration)\Vsix\</VSIXOutputPath>
+    <SBOMFileDestPath>$(VSIXOutputPath)</SBOMFileDestPath>
     <GenerateSBOMThisProject>true</GenerateSBOMThisProject>
     <UseMicroBuildSbomPluginVersion>2</UseMicroBuildSbomPluginVersion>
   </PropertyGroup>
